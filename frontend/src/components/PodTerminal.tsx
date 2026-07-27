@@ -3,6 +3,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { proxyURL, readToken } from '../api/client'
+import { Select } from './primitives'
 
 /*
  * The Kubernetes exec channel protocol prefixes every binary frame with the
@@ -18,9 +19,19 @@ const CHANNEL_RESIZE = 4
 /* v4 is what every current API server speaks; v5 adds a stdin close signal. */
 const SUBPROTOCOLS = ['v5.channel.k8s.io', 'v4.channel.k8s.io']
 
-/* The shells to try, in order. A distroless container has none of them, and
-   saying so beats a blank pane. */
-const SHELLS = ['/bin/bash', '/bin/sh']
+/*
+ * The shell to exec. Kubernetes takes `command` as an argv, not as a list of
+ * candidates — sending both `/bin/bash` and `/bin/sh` does not try one and fall
+ * back to the other, it runs bash *with* /bin/sh as its argument. So exactly one
+ * is sent, and which one is the operator's choice: bash is the comfortable
+ * default, sh is what a distroless or Alpine image actually has.
+ */
+const SHELLS = [
+  { value: '/bin/bash', label: 'bash' },
+  { value: '/bin/sh', label: 'sh' },
+]
+
+const DEFAULT_SHELL = SHELLS[0].value
 
 type Status = 'connecting' | 'open' | 'closed' | 'error'
 
@@ -58,10 +69,16 @@ export function PodTerminal({
   const host = useRef<HTMLDivElement | null>(null)
   const [status, setStatus] = useState<Status>('connecting')
   const [detail, setDetail] = useState<string | null>(null)
+  const [shell, setShell] = useState(DEFAULT_SHELL)
 
   useEffect(() => {
     const element = host.current
     if (!element) return
+
+    // Reconnecting after a closed session starts from "connecting" again, or
+    // the header would still be reporting the session that just ended.
+    setStatus('connecting')
+    setDetail(null)
 
     const term = new Terminal({
       fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
@@ -99,10 +116,8 @@ export function PodTerminal({
       stderr: 'true',
       tty: 'true',
       access_token: token,
+      command: shell,
     })
-    for (const shell of SHELLS) {
-      query.append('command', shell)
-    }
 
     const url = proxyURL(
       clusterId,
@@ -131,6 +146,7 @@ export function PodTerminal({
 
     socket.onopen = () => {
       setStatus('open')
+      setDetail(null)
       sendResize()
       term.focus()
     }
@@ -153,6 +169,13 @@ export function PodTerminal({
             const parsed = JSON.parse(payload) as { status?: string; message?: string }
             if (parsed.status !== 'Success' && parsed.message) {
               term.write(`\r\n\x1b[31m${parsed.message}\x1b[0m\r\n`)
+              // A slim image often has no bash at all, and "executable file not
+              // found" is the moment to say which control fixes it.
+              if (parsed.message.includes('executable file not found')) {
+                term.write(
+                  `\x1b[90mThis image has no ${shell}. Try another shell from the picker above.\x1b[0m\r\n`,
+                )
+              }
             }
           } catch {
             if (payload.trim()) term.write(`\r\n${payload}\r\n`)
@@ -193,7 +216,10 @@ export function PodTerminal({
       }
       term.dispose()
     }
-  }, [clusterId, namespace, pod, container])
+    // Changing the shell is a new session: the old one is torn down by the
+    // cleanup above and a fresh exec is opened, which is what an operator means
+    // by picking a different shell.
+  }, [clusterId, namespace, pod, container, shell])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
@@ -220,6 +246,26 @@ export function PodTerminal({
                 : 'Session closed'}
         </span>
         {detail ? <span className="truncate text-[12px] text-muted">· {detail}</span> : null}
+
+        {/* Which shell to exec. It is a session parameter, so changing it opens
+            a new session rather than trying to change the running one. */}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="label">Shell</span>
+          <div className="w-28">
+            <Select
+              aria-label="Shell"
+              size="sm"
+              value={shell}
+              onChange={(event) => setShell(event.target.value)}
+            >
+              {SHELLS.map((entry) => (
+                <option key={entry.value} value={entry.value}>
+                  {entry.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
       </div>
       <div
         ref={host}

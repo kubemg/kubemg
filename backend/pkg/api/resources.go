@@ -103,17 +103,8 @@ func (s *server) resourceCluster(c *gin.Context) (*db.User, *db.Cluster, db.User
 func (s *server) callResource(c *gin.Context, user *db.User, cluster *db.Cluster,
 	grant db.UserClusterAccess, path string,
 ) (*bastion.Response, bool) {
-	resp, err := s.proxy.Call(c.Request.Context(), user, cluster, grant, http.MethodGet, path, nil)
-	if err != nil {
-		var callErr *bastion.CallError
-		if errors.As(err, &callErr) {
-			c.JSON(callErr.Status, gin.H{"error": callErr.Message})
-			return nil, false
-		}
-		c.JSON(http.StatusBadGateway, gin.H{"error": "could not read from the cluster"})
-		return nil, false
-	}
-	return resp, true
+	return s.callResourceWith(c, user, cluster, grant,
+		http.MethodGet, path, nil, "could not read from the cluster")
 }
 
 // decodeResource turns a successful cluster response into a Go value, and any

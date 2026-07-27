@@ -459,3 +459,19 @@ export interface SettingsResponse {
 }
 
 export type SettingsPatch = Partial<RuntimeSettings>
+
+/**
+ * One object in full, as the YAML an operator already knows how to read.
+ * `editable` says whether KubeMG will write the manifest back — it is not a
+ * statement about the caller's cluster RBAC, which is only settled by trying.
+ */
+export interface ResourceManifest {
+  yaml: string
+  kind: string
+  api_version: string
+  name: string
+  namespace?: string
+  resource_version?: string
+  editable: boolean
+  reason?: string
+}

@@ -27,6 +27,8 @@ import { ExploreSidebar } from '../components/ExploreSidebar'
 import { PodDrawer } from '../components/PodDrawer'
 import { ResourceView } from '../components/ResourceTables'
 import type { LoadedResource } from '../components/ResourceTables'
+import { YamlDrawer } from '../components/YamlDrawer'
+import type { ManifestTarget } from '../components/YamlDrawer'
 import {
   Button,
   EmptyState,
@@ -36,7 +38,12 @@ import {
   Select,
 } from '../components/primitives'
 import type { ResourceKey } from '../lib/resources'
-import { ALL_NAMESPACES, RESOURCE_CATEGORIES, resourceItem } from '../lib/resources'
+import {
+  ALL_NAMESPACES,
+  RESOURCE_CATEGORIES,
+  resourceItem,
+  resourceSingular,
+} from '../lib/resources'
 import { useClusters } from '../state/clusters-context'
 
 /**
@@ -110,6 +117,7 @@ export function Explore() {
 
   const [loaded, setLoaded] = useState<LoadedResource | null>(null)
   const [selected, setSelected] = useState<Pod | null>(null)
+  const [manifest, setManifest] = useState<ManifestTarget | null>(null)
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -176,10 +184,11 @@ export function Explore() {
     void load()
   }, [load])
 
-  // A pod drawer belongs to the pod list; switching resources closes it rather
-  // than leaving a drawer open over a list it does not come from.
+  // A drawer belongs to the list it was opened from; switching resources closes
+  // it rather than leaving it open over a list it does not come from.
   useEffect(() => {
     setSelected(null)
+    setManifest(null)
   }, [resource, namespace, clusterId])
 
   if (!clustersLoading && reachable.length === 0) {
@@ -331,6 +340,18 @@ export function Explore() {
               loaded={loaded}
               showNamespace={allNamespaces}
               onSelectPod={setSelected}
+              // The page is the only place that knows which resource it asked
+              // for: several kinds share a table, and a manifest has to be
+              // addressed by what the object actually is.
+              onManifest={(name, rowNamespace, editing) =>
+                setManifest({
+                  kind: resource,
+                  label: resourceSingular(item),
+                  name,
+                  namespace: namespaced ? (rowNamespace ?? namespace) : undefined,
+                  editing,
+                })
+              }
             />
           ) : null}
 
@@ -373,6 +394,15 @@ export function Explore() {
           pod={selected}
           onClose={() => setSelected(null)}
           onRefresh={load}
+        />
+      ) : null}
+
+      {manifest && cluster ? (
+        <YamlDrawer
+          cluster={cluster}
+          target={manifest}
+          onClose={() => setManifest(null)}
+          onApplied={load}
         />
       ) : null}
     </AppShell>
