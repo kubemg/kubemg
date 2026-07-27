@@ -174,3 +174,22 @@ func TestTunnelFailureMapsToUsefulStatuses(t *testing.T) {
 		t.Fatalf("a dropped tunnel should be 503, got %d", status)
 	}
 }
+
+// The in-page terminal names the shell to exec in the query string, and the
+// only parameter KubeMG removes on the way through is its own session token.
+// Dropping `command` would silently exec the container's entrypoint instead of
+// the shell the operator picked, so what survives the strip is pinned here.
+func TestStrippedQueryKeepsExecParameters(t *testing.T) {
+	raw := "container=web&stdin=true&tty=true&command=%2Fbin%2Fsh&access_token=secret"
+
+	got := strippedQuery(raw)
+	if strings.Contains(got, "access_token") {
+		t.Fatalf("the session token reached the cluster: %q", got)
+	}
+	if !strings.Contains(got, "command=%2Fbin%2Fsh") {
+		t.Fatalf("the chosen shell was dropped: %q", got)
+	}
+	if !strings.Contains(got, "container=web") || !strings.Contains(got, "tty=true") {
+		t.Fatalf("the exec parameters were mangled: %q", got)
+	}
+}

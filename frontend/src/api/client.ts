@@ -1,4 +1,5 @@
 import axios from 'axios'
+import type { ResourceKey } from '../lib/resources'
 import { ALL_NAMESPACES } from '../lib/resources'
 import type {
   AgentInstall,
@@ -28,6 +29,7 @@ import type {
   PersistentVolumeClaim,
   Pod,
   PodMetrics,
+  ResourceManifest,
   Route,
   Service,
   SettingsPatch,
@@ -383,6 +385,40 @@ export function fetchCRDs(clusterId: number): Promise<CustomResourceDefinition[]
 
 export function fetchNodes(clusterId: number): Promise<ClusterNode[]> {
   return fetchList<ClusterNode>(clusterId, 'nodes', 'nodes')
+}
+
+/*
+ * One object as YAML. Both calls address the object by the same key the Explore
+ * sidebar uses, so the browser never names an API path — the backend builds it
+ * from a fixed table, and the write goes down the impersonated tunnel like every
+ * other call.
+ */
+
+export async function fetchResourceYaml(
+  clusterId: number,
+  kind: ResourceKey,
+  name: string,
+  namespace?: string,
+): Promise<ResourceManifest> {
+  const { data } = await http.get<ResourceManifest>(resourceURL(clusterId, 'object'), {
+    params: { kind, name, namespace: namespace || undefined },
+  })
+  return data
+}
+
+export async function updateResourceYaml(
+  clusterId: number,
+  kind: ResourceKey,
+  name: string,
+  namespace: string | undefined,
+  yaml: string,
+): Promise<ResourceManifest> {
+  const { data } = await http.put<ResourceManifest>(
+    resourceURL(clusterId, 'object'),
+    { yaml },
+    { params: { kind, name, namespace: namespace || undefined } },
+  )
+  return data
 }
 
 export async function fetchPodLogs(

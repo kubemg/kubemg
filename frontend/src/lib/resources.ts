@@ -38,12 +38,22 @@ export const ALL_NAMESPACES = '*'
 export interface ResourceItem {
   key: ResourceKey
   label: string
+  /** Only where dropping the trailing "s" would not give the singular. */
+  singular?: string
   /** Cluster-scoped resources have no namespace, so the namespace picker hides. */
   scope: 'namespaced' | 'cluster'
   /** Extra words the sidebar filter should match, for the Kubernetes short names. */
   aliases?: string[]
   /** Set for resources served by a CRD that a cluster may not have installed. */
   optional?: boolean
+  /**
+   * Set where KubeMG will show a manifest but not write it back. Only Secrets:
+   * their values are redacted before they leave the cluster, so the manifest is
+   * not the whole object and applying it would overwrite every value with the
+   * placeholder standing in for it. The backend refuses the write too — this is
+   * only what keeps the button from being offered.
+   */
+  manifestReadOnly?: boolean
 }
 
 export interface ResourceCategory {
@@ -70,7 +80,13 @@ export const RESOURCE_CATEGORIES: ResourceCategory[] = [
     label: 'Networking',
     items: [
       { key: 'services', label: 'Services', scope: 'namespaced', aliases: ['svc'] },
-      { key: 'ingresses', label: 'Ingresses', scope: 'namespaced', aliases: ['ing'] },
+      {
+        key: 'ingresses',
+        label: 'Ingresses',
+        singular: 'Ingress',
+        scope: 'namespaced',
+        aliases: ['ing'],
+      },
       {
         key: 'httproutes',
         label: 'HTTPRoutes',
@@ -98,9 +114,15 @@ export const RESOURCE_CATEGORIES: ResourceCategory[] = [
         scope: 'namespaced',
         aliases: ['pvc'],
       },
-      { key: 'storageclasses', label: 'StorageClasses', scope: 'cluster', aliases: ['sc'] },
+      {
+        key: 'storageclasses',
+        label: 'StorageClasses',
+        singular: 'StorageClass',
+        scope: 'cluster',
+        aliases: ['sc'],
+      },
       { key: 'configmaps', label: 'ConfigMaps', scope: 'namespaced', aliases: ['cm'] },
-      { key: 'secrets', label: 'Secrets', scope: 'namespaced' },
+      { key: 'secrets', label: 'Secrets', scope: 'namespaced', manifestReadOnly: true },
     ],
   },
   {
@@ -133,6 +155,11 @@ export function resourceItem(key: ResourceKey): ResourceItem {
   const item = BY_KEY.get(key)
   if (!item) throw new Error(`unknown resource ${key}`)
   return item
+}
+
+/** resourceSingular names one object of a kind, for a drawer over one row. */
+export function resourceSingular(item: ResourceItem): string {
+  return item.singular ?? item.label.replace(/s$/, '')
 }
 
 /** matchesResource powers the sidebar filter: label or Kubernetes short name. */

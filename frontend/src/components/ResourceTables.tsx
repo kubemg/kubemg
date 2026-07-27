@@ -15,7 +15,8 @@ import type {
   StorageClass,
   Workload,
 } from '../api/types'
-import { Pill, Row, Table, Td, Th } from './primitives'
+import { FileCode2, Pencil } from 'lucide-react'
+import { IconButton, Pill, Row, Table, Td, Th } from './primitives'
 import type { Tone } from '../lib/status'
 import { TONE_FILL, podTone, workloadTone } from '../lib/status'
 import { relativeAge } from '../lib/time'
@@ -42,55 +43,81 @@ export type LoadedResource =
   | { kind: 'nodes'; rows: ClusterNode[] }
   | { kind: 'namespaces'; rows: Namespace[] }
 
+/** OpenManifest opens one row's object as YAML, to read or to edit. */
+export type OpenManifest = (name: string, namespace: string | undefined, editing: boolean) => void
+
 /**
  * ResourceView renders whichever list is loaded, with the columns it deserves.
  * `showNamespace` is set when the list spans namespaces, and each namespaced
  * table then prefixes the name with where the object lives.
+ *
+ * `onManifest` arrives already bound to the kind being shown: several kinds
+ * share a shape here — HTTPRoutes and VirtualServices are both `routes` — so the
+ * page, which knows which resource it asked for, is the only place that can
+ * address a manifest correctly.
  */
 export function ResourceView({
   loaded,
   showNamespace = false,
   onSelectPod,
+  onManifest: open,
 }: {
   loaded: LoadedResource
   showNamespace?: boolean
   onSelectPod: (pod: Pod) => void
+  onManifest?: OpenManifest
 }) {
   switch (loaded.kind) {
     case 'pods':
-      return <PodTable pods={loaded.rows} showNamespace={showNamespace} onSelect={onSelectPod} />
+      return (
+        <PodTable
+          pods={loaded.rows}
+          showNamespace={showNamespace}
+          onSelect={onSelectPod}
+          onManifest={open}
+        />
+      )
     case 'workloads':
-      return <WorkloadTable workloads={loaded.rows} showNamespace={showNamespace} />
+      return (
+        <WorkloadTable workloads={loaded.rows} showNamespace={showNamespace} onManifest={open} />
+      )
     case 'jobs':
-      return <JobTable jobs={loaded.rows} showNamespace={showNamespace} />
+      return <JobTable jobs={loaded.rows} showNamespace={showNamespace} onManifest={open} />
     case 'cronjobs':
-      return <CronJobTable cronjobs={loaded.rows} showNamespace={showNamespace} />
+      return (
+        <CronJobTable cronjobs={loaded.rows} showNamespace={showNamespace} onManifest={open} />
+      )
     case 'services':
-      return <ServiceTable services={loaded.rows} showNamespace={showNamespace} />
+      return (
+        <ServiceTable services={loaded.rows} showNamespace={showNamespace} onManifest={open} />
+      )
     case 'ingresses':
-      return <IngressTable ingresses={loaded.rows} showNamespace={showNamespace} />
+      return (
+        <IngressTable ingresses={loaded.rows} showNamespace={showNamespace} onManifest={open} />
+      )
     case 'routes':
-      return <RouteTable routes={loaded.rows} showNamespace={showNamespace} />
+      return <RouteTable routes={loaded.rows} showNamespace={showNamespace} onManifest={open} />
     case 'persistentvolumes':
-      return <PersistentVolumeTable volumes={loaded.rows} />
+      return <PersistentVolumeTable volumes={loaded.rows} onManifest={open} />
     case 'persistentvolumeclaims':
-      return <ClaimTable claims={loaded.rows} showNamespace={showNamespace} />
+      return <ClaimTable claims={loaded.rows} showNamespace={showNamespace} onManifest={open} />
     case 'storageclasses':
-      return <StorageClassTable classes={loaded.rows} />
+      return <StorageClassTable classes={loaded.rows} onManifest={open} />
     case 'config':
       return (
         <ConfigTable
           entries={loaded.rows}
           secrets={loaded.secrets}
           showNamespace={showNamespace}
+          onManifest={open}
         />
       )
     case 'crds':
-      return <CRDTable crds={loaded.rows} />
+      return <CRDTable crds={loaded.rows} onManifest={open} />
     case 'nodes':
-      return <NodeTable nodes={loaded.rows} />
+      return <NodeTable nodes={loaded.rows} onManifest={open} />
     case 'namespaces':
-      return <NamespaceTable namespaces={loaded.rows} />
+      return <NamespaceTable namespaces={loaded.rows} onManifest={open} />
   }
 }
 
@@ -140,6 +167,63 @@ function List({ values, empty = '—' }: { values: string[] | undefined; empty?:
 const MONO = 'truncate font-mono text-[12.5px] text-muted'
 const AGE = 'text-[12.5px] text-muted'
 
+/**
+ * The manifest column. It is the last column of every list and carries no
+ * heading — the two icons are titled, and a word above them would be a column
+ * name for something that is not data.
+ */
+function ManifestHead({ onManifest }: { onManifest?: OpenManifest }) {
+  if (!onManifest) return null
+  return (
+    <Th className="w-[1%]">
+      <span className="sr-only">Manifest</span>
+    </Th>
+  )
+}
+
+/**
+ * ManifestCell offers the two things you can do with an object's YAML. Editing
+ * is offered separately from viewing rather than hidden inside it, because
+ * opening a manifest to read is the common case and should not look like the
+ * start of a change.
+ */
+function ManifestCell({
+  onManifest,
+  name,
+  namespace,
+  editable = true,
+}: {
+  onManifest?: OpenManifest
+  name: string
+  namespace?: string
+  editable?: boolean
+}) {
+  if (!onManifest) return null
+
+  return (
+    <Td className="whitespace-nowrap">
+      <span className="flex items-center justify-end gap-0.5">
+        <IconButton
+          type="button"
+          label={`View ${name} as YAML`}
+          onClick={() => onManifest(name, namespace, false)}
+        >
+          <FileCode2 aria-hidden="true" className="size-3.5" />
+        </IconButton>
+        {editable ? (
+          <IconButton
+            type="button"
+            label={`Edit ${name}`}
+            onClick={() => onManifest(name, namespace, true)}
+          >
+            <Pencil aria-hidden="true" className="size-3.5" />
+          </IconButton>
+        ) : null}
+      </span>
+    </Td>
+  )
+}
+
 function phaseTone(phase: string): Tone {
   switch (phase) {
     case 'Bound':
@@ -181,10 +265,12 @@ function PodTable({
   pods,
   showNamespace,
   onSelect,
+  onManifest,
 }: {
   pods: Pod[]
   showNamespace: boolean
   onSelect: (pod: Pod) => void
+  onManifest?: OpenManifest
 }) {
   return (
     <Table>
@@ -196,6 +282,7 @@ function PodTable({
           <Th className="hidden md:table-cell md:w-[9%]">Restarts</Th>
           <Th className="hidden lg:table-cell lg:w-[20%]">Node</Th>
           <Th className="w-[20%] md:w-[10%]">Age</Th>
+          <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
       <tbody>
@@ -233,6 +320,7 @@ function PodTable({
             </Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>{pod.node || '—'}</Td>
             <Td className={AGE}>{relativeAge(pod.created_at)}</Td>
+            <ManifestCell onManifest={onManifest} name={pod.name} namespace={pod.namespace} />
           </Row>
         ))}
       </tbody>
@@ -243,9 +331,11 @@ function PodTable({
 function WorkloadTable({
   workloads,
   showNamespace,
+  onManifest,
 }: {
   workloads: Workload[]
   showNamespace: boolean
+  onManifest?: OpenManifest
 }) {
   return (
     <Table>
@@ -256,6 +346,7 @@ function WorkloadTable({
           <Th className="w-[16%] md:w-[9%]">Ready</Th>
           <Th className="hidden lg:table-cell lg:w-[32%]">Image</Th>
           <Th className="w-[16%] md:w-[10%]">Age</Th>
+          <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
       <tbody>
@@ -282,6 +373,11 @@ function WorkloadTable({
               {workload.images?.[0] ?? '—'}
             </Td>
             <Td className={AGE}>{relativeAge(workload.created_at)}</Td>
+            <ManifestCell
+              onManifest={onManifest}
+              name={workload.name}
+              namespace={workload.namespace}
+            />
           </Row>
         ))}
       </tbody>
@@ -289,7 +385,15 @@ function WorkloadTable({
   )
 }
 
-function JobTable({ jobs, showNamespace }: { jobs: Job[]; showNamespace: boolean }) {
+function JobTable({
+  jobs,
+  showNamespace,
+  onManifest,
+}: {
+  jobs: Job[]
+  showNamespace: boolean
+  onManifest?: OpenManifest
+}) {
   return (
     <Table>
       <thead>
@@ -300,6 +404,7 @@ function JobTable({ jobs, showNamespace }: { jobs: Job[]; showNamespace: boolean
           <Th className="hidden md:table-cell md:w-[8%]">Failed</Th>
           <Th className="hidden lg:table-cell lg:w-[28%]">Image</Th>
           <Th className="w-[18%] md:w-[10%]">Age</Th>
+          <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
       <tbody>
@@ -331,6 +436,7 @@ function JobTable({ jobs, showNamespace }: { jobs: Job[]; showNamespace: boolean
               {job.images?.[0] ?? '—'}
             </Td>
             <Td className={AGE}>{relativeAge(job.created_at)}</Td>
+            <ManifestCell onManifest={onManifest} name={job.name} namespace={job.namespace} />
           </Row>
         ))}
       </tbody>
@@ -341,9 +447,11 @@ function JobTable({ jobs, showNamespace }: { jobs: Job[]; showNamespace: boolean
 function CronJobTable({
   cronjobs,
   showNamespace,
+  onManifest,
 }: {
   cronjobs: CronJob[]
   showNamespace: boolean
+  onManifest?: OpenManifest
 }) {
   return (
     <Table>
@@ -355,6 +463,7 @@ function CronJobTable({
           <Th className="hidden md:table-cell md:w-[8%]">Active</Th>
           <Th className="hidden md:table-cell md:w-[16%]">Last run</Th>
           <Th className="w-[16%] md:w-[10%]">Age</Th>
+          <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
       <tbody>
@@ -382,6 +491,11 @@ function CronJobTable({
               {cronjob.last_schedule_at ? relativeAge(cronjob.last_schedule_at) : 'never'}
             </Td>
             <Td className={AGE}>{relativeAge(cronjob.created_at)}</Td>
+            <ManifestCell
+              onManifest={onManifest}
+              name={cronjob.name}
+              namespace={cronjob.namespace}
+            />
           </Row>
         ))}
       </tbody>
@@ -392,9 +506,11 @@ function CronJobTable({
 function ServiceTable({
   services,
   showNamespace,
+  onManifest,
 }: {
   services: Service[]
   showNamespace: boolean
+  onManifest?: OpenManifest
 }) {
   return (
     <Table>
@@ -406,6 +522,7 @@ function ServiceTable({
           <Th className="hidden lg:table-cell lg:w-[18%]">External</Th>
           <Th className="w-[20%] md:w-[18%]">Ports</Th>
           <Th className="w-[16%] md:w-[10%]">Age</Th>
+          <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
       <tbody>
@@ -428,6 +545,11 @@ function ServiceTable({
               <List values={service.ports} />
             </Td>
             <Td className={AGE}>{relativeAge(service.created_at)}</Td>
+            <ManifestCell
+              onManifest={onManifest}
+              name={service.name}
+              namespace={service.namespace}
+            />
           </Row>
         ))}
       </tbody>
@@ -438,9 +560,11 @@ function ServiceTable({
 function IngressTable({
   ingresses,
   showNamespace,
+  onManifest,
 }: {
   ingresses: Ingress[]
   showNamespace: boolean
+  onManifest?: OpenManifest
 }) {
   return (
     <Table>
@@ -452,6 +576,7 @@ function IngressTable({
           <Th className="hidden lg:table-cell lg:w-[18%]">Address</Th>
           <Th className="hidden md:table-cell md:w-[8%]">Rules</Th>
           <Th className="w-[16%] md:w-[10%]">Age</Th>
+          <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
       <tbody>
@@ -476,6 +601,11 @@ function IngressTable({
               {ingress.rules}
             </Td>
             <Td className={AGE}>{relativeAge(ingress.created_at)}</Td>
+            <ManifestCell
+              onManifest={onManifest}
+              name={ingress.name}
+              namespace={ingress.namespace}
+            />
           </Row>
         ))}
       </tbody>
@@ -483,7 +613,15 @@ function IngressTable({
   )
 }
 
-function RouteTable({ routes, showNamespace }: { routes: Route[]; showNamespace: boolean }) {
+function RouteTable({
+  routes,
+  showNamespace,
+  onManifest,
+}: {
+  routes: Route[]
+  showNamespace: boolean
+  onManifest?: OpenManifest
+}) {
   return (
     <Table>
       <thead>
@@ -493,6 +631,7 @@ function RouteTable({ routes, showNamespace }: { routes: Route[]; showNamespace:
           <Th className="hidden md:table-cell md:w-[24%]">Attached to</Th>
           <Th className="hidden md:table-cell md:w-[8%]">Rules</Th>
           <Th className="w-[16%] md:w-[10%]">Age</Th>
+          <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
       <tbody>
@@ -513,6 +652,7 @@ function RouteTable({ routes, showNamespace }: { routes: Route[]; showNamespace:
               {route.rules}
             </Td>
             <Td className={AGE}>{relativeAge(route.created_at)}</Td>
+            <ManifestCell onManifest={onManifest} name={route.name} namespace={route.namespace} />
           </Row>
         ))}
       </tbody>
@@ -520,7 +660,13 @@ function RouteTable({ routes, showNamespace }: { routes: Route[]; showNamespace:
   )
 }
 
-function PersistentVolumeTable({ volumes }: { volumes: PersistentVolume[] }) {
+function PersistentVolumeTable({
+  volumes,
+  onManifest,
+}: {
+  volumes: PersistentVolume[]
+  onManifest?: OpenManifest
+}) {
   return (
     <Table>
       <thead>
@@ -532,6 +678,7 @@ function PersistentVolumeTable({ volumes }: { volumes: PersistentVolume[] }) {
           <Th className="hidden lg:table-cell lg:w-[20%]">Claim</Th>
           <Th className="hidden lg:table-cell lg:w-[12%]">Class</Th>
           <Th className="w-[16%] md:w-[10%]">Age</Th>
+          <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
       <tbody>
@@ -552,6 +699,7 @@ function PersistentVolumeTable({ volumes }: { volumes: PersistentVolume[] }) {
             <Td className={`hidden lg:table-cell ${MONO}`}>{volume.claim || '—'}</Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>{volume.storage_class || '—'}</Td>
             <Td className={AGE}>{relativeAge(volume.created_at)}</Td>
+            <ManifestCell onManifest={onManifest} name={volume.name} />
           </Row>
         ))}
       </tbody>
@@ -562,9 +710,11 @@ function PersistentVolumeTable({ volumes }: { volumes: PersistentVolume[] }) {
 function ClaimTable({
   claims,
   showNamespace,
+  onManifest,
 }: {
   claims: PersistentVolumeClaim[]
   showNamespace: boolean
+  onManifest?: OpenManifest
 }) {
   return (
     <Table>
@@ -577,6 +727,7 @@ function ClaimTable({
           <Th className="hidden lg:table-cell lg:w-[14%]">Class</Th>
           <Th className="hidden lg:table-cell lg:w-[16%]">Volume</Th>
           <Th className="w-[16%] md:w-[10%]">Age</Th>
+          <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
       <tbody>
@@ -601,6 +752,7 @@ function ClaimTable({
             <Td className={`hidden lg:table-cell ${MONO}`}>{claim.storage_class || '—'}</Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>{claim.volume || '—'}</Td>
             <Td className={AGE}>{relativeAge(claim.created_at)}</Td>
+            <ManifestCell onManifest={onManifest} name={claim.name} namespace={claim.namespace} />
           </Row>
         ))}
       </tbody>
@@ -608,7 +760,13 @@ function ClaimTable({
   )
 }
 
-function StorageClassTable({ classes }: { classes: StorageClass[] }) {
+function StorageClassTable({
+  classes,
+  onManifest,
+}: {
+  classes: StorageClass[]
+  onManifest?: OpenManifest
+}) {
   return (
     <Table>
       <thead>
@@ -618,6 +776,7 @@ function StorageClassTable({ classes }: { classes: StorageClass[] }) {
           <Th className="hidden md:table-cell md:w-[14%]">Reclaim</Th>
           <Th className="hidden lg:table-cell lg:w-[14%]">Binding</Th>
           <Th className="w-[16%] md:w-[10%]">Age</Th>
+          <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
       <tbody>
@@ -637,6 +796,7 @@ function StorageClassTable({ classes }: { classes: StorageClass[] }) {
             <Td className={`hidden md:table-cell ${MONO}`}>{entry.reclaim_policy || '—'}</Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>{entry.binding_mode || '—'}</Td>
             <Td className={AGE}>{relativeAge(entry.created_at)}</Td>
+            <ManifestCell onManifest={onManifest} name={entry.name} />
           </Row>
         ))}
       </tbody>
@@ -648,10 +808,12 @@ function ConfigTable({
   entries,
   secrets,
   showNamespace,
+  onManifest,
 }: {
   entries: ConfigEntry[]
   secrets: boolean
   showNamespace: boolean
+  onManifest?: OpenManifest
 }) {
   return (
     <Table>
@@ -664,6 +826,7 @@ function ConfigTable({
             Key names
           </Th>
           <Th className="w-[16%] md:w-[10%]">Age</Th>
+          <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
       <tbody>
@@ -688,6 +851,15 @@ function ConfigTable({
               <List values={entry.keys} empty="none" />
             </Td>
             <Td className={AGE}>{relativeAge(entry.created_at)}</Td>
+            {/* A Secret's values are redacted on the way out, so the manifest
+                is not the whole object and there is nothing honest to write
+                back — it is offered to read and not to edit. */}
+            <ManifestCell
+              onManifest={onManifest}
+              name={entry.name}
+              namespace={entry.namespace}
+              editable={!secrets}
+            />
           </Row>
         ))}
       </tbody>
@@ -695,7 +867,13 @@ function ConfigTable({
   )
 }
 
-function CRDTable({ crds }: { crds: CustomResourceDefinition[] }) {
+function CRDTable({
+  crds,
+  onManifest,
+}: {
+  crds: CustomResourceDefinition[]
+  onManifest?: OpenManifest
+}) {
   return (
     <Table>
       <thead>
@@ -705,6 +883,7 @@ function CRDTable({ crds }: { crds: CustomResourceDefinition[] }) {
           <Th className="hidden md:table-cell md:w-[20%]">Group</Th>
           <Th className="hidden lg:table-cell lg:w-[10%]">Scope</Th>
           <Th className="w-[18%] md:w-[12%]">Versions</Th>
+          <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
       <tbody>
@@ -719,6 +898,7 @@ function CRDTable({ crds }: { crds: CustomResourceDefinition[] }) {
             <Td className={MONO}>
               <List values={crd.versions} />
             </Td>
+            <ManifestCell onManifest={onManifest} name={crd.name} />
           </Row>
         ))}
       </tbody>
@@ -726,7 +906,7 @@ function CRDTable({ crds }: { crds: CustomResourceDefinition[] }) {
   )
 }
 
-function NodeTable({ nodes }: { nodes: ClusterNode[] }) {
+function NodeTable({ nodes, onManifest }: { nodes: ClusterNode[]; onManifest?: OpenManifest }) {
   return (
     <Table>
       <thead>
@@ -738,6 +918,7 @@ function NodeTable({ nodes }: { nodes: ClusterNode[] }) {
           <Th className="hidden lg:table-cell lg:w-[14%]">Internal IP</Th>
           <Th className="hidden lg:table-cell lg:w-[8%]">CPU</Th>
           <Th className="w-[18%] md:w-[10%]">Age</Th>
+          <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
       <tbody>
@@ -760,6 +941,7 @@ function NodeTable({ nodes }: { nodes: ClusterNode[] }) {
             <Td className={`hidden lg:table-cell ${MONO}`}>{node.internal_ip || '—'}</Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>{node.cpu || '—'}</Td>
             <Td className={AGE}>{relativeAge(node.created_at)}</Td>
+            <ManifestCell onManifest={onManifest} name={node.name} />
           </Row>
         ))}
       </tbody>
@@ -767,7 +949,13 @@ function NodeTable({ nodes }: { nodes: ClusterNode[] }) {
   )
 }
 
-function NamespaceTable({ namespaces }: { namespaces: Namespace[] }) {
+function NamespaceTable({
+  namespaces,
+  onManifest,
+}: {
+  namespaces: Namespace[]
+  onManifest?: OpenManifest
+}) {
   return (
     <Table>
       <thead>
@@ -776,6 +964,7 @@ function NamespaceTable({ namespaces }: { namespaces: Namespace[] }) {
           <Th className="w-[26%] md:w-[20%]">Status</Th>
           <Th className="hidden md:table-cell md:w-[20%]">Your access</Th>
           <Th className="w-[24%] md:w-[20%]">Age</Th>
+          <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
       <tbody>
@@ -799,6 +988,7 @@ function NamespaceTable({ namespaces }: { namespaces: Namespace[] }) {
             <Td className={AGE}>
               {namespace.created_at ? relativeAge(namespace.created_at) : '—'}
             </Td>
+            <ManifestCell onManifest={onManifest} name={namespace.name} />
           </Row>
         ))}
       </tbody>

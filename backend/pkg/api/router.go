@@ -257,6 +257,13 @@ func NewRouter(opts Options) *gin.Engine {
 			resources.GET("/crds", s.listCRDs)
 			resources.GET("/nodes", s.listNodes)
 
+			// One object in full, as the YAML an operator already reads. The
+			// PUT is the only write path in the resource API; it goes down the
+			// same impersonated tunnel, so the cluster's RBAC decides whether
+			// the caller may actually change anything.
+			resources.GET("/object", s.showResourceObject)
+			resources.PUT("/object", s.updateResourceObject)
+
 			// Live utilisation from the cluster's own Metrics API. It rides the
 			// same tunnel, grant and audit trail as the lists above; a cluster
 			// with no metrics-server answers "unavailable" rather than failing.

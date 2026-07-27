@@ -1,0 +1,437 @@
+package api
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"slices"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"sigs.k8s.io/yaml"
+
+	"github.com/kubemg/kubemg/backend/pkg/bastion"
+	"github.com/kubemg/kubemg/backend/pkg/db"
+)
+
+/*
+ * One object, as YAML, read and written through the same tunnel as everything
+ * else. The lists in resources.go and resources_inventory.go are normalised down
+ * to the few columns a table shows; this is the opposite surface — the whole
+ * object, in the form an operator already knows how to read.
+ *
+ * It is the first *write* path the resource API has, so it is deliberately
+ * narrow: only the kinds the Explore sidebar browses can be addressed, the API
+ * path is derived from a fixed table rather than from anything the caller sends,
+ * and the manifest has to name the object it is being applied to. What the
+ * caller may actually do is still the cluster's decision — the PUT goes down the
+ * tunnel impersonated, so a `view` grant is refused by the cluster's own RBAC
+ * rather than by a check here that would only duplicate it.
+ */
+
+// maxManifestBody caps a submitted manifest. A Kubernetes object that does not
+// fit in a megabyte is not one somebody is hand-editing.
+const maxManifestBody = 1 << 20
+
+// lastAppliedAnnotation is kubectl's copy of the previous manifest. It is a
+// duplicate of the object it is attached to and routinely longer than it, so it
+// is stripped: an editor that opens on two copies of the same thing is unusable.
+const lastAppliedAnnotation = "kubectl.kubernetes.io/last-applied-configuration"
+
+// redactedValue replaces a Secret's data. It is not valid base64 on purpose —
+// a placeholder that could be mistaken for the real value would be worse than
+// no placeholder at all.
+const redactedValue = "<redacted by KubeMG>"
+
+// objectKind is how a browsable resource is addressed as a single object.
+type objectKind struct {
+	// versions are the API paths to try, in preference order. More than one
+	// only for a CRD whose group has moved version between releases.
+	versions []resourceListPath
+	// namespaced mirrors the scope the Explore sidebar declares for this key.
+	namespaced bool
+	// writable is false for the kinds KubeMG will not send back. It is not a
+	// permission — the cluster decides that — it is a statement that KubeMG
+	// cannot faithfully round-trip the object it showed.
+	writable bool
+	// readOnlyReason explains that refusal to the operator.
+	readOnlyReason string
+}
+
+// objectKinds is the addressable inventory: the same keys the Explore sidebar
+// uses, mapped onto their API paths. A caller can only ever reach a path built
+// from this table, so the manifest editor cannot be turned into an unrestricted
+// API client.
+var objectKinds = map[string]objectKind{
+	"pods":                   {versions: []resourceListPath{{"/api/v1", "pods"}}, namespaced: true, writable: true},
+	"deployments":            {versions: []resourceListPath{{"/apis/apps/v1", "deployments"}}, namespaced: true, writable: true},
+	"statefulsets":           {versions: []resourceListPath{{"/apis/apps/v1", "statefulsets"}}, namespaced: true, writable: true},
+	"daemonsets":             {versions: []resourceListPath{{"/apis/apps/v1", "daemonsets"}}, namespaced: true, writable: true},
+	"jobs":                   {versions: []resourceListPath{{"/apis/batch/v1", "jobs"}}, namespaced: true, writable: true},
+	"cronjobs":               {versions: []resourceListPath{{"/apis/batch/v1", "cronjobs"}}, namespaced: true, writable: true},
+	"services":               {versions: []resourceListPath{{"/api/v1", "services"}}, namespaced: true, writable: true},
+	"ingresses":              {versions: []resourceListPath{{"/apis/networking.k8s.io/v1", "ingresses"}}, namespaced: true, writable: true},
+	"persistentvolumeclaims": {versions: []resourceListPath{{"/api/v1", "persistentvolumeclaims"}}, namespaced: true, writable: true},
+	"configmaps":             {versions: []resourceListPath{{"/api/v1", "configmaps"}}, namespaced: true, writable: true},
+
+	"httproutes": {
+		versions: []resourceListPath{
+			{"/apis/gateway.networking.k8s.io/v1", "httproutes"},
+			{"/apis/gateway.networking.k8s.io/v1beta1", "httproutes"},
+		},
+		namespaced: true,
+		writable:   true,
+	},
+	"virtualservices": {
+		versions: []resourceListPath{
+			{"/apis/networking.istio.io/v1", "virtualservices"},
+			{"/apis/networking.istio.io/v1beta1", "virtualservices"},
+		},
+		namespaced: true,
+		writable:   true,
+	},
+
+	"persistentvolumes": {versions: []resourceListPath{{"/api/v1", "persistentvolumes"}}, writable: true},
+	"storageclasses":    {versions: []resourceListPath{{"/apis/storage.k8s.io/v1", "storageclasses"}}, writable: true},
+	"nodes":             {versions: []resourceListPath{{"/api/v1", "nodes"}}, writable: true},
+	"namespaces":        {versions: []resourceListPath{{"/api/v1", "namespaces"}}, writable: true},
+	"crds": {
+		versions: []resourceListPath{{"/apis/apiextensions.k8s.io/v1", "customresourcedefinitions"}},
+		writable: true,
+	},
+
+	// A Secret's values never enter a response, here as anywhere else — so what
+	// KubeMG can show is not the object, and writing back what it showed would
+	// overwrite every value with the placeholder standing in for it.
+	"secrets": {
+		versions:       []resourceListPath{{"/api/v1", "secrets"}},
+		namespaced:     true,
+		readOnlyReason: "A Secret's values are redacted before they leave the cluster, so this manifest is not the whole object and KubeMG will not write it back. Change a Secret with kubectl.",
+	},
+}
+
+// objectView is one object rendered for the editor.
+type objectView struct {
+	YAML            string `json:"yaml"`
+	Kind            string `json:"kind"`
+	APIVersion      string `json:"api_version"`
+	Name            string `json:"name"`
+	Namespace       string `json:"namespace,omitempty"`
+	ResourceVersion string `json:"resource_version,omitempty"`
+	// Editable reports whether KubeMG will accept this manifest back. It says
+	// nothing about the caller's cluster RBAC, which is only settled by trying.
+	Editable bool `json:"editable"`
+	// Reason explains a manifest that cannot be written back.
+	Reason string `json:"reason,omitempty"`
+}
+
+// resourceObjectTarget resolves what a single-object call addresses: the kind
+// from the fixed table, the name, and the namespace checked against the grant.
+func (s *server) resourceObjectTarget(c *gin.Context, grant db.UserClusterAccess) (objectKind, string, string, bool) {
+	var none objectKind
+
+	key := strings.TrimSpace(c.Query("kind"))
+	kind, known := objectKinds[key]
+	if !known {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "kubemg does not serve manifests for " + key})
+		return none, "", "", false
+	}
+
+	name := strings.TrimSpace(c.Query("name"))
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a resource name is required"})
+		return none, "", "", false
+	}
+
+	if !kind.namespaced {
+		if !s.requireClusterScope(c, grant, key) {
+			return none, "", "", false
+		}
+		return kind, name, "", true
+	}
+
+	namespace, ok := s.resourceNamespace(c, grant)
+	if !ok {
+		return none, "", "", false
+	}
+	return kind, name, namespace, true
+}
+
+// objectPaths renders the candidate API paths for one object.
+func (k objectKind) objectPaths(namespace, name string) []string {
+	out := make([]string, 0, len(k.versions))
+	for _, version := range k.versions {
+		base := version.clusterWide()
+		if k.namespaced {
+			base = version.namespaced(namespace)
+		}
+		out = append(out, base+"/"+url.PathEscape(name))
+	}
+	return out
+}
+
+// showResourceObject returns one object as YAML.
+func (s *server) showResourceObject(c *gin.Context) {
+	user, cluster, grant, ok := s.resourceCluster(c)
+	if !ok {
+		return
+	}
+	kind, name, namespace, ok := s.resourceObjectTarget(c, grant)
+	if !ok {
+		return
+	}
+
+	var body []byte
+	paths := kind.objectPaths(namespace, name)
+	for i, path := range paths {
+		resp, callOK := s.callResource(c, user, cluster, grant, path)
+		if !callOK {
+			return
+		}
+		// A 404 on an optional CRD's newer API version means try the older one.
+		// On the last candidate it means what it says: no such object.
+		if resp.Status == http.StatusNotFound && i < len(paths)-1 {
+			continue
+		}
+		if resp.Status < 200 || resp.Status >= 300 {
+			c.JSON(resp.Status, gin.H{"error": kubeErrorMessage(resp.Body, resp.Status)})
+			return
+		}
+		body = resp.Body
+		break
+	}
+
+	view, err := renderObject(body, c.Query("kind"), kind)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, view)
+}
+
+// updateResourceObject writes an edited manifest back to the cluster. The write
+// is impersonated like every other call, so a caller whose role does not allow
+// it is refused by the cluster in the cluster's own words.
+func (s *server) updateResourceObject(c *gin.Context) {
+	user, cluster, grant, ok := s.resourceCluster(c)
+	if !ok {
+		return
+	}
+	kind, name, namespace, ok := s.resourceObjectTarget(c, grant)
+	if !ok {
+		return
+	}
+	if !kind.writable {
+		c.JSON(http.StatusConflict, gin.H{"error": kind.readOnlyReason})
+		return
+	}
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxManifestBody)
+	var payload struct {
+		YAML string `json:"yaml"`
+	}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "the manifest could not be read"})
+		return
+	}
+	if strings.TrimSpace(payload.YAML) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "the manifest is empty"})
+		return
+	}
+
+	document, err := yaml.YAMLToJSON([]byte(payload.YAML))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "this is not valid YAML: " + err.Error()})
+		return
+	}
+
+	var object map[string]any
+	if err := json.Unmarshal(document, &object); err != nil || object == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a manifest has to be a single YAML object"})
+		return
+	}
+
+	// The manifest has to name the object it is being applied to. The API server
+	// would refuse a mismatch too, but only after the round trip, and a rename
+	// silently landing somewhere else is worth catching here.
+	path, reason := kind.writePath(object, namespace, name)
+	if reason != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": reason})
+		return
+	}
+
+	// managedFields describe who last wrote each field; sending them back is
+	// meaningless and the field is stripped from what the editor showed anyway.
+	stripManagedFields(object)
+	document, err = json.Marshal(object)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "the manifest could not be encoded"})
+		return
+	}
+
+	resp, callOK := s.callResourceWith(c, user, cluster, grant,
+		http.MethodPut, path, document, "could not write to the cluster")
+	if !callOK {
+		return
+	}
+	if resp.Status < 200 || resp.Status >= 300 {
+		c.JSON(resp.Status, gin.H{"error": kubeErrorMessage(resp.Body, resp.Status)})
+		return
+	}
+
+	view, err := renderObject(resp.Body, c.Query("kind"), kind)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, view)
+}
+
+// writePath decides where an edited manifest goes. The path is built from the
+// kind table and the apiVersion the manifest itself declares, and the manifest
+// has to agree with the object being replaced — so this cannot be used to write
+// to an arbitrary API path.
+func (k objectKind) writePath(object map[string]any, namespace, name string) (string, string) {
+	apiVersion, _ := object["apiVersion"].(string)
+	if apiVersion == "" {
+		return "", "the manifest has no apiVersion"
+	}
+	if kind, _ := object["kind"].(string); kind == "" {
+		return "", "the manifest has no kind"
+	}
+
+	group := groupPath(apiVersion)
+	version, found := k.versionFor(group)
+	if !found {
+		return "", fmt.Sprintf("apiVersion %s is not the API this resource is served by; "+
+			"KubeMG will not move an object to a different API from here", apiVersion)
+	}
+
+	metadata, _ := object["metadata"].(map[string]any)
+	if metadata == nil {
+		return "", "the manifest has no metadata"
+	}
+	if got, _ := metadata["name"].(string); got != name {
+		return "", fmt.Sprintf("the manifest names %q but this is %q; renaming an object creates a new one, "+
+			"which this editor does not do", got, name)
+	}
+
+	if !k.namespaced {
+		return version.clusterWide() + "/" + url.PathEscape(name), ""
+	}
+	// An absent namespace is taken to mean the one being edited; a present one
+	// has to match, because a moved object is a new object.
+	if got, _ := metadata["namespace"].(string); got != "" && got != namespace {
+		return "", fmt.Sprintf("the manifest is in namespace %q but this object is in %q; "+
+			"moving an object between namespaces creates a new one", got, namespace)
+	}
+	return version.namespaced(namespace) + "/" + url.PathEscape(name), ""
+}
+
+// versionFor finds the candidate matching an API group path.
+func (k objectKind) versionFor(group string) (resourceListPath, bool) {
+	i := slices.IndexFunc(k.versions, func(version resourceListPath) bool {
+		return version.group == group
+	})
+	if i < 0 {
+		return resourceListPath{}, false
+	}
+	return k.versions[i], true
+}
+
+// groupPath turns an apiVersion into the path prefix it is served under. The
+// core group is the one without a slash, and it lives at /api rather than /apis.
+func groupPath(apiVersion string) string {
+	if strings.Contains(apiVersion, "/") {
+		return "/apis/" + apiVersion
+	}
+	return "/api/" + apiVersion
+}
+
+// renderObject turns an object from the cluster into the manifest the editor
+// shows: stripped of bookkeeping, with a Secret's values redacted.
+func renderObject(body []byte, key string, kind objectKind) (objectView, error) {
+	var object map[string]any
+	if err := json.Unmarshal(body, &object); err != nil || object == nil {
+		return objectView{}, fmt.Errorf("the cluster returned an unreadable object")
+	}
+
+	stripManagedFields(object)
+	if key == "secrets" {
+		redactValues(object)
+	}
+
+	document, err := yaml.Marshal(object)
+	if err != nil {
+		return objectView{}, fmt.Errorf("the object could not be rendered as YAML")
+	}
+
+	view := objectView{
+		YAML:     string(document),
+		Editable: kind.writable,
+		Reason:   kind.readOnlyReason,
+	}
+	view.Kind, _ = object["kind"].(string)
+	view.APIVersion, _ = object["apiVersion"].(string)
+	if metadata, ok := object["metadata"].(map[string]any); ok {
+		view.Name, _ = metadata["name"].(string)
+		view.Namespace, _ = metadata["namespace"].(string)
+		view.ResourceVersion, _ = metadata["resourceVersion"].(string)
+	}
+	return view, nil
+}
+
+// stripManagedFields removes the server-side-apply bookkeeping and kubectl's
+// copy of the last applied manifest. Neither is part of the object an operator
+// is reading, and together they are usually most of the bytes.
+func stripManagedFields(object map[string]any) {
+	metadata, ok := object["metadata"].(map[string]any)
+	if !ok {
+		return
+	}
+	delete(metadata, "managedFields")
+
+	annotations, ok := metadata["annotations"].(map[string]any)
+	if !ok {
+		return
+	}
+	delete(annotations, lastAppliedAnnotation)
+	if len(annotations) == 0 {
+		delete(metadata, "annotations")
+	}
+}
+
+// redactValues replaces a Secret's values, keeping its keys. This is the same
+// rule the secrets list follows: a key name is inventory, a value is the secret.
+func redactValues(object map[string]any) {
+	for _, field := range []string{"data", "stringData"} {
+		values, ok := object[field].(map[string]any)
+		if !ok {
+			continue
+		}
+		for key := range values {
+			values[key] = redactedValue
+		}
+	}
+}
+
+// callResourceWith performs a proxied call with a method and a body. The
+// cluster's own response is handed back untouched; only a failure to reach it,
+// or a refusal from the bastion itself, is answered here.
+func (s *server) callResourceWith(c *gin.Context, user *db.User, cluster *db.Cluster,
+	grant db.UserClusterAccess, method, path string, body []byte, fallback string,
+) (*bastion.Response, bool) {
+	resp, err := s.proxy.Call(c.Request.Context(), user, cluster, grant, method, path, body)
+	if err != nil {
+		var callErr *bastion.CallError
+		if errors.As(err, &callErr) {
+			c.JSON(callErr.Status, gin.H{"error": callErr.Message})
+			return nil, false
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": fallback})
+		return nil, false
+	}
+	return resp, true
+}
