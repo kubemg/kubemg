@@ -32,6 +32,8 @@ Carried into Phase 3 and completed there:
 - [x] Develop UI for multi-cluster namespace and resource visibility (RBAC-aware)
 - [x] Implement on-demand state fetching via Dumb Agent
 - [x] Settings page: server URL, agent image and agent namespace configurable at runtime instead of only through the environment
+- [x] Rebuild the console UI on the Signal Deck design system: two-level rail with a live fleet list, ⌘K command palette, dark/light decks, self-hosted Inter + JetBrains Mono, and the link strand as the state device
+- [x] Add Rancher-style 3rd resource navigation sidebar to Explore page (Workloads, Networking, Storage & Config, Custom Resources, Cluster)
 - [ ] Integrate VictoriaMetrics for minimal footprint metrics
 - [ ] Integrate VictoriaLogs/Promtail for minimal footprint logs
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
+import { KeyRound } from 'lucide-react'
 import {
   assignPermission,
   errorMessage,
@@ -12,11 +13,14 @@ import type { Cluster, Group, K8sRole, Permission, SubjectType, User } from '../
 import { AppShell } from '../components/AppShell'
 import {
   Button,
-  Drawer,
+  DetailList,
+  EmptyState,
   EnvironmentTag,
   Field,
   Notice,
+  Segmented,
   Select,
+  Sheet,
   TextInput,
 } from '../components/primitives'
 import { useClusters } from '../state/clusters-context'
@@ -27,7 +31,7 @@ const K8S_ROLES: K8sRole[] = ['cluster-admin', 'edit', 'view']
    one that reads as a warning. */
 const ROLE_STYLE: Record<string, string> = {
   'cluster-admin': 'bg-danger-soft text-danger',
-  edit: 'bg-primary-soft text-primary',
+  edit: 'bg-accent-soft text-accent',
   view: 'bg-ok-soft text-ok',
 }
 
@@ -96,108 +100,127 @@ export function PermissionsMatrix() {
     granted.set(cellKey(permission.subject_id, permission.cluster_id), permission)
   }
 
+  const agentClusters = clusters.filter((cluster) => cluster.connection_mode === 'agent').length
+  const directClusters = clusters.length - agentClusters
+
   return (
     <AppShell title="Permissions">
-      <div className="flex min-w-0 flex-col gap-3">
+      <div className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
 
-        <Notice tone="warn">
-          <strong className="font-semibold">These grants govern KubeMG, not the cluster.</strong> A
-          grant decides which clusters someone sees here and what role their kubeconfig claims. The
-          cluster&rsquo;s own RBAC stays untouched until the bastion ships.
-        </Notice>
+        {directClusters > 0 ? (
+          <Notice tone="warn">
+            <strong className="font-semibold">
+              {directClusters === clusters.length
+                ? 'These grants govern KubeMG, not the cluster.'
+                : `${directClusters} of these clusters use direct mode, where a grant governs KubeMG rather than the cluster.`}
+            </strong>{' '}
+            In direct mode KubeMG issues a token but creates no RoleBinding, so a grant decides what
+            someone sees here and what their kubeconfig claims. Agent-based clusters bind these roles
+            for real, and the cluster&rsquo;s own RBAC decides.
+          </Notice>
+        ) : null}
 
-        <div className="flex items-center gap-1">
-          {(['user', 'group'] as SubjectType[]).map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setTab(value)}
-              className={`rounded-[5px] border px-2.5 py-1 text-[12.5px] transition-colors ${
-                tab === value
-                  ? 'border-primary/40 bg-primary-soft font-medium text-primary'
-                  : 'border-line bg-surface text-muted hover:text-fg'
-              }`}
-            >
-              {value === 'user' ? 'Users' : 'Groups'}
-            </button>
-          ))}
-          <span className="ml-auto text-[12px] text-muted">
+        <div className="flex flex-wrap items-center gap-3">
+          <Segmented<SubjectType>
+            ariaLabel="Subject kind"
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: 'user', label: 'Users', count: users.length },
+              { value: 'group', label: 'Groups', count: groups.length },
+            ]}
+          />
+          <span className="text-[12.5px] text-muted">
             Click a cell to grant, change, or revoke access.
           </span>
         </div>
 
         {clusters.length === 0 || subjects.length === 0 ? (
-          <div className="panel px-3 py-10 text-center">
-            <p className="text-[13px] text-fg">Nothing to map yet</p>
-            <p className="mt-1 text-[12px] text-muted">
+          <div className="card">
+            <EmptyState
+              icon={<KeyRound aria-hidden="true" className="size-5" />}
+              title="Nothing to map yet"
+            >
               {clusters.length === 0
                 ? 'Register a cluster first.'
                 : tab === 'user'
                   ? 'Add a user first.'
                   : 'Create a group first.'}
-            </p>
+            </EmptyState>
           </div>
         ) : (
-          <div className="panel min-w-0 overflow-hidden">
+          <div className="card min-w-0 overflow-hidden">
             {/* The matrix is the one place a sideways scroll is right: cluster
                 columns grow with the fleet. */}
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-[13px]">
+              <table className="w-full border-collapse text-[13.5px]">
                 <thead>
-                  <tr className="border-b border-line">
-                    <th className="label sticky left-0 z-10 min-w-[160px] bg-surface px-3 py-2 text-left">
+                  <tr>
+                    <th
+                      scope="col"
+                      className="label sticky left-0 z-2 min-w-[180px] border-b border-line bg-surface px-4 py-3 text-left"
+                    >
                       {tab === 'user' ? 'User' : 'Group'}
                     </th>
                     {clusters.map((cluster) => (
                       <th
                         key={cluster.id}
-                        className="min-w-[128px] border-l border-line/60 px-3 py-2 text-left"
+                        scope="col"
+                        className="min-w-[140px] border-b border-l border-line-soft bg-surface px-3 py-3 text-left align-bottom"
                       >
-                        <span className="block truncate font-mono text-[12px] font-normal text-fg">
+                        <span className="block truncate font-mono text-[12.5px] font-normal text-fg">
                           {cluster.name}
                         </span>
-                        <EnvironmentTag environment={cluster.environment} />
+                        <span className="mt-1 flex items-center gap-1.5">
+                          <EnvironmentTag environment={cluster.environment} />
+                          <span className="font-mono text-[10.5px] text-faint">
+                            {cluster.connection_mode}
+                          </span>
+                        </span>
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {subjects.map((subject) => (
-                    <tr key={subject.id} className="border-b border-line/60 last:border-0">
-                      <th className="sticky left-0 z-10 max-w-[220px] bg-surface px-3 py-2 text-left font-normal">
+                    <tr key={subject.id} className="border-t border-line-soft">
+                      <th
+                        scope="row"
+                        className="sticky left-0 z-1 max-w-[240px] bg-surface px-4 py-2.5 text-left font-normal"
+                      >
                         <span className="block truncate font-mono text-fg">{subject.name}</span>
-                        <span className="block truncate text-[11px] text-muted">
+                        <span className="block truncate text-[11.5px] text-muted">
                           {subject.detail}
                         </span>
                       </th>
                       {clusters.map((cluster) => {
                         const permission = granted.get(cellKey(subject.id, cluster.id))
                         return (
-                          <td key={cluster.id} className="border-l border-line/60 px-2 py-1.5">
+                          <td key={cluster.id} className="border-l border-line-soft p-1.5">
                             <button
                               type="button"
                               onClick={() => setEditing({ subject, cluster })}
                               title={`Edit ${subject.name}'s access to ${cluster.name}`}
-                              className="w-full rounded-sm border border-transparent px-1.5 py-1 text-left transition-colors hover:border-primary/50 hover:bg-raised"
+                              className="w-full rounded-control border border-transparent px-2 py-1.5 text-left transition-colors hover:border-accent-line hover:bg-raised"
                             >
                               {permission ? (
                                 <>
                                   <span
-                                    className={`inline-flex rounded-[4px] px-1.5 py-px font-mono text-[11px] ${
+                                    className={`inline-flex rounded-chip px-1.5 py-px font-mono text-[11px] ${
                                       ROLE_STYLE[permission.k8s_role] ?? ROLE_STYLE.view
                                     }`}
                                   >
                                     {permission.k8s_role}
                                   </span>
-                                  <span className="mt-1 block truncate text-[11px] text-muted">
+                                  <span className="mt-1 block truncate text-[11.5px] text-muted">
                                     {permission.namespaces.length > 0
                                       ? permission.namespaces.join(', ')
                                       : 'all namespaces'}
                                   </span>
                                 </>
                               ) : (
-                                <span className="text-[12px] text-muted/50">—</span>
+                                <span className="text-[13px] text-faint">—</span>
                               )}
                             </button>
                           </td>
@@ -211,16 +234,16 @@ export function PermissionsMatrix() {
           </div>
         )}
 
-        {loading ? <p className="text-[12px] text-muted">Loading…</p> : null}
+        {loading ? <p className="text-[13px] text-muted">Loading…</p> : null}
 
-        <p className="text-[11.5px] text-muted">
+        <p className="text-[12px] text-muted">
           A group grant reaches every member. Where a user holds both, the more permissive one
           applies.
         </p>
       </div>
 
       {editing ? (
-        <GrantDrawer
+        <GrantSheet
           subject={editing.subject}
           cluster={editing.cluster}
           current={granted.get(cellKey(editing.subject.id, editing.cluster.id)) ?? null}
@@ -235,7 +258,7 @@ export function PermissionsMatrix() {
   )
 }
 
-function GrantDrawer({
+function GrantSheet({
   subject,
   cluster,
   current,
@@ -288,19 +311,15 @@ function GrantDrawer({
   }
 
   return (
-    <Drawer
-      title={current ? 'Edit access' : 'Grant access'}
+    <Sheet
+      eyebrow={current ? 'Edit access' : 'Grant access'}
+      title={`${subject.name} → ${cluster.name}`}
       onClose={onClose}
       onSubmit={save}
       footer={
         <>
           {current ? (
-            <Button
-              type="button"
-              onClick={revoke}
-              disabled={busy}
-              className="mr-auto border-danger/40 text-danger hover:border-danger"
-            >
+            <Button type="button" variant="danger" onClick={revoke} disabled={busy} className="mr-auto">
               Revoke
             </Button>
           ) : null}
@@ -308,17 +327,18 @@ function GrantDrawer({
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={busy}>
-            {busy ? 'Saving…' : current ? 'Save' : 'Grant'}
+            {busy ? 'Saving…' : current ? 'Save grant' : 'Grant access'}
           </Button>
         </>
       }
     >
-      <dl className="grid grid-cols-[80px_minmax(0,1fr)] gap-x-3 gap-y-2 text-[12px]">
-        <dt className="text-muted">{subject.type === 'user' ? 'User' : 'Group'}</dt>
-        <dd className="truncate font-mono text-fg">{subject.name}</dd>
-        <dt className="text-muted">Cluster</dt>
-        <dd className="truncate font-mono text-fg">{cluster.name}</dd>
-      </dl>
+      <DetailList
+        columns={2}
+        rows={[
+          { term: subject.type === 'user' ? 'User' : 'Group', value: subject.name },
+          { term: 'Cluster', value: cluster.name },
+        ]}
+      />
 
       <Field
         label="Kubernetes role"
@@ -352,12 +372,10 @@ function GrantDrawer({
       </Field>
 
       {subject.type === 'group' ? (
-        <p className="text-[11px] text-muted">
-          Every member of {subject.name} inherits this grant.
-        </p>
+        <Notice tone="info">Every member of {subject.name} inherits this grant.</Notice>
       ) : null}
 
       {error ? <Notice tone="error">{error}</Notice> : null}
-    </Drawer>
+    </Sheet>
   )
 }

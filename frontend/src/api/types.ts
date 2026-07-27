@@ -206,6 +206,145 @@ export interface Pod {
   containers: PodContainer[]
 }
 
+/*
+ * The rest of the inventory the Explore sidebar browses. Every list is
+ * normalised by the backend into the columns a list view shows — the browser
+ * never parses a raw Kubernetes object — so these are the response shapes, not
+ * the cluster's.
+ */
+
+export interface Job {
+  name: string
+  namespace: string
+  created_at: string
+  completions: number
+  succeeded: number
+  failed: number
+  active: number
+  state: string
+  images: string[]
+}
+
+export interface CronJob {
+  name: string
+  namespace: string
+  created_at: string
+  schedule: string
+  suspended: boolean
+  active: number
+  last_schedule_at?: string
+}
+
+export interface Service {
+  name: string
+  namespace: string
+  created_at: string
+  type: string
+  cluster_ip: string
+  external_ips: string[]
+  ports: string[]
+}
+
+export interface Ingress {
+  name: string
+  namespace: string
+  created_at: string
+  class: string
+  hosts: string[]
+  addresses: string[]
+  rules: number
+}
+
+/** A Gateway API HTTPRoute or an Istio VirtualService, which read the same way. */
+export interface Route {
+  name: string
+  namespace: string
+  created_at: string
+  hostnames: string[]
+  /** The gateways the route attaches to. */
+  parents: string[]
+  rules: number
+}
+
+/**
+ * An optional list: the resource is a CRD that may not be installed, so the
+ * response says whether the cluster serves it at all.
+ */
+export interface OptionalList<T> {
+  items: T[]
+  available: boolean
+  reason?: string
+}
+
+export interface PersistentVolume {
+  name: string
+  created_at: string
+  capacity: string
+  access_modes: string[]
+  reclaim_policy: string
+  status: string
+  claim?: string
+  storage_class?: string
+}
+
+export interface PersistentVolumeClaim {
+  name: string
+  namespace: string
+  created_at: string
+  status: string
+  capacity: string
+  access_modes: string[]
+  storage_class?: string
+  volume?: string
+}
+
+export interface StorageClass {
+  name: string
+  created_at: string
+  provisioner: string
+  reclaim_policy: string
+  binding_mode: string
+  default: boolean
+}
+
+/**
+ * A ConfigMap or a Secret. Only the keys travel — a value is never in a
+ * response, so no secret lands in a browser cache because someone opened a list.
+ */
+export interface ConfigEntry {
+  name: string
+  namespace: string
+  created_at: string
+  /** Set for secrets: the Kubernetes secret type. */
+  type?: string
+  keys: string[]
+  immutable?: boolean
+}
+
+export interface CustomResourceDefinition {
+  name: string
+  created_at: string
+  group: string
+  kind: string
+  plural: string
+  scope: string
+  versions: string[]
+}
+
+export interface ClusterNode {
+  name: string
+  created_at: string
+  ready: boolean
+  status: string
+  roles: string[]
+  version: string
+  internal_ip?: string
+  os_image?: string
+  cpu?: string
+  memory?: string
+  unschedulable?: boolean
+}
+
 /** Everything needed to install the agent into a freshly registered cluster. */
 export interface AgentInstall {
   cluster_id: number

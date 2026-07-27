@@ -5,23 +5,35 @@ import type {
   AuditQuery,
   AuditSummary,
   Cluster,
-  Namespace,
-  Pod,
-  Workload,
   ClusterListResponse,
+  ClusterNode,
+  ConfigEntry,
+  CronJob,
+  CustomResourceDefinition,
   Group,
+  Ingress,
+  Job,
   Kubeconfig,
   LoginResponse,
+  Namespace,
   NewCluster,
   NewUser,
+  OptionalList,
   Permission,
   PermissionGrant,
   PermissionMatrix,
+  PersistentVolume,
+  PersistentVolumeClaim,
+  Pod,
+  Route,
+  Service,
   SettingsPatch,
   SettingsResponse,
+  StorageClass,
   SubjectType,
   User,
   UserPatch,
+  Workload,
 } from './types'
 
 const TOKEN_KEY = 'kubemg.token'
@@ -233,6 +245,128 @@ export async function fetchPods(clusterId: number, namespace: string): Promise<P
     params: { namespace },
   })
   return data.pods ?? []
+}
+
+/*
+ * The inventory reads. Each one is a normalised list from the backend, read live
+ * through the agent tunnel under the caller's own identity — a scoped grant gets
+ * a refusal here exactly as it would from kubectl.
+ */
+
+/** resourceURL builds a path onto a cluster's on-demand resource surface. */
+function resourceURL(clusterId: number, resource: string): string {
+  return `/clusters/${clusterId}/resources/${resource}`
+}
+
+async function fetchList<T>(
+  clusterId: number,
+  resource: string,
+  key: string,
+  namespace?: string,
+): Promise<T[]> {
+  const { data } = await http.get<Record<string, T[]>>(resourceURL(clusterId, resource), {
+    params: namespace ? { namespace } : undefined,
+  })
+  return data[key] ?? []
+}
+
+/**
+ * fetchOptionalList reads a CRD-backed list. A cluster without the CRD installed
+ * answers with an empty list and says so, which the UI reports rather than
+ * showing as a failure.
+ */
+async function fetchOptionalList<T>(
+  clusterId: number,
+  resource: string,
+  key: string,
+  namespace: string,
+): Promise<OptionalList<T>> {
+  const { data } = await http.get<Record<string, unknown>>(resourceURL(clusterId, resource), {
+    params: { namespace },
+  })
+  return {
+    items: (data[key] as T[] | undefined) ?? [],
+    available: data.available !== false,
+    reason: data.reason as string | undefined,
+  }
+}
+
+export function fetchDeployments(clusterId: number, namespace: string): Promise<Workload[]> {
+  return fetchList<Workload>(clusterId, 'deployments', 'workloads', namespace)
+}
+
+export function fetchStatefulSets(clusterId: number, namespace: string): Promise<Workload[]> {
+  return fetchList<Workload>(clusterId, 'statefulsets', 'workloads', namespace)
+}
+
+export function fetchDaemonSets(clusterId: number, namespace: string): Promise<Workload[]> {
+  return fetchList<Workload>(clusterId, 'daemonsets', 'workloads', namespace)
+}
+
+export function fetchJobs(clusterId: number, namespace: string): Promise<Job[]> {
+  return fetchList<Job>(clusterId, 'jobs', 'jobs', namespace)
+}
+
+export function fetchCronJobs(clusterId: number, namespace: string): Promise<CronJob[]> {
+  return fetchList<CronJob>(clusterId, 'cronjobs', 'cronjobs', namespace)
+}
+
+export function fetchServices(clusterId: number, namespace: string): Promise<Service[]> {
+  return fetchList<Service>(clusterId, 'services', 'services', namespace)
+}
+
+export function fetchIngresses(clusterId: number, namespace: string): Promise<Ingress[]> {
+  return fetchList<Ingress>(clusterId, 'ingresses', 'ingresses', namespace)
+}
+
+export function fetchHTTPRoutes(
+  clusterId: number,
+  namespace: string,
+): Promise<OptionalList<Route>> {
+  return fetchOptionalList<Route>(clusterId, 'httproutes', 'httproutes', namespace)
+}
+
+export function fetchVirtualServices(
+  clusterId: number,
+  namespace: string,
+): Promise<OptionalList<Route>> {
+  return fetchOptionalList<Route>(clusterId, 'virtualservices', 'virtualservices', namespace)
+}
+
+export function fetchPersistentVolumes(clusterId: number): Promise<PersistentVolume[]> {
+  return fetchList<PersistentVolume>(clusterId, 'persistentvolumes', 'persistentvolumes')
+}
+
+export function fetchPersistentVolumeClaims(
+  clusterId: number,
+  namespace: string,
+): Promise<PersistentVolumeClaim[]> {
+  return fetchList<PersistentVolumeClaim>(
+    clusterId,
+    'persistentvolumeclaims',
+    'persistentvolumeclaims',
+    namespace,
+  )
+}
+
+export function fetchStorageClasses(clusterId: number): Promise<StorageClass[]> {
+  return fetchList<StorageClass>(clusterId, 'storageclasses', 'storageclasses')
+}
+
+export function fetchConfigMaps(clusterId: number, namespace: string): Promise<ConfigEntry[]> {
+  return fetchList<ConfigEntry>(clusterId, 'configmaps', 'configmaps', namespace)
+}
+
+export function fetchSecrets(clusterId: number, namespace: string): Promise<ConfigEntry[]> {
+  return fetchList<ConfigEntry>(clusterId, 'secrets', 'secrets', namespace)
+}
+
+export function fetchCRDs(clusterId: number): Promise<CustomResourceDefinition[]> {
+  return fetchList<CustomResourceDefinition>(clusterId, 'crds', 'crds')
+}
+
+export function fetchNodes(clusterId: number): Promise<ClusterNode[]> {
+  return fetchList<ClusterNode>(clusterId, 'nodes', 'nodes')
 }
 
 export async function fetchPodLogs(

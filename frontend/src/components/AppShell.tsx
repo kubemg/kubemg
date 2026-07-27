@@ -1,175 +1,530 @@
+import { useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import {
-  Boxes,
   ChevronRight,
-  KeySquare,
-  LayoutGrid,
+  Gauge,
+  KeyRound,
+  Layers,
   LogOut,
+  Menu,
+  Moon,
   ScrollText,
   Server,
+  Shield,
   SlidersHorizontal,
+  Sun,
   Users,
   UsersRound,
+  X,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../state/auth-context'
-import { ClusterSelector } from './ClusterSelector'
-
-/* Clusters are the product. Issuing access is an action on one, not a section.
-   The rail is grouped the way the work splits: the fleet, then who reaches it. */
-const NAV = [
-  { to: '/', label: 'Overview', icon: LayoutGrid, adminOnly: false, group: 'Fleet' },
-  { to: '/clusters', label: 'Clusters', icon: Server, adminOnly: true, group: 'Fleet' },
-  { to: '/explore', label: 'Explore', icon: Boxes, adminOnly: false, group: 'Fleet' },
-  { to: '/users', label: 'Users', icon: Users, adminOnly: true, group: 'Access' },
-  { to: '/groups', label: 'Groups', icon: UsersRound, adminOnly: true, group: 'Access' },
-  { to: '/permissions', label: 'Permissions', icon: KeySquare, adminOnly: true, group: 'Access' },
-  // Everyone can reach the audit trail; a non-admin only sees their own actions.
-  { to: '/audit', label: 'Audit', icon: ScrollText, adminOnly: false, group: 'Access' },
-  { to: '/settings', label: 'Settings', icon: SlidersHorizontal, adminOnly: true, group: 'System' },
-]
-
-function navClass({ isActive }: { isActive: boolean }) {
-  const base =
-    'flex items-center gap-2.5 rounded-[5px] px-2.5 py-1.5 text-[13px] transition-colors'
-  return isActive
-    ? `${base} bg-ink-raised text-white shadow-[inset_2px_0_0_var(--color-primary)]`
-    : `${base} text-ink-muted hover:bg-ink-raised hover:text-ink-fg`
-}
+import { useClusters } from '../state/clusters-context'
+import { useTheme } from '../lib/theme'
+import { strandState } from '../lib/status'
+import { CommandPalette } from './CommandPalette'
+import type { CommandTarget } from './CommandPalette'
+import { LinkStrand } from './LinkStrand'
+import { EnvironmentDot, IconButton, KeyHint } from './primitives'
 
 /**
- * AppShell is the console frame: a dark rail carrying context, navigation and
- * identity, and a light working surface for everything you read and act on.
+ * The deck has two levels of navigation because the work has two levels: which
+ * part of KubeMG you are in (the rail), and which thing inside it you are
+ * looking at (the panel). In the fleet section the panel is the fleet itself —
+ * every cluster, with its link state — so jumping between clusters never means
+ * going back to a list first.
  */
+const SECTIONS = [
+  {
+    id: 'fleet',
+    label: 'Fleet',
+    icon: Gauge,
+    items: [
+      { to: '/', label: 'Overview', icon: Gauge, adminOnly: false },
+      { to: '/clusters', label: 'Clusters', icon: Server, adminOnly: true },
+      { to: '/explore', label: 'Explore', icon: Layers, adminOnly: false },
+    ],
+  },
+  {
+    id: 'access',
+    label: 'Access',
+    icon: Shield,
+    items: [
+      { to: '/users', label: 'Users', icon: Users, adminOnly: true },
+      { to: '/groups', label: 'Groups', icon: UsersRound, adminOnly: true },
+      { to: '/permissions', label: 'Permissions', icon: KeyRound, adminOnly: true },
+      // Everyone can reach the audit trail; a non-admin only sees their own actions.
+      { to: '/audit', label: 'Audit trail', icon: ScrollText, adminOnly: false },
+    ],
+  },
+  {
+    id: 'system',
+    label: 'System',
+    icon: SlidersHorizontal,
+    items: [{ to: '/settings', label: 'Settings', icon: SlidersHorizontal, adminOnly: true }],
+  },
+] as const
+
+const ACCESS_ROUTES = ['/users', '/groups', '/permissions', '/audit']
+
+/* The palette answers to both chords; the hint shows the one this keyboard has. */
+const PALETTE_HINT = /mac/i.test(navigator.platform) ? '⌘K' : 'Ctrl K'
+
+function sectionForPath(pathname: string): string {
+  if (pathname.startsWith('/settings')) return 'system'
+  if (ACCESS_ROUTES.some((route) => pathname.startsWith(route))) return 'access'
+  return 'fleet'
+}
+
+/** The mark is the strand motif: three links converging on one node. */
+function Mark({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+    >
+      <path d="M2.5 5.5h5.5M2.5 10h9.5M2.5 14.5h5.5" />
+      <circle cx="16" cy="10" r="2.1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
 export function AppShell({
   title,
   parent,
   actions,
+  sidebar,
   children,
 }: {
   title: string
   /** Rendered ahead of the title as a breadcrumb, for pages nested under a section. */
   parent?: { label: string; to: string }
   actions?: ReactNode
+  /**
+   * A third level of navigation, flush against the section panel — what inside
+   * this page you are looking at. Explore uses it for the resource tree. It
+   * needs the width of a wide screen, so a page that offers one must also work
+   * without it.
+   */
+  sidebar?: ReactNode
   children: ReactNode
 }) {
   const { user, signOut } = useAuth()
-  const items = NAV.filter((item) => !item.adminOnly || user?.role === 'admin')
-  const groups = ['Fleet', 'Access', 'System'].filter((group) =>
-    items.some((item) => item.group === group),
+  const { clusters } = useClusters()
+  const { theme, toggle } = useTheme()
+  const { pathname } = useLocation()
+
+  const [navOpen, setNavOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  const isAdmin = user?.role === 'admin'
+  const sections = SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => !item.adminOnly || isAdmin),
+  })).filter((section) => section.items.length > 0)
+
+  const activeSectionId = sectionForPath(pathname)
+  const activeSection = sections.find((section) => section.id === activeSectionId) ?? sections[0]
+
+  const pages = useMemo<CommandTarget[]>(
+    () =>
+      sections.flatMap((section) =>
+        section.items.map((item) => ({
+          id: `page-${item.to}`,
+          label: item.label,
+          hint: section.label,
+          to: item.to,
+        })),
+      ),
+    [sections],
   )
+
+  // ⌘K anywhere. The listener lives here because the palette is part of the
+  // deck, not of any one page.
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen((current) => !current)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  useEffect(() => {
+    setNavOpen(false)
+  }, [pathname])
+
   const initials = (user?.username ?? '').slice(0, 2).toUpperCase()
 
   return (
-    <div className="flex min-h-svh">
-      <aside className="fixed inset-y-0 left-0 hidden w-56 flex-col bg-ink lg:flex">
-        <div className="flex h-12 items-center gap-2.5 border-b border-ink-line px-3.5">
-          <span className="grid size-[22px] place-items-center rounded-[5px] bg-primary font-mono text-[11px] font-bold text-white">
-            MG
+    <div className="min-h-svh bg-bg">
+      {/* Level one: which part of KubeMG. */}
+      <nav
+        aria-label="Sections"
+        className="fixed inset-y-0 left-0 z-30 hidden w-15 flex-col items-center gap-1 border-r border-rail-line bg-rail py-3 lg:flex"
+      >
+        <Link
+          to="/"
+          title="KubeMG"
+          className="mb-2 grid size-9 place-items-center rounded-control text-accent transition-colors hover:bg-rail-raised"
+        >
+          <Mark className="size-5" />
+          <span className="sr-only">KubeMG</span>
+        </Link>
+
+        {sections.map((section) => {
+          const active = section.id === activeSection?.id
+          return (
+            <Link
+              key={section.id}
+              to={section.items[0].to}
+              title={section.label}
+              aria-current={active ? 'page' : undefined}
+              className={`group relative grid size-10 place-items-center rounded-control transition-colors ${
+                active
+                  ? 'bg-rail-raised text-rail-fg'
+                  : 'text-rail-muted hover:bg-rail-raised/60 hover:text-rail-fg'
+              }`}
+            >
+              {active ? (
+                <span
+                  aria-hidden="true"
+                  className="absolute -left-2.5 h-5 w-[3px] rounded-r-full bg-accent"
+                />
+              ) : null}
+              <section.icon aria-hidden="true" className="size-4.5" />
+              <span className="sr-only">{section.label}</span>
+            </Link>
+          )
+        })}
+
+        <span className="flex-1" />
+
+        <button
+          type="button"
+          onClick={toggle}
+          title={theme === 'dark' ? 'Switch to the light deck' : 'Switch to the dark deck'}
+          className="grid size-9 place-items-center rounded-control text-rail-muted transition-colors hover:bg-rail-raised hover:text-rail-fg"
+        >
+          {theme === 'dark' ? (
+            <Sun aria-hidden="true" className="size-4" />
+          ) : (
+            <Moon aria-hidden="true" className="size-4" />
+          )}
+          <span className="sr-only">
+            {theme === 'dark' ? 'Switch to the light deck' : 'Switch to the dark deck'}
           </span>
-          <span className="text-[13.5px] font-bold tracking-[0.14em] text-white">KUBEMG</span>
+        </button>
+      </nav>
+
+      {/* Level two: what inside it. */}
+      <aside className="fixed inset-y-0 left-15 z-20 hidden w-60 flex-col border-r border-rail-line bg-rail lg:flex">
+        <div className="flex h-14 shrink-0 items-center px-4 text-[15px] font-semibold tracking-[-0.02em]">
+          <span className="text-rail-fg">Kube</span>
+          <span className="text-accent">MG</span>
         </div>
 
-        <div className="px-3 pt-3 pb-1">
-          <p className="label mb-1.5 text-ink-faint">Cluster context</p>
-          <ClusterSelector tone="ink" />
+        <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-3">
+          <p className="label px-2 pt-1 pb-2 text-rail-faint">{activeSection?.label}</p>
+          <ul className="flex flex-col gap-0.5">
+            {activeSection?.items.map((item) => (
+              <li key={item.to}>
+                <NavLink to={item.to} end={item.to === '/'} className={railLinkClass}>
+                  <item.icon aria-hidden="true" className="size-4 shrink-0" />
+                  {item.label}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+
+          {activeSection?.id === 'fleet' ? (
+            <FleetList clusters={clusters} pathname={pathname} />
+          ) : null}
         </div>
 
-        <nav className="flex flex-1 flex-col gap-3 p-2.5">
-          {groups.map((group) => (
-            <div key={group} className="flex flex-col gap-0.5">
-              <p className="label px-2.5 pb-1 text-ink-faint">{group}</p>
-              {items
-                .filter((item) => item.group === group)
-                .map((item) => (
-                  <NavLink key={item.to} to={item.to} end={item.to === '/'} className={navClass}>
-                    <item.icon aria-hidden="true" className="size-3.5 shrink-0" />
-                    {item.label}
-                  </NavLink>
-                ))}
-            </div>
-          ))}
-        </nav>
-
-        <div className="flex items-center gap-2.5 border-t border-ink-line px-3.5 py-3">
-          <span className="grid size-7 shrink-0 place-items-center rounded-full bg-ink-raised text-[11px] font-semibold text-ink-fg">
+        <div className="flex shrink-0 items-center gap-2.5 border-t border-rail-line px-3 py-3">
+          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-rail-raised font-mono text-[12px] font-semibold text-rail-fg">
             {initials}
           </span>
-          <div className="min-w-0 flex-1 leading-tight">
-            <p className="truncate text-[13px] text-ink-fg">{user?.username}</p>
-            <p className="label text-ink-faint">{user?.role}</p>
-          </div>
+          <span className="min-w-0 flex-1 leading-tight">
+            <span className="block truncate text-[13px] text-rail-fg">{user?.username}</span>
+            <span className="label block text-rail-faint">{user?.role}</span>
+          </span>
           <button
             type="button"
             onClick={signOut}
             title="Sign out"
-            className="rounded-[5px] p-1.5 text-ink-muted transition-colors hover:bg-ink-raised hover:text-white"
+            className="grid size-8 shrink-0 place-items-center rounded-control text-rail-muted transition-colors hover:bg-rail-raised hover:text-danger"
           >
-            <LogOut aria-hidden="true" className="size-3.5" />
+            <LogOut aria-hidden="true" className="size-4" />
             <span className="sr-only">Sign out</span>
           </button>
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col lg:ml-56">
-        <header className="sticky top-0 z-10 border-b border-line bg-surface">
-          <div className="flex h-12 items-center gap-3 px-4">
-            <span className="hidden text-[13px] font-bold tracking-[0.14em] text-fg sm:inline lg:hidden">
-              KUBEMG
-            </span>
-            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5">
+      {navOpen ? (
+        <MobileNav
+          sections={sections}
+          clusters={clusters}
+          pathname={pathname}
+          theme={theme}
+          onToggleTheme={toggle}
+          username={user?.username ?? ''}
+          role={user?.role ?? ''}
+          onSignOut={signOut}
+          onClose={() => setNavOpen(false)}
+        />
+      ) : null}
+
+      {/* Level three, when a page has one. */}
+      {sidebar ? (
+        <div className="fixed inset-y-0 left-75 z-10 hidden w-56 border-r border-rail-line bg-rail xl:block">
+          {sidebar}
+        </div>
+      ) : null}
+
+      <div className={`flex min-w-0 flex-col lg:ml-75 ${sidebar ? 'xl:ml-131' : ''}`}>
+        <header className="sticky top-0 z-10 border-b border-line bg-bg/85 backdrop-blur">
+          <div className="flex h-14 items-center gap-3 px-4 xl:px-6">
+            <IconButton
+              label="Open navigation"
+              onClick={() => setNavOpen(true)}
+              className="lg:hidden"
+            >
+              <Menu aria-hidden="true" className="size-4.5" />
+            </IconButton>
+
+            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2">
               {parent ? (
                 <>
                   <Link
                     to={parent.to}
-                    className="shrink-0 text-[13px] text-muted transition-colors hover:text-fg"
+                    className="hidden shrink-0 text-[13px] text-muted transition-colors hover:text-fg sm:block"
                   >
                     {parent.label}
                   </Link>
-                  <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-faint" />
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="hidden size-3.5 shrink-0 text-faint sm:block"
+                  />
                 </>
               ) : null}
-              <h1 className="min-w-0 truncate text-[13px] font-semibold text-fg">{title}</h1>
+              <h1 className="min-w-0 truncate text-[15px] font-semibold text-fg">{title}</h1>
             </nav>
-            <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>
-          </div>
 
-          {/* Below the rail breakpoint the sidebar collapses into this row. */}
-          <div className="flex flex-wrap items-center gap-2 border-t border-line-soft bg-bg px-4 py-2 lg:hidden">
-            <div className="min-w-0 max-w-[190px] flex-1">
-              <ClusterSelector />
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPaletteOpen(true)}
+                className="hidden h-9 items-center gap-2 rounded-control border border-line bg-surface px-3 text-[13px] text-muted transition-colors hover:border-faint/60 hover:text-fg md:flex"
+              >
+                Jump to…
+                <KeyHint>{PALETTE_HINT}</KeyHint>
+              </button>
+              {actions}
             </div>
-            <nav className="flex min-w-0 items-center gap-1 overflow-x-auto">
-              {items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === '/'}
-                  className={({ isActive }) =>
-                    `shrink-0 rounded-[5px] px-2.5 py-1.5 text-[13px] transition-colors ${
-                      isActive
-                        ? 'bg-primary-soft font-medium text-primary'
-                        : 'text-muted hover:bg-raised hover:text-fg'
-                    }`
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </nav>
-            <button
-              type="button"
-              onClick={signOut}
-              title="Sign out"
-              className="ml-auto rounded-[5px] border border-line p-1.5 text-muted transition-colors hover:border-danger/50 hover:text-danger"
-            >
-              <LogOut aria-hidden="true" className="size-3.5" />
-              <span className="sr-only">Sign out</span>
-            </button>
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 p-4">{children}</main>
+        <main className="min-w-0 flex-1 p-4 xl:p-6">
+          <div className="mx-auto min-w-0 max-w-[1440px]">{children}</div>
+        </main>
+      </div>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        pages={pages}
+        clusters={clusters}
+      />
+    </div>
+  )
+}
+
+function railLinkClass({ isActive }: { isActive: boolean }) {
+  const base =
+    'flex items-center gap-2.5 rounded-control px-2 py-1.5 text-[13.5px] transition-colors'
+  return isActive
+    ? `${base} bg-rail-raised font-medium text-rail-fg`
+    : `${base} text-rail-muted hover:bg-rail-raised/60 hover:text-rail-fg`
+}
+
+/**
+ * FleetList is the fleet in the panel: every cluster, its environment, and its
+ * link state on one line. It is the fastest path between two clusters, which is
+ * most of what an operator does all day.
+ */
+function FleetList({
+  clusters,
+  pathname,
+}: {
+  clusters: ReturnType<typeof useClusters>['clusters']
+  pathname: string
+}) {
+  return (
+    <div className="mt-5">
+      <p className="label flex items-center justify-between px-2 pb-2 text-rail-faint">
+        Clusters
+        <span className="font-mono">{clusters.length}</span>
+      </p>
+
+      {clusters.length === 0 ? (
+        <p className="px-2 text-[12px] text-rail-faint">None registered yet.</p>
+      ) : (
+        <ul className="flex flex-col gap-0.5">
+          {clusters.map((cluster) => {
+            const active = pathname === `/clusters/${cluster.id}`
+            return (
+              <li key={cluster.id}>
+                <Link
+                  to={`/clusters/${cluster.id}`}
+                  aria-current={active ? 'page' : undefined}
+                  className={`flex items-center gap-2 rounded-control px-2 py-1.5 transition-colors ${
+                    active ? 'bg-rail-raised' : 'hover:bg-rail-raised/60'
+                  }`}
+                >
+                  <EnvironmentDot environment={cluster.environment} />
+                  <span
+                    className={`min-w-0 flex-1 truncate font-mono text-[12.5px] ${
+                      active ? 'text-rail-fg' : 'text-rail-muted'
+                    }`}
+                  >
+                    {cluster.name}
+                  </span>
+                  <LinkStrand state={strandState(cluster)} className="w-8 shrink-0" />
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** Below the two-level breakpoint both levels collapse into one sheet. */
+function MobileNav({
+  sections,
+  clusters,
+  pathname,
+  theme,
+  onToggleTheme,
+  username,
+  role,
+  onSignOut,
+  onClose,
+}: {
+  sections: Array<{
+    id: string
+    label: string
+    items: ReadonlyArray<{ to: string; label: string; icon: typeof Gauge }>
+  }>
+  clusters: ReturnType<typeof useClusters>['clusters']
+  pathname: string
+  theme: 'dark' | 'light'
+  onToggleTheme: () => void
+  username: string
+  role: string
+  onSignOut: () => void
+  onClose: () => void
+}) {
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-40 flex lg:hidden">
+      <button
+        type="button"
+        aria-label="Close navigation"
+        onClick={onClose}
+        className="scrim-in absolute inset-0 bg-black/55"
+      />
+
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Navigation"
+        className="relative flex h-full w-[19rem] max-w-[85%] flex-col border-r border-rail-line bg-rail"
+      >
+        <div className="flex h-14 shrink-0 items-center gap-2.5 px-4">
+          <Mark className="size-5 text-accent" />
+          <span className="text-[15px] font-semibold tracking-[-0.02em]">
+            <span className="text-rail-fg">Kube</span>
+            <span className="text-accent">MG</span>
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="ml-auto grid size-8 place-items-center rounded-control text-rail-muted transition-colors hover:bg-rail-raised hover:text-rail-fg"
+          >
+            <X aria-hidden="true" className="size-4" />
+            <span className="sr-only">Close navigation</span>
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-4">
+          {sections.map((section) => (
+            <div key={section.id} className="mb-4">
+              <p className="label px-2 pb-2 text-rail-faint">{section.label}</p>
+              <ul className="flex flex-col gap-0.5">
+                {section.items.map((item) => (
+                  <li key={item.to}>
+                    <NavLink to={item.to} end={item.to === '/'} className={railLinkClass}>
+                      <item.icon aria-hidden="true" className="size-4 shrink-0" />
+                      {item.label}
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+
+          <FleetList clusters={clusters} pathname={pathname} />
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2.5 border-t border-rail-line px-3 py-3">
+          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-rail-raised font-mono text-[12px] font-semibold text-rail-fg">
+            {username.slice(0, 2).toUpperCase()}
+          </span>
+          <span className="min-w-0 flex-1 leading-tight">
+            <span className="block truncate text-[13px] text-rail-fg">{username}</span>
+            <span className="label block text-rail-faint">{role}</span>
+          </span>
+          <button
+            type="button"
+            onClick={onToggleTheme}
+            title={theme === 'dark' ? 'Switch to the light deck' : 'Switch to the dark deck'}
+            className="grid size-8 shrink-0 place-items-center rounded-control text-rail-muted transition-colors hover:bg-rail-raised hover:text-rail-fg"
+          >
+            {theme === 'dark' ? (
+              <Sun aria-hidden="true" className="size-4" />
+            ) : (
+              <Moon aria-hidden="true" className="size-4" />
+            )}
+            <span className="sr-only">Switch deck</span>
+          </button>
+          <button
+            type="button"
+            onClick={onSignOut}
+            title="Sign out"
+            className="grid size-8 shrink-0 place-items-center rounded-control text-rail-muted transition-colors hover:bg-rail-raised hover:text-danger"
+          >
+            <LogOut aria-hidden="true" className="size-4" />
+            <span className="sr-only">Sign out</span>
+          </button>
+        </div>
       </div>
     </div>
   )

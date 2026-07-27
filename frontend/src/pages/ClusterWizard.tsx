@@ -7,7 +7,6 @@ import {
   ArrowRight,
   Check,
   Download,
-  Loader2,
   Plug,
   RefreshCw,
   Server,
@@ -37,16 +36,20 @@ import type {
   User,
 } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { LinkStrand, StrandNode } from '../components/LinkStrand'
 import {
   Button,
+  ClusterState,
   CodeBlock,
+  DetailList,
   EnvironmentTag,
   Field,
+  IconButton,
   Notice,
   Panel,
   Pill,
   Select,
-  StatusDot,
+  Slab,
   TextArea,
   TextInput,
 } from '../components/primitives'
@@ -138,12 +141,12 @@ export function ClusterWizard() {
         cluster ? (
           <Button variant="primary" onClick={() => navigate(`/clusters/${cluster.id}`)}>
             Finish
-            <ArrowRight aria-hidden="true" className="size-3.5" />
+            <ArrowRight aria-hidden="true" className="size-4" />
           </Button>
         ) : null
       }
     >
-      <div className="flex min-w-0 max-w-4xl flex-col gap-4">
+      <div className="flex min-w-0 max-w-4xl flex-col gap-5">
         <Stepper current={step} furthest={cluster ? 3 : identityReady ? 1 : 0} onSelect={setStep} />
 
         {error ? <Notice tone="error">{error}</Notice> : null}
@@ -199,8 +202,9 @@ export function ClusterWizard() {
 }
 
 /**
- * Stepper carries progress as form as well as colour: a spine on the leading
- * edge of each cell, and a mark rather than a number once a step is behind you.
+ * Stepper numbers the steps because registration really is a sequence: the
+ * cluster is created on leaving step two, and steps three and four act on the
+ * record. The strand between markers is the same device used everywhere else.
  */
 function Stepper({
   current,
@@ -213,41 +217,48 @@ function Stepper({
   onSelect: (step: StepIndex) => void
 }) {
   return (
-    <ol className="panel flex flex-col overflow-hidden sm:flex-row">
+    <ol className="flex items-center gap-1.5">
       {STEPS.map((label, index) => {
         const done = index < current
         const active = index === current
         const reachable = index <= furthest
-        const spine = active ? 'bg-primary' : done ? 'bg-ok' : 'bg-faint/40'
 
         return (
-          <li key={label} className="min-w-0 flex-1">
+          <li key={label} className="flex min-w-0 flex-1 items-center gap-1.5">
             <button
               type="button"
               disabled={!reachable}
               onClick={() => onSelect(index as StepIndex)}
-              className={`flex w-full items-center gap-2.5 border-b border-line-soft py-2.5 pr-3 text-left transition-colors last:border-b-0 sm:border-r sm:border-b-0 ${
-                reachable ? 'hover:bg-raised' : 'cursor-not-allowed opacity-50'
-              } ${active ? 'bg-primary-soft/40' : ''}`}
+              className={`flex min-w-0 items-center gap-2 rounded-control px-1.5 py-1 transition-colors ${
+                reachable ? 'hover:bg-raised' : 'cursor-not-allowed opacity-45'
+              }`}
             >
-              <span aria-hidden="true" className={`h-8 w-[3px] rounded-r-[2px] ${spine}`} />
               <span
-                className={`grid size-5 shrink-0 place-items-center rounded-full font-mono text-[11px] ${
+                className={`grid size-6 shrink-0 place-items-center rounded-full font-mono text-[11.5px] font-semibold ${
                   done
                     ? 'bg-ok-soft text-ok'
                     : active
-                      ? 'bg-primary text-white'
+                      ? 'bg-accent text-on-accent'
                       : 'bg-raised text-muted'
                 }`}
               >
-                {done ? <Check aria-hidden="true" className="size-3" /> : index + 1}
+                {done ? <Check aria-hidden="true" className="size-3.5" /> : index + 1}
               </span>
               <span
-                className={`truncate text-[12.5px] ${active ? 'font-medium text-fg' : 'text-muted'}`}
+                className={`hidden truncate text-[13px] sm:block ${
+                  active ? 'font-medium text-fg' : 'text-muted'
+                }`}
               >
                 {label}
               </span>
             </button>
+            {index < STEPS.length - 1 ? (
+              <LinkStrand
+                state={done ? 'direct' : 'idle'}
+                size="sm"
+                className="min-w-4 flex-1"
+              />
+            ) : null}
           </li>
         )
       })}
@@ -258,7 +269,7 @@ function Stepper({
 /** StepActions is the consistent footer every step ends with. */
 function StepActions({ children }: { children: ReactNode }) {
   return (
-    <div className="flex items-center justify-end gap-2 border-t border-line-soft px-3.5 py-3">
+    <div className="flex items-center justify-end gap-2 border-t border-line-soft bg-raised/40 px-4 py-3">
       {children}
     </div>
   )
@@ -290,8 +301,8 @@ function IdentityStep({
         onNext()
       }}
     >
-      <Panel title="What is this cluster?">
-        <div className="flex flex-col gap-3.5 p-3.5">
+      <Panel eyebrow="Step 1" title="What is this cluster?">
+        <div className="flex flex-col gap-4 p-4">
           <Field
             label="Name"
             htmlFor="name"
@@ -303,6 +314,7 @@ function IdentityStep({
               autoFocus
               disabled={locked}
               placeholder="prod-eu"
+              className="font-mono"
               value={value.name}
               onChange={(event) => update('name', event.target.value)}
             />
@@ -311,19 +323,20 @@ function IdentityStep({
           <Field
             label="Environment"
             htmlFor="environment"
-            hint="Drives how loudly the fleet overview flags it. Production reads as production everywhere."
+            hint="Drives how loudly the fleet flags it. Production reads as production everywhere."
           >
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-2">
               {ENVIRONMENTS.map((environment) => (
                 <button
                   key={environment}
                   type="button"
                   disabled={locked}
                   onClick={() => update('environment', environment)}
-                  className={`flex items-center gap-2 rounded-[5px] border px-2.5 py-1.5 text-[12.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                  aria-pressed={value.environment === environment}
+                  className={`flex h-9 items-center gap-2 rounded-control border px-3 transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                     value.environment === environment
-                      ? 'border-primary bg-primary-soft text-primary'
-                      : 'border-line bg-surface text-muted hover:border-faint hover:text-fg'
+                      ? 'border-accent-line bg-accent-soft'
+                      : 'border-line bg-surface hover:bg-raised'
                   }`}
                 >
                   <EnvironmentTag environment={environment} />
@@ -350,7 +363,7 @@ function IdentityStep({
         <StepActions>
           <Button type="submit" variant="primary" disabled={value.name.trim().length === 0}>
             Continue
-            <ArrowRight aria-hidden="true" className="size-3.5" />
+            <ArrowRight aria-hidden="true" className="size-4" />
           </Button>
         </StepActions>
       </Panel>
@@ -389,9 +402,9 @@ function ConnectionStep({
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-4">
-      <Panel title="How should KubeMG reach it?">
-        <div className="grid gap-2 p-3.5 sm:grid-cols-2">
+    <form onSubmit={onSubmit} className="flex flex-col gap-5">
+      <Panel eyebrow="Step 2" title="How should KubeMG reach it?">
+        <div className="grid gap-3 p-4 sm:grid-cols-2">
           <ModeCard
             mode="agent"
             selected={mode === 'agent'}
@@ -400,6 +413,7 @@ function ConnectionStep({
             icon={Plug}
             title="Agent-based"
             tagline="Recommended"
+            strand="live"
             points={[
               'The cluster dials out to KubeMG — no inbound firewall rule, no exposed API server.',
               'KubeMG stores no credential for the cluster.',
@@ -414,6 +428,7 @@ function ConnectionStep({
             icon={Server}
             title="Direct API access"
             tagline="Requires reachability"
+            strand="direct"
             points={[
               'KubeMG dials the API server itself, so it must be routable from here.',
               'A service account token is stored in KubeMG.',
@@ -423,12 +438,13 @@ function ConnectionStep({
         </div>
 
         {mode === 'direct' && !cluster ? (
-          <div className="flex flex-col gap-3.5 border-t border-line-soft p-3.5">
+          <div className="flex flex-col gap-4 border-t border-line-soft p-4">
             <Field label="API server URL" htmlFor="api_url">
               <TextInput
                 id="api_url"
                 type="url"
                 required
+                className="font-mono text-[12.5px]"
                 placeholder="https://prod-eu.example.com:6443"
                 value={direct.api_url}
                 onChange={(event) => updateDirect('api_url', event.target.value)}
@@ -467,13 +483,13 @@ function ConnectionStep({
 
         <StepActions>
           <Button type="button" variant="ghost" onClick={onBack}>
-            <ArrowLeft aria-hidden="true" className="size-3.5" />
+            <ArrowLeft aria-hidden="true" className="size-4" />
             Back
           </Button>
           {cluster ? (
             <Button type="button" variant="primary" onClick={onNext}>
               Continue
-              <ArrowRight aria-hidden="true" className="size-3.5" />
+              <ArrowRight aria-hidden="true" className="size-4" />
             </Button>
           ) : (
             <Button type="submit" variant="primary" disabled={busy}>
@@ -500,6 +516,7 @@ function ModeCard({
   icon: Icon,
   title,
   tagline,
+  strand,
   points,
 }: {
   mode: ConnectionMode
@@ -509,6 +526,7 @@ function ModeCard({
   icon: typeof Plug
   title: string
   tagline: string
+  strand: 'live' | 'direct'
   points: string[]
 }) {
   return (
@@ -517,27 +535,30 @@ function ModeCard({
       disabled={locked}
       onClick={() => onSelect(mode)}
       aria-pressed={selected}
-      className={`flex flex-col gap-2 rounded-[5px] border p-3 text-left transition-colors disabled:cursor-not-allowed ${
+      className={`flex flex-col gap-3 rounded-card border p-4 text-left transition-colors disabled:cursor-not-allowed ${
         selected
-          ? 'border-primary bg-primary-soft/30'
-          : 'border-line bg-surface hover:border-faint disabled:opacity-50'
+          ? 'border-accent-line bg-accent-soft/40'
+          : 'border-line bg-surface hover:bg-raised disabled:opacity-50'
       }`}
     >
       <div className="flex items-center gap-2">
         <Icon
           aria-hidden="true"
-          className={`size-4 shrink-0 ${selected ? 'text-primary' : 'text-muted'}`}
+          className={`size-4 shrink-0 ${selected ? 'text-accent' : 'text-muted'}`}
         />
-        <span className="text-[13px] font-semibold text-fg">{title}</span>
+        <span className="text-[14px] font-semibold text-fg">{title}</span>
         <span className="ml-auto">
-          <Pill tone={selected ? 'accent' : 'neutral'} dot={false}>
+          <Pill tone={selected ? 'accent' : 'idle'} dot={false}>
             {tagline}
           </Pill>
         </span>
       </div>
-      <ul className="flex flex-col gap-1">
+
+      <LinkStrand state={strand} />
+
+      <ul className="flex flex-col gap-1.5">
         {points.map((point) => (
-          <li key={point} className="text-[11.5px] leading-snug text-muted">
+          <li key={point} className="text-[12.5px] leading-snug text-muted">
             {point}
           </li>
         ))}
@@ -547,80 +568,72 @@ function ModeCard({
 }
 
 /**
- * AgentInstaller is the handoff: one command to run somewhere else. The token
- * is shown separately and masked, because it is the cluster's only credential
- * and it is about to live in a Kubernetes Secret.
+ * AgentInstaller is the handoff: one command to run somewhere else. The token is
+ * shown separately and masked, because it is the cluster's only credential and it
+ * is about to live in a Kubernetes Secret.
  */
 function AgentInstaller({ install }: { install: AgentInstall }) {
   const [showManifest, setShowManifest] = useState(false)
 
   return (
     <Panel
+      eyebrow="Handoff"
       title="Install the agent"
+      description={`Run this against ${install.cluster} with a kubeconfig that can create resources in ${install.namespace}. The agent dials back out to KubeMG — nothing needs to be opened inbound.`}
       actions={
         <a
           href={install.manifest_url}
           download
-          className="inline-flex items-center gap-1.5 text-[12px] text-muted transition-colors hover:text-primary"
+          className="inline-flex h-9 items-center gap-2 rounded-control border border-line px-3 text-[13px] text-muted transition-colors hover:text-fg"
         >
-          <Download aria-hidden="true" className="size-3.5" />
+          <Download aria-hidden="true" className="size-4" />
           Download YAML
         </a>
       }
+      bodyClassName="flex flex-col gap-4 p-4"
     >
-      <div className="flex flex-col gap-3.5 p-3.5">
-        <p className="text-[12.5px] leading-relaxed text-muted">
-          Run this against <span className="font-mono text-fg">{install.cluster}</span> with a
-          kubeconfig that can create resources in{' '}
-          <span className="font-mono text-fg">{install.namespace}</span>. The agent dials back out
-          to KubeMG — nothing needs to be opened inbound.
-        </p>
+      <CodeBlock label="Install command" value={install.apply_command} />
 
-        <CodeBlock label="Install command" value={install.apply_command} />
-
-        <details className="group">
-          <summary className="cursor-pointer text-[12px] text-muted transition-colors hover:text-fg">
-            Prefer Kustomize?
-          </summary>
-          <div className="mt-2 flex flex-col gap-2">
-            <p className="text-[11.5px] leading-snug text-muted">
-              Kustomize only accepts local paths and Git specs as remote targets, so the package is
-              fetched and extracted first.
-            </p>
-            <CodeBlock value={install.kustomize_command} />
-          </div>
-        </details>
-
-        <dl className="grid grid-cols-[112px_minmax(0,1fr)] gap-x-3 gap-y-2 border-t border-line-soft pt-3 text-[12.5px]">
-          <dt className="text-muted">Bastion</dt>
-          <dd className="truncate font-mono text-fg">{install.bastion_url}</dd>
-          <dt className="text-muted">Namespace</dt>
-          <dd className="truncate font-mono text-fg">{install.namespace}</dd>
-          <dt className="text-muted">Image</dt>
-          <dd className="truncate font-mono text-fg">{install.image}</dd>
-        </dl>
-
-        <CodeBlock label="Registration token" value={install.agent_token} secret />
-        <p className="text-[11.5px] leading-snug text-warn">
-          <AlertTriangle aria-hidden="true" className="mr-1 inline size-3" />
-          This token authenticates the tunnel for this cluster. It is embedded in the command above
-          — treat both like a credential.
-        </p>
-
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowManifest((current) => !current)}
-            className="text-[12px] text-muted transition-colors hover:text-fg"
-          >
-            {showManifest ? 'Hide' : 'Review'} the manifest before applying
-          </button>
-          {showManifest ? (
-            <pre className="mt-2 max-h-80 overflow-auto rounded-[5px] border border-ink-line bg-ink px-2.5 py-2 font-mono text-[11.5px] leading-relaxed text-ink-fg">
-              {install.manifest}
-            </pre>
-          ) : null}
+      <details className="group">
+        <summary className="cursor-pointer text-[12.5px] text-muted transition-colors hover:text-fg">
+          Prefer Kustomize?
+        </summary>
+        <div className="mt-2.5 flex flex-col gap-2">
+          <p className="text-[12px] leading-snug text-muted">
+            Kustomize only accepts local paths and Git specs as remote targets, so the package is
+            fetched and extracted first.
+          </p>
+          <CodeBlock value={install.kustomize_command} />
         </div>
+      </details>
+
+      <div className="border-t border-line-soft pt-4">
+        <DetailList
+          columns={2}
+          rows={[
+            { term: 'Bastion', value: install.bastion_url },
+            { term: 'Namespace', value: install.namespace },
+            { term: 'Image', value: install.image },
+          ]}
+        />
+      </div>
+
+      <CodeBlock label="Registration token" value={install.agent_token} secret />
+      <p className="flex items-start gap-1.5 text-[12px] leading-snug text-warn">
+        <AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+        This token authenticates the tunnel for this cluster. It is embedded in the command above —
+        treat both like a credential.
+      </p>
+
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowManifest((current) => !current)}
+          className="text-[12.5px] text-muted transition-colors hover:text-fg"
+        >
+          {showManifest ? 'Hide' : 'Review'} the manifest before applying
+        </button>
+        {showManifest ? <Slab className="mt-2.5 max-h-80">{install.manifest}</Slab> : null}
       </div>
     </Panel>
   )
@@ -649,7 +662,8 @@ function HandshakeStep({
   const [checking, setChecking] = useState(false)
   const [polling, setPolling] = useState(cluster.connection_mode === 'agent')
 
-  const connected = cluster.connection_mode === 'agent' ? cluster.agent_attached : cluster.status === 'healthy'
+  const viaAgent = cluster.connection_mode === 'agent'
+  const connected = viaAgent ? cluster.agent_attached : cluster.status === 'healthy'
 
   // onCluster identity is stable enough in practice, but the poller reads it on
   // every tick — hold it in a ref so changing it never restarts the interval.
@@ -667,8 +681,8 @@ function HandshakeStep({
         const next = await fetchCluster(clusterId)
         if (!cancelled) report.current(next)
       } catch {
-        // A transient failure while waiting is not worth interrupting the
-        // wait for; the next tick will say the same thing if it is real.
+        // A transient failure while waiting is not worth interrupting the wait
+        // for; the next tick will say the same thing if it is real.
       }
     }, POLL_INTERVAL_MS)
 
@@ -678,8 +692,8 @@ function HandshakeStep({
     }
   }, [clusterId, polling])
 
-  // Stop polling the moment it lands, rather than keeping a timer alive behind
-  // a screen that has nothing left to report.
+  // Stop polling the moment it lands, rather than keeping a timer alive behind a
+  // screen that has nothing left to report.
   useEffect(() => {
     if (connected) setPolling(false)
   }, [connected])
@@ -697,48 +711,60 @@ function HandshakeStep({
   }, [clusterId])
 
   return (
-    <Panel title={connected ? 'Connected' : 'Waiting for the cluster'}>
-      <div className="flex flex-col gap-3.5 p-3.5">
+    <Panel eyebrow="Step 3" title={connected ? 'Connected' : 'Waiting for the cluster'}>
+      <div className="flex flex-col gap-4 p-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
 
-        <div className="flex flex-wrap items-center gap-2.5 rounded-[5px] border border-line bg-bg px-3 py-2.5">
-          <span aria-hidden="true" className={`h-8 w-[3px] rounded-r-[2px] ${connected ? 'bg-ok' : 'bg-warn'}`} />
-          {connected ? (
-            <Check aria-hidden="true" className="size-4 shrink-0 text-ok" />
-          ) : (
-            <Loader2 aria-hidden="true" className="size-4 shrink-0 animate-spin text-warn" />
-          )}
-          <div className="min-w-0 flex-1">
-            <p className="text-[13px] text-fg">
+        {/* The wait is the strand filling in: nothing else on this screen says
+            as directly whether the cluster has found us. */}
+        <div className="flex flex-col gap-4 rounded-card border border-line-soft bg-raised/50 p-4 sm:flex-row sm:items-end">
+          <StrandNode label="Cluster" value={cluster.name} tone={connected ? 'ok' : 'idle'} />
+          <span className="min-w-16 flex-1 pb-2">
+            <LinkStrand
+              state={connected ? 'live' : viaAgent ? 'idle' : 'direct'}
+              size="lg"
+              className={connected ? '' : 'breathe'}
+            />
+            <span className="mt-1.5 block font-mono text-[11px] text-faint">
               {connected
-                ? cluster.connection_mode === 'agent'
-                  ? 'The agent is connected and the tunnel is open.'
-                  : 'The API server answered.'
-                : cluster.connection_mode === 'agent'
-                  ? 'No agent has dialled in yet. Run the install command and this will update on its own.'
-                  : 'The cluster has not been probed yet.'}
-            </p>
-            {cluster.status_message ? (
-              <p className="mt-0.5 text-[11.5px] text-muted">{cluster.status_message}</p>
-            ) : null}
-          </div>
-          <StatusDot status={cluster.status} message={cluster.status_message} />
+                ? viaAgent
+                  ? 'tunnel open'
+                  : 'API server answered'
+                : viaAgent
+                  ? 'waiting for the agent to dial in'
+                  : 'not probed yet'}
+            </span>
+          </span>
+          <StrandNode label="KubeMG" value="bastion" tone="accent" />
+          <span className="shrink-0 pb-2 sm:pb-0">
+            <ClusterState cluster={cluster} />
+          </span>
         </div>
 
-        <dl className="grid grid-cols-[112px_minmax(0,1fr)] gap-x-3 gap-y-2 text-[12.5px]">
-          <dt className="text-muted">Cluster</dt>
-          <dd className="truncate font-mono text-fg">{cluster.name}</dd>
-          <dt className="text-muted">Mode</dt>
-          <dd className="font-mono text-fg">{cluster.connection_mode}</dd>
-          <dt className="text-muted">Kubernetes</dt>
-          <dd className="font-mono text-fg">{cluster.kubernetes_version ?? 'unknown'}</dd>
-          {cluster.connection_mode === 'agent' ? (
-            <>
-              <dt className="text-muted">Agent</dt>
-              <dd className="font-mono text-fg">{cluster.agent_version ?? 'not seen yet'}</dd>
-            </>
-          ) : null}
-        </dl>
+        <p className="text-[13px] leading-relaxed text-muted">
+          {connected
+            ? viaAgent
+              ? 'The agent is connected and the tunnel is open. Anything KubeMG does on this cluster now travels along it.'
+              : 'The API server answered. KubeMG can issue kubeconfigs for this cluster.'
+            : viaAgent
+              ? 'No agent has dialled in yet. Run the install command against the cluster and this screen updates on its own.'
+              : 'The cluster has not been probed yet. Run a check to confirm KubeMG can reach the API server.'}
+        </p>
+
+        {cluster.status_message ? (
+          <Notice tone={connected ? 'info' : 'warn'}>{cluster.status_message}</Notice>
+        ) : null}
+
+        <DetailList
+          columns={2}
+          rows={[
+            { term: 'Mode', value: cluster.connection_mode },
+            { term: 'Kubernetes', value: cluster.kubernetes_version ?? 'unknown' },
+            ...(viaAgent
+              ? [{ term: 'Agent', value: cluster.agent_version ?? 'not seen yet' }]
+              : []),
+          ]}
+        />
 
         {!connected && install ? (
           <CodeBlock label="Install command" value={install.apply_command} />
@@ -747,10 +773,10 @@ function HandshakeStep({
 
       <StepActions>
         <Button type="button" variant="ghost" onClick={onBack}>
-          <ArrowLeft aria-hidden="true" className="size-3.5" />
+          <ArrowLeft aria-hidden="true" className="size-4" />
           Back
         </Button>
-        {cluster.connection_mode === 'agent' ? (
+        {viaAgent ? (
           <Button
             type="button"
             onClick={() => setPolling((current) => !current)}
@@ -759,19 +785,19 @@ function HandshakeStep({
           >
             <RefreshCw
               aria-hidden="true"
-              className={`size-3.5 ${polling && !connected ? 'animate-spin' : ''}`}
+              className={`size-4 ${polling && !connected ? 'animate-spin' : ''}`}
             />
             {connected ? 'Connected' : polling ? 'Watching…' : 'Resume watching'}
           </Button>
         ) : (
           <Button type="button" onClick={runCheck} disabled={checking} className="mr-auto">
-            <RefreshCw aria-hidden="true" className={`size-3.5 ${checking ? 'animate-spin' : ''}`} />
+            <RefreshCw aria-hidden="true" className={`size-4 ${checking ? 'animate-spin' : ''}`} />
             {checking ? 'Checking…' : 'Run check'}
           </Button>
         )}
         <Button type="button" variant="primary" onClick={onNext}>
           {connected ? 'Continue' : 'Skip for now'}
-          <ArrowRight aria-hidden="true" className="size-3.5" />
+          <ArrowRight aria-hidden="true" className="size-4" />
         </Button>
       </StepActions>
     </Panel>
@@ -780,9 +806,8 @@ function HandshakeStep({
 
 /**
  * AccessStep grants the first permissions on the new cluster. It is the same
- * decision the permissions matrix makes, narrowed to one cluster so the last
- * step of registration is "who can use this" rather than "go and find the
- * matrix".
+ * decision the permissions matrix makes, narrowed to one cluster so the last step
+ * of registration is "who can use this" rather than "go and find the matrix".
  */
 function AccessStep({
   cluster,
@@ -880,12 +905,12 @@ function AccessStep({
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <Panel title={`Who can use ${cluster.name}?`}>
-        <form onSubmit={grant} className="flex flex-col gap-3.5 p-3.5">
+    <div className="flex flex-col gap-5">
+      <Panel eyebrow="Step 4" title={`Who can use ${cluster.name}?`}>
+        <form onSubmit={grant} className="flex flex-col gap-4 p-4">
           {error ? <Notice tone="error">{error}</Notice> : null}
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Grant to" htmlFor="subject_type">
               <Select
                 id="subject_type"
@@ -963,47 +988,43 @@ function AccessStep({
             {granted.map((permission) => (
               <li
                 key={`${permission.subject_type}:${permission.subject_id}`}
-                className="flex items-center gap-2.5 border-b border-line-soft px-3.5 py-2 last:border-b-0"
+                className="flex items-center gap-3 border-b border-line-soft px-4 py-2.5 last:border-b-0"
               >
-                <span className="label w-12 shrink-0">{permission.subject_type}</span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-fg">
+                <span className="label w-14 shrink-0">{permission.subject_type}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-fg">
                   {permission.subject_name}
                 </span>
-                <span className="font-mono text-[12px] text-muted">{permission.k8s_role}</span>
-                <span className="hidden truncate font-mono text-[11.5px] text-faint sm:block">
+                <span className="font-mono text-[12.5px] text-muted">{permission.k8s_role}</span>
+                <span className="hidden truncate font-mono text-[12px] text-faint sm:block">
                   {permission.namespaces.length > 0
                     ? permission.namespaces.join(', ')
                     : 'all namespaces'}
                 </span>
-                <button
-                  type="button"
+                <IconButton
+                  label={`Revoke ${permission.subject_name}`}
+                  tone="danger"
                   onClick={() => revoke(permission)}
                   disabled={busy}
-                  title={`Revoke ${permission.subject_name}`}
-                  className="rounded-sm border border-transparent p-1 text-muted transition-colors hover:border-danger/40 hover:text-danger disabled:opacity-50"
                 >
                   <Trash2 aria-hidden="true" className="size-3.5" />
-                  <span className="sr-only">Revoke {permission.subject_name}</span>
-                </button>
+                </IconButton>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="border-t border-line-soft px-3.5 py-6 text-center text-[12px] text-muted">
-            {loading
-              ? 'Loading…'
-              : 'No one has access yet. Admins can always reach every cluster.'}
+          <p className="border-t border-line-soft px-4 py-8 text-center text-[13px] text-muted">
+            {loading ? 'Loading…' : 'No one has access yet. Admins can always reach every cluster.'}
           </p>
         )}
 
         <StepActions>
           <Button type="button" variant="ghost" onClick={onBack}>
-            <ArrowLeft aria-hidden="true" className="size-3.5" />
+            <ArrowLeft aria-hidden="true" className="size-4" />
             Back
           </Button>
           <Button type="button" variant="primary" onClick={onDone}>
             Done
-            <ArrowRight aria-hidden="true" className="size-3.5" />
+            <ArrowRight aria-hidden="true" className="size-4" />
           </Button>
         </StepActions>
       </Panel>

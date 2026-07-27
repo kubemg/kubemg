@@ -17,7 +17,11 @@ import { useAuth } from './state/auth-context'
 
 function RestoringSession() {
   return (
-    <div className="flex min-h-svh items-center justify-center">
+    <div className="flex min-h-svh flex-col items-center justify-center gap-3 bg-bg">
+      <span className="text-[18px] font-semibold tracking-[-0.02em]">
+        <span className="text-fg">Kube</span>
+        <span className="text-accent">MG</span>
+      </span>
       <p className="label">Restoring session…</p>
     </div>
   )

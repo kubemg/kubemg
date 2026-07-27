@@ -88,21 +88,28 @@ func (s *server) resourceCluster(c *gin.Context) (*db.User, *db.Cluster, db.User
 	return user, cluster, grant, true
 }
 
-// fetch performs a proxied GET and decodes it, translating a proxy refusal into
-// the HTTP response itself.
-func (s *server) fetch(c *gin.Context, user *db.User, cluster *db.Cluster,
-	grant db.UserClusterAccess, path string, out any,
-) bool {
+// callResource performs a proxied GET, writing a transport failure or a refusal
+// from the bastion itself to the client. The cluster's own response is handed
+// back untouched, so a caller can decide what a given status means to it.
+func (s *server) callResource(c *gin.Context, user *db.User, cluster *db.Cluster,
+	grant db.UserClusterAccess, path string,
+) (*bastion.Response, bool) {
 	resp, err := s.proxy.Call(c.Request.Context(), user, cluster, grant, http.MethodGet, path, nil)
 	if err != nil {
 		var callErr *bastion.CallError
 		if errors.As(err, &callErr) {
 			c.JSON(callErr.Status, gin.H{"error": callErr.Message})
-			return false
+			return nil, false
 		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": "could not read from the cluster"})
-		return false
+		return nil, false
 	}
+	return resp, true
+}
+
+// decodeResource turns a successful cluster response into a Go value, and any
+// other status into the HTTP response.
+func (s *server) decodeResource(c *gin.Context, resp *bastion.Response, out any) bool {
 	if resp.Status < 200 || resp.Status >= 300 {
 		// Hand the API server's own explanation back: "forbidden: pods is
 		// forbidden for user X" is far more useful than anything we'd invent.
@@ -114,6 +121,18 @@ func (s *server) fetch(c *gin.Context, user *db.User, cluster *db.Cluster,
 		return false
 	}
 	return true
+}
+
+// fetch performs a proxied GET and decodes it, translating a proxy refusal into
+// the HTTP response itself.
+func (s *server) fetch(c *gin.Context, user *db.User, cluster *db.Cluster,
+	grant db.UserClusterAccess, path string, out any,
+) bool {
+	resp, ok := s.callResource(c, user, cluster, grant, path)
+	if !ok {
+		return false
+	}
+	return s.decodeResource(c, resp, out)
 }
 
 // listNamespaces returns the namespaces the caller may see. A namespace-scoped
@@ -163,6 +182,18 @@ func (s *server) listNamespaces(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"namespaces": out, "scoped": false})
 }
 
+// workloadKinds are the apps/v1 kinds that share the ready/desired shape. The
+// sidebar lists them one at a time; the combined workloads route returns all of
+// them.
+var workloadKinds = []struct {
+	kind     string
+	resource string
+}{
+	{"Deployment", "deployments"},
+	{"StatefulSet", "statefulsets"},
+	{"DaemonSet", "daemonsets"},
+}
+
 // listWorkloads returns deployments, statefulsets and daemonsets in one shape.
 func (s *server) listWorkloads(c *gin.Context) {
 	user, cluster, grant, ok := s.resourceCluster(c)
@@ -174,17 +205,24 @@ func (s *server) listWorkloads(c *gin.Context) {
 		return
 	}
 
-	kinds := []struct {
-		kind     string
-		resource string
-	}{
-		{"Deployment", "deployments"},
-		{"StatefulSet", "statefulsets"},
-		{"DaemonSet", "daemonsets"},
+	out, ok := s.collectWorkloads(c, user, cluster, grant, namespace, "")
+	if !ok {
+		return
 	}
+	c.JSON(http.StatusOK, gin.H{"workloads": out, "namespace": namespace})
+}
 
+// collectWorkloads reads the apps/v1 kinds into one list. An empty kind reads
+// all of them; naming one reads just that kind, which is what the per-kind
+// routes want.
+func (s *server) collectWorkloads(c *gin.Context, user *db.User, cluster *db.Cluster,
+	grant db.UserClusterAccess, namespace, only string,
+) ([]workloadView, bool) {
 	out := []workloadView{}
-	for _, kind := range kinds {
+	for _, kind := range workloadKinds {
+		if only != "" && kind.kind != only {
+			continue
+		}
 		var list struct {
 			Items []struct {
 				Metadata struct {
@@ -213,7 +251,7 @@ func (s *server) listWorkloads(c *gin.Context) {
 
 		path := fmt.Sprintf("/apis/apps/v1/namespaces/%s/%s", url.PathEscape(namespace), kind.resource)
 		if !s.fetch(c, user, cluster, grant, path, &list) {
-			return
+			return nil, false
 		}
 
 		for _, item := range list.Items {
@@ -243,7 +281,7 @@ func (s *server) listWorkloads(c *gin.Context) {
 	}
 
 	slices.SortFunc(out, func(a, b workloadView) int { return strings.Compare(a.Name, b.Name) })
-	c.JSON(http.StatusOK, gin.H{"workloads": out, "namespace": namespace})
+	return out, true
 }
 
 // listPods returns the pods in a namespace, flattened to what a list view needs.

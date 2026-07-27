@@ -1,10 +1,55 @@
-/**
- * The 3px state marker on the leading edge of a row, card, or ribbon bar. State
- * reads as form as well as colour, so it survives greyscale and a glance from
- * across the room.
- */
-export const SPINE_TONE: Record<string, string> = {
-  healthy: 'bg-ok',
-  unhealthy: 'bg-danger',
-  pending: 'bg-faint/40',
+import type { Cluster, Pod, Workload } from '../api/types'
+
+/** The five tones the deck reads state in. Nothing is ever colour alone. */
+export type Tone = 'ok' | 'warn' | 'bad' | 'idle' | 'accent'
+
+export const TONE_TEXT: Record<Tone, string> = {
+  ok: 'text-ok',
+  warn: 'text-warn',
+  bad: 'text-danger',
+  idle: 'text-faint',
+  accent: 'text-accent',
+}
+
+export const TONE_FILL: Record<Tone, string> = {
+  ok: 'bg-ok',
+  warn: 'bg-warn',
+  bad: 'bg-danger',
+  idle: 'bg-faint',
+  accent: 'bg-accent',
+}
+
+export function clusterTone(cluster: Cluster): Tone {
+  if (cluster.status === 'healthy') return 'ok'
+  if (cluster.status === 'unhealthy') return 'bad'
+  return 'idle'
+}
+
+export function clusterStateLabel(cluster: Cluster): string {
+  if (cluster.status === 'healthy') return 'Reachable'
+  if (cluster.status === 'unhealthy') return 'Unreachable'
+  return 'Never checked'
+}
+
+/** How the strand for a cluster should read: is a tunnel carrying traffic now. */
+export function strandState(cluster: Cluster): 'live' | 'direct' | 'down' | 'idle' {
+  if (cluster.connection_mode === 'agent') {
+    if (cluster.agent_attached) return 'live'
+    return cluster.status === 'unhealthy' ? 'down' : 'idle'
+  }
+  if (cluster.status === 'healthy') return 'direct'
+  return cluster.status === 'unhealthy' ? 'down' : 'idle'
+}
+
+export function podTone(pod: Pod): Tone {
+  if (pod.phase === 'Running' && pod.ready === pod.total) return 'ok'
+  if (pod.phase === 'Succeeded') return 'idle'
+  if (pod.phase === 'Failed') return 'bad'
+  return 'warn'
+}
+
+export function workloadTone(workload: Workload): Tone {
+  if (workload.desired > 0 && workload.ready === workload.desired) return 'ok'
+  if (workload.ready === 0) return 'bad'
+  return 'warn'
 }
