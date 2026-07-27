@@ -24,6 +24,20 @@ const SHELLS = ['/bin/bash', '/bin/sh']
 
 type Status = 'connecting' | 'open' | 'closed' | 'error'
 
+/** The terminal borrows its palette from the deck rather than hard-coding one. */
+function deckTheme() {
+  const deck = getComputedStyle(document.documentElement)
+  const token = (name: string, fallback: string) =>
+    deck.getPropertyValue(name).trim() || fallback
+
+  return {
+    background: token('--deck-sunken', '#0d1017'),
+    foreground: token('--deck-text', '#e7ebf3'),
+    cursor: token('--deck-accent', '#8878fb'),
+    selectionBackground: token('--deck-border', '#242b38'),
+  }
+}
+
 /**
  * PodTerminal is an interactive shell in a container, carried over the same
  * audited tunnel as everything else. Every keystroke reaches the cluster under
@@ -50,12 +64,22 @@ export function PodTerminal({
     if (!element) return
 
     const term = new Terminal({
-      fontFamily:
-        'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
-      fontSize: 12,
+      fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+      fontSize: 12.5,
+      lineHeight: 1.35,
       cursorBlink: true,
       convertEol: true,
-      theme: { background: '#12161c', foreground: '#d7dde5', cursor: '#7aa2f7' },
+      theme: deckTheme(),
+    })
+
+    // The shell sits on the same slab as every other machine-output surface, so
+    // it follows the deck when the operator switches it.
+    const deckWatcher = new MutationObserver(() => {
+      term.options.theme = deckTheme()
+    })
+    deckWatcher.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -160,6 +184,7 @@ export function PodTerminal({
 
     return () => {
       observer.disconnect()
+      deckWatcher.disconnect()
       typed.dispose()
       // 1000 is a normal close; anything else makes the audit trail read as if
       // the session crashed.
@@ -171,13 +196,13 @@ export function PodTerminal({
   }, [clusterId, namespace, pod, container])
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-1.5">
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="flex items-center gap-2">
         <span
           aria-hidden="true"
           className={`inline-block size-1.5 rounded-full ${
             status === 'open'
-              ? 'bg-ok'
+              ? 'breathe bg-ok'
               : status === 'connecting'
                 ? 'bg-warn'
                 : status === 'error'
@@ -185,7 +210,7 @@ export function PodTerminal({
                   : 'bg-faint'
           }`}
         />
-        <span className="text-[11.5px] text-muted">
+        <span className="text-[12px] text-muted">
           {status === 'open'
             ? `Connected to ${container}`
             : status === 'connecting'
@@ -194,11 +219,11 @@ export function PodTerminal({
                 ? 'Could not open a session'
                 : 'Session closed'}
         </span>
-        {detail ? <span className="truncate text-[11.5px] text-muted">· {detail}</span> : null}
+        {detail ? <span className="truncate text-[12px] text-muted">· {detail}</span> : null}
       </div>
       <div
         ref={host}
-        className="min-h-[260px] flex-1 overflow-hidden rounded-[5px] border border-ink-line bg-ink p-1.5"
+        className="min-h-[280px] flex-1 overflow-hidden rounded-card border border-line bg-sunken p-2"
       />
     </div>
   )

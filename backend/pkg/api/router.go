@@ -202,6 +202,33 @@ func NewRouter(opts Options) *gin.Engine {
 			resources.GET("/pods", s.listPods)
 			resources.GET("/pods/:pod", s.showPod)
 			resources.GET("/pods/:pod/logs", s.podLogs)
+
+			// The rest of the inventory behind the Explore sidebar: one route
+			// per list an operator can be looking at. The cluster-scoped ones
+			// refuse a namespace-scoped grant, since a cluster-wide list would
+			// reach past it.
+			resources.GET("/deployments", s.listWorkloadsOf("Deployment"))
+			resources.GET("/statefulsets", s.listWorkloadsOf("StatefulSet"))
+			resources.GET("/daemonsets", s.listWorkloadsOf("DaemonSet"))
+			resources.GET("/jobs", s.listJobs)
+			resources.GET("/cronjobs", s.listCronJobs)
+
+			resources.GET("/services", s.listServices)
+			resources.GET("/ingresses", s.listIngresses)
+			// Gateway API and Istio are optional: a cluster without them
+			// answers with an empty list marked unavailable, not an error.
+			resources.GET("/httproutes", s.listHTTPRoutes)
+			resources.GET("/virtualservices", s.listVirtualServices)
+
+			resources.GET("/persistentvolumes", s.listPersistentVolumes)
+			resources.GET("/persistentvolumeclaims", s.listPersistentVolumeClaims)
+			resources.GET("/storageclasses", s.listStorageClasses)
+			resources.GET("/configmaps", s.listConfigMaps)
+			// Secrets are listed as metadata only; no value reaches a response.
+			resources.GET("/secrets", s.listSecrets)
+
+			resources.GET("/crds", s.listCRDs)
+			resources.GET("/nodes", s.listNodes)
 		}
 
 		// Identity and access management is an administrative surface only.

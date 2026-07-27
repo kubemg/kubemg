@@ -1,108 +1,294 @@
 @import 'tailwindcss';
 
 /*
- * KubeMG is an operations console in the Argo CD / Grafana register: navigation
- * and identity sit on ink, everything you read and act on sits on paper. Trust
- * comes from legibility and honest state, so there is no glow and no gradient —
- * blue carries interaction, and green/amber/red are reserved for state that is
- * actually changing. Type is the neutral system grotesque (no webfonts); mono
- * carries the data — cluster names, endpoints, versions, counts, grants.
+ * KubeMG — "Signal Deck".
+ *
+ * KubeMG watches clusters that cannot be reached from the outside: each one
+ * dials out and holds a tunnel open. The interface is built around that fact.
+ * Chrome is a graphite deck (rail → section panel → work surface) so the eye
+ * always knows where it is in a fleet; violet is the only interactive accent,
+ * and green/amber/red are state that is actually changing. Identifiers —
+ * cluster names, endpoints, versions, counts, paths — are set in mono with
+ * tabular figures, because they are data and get compared column to column.
+ *
+ * The signature device is the link strand (see components/LinkStrand.tsx): a
+ * track whose travelling pulse runs cluster → KubeMG, the direction the real
+ * connection is made. Nothing else animates.
+ *
+ * Dark is the default deck; light is a full peer, not an afterthought. Every
+ * colour below is a token pair — never hard-code a hex in a component.
  */
-@theme {
-  /* Working surfaces. */
-  --color-bg: #f4f6f8;
-  --color-surface: #ffffff;
-  --color-raised: #eef1f5;
-  --color-line: #dfe4ea;
-  --color-line-soft: #eaeef2;
-  --color-fg: #16202b;
-  --color-muted: #5c6875;
-  --color-faint: #8794a2;
 
-  /* Chrome: the rail and anything that reads as system, not content. */
-  --color-ink: #0f1620;
-  --color-ink-raised: #17202c;
-  --color-ink-line: #263141;
-  --color-ink-fg: #e7edf5;
-  --color-ink-muted: #9fb0c2;
-  --color-ink-faint: #62778e;
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
-  /* Blue is interaction. The rest is state, never decoration. */
-  --color-primary: #2a4fd7;
-  --color-primary-soft: #e8ecfc;
-  --color-ok: #17794c;
-  --color-ok-soft: #e2f2e9;
-  --color-warn: #a96500;
-  --color-warn-soft: #fbeedb;
-  --color-danger: #bd3128;
-  --color-danger-soft: #fbe8e6;
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/inter-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
 
-  --radius-panel: 6px;
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
-  --font-sans:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* Light deck. */
+:root {
+  color-scheme: light;
+
+  --deck-bg: #f4f6f9;
+  --deck-surface: #ffffff;
+  --deck-raised: #eef1f6;
+  --deck-sunken: #e8ebf1;
+  --deck-border: #dfe3eb;
+  --deck-border-soft: #ebeef3;
+  --deck-text: #0f131a;
+  --deck-muted: #56606f;
+  --deck-faint: #8892a2;
+
+  /* The rail and the section panel: one step deeper than the work surface. */
+  --deck-rail: #12161f;
+  --deck-rail-raised: #1c2230;
+  --deck-rail-border: #262d3c;
+  --deck-rail-text: #e9edf5;
+  --deck-rail-muted: #98a3b6;
+  --deck-rail-faint: #66718a;
+
+  --deck-accent: #5a47e0;
+  --deck-accent-hover: #4b39d1;
+  --deck-accent-soft: #eeecfd;
+  --deck-accent-line: #cdc6f8;
+  --deck-on-accent: #ffffff;
+
+  --deck-ok: #10996b;
+  --deck-ok-soft: #e2f5ed;
+  --deck-warn: #96620a;
+  --deck-warn-soft: #fbf0dc;
+  --deck-danger: #cf4238;
+  --deck-danger-soft: #fceae8;
+
+  --deck-shadow: 0 1px 2px rgb(15 19 26 / 0.05), 0 8px 24px -16px rgb(15 19 26 / 0.28);
+  --deck-shadow-lift: 0 2px 4px rgb(15 19 26 / 0.06), 0 18px 40px -20px rgb(15 19 26 / 0.35);
+}
+
+/* Dark deck — the default. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --deck-bg: #0a0d13;
+  --deck-surface: #11151d;
+  --deck-raised: #181d27;
+  --deck-sunken: #0d1017;
+  --deck-border: #242b38;
+  --deck-border-soft: #1a202b;
+  --deck-text: #e7ebf3;
+  --deck-muted: #9aa4b5;
+  --deck-faint: #69738a;
+
+  --deck-rail: #0d1017;
+  --deck-rail-raised: #191f2a;
+  --deck-rail-border: #212836;
+  --deck-rail-text: #e7ebf3;
+  --deck-rail-muted: #9aa4b5;
+  --deck-rail-faint: #69738a;
+
+  --deck-accent: #8878fb;
+  --deck-accent-hover: #9a8dfc;
+  --deck-accent-soft: #1d1b33;
+  --deck-accent-line: #3b3470;
+  --deck-on-accent: #0a0d13;
+
+  --deck-ok: #3dd68c;
+  --deck-ok-soft: #10241c;
+  --deck-warn: #f2b33d;
+  --deck-warn-soft: #291f10;
+  --deck-danger: #f2685b;
+  --deck-danger-soft: #2a1414;
+
+  --deck-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  --deck-shadow-lift: 0 2px 6px rgb(0 0 0 / 0.45), 0 20px 44px -24px rgb(0 0 0 / 0.7);
+}
+
+@theme inline {
+  --color-bg: var(--deck-bg);
+  --color-surface: var(--deck-surface);
+  --color-raised: var(--deck-raised);
+  --color-sunken: var(--deck-sunken);
+  --color-line: var(--deck-border);
+  --color-line-soft: var(--deck-border-soft);
+  --color-fg: var(--deck-text);
+  --color-muted: var(--deck-muted);
+  --color-faint: var(--deck-faint);
+
+  --color-rail: var(--deck-rail);
+  --color-rail-raised: var(--deck-rail-raised);
+  --color-rail-line: var(--deck-rail-border);
+  --color-rail-fg: var(--deck-rail-text);
+  --color-rail-muted: var(--deck-rail-muted);
+  --color-rail-faint: var(--deck-rail-faint);
+
+  --color-accent: var(--deck-accent);
+  --color-accent-hover: var(--deck-accent-hover);
+  --color-accent-soft: var(--deck-accent-soft);
+  --color-accent-line: var(--deck-accent-line);
+  --color-on-accent: var(--deck-on-accent);
+
+  --color-ok: var(--deck-ok);
+  --color-ok-soft: var(--deck-ok-soft);
+  --color-warn: var(--deck-warn);
+  --color-warn-soft: var(--deck-warn-soft);
+  --color-danger: var(--deck-danger);
+  --color-danger-soft: var(--deck-danger-soft);
+
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-chip: 6px;
+
+  --shadow-deck: var(--deck-shadow);
+  --shadow-lift: var(--deck-shadow-lift);
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 @layer base {
   html {
-    color-scheme: light;
+    background: var(--deck-bg);
   }
 
   body {
     margin: 0;
     min-height: 100svh;
-    background: var(--color-bg);
-    color: var(--color-fg);
+    background: var(--deck-bg);
+    color: var(--deck-text);
     font-family: var(--font-sans);
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.5;
+    font-feature-settings: 'cv05' 1, 'ss03' 1;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
-  /* Digits line up in every table, gauge, and count in the console. */
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.02em;
+  }
+
+  /* Every figure that gets compared down a column lines up. */
   table,
   .font-mono {
     font-variant-numeric: tabular-nums;
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: 1px;
-    border-radius: 3px;
+    outline: 2px solid var(--deck-accent);
+    outline-offset: 2px;
+    border-radius: 6px;
   }
 
   ::selection {
-    background: color-mix(in oklab, var(--color-primary) 22%, transparent);
+    background: color-mix(in oklab, var(--deck-accent) 30%, transparent);
+  }
+
+  /* Scrollbars belong to the deck, not to the operating system. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--deck-border) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--deck-border);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--deck-faint);
+    background-clip: content-box;
   }
 }
 
-/* Small caps label used for field labels, table headers, and panel titles. */
+/* Micro-caps used for field labels, column heads, and panel eyebrows. */
 @utility label {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.055em;
   text-transform: uppercase;
-  color: var(--color-faint);
+  color: var(--deck-faint);
 }
 
-@utility panel {
-  background: var(--color-surface);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-panel);
+@utility card {
+  background: var(--deck-surface);
+  border: 1px solid var(--deck-border);
+  border-radius: var(--radius-card);
 }
 
-/* Lifts a panel while it is hovered or is the active surface. */
 @utility lift {
-  box-shadow:
-    0 1px 2px rgb(16 32 48 / 0.06),
-    0 6px 20px -12px rgb(16 32 48 / 0.18);
+  box-shadow: var(--deck-shadow-lift);
 }
 
-@keyframes fade-up {
+/*
+ * The link strand: a track of micro-dashes with one travelling pulse. The pulse
+ * runs right to left because that is the direction the connection is actually
+ * made — the cluster dials out to KubeMG, never the other way around.
+ */
+@keyframes strand-travel {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+@utility strand-pulse {
+  animation: strand-travel 2.6s linear infinite;
+}
+
+@keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -110,21 +296,66 @@
   }
 }
 
-@utility enter {
-  animation: fade-up 160ms ease-out both;
+@utility rise {
+  animation: rise 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-@keyframes slide-in {
+@keyframes sheet-in {
   from {
-    transform: translateX(100%);
+    opacity: 0;
+    transform: translateX(24px);
   }
   to {
+    opacity: 1;
     transform: translateX(0);
   }
 }
 
-@utility drawer-in {
-  animation: slide-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+@utility sheet-in {
+  animation: sheet-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@utility scrim-in {
+  animation: scrim-in 180ms ease-out both;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@utility pop-in {
+  animation: pop-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* A live stream is the one other thing allowed to move: it says "still open". */
+@utility breathe {
+  animation: breathe 1.8s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

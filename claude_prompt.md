@@ -1,33 +1,47 @@
-Read `implementation_plan.md` and `roadmap.md` carefully.
+# Task: Implement Rancher-Style 3rd Resource Navigation Sidebar on Explore Page
 
-Execute Phase 2: Bastion Architecture, Dumb Agent & Cluster Registration Wizard.
+## Context & Objective
+In KubeMG, the Explore page (`/explore`) needs a **3rd Resource Navigation Sidebar** (similar to Rancher's resource tree menu) to allow cluster operators and developers to browse Kubernetes resources grouped by logical categories.
 
-Tasks to implement:
+---
 
-1. Refactor Cluster Onboarding UI into a Dedicated Wizard Page (`frontend/src/`):
-   - Create `frontend/src/pages/ClusterWizard.tsx` with a multi-step workflow:
-     - Step 1: Cluster Metadata (Name, Environment: `prod`/`staging`/`dev`, Description).
-     - Step 2: Connection Mode & Agent Installer (Agent-based vs Direct K8s API token). Display copyable `kubectl apply -k <kustomize-url>` snippet & registration token.
-     - Step 3: Healthcheck Polling (Verify status transition from `pending` -> `healthy`).
-     - Step 4: Initial Access & RBAC Assignment.
-   - Register `/clusters/new` route in `App.tsx` and link it from Cluster Management button.
+## Technical Instructions for Claude-CLI
 
-2. Kustomize Agent Manifest Generator (`deploy/kustomize/` & `backend/pkg/api/`):
-   - Add base Kustomize templates in `deploy/kustomize/base/`: `kustomization.yaml`, `deployment.yaml` (resource-capped agent pod), `rbac.yaml` (ServiceAccount & ClusterRoleBinding), `secret.yaml`.
-   - Add API handler `GET /api/v1/clusters/:id/kustomize` serving dynamically assembled Kustomize package (injecting cluster registration secret token & Bastion URL).
+### 1. Backend (`backend/pkg/api/`)
+- Update `resources.go` and `router.go` to add or expand listing handlers for the following resource categories over the agent tunnel (via `s.proxy.Call` with impersonation headers):
+  - **Workloads**: `pods`, `deployments`, `statefulsets`, `daemonsets`, `jobs`, `cronjobs`.
+  - **Networking**: `services`, `ingresses`, `httproutes` (gateway.networking.k8s.io), `virtualservices` (networking.istio.io). Handle missing CRD (404) gracefully by returning an empty list or appropriate status.
+  - **Storage & Config**: `persistentvolumes` (PV - cluster-scoped), `persistentvolumeclaims` (PVC), `storageclasses` (cluster-scoped), `configmaps`, `secrets` (expose metadata only, omit raw secret data).
+  - **Custom Resources**: `customresourcedefinitions` (CRDs).
+  - **Cluster**: `nodes` (cluster-scoped), `namespaces`.
+- Ensure namespace-scoped queries apply namespace isolation based on user's granted permissions (`resourceNamespace(c, grant)`).
 
-3. Lightweight Open-Source "Dumb Agent" (`agent/`):
-   - Create Go client in `agent/cmd/agent/main.go` that connects to central Bastion URL via outbound gRPC/WebSocket stream.
-   - Proxies incoming tunnel requests to local K8s API server (`https://kubernetes.default.svc`).
-   - Create `agent/Dockerfile` for minimal static binary build (`CGO_ENABLED=0`).
+### 2. Frontend (`frontend/src/`)
+- **API Client (`api/types.ts` & `api/client.ts`)**:
+  - Add TypeScript interfaces and API methods to fetch services, ingresses, configmaps, secrets, PVs, PVCs, storageclasses, nodes, and CRDs.
+- **3rd Sidebar Component (`components/ExploreSidebar.tsx`)**:
+  - Create a collapsible resource menu sidebar with categories:
+    - 📦 **Workloads**: Pods, Deployments, StatefulSets, DaemonSets, Jobs, CronJobs
+    - 🌐 **Networking**: Services, Ingresses, HTTPRoutes, VirtualServices
+    - 💾 **Storage & Config**: PVs, PVCs, StorageClasses, ConfigMaps, Secrets
+    - 🧩 **Custom Resources**: CRDs
+    - 🖥️ **Cluster**: Nodes, Namespaces
+  - Include search/filter input to quickly filter resources in the sidebar.
+  - Follow Signal Deck design tokens (`bg-rail`, `bg-rail-raised`, `text-accent`, etc.).
+- **Explore Page (`pages/Explore.tsx`)**:
+  - Render `ExploreSidebar` on the left side of the Explore content view (forming the 3rd navigation level in KubeMG layout: Level 1 Rail -> Level 2 Panel -> Level 3 Resource Sidebar).
+  - Update main content area to display table views corresponding to the selected resource item.
+  - Maintain namespace selection dropdown at the top for namespace-scoped resources and disable/hide for cluster-scoped resources (Nodes, PVs, StorageClasses, CRDs).
 
-4. Central Bastion Proxy Server & Audit Engine (`backend/pkg/bastion/`):
-   - `server.go`: Bastion tunnel listener handling incoming agent connections & cluster token handshakes.
-   - `proxy.go`: Proxy handler for `kubectl` requests attaching `Impersonate-User` and `Impersonate-Group` headers.
-   - `audit.go`: Structured audit logger for all proxied API actions.
+---
 
-5. Verification:
-   - Run `make verify` inside Docker container environment to validate backend, agent, and frontend builds, tests, and linters.
-
-6. Update `roadmap.md`:
-   - Mark Phase 2 items as completed (`[x]`) upon successful verification.
+## Verification Rules
+1. Run containerized verification & linting:
+   ```bash
+   make verify
+   ```
+2. Run containerized test suite:
+   ```bash
+   make test
+   ```
+3. Update `roadmap.md` to check off (`[x]`) completed items upon success.

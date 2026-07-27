@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Plus, Trash2, UserMinus } from 'lucide-react'
+import { Plus, Trash2, UserMinus, UsersRound } from 'lucide-react'
 import {
   addGroupMember,
   createGroup,
@@ -12,7 +12,18 @@ import {
 } from '../api/client'
 import type { Group, User } from '../api/types'
 import { AppShell } from '../components/AppShell'
-import { Button, Drawer, Field, Notice, Panel, Select, TextInput } from '../components/primitives'
+import {
+  Button,
+  EmptyState,
+  Field,
+  IconButton,
+  Notice,
+  Panel,
+  Select,
+  Sheet,
+  TextInput,
+} from '../components/primitives'
+import { relativeAge } from '../lib/time'
 
 export function GroupManagement() {
   const [groups, setGroups] = useState<Group[]>([])
@@ -21,7 +32,7 @@ export function GroupManagement() {
   const [error, setError] = useState<string | null>(null)
   const [rowError, setRowError] = useState<string | null>(null)
   const [busyGroup, setBusyGroup] = useState<number | null>(null)
-  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -67,62 +78,69 @@ export function GroupManagement() {
     <AppShell
       title="Groups"
       actions={
-        <Button variant="primary" onClick={() => setDrawerOpen(true)}>
-          <Plus aria-hidden="true" className="size-3.5" />
+        <Button variant="primary" onClick={() => setSheetOpen(true)}>
+          <Plus aria-hidden="true" className="size-4" />
           Create group
         </Button>
       }
     >
-      <div className="flex min-w-0 flex-col gap-3">
+      <div className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
         {rowError ? <Notice tone="error">{rowError}</Notice> : null}
 
         {loading && groups.length === 0 ? (
-          <p className="text-[12px] text-muted">Loading…</p>
+          <p className="text-[13px] text-muted">Loading…</p>
         ) : null}
 
         {!loading && groups.length === 0 ? (
-          <div className="panel px-3 py-10 text-center">
-            <p className="text-[13px] text-fg">No groups yet</p>
-            <p className="mt-1 text-[12px] text-muted">
-              Grant a cluster to a group once instead of to each member in turn.
-            </p>
-            <Button variant="secondary" className="mt-3" onClick={() => setDrawerOpen(true)}>
-              <Plus aria-hidden="true" className="size-3.5" />
-              Create group
-            </Button>
+          <div className="card">
+            <EmptyState
+              icon={<UsersRound aria-hidden="true" className="size-5" />}
+              title="No groups yet"
+              action={
+                <Button variant="primary" onClick={() => setSheetOpen(true)}>
+                  <Plus aria-hidden="true" className="size-4" />
+                  Create group
+                </Button>
+              }
+            >
+              Grant a cluster to a group once instead of to each member in turn. Every member
+              inherits the grant.
+            </EmptyState>
           </div>
         ) : null}
 
-        <div className="grid items-start gap-3 xl:grid-cols-2">
-          {groups.map((group) => (
-            <GroupCard
-              key={group.id}
-              group={group}
-              users={users}
-              usersById={usersById}
-              busy={busyGroup === group.id}
-              onAdd={(userId) =>
-                run(group.id, `Could not add the member to ${group.name}.`, () =>
-                  addGroupMember(group.id, userId),
-                )
-              }
-              onRemove={(userId) =>
-                run(group.id, `Could not remove the member from ${group.name}.`, () =>
-                  removeGroupMember(group.id, userId),
-                )
-              }
-              onDelete={() => remove(group)}
-            />
-          ))}
-        </div>
+        {groups.length > 0 ? (
+          <div className="grid items-start gap-4 xl:grid-cols-2">
+            {groups.map((group) => (
+              <GroupCard
+                key={group.id}
+                group={group}
+                users={users}
+                usersById={usersById}
+                busy={busyGroup === group.id}
+                onAdd={(userId) =>
+                  run(group.id, `Could not add the member to ${group.name}.`, () =>
+                    addGroupMember(group.id, userId),
+                  )
+                }
+                onRemove={(userId) =>
+                  run(group.id, `Could not remove the member from ${group.name}.`, () =>
+                    removeGroupMember(group.id, userId),
+                  )
+                }
+                onDelete={() => remove(group)}
+              />
+            ))}
+          </div>
+        ) : null}
       </div>
 
-      {drawerOpen ? (
-        <CreateGroupDrawer
-          onClose={() => setDrawerOpen(false)}
+      {sheetOpen ? (
+        <CreateGroupSheet
+          onClose={() => setSheetOpen(false)}
           onCreated={async () => {
-            setDrawerOpen(false)
+            setSheetOpen(false)
             await load()
           }}
         />
@@ -164,66 +182,50 @@ function GroupCard({
 
   return (
     <Panel
+      eyebrow={`${members.length} ${members.length === 1 ? 'member' : 'members'} · created ${relativeAge(group.created_at)}`}
       title={group.name}
+      description={group.description || undefined}
       actions={
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] text-muted">
-            {members.length} {members.length === 1 ? 'member' : 'members'}
-          </span>
-          <button
-            type="button"
-            onClick={onDelete}
-            disabled={busy}
-            className="rounded-sm border border-transparent p-1 text-muted transition-colors hover:border-danger/40 hover:text-danger disabled:opacity-50"
-            title={`Delete ${group.name}`}
-          >
-            <Trash2 aria-hidden="true" className="size-3.5" />
-            <span className="sr-only">Delete {group.name}</span>
-          </button>
-        </div>
+        <IconButton label={`Delete ${group.name}`} tone="danger" onClick={onDelete} disabled={busy}>
+          <Trash2 aria-hidden="true" className="size-3.5" />
+        </IconButton>
       }
     >
-      {group.description ? (
-        <p className="border-b border-line px-3 py-2 text-[12px] text-muted">{group.description}</p>
-      ) : null}
-
       <ul className="flex flex-col">
         {members.map((member) => (
           <li
             key={member.id}
-            className="flex items-center gap-2 border-b border-line-soft px-3 py-1.5 last:border-0"
+            className="flex items-center gap-2.5 border-b border-line-soft px-4 py-2 last:border-0"
           >
-            <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-fg">
+            <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-fg">
               {member.username}
             </span>
             <span className="label shrink-0">{member.system_role}</span>
-            <button
-              type="button"
+            <IconButton
+              label={`Remove ${member.username} from ${group.name}`}
               onClick={() => onRemove(member.id)}
               disabled={busy}
-              className="shrink-0 rounded-sm border border-transparent p-1 text-muted transition-colors hover:border-danger/40 hover:text-danger disabled:opacity-50"
-              title={`Remove ${member.username} from ${group.name}`}
             >
               <UserMinus aria-hidden="true" className="size-3.5" />
-              <span className="sr-only">
-                Remove {member.username} from {group.name}
-              </span>
-            </button>
+            </IconButton>
           </li>
         ))}
 
         {members.length === 0 ? (
-          <li className="px-3 py-3 text-[12px] text-muted">No members yet.</li>
+          <li className="px-4 py-4 text-[13px] text-muted">No members yet.</li>
         ) : null}
       </ul>
 
-      <form onSubmit={add} className="flex items-center gap-2 border-t border-line p-2.5">
+      <form
+        onSubmit={add}
+        className="flex items-center gap-2 border-t border-line-soft bg-raised/40 px-4 py-3"
+      >
         <Select
           aria-label={`Add a member to ${group.name}`}
+          size="sm"
           value={pending}
           disabled={busy || candidates.length === 0}
           onChange={(event) => setPending(event.target.value)}
-          className="py-1 text-[12px]"
         >
           <option value="">
             {candidates.length === 0 ? 'Every account is a member' : 'Select a user…'}
@@ -234,7 +236,7 @@ function GroupCard({
             </option>
           ))}
         </Select>
-        <Button type="submit" disabled={busy || !pending} className="shrink-0">
+        <Button type="submit" size="sm" disabled={busy || !pending}>
           Add
         </Button>
       </form>
@@ -242,7 +244,7 @@ function GroupCard({
   )
 }
 
-function CreateGroupDrawer({
+function CreateGroupSheet({
   onClose,
   onCreated,
 }: {
@@ -268,7 +270,8 @@ function CreateGroupDrawer({
   }
 
   return (
-    <Drawer
+    <Sheet
+      eyebrow="Access"
       title="Create group"
       onClose={onClose}
       onSubmit={handleSubmit}
@@ -304,6 +307,6 @@ function CreateGroupDrawer({
       </Field>
 
       {error ? <Notice tone="error">{error}</Notice> : null}
-    </Drawer>
+    </Sheet>
   )
 }

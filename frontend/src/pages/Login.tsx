@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import { ArrowRight } from 'lucide-react'
 import { errorMessage } from '../api/client'
 import { Button, Field, Notice, TextInput } from '../components/primitives'
+import { LinkStrand } from '../components/LinkStrand'
 import { useAuth } from '../state/auth-context'
 
 export function Login() {
@@ -24,50 +26,119 @@ export function Login() {
   }
 
   return (
-    <main className="flex min-h-svh flex-col items-center justify-center gap-5 bg-ink p-6">
-      <div className="flex items-center gap-2.5">
-        <span className="grid size-6 place-items-center rounded-[5px] bg-primary font-mono text-[11px] font-bold text-white">
-          MG
-        </span>
-        <span className="text-[15px] font-bold tracking-[0.14em] text-white">KUBEMG</span>
-      </div>
+    <main className="grid min-h-svh lg:grid-cols-[1.1fr_minmax(420px,0.9fr)]">
+      {/* The left half is the product in one picture: clusters dial out, and
+          everything an operator does travels back along those strands. */}
+      <section className="relative hidden flex-col justify-between overflow-hidden bg-rail p-10 lg:flex">
+        <div className="flex items-center gap-2.5">
+          <svg
+            viewBox="0 0 20 20"
+            aria-hidden="true"
+            className="size-5 text-accent"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+          >
+            <path d="M2.5 5.5h5.5M2.5 10h9.5M2.5 14.5h5.5" />
+            <circle cx="16" cy="10" r="2.1" fill="currentColor" stroke="none" />
+          </svg>
+          <span className="text-[16px] font-semibold tracking-[-0.02em]">
+            <span className="text-rail-fg">Kube</span>
+            <span className="text-accent">MG</span>
+          </span>
+        </div>
 
-      <form
-        onSubmit={handleSubmit}
-        className="flex w-full max-w-[340px] flex-col gap-3.5 rounded-panel border border-line bg-surface p-5 lift"
-      >
-        <Field label="Username" htmlFor="username">
-          <TextInput
-            id="username"
-            name="username"
-            autoComplete="username"
-            autoFocus
-            required
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-          />
-        </Field>
+        <div className="max-w-md">
+          <h1 className="text-[34px] leading-[1.1] font-semibold tracking-[-0.03em] text-rail-fg">
+            Clusters dial out.
+            <br />
+            Nothing dials in.
+          </h1>
+          <p className="mt-4 text-[14px] leading-relaxed text-rail-muted">
+            Every cluster holds an outbound tunnel to KubeMG. Access is issued here, kubectl traffic
+            is proxied under your own identity, and every call lands in the audit trail.
+          </p>
 
-        <Field label="Password" htmlFor="password">
-          <TextInput
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </Field>
+          <Convergence />
+        </div>
 
-        {error ? <Notice tone="error">{error}</Notice> : null}
+        <p className="font-mono text-[11.5px] text-rail-faint">
+          kubemg · centralized Kubernetes access
+        </p>
+      </section>
 
-        <Button type="submit" variant="primary" disabled={busy} className="mt-0.5 py-2">
-          {busy ? 'Signing in…' : 'Sign in'}
-        </Button>
-      </form>
+      <section className="flex items-center justify-center bg-bg p-6">
+        <div className="w-full max-w-[380px]">
+          <div className="mb-7 lg:hidden">
+            <span className="text-[20px] font-semibold tracking-[-0.02em]">
+              <span className="text-fg">Kube</span>
+              <span className="text-accent">MG</span>
+            </span>
+          </div>
 
-      <p className="text-[11.5px] text-ink-faint">Central access to your Kubernetes fleet</p>
+          <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Sign in</h2>
+          <p className="mt-1.5 text-[13px] text-muted">
+            Use the account your administrator issued.
+          </p>
+
+          <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
+            <Field label="Username" htmlFor="username">
+              <TextInput
+                id="username"
+                name="username"
+                autoComplete="username"
+                autoFocus
+                required
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+              />
+            </Field>
+
+            <Field label="Password" htmlFor="password">
+              <TextInput
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </Field>
+
+            {error ? <Notice tone="error">{error}</Notice> : null}
+
+            <Button type="submit" variant="primary" disabled={busy} className="mt-1 h-10 w-full">
+              {busy ? 'Signing in…' : 'Sign in'}
+              {busy ? null : <ArrowRight aria-hidden="true" className="size-4" />}
+            </Button>
+          </form>
+        </div>
+      </section>
     </main>
+  )
+}
+
+/**
+ * Convergence draws the shape of the product: several clusters, one node. The
+ * strands are the same device used throughout the console, so the login page
+ * teaches the reading before anyone needs it.
+ */
+function Convergence() {
+  return (
+    <div className="mt-10 flex items-center gap-4" aria-hidden="true">
+      <div className="flex flex-1 flex-col gap-3">
+        {(['live', 'live', 'idle'] as const).map((state, index) => (
+          <div key={index} className="flex items-center gap-3">
+            <span className="size-1.5 shrink-0 rounded-full bg-rail-faint" />
+            <LinkStrand state={state} className="flex-1" />
+          </div>
+        ))}
+      </div>
+      <span className="grid size-11 shrink-0 place-items-center rounded-card border border-accent-line bg-accent-soft font-mono text-[12px] font-semibold text-accent">
+        MG
+      </span>
+    </div>
   )
 }
