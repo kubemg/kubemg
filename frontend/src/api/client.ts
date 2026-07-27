@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { ALL_NAMESPACES } from '../lib/resources'
 import type {
   AgentInstall,
   AuditPage,
@@ -38,7 +39,16 @@ import type {
 
 const TOKEN_KEY = 'kubemg.token'
 
-const baseURL = `${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'}/api/v1`
+/*
+ * The API origin defaults to *this* page's origin, because a browser reaching
+ * KubeMG from another machine cannot resolve the server's own loopback address.
+ * Set VITE_API_BASE_URL only when the API genuinely lives on a different host;
+ * left empty, requests stay same-origin and the dev server (or a reverse proxy
+ * in front of the built assets) forwards /api to the backend.
+ */
+const apiOrigin = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '')
+
+const baseURL = `${apiOrigin}/api/v1`
 
 export const http = axios.create({ baseURL })
 
@@ -232,19 +242,12 @@ export async function fetchNamespaces(
   return { namespaces: data.namespaces ?? [], scoped: data.scoped ?? false }
 }
 
-export async function fetchWorkloads(clusterId: number, namespace: string): Promise<Workload[]> {
-  const { data } = await http.get<{ workloads: Workload[] }>(
-    `/clusters/${clusterId}/resources/workloads`,
-    { params: { namespace } },
-  )
-  return data.workloads ?? []
+export function fetchWorkloads(clusterId: number, namespace: string): Promise<Workload[]> {
+  return fetchList<Workload>(clusterId, 'workloads', 'workloads', namespace)
 }
 
-export async function fetchPods(clusterId: number, namespace: string): Promise<Pod[]> {
-  const { data } = await http.get<{ pods: Pod[] }>(`/clusters/${clusterId}/resources/pods`, {
-    params: { namespace },
-  })
-  return data.pods ?? []
+export function fetchPods(clusterId: number, namespace: string): Promise<Pod[]> {
+  return fetchList<Pod>(clusterId, 'pods', 'pods', namespace)
 }
 
 /*
@@ -258,6 +261,17 @@ function resourceURL(clusterId: number, resource: string): string {
   return `/clusters/${clusterId}/resources/${resource}`
 }
 
+/**
+ * scopeParams turns a namespace selection into query parameters. The
+ * all-namespaces sentinel becomes a flag rather than a namespace, because the
+ * backend resolves it against the caller's grant.
+ */
+function scopeParams(namespace: string | undefined): Record<string, string> | undefined {
+  if (!namespace) return undefined
+  if (namespace === ALL_NAMESPACES) return { all_namespaces: 'true' }
+  return { namespace }
+}
+
 async function fetchList<T>(
   clusterId: number,
   resource: string,
@@ -265,7 +279,7 @@ async function fetchList<T>(
   namespace?: string,
 ): Promise<T[]> {
   const { data } = await http.get<Record<string, T[]>>(resourceURL(clusterId, resource), {
-    params: namespace ? { namespace } : undefined,
+    params: scopeParams(namespace),
   })
   return data[key] ?? []
 }
@@ -282,7 +296,7 @@ async function fetchOptionalList<T>(
   namespace: string,
 ): Promise<OptionalList<T>> {
   const { data } = await http.get<Record<string, unknown>>(resourceURL(clusterId, resource), {
-    params: { namespace },
+    params: scopeParams(namespace),
   })
   return {
     items: (data[key] as T[] | undefined) ?? [],
@@ -389,7 +403,10 @@ export async function fetchPodLogs(
  * WebSocket, so they need the URL and the token in hand.
  */
 export function proxyURL(clusterId: number, path: string, protocol: 'http' | 'ws' = 'http'): string {
-  const base = `${baseURL}/clusters/${clusterId}/proxy${path.startsWith('/') ? path : `/${path}`}`
+  // fetch and WebSocket both need an absolute URL, so a same-origin baseURL is
+  // resolved against the page — which is also what makes wss: follow https:.
+  const origin = apiOrigin || window.location.origin
+  const base = `${origin}/api/v1/clusters/${clusterId}/proxy${path.startsWith('/') ? path : `/${path}`}`
   if (protocol === 'ws') {
     return base.replace(/^http/, 'ws')
   }

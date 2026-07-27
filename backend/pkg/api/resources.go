@@ -200,115 +200,125 @@ func (s *server) listWorkloads(c *gin.Context) {
 	if !ok {
 		return
 	}
-	namespace, ok := s.resourceNamespace(c, grant)
+	scope, ok := s.resourceScope(c, grant)
 	if !ok {
 		return
 	}
 
-	out, ok := s.collectWorkloads(c, user, cluster, grant, namespace, "")
+	out, ok := s.collectWorkloads(c, user, cluster, grant, scope, "")
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"workloads": out, "namespace": namespace})
+	c.JSON(http.StatusOK, gin.H{
+		"workloads":      out,
+		"namespace":      scope.Namespace,
+		"all_namespaces": scope.All,
+	})
 }
 
 // collectWorkloads reads the apps/v1 kinds into one list. An empty kind reads
 // all of them; naming one reads just that kind, which is what the per-kind
 // routes want.
 func (s *server) collectWorkloads(c *gin.Context, user *db.User, cluster *db.Cluster,
-	grant db.UserClusterAccess, namespace, only string,
+	grant db.UserClusterAccess, scope readScope, only string,
 ) ([]workloadView, bool) {
 	out := []workloadView{}
 	for _, kind := range workloadKinds {
 		if only != "" && kind.kind != only {
 			continue
 		}
-		var list struct {
-			Items []struct {
-				Metadata struct {
-					Name              string    `json:"name"`
-					Namespace         string    `json:"namespace"`
-					CreationTimestamp time.Time `json:"creationTimestamp"`
-				} `json:"metadata"`
-				Spec struct {
-					Replicas *int32 `json:"replicas"`
-					Template struct {
-						Spec struct {
-							Containers []struct {
-								Image string `json:"image"`
-							} `json:"containers"`
-						} `json:"spec"`
-					} `json:"template"`
-				} `json:"spec"`
-				Status struct {
-					ReadyReplicas          int32 `json:"readyReplicas"`
-					Replicas               int32 `json:"replicas"`
-					NumberReady            int32 `json:"numberReady"`
-					DesiredNumberScheduled int32 `json:"desiredNumberScheduled"`
-				} `json:"status"`
-			} `json:"items"`
-		}
-
-		path := fmt.Sprintf("/apis/apps/v1/namespaces/%s/%s", url.PathEscape(namespace), kind.resource)
-		if !s.fetch(c, user, cluster, grant, path, &list) {
-			return nil, false
-		}
-
-		for _, item := range list.Items {
-			view := workloadView{
-				Kind:      kind.kind,
-				Name:      item.Metadata.Name,
-				Namespace: item.Metadata.Namespace,
-				Created:   item.Metadata.CreationTimestamp,
+		for _, path := range scope.paths(resourceListPath{"/apis/apps/v1", kind.resource}) {
+			var list struct {
+				Items []struct {
+					Metadata struct {
+						Name              string    `json:"name"`
+						Namespace         string    `json:"namespace"`
+						CreationTimestamp time.Time `json:"creationTimestamp"`
+					} `json:"metadata"`
+					Spec struct {
+						Replicas *int32 `json:"replicas"`
+						Template struct {
+							Spec struct {
+								Containers []struct {
+									Image string `json:"image"`
+								} `json:"containers"`
+							} `json:"spec"`
+						} `json:"template"`
+					} `json:"spec"`
+					Status struct {
+						ReadyReplicas          int32 `json:"readyReplicas"`
+						Replicas               int32 `json:"replicas"`
+						NumberReady            int32 `json:"numberReady"`
+						DesiredNumberScheduled int32 `json:"desiredNumberScheduled"`
+					} `json:"status"`
+				} `json:"items"`
 			}
-			// A DaemonSet has no replica count; its scale is how many nodes it
-			// is meant to be on.
-			if kind.kind == "DaemonSet" {
-				view.Ready = item.Status.NumberReady
-				view.Desired = item.Status.DesiredNumberScheduled
-			} else {
-				view.Ready = item.Status.ReadyReplicas
-				view.Desired = item.Status.Replicas
-				if item.Spec.Replicas != nil {
-					view.Desired = *item.Spec.Replicas
+
+			if !s.fetch(c, user, cluster, grant, path, &list) {
+				return nil, false
+			}
+
+			for _, item := range list.Items {
+				view := workloadView{
+					Kind:      kind.kind,
+					Name:      item.Metadata.Name,
+					Namespace: item.Metadata.Namespace,
+					Created:   item.Metadata.CreationTimestamp,
 				}
+				// A DaemonSet has no replica count; its scale is how many nodes
+				// it is meant to be on.
+				if kind.kind == "DaemonSet" {
+					view.Ready = item.Status.NumberReady
+					view.Desired = item.Status.DesiredNumberScheduled
+				} else {
+					view.Ready = item.Status.ReadyReplicas
+					view.Desired = item.Status.Replicas
+					if item.Spec.Replicas != nil {
+						view.Desired = *item.Spec.Replicas
+					}
+				}
+				for _, container := range item.Spec.Template.Spec.Containers {
+					view.Images = append(view.Images, container.Image)
+				}
+				out = append(out, view)
 			}
-			for _, container := range item.Spec.Template.Spec.Containers {
-				view.Images = append(view.Images, container.Image)
-			}
-			out = append(out, view)
 		}
 	}
 
-	slices.SortFunc(out, func(a, b workloadView) int { return strings.Compare(a.Name, b.Name) })
+	sortResources(out)
 	return out, true
 }
 
-// listPods returns the pods in a namespace, flattened to what a list view needs.
+// listPods returns the pods a scope covers, flattened to what a list view needs.
 func (s *server) listPods(c *gin.Context) {
 	user, cluster, grant, ok := s.resourceCluster(c)
 	if !ok {
 		return
 	}
-	namespace, ok := s.resourceNamespace(c, grant)
+	scope, ok := s.resourceScope(c, grant)
 	if !ok {
 		return
 	}
 
-	var list struct {
-		Items []podObject `json:"items"`
-	}
-	path := fmt.Sprintf("/api/v1/namespaces/%s/pods", url.PathEscape(namespace))
-	if !s.fetch(c, user, cluster, grant, path, &list) {
-		return
+	out := []podView{}
+	for _, path := range scope.paths(resourceListPath{"/api/v1", "pods"}) {
+		var list struct {
+			Items []podObject `json:"items"`
+		}
+		if !s.fetch(c, user, cluster, grant, path, &list) {
+			return
+		}
+		for _, item := range list.Items {
+			out = append(out, item.view())
+		}
 	}
 
-	out := make([]podView, 0, len(list.Items))
-	for _, item := range list.Items {
-		out = append(out, item.view())
-	}
-	slices.SortFunc(out, func(a, b podView) int { return strings.Compare(a.Name, b.Name) })
-	c.JSON(http.StatusOK, gin.H{"pods": out, "namespace": namespace})
+	sortResources(out)
+	c.JSON(http.StatusOK, gin.H{
+		"pods":           out,
+		"namespace":      scope.Namespace,
+		"all_namespaces": scope.All,
+	})
 }
 
 // showPod returns one pod in full.
@@ -393,6 +403,91 @@ func (s *server) podLogs(c *gin.Context) {
 	// Logs are plain text, not JSON, so they are handed back as-is.
 	c.JSON(http.StatusOK, gin.H{"log": string(resp.Body), "tail": tail})
 }
+
+/*
+ * A list read covers either one namespace or every namespace the caller may see.
+ * "Every" means two different reads: an unscoped grant takes one cluster-wide
+ * path, and a namespace-scoped grant reads its granted namespaces one at a time
+ * and the results are merged. The second shape is what keeps the scope intact —
+ * a cluster-wide list would return objects from namespaces the grant does not
+ * cover, and the proxy refuses it for exactly that reason.
+ */
+
+// maxFanOut caps how many namespaces one all-namespaces read will visit. Each is
+// a real call down the tunnel, so a grant covering half a cluster is asked to
+// pick a namespace instead of paying for fifty round trips per list.
+const maxFanOut = 25
+
+type readScope struct {
+	// Namespaces are read one at a time and merged. Empty means a single
+	// cluster-wide read.
+	Namespaces []string
+	// Namespace is the one namespace being read, empty when the read covers all.
+	Namespace string
+	// All reports a read across every namespace the caller may see.
+	All bool
+}
+
+// paths renders the API paths this scope reads for a given resource.
+func (r readScope) paths(path resourceListPath) []string {
+	if len(r.Namespaces) == 0 {
+		return []string{path.clusterWide()}
+	}
+
+	out := make([]string, 0, len(r.Namespaces))
+	for _, namespace := range r.Namespaces {
+		out = append(out, path.namespaced(namespace))
+	}
+	return out
+}
+
+// resourceScope resolves what a list read covers: `all_namespaces=true` for
+// everything the caller may see, otherwise the single namespace rules in
+// resourceNamespace.
+func (s *server) resourceScope(c *gin.Context, grant db.UserClusterAccess) (readScope, bool) {
+	if c.Query("all_namespaces") != "true" {
+		namespace, ok := s.resourceNamespace(c, grant)
+		if !ok {
+			return readScope{}, false
+		}
+		return readScope{Namespaces: []string{namespace}, Namespace: namespace}, true
+	}
+
+	allowed := grant.NamespaceList()
+	if len(allowed) == 0 {
+		return readScope{All: true}, true
+	}
+	if len(allowed) > maxFanOut {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf(
+				"your grant covers %d namespaces, which is more than this view reads at once; pick one namespace",
+				len(allowed)),
+		})
+		return readScope{}, false
+	}
+	return readScope{Namespaces: allowed, All: true}, true
+}
+
+// namedResource is a normalised list entry that knows where it sorts.
+type namedResource interface {
+	sortKey() (namespace, name string)
+}
+
+// sortResources orders a list by namespace then name — how a multi-namespace
+// list reads, and identical to sorting by name inside a single one.
+func sortResources[T namedResource](items []T) {
+	slices.SortFunc(items, func(a, b T) int {
+		aNamespace, aName := a.sortKey()
+		bNamespace, bName := b.sortKey()
+		if order := strings.Compare(aNamespace, bNamespace); order != 0 {
+			return order
+		}
+		return strings.Compare(aName, bName)
+	})
+}
+
+func (v podView) sortKey() (string, string)      { return v.Namespace, v.Name }
+func (v workloadView) sortKey() (string, string) { return v.Namespace, v.Name }
 
 // resourceNamespace reads the requested namespace and checks it against the
 // caller's grant. A scoped grant with no namespace given defaults to its first

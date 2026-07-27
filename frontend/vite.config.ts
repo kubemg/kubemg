@@ -2,7 +2,38 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+/*
+ * The dev server proxies the backend so the console is reachable from another
+ * machine over a single port: the browser only ever talks to the origin it
+ * loaded the page from, which is what makes external access work without baking
+ * a hostname into the bundle. ws:true is required — the in-page terminal and
+ * followed logs are WebSocket upgrades under /api.
+ */
+const apiTarget = process.env.VITE_DEV_PROXY_TARGET ?? 'http://localhost:8080'
+
+/*
+ * Vite rejects a Host header it does not recognise, which is why reaching the
+ * dev server by hostname 404s where an IP works. Name the hostnames the console
+ * is served under in VITE_ALLOWED_HOSTS; unset accepts any, which is fine for a
+ * dev stack but should be narrowed anywhere it is exposed for real.
+ */
+const allowedHosts = process.env.VITE_ALLOWED_HOSTS
+  ? process.env.VITE_ALLOWED_HOSTS.split(',').map((host) => host.trim()).filter(Boolean)
+  : true
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  server: {
+    host: true,
+    allowedHosts,
+    proxy: {
+      '/api': { target: apiTarget, changeOrigin: true, ws: true },
+      '/health': { target: apiTarget, changeOrigin: true },
+      // The agent tunnel and the unauthenticated install package, so a target
+      // cluster can be pointed at the address an operator already uses.
+      '/agent': { target: apiTarget, changeOrigin: true, ws: true },
+      '/install': { target: apiTarget, changeOrigin: true },
+    },
+  },
 })

@@ -40,7 +40,7 @@ services:
       - KUBEMG_ADMIN_USERNAME=admin
       - KUBEMG_ADMIN_PASSWORD=admin
       - KUBEMG_SA_NAMESPACE=kubemg-system
-      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://100.112.67.6:5173
       # Baked into every generated agent install command, so it has to be the
       # address the target cluster can reach — not the container's own.
       - KUBEMG_PUBLIC_URL=http://localhost:8080
@@ -67,7 +67,10 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - VITE_API_BASE_URL=http://localhost:8080
+      # No VITE_API_BASE_URL: the SPA calls its own origin and vite proxies /api
+      # to the backend, so opening the console from another machine works.
+      - VITE_DEV_PROXY_TARGET=http://backend:8080
+      - VITE_API_BASE_URL=http://100.112.67.6:8080
     depends_on:
       - backend
 

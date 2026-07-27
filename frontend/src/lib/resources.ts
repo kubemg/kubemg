@@ -27,6 +27,14 @@ export type ResourceKey =
 
 export type CategoryId = 'workloads' | 'networking' | 'storage' | 'custom' | 'cluster'
 
+/**
+ * The namespace selection that means "everything I may see". A namespace cannot
+ * be named `*`, so it can never collide with a real one. The backend turns it
+ * into one cluster-wide read for an unscoped grant, or one read per granted
+ * namespace for a scoped one — never a cluster-wide read past a scope.
+ */
+export const ALL_NAMESPACES = '*'
+
 export interface ResourceItem {
   key: ResourceKey
   label: string
