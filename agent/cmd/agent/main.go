@@ -57,6 +57,10 @@ func run(logger *slog.Logger, listen, apiURL string, insecure bool) error {
 		Version:    version,
 		Kube:       client,
 		Logger:     logger,
+		// A self-signed or internal-CA bastion is pinned rather than trusted
+		// blindly; the install manifest carries the PEM in the agent's Secret.
+		CAPEM:              os.Getenv("KUBEMG_BASTION_CA"),
+		InsecureSkipVerify: envBool("KUBEMG_BASTION_INSECURE_SKIP_VERIFY"),
 	})
 	if err != nil {
 		return err

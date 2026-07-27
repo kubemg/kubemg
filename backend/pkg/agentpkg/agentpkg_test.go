@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/base64"
 	"io"
 	"strings"
 	"testing"
@@ -166,5 +167,49 @@ func TestQuoteEscapesEmbeddedQuotes(t *testing.T) {
 	got := quote(`a"b\c`)
 	if want := `"a\"b\\c"`; got != want {
 		t.Fatalf("quote() = %s, want %s", got, want)
+	}
+}
+
+// A self-signed bastion is only reachable if its certificate rides along in the
+// install package: the agent has nothing else to verify the tunnel against.
+func TestRenderCarriesTheBastionCA(t *testing.T) {
+	const pemBlock = "-----BEGIN CERTIFICATE-----\nMIIBkTCB+w==\n-----END CERTIFICATE-----"
+
+	files, err := Render(Options{
+		BastionURL:   "https://kubemg.example.com:8443",
+		ClusterToken: "kmg_token",
+		BastionCA:    pemBlock,
+	})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+
+	secret := files["secret.yaml"]
+	encoded := base64.StdEncoding.EncodeToString([]byte(pemBlock + "\n"))
+	if !strings.Contains(secret, "bastion-ca: "+encoded) {
+		t.Fatalf("secret does not carry the CA:\n%s", secret)
+	}
+	// The PEM must never land raw in a YAML scalar; it is multi-line.
+	if strings.Contains(secret, "BEGIN CERTIFICATE") {
+		t.Fatalf("CA was embedded unencoded:\n%s", secret)
+	}
+}
+
+// A bastion behind a publicly-trusted certificate pins nothing, and the
+// manifest keeps one shape either way rather than sprouting a conditional key.
+func TestRenderWithoutCALeavesTheKeyEmpty(t *testing.T) {
+	files, err := Render(Options{
+		BastionURL:   "https://kubemg.example.com",
+		ClusterToken: "kmg_token",
+	})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if !strings.Contains(files["secret.yaml"], "bastion-ca: \n") &&
+		!strings.Contains(files["secret.yaml"], "bastion-ca:\n") {
+		t.Fatalf("expected an empty bastion-ca key:\n%s", files["secret.yaml"])
+	}
+	if strings.Contains(files["secret.yaml"], "__BASTION_CA__") {
+		t.Fatal("placeholder survived rendering")
 	}
 }

@@ -98,6 +98,11 @@ type Options struct {
 	// AgentImage and AgentNamespace parameterise the generated manifests.
 	AgentImage     string
 	AgentNamespace string
+	// BastionCA is the certificate an agent has to trust to dial this server,
+	// baked into every rendered install package. Set it when the bastion serves
+	// a certificate the public CAs do not vouch for — a self-signed one — and
+	// leave it empty otherwise.
+	BastionCA string
 	// AuditRetentionDays is the boot-time default retention window, overridable
 	// at runtime from the Settings page. Zero falls back to
 	// defaultAuditRetentionDays.
@@ -127,6 +132,7 @@ type server struct {
 	publicURL          string
 	agentImage         string
 	agentNamespace     string
+	bastionCA          string
 	auditRetentionDays int
 	logger             *slog.Logger
 }
@@ -168,6 +174,7 @@ func NewRouter(opts Options) *gin.Engine {
 		publicURL:          publicURL,
 		agentImage:         opts.AgentImage,
 		agentNamespace:     opts.AgentNamespace,
+		bastionCA:          opts.BastionCA,
 		auditRetentionDays: retention,
 		logger:             opts.Logger,
 	}

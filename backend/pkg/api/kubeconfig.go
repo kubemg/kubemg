@@ -196,6 +196,13 @@ func (s *server) agentKubeconfig(
 		Username:    user.Username,
 		Token:       token,
 		Namespace:   namespace,
+		// In agent mode the "cluster" kubectl dials is KubeMG, so the CA it has
+		// to trust is KubeMG's own — not the target cluster's. Without this a
+		// self-signed or internal-PKI bastion hands out kubeconfigs that fail
+		// on x509 at the first call, which the operator can only fix by editing
+		// the file or turning verification off. Empty when the bastion is
+		// publicly trusted, which is what the system roots are for.
+		CAData: []byte(s.bastionCA),
 	}
 	kubeconfig, err := k8s.BuildKubeconfig(input)
 	if err != nil {

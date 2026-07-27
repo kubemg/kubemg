@@ -42,6 +42,15 @@ spec:
                 secretKeyRef:
                   name: kubemg-agent
                   key: cluster-token
+            # A self-signed bastion is trusted by pinning its certificate here,
+            # which is a far better answer than an insecure-skip-verify switch
+            # someone forgets to turn off.
+            - name: KUBEMG_BASTION_CA
+              valueFrom:
+                secretKeyRef:
+                  name: kubemg-agent
+                  key: bastion-ca
+                  optional: true
           ports:
             - name: health
               containerPort: 8081

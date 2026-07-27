@@ -53,6 +53,34 @@ type Config struct {
 	// background pruner drops them. Like the settings above it is only the
 	// boot-time default; an operator overrides it from the Settings page.
 	AuditRetentionDays int
+	// TLS is how the bastion terminates HTTPS. It is not decoration: client-go
+	// refuses to send a bearer token over plain http, so kubectl cannot use the
+	// proxy at all without it.
+	TLS TLS
+}
+
+// TLS configures the bastion's own listener.
+type TLS struct {
+	Enabled  bool
+	CertFile string
+	KeyFile  string
+	// SelfSigned mints a certificate when CertFile/KeyFile do not exist yet,
+	// so a fresh install serves HTTPS without an operator having to produce
+	// one first. A real deployment drops its own files in and this does
+	// nothing.
+	SelfSigned bool
+	// Hosts are extra SANs for a generated certificate. The public URL's host
+	// and loopback are always included.
+	Hosts []string
+	// AgentCABundle is a path to the PEM chain agents must trust to dial this
+	// server. It is read independently of Enabled, because the certificate
+	// agents see is not always the one this process serves: an ingress or load
+	// balancer in front of KubeMG terminates TLS with its own.
+	//
+	// Set it whenever that chain is not one the public CAs vouch for — an
+	// internal corporate PKI is the common case, and it is invisible to the
+	// self-signed detection that covers the generated certificate.
+	AgentCABundle string
 }
 
 // Load reads configuration from the environment, applying development defaults.
@@ -80,7 +108,32 @@ func Load() Config {
 		AgentImage:     env("KUBEMG_AGENT_IMAGE", agentpkg.DefaultImage),
 		AgentNamespace:     env("KUBEMG_AGENT_NAMESPACE", agentpkg.DefaultNamespace),
 		AuditRetentionDays: envInt("KUBEMG_AUDIT_RETENTION_DAYS", 30),
+		TLS: TLS{
+			Enabled:  envBool("KUBEMG_TLS_ENABLED", false),
+			CertFile: env("KUBEMG_TLS_CERT_FILE", "/etc/kubemg/tls/tls.crt"),
+			KeyFile:  env("KUBEMG_TLS_KEY_FILE", "/etc/kubemg/tls/tls.key"),
+			// Defaulting this on only matters when TLS is enabled at all, and
+			// there it is the difference between a server that starts and one
+			// that stops on a missing file nobody has been asked for yet.
+			SelfSigned:    envBool("KUBEMG_TLS_SELF_SIGNED", true),
+			Hosts:         envList("KUBEMG_TLS_HOSTS", nil),
+			AgentCABundle: env("KUBEMG_AGENT_CA_BUNDLE", ""),
+		},
 	}
+}
+
+// envBool reads a boolean. Anything unparseable falls back rather than failing
+// the boot, in keeping with envInt above.
+func envBool(key string, fallback bool) bool {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return fallback
+	}
+	return value
 }
 
 func env(key, fallback string) string {

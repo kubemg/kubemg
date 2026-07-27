@@ -254,3 +254,19 @@ func TestCheckAgentClusterUsesTheTunnelNotTheAPIServer(t *testing.T) {
 		t.Fatal("an agent-mode cluster must not be probed over the direct path")
 	}
 }
+
+// kubectl fetches a manifest URL over the operator's own trust store, which a
+// self-signed bastion is not in — and it has no flag for that hop. The command
+// an operator pastes has to work, so the fetch moves to curl.
+func TestApplyCommandFetchesInsecurelyWhenSelfSigned(t *testing.T) {
+	const url = "https://kubemg.example.com:8443/install/kmg_t/agent.yaml"
+
+	if got := applyCommand(url, false); got != "kubectl apply -f "+url {
+		t.Fatalf("a publicly-trusted bastion needs no curl hop: %q", got)
+	}
+
+	got := applyCommand(url, true)
+	if !strings.Contains(got, "curl -sfLk "+url) || !strings.Contains(got, "kubectl apply -f -") {
+		t.Fatalf("unexpected self-signed apply command: %q", got)
+	}
+}

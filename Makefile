@@ -1,7 +1,7 @@
 GO_IMAGE   ?= golang:1.26-alpine
 NODE_IMAGE ?= node:22-alpine
 
-AGENT_VERSION ?= 0.1.0
+AGENT_VERSION ?= 0.2.0
 AGENT_REPO    ?= docker.io/ozkanpoyrazoglu/kubemg-agent
 AGENT_IMAGE   ?= $(AGENT_REPO):$(AGENT_VERSION)
 
