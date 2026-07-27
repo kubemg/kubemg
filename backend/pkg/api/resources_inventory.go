@@ -40,6 +40,28 @@ func (p resourceListPath) clusterWide() string {
 	return fmt.Sprintf("%s/%s", p.group, p.resource)
 }
 
+// candidates renders one candidate group per namespace a scope reads: the same
+// list at every API version worth trying, in preference order.
+func (r readScope) candidates(versions ...resourceListPath) [][]string {
+	if len(r.Namespaces) == 0 {
+		group := make([]string, 0, len(versions))
+		for _, version := range versions {
+			group = append(group, version.clusterWide())
+		}
+		return [][]string{group}
+	}
+
+	out := make([][]string, 0, len(r.Namespaces))
+	for _, namespace := range r.Namespaces {
+		group := make([]string, 0, len(versions))
+		for _, version := range versions {
+			group = append(group, version.namespaced(namespace))
+		}
+		out = append(out, group)
+	}
+	return out
+}
+
 // listMeta is the metadata every normalised list carries.
 type listMeta struct {
 	Name      string    `json:"name"`
@@ -59,6 +81,10 @@ type objectMeta struct {
 func (m objectMeta) meta() listMeta {
 	return listMeta{Name: m.Name, Namespace: m.Namespace, Created: m.CreationTimestamp}
 }
+
+// Every normalised view embeds listMeta, so every list sorts by namespace then
+// name without each handler saying so.
+func (m listMeta) sortKey() (string, string) { return m.Namespace, m.Name }
 
 // requireClusterScope refuses a cluster-scoped read for a namespace-scoped
 // grant. The proxy would refuse it too — it is the enforcement point — but a
@@ -99,11 +125,6 @@ func (s *server) fetchOptional(c *gin.Context, user *db.User, cluster *db.Cluste
 	return false, true
 }
 
-// sortByName orders a list the way every Kubernetes list view is read.
-func sortByName[T any](items []T, name func(T) string) {
-	slices.SortFunc(items, func(a, b T) int { return strings.Compare(name(a), name(b)) })
-}
-
 /* ------------------------------------------------------------- workloads --- */
 
 type jobView struct {
@@ -132,16 +153,20 @@ func (s *server) listWorkloadsOf(kind string) gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		namespace, ok := s.resourceNamespace(c, grant)
+		scope, ok := s.resourceScope(c, grant)
 		if !ok {
 			return
 		}
 
-		out, ok := s.collectWorkloads(c, user, cluster, grant, namespace, kind)
+		out, ok := s.collectWorkloads(c, user, cluster, grant, scope, kind)
 		if !ok {
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"workloads": out, "namespace": namespace})
+		c.JSON(http.StatusOK, gin.H{
+			"workloads":      out,
+			"namespace":      scope.Namespace,
+			"all_namespaces": scope.All,
+		})
 	}
 }
 
@@ -150,81 +175,84 @@ func (s *server) listJobs(c *gin.Context) {
 	if !ok {
 		return
 	}
-	namespace, ok := s.resourceNamespace(c, grant)
+	scope, ok := s.resourceScope(c, grant)
 	if !ok {
 		return
 	}
 
-	var list struct {
-		Items []struct {
-			Metadata objectMeta `json:"metadata"`
-			Spec     struct {
-				Completions *int32 `json:"completions"`
-				Suspend     *bool  `json:"suspend"`
-				Template    struct {
-					Spec struct {
-						Containers []struct {
-							Image string `json:"image"`
-						} `json:"containers"`
-					} `json:"spec"`
-				} `json:"template"`
-			} `json:"spec"`
-			Status struct {
-				Active     int32 `json:"active"`
-				Succeeded  int32 `json:"succeeded"`
-				Failed     int32 `json:"failed"`
-				Conditions []struct {
-					Type   string `json:"type"`
-					Status string `json:"status"`
-				} `json:"conditions"`
-			} `json:"status"`
-		} `json:"items"`
-	}
-
-	path := resourceListPath{"/apis/batch/v1", "jobs"}.namespaced(namespace)
-	if !s.fetch(c, user, cluster, grant, path, &list) {
-		return
-	}
-
-	out := make([]jobView, 0, len(list.Items))
-	for _, item := range list.Items {
-		view := jobView{
-			listMeta:  item.Metadata.meta(),
-			Succeeded: item.Status.Succeeded,
-			Failed:    item.Status.Failed,
-			Active:    item.Status.Active,
-			// A job with no completions target runs exactly once.
-			Completions: 1,
+	out := []jobView{}
+	for _, path := range scope.paths(resourceListPath{"/apis/batch/v1", "jobs"}) {
+		var list struct {
+			Items []struct {
+				Metadata objectMeta `json:"metadata"`
+				Spec     struct {
+					Completions *int32 `json:"completions"`
+					Suspend     *bool  `json:"suspend"`
+					Template    struct {
+						Spec struct {
+							Containers []struct {
+								Image string `json:"image"`
+							} `json:"containers"`
+						} `json:"spec"`
+					} `json:"template"`
+				} `json:"spec"`
+				Status struct {
+					Active     int32 `json:"active"`
+					Succeeded  int32 `json:"succeeded"`
+					Failed     int32 `json:"failed"`
+					Conditions []struct {
+						Type   string `json:"type"`
+						Status string `json:"status"`
+					} `json:"conditions"`
+				} `json:"status"`
+			} `json:"items"`
 		}
-		if item.Spec.Completions != nil {
-			view.Completions = *item.Spec.Completions
-		}
-		for _, container := range item.Spec.Template.Spec.Containers {
-			view.Images = append(view.Images, container.Image)
+		if !s.fetch(c, user, cluster, grant, path, &list) {
+			return
 		}
 
-		view.State = "Running"
-		switch {
-		case item.Spec.Suspend != nil && *item.Spec.Suspend:
-			view.State = "Suspended"
-		case item.Status.Active > 0:
-			view.State = "Running"
-		default:
-			view.State = "Pending"
-		}
-		for _, condition := range item.Status.Conditions {
-			if condition.Status != "True" {
-				continue
+		for _, item := range list.Items {
+			view := jobView{
+				listMeta:  item.Metadata.meta(),
+				Succeeded: item.Status.Succeeded,
+				Failed:    item.Status.Failed,
+				Active:    item.Status.Active,
+				// A job with no completions target runs exactly once.
+				Completions: 1,
 			}
-			if condition.Type == "Complete" || condition.Type == "Failed" {
-				view.State = condition.Type
+			if item.Spec.Completions != nil {
+				view.Completions = *item.Spec.Completions
 			}
+			for _, container := range item.Spec.Template.Spec.Containers {
+				view.Images = append(view.Images, container.Image)
+			}
+
+			switch {
+			case item.Spec.Suspend != nil && *item.Spec.Suspend:
+				view.State = "Suspended"
+			case item.Status.Active > 0:
+				view.State = "Running"
+			default:
+				view.State = "Pending"
+			}
+			for _, condition := range item.Status.Conditions {
+				if condition.Status != "True" {
+					continue
+				}
+				if condition.Type == "Complete" || condition.Type == "Failed" {
+					view.State = condition.Type
+				}
+			}
+			out = append(out, view)
 		}
-		out = append(out, view)
 	}
 
-	sortByName(out, func(v jobView) string { return v.Name })
-	c.JSON(http.StatusOK, gin.H{"jobs": out, "namespace": namespace})
+	sortResources(out)
+	c.JSON(http.StatusOK, gin.H{
+		"jobs":           out,
+		"namespace":      scope.Namespace,
+		"all_namespaces": scope.All,
+	})
 }
 
 func (s *server) listCronJobs(c *gin.Context) {
@@ -232,46 +260,50 @@ func (s *server) listCronJobs(c *gin.Context) {
 	if !ok {
 		return
 	}
-	namespace, ok := s.resourceNamespace(c, grant)
+	scope, ok := s.resourceScope(c, grant)
 	if !ok {
 		return
 	}
 
-	var list struct {
-		Items []struct {
-			Metadata objectMeta `json:"metadata"`
-			Spec     struct {
-				Schedule string `json:"schedule"`
-				Suspend  *bool  `json:"suspend"`
-			} `json:"spec"`
-			Status struct {
-				Active           []struct{} `json:"active"`
-				LastScheduleTime *time.Time `json:"lastScheduleTime"`
-			} `json:"status"`
-		} `json:"items"`
-	}
-
-	path := resourceListPath{"/apis/batch/v1", "cronjobs"}.namespaced(namespace)
-	if !s.fetch(c, user, cluster, grant, path, &list) {
-		return
-	}
-
-	out := make([]cronJobView, 0, len(list.Items))
-	for _, item := range list.Items {
-		view := cronJobView{
-			listMeta:     item.Metadata.meta(),
-			Schedule:     item.Spec.Schedule,
-			Active:       len(item.Status.Active),
-			LastSchedule: item.Status.LastScheduleTime,
+	out := []cronJobView{}
+	for _, path := range scope.paths(resourceListPath{"/apis/batch/v1", "cronjobs"}) {
+		var list struct {
+			Items []struct {
+				Metadata objectMeta `json:"metadata"`
+				Spec     struct {
+					Schedule string `json:"schedule"`
+					Suspend  *bool  `json:"suspend"`
+				} `json:"spec"`
+				Status struct {
+					Active           []struct{} `json:"active"`
+					LastScheduleTime *time.Time `json:"lastScheduleTime"`
+				} `json:"status"`
+			} `json:"items"`
 		}
-		if item.Spec.Suspend != nil {
-			view.Suspended = *item.Spec.Suspend
+		if !s.fetch(c, user, cluster, grant, path, &list) {
+			return
 		}
-		out = append(out, view)
+
+		for _, item := range list.Items {
+			view := cronJobView{
+				listMeta:     item.Metadata.meta(),
+				Schedule:     item.Spec.Schedule,
+				Active:       len(item.Status.Active),
+				LastSchedule: item.Status.LastScheduleTime,
+			}
+			if item.Spec.Suspend != nil {
+				view.Suspended = *item.Spec.Suspend
+			}
+			out = append(out, view)
+		}
 	}
 
-	sortByName(out, func(v cronJobView) string { return v.Name })
-	c.JSON(http.StatusOK, gin.H{"cronjobs": out, "namespace": namespace})
+	sortResources(out)
+	c.JSON(http.StatusOK, gin.H{
+		"cronjobs":       out,
+		"namespace":      scope.Namespace,
+		"all_namespaces": scope.All,
+	})
 }
 
 /* ------------------------------------------------------------ networking --- */
@@ -306,75 +338,80 @@ func (s *server) listServices(c *gin.Context) {
 	if !ok {
 		return
 	}
-	namespace, ok := s.resourceNamespace(c, grant)
+	scope, ok := s.resourceScope(c, grant)
 	if !ok {
 		return
 	}
 
-	var list struct {
-		Items []struct {
-			Metadata objectMeta `json:"metadata"`
-			Spec     struct {
-				Type        string   `json:"type"`
-				ClusterIP   string   `json:"clusterIP"`
-				ExternalIPs []string `json:"externalIPs"`
-				Ports       []struct {
-					Name     string `json:"name"`
-					Port     int32  `json:"port"`
-					NodePort int32  `json:"nodePort"`
-					Protocol string `json:"protocol"`
-				} `json:"ports"`
-			} `json:"spec"`
-			Status struct {
-				LoadBalancer struct {
-					Ingress []struct {
-						IP       string `json:"ip"`
-						Hostname string `json:"hostname"`
-					} `json:"ingress"`
-				} `json:"loadBalancer"`
-			} `json:"status"`
-		} `json:"items"`
+	out := []serviceView{}
+	for _, path := range scope.paths(resourceListPath{"/api/v1", "services"}) {
+		var list struct {
+			Items []struct {
+				Metadata objectMeta `json:"metadata"`
+				Spec     struct {
+					Type        string   `json:"type"`
+					ClusterIP   string   `json:"clusterIP"`
+					ExternalIPs []string `json:"externalIPs"`
+					Ports       []struct {
+						Name     string `json:"name"`
+						Port     int32  `json:"port"`
+						NodePort int32  `json:"nodePort"`
+						Protocol string `json:"protocol"`
+					} `json:"ports"`
+				} `json:"spec"`
+				Status struct {
+					LoadBalancer struct {
+						Ingress []struct {
+							IP       string `json:"ip"`
+							Hostname string `json:"hostname"`
+						} `json:"ingress"`
+					} `json:"loadBalancer"`
+				} `json:"status"`
+			} `json:"items"`
+		}
+		if !s.fetch(c, user, cluster, grant, path, &list) {
+			return
+		}
+
+		for _, item := range list.Items {
+			view := serviceView{
+				listMeta:    item.Metadata.meta(),
+				Type:        item.Spec.Type,
+				ClusterIP:   item.Spec.ClusterIP,
+				ExternalIPs: item.Spec.ExternalIPs,
+			}
+			// A LoadBalancer's assigned address matters more than the field it
+			// was asked for, so both end up in the same column.
+			for _, ingress := range item.Status.LoadBalancer.Ingress {
+				if ingress.IP != "" {
+					view.ExternalIPs = append(view.ExternalIPs, ingress.IP)
+				}
+				if ingress.Hostname != "" {
+					view.ExternalIPs = append(view.ExternalIPs, ingress.Hostname)
+				}
+			}
+			for _, port := range item.Spec.Ports {
+				protocol := port.Protocol
+				if protocol == "" {
+					protocol = "TCP"
+				}
+				if port.NodePort > 0 {
+					view.Ports = append(view.Ports,
+						fmt.Sprintf("%d:%d/%s", port.Port, port.NodePort, protocol))
+					continue
+				}
+				view.Ports = append(view.Ports, fmt.Sprintf("%d/%s", port.Port, protocol))
+			}
+			out = append(out, view)
+		}
 	}
 
-	path := resourceListPath{"/api/v1", "services"}.namespaced(namespace)
-	if !s.fetch(c, user, cluster, grant, path, &list) {
-		return
-	}
-
-	out := make([]serviceView, 0, len(list.Items))
-	for _, item := range list.Items {
-		view := serviceView{
-			listMeta:    item.Metadata.meta(),
-			Type:        item.Spec.Type,
-			ClusterIP:   item.Spec.ClusterIP,
-			ExternalIPs: item.Spec.ExternalIPs,
-		}
-		// A LoadBalancer's assigned address matters more than the field it was
-		// asked for, so both end up in the same column.
-		for _, ingress := range item.Status.LoadBalancer.Ingress {
-			if ingress.IP != "" {
-				view.ExternalIPs = append(view.ExternalIPs, ingress.IP)
-			}
-			if ingress.Hostname != "" {
-				view.ExternalIPs = append(view.ExternalIPs, ingress.Hostname)
-			}
-		}
-		for _, port := range item.Spec.Ports {
-			protocol := port.Protocol
-			if protocol == "" {
-				protocol = "TCP"
-			}
-			if port.NodePort > 0 {
-				view.Ports = append(view.Ports, fmt.Sprintf("%d:%d/%s", port.Port, port.NodePort, protocol))
-				continue
-			}
-			view.Ports = append(view.Ports, fmt.Sprintf("%d/%s", port.Port, protocol))
-		}
-		out = append(out, view)
-	}
-
-	sortByName(out, func(v serviceView) string { return v.Name })
-	c.JSON(http.StatusOK, gin.H{"services": out, "namespace": namespace})
+	sortResources(out)
+	c.JSON(http.StatusOK, gin.H{
+		"services":       out,
+		"namespace":      scope.Namespace,
+		"all_namespaces": scope.All,
+	})
 }
 
 func (s *server) listIngresses(c *gin.Context) {
@@ -382,61 +419,65 @@ func (s *server) listIngresses(c *gin.Context) {
 	if !ok {
 		return
 	}
-	namespace, ok := s.resourceNamespace(c, grant)
+	scope, ok := s.resourceScope(c, grant)
 	if !ok {
 		return
 	}
 
-	var list struct {
-		Items []struct {
-			Metadata objectMeta `json:"metadata"`
-			Spec     struct {
-				IngressClassName string `json:"ingressClassName"`
-				Rules            []struct {
-					Host string `json:"host"`
-				} `json:"rules"`
-			} `json:"spec"`
-			Status struct {
-				LoadBalancer struct {
-					Ingress []struct {
-						IP       string `json:"ip"`
-						Hostname string `json:"hostname"`
-					} `json:"ingress"`
-				} `json:"loadBalancer"`
-			} `json:"status"`
-		} `json:"items"`
+	out := []ingressView{}
+	for _, path := range scope.paths(resourceListPath{"/apis/networking.k8s.io/v1", "ingresses"}) {
+		var list struct {
+			Items []struct {
+				Metadata objectMeta `json:"metadata"`
+				Spec     struct {
+					IngressClassName string `json:"ingressClassName"`
+					Rules            []struct {
+						Host string `json:"host"`
+					} `json:"rules"`
+				} `json:"spec"`
+				Status struct {
+					LoadBalancer struct {
+						Ingress []struct {
+							IP       string `json:"ip"`
+							Hostname string `json:"hostname"`
+						} `json:"ingress"`
+					} `json:"loadBalancer"`
+				} `json:"status"`
+			} `json:"items"`
+		}
+		if !s.fetch(c, user, cluster, grant, path, &list) {
+			return
+		}
+
+		for _, item := range list.Items {
+			view := ingressView{
+				listMeta: item.Metadata.meta(),
+				Class:    item.Spec.IngressClassName,
+				Rules:    len(item.Spec.Rules),
+			}
+			for _, rule := range item.Spec.Rules {
+				if rule.Host != "" && !slices.Contains(view.Hosts, rule.Host) {
+					view.Hosts = append(view.Hosts, rule.Host)
+				}
+			}
+			for _, address := range item.Status.LoadBalancer.Ingress {
+				if address.IP != "" {
+					view.Addresses = append(view.Addresses, address.IP)
+				}
+				if address.Hostname != "" {
+					view.Addresses = append(view.Addresses, address.Hostname)
+				}
+			}
+			out = append(out, view)
+		}
 	}
 
-	path := resourceListPath{"/apis/networking.k8s.io/v1", "ingresses"}.namespaced(namespace)
-	if !s.fetch(c, user, cluster, grant, path, &list) {
-		return
-	}
-
-	out := make([]ingressView, 0, len(list.Items))
-	for _, item := range list.Items {
-		view := ingressView{
-			listMeta: item.Metadata.meta(),
-			Class:    item.Spec.IngressClassName,
-			Rules:    len(item.Spec.Rules),
-		}
-		for _, rule := range item.Spec.Rules {
-			if rule.Host != "" && !slices.Contains(view.Hosts, rule.Host) {
-				view.Hosts = append(view.Hosts, rule.Host)
-			}
-		}
-		for _, address := range item.Status.LoadBalancer.Ingress {
-			if address.IP != "" {
-				view.Addresses = append(view.Addresses, address.IP)
-			}
-			if address.Hostname != "" {
-				view.Addresses = append(view.Addresses, address.Hostname)
-			}
-		}
-		out = append(out, view)
-	}
-
-	sortByName(out, func(v ingressView) string { return v.Name })
-	c.JSON(http.StatusOK, gin.H{"ingresses": out, "namespace": namespace})
+	sortResources(out)
+	c.JSON(http.StatusOK, gin.H{
+		"ingresses":      out,
+		"namespace":      scope.Namespace,
+		"all_namespaces": scope.All,
+	})
 }
 
 // listHTTPRoutes reads Gateway API routes. The Gateway API is a CRD, so a
@@ -448,63 +489,73 @@ func (s *server) listHTTPRoutes(c *gin.Context) {
 	if !ok {
 		return
 	}
-	namespace, ok := s.resourceNamespace(c, grant)
+	scope, ok := s.resourceScope(c, grant)
 	if !ok {
 		return
 	}
 
-	var list struct {
-		Items []struct {
-			Metadata objectMeta `json:"metadata"`
-			Spec     struct {
-				Hostnames  []string `json:"hostnames"`
-				ParentRefs []struct {
-					Name      string `json:"name"`
-					Namespace string `json:"namespace"`
-					Kind      string `json:"kind"`
-				} `json:"parentRefs"`
-				Rules []struct{} `json:"rules"`
-			} `json:"spec"`
-		} `json:"items"`
-	}
+	groups := scope.candidates(
+		resourceListPath{"/apis/gateway.networking.k8s.io/v1", "httproutes"},
+		resourceListPath{"/apis/gateway.networking.k8s.io/v1beta1", "httproutes"},
+	)
 
-	paths := []string{
-		resourceListPath{"/apis/gateway.networking.k8s.io/v1", "httproutes"}.namespaced(namespace),
-		resourceListPath{"/apis/gateway.networking.k8s.io/v1beta1", "httproutes"}.namespaced(namespace),
-	}
-	found, ok := s.fetchOptional(c, user, cluster, grant, paths, &list)
-	if !ok {
-		return
-	}
-	if !found {
-		c.JSON(http.StatusOK, gin.H{
-			"httproutes": []routeView{},
-			"namespace":  namespace,
-			"available":  false,
-			"reason":     "the Gateway API is not installed on this cluster",
-		})
-		return
-	}
-
-	out := make([]routeView, 0, len(list.Items))
-	for _, item := range list.Items {
-		view := routeView{
-			listMeta:  item.Metadata.meta(),
-			Hostnames: item.Spec.Hostnames,
-			Rules:     len(item.Spec.Rules),
+	out := []routeView{}
+	for _, group := range groups {
+		var list struct {
+			Items []struct {
+				Metadata objectMeta `json:"metadata"`
+				Spec     struct {
+					Hostnames  []string `json:"hostnames"`
+					ParentRefs []struct {
+						Name      string `json:"name"`
+						Namespace string `json:"namespace"`
+						Kind      string `json:"kind"`
+					} `json:"parentRefs"`
+					Rules []struct{} `json:"rules"`
+				} `json:"spec"`
+			} `json:"items"`
 		}
-		for _, parent := range item.Spec.ParentRefs {
-			name := parent.Name
-			if parent.Namespace != "" {
-				name = parent.Namespace + "/" + parent.Name
+		found, callOK := s.fetchOptional(c, user, cluster, grant, group, &list)
+		if !callOK {
+			return
+		}
+		// The CRD is either installed on the cluster or it is not; one namespace
+		// answering 404 settles it for all of them.
+		if !found {
+			c.JSON(http.StatusOK, gin.H{
+				"httproutes":     []routeView{},
+				"namespace":      scope.Namespace,
+				"all_namespaces": scope.All,
+				"available":      false,
+				"reason":         "the Gateway API is not installed on this cluster",
+			})
+			return
+		}
+
+		for _, item := range list.Items {
+			view := routeView{
+				listMeta:  item.Metadata.meta(),
+				Hostnames: item.Spec.Hostnames,
+				Rules:     len(item.Spec.Rules),
 			}
-			view.Parents = append(view.Parents, name)
+			for _, parent := range item.Spec.ParentRefs {
+				name := parent.Name
+				if parent.Namespace != "" {
+					name = parent.Namespace + "/" + parent.Name
+				}
+				view.Parents = append(view.Parents, name)
+			}
+			out = append(out, view)
 		}
-		out = append(out, view)
 	}
 
-	sortByName(out, func(v routeView) string { return v.Name })
-	c.JSON(http.StatusOK, gin.H{"httproutes": out, "namespace": namespace, "available": true})
+	sortResources(out)
+	c.JSON(http.StatusOK, gin.H{
+		"httproutes":     out,
+		"namespace":      scope.Namespace,
+		"all_namespaces": scope.All,
+		"available":      true,
+	})
 }
 
 // listVirtualServices reads Istio virtual services, which are optional in the
@@ -514,54 +565,62 @@ func (s *server) listVirtualServices(c *gin.Context) {
 	if !ok {
 		return
 	}
-	namespace, ok := s.resourceNamespace(c, grant)
+	scope, ok := s.resourceScope(c, grant)
 	if !ok {
 		return
 	}
 
-	var list struct {
-		Items []struct {
-			Metadata objectMeta `json:"metadata"`
-			Spec     struct {
-				Hosts    []string   `json:"hosts"`
-				Gateways []string   `json:"gateways"`
-				HTTP     []struct{} `json:"http"`
-				TCP      []struct{} `json:"tcp"`
-				TLS      []struct{} `json:"tls"`
-			} `json:"spec"`
-		} `json:"items"`
+	groups := scope.candidates(
+		resourceListPath{"/apis/networking.istio.io/v1", "virtualservices"},
+		resourceListPath{"/apis/networking.istio.io/v1beta1", "virtualservices"},
+	)
+
+	out := []routeView{}
+	for _, group := range groups {
+		var list struct {
+			Items []struct {
+				Metadata objectMeta `json:"metadata"`
+				Spec     struct {
+					Hosts    []string   `json:"hosts"`
+					Gateways []string   `json:"gateways"`
+					HTTP     []struct{} `json:"http"`
+					TCP      []struct{} `json:"tcp"`
+					TLS      []struct{} `json:"tls"`
+				} `json:"spec"`
+			} `json:"items"`
+		}
+		found, callOK := s.fetchOptional(c, user, cluster, grant, group, &list)
+		if !callOK {
+			return
+		}
+		if !found {
+			c.JSON(http.StatusOK, gin.H{
+				"virtualservices": []routeView{},
+				"namespace":       scope.Namespace,
+				"all_namespaces":  scope.All,
+				"available":       false,
+				"reason":          "Istio is not installed on this cluster",
+			})
+			return
+		}
+
+		for _, item := range list.Items {
+			out = append(out, routeView{
+				listMeta:  item.Metadata.meta(),
+				Hostnames: item.Spec.Hosts,
+				Parents:   item.Spec.Gateways,
+				Rules:     len(item.Spec.HTTP) + len(item.Spec.TCP) + len(item.Spec.TLS),
+			})
+		}
 	}
 
-	paths := []string{
-		resourceListPath{"/apis/networking.istio.io/v1", "virtualservices"}.namespaced(namespace),
-		resourceListPath{"/apis/networking.istio.io/v1beta1", "virtualservices"}.namespaced(namespace),
-	}
-	found, ok := s.fetchOptional(c, user, cluster, grant, paths, &list)
-	if !ok {
-		return
-	}
-	if !found {
-		c.JSON(http.StatusOK, gin.H{
-			"virtualservices": []routeView{},
-			"namespace":       namespace,
-			"available":       false,
-			"reason":          "Istio is not installed on this cluster",
-		})
-		return
-	}
-
-	out := make([]routeView, 0, len(list.Items))
-	for _, item := range list.Items {
-		out = append(out, routeView{
-			listMeta:  item.Metadata.meta(),
-			Hostnames: item.Spec.Hosts,
-			Parents:   item.Spec.Gateways,
-			Rules:     len(item.Spec.HTTP) + len(item.Spec.TCP) + len(item.Spec.TLS),
-		})
-	}
-
-	sortByName(out, func(v routeView) string { return v.Name })
-	c.JSON(http.StatusOK, gin.H{"virtualservices": out, "namespace": namespace, "available": true})
+	sortResources(out)
+	c.JSON(http.StatusOK, gin.H{
+		"virtualservices": out,
+		"namespace":       scope.Namespace,
+		"all_namespaces":  scope.All,
+		"available":       true,
+	})
 }
 
 /* ------------------------------------------------------ storage & config --- */
@@ -654,7 +713,7 @@ func (s *server) listPersistentVolumes(c *gin.Context) {
 		out = append(out, view)
 	}
 
-	sortByName(out, func(v persistentVolumeView) string { return v.Name })
+	sortResources(out)
 	c.JSON(http.StatusOK, gin.H{"persistentvolumes": out})
 }
 
@@ -663,56 +722,60 @@ func (s *server) listPersistentVolumeClaims(c *gin.Context) {
 	if !ok {
 		return
 	}
-	namespace, ok := s.resourceNamespace(c, grant)
+	scope, ok := s.resourceScope(c, grant)
 	if !ok {
 		return
 	}
 
-	var list struct {
-		Items []struct {
-			Metadata objectMeta `json:"metadata"`
-			Spec     struct {
-				AccessModes      []string `json:"accessModes"`
-				StorageClassName *string  `json:"storageClassName"`
-				VolumeName       string   `json:"volumeName"`
-				Resources        struct {
-					Requests map[string]string `json:"requests"`
-				} `json:"resources"`
-			} `json:"spec"`
-			Status struct {
-				Phase    string            `json:"phase"`
-				Capacity map[string]string `json:"capacity"`
-			} `json:"status"`
-		} `json:"items"`
+	out := []persistentVolumeClaimView{}
+	for _, path := range scope.paths(resourceListPath{"/api/v1", "persistentvolumeclaims"}) {
+		var list struct {
+			Items []struct {
+				Metadata objectMeta `json:"metadata"`
+				Spec     struct {
+					AccessModes      []string `json:"accessModes"`
+					StorageClassName *string  `json:"storageClassName"`
+					VolumeName       string   `json:"volumeName"`
+					Resources        struct {
+						Requests map[string]string `json:"requests"`
+					} `json:"resources"`
+				} `json:"spec"`
+				Status struct {
+					Phase    string            `json:"phase"`
+					Capacity map[string]string `json:"capacity"`
+				} `json:"status"`
+			} `json:"items"`
+		}
+		if !s.fetch(c, user, cluster, grant, path, &list) {
+			return
+		}
+
+		for _, item := range list.Items {
+			view := persistentVolumeClaimView{
+				listMeta:    item.Metadata.meta(),
+				Status:      item.Status.Phase,
+				AccessModes: item.Spec.AccessModes,
+				Volume:      item.Spec.VolumeName,
+			}
+			// A bound claim reports what it got; a pending one only what it
+			// asked for, and that is the more useful thing while it waits.
+			view.Capacity = item.Status.Capacity["storage"]
+			if view.Capacity == "" {
+				view.Capacity = item.Spec.Resources.Requests["storage"]
+			}
+			if item.Spec.StorageClassName != nil {
+				view.StorageClass = *item.Spec.StorageClassName
+			}
+			out = append(out, view)
+		}
 	}
 
-	path := resourceListPath{"/api/v1", "persistentvolumeclaims"}.namespaced(namespace)
-	if !s.fetch(c, user, cluster, grant, path, &list) {
-		return
-	}
-
-	out := make([]persistentVolumeClaimView, 0, len(list.Items))
-	for _, item := range list.Items {
-		view := persistentVolumeClaimView{
-			listMeta:    item.Metadata.meta(),
-			Status:      item.Status.Phase,
-			AccessModes: item.Spec.AccessModes,
-			Volume:      item.Spec.VolumeName,
-		}
-		// A bound claim reports what it got; a pending one only what it asked
-		// for, and that is the more useful thing to show while it waits.
-		view.Capacity = item.Status.Capacity["storage"]
-		if view.Capacity == "" {
-			view.Capacity = item.Spec.Resources.Requests["storage"]
-		}
-		if item.Spec.StorageClassName != nil {
-			view.StorageClass = *item.Spec.StorageClassName
-		}
-		out = append(out, view)
-	}
-
-	sortByName(out, func(v persistentVolumeClaimView) string { return v.Name })
-	c.JSON(http.StatusOK, gin.H{"persistentvolumeclaims": out, "namespace": namespace})
+	sortResources(out)
+	c.JSON(http.StatusOK, gin.H{
+		"persistentvolumeclaims": out,
+		"namespace":              scope.Namespace,
+		"all_namespaces":         scope.All,
+	})
 }
 
 func (s *server) listStorageClasses(c *gin.Context) {
@@ -751,7 +814,7 @@ func (s *server) listStorageClasses(c *gin.Context) {
 		})
 	}
 
-	sortByName(out, func(v storageClassView) string { return v.Name })
+	sortResources(out)
 	c.JSON(http.StatusOK, gin.H{"storageclasses": out})
 }
 
@@ -760,43 +823,47 @@ func (s *server) listConfigMaps(c *gin.Context) {
 	if !ok {
 		return
 	}
-	namespace, ok := s.resourceNamespace(c, grant)
+	scope, ok := s.resourceScope(c, grant)
 	if !ok {
 		return
 	}
 
-	var list struct {
-		Items []struct {
-			Metadata   objectMeta        `json:"metadata"`
-			Immutable  *bool             `json:"immutable"`
-			Data       map[string]string `json:"data"`
-			BinaryData map[string]string `json:"binaryData"`
-		} `json:"items"`
+	out := []configEntryView{}
+	for _, path := range scope.paths(resourceListPath{"/api/v1", "configmaps"}) {
+		var list struct {
+			Items []struct {
+				Metadata   objectMeta        `json:"metadata"`
+				Immutable  *bool             `json:"immutable"`
+				Data       map[string]string `json:"data"`
+				BinaryData map[string]string `json:"binaryData"`
+			} `json:"items"`
+		}
+		if !s.fetch(c, user, cluster, grant, path, &list) {
+			return
+		}
+
+		for _, item := range list.Items {
+			view := configEntryView{listMeta: item.Metadata.meta(), Keys: []string{}}
+			for key := range item.Data {
+				view.Keys = append(view.Keys, key)
+			}
+			for key := range item.BinaryData {
+				view.Keys = append(view.Keys, key)
+			}
+			slices.Sort(view.Keys)
+			if item.Immutable != nil {
+				view.Immutable = *item.Immutable
+			}
+			out = append(out, view)
+		}
 	}
 
-	path := resourceListPath{"/api/v1", "configmaps"}.namespaced(namespace)
-	if !s.fetch(c, user, cluster, grant, path, &list) {
-		return
-	}
-
-	out := make([]configEntryView, 0, len(list.Items))
-	for _, item := range list.Items {
-		view := configEntryView{listMeta: item.Metadata.meta(), Keys: []string{}}
-		for key := range item.Data {
-			view.Keys = append(view.Keys, key)
-		}
-		for key := range item.BinaryData {
-			view.Keys = append(view.Keys, key)
-		}
-		slices.Sort(view.Keys)
-		if item.Immutable != nil {
-			view.Immutable = *item.Immutable
-		}
-		out = append(out, view)
-	}
-
-	sortByName(out, func(v configEntryView) string { return v.Name })
-	c.JSON(http.StatusOK, gin.H{"configmaps": out, "namespace": namespace})
+	sortResources(out)
+	c.JSON(http.StatusOK, gin.H{
+		"configmaps":     out,
+		"namespace":      scope.Namespace,
+		"all_namespaces": scope.All,
+	})
 }
 
 // listSecrets returns secret metadata only. The values are decoded off the wire
@@ -807,44 +874,48 @@ func (s *server) listSecrets(c *gin.Context) {
 	if !ok {
 		return
 	}
-	namespace, ok := s.resourceNamespace(c, grant)
+	scope, ok := s.resourceScope(c, grant)
 	if !ok {
 		return
 	}
 
-	var list struct {
-		Items []struct {
-			Metadata  objectMeta        `json:"metadata"`
-			Type      string            `json:"type"`
-			Immutable *bool             `json:"immutable"`
-			Data      map[string]string `json:"data"`
-		} `json:"items"`
+	out := []configEntryView{}
+	for _, path := range scope.paths(resourceListPath{"/api/v1", "secrets"}) {
+		var list struct {
+			Items []struct {
+				Metadata  objectMeta        `json:"metadata"`
+				Type      string            `json:"type"`
+				Immutable *bool             `json:"immutable"`
+				Data      map[string]string `json:"data"`
+			} `json:"items"`
+		}
+		if !s.fetch(c, user, cluster, grant, path, &list) {
+			return
+		}
+
+		for _, item := range list.Items {
+			view := configEntryView{
+				listMeta: item.Metadata.meta(),
+				Type:     item.Type,
+				Keys:     []string{},
+			}
+			for key := range item.Data {
+				view.Keys = append(view.Keys, key)
+			}
+			slices.Sort(view.Keys)
+			if item.Immutable != nil {
+				view.Immutable = *item.Immutable
+			}
+			out = append(out, view)
+		}
 	}
 
-	path := resourceListPath{"/api/v1", "secrets"}.namespaced(namespace)
-	if !s.fetch(c, user, cluster, grant, path, &list) {
-		return
-	}
-
-	out := make([]configEntryView, 0, len(list.Items))
-	for _, item := range list.Items {
-		view := configEntryView{
-			listMeta: item.Metadata.meta(),
-			Type:     item.Type,
-			Keys:     []string{},
-		}
-		for key := range item.Data {
-			view.Keys = append(view.Keys, key)
-		}
-		slices.Sort(view.Keys)
-		if item.Immutable != nil {
-			view.Immutable = *item.Immutable
-		}
-		out = append(out, view)
-	}
-
-	sortByName(out, func(v configEntryView) string { return v.Name })
-	c.JSON(http.StatusOK, gin.H{"secrets": out, "namespace": namespace})
+	sortResources(out)
+	c.JSON(http.StatusOK, gin.H{
+		"secrets":        out,
+		"namespace":      scope.Namespace,
+		"all_namespaces": scope.All,
+	})
 }
 
 /* -------------------------------------------------------------- cluster --- */
@@ -922,7 +993,7 @@ func (s *server) listCRDs(c *gin.Context) {
 		out = append(out, view)
 	}
 
-	sortByName(out, func(v crdView) string { return v.Name })
+	sortResources(out)
 	c.JSON(http.StatusOK, gin.H{"crds": out})
 }
 
@@ -995,7 +1066,7 @@ func (s *server) listNodes(c *gin.Context) {
 		out = append(out, view)
 	}
 
-	sortByName(out, func(v nodeView) string { return v.Name })
+	sortResources(out)
 	c.JSON(http.StatusOK, gin.H{"nodes": out})
 }
 

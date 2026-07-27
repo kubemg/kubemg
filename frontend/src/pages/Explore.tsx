@@ -36,7 +36,7 @@ import {
   Select,
 } from '../components/primitives'
 import type { ResourceKey } from '../lib/resources'
-import { RESOURCE_CATEGORIES, resourceItem } from '../lib/resources'
+import { ALL_NAMESPACES, RESOURCE_CATEGORIES, resourceItem } from '../lib/resources'
 import { useClusters } from '../state/clusters-context'
 
 /**
@@ -200,6 +200,7 @@ export function Explore() {
 
   const unavailable = loaded?.kind === 'routes' && !loaded.available
   const count = loaded?.rows.length ?? 0
+  const allNamespaces = namespaced && namespace === ALL_NAMESPACES
 
   return (
     <AppShell
@@ -236,7 +237,7 @@ export function Explore() {
           {/* The namespace only applies to a namespaced list; for nodes, PVs,
               storage classes and CRDs there is nothing for it to narrow. */}
           {namespaced ? (
-            <div className="w-44">
+            <div className="w-48">
               <Select
                 aria-label="Namespace"
                 size="sm"
@@ -245,6 +246,13 @@ export function Explore() {
                 onChange={(event) => setNamespace(event.target.value)}
               >
                 {namespaces.length === 0 ? <option value="">No namespaces</option> : null}
+                {/* A scoped grant's "all" is its own namespaces, and it says so
+                    rather than implying it covers the cluster. */}
+                {namespaces.length > 0 ? (
+                  <option value={ALL_NAMESPACES}>
+                    {scoped ? 'All granted namespaces' : 'All namespaces'}
+                  </option>
+                ) : null}
                 {namespaces.map((entry) => (
                   <option key={entry.name} value={entry.name}>
                     {entry.name}
@@ -291,7 +299,19 @@ export function Explore() {
             <h2 className="text-[14px] font-semibold text-fg">{item.label}</h2>
             <span className="font-mono text-[12.5px] text-faint">{count}</span>
             {namespaced && namespace ? (
-              <span className="font-mono text-[12px] text-muted">in {namespace}</span>
+              <span className="text-[12.5px] text-muted">
+                {allNamespaces ? (
+                  scoped ? (
+                    'across your granted namespaces'
+                  ) : (
+                    'across every namespace'
+                  )
+                ) : (
+                  <>
+                    in <span className="font-mono">{namespace}</span>
+                  </>
+                )}
+              </span>
             ) : null}
             {loading ? (
               <span className="ml-auto text-[12px] text-muted">Reading the cluster…</span>
@@ -307,7 +327,11 @@ export function Explore() {
           ) : null}
 
           {loaded && !unavailable ? (
-            <ResourceView loaded={loaded} onSelectPod={setSelected} />
+            <ResourceView
+              loaded={loaded}
+              showNamespace={allNamespaces}
+              onSelectPod={setSelected}
+            />
           ) : null}
 
           {!loading && namespaced && !namespace ? (
@@ -319,13 +343,13 @@ export function Explore() {
           {!loading && !unavailable && loaded && count === 0 ? (
             <p className="px-4 py-10 text-center text-[13px] text-muted">
               No {item.label.toLowerCase()}
-              {namespaced && namespace ? (
+              {allNamespaces || !namespaced ? (
+                ' in this cluster'
+              ) : (
                 <>
                   {' '}
                   in <span className="font-mono">{namespace}</span>
                 </>
-              ) : (
-                ' in this cluster'
               )}
               .
             </p>

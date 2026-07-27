@@ -42,37 +42,49 @@ export type LoadedResource =
   | { kind: 'nodes'; rows: ClusterNode[] }
   | { kind: 'namespaces'; rows: Namespace[] }
 
-/** ResourceView renders whichever list is loaded, with the columns it deserves. */
+/**
+ * ResourceView renders whichever list is loaded, with the columns it deserves.
+ * `showNamespace` is set when the list spans namespaces, and each namespaced
+ * table then prefixes the name with where the object lives.
+ */
 export function ResourceView({
   loaded,
+  showNamespace = false,
   onSelectPod,
 }: {
   loaded: LoadedResource
+  showNamespace?: boolean
   onSelectPod: (pod: Pod) => void
 }) {
   switch (loaded.kind) {
     case 'pods':
-      return <PodTable pods={loaded.rows} onSelect={onSelectPod} />
+      return <PodTable pods={loaded.rows} showNamespace={showNamespace} onSelect={onSelectPod} />
     case 'workloads':
-      return <WorkloadTable workloads={loaded.rows} />
+      return <WorkloadTable workloads={loaded.rows} showNamespace={showNamespace} />
     case 'jobs':
-      return <JobTable jobs={loaded.rows} />
+      return <JobTable jobs={loaded.rows} showNamespace={showNamespace} />
     case 'cronjobs':
-      return <CronJobTable cronjobs={loaded.rows} />
+      return <CronJobTable cronjobs={loaded.rows} showNamespace={showNamespace} />
     case 'services':
-      return <ServiceTable services={loaded.rows} />
+      return <ServiceTable services={loaded.rows} showNamespace={showNamespace} />
     case 'ingresses':
-      return <IngressTable ingresses={loaded.rows} />
+      return <IngressTable ingresses={loaded.rows} showNamespace={showNamespace} />
     case 'routes':
-      return <RouteTable routes={loaded.rows} />
+      return <RouteTable routes={loaded.rows} showNamespace={showNamespace} />
     case 'persistentvolumes':
       return <PersistentVolumeTable volumes={loaded.rows} />
     case 'persistentvolumeclaims':
-      return <ClaimTable claims={loaded.rows} />
+      return <ClaimTable claims={loaded.rows} showNamespace={showNamespace} />
     case 'storageclasses':
       return <StorageClassTable classes={loaded.rows} />
     case 'config':
-      return <ConfigTable entries={loaded.rows} secrets={loaded.secrets} />
+      return (
+        <ConfigTable
+          entries={loaded.rows}
+          secrets={loaded.secrets}
+          showNamespace={showNamespace}
+        />
+      )
     case 'crds':
       return <CRDTable crds={loaded.rows} />
     case 'nodes':
@@ -84,15 +96,22 @@ export function ResourceView({
 
 /* ------------------------------------------------------------- cell atoms --- */
 
-/** Name is the first column of every list: mono, truncated, with a state dot. */
+/**
+ * Name is the first column of every list: mono, truncated, with a state dot. In
+ * a list that spans namespaces it carries the namespace as a `ns/` prefix rather
+ * than a column of its own — the same way kubectl names an object, and it keeps
+ * the row one line tall.
+ */
 function Name({
   children,
   tone,
   title,
+  namespace,
 }: {
   children: ReactNode
   tone?: Tone
   title?: string
+  namespace?: string
 }) {
   return (
     <span className="flex items-center gap-2.5">
@@ -100,6 +119,7 @@ function Name({
         <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${TONE_FILL[tone]}`} />
       ) : null}
       <span className="min-w-0 truncate font-mono text-fg" title={title}>
+        {namespace ? <span className="text-faint">{namespace}/</span> : null}
         {children}
       </span>
     </span>
@@ -157,7 +177,15 @@ function jobTone(state: string): Tone {
 
 /* ---------------------------------------------------------------- tables --- */
 
-function PodTable({ pods, onSelect }: { pods: Pod[]; onSelect: (pod: Pod) => void }) {
+function PodTable({
+  pods,
+  showNamespace,
+  onSelect,
+}: {
+  pods: Pod[]
+  showNamespace: boolean
+  onSelect: (pod: Pod) => void
+}) {
   return (
     <Table>
       <thead>
@@ -183,8 +211,9 @@ function PodTable({ pods, onSelect }: { pods: Pod[]; onSelect: (pod: Pod) => voi
                   type="button"
                   onClick={() => onSelect(pod)}
                   className="min-w-0 truncate font-mono text-fg transition-colors hover:text-accent"
-                  title={pod.name}
+                  title={`${pod.namespace}/${pod.name}`}
                 >
+                  {showNamespace ? <span className="text-faint">{pod.namespace}/</span> : null}
                   {pod.name}
                 </button>
               </span>
@@ -211,7 +240,13 @@ function PodTable({ pods, onSelect }: { pods: Pod[]; onSelect: (pod: Pod) => voi
   )
 }
 
-function WorkloadTable({ workloads }: { workloads: Workload[] }) {
+function WorkloadTable({
+  workloads,
+  showNamespace,
+}: {
+  workloads: Workload[]
+  showNamespace: boolean
+}) {
   return (
     <Table>
       <thead>
@@ -225,9 +260,13 @@ function WorkloadTable({ workloads }: { workloads: Workload[] }) {
       </thead>
       <tbody>
         {workloads.map((workload) => (
-          <Row key={`${workload.kind}/${workload.name}`}>
+          <Row key={`${workload.kind}/${workload.namespace}/${workload.name}`}>
             <Td className="truncate">
-              <Name tone={workloadTone(workload)} title={workload.name}>
+              <Name
+                tone={workloadTone(workload)}
+                title={workload.name}
+                namespace={showNamespace ? workload.namespace : undefined}
+              >
                 {workload.name}
               </Name>
             </Td>
@@ -250,7 +289,7 @@ function WorkloadTable({ workloads }: { workloads: Workload[] }) {
   )
 }
 
-function JobTable({ jobs }: { jobs: Job[] }) {
+function JobTable({ jobs, showNamespace }: { jobs: Job[]; showNamespace: boolean }) {
   return (
     <Table>
       <thead>
@@ -265,9 +304,13 @@ function JobTable({ jobs }: { jobs: Job[] }) {
       </thead>
       <tbody>
         {jobs.map((job) => (
-          <Row key={job.name}>
+          <Row key={`${job.namespace}/${job.name}`}>
             <Td className="truncate">
-              <Name tone={jobTone(job.state)} title={job.name}>
+              <Name
+                tone={jobTone(job.state)}
+                title={job.name}
+                namespace={showNamespace ? job.namespace : undefined}
+              >
                 {job.name}
               </Name>
             </Td>
@@ -295,7 +338,13 @@ function JobTable({ jobs }: { jobs: Job[] }) {
   )
 }
 
-function CronJobTable({ cronjobs }: { cronjobs: CronJob[] }) {
+function CronJobTable({
+  cronjobs,
+  showNamespace,
+}: {
+  cronjobs: CronJob[]
+  showNamespace: boolean
+}) {
   return (
     <Table>
       <thead>
@@ -310,9 +359,13 @@ function CronJobTable({ cronjobs }: { cronjobs: CronJob[] }) {
       </thead>
       <tbody>
         {cronjobs.map((cronjob) => (
-          <Row key={cronjob.name}>
+          <Row key={`${cronjob.namespace}/${cronjob.name}`}>
             <Td className="truncate">
-              <Name tone={cronjob.suspended ? 'idle' : 'ok'} title={cronjob.name}>
+              <Name
+                tone={cronjob.suspended ? 'idle' : 'ok'}
+                title={cronjob.name}
+                namespace={showNamespace ? cronjob.namespace : undefined}
+              >
                 {cronjob.name}
               </Name>
             </Td>
@@ -336,7 +389,13 @@ function CronJobTable({ cronjobs }: { cronjobs: CronJob[] }) {
   )
 }
 
-function ServiceTable({ services }: { services: Service[] }) {
+function ServiceTable({
+  services,
+  showNamespace,
+}: {
+  services: Service[]
+  showNamespace: boolean
+}) {
   return (
     <Table>
       <thead>
@@ -351,9 +410,14 @@ function ServiceTable({ services }: { services: Service[] }) {
       </thead>
       <tbody>
         {services.map((service) => (
-          <Row key={service.name}>
+          <Row key={`${service.namespace}/${service.name}`}>
             <Td className="truncate">
-              <Name title={service.name}>{service.name}</Name>
+              <Name
+                title={service.name}
+                namespace={showNamespace ? service.namespace : undefined}
+              >
+                {service.name}
+              </Name>
             </Td>
             <Td className="text-[12.5px] text-muted">{service.type}</Td>
             <Td className={`hidden md:table-cell ${MONO}`}>{service.cluster_ip || '—'}</Td>
@@ -371,7 +435,13 @@ function ServiceTable({ services }: { services: Service[] }) {
   )
 }
 
-function IngressTable({ ingresses }: { ingresses: Ingress[] }) {
+function IngressTable({
+  ingresses,
+  showNamespace,
+}: {
+  ingresses: Ingress[]
+  showNamespace: boolean
+}) {
   return (
     <Table>
       <thead>
@@ -386,9 +456,14 @@ function IngressTable({ ingresses }: { ingresses: Ingress[] }) {
       </thead>
       <tbody>
         {ingresses.map((ingress) => (
-          <Row key={ingress.name}>
+          <Row key={`${ingress.namespace}/${ingress.name}`}>
             <Td className="truncate">
-              <Name title={ingress.name}>{ingress.name}</Name>
+              <Name
+                title={ingress.name}
+                namespace={showNamespace ? ingress.namespace : undefined}
+              >
+                {ingress.name}
+              </Name>
             </Td>
             <Td className={MONO}>{ingress.class || '—'}</Td>
             <Td className={MONO}>
@@ -408,7 +483,7 @@ function IngressTable({ ingresses }: { ingresses: Ingress[] }) {
   )
 }
 
-function RouteTable({ routes }: { routes: Route[] }) {
+function RouteTable({ routes, showNamespace }: { routes: Route[]; showNamespace: boolean }) {
   return (
     <Table>
       <thead>
@@ -422,9 +497,11 @@ function RouteTable({ routes }: { routes: Route[] }) {
       </thead>
       <tbody>
         {routes.map((route) => (
-          <Row key={route.name}>
+          <Row key={`${route.namespace}/${route.name}`}>
             <Td className="truncate">
-              <Name title={route.name}>{route.name}</Name>
+              <Name title={route.name} namespace={showNamespace ? route.namespace : undefined}>
+                {route.name}
+              </Name>
             </Td>
             <Td className={MONO}>
               <List values={route.hostnames} empty="*" />
@@ -482,7 +559,13 @@ function PersistentVolumeTable({ volumes }: { volumes: PersistentVolume[] }) {
   )
 }
 
-function ClaimTable({ claims }: { claims: PersistentVolumeClaim[] }) {
+function ClaimTable({
+  claims,
+  showNamespace,
+}: {
+  claims: PersistentVolumeClaim[]
+  showNamespace: boolean
+}) {
   return (
     <Table>
       <thead>
@@ -498,9 +581,13 @@ function ClaimTable({ claims }: { claims: PersistentVolumeClaim[] }) {
       </thead>
       <tbody>
         {claims.map((claim) => (
-          <Row key={claim.name}>
+          <Row key={`${claim.namespace}/${claim.name}`}>
             <Td className="truncate">
-              <Name tone={phaseTone(claim.status)} title={claim.name}>
+              <Name
+                tone={phaseTone(claim.status)}
+                title={claim.name}
+                namespace={showNamespace ? claim.namespace : undefined}
+              >
                 {claim.name}
               </Name>
             </Td>
@@ -557,7 +644,15 @@ function StorageClassTable({ classes }: { classes: StorageClass[] }) {
   )
 }
 
-function ConfigTable({ entries, secrets }: { entries: ConfigEntry[]; secrets: boolean }) {
+function ConfigTable({
+  entries,
+  secrets,
+  showNamespace,
+}: {
+  entries: ConfigEntry[]
+  secrets: boolean
+  showNamespace: boolean
+}) {
   return (
     <Table>
       <thead>
@@ -573,10 +668,12 @@ function ConfigTable({ entries, secrets }: { entries: ConfigEntry[]; secrets: bo
       </thead>
       <tbody>
         {entries.map((entry) => (
-          <Row key={entry.name}>
+          <Row key={`${entry.namespace}/${entry.name}`}>
             <Td className="truncate">
               <span className="flex items-center gap-2">
-                <Name title={entry.name}>{entry.name}</Name>
+                <Name title={entry.name} namespace={showNamespace ? entry.namespace : undefined}>
+                  {entry.name}
+                </Name>
                 {entry.immutable ? (
                   <Pill tone="idle" dot={false}>
                     immutable
