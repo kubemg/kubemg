@@ -98,15 +98,38 @@ func (s *server) clusterKustomize(c *gin.Context) {
 		AgentToken:  cluster.AgentToken,
 		ManifestURL: manifestURL,
 		ArchiveURL:  archiveURL,
-		ApplyCommand: fmt.Sprintf(
-			"kubectl apply -f %s", manifestURL),
+		ApplyCommand: applyCommand(manifestURL, opts.BastionCA != ""),
 		// Kustomize only accepts local paths and Git specs as remote targets,
 		// so the package is fetched and extracted before `apply -k` sees it.
 		KustomizeCommand: fmt.Sprintf(
-			"curl -sfL %s | tar -xz\nkubectl apply -k %s", archiveURL, agentpkg.PackageDir),
+			"curl -sfL%s %s | tar -xz\nkubectl apply -k %s",
+			curlInsecureFlag(opts.BastionCA != ""), archiveURL, agentpkg.PackageDir),
 		Manifest: manifest,
 		Files:    files,
 	})
+}
+
+// applyCommand renders the one-liner an operator pastes. `kubectl apply -f
+// <url>` fetches over the operator's own trust store, which a self-signed
+// bastion is not in — and kubectl has no flag for that hop, since
+// --insecure-skip-tls-verify applies to the cluster's API server, not to a
+// manifest URL. So the fetch moves to curl, which does have one.
+func applyCommand(manifestURL string, selfSigned bool) string {
+	if !selfSigned {
+		return fmt.Sprintf("kubectl apply -f %s", manifestURL)
+	}
+	return fmt.Sprintf("curl -sfL%s %s | kubectl apply -f -",
+		curlInsecureFlag(true), manifestURL)
+}
+
+// curlInsecureFlag is the bootstrap concession: the manifest carries the CA the
+// agent will pin, so this one fetch is the only hop that cannot verify it yet.
+// It is scoped to that fetch rather than being a setting anyone can leave on.
+func curlInsecureFlag(selfSigned bool) string {
+	if selfSigned {
+		return "k"
+	}
+	return ""
 }
 
 // installManifest serves the flat manifest that `kubectl apply -f` fetches.
@@ -184,6 +207,10 @@ func (s *server) agentOptions(ctx context.Context, token string) agentpkg.Option
 		ClusterToken: token,
 		Namespace:    settings.AgentNamespace,
 		Image:        settings.AgentImage,
+		// The CA is the server's own listener certificate, so it is boot-time
+		// configuration rather than a runtime setting: changing it means
+		// restarting with different TLS material anyway.
+		BastionCA: s.bastionCA,
 	}
 }
 

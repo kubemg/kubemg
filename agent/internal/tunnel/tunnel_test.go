@@ -1,6 +1,13 @@
 package tunnel
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"testing"
 	"time"
 
@@ -91,4 +98,64 @@ func TestNewAgentStartsDisconnected(t *testing.T) {
 	if testClient(t, "https://kubemg.example.com").Connected() {
 		t.Fatal("readiness must not report ready before a tunnel exists")
 	}
+}
+
+// An on-prem bastion often serves a certificate no public CA vouches for. The
+// agent is handed that certificate in its Secret; pinning it must add trust
+// rather than replace the system roots, so a bastion that later moves behind a
+// public certificate does not strand the fleet.
+func TestBastionTLSPinsTheGivenCA(t *testing.T) {
+	certPEM, _ := selfSignedForTest(t)
+
+	cfg, err := bastionTLS(string(certPEM), false)
+	if err != nil {
+		t.Fatalf("bastionTLS: %v", err)
+	}
+	if cfg.RootCAs == nil {
+		t.Fatal("the CA was not added to the trust pool")
+	}
+	if cfg.InsecureSkipVerify {
+		t.Fatal("pinning a CA must not disable verification")
+	}
+}
+
+func TestBastionTLSWithoutCAUsesSystemRoots(t *testing.T) {
+	cfg, err := bastionTLS("", false)
+	if err != nil {
+		t.Fatalf("bastionTLS: %v", err)
+	}
+	if cfg.RootCAs != nil {
+		t.Fatal("an empty CA must leave the system roots alone")
+	}
+}
+
+func TestBastionTLSRejectsGarbage(t *testing.T) {
+	if _, err := bastionTLS("this is not a certificate", false); err == nil {
+		t.Fatal("expected an error for a CA that is not PEM")
+	}
+}
+
+// selfSignedForTest mints a throwaway certificate to pin.
+func selfSignedForTest(t *testing.T) ([]byte, *ecdsa.PrivateKey) {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	template := x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "kubemg.test"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		DNSNames:              []string{"kubemg.test"},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create certificate: %v", err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), key
 }

@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"embed"
+	"encoding/base64"
 	"fmt"
 	"io/fs"
 	"path"
@@ -38,6 +39,7 @@ const (
 	placeholderBastion   = "__BASTION_URL__"
 	placeholderToken     = "__CLUSTER_TOKEN__"
 	placeholderImage     = "__AGENT_IMAGE__"
+	placeholderCA        = "__BASTION_CA__"
 )
 
 // applyOrder is the order resources are concatenated into the flat manifest.
@@ -62,6 +64,11 @@ type Options struct {
 	// Namespace and Image fall back to the defaults above when empty.
 	Namespace string
 	Image     string
+	// BastionCA is the PEM the agent must trust to dial the bastion. It is set
+	// when KubeMG serves a certificate the agent's system roots do not cover —
+	// a self-signed one, typically — and empty otherwise, which the agent reads
+	// as "use the system roots".
+	BastionCA string
 }
 
 func (o Options) normalize() (Options, error) {
@@ -73,6 +80,12 @@ func (o Options) normalize() (Options, error) {
 	}
 	o.BastionURL = strings.TrimRight(strings.TrimSpace(o.BastionURL), "/")
 	o.ClusterToken = strings.TrimSpace(o.ClusterToken)
+	o.BastionCA = strings.TrimSpace(o.BastionCA)
+	if o.BastionCA != "" {
+		// A PEM block ends with a newline; trimming above would otherwise hand
+		// the agent something its parser rejects.
+		o.BastionCA += "\n"
+	}
 	if o.Namespace == "" {
 		o.Namespace = DefaultNamespace
 	}
@@ -101,6 +114,9 @@ func Render(opts Options) (map[string]string, error) {
 		placeholderBastion, quote(opts.BastionURL),
 		placeholderToken, quote(opts.ClusterToken),
 		placeholderImage, quote(opts.Image),
+		// The CA lands in the Secret's `data`, which is base64 by definition,
+		// so it needs no quoting: an empty CA renders as an empty value.
+		placeholderCA, base64.StdEncoding.EncodeToString([]byte(opts.BastionCA)),
 	)
 
 	out := make(map[string]string, len(entries))

@@ -12,6 +12,14 @@ import tailwindcss from '@tailwindcss/vite'
 const apiTarget = process.env.VITE_DEV_PROXY_TARGET ?? 'http://localhost:8080'
 
 /*
+ * The bastion has to serve HTTPS for kubectl to work against it at all, and a
+ * dev stack's certificate is self-signed. This is the proxy's own hop to the
+ * backend, not the browser's, so accepting it here is scoped to the dev server
+ * — the browser still sees whatever certificate the console is served under.
+ */
+const proxySecure = process.env.VITE_DEV_PROXY_INSECURE !== 'true'
+
+/*
  * Vite rejects a Host header it does not recognise, which is why reaching the
  * dev server by hostname 404s where an IP works. Name the hostnames the console
  * is served under in VITE_ALLOWED_HOSTS; unset accepts any, which is fine for a
@@ -28,12 +36,12 @@ export default defineConfig({
     host: true,
     allowedHosts,
     proxy: {
-      '/api': { target: apiTarget, changeOrigin: true, ws: true },
-      '/health': { target: apiTarget, changeOrigin: true },
+      '/api': { target: apiTarget, changeOrigin: true, ws: true, secure: proxySecure },
+      '/health': { target: apiTarget, changeOrigin: true, secure: proxySecure },
       // The agent tunnel and the unauthenticated install package, so a target
       // cluster can be pointed at the address an operator already uses.
-      '/agent': { target: apiTarget, changeOrigin: true, ws: true },
-      '/install': { target: apiTarget, changeOrigin: true },
+      '/agent': { target: apiTarget, changeOrigin: true, ws: true, secure: proxySecure },
+      '/install': { target: apiTarget, changeOrigin: true, secure: proxySecure },
     },
   },
 })

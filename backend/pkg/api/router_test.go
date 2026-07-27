@@ -634,6 +634,13 @@ func authManagerForTest() *auth.Manager {
 
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
+	return newTestEnvWith(t, nil)
+}
+
+// newTestEnvWith is newTestEnv with the router options adjusted, for the cases
+// that turn on a dependency the default stack leaves off.
+func newTestEnvWith(t *testing.T, adjust func(*Options)) *testEnv {
+	t.Helper()
 	store := newFakeStore()
 	manager := authManagerForTest()
 	issuer := &fakeIssuer{
@@ -644,19 +651,24 @@ func newTestEnv(t *testing.T) *testEnv {
 	gateway := bastion.NewServer(bastion.ServerOptions{Store: store})
 	proxy := bastion.NewProxy(bastion.ProxyOptions{Store: store, Registry: gateway.Registry()})
 
+	opts := Options{
+		Store:          store,
+		JWT:            manager,
+		Tokens:         issuer,
+		Health:         checker,
+		SANamespace:    "kubemg-system",
+		Bastion:        gateway,
+		Proxy:          proxy,
+		PublicURL:      "https://kubemg.example.com",
+		AgentImage:     "ghcr.io/kubemg/kubemg-agent:test",
+		AgentNamespace: "kubemg-system",
+	}
+	if adjust != nil {
+		adjust(&opts)
+	}
+
 	return &testEnv{
-		router: NewRouter(Options{
-			Store:          store,
-			JWT:            manager,
-			Tokens:         issuer,
-			Health:         checker,
-			SANamespace:    "kubemg-system",
-			Bastion:        gateway,
-			Proxy:          proxy,
-			PublicURL:      "https://kubemg.example.com",
-			AgentImage:     "ghcr.io/kubemg/kubemg-agent:test",
-			AgentNamespace: "kubemg-system",
-		}),
+		router: NewRouter(opts),
 		store:    store,
 		jwt:      manager,
 		tokens:   issuer,

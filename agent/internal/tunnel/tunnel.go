@@ -8,6 +8,8 @@ package tunnel
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,6 +54,7 @@ type Client struct {
 	version    string
 	kube       *kube.Client
 	logger     *slog.Logger
+	tlsConfig  *tls.Config
 
 	// streams tracks the long-lived calls this agent is servicing.
 	streams *streamTable
@@ -74,6 +77,15 @@ type Options struct {
 	Version string
 	Kube    *kube.Client
 	Logger  *slog.Logger
+	// CAPEM is a certificate the bastion is trusted on in addition to the
+	// system roots. An on-prem KubeMG often serves a certificate no public CA
+	// vouches for; pinning it here is the answer, rather than an
+	// insecure-skip-verify switch someone forgets to turn off.
+	CAPEM string
+	// InsecureSkipVerify drops certificate verification entirely. It exists for
+	// running the agent by hand against a development bastion, and it is
+	// logged loudly because it makes the tunnel trivially interceptable.
+	InsecureSkipVerify bool
 }
 
 // New builds a tunnel client.
@@ -91,14 +103,47 @@ func New(opts Options) (*Client, error) {
 		opts.Logger = slog.Default()
 	}
 
+	tlsConfig, err := bastionTLS(opts.CAPEM, opts.InsecureSkipVerify)
+	if err != nil {
+		return nil, err
+	}
+	if opts.InsecureSkipVerify {
+		opts.Logger.Warn("bastion certificate verification is disabled; the tunnel can be intercepted")
+	}
+
 	return &Client{
 		bastionURL: strings.TrimRight(strings.TrimSpace(opts.BastionURL), "/"),
 		token:      strings.TrimSpace(opts.Token),
 		version:    opts.Version,
 		kube:       opts.Kube,
 		logger:     opts.Logger,
+		tlsConfig:  tlsConfig,
 		streams:    newStreamTable(),
 	}, nil
+}
+
+// bastionTLS builds the trust the tunnel dials with. An empty CA and no
+// override means the system roots, which is what a bastion behind a real
+// certificate needs and nothing more.
+func bastionTLS(caPEM string, insecure bool) (*tls.Config, error) {
+	cfg := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: insecure}
+	caPEM = strings.TrimSpace(caPEM)
+	if caPEM == "" {
+		return cfg, nil
+	}
+
+	// Start from the system roots rather than replacing them: a deployment can
+	// pin an internal CA without losing the ability to dial a bastion that
+	// later moves behind a public one.
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM([]byte(caPEM + "\n")) {
+		return nil, errors.New("KUBEMG_BASTION_CA does not contain a PEM certificate")
+	}
+	cfg.RootCAs = pool
+	return cfg, nil
 }
 
 // Connected reports whether the tunnel is currently up.
@@ -148,7 +193,10 @@ func (c *Client) connectOnce(ctx context.Context) error {
 		return err
 	}
 
-	dialer := &websocket.Dialer{HandshakeTimeout: handshakeTimeout}
+	dialer := &websocket.Dialer{
+		HandshakeTimeout: handshakeTimeout,
+		TLSClientConfig:  c.tlsConfig,
+	}
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+c.token)
 	header.Set("User-Agent", "kubemg-agent/"+c.version)

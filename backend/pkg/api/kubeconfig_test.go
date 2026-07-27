@@ -409,3 +409,46 @@ func TestProxyScopedTokenIsConfinedToItsCluster(t *testing.T) {
 		t.Fatalf("proxy-scoped token was refused on its own cluster: %d (%s)", rec.Code, rec.Body.String())
 	}
 }
+
+// In agent mode kubectl dials KubeMG, so the CA it must trust is KubeMG's own.
+// Leaving it out hands the operator a kubeconfig that fails on x509 at the
+// first call, fixable only by editing the file or disabling verification.
+func TestAgentKubeconfigCarriesTheBastionCA(t *testing.T) {
+	env := newTestEnvWith(t, func(o *Options) { o.BastionCA = testPEM })
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addAgentCluster("edge-us", db.EnvStaging, "kmg_token")
+
+	rec := env.do(t, http.MethodPost, generatePath(cluster.ID), env.tokenFor(t, admin), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	body := decode[generateKubeconfigResponse](t, rec)
+	cfg, err := clientcmd.Load([]byte(body.Kubeconfig))
+	if err != nil {
+		t.Fatalf("returned kubeconfig does not parse: %v", err)
+	}
+	kubeCtx := cfg.Contexts[cfg.CurrentContext]
+	if got := string(cfg.Clusters[kubeCtx.Cluster].CertificateAuthorityData); got != testPEM {
+		t.Fatalf("kubeconfig does not carry the bastion CA: %q", got)
+	}
+}
+
+// A publicly-trusted bastion pins nothing: the system roots already cover it,
+// and embedding the certificate would break the kubeconfig at renewal.
+func TestAgentKubeconfigOmitsTheCAWhenPubliclyTrusted(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addAgentCluster("edge-us", db.EnvStaging, "kmg_token")
+
+	rec := env.do(t, http.MethodPost, generatePath(cluster.ID), env.tokenFor(t, admin), nil)
+	body := decode[generateKubeconfigResponse](t, rec)
+	cfg, err := clientcmd.Load([]byte(body.Kubeconfig))
+	if err != nil {
+		t.Fatalf("returned kubeconfig does not parse: %v", err)
+	}
+	kubeCtx := cfg.Contexts[cfg.CurrentContext]
+	if len(cfg.Clusters[kubeCtx.Cluster].CertificateAuthorityData) != 0 {
+		t.Fatal("a publicly-trusted bastion must not be pinned into the kubeconfig")
+	}
+}
