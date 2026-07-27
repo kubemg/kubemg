@@ -15,10 +15,19 @@ const (
 	SettingPublicURL      = "public_url"
 	SettingAgentImage     = "agent_image"
 	SettingAgentNamespace = "agent_namespace"
+	// SettingAuditRetentionDays is how long a proxied call stays in the audit
+	// table. It is stored as a decimal string like every other setting so the
+	// key/value table needs no second column.
+	SettingAuditRetentionDays = "audit_retention_days"
 )
 
 // SettingKeys enumerates the runtime-configurable settings.
-var SettingKeys = []string{SettingPublicURL, SettingAgentImage, SettingAgentNamespace}
+var SettingKeys = []string{
+	SettingPublicURL,
+	SettingAgentImage,
+	SettingAgentNamespace,
+	SettingAuditRetentionDays,
+}
 
 // Setting is one operator-configurable value. An empty Value means "unset" and
 // reads as the configured default rather than as an empty string — that is how

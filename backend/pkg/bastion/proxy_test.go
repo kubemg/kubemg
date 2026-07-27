@@ -2,7 +2,9 @@ package bastion
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/kubemg/kubemg/backend/pkg/db"
@@ -118,19 +120,47 @@ func TestStreamRouting(t *testing.T) {
 	}
 }
 
-func TestPortForwardIsStillRefusedNotStalled(t *testing.T) {
-	// It multiplexes arbitrary TCP inside the session, which this framing does
-	// not carry. An honest 501 beats a hung client.
-	reason, refused := unsupportedStream(ParsePath("/api/v1/namespaces/team-a/pods/web-0/portforward"))
+// port-forward is carried in its WebSocket transport and only that one. A SPDY
+// client has to be told so at the handshake: an honest 501 naming the fix beats
+// an upgrade that hangs.
+func TestPortForwardRefusesSPDYAndAcceptsWebSocket(t *testing.T) {
+	const path = "/api/v1/namespaces/team-a/pods/web-0/portforward?ports=8080"
+	parsed := ParsePath(path)
+
+	spdy := httptest.NewRequest(http.MethodPost, path, nil)
+	spdy.Header.Set("Connection", "Upgrade")
+	spdy.Header.Set("Upgrade", "SPDY/3.1")
+
+	reason, refused := unsupportedStream(spdy, parsed)
 	if !refused {
-		t.Fatal("port-forward must be refused until the tunnel can carry it")
+		t.Fatal("a SPDY port-forward must be refused rather than stalled")
 	}
-	if reason == "" {
-		t.Fatal("a refusal must explain itself")
+	if !strings.Contains(reason, "WebSocket") {
+		t.Fatalf("the refusal must name the transport that works, got %q", reason)
 	}
 
-	if _, refused := unsupportedStream(ParsePath("/api/v1/namespaces/team-a/pods/web-0/exec")); refused {
-		t.Fatal("exec is carried now and must not be refused")
+	socket := httptest.NewRequest(http.MethodGet, path, nil)
+	socket.Header.Set("Connection", "Upgrade")
+	socket.Header.Set("Upgrade", "websocket")
+	socket.Header.Set("Sec-Websocket-Version", "13")
+	socket.Header.Set("Sec-Websocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	socket.Header.Set("Sec-Websocket-Protocol", "v2.portforward.k8s.io")
+
+	if _, refused := unsupportedStream(socket, parsed); refused {
+		t.Fatal("a WebSocket port-forward is carried and must not be refused")
+	}
+	if !wantsUpgrade(parsed) {
+		t.Fatal("port-forward is an upgraded session and must route as one")
+	}
+	// The two subprotocol families are not interchangeable: negotiating a
+	// port-forward as a channel protocol yields a session neither end can read.
+	if got := offeredSubprotocols(parsed); !slices.Equal(got, PortForwardSubprotocols) {
+		t.Fatalf("port-forward must offer the port-forward subprotocols, got %v", got)
+	}
+	if got := offeredSubprotocols(ParsePath("/api/v1/namespaces/team-a/pods/web-0/exec")); !slices.Equal(
+		got, ChannelSubprotocols,
+	) {
+		t.Fatalf("exec must offer the channel subprotocols, got %v", got)
 	}
 }
 

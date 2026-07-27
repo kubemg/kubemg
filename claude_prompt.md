@@ -1,42 +1,39 @@
-# Task: Implement Rancher-Style 3rd Resource Navigation Sidebar on Explore Page
+# Phase 3 Finalization Task Prompt for Claude-CLI
 
-## Context & Objective
-In KubeMG, the Explore page (`/explore`) needs a **3rd Resource Navigation Sidebar** (similar to Rancher's resource tree menu) to allow cluster operators and developers to browse Kubernetes resources grouped by logical categories.
+## Objective
+Finalize Phase 3 of KubeMG by implementing:
+1. Observability metrics & log viewer integration (VictoriaMetrics / K8s Metrics API & VictoriaLogs / Log stream filtering).
+2. Automated background audit event retention pruner.
+3. Tunnel `port-forward` TCP multiplexing support over WebSocket reverse proxy tunnel.
 
 ---
 
-## Technical Instructions for Claude-CLI
+## Technical Implementation Tasks
 
-### 1. Backend (`backend/pkg/api/`)
-- Update `resources.go` and `router.go` to add or expand listing handlers for the following resource categories over the agent tunnel (via `s.proxy.Call` with impersonation headers):
-  - **Workloads**: `pods`, `deployments`, `statefulsets`, `daemonsets`, `jobs`, `cronjobs`.
-  - **Networking**: `services`, `ingresses`, `httproutes` (gateway.networking.k8s.io), `virtualservices` (networking.istio.io). Handle missing CRD (404) gracefully by returning an empty list or appropriate status.
-  - **Storage & Config**: `persistentvolumes` (PV - cluster-scoped), `persistentvolumeclaims` (PVC), `storageclasses` (cluster-scoped), `configmaps`, `secrets` (expose metadata only, omit raw secret data).
-  - **Custom Resources**: `customresourcedefinitions` (CRDs).
-  - **Cluster**: `nodes` (cluster-scoped), `namespaces`.
-- Ensure namespace-scoped queries apply namespace isolation based on user's granted permissions (`resourceNamespace(c, grant)`).
+### 1. Backend (`backend/pkg/`)
+- **Audit Retention Scheduler (`pkg/api/` & `pkg/db/`)**:
+  - Add a background scheduler/ticker in `backend/pkg/api/` (e.g. `startAuditPruner(ctx)`) running every 12 hours.
+  - Read `audit_retention_days` setting from `db.Store` (defaulting to 30 days) and call `s.store.PruneAuditEvents(ctx, cutoff)`.
+  - Expose `audit_retention_days` in the `/api/v1/settings` API payload and handler.
+- **Metrics API Integration (`pkg/api/metrics.go`)**:
+  - Add `/api/v1/clusters/:id/metrics/pods` and `/api/v1/clusters/:id/metrics/nodes` API handlers.
+  - Proxy requests over the agent tunnel to `/apis/metrics.k8s.io/v1beta1/pods` and `/apis/metrics.k8s.io/v1beta1/nodes` (or VictoriaMetrics backend endpoint if present). Return normalized JSON structure for pod/node CPU (mcores) and Memory (MiB/GiB).
+- **Port-Forward Multiplexing (`pkg/bastion/tunnel.go` & `pkg/api/`)**:
+  - Upgrade WebSocket agent proxy handler to support `port-forward` requests (`/api/v1/namespaces/:ns/pods/:pod/portforward`), implementing TCP stream framing over the tunnel session.
 
 ### 2. Frontend (`frontend/src/`)
-- **API Client (`api/types.ts` & `api/client.ts`)**:
-  - Add TypeScript interfaces and API methods to fetch services, ingresses, configmaps, secrets, PVs, PVCs, storageclasses, nodes, and CRDs.
-- **3rd Sidebar Component (`components/ExploreSidebar.tsx`)**:
-  - Create a collapsible resource menu sidebar with categories:
-    - 📦 **Workloads**: Pods, Deployments, StatefulSets, DaemonSets, Jobs, CronJobs
-    - 🌐 **Networking**: Services, Ingresses, HTTPRoutes, VirtualServices
-    - 💾 **Storage & Config**: PVs, PVCs, StorageClasses, ConfigMaps, Secrets
-    - 🧩 **Custom Resources**: CRDs
-    - 🖥️ **Cluster**: Nodes, Namespaces
-  - Include search/filter input to quickly filter resources in the sidebar.
-  - Follow Signal Deck design tokens (`bg-rail`, `bg-rail-raised`, `text-accent`, etc.).
-- **Explore Page (`pages/Explore.tsx`)**:
-  - Render `ExploreSidebar` on the left side of the Explore content view (forming the 3rd navigation level in KubeMG layout: Level 1 Rail -> Level 2 Panel -> Level 3 Resource Sidebar).
-  - Update main content area to display table views corresponding to the selected resource item.
-  - Maintain namespace selection dropdown at the top for namespace-scoped resources and disable/hide for cluster-scoped resources (Nodes, PVs, StorageClasses, CRDs).
+- **Settings Page (`pages/Settings.tsx`)**:
+  - Add configuration field for "Audit Event Retention (Days)" allowing administrators to update retention setting.
+- **Pod & Node Metrics UI (`components/PodDrawer.tsx`, `pages/Explore.tsx`, `pages/Overview.tsx`)**:
+  - In `PodDrawer`: Display CPU & Memory utilization progress bars and real-time values for running pods.
+  - In `Overview` & `ClusterDetail`: Display Node CPU/Memory usage summaries and cluster metrics health.
+- **Log Viewer Enhancements (`components/PodDrawer.tsx`)**:
+  - Add live log search filter box, line wrap toggle, and auto-scroll control to the container log stream drawer.
 
 ---
 
 ## Verification Rules
-1. Run containerized verification & linting:
+1. Run containerized verification & linter:
    ```bash
    make verify
    ```
@@ -44,4 +41,4 @@ In KubeMG, the Explore page (`/explore`) needs a **3rd Resource Navigation Sideb
    ```bash
    make test
    ```
-3. Update `roadmap.md` to check off (`[x]`) completed items upon success.
+3. Open `roadmap.md` and check off (`[x]`) all completed Phase 3 items upon successful verification.

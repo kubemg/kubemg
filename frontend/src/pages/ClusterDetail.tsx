@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { AlertTriangle, ChevronRight, KeyRound, RefreshCw } from 'lucide-react'
-import { checkCluster, errorMessage, fetchCluster } from '../api/client'
-import type { Cluster } from '../api/types'
+import { checkCluster, errorMessage, fetchCluster, fetchNodeMetrics } from '../api/client'
+import type { Cluster, NodeMetrics } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { KubeconfigDrawer } from '../components/KubeconfigDrawer'
 import { LinkStrand, StrandNode } from '../components/LinkStrand'
@@ -11,11 +11,13 @@ import {
   ClusterState,
   DetailList,
   EnvironmentTag,
+  Meter,
   Notice,
   Panel,
 } from '../components/primitives'
 import { strandState } from '../lib/status'
 import { relativeAge } from '../lib/time'
+import { formatCPU, formatMemory } from '../lib/units'
 import { useAuth } from '../state/auth-context'
 
 export function ClusterDetail() {
@@ -168,6 +170,10 @@ export function ClusterDetail() {
               <Notice tone="error">{cluster.status_message}</Notice>
             ) : null}
 
+            {/* Capacity only exists for a cluster KubeMG can actually read
+                through, which is the agent path. */}
+            {viaAgent ? <Capacity cluster={cluster} /> : null}
+
             <AccessPath cluster={cluster} username={user?.username ?? 'you'} />
 
             {viaAgent ? (
@@ -206,6 +212,109 @@ export function ClusterDetail() {
         <KubeconfigDrawer cluster={cluster} onClose={() => setDrawerOpen(false)} />
       ) : null}
     </AppShell>
+  )
+}
+
+/**
+ * Capacity is what the cluster is actually using, read from its own Metrics
+ * API through the same audited tunnel as everything else. It leads with the
+ * cluster total, because the first question is whether the cluster has room;
+ * the per-node rows underneath answer the second one, which is whether that
+ * room is where the work is.
+ *
+ * There is no chart here on purpose: metrics-server keeps a sliding window of
+ * a couple of minutes, so there is no series to draw and pretending otherwise
+ * would invent history the cluster does not have.
+ */
+function Capacity({ cluster }: { cluster: Cluster }) {
+  const [metrics, setMetrics] = useState<NodeMetrics | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let live = true
+    async function read() {
+      try {
+        const next = await fetchNodeMetrics(cluster.id)
+        if (!live) return
+        setMetrics(next)
+        setError(null)
+      } catch (err) {
+        if (!live) return
+        setError(errorMessage(err, 'Could not read this cluster’s usage.'))
+      } finally {
+        if (live) setLoading(false)
+      }
+    }
+
+    void read()
+    // metrics-server samples every 15s or so; matching it keeps the panel live
+    // without spending tunnel round trips on numbers that have not moved.
+    const timer = window.setInterval(() => void read(), 15_000)
+    return () => {
+      live = false
+      window.clearInterval(timer)
+    }
+  }, [cluster.id])
+
+  const summary = metrics?.summary
+
+  return (
+    <Panel
+      title="Capacity"
+      eyebrow="Live"
+      description="Current consumption against allocatable capacity, read from the cluster's Metrics API."
+      bodyClassName="flex flex-col gap-4 p-4"
+    >
+      {error ? <Notice tone="error">{error}</Notice> : null}
+      {!error && metrics && !metrics.available ? (
+        <Notice tone="info">{metrics.reason}</Notice>
+      ) : null}
+      {loading && !metrics ? <p className="text-[13px] text-muted">Reading usage…</p> : null}
+
+      {metrics?.available && summary ? (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Meter
+              label={`CPU across ${summary.nodes} ${summary.nodes === 1 ? 'node' : 'nodes'}`}
+              value={formatCPU(summary.cpu_millicores)}
+              percent={summary.cpu_percent}
+              capacity={formatCPU(summary.cpu_capacity_millicores)}
+            />
+            <Meter
+              label="Memory"
+              value={formatMemory(summary.memory_bytes)}
+              percent={summary.memory_percent}
+              capacity={formatMemory(summary.memory_capacity_bytes)}
+            />
+          </div>
+
+          <ul className="flex flex-col gap-3 border-t border-line-soft pt-4">
+            {metrics.nodes.map((node) => (
+              <li key={node.name} className="flex flex-col gap-2">
+                <span className="truncate font-mono text-[13px] text-fg" title={node.name}>
+                  {node.name}
+                </span>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Meter
+                    label="CPU"
+                    value={formatCPU(node.cpu_millicores)}
+                    percent={node.cpu_percent}
+                    capacity={formatCPU(node.cpu_capacity_millicores)}
+                  />
+                  <Meter
+                    label="Memory"
+                    value={formatMemory(node.memory_bytes)}
+                    percent={node.memory_percent}
+                    capacity={formatMemory(node.memory_capacity_bytes)}
+                  />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </Panel>
   )
 }
 

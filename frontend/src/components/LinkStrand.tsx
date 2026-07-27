@@ -1,12 +1,14 @@
 export type StrandState = 'live' | 'direct' | 'down' | 'idle'
 
-/* Dash pitch differs per state so the strand survives greyscale and a squint:
-   traffic is a fine dash, a fixed wire is solid, a broken link is a long dash. */
+/* The shape of the line carries the state, so the strand survives greyscale and
+   a squint: a live link swells toward the KubeMG end, a fixed wire is flat and
+   even, a broken one is severed in the middle, a waiting one barely registers.
+   No dashes and no marquee — the form does the work, not the motion. */
 const TRACK: Record<StrandState, string> = {
-  live: 'repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 7px)',
+  live: 'linear-gradient(90deg, transparent, currentColor 30%, currentColor)',
   direct: 'linear-gradient(90deg, currentColor, currentColor)',
-  down: 'repeating-linear-gradient(90deg, currentColor 0 7px, transparent 7px 13px)',
-  idle: 'repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 8px)',
+  down: 'linear-gradient(90deg, currentColor, transparent 40%, transparent 60%, currentColor)',
+  idle: 'linear-gradient(90deg, transparent, currentColor 45%, currentColor 55%, transparent)',
 }
 
 const COLOR: Record<StrandState, string> = {
@@ -17,10 +19,10 @@ const COLOR: Record<StrandState, string> = {
 }
 
 const OPACITY: Record<StrandState, string> = {
-  live: 'opacity-45',
-  direct: 'opacity-45',
-  down: 'opacity-80',
-  idle: 'opacity-40',
+  live: 'strand-live',
+  direct: 'opacity-40',
+  down: 'opacity-75',
+  idle: 'opacity-30',
 }
 
 const READING: Record<StrandState, string> = {
@@ -32,10 +34,12 @@ const READING: Record<StrandState, string> = {
 
 /**
  * LinkStrand is the deck's signature: one cluster's link to KubeMG, drawn as a
- * track. When an agent tunnel is open a pulse travels along it right to left,
- * the direction the connection is actually made — the cluster dials out, KubeMG
- * never dials in. A direct-mode cluster is a fixed wire with no traffic of its
- * own; a broken link is a long dash with a notch bitten out of the middle.
+ * single continuous hairline. An open agent tunnel gathers toward the KubeMG
+ * end — the direction the connection is actually made, since the cluster dials
+ * out and KubeMG never dials in — and carries a soft glow that breathes rather
+ * than a pulse that races across the row. A direct-mode cluster is a flat wire
+ * with no traffic of its own; a broken link is severed in the middle; a cluster
+ * that has not dialled in yet is a faint thread fading out at both ends.
  */
 export function LinkStrand({
   state,
@@ -53,30 +57,18 @@ export function LinkStrand({
       role="img"
       aria-label={READING[state]}
       title={READING[state]}
-      className={`relative block overflow-hidden rounded-full ${height} ${COLOR[state]} ${className ?? ''}`}
+      className={`relative block rounded-full ${height} ${COLOR[state]} ${className ?? ''}`}
     >
+      {/* drop-shadow rather than box-shadow: it follows the gradient's own alpha,
+          so the glow gathers where the link is live and dies out where it isn't. */}
       <span
         aria-hidden="true"
-        className={`absolute inset-0 ${OPACITY[state]}`}
-        style={{ backgroundImage: TRACK[state] }}
+        className={`absolute inset-0 rounded-full ${OPACITY[state]}`}
+        style={{
+          backgroundImage: TRACK[state],
+          filter: state === 'live' ? 'drop-shadow(0 0 3px currentColor)' : undefined,
+        }}
       />
-
-      {state === 'live' ? (
-        <span
-          aria-hidden="true"
-          className="strand-pulse absolute inset-y-0 left-0 w-1/3"
-          style={{
-            backgroundImage: 'linear-gradient(90deg, transparent, currentColor, transparent)',
-          }}
-        />
-      ) : null}
-
-      {state === 'down' ? (
-        <span
-          aria-hidden="true"
-          className="absolute top-0 bottom-0 left-1/2 w-2 -translate-x-1/2 bg-surface"
-        />
-      ) : null}
     </span>
   )
 }

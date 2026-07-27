@@ -9,14 +9,17 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// clientUpgrader accepts the browser terminal's WebSocket. The Kubernetes
-// channel subprotocols are echoed back so xterm-style clients and kubectl both
-// see the negotiation they expect.
+// clientUpgrader accepts the browser terminal's WebSocket, and kubectl's for an
+// exec or a port-forward.
+//
+// It deliberately declares no Subprotocols of its own: the subprotocol the
+// client is told is the one the *cluster* agreed to, echoed through the
+// response header. Letting the upgrader choose independently would let this end
+// answer v5 while the API server is speaking v4, and the two framings differ.
 var clientUpgrader = websocket.Upgrader{
 	HandshakeTimeout: 15 * time.Second,
 	ReadBufferSize:   32 << 10,
 	WriteBufferSize:  32 << 10,
-	Subprotocols:     ChannelSubprotocols,
 	// The caller is already authenticated by JWT before reaching here; there is
 	// no cookie to protect, so origin is not the control that matters.
 	CheckOrigin: func(*http.Request) bool { return true },
@@ -29,6 +32,14 @@ var ChannelSubprotocols = []string{
 	"v5.channel.k8s.io",
 	"v4.channel.k8s.io",
 	"channel.k8s.io",
+}
+
+// PortForwardSubprotocols are the WebSocket framings for port-forward, newest
+// first. v2 carries many ports over one socket, which is what makes a single
+// tunnelled session enough; the original carries one port per connection.
+var PortForwardSubprotocols = []string{
+	"v2.portforward.k8s.io",
+	"portforward.k8s.io",
 }
 
 // streamIdleTimeout bounds how long a stream may sit with no traffic at all.
@@ -115,13 +126,20 @@ func (p *Proxy) serveBodyStream(c *gin.Context, tunnel *Tunnel, event *Event, he
 }
 
 // serveUpgradeStream bridges a client's WebSocket to an upgraded session on the
-// target cluster — this is `kubectl exec` and the browser terminal. Bytes are
-// piped verbatim in both directions: the Kubernetes channel protocol multiplexes
-// stdin/stdout/stderr itself, so KubeMG stays out of the payload.
-func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event, header map[string][]string) {
+// target cluster — `kubectl exec`, the browser terminal, and `kubectl
+// port-forward` over its WebSocket transport. Bytes are piped verbatim in both
+// directions: both the channel protocol and the port-forward one multiplex
+// their own substreams behind a leading channel byte, so KubeMG stays out of
+// the payload entirely and one bridge serves all three.
+//
+// offered is what to ask the cluster for when the client named no subprotocol
+// of its own; a client that named some gets exactly those forwarded.
+func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
+	header map[string][]string, offered []string,
+) {
 	requested := websocket.Subprotocols(c.Request)
 	if len(requested) == 0 {
-		requested = ChannelSubprotocols
+		requested = offered
 	}
 
 	stream, head, err := tunnel.OpenStream(c.Request.Context(), &StreamOpen{

@@ -34,13 +34,15 @@ Carried into Phase 3 and completed there:
 - [x] Settings page: server URL, agent image and agent namespace configurable at runtime instead of only through the environment
 - [x] Rebuild the console UI on the Signal Deck design system: two-level rail with a live fleet list, ⌘K command palette, dark/light decks, self-hosted Inter + JetBrains Mono, and the link strand as the state device
 - [x] Add Rancher-style 3rd resource navigation sidebar to Explore page (Workloads, Networking, Storage & Config, Custom Resources, Cluster)
-- [ ] Integrate VictoriaMetrics for minimal footprint metrics
-- [ ] Integrate VictoriaLogs/Promtail for minimal footprint logs
+- [x] Live utilisation from the cluster's own Metrics API (`/metrics/nodes`, `/metrics/pods`), surfaced as capacity meters on the fleet, the cluster page and the pod drawer
+- [x] Log viewer controls on the streamed container log: line filter, wrap toggle, tail toggle
+- [ ] Integrate VictoriaMetrics for minimal footprint metrics — **not started.** The Metrics API above answers "what is this using right now"; it is a two-minute sliding window with no history, so a series backend is still needed for anything over time
+- [ ] Integrate VictoriaLogs/Promtail for minimal footprint logs — **not started.** Logs today are read live from the pod through the tunnel, so nothing survives a pod restart and nothing is searchable across pods
 
 Still open from the streaming work:
-- [ ] `port-forward` over the tunnel — refused with `501` today; it multiplexes arbitrary TCP inside one session and needs its own framing
+- [x] `port-forward` over the tunnel — carried in its WebSocket transport (`v2.portforward.k8s.io`), which the existing upgrade bridge multiplexes verbatim. The SPDY transport is still refused with a `501` that names the fix; implementing it would mean a second multiplexing protocol inside the tunnel for a transport Kubernetes is retiring
 - [ ] `kubectl exec` against a plaintext bastion: client-go refuses to send bearer tokens over `http://`, so kubectl needs TLS in front of the bastion (the browser terminal is unaffected)
-- [ ] Audit retention policy — `PruneAuditEvents` exists but nothing calls it on a schedule
+- [x] Audit retention policy — a background pass every 12 hours prunes past `audit_retention_days`, configurable from the Settings page
 
 ## Phase 4: Enterprise SSO & Identity Provider Federation
 - [ ] Implement SAML/OIDC/LDAP integration module

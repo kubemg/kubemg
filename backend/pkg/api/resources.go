@@ -46,6 +46,15 @@ type containerView struct {
 	Ready    bool   `json:"ready"`
 	Restarts int32  `json:"restarts"`
 	State    string `json:"state"`
+	// The container's own resource contract, normalised into the same units as
+	// the metrics endpoints. Live usage means very little on its own — the
+	// question is always "how close to its limit" — so the denominator travels
+	// with the container rather than being looked up separately. Zero means the
+	// container declares none, which is a real and common answer.
+	CPURequestMillicores int64 `json:"cpu_request_millicores"`
+	CPULimitMillicores   int64 `json:"cpu_limit_millicores"`
+	MemoryRequestBytes   int64 `json:"memory_request_bytes"`
+	MemoryLimitBytes     int64 `json:"memory_limit_bytes"`
 }
 
 type podView struct {
@@ -520,8 +529,12 @@ type podObject struct {
 	Spec struct {
 		NodeName   string `json:"nodeName"`
 		Containers []struct {
-			Name  string `json:"name"`
-			Image string `json:"image"`
+			Name      string `json:"name"`
+			Image     string `json:"image"`
+			Resources struct {
+				Requests map[string]string `json:"requests"`
+				Limits   map[string]string `json:"limits"`
+			} `json:"resources"`
 		} `json:"containers"`
 	} `json:"spec"`
 	Status struct {
@@ -582,6 +595,12 @@ func (p podObject) view() podView {
 		if view.Image == "" {
 			view.Image = container.Image
 		}
+		// Requests and limits come from the spec, which is where they are
+		// declared; a container that has not started yet still has them.
+		view.CPURequestMillicores = parseCPUMillicores(container.Resources.Requests["cpu"])
+		view.CPULimitMillicores = parseCPUMillicores(container.Resources.Limits["cpu"])
+		view.MemoryRequestBytes = parseMemoryBytes(container.Resources.Requests["memory"])
+		view.MemoryLimitBytes = parseMemoryBytes(container.Resources.Limits["memory"])
 		out.Containers = append(out.Containers, view)
 	}
 	out.Total = len(out.Containers)
