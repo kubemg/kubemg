@@ -1,0 +1,96 @@
+package auth
+
+import (
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+)
+
+// contextKey is the Gin context key holding the verified claims.
+const contextKey = "kubemg_claims"
+
+// QueryTokenParam carries the session token on a WebSocket upgrade. A browser
+// cannot set headers when opening a WebSocket, so this is the only way an
+// in-page terminal can authenticate.
+const QueryTokenParam = "access_token"
+
+// RequireAuth validates the Bearer token and stores its claims on the request
+// context.
+func RequireAuth(m *Manager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token, ok := bearerToken(c.GetHeader("Authorization"))
+		if !ok {
+			// Fall back to the query parameter, but only for an upgrade: on an
+			// ordinary request a token in the URL would end up in proxy logs
+			// and browser history for no reason, since a header works there.
+			if isWebSocketUpgrade(c.Request) {
+				token = strings.TrimSpace(c.Query(QueryTokenParam))
+				ok = token != ""
+			}
+		}
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+			return
+		}
+
+		claims, err := m.Parse(token)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+			return
+		}
+
+		c.Set(contextKey, claims)
+		c.Next()
+	}
+}
+
+// RequireRole rejects authenticated requests whose role does not match.
+// It must be chained after RequireAuth.
+func RequireRole(role string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		claims, ok := ClaimsFrom(c)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+			return
+		}
+		if claims.Role != role {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient privileges"})
+			return
+		}
+		c.Next()
+	}
+}
+
+// ClaimsFrom retrieves the verified claims from a Gin context.
+func ClaimsFrom(c *gin.Context) (*Claims, bool) {
+	value, exists := c.Get(contextKey)
+	if !exists {
+		return nil, false
+	}
+	claims, ok := value.(*Claims)
+	return claims, ok
+}
+
+// isWebSocketUpgrade reports whether this request is opening a WebSocket.
+func isWebSocketUpgrade(r *http.Request) bool {
+	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		return false
+	}
+	// Connection is a comma-separated list, and casing is not guaranteed.
+	for _, value := range strings.Split(r.Header.Get("Connection"), ",") {
+		if strings.EqualFold(strings.TrimSpace(value), "upgrade") {
+			return true
+		}
+	}
+	return false
+}
+
+func bearerToken(header string) (string, bool) {
+	scheme, token, found := strings.Cut(strings.TrimSpace(header), " ")
+	if !found || !strings.EqualFold(scheme, "Bearer") {
+		return "", false
+	}
+	token = strings.TrimSpace(token)
+	return token, token != ""
+}

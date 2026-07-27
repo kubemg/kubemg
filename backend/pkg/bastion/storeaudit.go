@@ -1,0 +1,192 @@
+package bastion
+
+import (
+	"context"
+	"log/slog"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/kubemg/kubemg/backend/pkg/db"
+)
+
+// Audit buffering. Records are batched because a proxied call must never wait
+// on a database round trip — the trail is written beside the request, not in
+// front of it.
+const (
+	auditQueueSize     = 4096
+	auditBatchSize     = 128
+	auditFlushInterval = 2 * time.Second
+	auditWriteTimeout  = 10 * time.Second
+)
+
+// AuditSink persists a batch of audit records.
+type AuditSink interface {
+	AppendAuditEvents(ctx context.Context, events []db.AuditEvent) error
+}
+
+// StoreAuditor persists the audit trail asynchronously. Record never blocks:
+// if the queue is full the record is dropped and the drop is itself logged, so
+// a database outage degrades the trail rather than the gateway.
+//
+// Dropping is the honest trade here. The alternative — blocking the proxy —
+// would turn a slow database into an outage for every kubectl in the fleet, and
+// the structured-log auditor still has the record either way.
+type StoreAuditor struct {
+	sink   AuditSink
+	logger *slog.Logger
+
+	queue chan db.AuditEvent
+
+	dropped atomic.Int64
+	done    chan struct{}
+}
+
+// NewStoreAuditor builds the persistent auditor. Run must be started for it to
+// write anything.
+func NewStoreAuditor(sink AuditSink, logger *slog.Logger) *StoreAuditor {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &StoreAuditor{
+		sink:   sink,
+		logger: logger,
+		queue:  make(chan db.AuditEvent, auditQueueSize),
+		done:   make(chan struct{}),
+	}
+}
+
+// Record enqueues an audit event. It is safe from any goroutine and never
+// blocks.
+func (a *StoreAuditor) Record(_ context.Context, event Event) {
+	select {
+	case a.queue <- toAuditRow(event):
+	default:
+		// Log the first drop and then every thousandth, so a sustained outage
+		// does not turn the log itself into the problem.
+		if n := a.dropped.Add(1); n == 1 || n%1000 == 0 {
+			a.logger.Error("audit queue is full, dropping records",
+				slog.Int64("dropped_total", n),
+			)
+		}
+	}
+}
+
+// Run drains the queue until the context is cancelled, then flushes what is
+// left. It blocks and is meant to be started on its own goroutine.
+func (a *StoreAuditor) Run(ctx context.Context) {
+	defer close(a.done)
+
+	ticker := time.NewTicker(auditFlushInterval)
+	defer ticker.Stop()
+
+	batch := make([]db.AuditEvent, 0, auditBatchSize)
+
+	for {
+		select {
+		case <-ctx.Done():
+			// Drain whatever is already queued rather than losing the tail of
+			// the trail on shutdown.
+			for {
+				select {
+				case event := <-a.queue:
+					batch = append(batch, event)
+					if len(batch) >= auditBatchSize {
+						batch = a.flush(batch)
+					}
+					continue
+				default:
+				}
+				break
+			}
+			a.flush(batch)
+			return
+
+		case event := <-a.queue:
+			batch = append(batch, event)
+			if len(batch) >= auditBatchSize {
+				batch = a.flush(batch)
+			}
+
+		case <-ticker.C:
+			batch = a.flush(batch)
+		}
+	}
+}
+
+// Wait blocks until Run has finished flushing, for an orderly shutdown.
+func (a *StoreAuditor) Wait() { <-a.done }
+
+// flush writes a batch and returns an empty slice to keep filling.
+func (a *StoreAuditor) flush(batch []db.AuditEvent) []db.AuditEvent {
+	if len(batch) == 0 {
+		return batch
+	}
+
+	// A detached context: the trail for work that already happened must still
+	// be written even when the server is shutting down.
+	ctx, cancel := context.WithTimeout(context.Background(), auditWriteTimeout)
+	defer cancel()
+
+	if err := a.sink.AppendAuditEvents(ctx, batch); err != nil {
+		a.logger.Error("could not persist audit records",
+			slog.Int("count", len(batch)),
+			slog.String("error", err.Error()),
+		)
+	}
+	return batch[:0]
+}
+
+// toAuditRow flattens an in-flight event into its stored form.
+func toAuditRow(event Event) db.AuditEvent {
+	at := event.At
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	return db.AuditEvent{
+		At:                 at,
+		UserID:             event.UserID,
+		Username:           event.Username,
+		ClusterID:          event.ClusterID,
+		Cluster:            event.Cluster,
+		Verb:               event.Verb,
+		Method:             event.Method,
+		Path:               event.Path,
+		Namespace:          event.Namespace,
+		Resource:           event.Resource,
+		ImpersonatedUser:   event.ImpersonatedUser,
+		ImpersonatedGroups: strings.Join(event.ImpersonatedGroups, ","),
+		Status:             event.Status,
+		DurationMS:         event.Duration.Milliseconds(),
+		Streaming:          event.Streaming,
+		Phase:              event.Phase,
+		BytesOut:           event.BytesOut,
+		BytesIn:            event.BytesIn,
+		Error:              event.Error,
+	}
+}
+
+// MultiAuditor fans one event out to several auditors. The structured log and
+// the database are both wanted: the log is what a SIEM already tails, the table
+// is what the UI queries.
+type MultiAuditor struct {
+	auditors []Auditor
+}
+
+// NewMultiAuditor combines auditors, skipping nil ones so wiring stays simple.
+func NewMultiAuditor(auditors ...Auditor) *MultiAuditor {
+	out := make([]Auditor, 0, len(auditors))
+	for _, auditor := range auditors {
+		if auditor != nil {
+			out = append(out, auditor)
+		}
+	}
+	return &MultiAuditor{auditors: out}
+}
+
+// Record forwards to every auditor.
+func (m *MultiAuditor) Record(ctx context.Context, event Event) {
+	for _, auditor := range m.auditors {
+		auditor.Record(ctx, event)
+	}
+}

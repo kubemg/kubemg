@@ -1,0 +1,63 @@
+# Compiled binaries. `make backend-build` and `make agent-build` drop these in
+# the tree, and the backend one is ~90 MB.
+/backend/server
+/agent/kubemg-agent
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go workspace files — local to whoever set them up.
+go.work
+go.work.sum
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Credentials and local overrides. The dev stack's defaults live in
+# docker-compose.yml; anything real belongs in an untracked env file.
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+!**/testdata/**/*.pem
+!**/testdata/**/*.key
+kubeconfig
+kubeconfig-*.yaml
+*.kubeconfig
+
+# Rendered agent install packages. These carry a cluster registration token —
+# they are generated per cluster and must never be committed.
+kustomize.tar.gz
+*-kubemg-agent.yaml
+*-kubemg-agent.tar.gz
+
+# Local Postgres data if the compose volume is ever bind-mounted.
+/data/
+/pgdata/
+
+# Editors and OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.sw?
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage/
+coverage.out
+*.cover

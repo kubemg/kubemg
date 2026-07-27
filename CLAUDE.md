@@ -1,0 +1,133 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+# Claude-CLI Instructions & Project Rules
+
+You are **Claude-CLI** (The Coder / Implementer) working on the **KubeMG** project alongside **Antigravity** (The Planner / Architect). The same rules are mirrored in `AGENT_RULES.md`, `.cursorrules`, `.clinerules`, `.windsurfrules`, and `.agents/rules/agentrule.md` — keep any edits to this workflow in sync across all of them.
+
+## Repository state
+Phases 1 and 2 are complete. Phase 3 is half done: the single-pane-of-glass UI and on-demand state via the agent have landed; the VictoriaMetrics / VictoriaLogs observability stack has not been started. Check `roadmap.md` for current status before starting work.
+
+**Backend** (`github.com/kubemg/kubemg/backend`, Gin + GORM + PostgreSQL 16):
+- `pkg/db` — `User`/`Cluster`/`UserClusterAccess`/`Group`/`UserGroup`/`GroupClusterAccess` models (join tables pin `TableName()` to `user_cluster_access`, `user_groups`, `group_cluster_access`; GORM would otherwise pluralize them), `Store` query layer (`store.go` for clusters, `iam.go` for users/groups/permissions), AutoMigrate on startup. `User.Role` is the coarse privilege the JWT carries and is *derived* from `User.SystemRole` (`superadmin`/`admin`/`user`) — always set SystemRole and let `Normalize()`/`LegacyRoleFor` fill in Role, never write the two independently. `AccessForUser` returns **effective** access: direct grants merged with everything inherited from the caller's groups, more permissive grant winning (`MergeAccess`).
+- `pkg/auth` — bcrypt hashing, HS256 JWT manager, `RequireAuth`/`RequireRole` middleware.
+- `pkg/k8s` — per-cluster `rest.Config` + cached clientsets, TokenRequest issuance (creates the per-user service account if absent), kubeconfig rendering via `clientcmd`.
+- `pkg/api` — `/health`, `/api/v1/auth/{login,me}`, `/api/v1/clusters` (GET/POST), `GET|DELETE /api/v1/clusters/:id`, `POST /api/v1/clusters/:id/check` (admin health probe), `POST /api/v1/clusters/:id/kubeconfig/generate`, plus the admin-only IAM surface: `/api/v1/users` (GET/POST, `PUT|DELETE /:id`, `PATCH /:id/status`), `/api/v1/groups` (GET/POST, `DELETE /:id`, `POST /:id/members`, `DELETE /:id/members/:userId`), `/api/v1/permissions` (GET, `POST /assign`, `POST /revoke`), `/api/v1/settings` (GET/PUT). CORS must keep allowing the `Authorization` header — gin's `cors.Default()` does not, which silently breaks the whole SPA — and its `AllowMethods` must keep PUT/PATCH for the user routes.
+  Account safety rules live in the handlers, not the store: a caller can never delete, disable, or change the system role of *its own* account (that self-protection is what guarantees an active admin always remains — do not add a redundant "last admin" count), and only a super admin may create or manage another super admin. Disabled accounts are rejected in `currentUser`, so a live JWT stops working the moment the account is disabled.
+- `pkg/config` — env-driven config (`DB_*`, `JWT_*`, `KUBEMG_SA_NAMESPACE`, `CORS_ALLOWED_ORIGINS`, `KUBEMG_ADMIN_*`, plus Phase 2's `KUBEMG_PUBLIC_URL`/`KUBEMG_AGENT_IMAGE`/`KUBEMG_AGENT_NAMESPACE`). `KUBEMG_PUBLIC_URL` is baked into every generated install command, so it must be the address a *target cluster* can reach, not the listen address. The environment only supplies the **boot-time default**: `KUBEMG_PUBLIC_URL`/`KUBEMG_AGENT_IMAGE`/`KUBEMG_AGENT_NAMESPACE` are each overridable at runtime from the Settings page (`pkg/db/settings.go` key/value table, `pkg/api/settings.go`). Nothing may read `s.publicURL`/`s.agentImage`/`s.agentNamespace` directly any more — go through `s.settings(ctx)`, which resolves override-then-default and falls back to the environment when the database is unreachable, because failing to render an install command is worse than rendering it with the boot-time address. An empty override means "use the default"; that is how a setting is cleared. A bootstrap admin is seeded when the users table is empty.
+
+**Frontend** (Vite + React + TS + Tailwind v4 + lucide-react + react-router + xterm): `src/api` (axios client with JWT injection), `src/state` (auth + clusters contexts, each split into a `*-context.ts` hook file and a `*Provider.tsx` component so lint stays happy), `src/pages` (Login, Overview, ClusterManagement, ClusterWizard, ClusterDetail, Explore, AuditTrail, UserManagement, GroupManagement, PermissionsMatrix, Settings), `src/components` (`AppShell` is the console frame; `primitives.tsx` holds Button/Field/Panel/`Drawer`/`CodeBlock`/table atoms; `PodDrawer` and `PodTerminal` are the Explore detail surfaces). Every editing surface goes through the shared `Drawer` primitive — do not hand-roll another dialog. `PodTerminal` is **lazy-loaded** on purpose: xterm is ~290 kB and most sessions never open a shell, so it must not be in the main bundle. Streaming reads (followed logs, exec) bypass axios and use `fetch`/`WebSocket` against `proxyURL()` directly, because axios buffers a response body and would defeat the point.
+
+**The cluster is the primary object, not the kubeconfig.** Per `PROJECT_KNOWLEDGE.md` the product is central cluster administration, health visibility, and RBAC access; issuing a kubeconfig is one security feature. So the IA is: `/` fleet Overview (environment-banded tiles with live health, version, last-checked) → `/clusters` admin inventory table → `/clusters/new` registration wizard → `/clusters/:id` cluster detail. Kubeconfig generation has **no page of its own** — it is a drawer opened from a cluster (`KubeconfigDrawer`). Do not reintroduce a top-level kubeconfig route.
+
+**Registration is a page, not a drawer** (`ClusterWizard.tsx`, `/clusters/new`, registered *before* `/clusters/:id` so "new" is not parsed as an id): four steps — identity, connection mode, handshake, access. The cluster is created on leaving step 2, so steps 1–2 lock afterwards and steps 3–4 act on the real record. Step 3 polls `GET /clusters/:id` every 3s and stops the moment the agent attaches; that live wait is the point of the step, since the operator is pasting a command into a terminal elsewhere. This is the one editing surface that is deliberately *not* the `Drawer` primitive — everything else still is.
+
+Visual language is the **Daylight Console** (Argo CD / Grafana register), deliberately not editorial: chrome sits on ink (`--color-ink*`: fixed left rail carrying brand → cluster context → grouped nav → identity), everything you read and act on sits on paper (`bg`/`surface`), and the slim top bar carries a breadcrumb plus the page's primary action. Content lives in bordered panels; clusters are a real `<table>`; every editing surface is the right-side `Drawer`. Type is the neutral system grotesque stack (Arial/Helvetica/Segoe UI) at a 13px base with `label` uppercase micro-caps, and **mono carries the data** — cluster names, endpoints, versions, counts, grants — with tabular figures. **No webfonts, do not reintroduce them; no glow, gradients, or neon.** Blue (`primary`) is the only interactive accent; green/amber/red are semantic state only (health, expiry thresholds, prod, destructive). State always reads as form as well as colour: a 3px `SPINE_TONE` marker on the leading edge of rows, cards and ribbon bars, plus a `Pill` that carries a dot *and* a word. Two signature devices: the **fleet ribbon** on Overview (one bar per cluster, colour = last known state, height = how recently the check ran) and the **access path** on cluster detail (identity → grant → namespaces → cluster RBAC, ending in an amber hop while no RoleBinding exists). Tables hide the API-server and role columns below `md` instead of scrolling the page sideways.
+
+**Two connection modes** (`Cluster.ConnectionMode`, Phase 2): `direct` is the Phase 1 path — KubeMG stores an API URL plus a service account token and dials the cluster itself. `agent` is the bastion path — the cluster runs the Dumb Agent, which dials *out* and holds a WebSocket open, and KubeMG stores no cluster credential at all (only the registration token the agent presents). Registering in agent mode mints that token; `api_url`/`service_account_token` are required in direct mode only. `checkCluster` branches on the mode: an agent cluster's health is the tunnel pool, not a probe against an API server KubeMG has no route to.
+
+**Phase 2 packages**: `pkg/bastion` (`server.go` tunnel listener + handshake, `registry.go` connection pool and per-tunnel request multiplexing, `proxy.go` the `kubectl` proxy, `audit.go` structured audit records, `protocol.go` the wire format, `token.go` registration tokens); `pkg/agentpkg` renders the agent install package from `base/*.yaml` embedded via `go:embed`. Routes added: `GET /agent/v1/tunnel` (agent WebSocket, authenticated by registration token, outside the JWT middleware), `GET /install/:token/{agent.yaml,kustomize.tar.gz}` (unauthenticated because kubectl cannot carry a session — the token *is* the credential), `GET /api/v1/clusters/:id/kustomize` (admin), and `ANY /api/v1/clusters/:id/proxy/*path`.
+
+`agent/` is a **separate open-source Go module** depending only on `gorilla/websocket` — no client-go, which is what keeps the binary near 7 MB. It mirrors the wire format in `agent/internal/protocol`; the two copies agree on JSON field names and `ProtocolVersion`, which the bastion checks at handshake. The Kustomize manifests exist twice on purpose (`deploy/kustomize/base/` is human-facing, `backend/pkg/agentpkg/base/` is embedded); `make manifest-check` diffs them and is part of `make verify`, so edit both or neither.
+
+**Known gap** (deliberate, not a bug): in **direct** mode KubeMG mints tokens but provisions no RoleBinding, so generated kubeconfigs authenticate without authorizing, and the permission matrix governs *KubeMG's own* authorization rather than the target cluster's RBAC. In **agent** mode this closes: the installed manifests bind `kubemg:view`/`kubemg:edit`/`kubemg:cluster-admin` to the built-in ClusterRoles, and the proxy asserts the caller with `Impersonate-User`/`Impersonate-Group`, so the cluster's own RBAC decides. The cluster detail page, the permissions page and the wizard's last step all say which of the two applies — keep that disclosure honest and mode-aware.
+
+Namespace scope is enforced in the proxy (a scoped grant refuses anything not naming one of its namespaces, except discovery paths) because it is a KubeMG concept impersonation groups cannot express; the *role* is deliberately not enforced locally — that is the cluster's job, and it does it: a `view` grant really is read-only inside the cluster via the `kubemg:view` binding.
+
+**Streaming (protocol v2)**: the tunnel carries long-lived calls as well as request/response pairs. `pkg/bastion/stream.go` multiplexes streams over the same socket by correlation ID; `streamproxy.go` has the two shapes — `serveBodyStream` for `watch` and `logs -f` (response head, then flushed chunks) and `serveUpgradeStream` for `exec`/`attach` (client WebSocket bridged to the agent's upgraded session, bytes piped verbatim because the Kubernetes channel protocol multiplexes stdin/stdout/stderr itself). Only the *handshake* is bounded (`streamOpenTimeout`); a stream itself may run for hours. A stream that its consumer cannot drain is killed alone rather than blocking the tunnel (`streamBuffer`, `ErrStreamBacklog`) — never make a full buffer block the read loop, it would stall every other stream on that socket. `port-forward` is still `501`: it multiplexes arbitrary TCP and needs its own framing. Bumping `ProtocolVersion` is a breaking change — the bastion refuses a mismatched handshake, so `agent/internal/protocol` must move with it.
+
+Browsers cannot set headers on a WebSocket, so the in-page terminal authenticates with `?access_token=`; `auth.RequireAuth` accepts it **only on an upgrade request**, and `strippedQuery` removes it before the path reaches the cluster or the audit trail. Note that `kubectl exec` through the proxy needs TLS in front of the bastion: client-go refuses to send bearer tokens over `http://` at all, even to loopback.
+
+**Audit (`pkg/bastion/audit.go`, `storeaudit.go`, `pkg/db/audit.go`)**: every proxied call is recorded, refusals included. A streaming call is recorded **twice**, at `PhaseOpen` and `PhaseClose`, so a session that runs for an hour is visible while it is still running; the closing record carries duration and bytes each way. `VerbFor` names `exec`/`attach`/`portforward`/`log` after the subresource rather than the HTTP method — recording a shell in a production pod as a "get" would bury the most sensitive line in the trail under the most common one. Persistence is asynchronous and **drops on a full queue rather than blocking the proxy**: a slow database must never become a slow kubectl, and the structured-log auditor still has the record. `MultiAuditor` fans out to both. `GET /api/v1/audit` is readable by everyone but a non-admin is silently narrowed to their own `user_id` — do not "fix" that by making it admin-only, and do not let the query parameter widen it.
+
+**On-demand state (`pkg/api/resources.go`)**: `/api/v1/clusters/:id/resources/{namespaces,workloads,pods,pods/:pod,pods/:pod/logs}` read live cluster state through `bastion.Proxy.Call`, which is the same impersonation, namespace enforcement and audit trail as a kubectl call — the UI gets no privileged shortcut. Responses are normalised server-side so the browser does not need to know six Kubernetes list shapes. A namespace-scoped grant is answered **from the grant** rather than by listing the cluster, so a scoped user cannot enumerate namespaces they were not given.
+
+## Core Responsibilities
+1. **Strict Token Economy**: Output code, commands, or file edits directly. Do NOT include conversational explanations, filler text, summaries, or unnecessary code comments unless explicitly requested. Every token counts.
+2. **Execute Antigravity's Plans**: Follow the instructions provided in `implementation_plan.md` or the specific prompt passed to you by Antigravity. Do not introduce new architectural patterns without explicit instructions.
+3. **Roadmap Tracking**: When you successfully complete a feature or task, you MUST open `roadmap.md` and check off (`[x]`) the completed items.
+4. **Context Recovery**: Always refer to `PROJECT_KNOWLEDGE.md` to understand KubeMG's architecture, security model, and GTM strategy. Refer to `roadmap.md` to see overall project status.
+
+## Two-Agent Workflow
+This project is developed by a human passing work between two AI agents:
+- **Antigravity (Planner/Architect)**: writes `implementation_plan.md` and a Claude-CLI prompt for each task; never writes or modifies application code or stack configuration files (`backend/*`, `frontend/*`, `docker-compose.yml`, `Makefile`); updates `roadmap.md` with granular tasks.
+- **Claude-CLI (you)**: executes the plan/prompt handed to you, writes the actual code, and checks off `roadmap.md` items on completion.
+
+When picking up a task with no explicit plan attached, read `PROJECT_KNOWLEDGE.md` and `roadmap.md` first to recover context rather than asking the user to re-explain the project.
+
+## Product Architecture (from PROJECT_KNOWLEDGE.md)
+KubeMG is a centralized, web-based Kubernetes access/management platform (alternative to Rancher/K8s Dashboard/Lens), commercial closed-source with an open-source agent component:
+- **Bastion/Gateway Proxy**: central server proxies all K8s API traffic over port 443, inspecting `kubectl` commands (including `exec`/`logs`) and keeping audit logs. Developers never get direct network access to the K8s API or nodes.
+- **Dumb Agent**: a lightweight (~10-15 MB) open-source agent deployed in-cluster that opens an *outbound* reverse tunnel (gRPC/WebSocket) to the central server — no inbound firewall ports needed, no heavy in-cluster CRDs/controllers.
+- **K8s Impersonation**: the proxy talks to the K8s API using `Impersonate-User`/`Impersonate-Group` headers instead of managing per-user Service Account tokens.
+- **Kubeconfig issuance**: short-lived `kubeconfig`s are generated via the K8s TokenRequest API (MVP/Phase 1).
+- **Observability isolation**: live pod state is fetched on-demand via the Dumb Agent; metrics/logs use either the customer's existing stack (BYO Prometheus/Loki/Elastic) or an auto-provisioned lightweight VictoriaMetrics + VictoriaLogs/Promtail stack — avoid heavy monitoring tooling.
+- **Licensing model**: backend (Go/Rust) + UI + identity/authz are closed-source with license keys (SaaS or on-prem); only the Dumb Agent is open-source.
+
+See `roadmap.md` for the phase breakdown (Phase 1 MVP → Phase 2 Bastion/Agent → Phase 3 Single Pane of Glass UI/Observability → Phase 4 Enterprise SSO & Federation) and current checkbox status — always check it before starting work to confirm what's already done.
+
+## General Project Stack & Structure
+- **Core Backend**: Go / Rust (Compiled closed-source)
+- **Frontend**: React / Next.js / Vite (Modern dark UI, Single Pane of Glass)
+- **Agent**: Lightweight Dumb Agent (Reverse tunnel over gRPC/WebSocket, open-source)
+- **Architecture**: Bastion / Gateway proxying port 443 with K8s Impersonation headers
+
+## Containerized Commands (Docker execution)
+
+All building, testing, dependency management, and dev server tasks must be run inside Docker containers.
+
+**Preferred entrypoint: the root `Makefile`** (wraps every command below in a container, with cached Go module/build and npm volumes). Run from project root:
+```bash
+make verify           # manifest-check + backend vet/test/build + agent vet/test/build + frontend lint/build
+make test             # backend + agent tests
+make build            # backend + agent + frontend build
+make manifest-check   # diff deploy/kustomize/base against the embedded copy
+make backend-test     # go test ./...
+make backend-vet      # go vet ./...
+make backend-build    # go build -o server ./cmd/server
+make backend-tidy     # go mod tidy
+make agent-test / agent-vet / agent-build / agent-tidy   # the open-source agent module
+make agent-image      # distroless agent image (AGENT_VERSION=x.y.z)
+make frontend-lint    # oxlint
+make frontend-build   # tsc -b && vite build
+make up / down / logs / ps   # docker compose dev stack (backend :8080, frontend :5173)
+```
+
+`docker-compose.ci.yml` exposes the same jobs as compose services for CI runners:
+```bash
+docker compose -f docker-compose.ci.yml run --rm backend-test
+docker compose -f docker-compose.ci.yml run --rm frontend-build
+```
+
+Raw equivalents — backend (run from project root):
+```bash
+# build server binary inside container
+docker run --rm -v $(pwd)/backend:/app -w /app golang:1.26 go build -o server ./cmd/server
+
+# run all tests
+docker run --rm -v $(pwd)/backend:/app -w /app golang:1.26 go test ./...
+
+# run single test
+docker run --rm -v $(pwd)/backend:/app -w /app golang:1.26 go test -run TestName ./pkg/auth
+
+# tidy go modules
+docker run --rm -v $(pwd)/backend:/app -w /app golang:1.26 go mod tidy
+```
+
+Frontend (run from project root):
+```bash
+# install dependencies
+docker run --rm -v $(pwd)/frontend:/app -w /app node:22 npm install
+
+# run dev server on :5173
+docker run --rm -v $(pwd)/frontend:/app -w /app -p 5173:5173 node:22 npm run dev -- --host
+
+# build frontend (tsc & vite build)
+docker run --rm -v $(pwd)/frontend:/app -w /app node:22 npm run build
+
+# lint frontend
+docker run --rm -v $(pwd)/frontend:/app -w /app node:22 npm run lint
+```
+
+**Toolchain Note**: Host installation of Go, Node, or npm is not required. All tools are executed strictly within disposable Docker containers.

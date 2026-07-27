@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: __AGENT_NAMESPACE__
+  labels:
+    app.kubernetes.io/name: kubemg-agent
+    app.kubernetes.io/part-of: kubemg

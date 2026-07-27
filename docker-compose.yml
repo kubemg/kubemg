@@ -1,0 +1,77 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kubemg-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=kubemg
+      - POSTGRES_USER=kubemg
+      - POSTGRES_PASSWORD=kubemg_secret
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kubemg -d kubemg"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: kubemg-backend
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    environment:
+      - GIN_MODE=debug
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=kubemg
+      - DB_PASSWORD=kubemg_secret
+      - DB_NAME=kubemg
+      - DB_SSLMODE=disable
+      - JWT_SECRET=kubemg_dev_secret_change_me
+      - KUBEMG_ADMIN_USERNAME=admin
+      - KUBEMG_ADMIN_PASSWORD=admin
+      - KUBEMG_SA_NAMESPACE=kubemg-system
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+      # Baked into every generated agent install command, so it has to be the
+      # address the target cluster can reach — not the container's own.
+      - KUBEMG_PUBLIC_URL=http://localhost:8080
+      - KUBEMG_AGENT_IMAGE=docker.io/ozkanpoyrazoglu/kubemg-agent:0.1.0
+      - KUBEMG_AGENT_NAMESPACE=kubemg-system
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 60s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: kubemg-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8080
+    depends_on:
+      - backend
+
+volumes:
+  postgres-data:
+  go-mod-cache:
+  go-build-cache:
