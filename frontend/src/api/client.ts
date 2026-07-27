@@ -12,6 +12,10 @@ import type {
   ConfigEntry,
   CronJob,
   CustomResourceDefinition,
+  DatasourceCandidate,
+  DatasourceCheck,
+  DatasourceInput,
+  DatasourceKind,
   Group,
   Ingress,
   Job,
@@ -19,6 +23,8 @@ import type {
   LoginResponse,
   Namespace,
   NewCluster,
+  ObservabilityResponse,
+  ObservabilitySource,
   NewUser,
   NodeMetrics,
   OptionalList,
@@ -509,4 +515,60 @@ export async function fetchSettings(): Promise<SettingsResponse> {
 export async function updateSettings(patch: SettingsPatch): Promise<SettingsResponse> {
   const { data } = await http.put<SettingsResponse>('/settings', patch)
   return { ...data, warnings: data.warnings ?? [] }
+}
+
+/* ------------------------------------------------------- observability --- */
+
+/** fetchObservability returns the datasources registered for a cluster. */
+export async function fetchObservability(clusterId: number): Promise<ObservabilityResponse> {
+  const { data } = await http.get<ObservabilityResponse>(`/clusters/${clusterId}/observability`)
+  return { ...data, sources: data.sources ?? [] }
+}
+
+export async function saveDatasource(
+  clusterId: number,
+  kind: DatasourceKind,
+  input: DatasourceInput,
+): Promise<{ source: ObservabilitySource; check: DatasourceCheck }> {
+  const { data } = await http.put<{ source: ObservabilitySource; check: DatasourceCheck }>(
+    `/clusters/${clusterId}/observability/sources/${kind}`,
+    input,
+  )
+  return data
+}
+
+export async function deleteDatasource(clusterId: number, kind: DatasourceKind): Promise<void> {
+  await http.delete(`/clusters/${clusterId}/observability/sources/${kind}`)
+}
+
+/** testDatasource checks a draft that has not been saved yet. */
+export async function testDatasource(
+  clusterId: number,
+  kind: DatasourceKind,
+  input: DatasourceInput,
+): Promise<DatasourceCheck> {
+  const { data } = await http.post<DatasourceCheck>(
+    `/clusters/${clusterId}/observability/sources/${kind}/test`,
+    input,
+  )
+  return data
+}
+
+/** checkDatasource re-checks the stored source and records the verdict. */
+export async function checkDatasource(
+  clusterId: number,
+  kind: DatasourceKind,
+): Promise<{ source: ObservabilitySource; check: DatasourceCheck }> {
+  const { data } = await http.post<{ source: ObservabilitySource; check: DatasourceCheck }>(
+    `/clusters/${clusterId}/observability/sources/${kind}/check`,
+  )
+  return data
+}
+
+/** discoverDatasources looks for a backend that is already running in-cluster. */
+export async function discoverDatasources(clusterId: number): Promise<DatasourceCandidate[]> {
+  const { data } = await http.get<{ candidates: DatasourceCandidate[] }>(
+    `/clusters/${clusterId}/observability/discover`,
+  )
+  return data.candidates ?? []
 }

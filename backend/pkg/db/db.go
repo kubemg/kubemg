@@ -41,6 +41,7 @@ func Migrate(gdb *gorm.DB) error {
 		&GroupClusterAccess{},
 		&AuditEvent{},
 		&Setting{},
+		&ObservabilitySource{},
 	); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
 	}

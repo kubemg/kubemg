@@ -264,6 +264,11 @@ func (s *Store) DeleteCluster(ctx context.Context, id uint) error {
 		if err := tx.Where("cluster_id = ?", id).Delete(&GroupClusterAccess{}).Error; err != nil {
 			return fmt.Errorf("delete group cluster access: %w", err)
 		}
+		// A datasource describes one cluster and outlives nothing; leaving it
+		// behind would strand a stored credential with no owner.
+		if err := tx.Where("cluster_id = ?", id).Delete(&ObservabilitySource{}).Error; err != nil {
+			return fmt.Errorf("delete observability sources: %w", err)
+		}
 		return nil
 	})
 }

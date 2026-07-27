@@ -67,6 +67,12 @@ type Store interface {
 
 	Settings(ctx context.Context) (map[string]string, error)
 	PutSettings(ctx context.Context, values map[string]string, updatedBy uint) error
+
+	ObservabilitySources(ctx context.Context, clusterID uint) ([]db.ObservabilitySource, error)
+	ObservabilitySource(ctx context.Context, clusterID uint, kind string) (*db.ObservabilitySource, error)
+	PutObservabilitySource(ctx context.Context, source *db.ObservabilitySource) error
+	UpdateSourceHealth(ctx context.Context, id uint, health db.SourceHealth) error
+	DeleteObservabilitySource(ctx context.Context, clusterID uint, kind string) error
 }
 
 // Options wires the router's dependencies.
@@ -225,6 +231,29 @@ func NewRouter(opts Options) *gin.Engine {
 		}
 		if opts.Bastion != nil {
 			clusters.GET("/:id/kustomize", requireAdmin, s.clusterKustomize)
+		}
+
+		// Where this cluster's metrics and logs actually come from. The Metrics
+		// API read below answers "right now"; a series backend is what answers
+		// "since when", and it is registered per cluster because that is where
+		// it lives. Reading the configuration is open to anyone the cluster is
+		// granted to — you cannot be shown a chart from a source you cannot know
+		// exists — while changing it is administrative, and the credential never
+		// travels back out.
+		sources := clusters.Group("/:id/observability")
+		sources.GET("", s.listObservabilitySources)
+		sources.PUT("/sources/:kind", requireAdmin, s.putObservabilitySource)
+		sources.DELETE("/sources/:kind", requireAdmin, s.deleteObservabilitySource)
+		// test checks a draft nobody has saved yet, which is what makes the
+		// wizard's "check connection" honest; check re-runs the stored one and
+		// records the verdict.
+		sources.POST("/sources/:kind/test", requireAdmin, s.testObservabilitySource)
+		sources.POST("/sources/:kind/check", requireAdmin, s.checkObservabilitySource)
+		if opts.Proxy != nil {
+			// Most clusters are already running one of these. Looking first is
+			// the difference between metrics that get connected and metrics that
+			// stay a task nobody does.
+			sources.GET("/discover", requireAdmin, s.discoverObservabilitySources)
 		}
 		if opts.Proxy != nil {
 			// kubectl's server URL points here, so every verb has to land on

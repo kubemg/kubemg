@@ -38,6 +38,9 @@ type fakeStore struct {
 	groupAccess map[uint]map[uint]db.GroupClusterAccess // groupID -> clusterID -> grant
 	audit       []db.AuditEvent
 	settings    map[string]string
+	// sources holds the observability datasources, keyed the way the table is:
+	// one per cluster per kind.
+	sources map[uint]map[string]db.ObservabilitySource
 	nextID      uint
 	createErr   error
 	// pruned records the cutoff of every retention pass, so a test can assert
@@ -55,6 +58,7 @@ func newFakeStore() *fakeStore {
 		members:     map[uint]map[uint]bool{},
 		groupAccess: map[uint]map[uint]db.GroupClusterAccess{},
 		settings:    map[string]string{},
+		sources:     map[uint]map[string]db.ObservabilitySource{},
 		nextID:      1,
 	}
 }
@@ -584,6 +588,64 @@ func (f *fakeStore) PutSettings(_ context.Context, values map[string]string, _ u
 	for key, value := range values {
 		f.settings[key] = value
 	}
+	return nil
+}
+
+func (f *fakeStore) ObservabilitySources(_ context.Context, clusterID uint) ([]db.ObservabilitySource, error) {
+	out := []db.ObservabilitySource{}
+	for _, kind := range db.SourceKinds {
+		if source, ok := f.sources[clusterID][kind]; ok {
+			out = append(out, source)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) ObservabilitySource(
+	_ context.Context, clusterID uint, kind string,
+) (*db.ObservabilitySource, error) {
+	source, ok := f.sources[clusterID][kind]
+	if !ok {
+		return nil, db.ErrNotFound
+	}
+	return &source, nil
+}
+
+func (f *fakeStore) PutObservabilitySource(_ context.Context, source *db.ObservabilitySource) error {
+	if f.sources[source.ClusterID] == nil {
+		f.sources[source.ClusterID] = map[string]db.ObservabilitySource{}
+	}
+	if source.ID == 0 {
+		source.ID = f.nextID
+		f.nextID++
+	}
+	source.UpdatedAt = time.Now()
+	f.sources[source.ClusterID][source.Kind] = *source
+	return nil
+}
+
+func (f *fakeStore) UpdateSourceHealth(_ context.Context, id uint, health db.SourceHealth) error {
+	for clusterID, byKind := range f.sources {
+		for kind, source := range byKind {
+			if source.ID != id {
+				continue
+			}
+			source.LastStatus = health.Status
+			source.LastMessage = health.Message
+			source.DetectedVersion = health.DetectedVersion
+			source.LastCheckedAt = &health.CheckedAt
+			f.sources[clusterID][kind] = source
+			return nil
+		}
+	}
+	return db.ErrNotFound
+}
+
+func (f *fakeStore) DeleteObservabilitySource(_ context.Context, clusterID uint, kind string) error {
+	if _, ok := f.sources[clusterID][kind]; !ok {
+		return db.ErrNotFound
+	}
+	delete(f.sources[clusterID], kind)
 	return nil
 }
 

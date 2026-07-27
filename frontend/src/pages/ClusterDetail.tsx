@@ -4,6 +4,7 @@ import { AlertTriangle, ChevronRight, KeyRound, RefreshCw } from 'lucide-react'
 import { checkCluster, errorMessage, fetchCluster, fetchNodeMetrics } from '../api/client'
 import type { Cluster, NodeMetrics } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { DatasourcePanel } from '../components/DatasourcePanel'
 import { KubeconfigDrawer } from '../components/KubeconfigDrawer'
 import { LinkStrand, StrandNode } from '../components/LinkStrand'
 import {
@@ -173,6 +174,10 @@ export function ClusterDetail() {
             {/* Capacity only exists for a cluster KubeMG can actually read
                 through, which is the agent path. */}
             {viaAgent ? <Capacity cluster={cluster} /> : null}
+
+            {/* Capacity above is a live sample and nothing more; this is where
+                the history behind it comes from, wired per cluster. */}
+            <DatasourcePanel cluster={cluster} />
 
             <AccessPath cluster={cluster} username={user?.username ?? 'you'} />
 

@@ -481,3 +481,97 @@ export interface ResourceManifest {
   editable: boolean
   reason?: string
 }
+
+/* ------------------------------------------------------- observability --- */
+
+/**
+ * Where a cluster's series actually live. The Metrics API read answers "right
+ * now"; a datasource is what answers "since when", and it belongs to the
+ * cluster rather than to the server — two clusters have two Prometheuses.
+ */
+export type DatasourceKind = 'metrics' | 'logs'
+
+export type MetricsProvider = 'victoriametrics' | 'prometheus' | 'thanos' | 'mimir'
+export type LogsProvider = 'victorialogs' | 'loki'
+export type DatasourceProvider = MetricsProvider | LogsProvider
+
+/** How KubeMG reaches it: down the agent tunnel, or dialled from here. */
+export type DatasourceAccess = 'in-cluster' | 'direct'
+
+export type DatasourceAuth = 'none' | 'bearer' | 'basic'
+
+export interface ObservabilitySource {
+  kind: DatasourceKind
+  provider: DatasourceProvider
+  provider_label: string
+  access_mode: DatasourceAccess
+  url?: string
+  service_namespace?: string
+  service_name?: string
+  service_port?: string
+  service_scheme?: string
+  path_prefix?: string
+  auth_mode: DatasourceAuth
+  username?: string
+  /** Whether a credential is stored. The value itself never leaves the server. */
+  has_credential: boolean
+  insecure_skip_verify: boolean
+  enabled: boolean
+  /** The address this resolves to, rendered for display. */
+  endpoint: string
+  last_status: ClusterStatus
+  last_message?: string
+  detected_version?: string
+  last_checked_at?: string
+  updated_at: string
+}
+
+/**
+ * The datasource form. `credential` omitted keeps the stored secret, so editing
+ * a port does not mean re-typing a token; sent empty, it is cleared.
+ */
+export interface DatasourceInput {
+  provider: DatasourceProvider
+  access_mode: DatasourceAccess
+  url?: string
+  service_namespace?: string
+  service_name?: string
+  service_port?: string
+  service_scheme?: string
+  path_prefix?: string
+  auth_mode?: DatasourceAuth
+  username?: string
+  credential?: string
+  insecure_skip_verify?: boolean
+  enabled?: boolean
+}
+
+/** The verdict of one datasource check, written for the person who typed it. */
+export interface DatasourceCheck {
+  reachable: boolean
+  message: string
+  version?: string
+  endpoint: string
+  path: string
+}
+
+export interface ObservabilityResponse {
+  sources: ObservabilitySource[]
+  agent_attached: boolean
+  connection_mode: ConnectionMode
+  editable: boolean
+}
+
+/** A datasource KubeMG believes is already running in the cluster. */
+export interface DatasourceCandidate {
+  kind: DatasourceKind
+  provider: DatasourceProvider
+  service_namespace: string
+  service_name: string
+  service_port: string
+  service_scheme: string
+  path_prefix?: string
+  /** 2 when it matched on the provider's own port, 1 when only on its name. */
+  score: number
+  reason: string
+}
