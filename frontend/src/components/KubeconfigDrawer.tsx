@@ -73,6 +73,17 @@ export function KubeconfigDrawer({
         </>
       }
     >
+      {/* The two connection modes issue two different credentials, and the
+          difference matters to whoever uses the file: one authenticates
+          straight at the API server, the other only ever reaches KubeMG. */}
+      <Notice tone="info">
+        {cluster.connection_mode === 'agent'
+          ? 'kubectl will talk to KubeMG, which replays each call down this cluster’s agent ' +
+            'tunnel as you. The cluster’s own RBAC decides what you may do, and every call is audited.'
+          : 'kubectl will talk to this cluster’s API server directly, using a short-lived token ' +
+            'minted on the cluster.'}
+      </Notice>
+
       <div className="flex flex-col gap-1.5">
         <span className="label">Valid for</span>
         <Segmented
@@ -179,12 +190,18 @@ function IssuedCredential({ issued }: { issued: Kubeconfig }) {
         ) : null}
       </div>
 
+      {issued.warning ? <Notice tone="warn">{issued.warning}</Notice> : null}
+
       <DetailList
         columns={2}
         rows={[
           { term: 'Context', value: issued.context },
           { term: 'Namespace', value: issued.namespace },
-          { term: 'Service account', value: issued.service_account },
+          // Only direct mode authenticates as a service account; the bastion
+          // impersonates the caller, so naming one there would be a lie.
+          issued.connection_mode === 'agent'
+            ? { term: 'Server', value: issued.server }
+            : { term: 'Service account', value: issued.service_account },
           { term: 'Role', value: issued.k8s_role },
         ]}
       />

@@ -10,6 +10,7 @@ import (
 
 	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
 )
@@ -306,5 +307,105 @@ func TestGenerateKubeconfigRouteAbsentWithoutIssuer(t *testing.T) {
 	rec := env.do(t, http.MethodPost, generatePath(cluster.ID), env.tokenFor(t, admin), nil)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected status %d without a token issuer, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
+// An agent cluster stores no API URL and no service account token by design, so
+// the direct-mode path cannot serve it. Its kubeconfig points at KubeMG's own
+// proxy instead of failing with "missing an API URL".
+func TestGenerateKubeconfigForAgentCluster(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addAgentCluster("edge-us", db.EnvStaging, "kmg_token")
+
+	rec := env.do(t, http.MethodPost, generatePath(cluster.ID), env.tokenFor(t, admin), map[string]any{
+		"namespace": "payments",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	body := decode[generateKubeconfigResponse](t, rec)
+	wantServer := "https://kubemg.example.com/api/v1/clusters/" + itoa(cluster.ID) + "/proxy"
+	if body.ConnectionMode != db.ModeAgent || body.Server != wantServer {
+		t.Fatalf("unexpected credential shape: %+v", body)
+	}
+	if body.ServiceAcct != "" {
+		t.Fatalf("agent mode impersonates; no service account should be reported, got %q", body.ServiceAcct)
+	}
+	if body.Warning != "" {
+		t.Fatalf("an https public URL needs no warning, got %q", body.Warning)
+	}
+
+	cfg, err := clientcmd.Load([]byte(body.Kubeconfig))
+	if err != nil {
+		t.Fatalf("returned kubeconfig does not parse: %v\n%s", err, body.Kubeconfig)
+	}
+	kubeCtx := cfg.Contexts[cfg.CurrentContext]
+	if kubeCtx == nil || kubeCtx.Namespace != "payments" {
+		t.Fatalf("unexpected context in kubeconfig: %+v", cfg.Contexts)
+	}
+	if cfg.Clusters[kubeCtx.Cluster].Server != wantServer {
+		t.Fatalf("kubeconfig points at %q", cfg.Clusters[kubeCtx.Cluster].Server)
+	}
+
+	// The credential must be a KubeMG token confined to this cluster's proxy,
+	// not a session key for the rest of the API.
+	claims, err := env.jwt.Parse(cfg.AuthInfos[kubeCtx.AuthInfo].Token)
+	if err != nil {
+		t.Fatalf("kubeconfig token does not verify: %v", err)
+	}
+	if claims.Scope != auth.ScopeProxy || claims.ClusterID != cluster.ID {
+		t.Fatalf("unexpected token claims: %+v", claims)
+	}
+
+	// The agent's registration token is a cluster credential and must not leak.
+	if strings.Contains(rec.Body.String(), "kmg_token") {
+		t.Fatal("response leaked the agent registration token")
+	}
+}
+
+func TestGenerateKubeconfigForAgentClusterHonoursGrantScope(t *testing.T) {
+	env := newTestEnv(t)
+	user := env.store.addUser("devops", "pw", db.RoleUser)
+	cluster := env.store.addAgentCluster("edge-us", db.EnvStaging, "kmg_token")
+	env.store.grant(user.ID, cluster.ID, db.K8sRoleView, []string{"payments"})
+
+	rec := env.do(t, http.MethodPost, generatePath(cluster.ID)+"?namespace=infra", env.tokenFor(t, user), nil)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusForbidden, rec.Code, rec.Body.String())
+	}
+}
+
+// A proxy-scoped token is a file on a laptop: it drives kubectl against its own
+// cluster and must not open anything else.
+func TestProxyScopedTokenIsConfinedToItsCluster(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addAgentCluster("edge-us", db.EnvStaging, "kmg_token")
+
+	token, _, err := env.jwt.GenerateProxyToken(admin.ID, admin.Username, admin.Role, cluster.ID, time.Hour)
+	if err != nil {
+		t.Fatalf("issue proxy token: %v", err)
+	}
+
+	for _, path := range []string{
+		"/api/v1/clusters",
+		"/api/v1/users",
+		"/api/v1/clusters/" + itoa(cluster.ID+1) + "/proxy/api/v1/pods",
+	} {
+		rec := env.do(t, http.MethodGet, path, token, nil)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("%s: expected status %d, got %d (%s)",
+				path, http.StatusForbidden, rec.Code, rec.Body.String())
+		}
+	}
+
+	// Its own cluster's proxy is reachable: no tunnel is attached in this test,
+	// so it gets that far and fails on the connection, not on the token.
+	rec := env.do(t, http.MethodGet,
+		"/api/v1/clusters/"+itoa(cluster.ID)+"/proxy/api/v1/pods", token, nil)
+	if rec.Code == http.StatusForbidden || rec.Code == http.StatusUnauthorized {
+		t.Fatalf("proxy-scoped token was refused on its own cluster: %d (%s)", rec.Code, rec.Body.String())
 	}
 }
