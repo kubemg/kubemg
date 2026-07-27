@@ -13,11 +13,21 @@ var ErrInvalidToken = errors.New("invalid token")
 
 const issuer = "kubemg"
 
+// ScopeProxy marks a token that may only be replayed against one cluster's
+// kubectl proxy. It is what generated kubeconfigs carry in agent mode: the file
+// lands on a laptop, so it must not also open the rest of the KubeMG API.
+const ScopeProxy = "proxy"
+
 // Claims is the KubeMG JWT payload.
 type Claims struct {
 	UserID   uint   `json:"uid"`
 	Username string `json:"username"`
 	Role     string `json:"role"`
+	// Scope narrows what the token may do. Empty is a full session token;
+	// ScopeProxy is confined to ClusterID's proxy routes.
+	Scope string `json:"scope,omitempty"`
+	// ClusterID is the only cluster a scoped token may address.
+	ClusterID uint `json:"cid,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -41,20 +51,38 @@ func (m *Manager) TTL() time.Duration { return m.ttl }
 // Generate issues a signed token for the given identity and returns it with its
 // expiry time.
 func (m *Manager) Generate(userID uint, username, role string) (string, time.Time, error) {
-	now := time.Now()
-	expiresAt := now.Add(m.ttl)
+	return m.sign(Claims{UserID: userID, Username: username, Role: role}, m.ttl)
+}
 
-	claims := Claims{
-		UserID:   userID,
-		Username: username,
-		Role:     role,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    issuer,
-			Subject:   fmt.Sprint(userID),
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(expiresAt),
-		},
+// GenerateProxyToken issues a credential that only works against one cluster's
+// kubectl proxy, for the given lifetime. This is the token a generated
+// kubeconfig carries when KubeMG reaches the cluster through an agent tunnel
+// and therefore has no API server to mint a service account token on.
+func (m *Manager) GenerateProxyToken(
+	userID uint, username, role string, clusterID uint, ttl time.Duration,
+) (string, time.Time, error) {
+	if ttl <= 0 {
+		ttl = m.ttl
+	}
+	return m.sign(Claims{
+		UserID:    userID,
+		Username:  username,
+		Role:      role,
+		Scope:     ScopeProxy,
+		ClusterID: clusterID,
+	}, ttl)
+}
+
+func (m *Manager) sign(claims Claims, ttl time.Duration) (string, time.Time, error) {
+	now := time.Now()
+	expiresAt := now.Add(ttl)
+
+	claims.RegisteredClaims = jwt.RegisteredClaims{
+		Issuer:    issuer,
+		Subject:   fmt.Sprint(claims.UserID),
+		IssuedAt:  jwt.NewNumericDate(now),
+		NotBefore: jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(expiresAt),
 	}
 
 	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(m.secret)

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -21,15 +22,26 @@ type generateKubeconfigRequest struct {
 }
 
 type generateKubeconfigResponse struct {
-	Cluster     string    `json:"cluster"`
-	Context     string    `json:"context"`
-	Namespace   string    `json:"namespace"`
-	TTLSeconds  int64     `json:"ttl_seconds"`
-	ExpiresAt   time.Time `json:"expires_at"`
-	Filename    string    `json:"filename"`
-	Kubeconfig  string    `json:"kubeconfig"`
-	K8sRole     string    `json:"k8s_role"`
-	ServiceAcct string    `json:"service_account"`
+	Cluster    string    `json:"cluster"`
+	Context    string    `json:"context"`
+	Namespace  string    `json:"namespace"`
+	TTLSeconds int64     `json:"ttl_seconds"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	Filename   string    `json:"filename"`
+	Kubeconfig string    `json:"kubeconfig"`
+	K8sRole    string    `json:"k8s_role"`
+	// ServiceAcct is the in-cluster identity the credential authenticates as.
+	// Only direct mode has one; through the bastion the caller is impersonated
+	// and no service account is involved.
+	ServiceAcct string `json:"service_account"`
+	// ConnectionMode says which of the two credentials this is, so the UI can
+	// describe honestly what the file does.
+	ConnectionMode string `json:"connection_mode"`
+	// Server is what kubectl will dial: the cluster's API server in direct
+	// mode, KubeMG's own proxy in agent mode.
+	Server string `json:"server"`
+	// Warning flags a kubeconfig that is rendered but will not work as-is.
+	Warning string `json:"warning,omitempty"`
 }
 
 // generateKubeconfig mints a short-lived token on the target cluster and returns
@@ -80,6 +92,22 @@ func (s *server) generateKubeconfig(c *gin.Context) {
 		return
 	}
 
+	// An agent cluster has no API URL and no stored credential by design —
+	// KubeMG reaches it only through the tunnel — so there is nothing to mint a
+	// service account token on. Its kubeconfig points at KubeMG's own proxy
+	// instead, which is the path that carries impersonation, namespace scope
+	// and the audit trail anyway.
+	if cluster.UsesAgent() {
+		s.agentKubeconfig(c, user, cluster, namespace, k8sRole, ttl)
+		return
+	}
+	if s.tokens == nil {
+		c.JSON(http.StatusFailedDependency, gin.H{
+			"error": "this server cannot mint tokens on target clusters",
+		})
+		return
+	}
+
 	serviceAccount := k8s.ServiceAccountName(user.Username)
 	issued, err := s.tokens.IssueToken(ctx, cluster, k8s.TokenRequest{
 		ServiceAccount:          serviceAccount,
@@ -113,16 +141,93 @@ func (s *server) generateKubeconfig(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, generateKubeconfigResponse{
-		Cluster:     cluster.Name,
-		Context:     input.ContextName(),
-		Namespace:   namespace,
-		TTLSeconds:  int64(ttl.Seconds()),
-		ExpiresAt:   issued.ExpiresAt,
-		Filename:    fmt.Sprintf("%s-%s.kubeconfig", cluster.Name, user.Username),
-		Kubeconfig:  string(kubeconfig),
-		K8sRole:     k8sRole,
-		ServiceAcct: serviceAccount,
+		Cluster:        cluster.Name,
+		Context:        input.ContextName(),
+		Namespace:      namespace,
+		TTLSeconds:     int64(ttl.Seconds()),
+		ExpiresAt:      issued.ExpiresAt,
+		Filename:       fmt.Sprintf("%s-%s.kubeconfig", cluster.Name, user.Username),
+		Kubeconfig:     string(kubeconfig),
+		K8sRole:        k8sRole,
+		ServiceAcct:    serviceAccount,
+		ConnectionMode: db.ModeDirect,
+		Server:         cluster.APIURL,
 	})
+}
+
+// agentKubeconfig renders the bastion-mode credential: kubectl talks to KubeMG,
+// KubeMG replays the call down the cluster's tunnel under the caller's
+// impersonated identity. The token is scoped to this one cluster's proxy, so a
+// leaked kubeconfig cannot be replayed against the rest of the API.
+func (s *server) agentKubeconfig(
+	c *gin.Context,
+	user *db.User,
+	cluster *db.Cluster,
+	namespace, k8sRole string,
+	ttl time.Duration,
+) {
+	if s.proxy == nil {
+		c.JSON(http.StatusFailedDependency, gin.H{
+			"error": "the agent proxy is not enabled on this server",
+		})
+		return
+	}
+
+	publicURL := s.settings(c.Request.Context()).PublicURL
+	if publicURL == "" {
+		c.JSON(http.StatusFailedDependency, gin.H{
+			"error": "no public URL is configured for this server",
+		})
+		return
+	}
+
+	token, expiresAt, err := s.jwt.GenerateProxyToken(
+		user.ID, user.Username, user.Role, cluster.ID, ttl,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not issue an access token"})
+		return
+	}
+
+	server := fmt.Sprintf("%s/api/v1/clusters/%d/proxy", strings.TrimRight(publicURL, "/"), cluster.ID)
+	input := k8s.KubeconfigInput{
+		ClusterName: cluster.Name,
+		Server:      server,
+		Username:    user.Username,
+		Token:       token,
+		Namespace:   namespace,
+	}
+	kubeconfig, err := k8s.BuildKubeconfig(input)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not render kubeconfig"})
+		return
+	}
+
+	c.JSON(http.StatusOK, generateKubeconfigResponse{
+		Cluster:        cluster.Name,
+		Context:        input.ContextName(),
+		Namespace:      namespace,
+		TTLSeconds:     int64(ttl.Seconds()),
+		ExpiresAt:      expiresAt,
+		Filename:       fmt.Sprintf("%s-%s.kubeconfig", cluster.Name, user.Username),
+		Kubeconfig:     string(kubeconfig),
+		K8sRole:        k8sRole,
+		ConnectionMode: db.ModeAgent,
+		Server:         server,
+		Warning:        insecureProxyWarning(server),
+	})
+}
+
+// insecureProxyWarning names the one configuration that renders a valid
+// kubeconfig kubectl still refuses to use: client-go will not send a bearer
+// token over plain http, so a non-TLS public URL fails at the first call with
+// nothing to explain it.
+func insecureProxyWarning(server string) string {
+	if strings.HasPrefix(server, "https://") {
+		return ""
+	}
+	return "This server's public URL is not HTTPS. kubectl refuses to send a bearer token over " +
+		"plain HTTP, so put TLS in front of KubeMG before using this kubeconfig."
 }
 
 // authorizeCluster checks that the user may act on the cluster, returning their

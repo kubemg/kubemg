@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -39,6 +40,14 @@ func RequireAuth(m *Manager) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 			return
 		}
+		// A kubeconfig token is a file on someone's laptop. It authenticates
+		// kubectl against the one cluster it was issued for and nothing else.
+		if claims.Scope == ScopeProxy && !isProxyRequest(c, claims.ClusterID) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error": "this token may only be used against its cluster's kubectl proxy",
+			})
+			return
+		}
 
 		c.Set(contextKey, claims)
 		c.Next()
@@ -70,6 +79,21 @@ func ClaimsFrom(c *gin.Context) (*Claims, bool) {
 	}
 	claims, ok := value.(*Claims)
 	return claims, ok
+}
+
+// proxyRoute is the only route a ScopeProxy token may reach. Matching the
+// registered route rather than the raw URL keeps the check exact: every other
+// route with an ":id" parameter names a different kind of object.
+const proxyRoute = "/api/v1/clusters/:id/proxy/*path"
+
+// isProxyRequest reports whether this request is the kubectl proxy for the
+// cluster the token was issued for.
+func isProxyRequest(c *gin.Context, clusterID uint) bool {
+	if c.FullPath() != proxyRoute || clusterID == 0 {
+		return false
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	return err == nil && uint(id) == clusterID
 }
 
 // isWebSocketUpgrade reports whether this request is opening a WebSocket.

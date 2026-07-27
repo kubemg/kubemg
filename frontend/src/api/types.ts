@@ -435,7 +435,13 @@ export interface Kubeconfig {
   filename: string
   kubeconfig: string
   k8s_role: string
+  /** Empty in agent mode: the bastion impersonates the caller instead. */
   service_account: string
+  connection_mode: ConnectionMode
+  /** What kubectl dials — the API server directly, or KubeMG's proxy. */
+  server: string
+  /** Set when the kubeconfig is valid but cannot work as configured. */
+  warning?: string
 }
 
 /**

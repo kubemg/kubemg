@@ -209,7 +209,11 @@ func NewRouter(opts Options) *gin.Engine {
 		if s.health != nil {
 			clusters.POST("/:id/check", requireAdmin, s.checkCluster)
 		}
-		if s.tokens != nil {
+		// Direct mode mints a token on the cluster; agent mode issues a
+		// proxy-scoped KubeMG token instead. Either dependency is enough to
+		// register the route — the handler branches on the cluster's mode and
+		// answers 424 for the combination it cannot serve.
+		if s.tokens != nil || opts.Proxy != nil {
 			clusters.POST("/:id/kubeconfig/generate", s.generateKubeconfig)
 		}
 		if opts.Bastion != nil {
