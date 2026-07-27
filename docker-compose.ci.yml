@@ -1,0 +1,88 @@
+name: kubemg-ci
+
+services:
+  backend-build:
+    image: golang:1.26-alpine
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    command: go build -o server ./cmd/server
+
+  backend-test:
+    image: golang:1.26-alpine
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    command: go test ./...
+
+  backend-vet:
+    image: golang:1.26-alpine
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    command: go vet ./...
+
+  agent-build:
+    image: golang:1.26-alpine
+    working_dir: /app
+    volumes:
+      - ./agent:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    environment:
+      - CGO_ENABLED=0
+    command: go build -ldflags "-s -w" -o kubemg-agent ./cmd/agent
+
+  agent-test:
+    image: golang:1.26-alpine
+    working_dir: /app
+    volumes:
+      - ./agent:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    command: go test ./...
+
+  agent-vet:
+    image: golang:1.26-alpine
+    working_dir: /app
+    volumes:
+      - ./agent:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    command: go vet ./...
+
+  # The bastion embeds a copy of the agent manifests; drift between the two is
+  # a build failure rather than a surprise at install time.
+  manifest-check:
+    image: golang:1.26-alpine
+    working_dir: /repo
+    volumes:
+      - .:/repo
+    command: diff -ru deploy/kustomize/base backend/pkg/agentpkg/base
+
+  frontend-build:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - npm-cache:/root/.npm
+    command: sh -c "npm ci && npm run build"
+
+  frontend-lint:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - npm-cache:/root/.npm
+    command: sh -c "npm ci && npm run lint"
+
+volumes:
+  go-mod-cache:
+  go-build-cache:
+  npm-cache:

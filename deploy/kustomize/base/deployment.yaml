@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubemg-agent
+  namespace: __AGENT_NAMESPACE__
+spec:
+  # One replica is the right number: the tunnel is a single long-lived socket
+  # and the bastion keeps only the newest connection per cluster, so a second
+  # replica would just be displaced on every reconnect.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubemg-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kubemg-agent
+    spec:
+      serviceAccountName: kubemg-agent
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: agent
+          image: __AGENT_IMAGE__
+          imagePullPolicy: IfNotPresent
+          args: ["--listen=:8081"]
+          env:
+            - name: KUBEMG_BASTION_URL
+              valueFrom:
+                secretKeyRef:
+                  name: kubemg-agent
+                  key: bastion-url
+            - name: KUBEMG_CLUSTER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: kubemg-agent
+                  key: cluster-token
+          ports:
+            - name: health
+              containerPort: 8081
+          # The agent holds one socket and forwards bounded request/response
+          # pairs; it has no cache and no queue. The memory limit is sized for
+          # a single in-flight API object rather than for the 32Mi a truly idle
+          # process would need, so a `kubectl get pods -A` on a large cluster
+          # does not get the agent OOMKilled mid-request.
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            # Ready means "the tunnel is up", so a cluster whose agent cannot
+            # reach the bastion shows as not-ready here as well as in KubeMG.
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
