@@ -10,6 +10,7 @@ import { Check, ChevronDown, Copy, Eye, EyeOff, Loader2, Search, X } from 'lucid
 import type { Cluster, Environment } from '../api/types'
 import { clusterStateLabel, clusterTone } from '../lib/status'
 import type { Tone } from '../lib/status'
+import { usageTone } from '../lib/units'
 
 /* ------------------------------------------------------------------ state --- */
 
@@ -255,11 +256,15 @@ const CONTROL =
 export function Field({
   label,
   hint,
+  error,
   htmlFor,
   children,
 }: {
   label: string
   hint?: string
+  /** Replaces the hint while the field is invalid — two messages under one
+      input is one too many, and the problem outranks the explanation. */
+  error?: string
   htmlFor: string
   children: ReactNode
 }) {
@@ -269,7 +274,13 @@ export function Field({
         {label}
       </label>
       {children}
-      {hint ? <p className="text-[12px] leading-snug text-muted">{hint}</p> : null}
+      {error ? (
+        <p role="alert" className="text-[12px] leading-snug text-danger">
+          {error}
+        </p>
+      ) : hint ? (
+        <p className="text-[12px] leading-snug text-muted">{hint}</p>
+      ) : null}
     </div>
   )
 }
@@ -690,6 +701,82 @@ export function Slab({ children, className }: { children: ReactNode; className?:
     >
       {children}
     </pre>
+  )
+}
+
+/**
+ * Meter is the deck's utilisation bar: a label, the reading in mono, and a
+ * track. It is a bar rather than a chart because the metrics behind it are a
+ * single live sample, not a series — metrics-server keeps a couple of minutes
+ * and nothing more, so there is no history to plot and none is implied.
+ *
+ * A meter with no capacity to measure against still renders the value and says
+ * the denominator is unknown, since "using 40m, no limit set" is exactly the
+ * thing an operator wants to notice.
+ */
+export function Meter({
+  label,
+  value,
+  percent,
+  capacity,
+  className,
+}: {
+  label: string
+  /** The reading itself, already formatted. */
+  value: string
+  /** Utilisation 0-100, or undefined when nothing bounds it. */
+  percent?: number
+  /** The denominator, already formatted. Omitted when there is none. */
+  capacity?: string
+  className?: string
+}) {
+  const bounded = percent !== undefined && capacity !== undefined
+  const tone = bounded ? usageTone(percent) : 'idle'
+  const fill = bounded ? Math.min(100, Math.max(0, percent)) : 0
+
+  return (
+    <div className={`min-w-0 ${className ?? ''}`}>
+      <div className="flex items-baseline gap-2">
+        <span className="label">{label}</span>
+        <span className="ml-auto font-mono text-[12.5px] text-fg tabular-nums">{value}</span>
+        <span className="font-mono text-[12px] text-faint tabular-nums">
+          {bounded ? `/ ${capacity}` : 'no limit'}
+        </span>
+      </div>
+      <div
+        role="meter"
+        aria-label={label}
+        aria-valuenow={bounded ? Math.round(percent) : undefined}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuetext={bounded ? `${value} of ${capacity}` : value}
+        className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-raised"
+      >
+        {/* An unbounded reading gets a hatch rather than a fill: a full-width
+            bar would read as "at capacity", which is the opposite of unknown. */}
+        {bounded ? (
+          <span
+            aria-hidden="true"
+            className={`block h-full rounded-full ${TONE_DOT[tone]}`}
+            style={{ width: `${fill}%` }}
+          />
+        ) : (
+          <span
+            aria-hidden="true"
+            className="block h-full w-full opacity-30"
+            style={{
+              backgroundImage:
+                'repeating-linear-gradient(135deg, currentColor 0 2px, transparent 2px 6px)',
+            }}
+          />
+        )}
+      </div>
+      {bounded ? (
+        <p className="mt-1 font-mono text-[11px] text-faint tabular-nums">
+          {percent.toFixed(percent < 10 ? 1 : 0)}%
+        </p>
+      ) : null}
+    </div>
   )
 }
 

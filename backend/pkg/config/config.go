@@ -49,6 +49,10 @@ type Config struct {
 	AgentImage string
 	// AgentNamespace is where the agent is installed on target clusters.
 	AgentNamespace string
+	// AuditRetentionDays is how long proxied calls are kept before the
+	// background pruner drops them. Like the settings above it is only the
+	// boot-time default; an operator overrides it from the Settings page.
+	AuditRetentionDays int
 }
 
 // Load reads configuration from the environment, applying development defaults.
@@ -74,7 +78,8 @@ func Load() Config {
 		),
 		PublicURL:      strings.TrimRight(env("KUBEMG_PUBLIC_URL", "http://localhost:8080"), "/"),
 		AgentImage:     env("KUBEMG_AGENT_IMAGE", agentpkg.DefaultImage),
-		AgentNamespace: env("KUBEMG_AGENT_NAMESPACE", agentpkg.DefaultNamespace),
+		AgentNamespace:     env("KUBEMG_AGENT_NAMESPACE", agentpkg.DefaultNamespace),
+		AuditRetentionDays: envInt("KUBEMG_AUDIT_RETENTION_DAYS", 30),
 	}
 }
 
@@ -102,6 +107,21 @@ func envList(key string, fallback []string) []string {
 		return fallback
 	}
 	return out
+}
+
+// envInt reads a positive integer. A value that is not one at all falls back
+// rather than failing the boot: a typo in a retention window should not stop
+// the platform from starting.
+func envInt(key string, fallback int) int {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
 }
 
 func envDuration(key string, fallback time.Duration) time.Duration {

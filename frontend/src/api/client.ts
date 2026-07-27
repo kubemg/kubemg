@@ -19,6 +19,7 @@ import type {
   Namespace,
   NewCluster,
   NewUser,
+  NodeMetrics,
   OptionalList,
   Permission,
   PermissionGrant,
@@ -26,6 +27,7 @@ import type {
   PersistentVolume,
   PersistentVolumeClaim,
   Pod,
+  PodMetrics,
   Route,
   Service,
   SettingsPatch,
@@ -395,6 +397,44 @@ export async function fetchPodLogs(
     { params: { namespace, container: container || undefined, tail } },
   )
   return data.log ?? ''
+}
+
+/*
+ * Live utilisation. A cluster without metrics-server is not an error case: the
+ * response says it does not serve the Metrics API and the UI says so too, so
+ * these never reject for a missing add-on.
+ */
+
+export async function fetchNodeMetrics(clusterId: number): Promise<NodeMetrics> {
+  const { data } = await http.get<NodeMetrics>(`/clusters/${clusterId}/metrics/nodes`)
+  return {
+    available: data.available ?? false,
+    reason: data.reason,
+    nodes: data.nodes ?? [],
+    summary: data.summary ?? EMPTY_USAGE,
+  }
+}
+
+export async function fetchPodMetrics(
+  clusterId: number,
+  namespace: string,
+  pod: string,
+): Promise<PodMetrics> {
+  const { data } = await http.get<PodMetrics>(
+    `/clusters/${clusterId}/metrics/pods/${encodeURIComponent(pod)}`,
+    { params: { namespace } },
+  )
+  return { available: data.available ?? false, reason: data.reason, pod: data.pod ?? null }
+}
+
+const EMPTY_USAGE = {
+  nodes: 0,
+  cpu_millicores: 0,
+  cpu_capacity_millicores: 0,
+  cpu_percent: 0,
+  memory_bytes: 0,
+  memory_capacity_bytes: 0,
+  memory_percent: 0,
 }
 
 /**

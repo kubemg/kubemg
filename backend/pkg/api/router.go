@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -62,6 +63,7 @@ type Store interface {
 
 	ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]db.AuditEvent, int64, error)
 	AuditSummary(ctx context.Context, since time.Time) (db.AuditStats, error)
+	PruneAuditEvents(ctx context.Context, before time.Time) (int64, error)
 
 	Settings(ctx context.Context) (map[string]string, error)
 	PutSettings(ctx context.Context, values map[string]string, updatedBy uint) error
@@ -96,6 +98,16 @@ type Options struct {
 	// AgentImage and AgentNamespace parameterise the generated manifests.
 	AgentImage     string
 	AgentNamespace string
+	// AuditRetentionDays is the boot-time default retention window, overridable
+	// at runtime from the Settings page. Zero falls back to
+	// defaultAuditRetentionDays.
+	AuditRetentionDays int
+	// Background scopes the housekeeping goroutines that run alongside the
+	// handlers — today just the audit retention pruner. Left nil, as the tests
+	// leave it, nothing is started and the router is purely request-driven.
+	Background context.Context
+	// Logger is where those goroutines report. Defaults to slog's default.
+	Logger *slog.Logger
 }
 
 // tunnels is the slice of the bastion registry the HTTP layer needs: whether a
@@ -105,16 +117,18 @@ type tunnels interface {
 }
 
 type server struct {
-	store          Store
-	jwt            *auth.Manager
-	tokens         k8s.Issuer
-	health         k8s.Checker
-	tunnels        tunnels
-	proxy          *bastion.Proxy
-	saNamespace    string
-	publicURL      string
-	agentImage     string
-	agentNamespace string
+	store              Store
+	jwt                *auth.Manager
+	tokens             k8s.Issuer
+	health             k8s.Checker
+	tunnels            tunnels
+	proxy              *bastion.Proxy
+	saNamespace        string
+	publicURL          string
+	agentImage         string
+	agentNamespace     string
+	auditRetentionDays int
+	logger             *slog.Logger
 }
 
 // NewRouter builds the KubeMG HTTP router. Authenticated routes are only
@@ -139,19 +153,32 @@ func NewRouter(opts Options) *gin.Engine {
 		publicURL = defaultPublicURL
 	}
 
+	retention := opts.AuditRetentionDays
+	if retention < minAuditRetentionDays {
+		retention = defaultAuditRetentionDays
+	}
+
 	s := &server{
-		store:          opts.Store,
-		jwt:            opts.JWT,
-		tokens:         opts.Tokens,
-		health:         opts.Health,
-		proxy:          opts.Proxy,
-		saNamespace:    saNamespace,
-		publicURL:      publicURL,
-		agentImage:     opts.AgentImage,
-		agentNamespace: opts.AgentNamespace,
+		store:              opts.Store,
+		jwt:                opts.JWT,
+		tokens:             opts.Tokens,
+		health:             opts.Health,
+		proxy:              opts.Proxy,
+		saNamespace:        saNamespace,
+		publicURL:          publicURL,
+		agentImage:         opts.AgentImage,
+		agentNamespace:     opts.AgentNamespace,
+		auditRetentionDays: retention,
+		logger:             opts.Logger,
 	}
 	if opts.Bastion != nil {
 		s.tunnels = opts.Bastion.Registry()
+	}
+	if opts.Background != nil {
+		// The audit table is the one thing here that grows without an operator
+		// touching it, so enforcing its retention is a server responsibility
+		// rather than a cron job someone has to remember to install.
+		go s.startAuditPruner(opts.Background)
 	}
 	requireAuth := auth.RequireAuth(s.jwt)
 	requireAdmin := auth.RequireRole(db.RoleAdmin)
@@ -229,6 +256,14 @@ func NewRouter(opts Options) *gin.Engine {
 
 			resources.GET("/crds", s.listCRDs)
 			resources.GET("/nodes", s.listNodes)
+
+			// Live utilisation from the cluster's own Metrics API. It rides the
+			// same tunnel, grant and audit trail as the lists above; a cluster
+			// with no metrics-server answers "unavailable" rather than failing.
+			metrics := clusters.Group("/:id/metrics")
+			metrics.GET("/nodes", s.nodeMetrics)
+			metrics.GET("/pods", s.podMetrics)
+			metrics.GET("/pods/:pod", s.showPodMetrics)
 		}
 
 		// Identity and access management is an administrative surface only.

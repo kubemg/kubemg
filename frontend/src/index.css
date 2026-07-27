@@ -12,8 +12,8 @@
  * tabular figures, because they are data and get compared column to column.
  *
  * The signature device is the link strand (see components/LinkStrand.tsx): a
- * track whose travelling pulse runs cluster → KubeMG, the direction the real
- * connection is made. Nothing else animates.
+ * hairline that gathers toward the KubeMG end, the direction the real
+ * connection is made. It glows; it does not march. Nothing else animates.
  *
  * Dark is the default deck; light is a full peer, not an afterthought. Every
  * colour below is a token pair — never hard-code a hex in a component.
@@ -268,21 +268,23 @@
 }
 
 /*
- * The link strand: a track of micro-dashes with one travelling pulse. The pulse
- * runs right to left because that is the direction the connection is actually
- * made — the cluster dials out to KubeMG, never the other way around.
+ * The link strand: one continuous hairline, shaped rather than dashed. A live
+ * link brightens toward the KubeMG end — the direction the connection is
+ * actually made, since the cluster dials out and KubeMG never dials in — and
+ * glows gently instead of running a marquee across the screen.
  */
-@keyframes strand-travel {
-  from {
-    transform: translateX(100%);
+@keyframes strand-glow {
+  0%,
+  100% {
+    opacity: 0.9;
   }
-  to {
-    transform: translateX(-100%);
+  50% {
+    opacity: 0.55;
   }
 }
 
-@utility strand-pulse {
-  animation: strand-travel 2.6s linear infinite;
+@utility strand-live {
+  animation: strand-glow 3.6s ease-in-out infinite;
 }
 
 @keyframes rise {

@@ -2,16 +2,42 @@ import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { RotateCcw } from 'lucide-react'
 import { errorMessage, fetchSettings, updateSettings } from '../api/client'
-import type { SettingsResponse } from '../api/types'
+import type { RuntimeSettings, SettingsResponse } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { Button, Field, Notice, Panel, TextInput } from '../components/primitives'
 
-/** Blank means "use the default", so the form state is the override, not the value. */
-type Draft = { public_url: string; agent_image: string; agent_namespace: string }
+/**
+ * Blank means "use the default", so the form state is the override, not the
+ * value. Retention is a number in the API but is edited as a string for exactly
+ * the same reason: empty has to stay distinguishable from zero.
+ */
+type Draft = {
+  public_url: string
+  agent_image: string
+  agent_namespace: string
+  audit_retention_days: string
+}
 
-const EMPTY: Draft = { public_url: '', agent_image: '', agent_namespace: '' }
+const EMPTY: Draft = {
+  public_url: '',
+  agent_image: '',
+  agent_namespace: '',
+  audit_retention_days: '',
+}
 
 const KEYS = ['public_url', 'agent_image', 'agent_namespace'] as const
+
+/** draftOf turns a settings response into the form's own shape. */
+function draftOf(overrides: RuntimeSettings): Draft {
+  return {
+    public_url: overrides.public_url,
+    agent_image: overrides.agent_image,
+    agent_namespace: overrides.agent_namespace,
+    // 0 is how the API says "unset", which the form shows as an empty box.
+    audit_retention_days:
+      overrides.audit_retention_days > 0 ? String(overrides.audit_retention_days) : '',
+  }
+}
 
 export function Settings() {
   const [settings, setSettings] = useState<SettingsResponse | null>(null)
@@ -25,7 +51,7 @@ export function Settings() {
     try {
       const next = await fetchSettings()
       setSettings(next)
-      setDraft({ ...next.overrides })
+      setDraft(draftOf(next.overrides))
       setError(null)
     } catch (err) {
       setError(errorMessage(err, 'Could not load the settings.'))
@@ -48,9 +74,11 @@ export function Settings() {
         public_url: draft.public_url.trim(),
         agent_image: draft.agent_image.trim(),
         agent_namespace: draft.agent_namespace.trim(),
+        // An empty box clears the override, which the API spells as 0.
+        audit_retention_days: retentionDays,
       })
       setSettings(next)
-      setDraft({ ...next.overrides })
+      setDraft(draftOf(next.overrides))
       setSaved(true)
     } catch (err) {
       setError(errorMessage(err, 'Could not save the settings.'))
@@ -64,8 +92,14 @@ export function Settings() {
     setSaved(false)
   }
 
+  const retentionDays = Number(draft.audit_retention_days.trim() || 0)
+  const retentionValid =
+    Number.isInteger(retentionDays) && retentionDays >= 0 && retentionDays <= 3650
+
   const dirty =
-    settings !== null && KEYS.some((key) => draft[key].trim() !== settings.overrides[key])
+    settings !== null &&
+    (KEYS.some((key) => draft[key].trim() !== settings.overrides[key]) ||
+      retentionDays !== settings.overrides.audit_retention_days)
 
   return (
     <AppShell
@@ -78,14 +112,19 @@ export function Settings() {
               variant="ghost"
               disabled={busy || !dirty}
               onClick={() => {
-                setDraft({ ...settings.overrides })
+                setDraft(draftOf(settings.overrides))
                 setSaved(false)
               }}
             >
               <RotateCcw aria-hidden="true" className="size-4" />
               Discard
             </Button>
-            <Button type="submit" form="settings-form" variant="primary" disabled={busy || !dirty}>
+            <Button
+              type="submit"
+              form="settings-form"
+              variant="primary"
+              disabled={busy || !dirty || !retentionValid}
+            >
               {busy ? 'Saving…' : 'Save settings'}
             </Button>
           </>
@@ -99,7 +138,7 @@ export function Settings() {
             {warning}
           </Notice>
         ))}
-        {saved && !dirty ? <Notice tone="ok">Saved. New install commands use it.</Notice> : null}
+        {saved && !dirty ? <Notice tone="ok">Saved.</Notice> : null}
         {loading ? <p className="text-[13px] text-muted">Loading…</p> : null}
 
         {settings ? (
@@ -160,6 +199,36 @@ export function Settings() {
                 />
               </Field>
               <Effective label="In use" value={settings.effective.agent_namespace} />
+            </Panel>
+
+            <Panel
+              eyebrow="Audit"
+              title="How long the trail is kept"
+              description="Every proxied call is recorded, including refusals and both ends of a streamed session, so the table grows with fleet activity rather than with fleet size. A background pass prunes anything past this window twice a day."
+              bodyClassName="flex flex-col gap-4 p-4"
+            >
+              <Field
+                label="Retention (days)"
+                htmlFor="audit_retention_days"
+                hint={`Records older than this are deleted and cannot be recovered. Leave empty for ${settings.defaults.audit_retention_days} days.`}
+                error={
+                  retentionValid ? undefined : 'Retention must be a whole number of days, up to 3650.'
+                }
+              >
+                <TextInput
+                  id="audit_retention_days"
+                  type="number"
+                  min={1}
+                  max={3650}
+                  step={1}
+                  inputMode="numeric"
+                  className="max-w-40 font-mono text-[12.5px]"
+                  placeholder={String(settings.defaults.audit_retention_days)}
+                  value={draft.audit_retention_days}
+                  onChange={(event) => set('audit_retention_days', event.target.value)}
+                />
+              </Field>
+              <Effective label="In use" value={`${settings.effective.audit_retention_days} days`} />
             </Panel>
 
             {/* Settings only reach clusters registered from here on: an agent

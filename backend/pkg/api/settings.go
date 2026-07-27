@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -20,6 +22,10 @@ type runtimeSettings struct {
 	PublicURL      string `json:"public_url"`
 	AgentImage     string `json:"agent_image"`
 	AgentNamespace string `json:"agent_namespace"`
+	// AuditRetentionDays is how long the pruner keeps a proxied call. Zero in
+	// the overrides means "unset", exactly as an empty string does for the
+	// others.
+	AuditRetentionDays int `json:"audit_retention_days"`
 }
 
 type settingsResponse struct {
@@ -40,16 +46,27 @@ type updateSettingsRequest struct {
 	PublicURL      *string `json:"public_url"`
 	AgentImage     *string `json:"agent_image"`
 	AgentNamespace *string `json:"agent_namespace"`
+	// AuditRetentionDays accepts 0 to clear the override back to the default.
+	AuditRetentionDays *int `json:"audit_retention_days"`
 }
+
+// Audit retention bounds. The floor stops an operator from silently emptying
+// the trail with a fat-fingered zero-ish value; the ceiling is ten years, past
+// which a retention policy is really an archive and belongs somewhere else.
+const (
+	minAuditRetentionDays = 1
+	maxAuditRetentionDays = 3650
+)
 
 // settings resolves the effective configuration. A database failure falls back
 // to the environment values rather than erroring: generating an install command
 // with the boot-time address is far better than not generating one at all.
 func (s *server) settings(ctx context.Context) runtimeSettings {
 	out := runtimeSettings{
-		PublicURL:      s.publicURL,
-		AgentImage:     s.agentImage,
-		AgentNamespace: s.agentNamespace,
+		PublicURL:          s.publicURL,
+		AgentImage:         s.agentImage,
+		AgentNamespace:     s.agentNamespace,
+		AuditRetentionDays: s.auditRetentionDays,
 	}
 	stored, err := s.store.Settings(ctx)
 	if err != nil {
@@ -64,7 +81,25 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 	if v := strings.TrimSpace(stored[db.SettingAgentNamespace]); v != "" {
 		out.AgentNamespace = v
 	}
+	if v := storedRetentionDays(stored); v > 0 {
+		out.AuditRetentionDays = v
+	}
 	return out
+}
+
+// storedRetentionDays reads the retention override. A value that is not a
+// usable number reads as unset, so a hand-edited row cannot turn the pruner
+// into something that deletes everything.
+func storedRetentionDays(stored map[string]string) int {
+	raw := strings.TrimSpace(stored[db.SettingAuditRetentionDays])
+	if raw == "" {
+		return 0
+	}
+	days, err := strconv.Atoi(raw)
+	if err != nil || days < minAuditRetentionDays || days > maxAuditRetentionDays {
+		return 0
+	}
+	return days
 }
 
 // getSettings returns the effective settings alongside the stored overrides and
@@ -80,14 +115,16 @@ func (s *server) getSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, settingsResponse{
 		Effective: effective,
 		Overrides: runtimeSettings{
-			PublicURL:      strings.TrimSpace(stored[db.SettingPublicURL]),
-			AgentImage:     strings.TrimSpace(stored[db.SettingAgentImage]),
-			AgentNamespace: strings.TrimSpace(stored[db.SettingAgentNamespace]),
+			PublicURL:          strings.TrimSpace(stored[db.SettingPublicURL]),
+			AgentImage:         strings.TrimSpace(stored[db.SettingAgentImage]),
+			AgentNamespace:     strings.TrimSpace(stored[db.SettingAgentNamespace]),
+			AuditRetentionDays: storedRetentionDays(stored),
 		},
 		Defaults: runtimeSettings{
-			PublicURL:      s.publicURL,
-			AgentImage:     s.agentImage,
-			AgentNamespace: s.agentNamespace,
+			PublicURL:          s.publicURL,
+			AgentImage:         s.agentImage,
+			AgentNamespace:     s.agentNamespace,
+			AuditRetentionDays: s.auditRetentionDays,
 		},
 		Warnings: settingsWarnings(effective),
 	})
@@ -130,6 +167,23 @@ func (s *server) updateSettings(c *gin.Context) {
 			return
 		}
 		values[db.SettingAgentNamespace] = namespace
+	}
+	if req.AuditRetentionDays != nil {
+		days := *req.AuditRetentionDays
+		switch {
+		case days == 0:
+			// Clearing it: the same "empty means default" rule the string
+			// settings follow.
+			values[db.SettingAuditRetentionDays] = ""
+		case days < minAuditRetentionDays || days > maxAuditRetentionDays:
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("audit retention must be between %d and %d days, or 0 to use the default",
+					minAuditRetentionDays, maxAuditRetentionDays),
+			})
+			return
+		default:
+			values[db.SettingAuditRetentionDays] = strconv.Itoa(days)
+		}
 	}
 
 	if err := s.store.PutSettings(c.Request.Context(), values, caller.ID); err != nil {

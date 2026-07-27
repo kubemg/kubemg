@@ -191,6 +191,15 @@ export interface PodContainer {
   ready: boolean
   restarts: number
   state: string
+  /**
+   * The container's declared resource contract, in the same units as the
+   * metrics endpoints. Zero means the container declares none — a real answer,
+   * and the reason a usage bar sometimes has no denominator to draw against.
+   */
+  cpu_request_millicores: number
+  cpu_limit_millicores: number
+  memory_request_bytes: number
+  memory_limit_bytes: number
 }
 
 export interface Pod {
@@ -345,6 +354,61 @@ export interface ClusterNode {
   unschedulable?: boolean
 }
 
+/*
+ * Live utilisation, read from the cluster's own Metrics API through the same
+ * tunnel as everything else. metrics-server is optional, so every metrics
+ * response says whether the cluster serves it at all — `available: false` with
+ * a reason is an answer, not a failure.
+ */
+
+export interface ContainerUsage {
+  name: string
+  cpu_millicores: number
+  memory_bytes: number
+}
+
+export interface PodUsage {
+  name: string
+  namespace: string
+  cpu_millicores: number
+  memory_bytes: number
+  containers: ContainerUsage[]
+}
+
+export interface NodeUsage {
+  name: string
+  cpu_millicores: number
+  cpu_capacity_millicores: number
+  cpu_percent: number
+  memory_bytes: number
+  memory_capacity_bytes: number
+  memory_percent: number
+}
+
+/** One cluster's total consumption against its total allocatable capacity. */
+export interface UsageSummary {
+  nodes: number
+  cpu_millicores: number
+  cpu_capacity_millicores: number
+  cpu_percent: number
+  memory_bytes: number
+  memory_capacity_bytes: number
+  memory_percent: number
+}
+
+export interface NodeMetrics {
+  available: boolean
+  reason?: string
+  nodes: NodeUsage[]
+  summary: UsageSummary
+}
+
+export interface PodMetrics {
+  available: boolean
+  reason?: string
+  pod: PodUsage | null
+}
+
 /** Everything needed to install the agent into a freshly registered cluster. */
 export interface AgentInstall {
   cluster_id: number
@@ -383,6 +447,8 @@ export interface RuntimeSettings {
   public_url: string
   agent_image: string
   agent_namespace: string
+  /** Retention window for the audit trail. 0 in `overrides` means unset. */
+  audit_retention_days: number
 }
 
 export interface SettingsResponse {

@@ -40,6 +40,10 @@ type fakeStore struct {
 	settings    map[string]string
 	nextID      uint
 	createErr   error
+	// pruned records the cutoff of every retention pass, so a test can assert
+	// on the window the pruner chose rather than only on what survived.
+	pruned   []time.Time
+	pruneErr error
 }
 
 func newFakeStore() *fakeStore {
@@ -547,6 +551,25 @@ func (f *fakeStore) AuditSummary(_ context.Context, since time.Time) (db.AuditSt
 		}
 	}
 	return stats, nil
+}
+
+func (f *fakeStore) PruneAuditEvents(_ context.Context, before time.Time) (int64, error) {
+	if f.pruneErr != nil {
+		return 0, f.pruneErr
+	}
+
+	kept := make([]db.AuditEvent, 0, len(f.audit))
+	for _, event := range f.audit {
+		if event.At.Before(before) {
+			continue
+		}
+		kept = append(kept, event)
+	}
+
+	removed := int64(len(f.audit) - len(kept))
+	f.audit = kept
+	f.pruned = append(f.pruned, before)
+	return removed, nil
 }
 
 func (f *fakeStore) Settings(_ context.Context) (map[string]string, error) {

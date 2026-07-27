@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 
 	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/db"
@@ -28,9 +29,9 @@ const GroupAllUsers = GroupPrefix + "users"
 // maxRequestBody caps what a client may push through the tunnel in one call.
 const maxRequestBody = 8 << 20
 
-// proxyTimeout bounds a single proxied call. Long-running verbs (watch, exec,
-// port-forward) are not framed by this protocol and are refused outright rather
-// than hanging until this fires.
+// proxyTimeout bounds a single proxied call. Long-running verbs — watch, exec,
+// port-forward — are streams and never reach this path, so nothing legitimate
+// is waiting on it.
 const proxyTimeout = 60 * time.Second
 
 // hopByHopHeaders never survive a proxy hop; forwarding them corrupts the
@@ -144,10 +145,9 @@ func (p *Proxy) Handle(c *gin.Context) {
 		return
 	}
 
-	// port-forward multiplexes arbitrary TCP inside the session rather than
-	// carrying a terminal, so it needs work this framing does not do. Say so
-	// instead of letting the client hang.
-	if reason, refused := unsupportedStream(parsed); refused {
+	// port-forward is carried in its WebSocket form only. A SPDY client is
+	// refused here rather than left to hang on an upgrade nobody will answer.
+	if reason, refused := unsupportedStream(c.Request, parsed); refused {
 		p.fail(c, &event, http.StatusNotImplemented, reason)
 		return
 	}
@@ -166,7 +166,7 @@ func (p *Proxy) Handle(c *gin.Context) {
 	switch {
 	case wantsUpgrade(parsed):
 		event.Streaming = true
-		p.serveUpgradeStream(c, tunnel, &event, header)
+		p.serveUpgradeStream(c, tunnel, &event, header, offeredSubprotocols(parsed))
 		return
 	case wantsBodyStream(parsed, path):
 		event.Streaming = true
@@ -486,14 +486,26 @@ func strippedQuery(raw string) string {
 }
 
 // wantsUpgrade reports whether a call needs a bidirectional session rather than
-// a response body. These are the interactive subresources.
+// a response body. These are the interactive subresources. port-forward is one
+// of them only in its WebSocket form; unsupportedStream has already turned away
+// the SPDY shape by the time this runs.
 func wantsUpgrade(parsed APIPath) bool {
 	switch parsed.Subresource {
-	case "exec", "attach":
+	case "exec", "attach", "portforward":
 		return true
 	default:
 		return false
 	}
+}
+
+// offeredSubprotocols is what to ask the cluster for when the client named
+// nothing itself. The two families are not interchangeable: a port-forward
+// negotiated as a channel protocol is a session neither end can read.
+func offeredSubprotocols(parsed APIPath) []string {
+	if parsed.Subresource == "portforward" {
+		return PortForwardSubprotocols
+	}
+	return ChannelSubprotocols
 }
 
 // wantsBodyStream reports whether a call returns a body that keeps arriving —
@@ -505,14 +517,23 @@ func wantsBodyStream(parsed APIPath, path string) bool {
 	return watchRequested(path)
 }
 
-// unsupportedStream flags what the tunnel still cannot carry. port-forward
-// multiplexes arbitrary TCP connections inside one session, which needs its own
-// framing; it gets an honest 501 rather than a stalled connection.
-func unsupportedStream(parsed APIPath) (string, bool) {
-	if parsed.Subresource == "portforward" {
-		return "kubectl port-forward is not proxied yet; the tunnel does not carry multiplexed TCP", true
+// unsupportedStream flags what the tunnel still cannot carry.
+//
+// port-forward multiplexes arbitrary TCP inside one session, and Kubernetes
+// offers two framings for that: the original SPDY/3.1 upgrade, and a WebSocket
+// one (v2.portforward.k8s.io) that carries the same channel-prefixed stream.
+// KubeMG carries the WebSocket shape, because the whole tunnel is a WebSocket
+// and the frames pass through untouched; SPDY would mean implementing a second
+// multiplexing protocol inside the first one to reach a transport Kubernetes is
+// itself retiring. A SPDY client gets an honest 501 naming the way forward
+// rather than a stalled upgrade.
+func unsupportedStream(r *http.Request, parsed APIPath) (string, bool) {
+	if parsed.Subresource != "portforward" || websocket.IsWebSocketUpgrade(r) {
+		return "", false
 	}
-	return "", false
+	return "port-forward over this gateway needs its WebSocket transport; " +
+		"run kubectl with KUBECTL_PORT_FORWARD_WEBSOCKETS=true (default on Kubernetes 1.31 and later). " +
+		"The SPDY transport is not proxied.", true
 }
 
 func followRequested(path string) bool {

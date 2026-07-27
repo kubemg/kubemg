@@ -67,6 +67,11 @@ func main() {
 		PublicURL:      cfg.PublicURL,
 		AgentImage:     cfg.AgentImage,
 		AgentNamespace: cfg.AgentNamespace,
+		// Housekeeping shares the audit writer's lifetime: both are background
+		// work that has to stop when the process is winding down.
+		AuditRetentionDays: cfg.AuditRetentionDays,
+		Background:         auditCtx,
+		Logger:             logger,
 	})
 
 	if err := router.Run(cfg.ListenAddr); err != nil {
