@@ -201,14 +201,18 @@ export function Segmented<T extends string>({
   onChange,
   options,
   ariaLabel,
+  id,
 }: {
   value: T
   onChange: (next: T) => void
   options: Array<{ value: T; label: string; icon?: ReactNode; count?: number }>
   ariaLabel: string
+  /** Set when a Field labels the control rather than the control labelling itself. */
+  id?: string
 }) {
   return (
     <div
+      id={id}
       role="tablist"
       aria-label={ariaLabel}
       className="inline-flex shrink-0 items-center gap-0.5 rounded-control border border-line bg-raised p-0.5"

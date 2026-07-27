@@ -36,6 +36,7 @@ import type {
   User,
 } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { DatasourcePanel } from '../components/DatasourcePanel'
 import { LinkStrand, StrandNode } from '../components/LinkStrand'
 import {
   Button,
@@ -63,8 +64,8 @@ const K8S_ROLES: K8sRole[] = ['cluster-admin', 'edit', 'view']
    worked. Three seconds is fast enough to feel live without hammering the API. */
 const POLL_INTERVAL_MS = 3000
 
-const STEPS = ['Identity', 'Connection', 'Handshake', 'Access'] as const
-type StepIndex = 0 | 1 | 2 | 3
+const STEPS = ['Identity', 'Connection', 'Handshake', 'Observability', 'Access'] as const
+type StepIndex = 0 | 1 | 2 | 3 | 4
 
 const BLANK_IDENTITY = {
   name: '',
@@ -147,7 +148,11 @@ export function ClusterWizard() {
       }
     >
       <div className="flex min-w-0 max-w-4xl flex-col gap-5">
-        <Stepper current={step} furthest={cluster ? 3 : identityReady ? 1 : 0} onSelect={setStep} />
+        <Stepper
+          current={step}
+          furthest={cluster ? STEPS.length - 1 : identityReady ? 1 : 0}
+          onSelect={setStep}
+        />
 
         {error ? <Notice tone="error">{error}</Notice> : null}
 
@@ -186,9 +191,17 @@ export function ClusterWizard() {
         ) : null}
 
         {step === 3 && cluster ? (
-          <AccessStep
+          <ObservabilityStep
             cluster={cluster}
             onBack={() => setStep(2)}
+            onNext={() => setStep(4)}
+          />
+        ) : null}
+
+        {step === 4 && cluster ? (
+          <AccessStep
+            cluster={cluster}
+            onBack={() => setStep(3)}
             onDone={() => navigate(`/clusters/${cluster.id}`)}
           />
         ) : null}
@@ -805,6 +818,48 @@ function HandshakeStep({
 }
 
 /**
+ * ObservabilityStep wires the cluster's series backends while the operator is
+ * still here. KubeMG's live meters read the cluster's own Metrics API, which
+ * keeps about two minutes — so a cluster registered without a datasource has no
+ * history at all, and the moment to notice that is now rather than the first
+ * time someone asks what happened last night. It is optional on purpose: a
+ * cluster is usable without one, and the step says so instead of blocking.
+ */
+function ObservabilityStep({
+  cluster,
+  onBack,
+  onNext,
+}: {
+  cluster: Cluster
+  onBack: () => void
+  onNext: () => void
+}) {
+  return (
+    <div className="flex flex-col gap-5">
+      <DatasourcePanel cluster={cluster} eyebrow="Step 4" />
+
+      <div className="card overflow-hidden">
+        <p className="px-4 py-3 text-[13px] leading-relaxed text-muted">
+          Optional. Skip it and the cluster still works — you just see the last couple of minutes
+          the cluster keeps itself, and nothing before that. It can be connected later from the
+          cluster page.
+        </p>
+        <StepActions>
+          <Button type="button" variant="ghost" onClick={onBack}>
+            <ArrowLeft aria-hidden="true" className="size-4" />
+            Back
+          </Button>
+          <Button type="button" variant="primary" onClick={onNext}>
+            Continue
+            <ArrowRight aria-hidden="true" className="size-4" />
+          </Button>
+        </StepActions>
+      </div>
+    </div>
+  )
+}
+
+/**
  * AccessStep grants the first permissions on the new cluster. It is the same
  * decision the permissions matrix makes, narrowed to one cluster so the last step
  * of registration is "who can use this" rather than "go and find the matrix".
@@ -906,7 +961,7 @@ function AccessStep({
 
   return (
     <div className="flex flex-col gap-5">
-      <Panel eyebrow="Step 4" title={`Who can use ${cluster.name}?`}>
+      <Panel eyebrow="Step 5" title={`Who can use ${cluster.name}?`}>
         <form onSubmit={grant} className="flex flex-col gap-4 p-4">
           {error ? <Notice tone="error">{error}</Notice> : null}
 

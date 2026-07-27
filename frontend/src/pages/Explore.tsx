@@ -281,9 +281,10 @@ export function Explore() {
             </Pill>
           ) : null}
 
-          {/* Below the third-column breakpoint the sidebar is not rendered, so
-              the resource is picked here instead. */}
-          <div className="w-52 xl:hidden">
+          {/* The resource tree survives down to `lg` by collapsing the section
+              panel; below that all chrome is in the mobile sheet, so the
+              resource is picked here instead. */}
+          <div className="w-52 lg:hidden">
             <Select
               aria-label="Resource"
               size="sm"
