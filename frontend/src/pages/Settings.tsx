@@ -5,6 +5,7 @@ import { errorMessage, fetchSettings, updateSettings } from '../api/client'
 import type { RuntimeSettings, SettingsResponse } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { Button, Field, Notice, Panel, TextInput } from '../components/primitives'
+import { SsoSettingsPanel } from '../components/SsoSettingsPanel'
 
 /**
  * Blank means "use the default", so the form state is the override, not the
@@ -230,6 +231,11 @@ export function Settings() {
               </Field>
               <Effective label="In use" value={`${settings.effective.audit_retention_days} days`} />
             </Panel>
+
+            {/* Who may sign in at all. It sits inside the settings form's flow
+                but owns its own saving — a provider is edited in a sheet and
+                saved on its own, not by the page's Save button. */}
+            <SsoSettingsPanel />
 
             {/* Settings only reach clusters registered from here on: an agent
                 already running holds the address it was installed with. */}

@@ -94,11 +94,28 @@ type User struct {
 	// SystemRole is the administrative tier surfaced in the IAM UI.
 	SystemRole string `gorm:"size:20;not null;default:user" json:"system_role"`
 	// IsActive gates sign-in without destroying the account or its grants.
-	IsActive    bool       `gorm:"not null;default:true" json:"is_active"`
+	IsActive bool `gorm:"not null;default:true" json:"is_active"`
+
+	// AuthSource is where this account's credentials live: AuthSourceLocal for a
+	// bcrypt hash in this database, or a federation protocol for an account an
+	// identity provider vouches for. A federated account has no usable password,
+	// so password sign-in is refused for it rather than merely failing.
+	AuthSource string `gorm:"size:20;not null;default:local" json:"auth_source"`
+	// SSOProviderID is the provider that vouches for a federated account.
+	SSOProviderID uint `gorm:"column:sso_provider_id;index" json:"sso_provider_id,omitempty"`
+	// ExternalID is the directory's own stable identifier — an OIDC subject, a
+	// SAML NameID, an LDAP DN. It is what an account is matched on, because a
+	// username is a display detail a directory is entitled to change.
+	ExternalID string `gorm:"size:255;index" json:"external_id,omitempty"`
+
 	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
+
+// IsFederated reports whether this account is authenticated by an external
+// directory rather than by a password stored here.
+func (u User) IsFederated() bool { return IsFederatedSource(u.AuthSource) }
 
 // Normalize fills in a missing system role from the legacy role and re-derives
 // the legacy role, so the two columns can never drift apart.
@@ -132,8 +149,14 @@ type Group struct {
 
 // UserGroup maps a user into a local group.
 type UserGroup struct {
-	UserID    uint      `gorm:"primaryKey" json:"user_id"`
-	GroupID   uint      `gorm:"primaryKey" json:"group_id"`
+	UserID  uint `gorm:"primaryKey" json:"user_id"`
+	GroupID uint `gorm:"primaryKey" json:"group_id"`
+	// Source records who wrote this membership: an administrator, or the
+	// federation sync deriving it from an IdP group. Only the derived ones are
+	// reconciled away when the directory stops asserting that group, so a
+	// hand-written membership is never lost to someone else's login. Empty
+	// predates federation and therefore means local.
+	Source    string    `gorm:"size:20;not null;default:local" json:"source,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -249,6 +272,11 @@ type UserClusterAccess struct {
 	ClusterID  uint   `gorm:"uniqueIndex:idx_user_cluster;not null" json:"cluster_id"`
 	K8sRole    string `gorm:"column:k8s_role;size:60;not null;default:view" json:"k8s_role"`
 	Namespaces string `gorm:"type:text" json:"-"`
+	// Source records who wrote this grant, and is what makes federated access
+	// revocable: a grant derived from an IdP group is withdrawn on the next
+	// login that no longer carries it, while one an administrator wrote by hand
+	// survives untouched. Empty predates federation and means local.
+	Source string `gorm:"size:20;not null;default:local" json:"source,omitempty"`
 }
 
 // TableName pins the join table name; GORM would otherwise pluralize it to

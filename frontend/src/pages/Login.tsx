@@ -5,6 +5,7 @@ import { errorMessage } from '../api/client'
 import { Button, Field, Notice, TextInput } from '../components/primitives'
 import { LinkStrand } from '../components/LinkStrand'
 import { Mark } from '../components/Mark'
+import { SsoLoginPage } from '../components/SsoLoginPage'
 import { useAuth } from '../state/auth-context'
 
 export function Login() {
@@ -104,6 +105,11 @@ export function Login() {
               {busy ? null : <ArrowRight aria-hidden="true" className="size-4" />}
             </Button>
           </form>
+
+          {/* Federated sign-in, when an administrator has configured any. It
+              renders nothing at all otherwise, so a single-tenant install never
+              sees a divider over an empty space. */}
+          <SsoLoginPage onBusyChange={setBusy} />
         </div>
       </section>
     </main>

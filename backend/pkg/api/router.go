@@ -68,6 +68,22 @@ type Store interface {
 	Settings(ctx context.Context) (map[string]string, error)
 	PutSettings(ctx context.Context, values map[string]string, updatedBy uint) error
 
+	// Identity federation: the providers, the rules that say what an external
+	// group is worth, and the sync that applies them on every federated sign-in.
+	ListSSOProviders(ctx context.Context) ([]db.SSOProviderConfig, error)
+	SSOProviderByID(ctx context.Context, id uint) (*db.SSOProviderConfig, error)
+	CreateSSOProvider(ctx context.Context, provider *db.SSOProviderConfig) error
+	UpdateSSOProvider(ctx context.Context, provider *db.SSOProviderConfig) error
+	UpdateSSOProviderHealth(ctx context.Context, id uint, status, message string) error
+	DeleteSSOProvider(ctx context.Context, id uint) error
+	ListSSOMappings(ctx context.Context, providerID uint) ([]db.SSOGroupMapping, error)
+	CreateSSOMapping(ctx context.Context, mapping *db.SSOGroupMapping) error
+	UpdateSSOMapping(ctx context.Context, mapping *db.SSOGroupMapping) error
+	DeleteSSOMapping(ctx context.Context, id uint) error
+	SyncSSOUserAndGroups(
+		ctx context.Context, provider *db.SSOProviderConfig, identity db.SSOIdentity,
+	) (*db.SSOSyncResult, error)
+
 	ObservabilitySources(ctx context.Context, clusterID uint) ([]db.ObservabilitySource, error)
 	ObservabilitySource(ctx context.Context, clusterID uint, kind string) (*db.ObservabilitySource, error)
 	PutObservabilitySource(ctx context.Context, source *db.ObservabilitySource) error
@@ -141,6 +157,12 @@ type server struct {
 	bastionCA          string
 	auditRetentionDays int
 	logger             *slog.Logger
+	// allowedOrigins is where a browser app may live. Federation reads it as the
+	// set of consoles a finished sign-in may be handed back to, which is what
+	// keeps the callback from being an open redirect for session tokens.
+	allowedOrigins []string
+	// ssoFlows holds sign-ins that have left for an IdP and not yet come back.
+	ssoFlows *flowStore
 }
 
 // NewRouter builds the KubeMG HTTP router. Authenticated routes are only
@@ -183,6 +205,8 @@ func NewRouter(opts Options) *gin.Engine {
 		bastionCA:          opts.BastionCA,
 		auditRetentionDays: retention,
 		logger:             opts.Logger,
+		allowedOrigins:     opts.AllowedOrigins,
+		ssoFlows:           newFlowStore(),
 	}
 	if opts.Bastion != nil {
 		s.tunnels = opts.Bastion.Registry()
@@ -213,6 +237,25 @@ func NewRouter(opts Options) *gin.Engine {
 	{
 		v1.POST("/auth/login", s.login)
 		v1.GET("/auth/me", requireAuth, s.me)
+
+		// Federated sign-in. Every route here is unauthenticated by necessity —
+		// nobody has a session yet — so each one is narrow: the list carries no
+		// configuration, the callbacks are single-use against a server-held
+		// flow, and the SP metadata is a public document by design.
+		//
+		// They hang off a static "providers" segment rather than off
+		// /auth/sso/:id, because gin cannot have a static and a param child at
+		// the same level and the list has to live somewhere.
+		sso := v1.Group("/auth/sso/providers")
+		sso.GET("", s.listSSOProvidersPublic)
+		sso.GET("/:id/login", s.startSSOLogin)
+		// LDAP has no redirect: the credentials are posted here and checked
+		// against the directory.
+		sso.POST("/:id/login", s.ldapLogin)
+		// OIDC comes back as a GET with a code, SAML as a POST with an assertion.
+		sso.GET("/:id/callback", s.ssoCallback)
+		sso.POST("/:id/callback", s.ssoCallback)
+		sso.GET("/:id/metadata", s.ssoMetadata)
 
 		clusters := v1.Group("/clusters", requireAuth)
 		clusters.GET("", s.listClusters)
@@ -378,6 +421,23 @@ func NewRouter(opts Options) *gin.Engine {
 		audit := v1.Group("/audit", requireAuth)
 		audit.GET("", s.listAudit)
 		audit.GET("/summary", s.auditSummary)
+
+		// Configuring federation: who may sign in at all, and what an external
+		// group is worth once they have. Both decide platform-wide access, so
+		// both are administrative.
+		admin := v1.Group("/admin/sso", requireAuth, requireAdmin)
+		admin.GET("/providers", s.listSSOProviders)
+		admin.POST("/providers", s.createSSOProvider)
+		admin.PUT("/providers/:id", s.updateSSOProvider)
+		admin.DELETE("/providers/:id", s.deleteSSOProvider)
+		// Proving the configuration reaches the directory, so an operator finds
+		// out here rather than from the first person who cannot sign in.
+		admin.POST("/providers/:id/check", s.checkSSOProvider)
+
+		admin.GET("/mappings", s.listSSOMappings)
+		admin.POST("/mappings", s.createSSOMapping)
+		admin.PUT("/mappings/:id", s.updateSSOMapping)
+		admin.DELETE("/mappings/:id", s.deleteSSOMapping)
 
 		// Server-wide settings. The public URL lands inside manifests applied on
 		// other people's clusters, so this is an administrative surface.

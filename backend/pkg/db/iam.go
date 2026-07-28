@@ -190,9 +190,12 @@ func (s *Store) DeleteGroup(ctx context.Context, id uint) error {
 // AddGroupMember puts a user into a group. Re-adding an existing member is a
 // no-op rather than an error.
 func (s *Store) AddGroupMember(ctx context.Context, groupID, userID uint) error {
-	member := UserGroup{GroupID: groupID, UserID: userID}
+	member := UserGroup{GroupID: groupID, UserID: userID, Source: GrantSourceLocal}
 	err := s.gdb.WithContext(ctx).
-		Clauses(clause.OnConflict{DoNothing: true}).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "user_id"}, {Name: "group_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"source"}),
+		}).
 		Create(&member).Error
 	if err != nil {
 		return fmt.Errorf("add group member: %w", err)
@@ -236,10 +239,16 @@ func (s *Store) ListGroupAccess(ctx context.Context) ([]GroupClusterAccess, erro
 
 // AssignUserAccess grants a user access to a cluster, replacing any existing
 // grant for that pair.
+// A grant written through this path is an administrator's decision, so it is
+// stamped local — which is what takes it out of the federation sync's reach,
+// including a row that sync had previously derived.
 func (s *Store) AssignUserAccess(ctx context.Context, grant *UserClusterAccess) error {
+	if grant.Source == "" {
+		grant.Source = GrantSourceLocal
+	}
 	err := s.gdb.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "user_id"}, {Name: "cluster_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"k8s_role", "namespaces"}),
+		DoUpdates: clause.AssignmentColumns([]string{"k8s_role", "namespaces", "source"}),
 	}).Create(grant).Error
 	if err != nil {
 		return fmt.Errorf("assign user access: %w", err)
