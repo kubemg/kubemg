@@ -802,3 +802,30 @@ export function unconfigured(err: unknown): boolean {
       (err.response?.data as { unconfigured?: boolean } | undefined)?.unconfigured,
   )
 }
+
+/**
+ * queryError turns an observability failure into something that names the actual
+ * problem.
+ *
+ * The generic fallback is wrong in one specific and costly case: a **404**. Every
+ * handled error from these endpoints carries a JSON `error` field, so a response
+ * without one did not come from the handler at all — it came from the router,
+ * which means this page is talking to a server that does not have these routes.
+ * Reporting that as "could not read metrics for this window" points at the time
+ * range, which is the one thing that is not wrong, and sends whoever reads it to
+ * change a filter that was never the problem.
+ */
+export function queryError(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err) && !(err.response?.data as { error?: string } | undefined)?.error) {
+    if (err.response?.status === 404) {
+      return (
+        'This KubeMG server has no history endpoint — it is running a build older ' +
+        'than this page. Restart the backend so it picks up the current code.'
+      )
+    }
+    if (err.response && err.response.status >= 500) {
+      return `The KubeMG server failed on this query (HTTP ${err.response.status}). Check its logs.`
+    }
+  }
+  return errorMessage(err, fallback)
+}

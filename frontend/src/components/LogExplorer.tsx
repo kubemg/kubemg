@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ScrollText, Search } from 'lucide-react'
-import { errorMessage, queryLogs, unconfigured } from '../api/client'
+import { queryError, queryLogs, unconfigured } from '../api/client'
 import type { Cluster, LogEntry, LogQueryResult } from '../api/types'
 import { Button, EmptyState, Notice, Select, TextInput } from './primitives'
 
@@ -78,7 +78,7 @@ export function LogExplorer({
       setMissing(false)
     } catch (err) {
       setMissing(unconfigured(err))
-      setError(errorMessage(err, 'Could not search the logs for this window.'))
+      setError(queryError(err, 'Could not search the logs for this window.'))
       setResult(null)
     } finally {
       setLoading(false)

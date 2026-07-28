@@ -152,6 +152,67 @@ func TestScopedSelectorMatchesOnlyTheGrantedNamespaces(t *testing.T) {
 	}
 }
 
+/*
+ * Whether cadvisor series carry a `container` label is decided by the scrape
+ * config, not by cadvisor — kube-prometheus-stack promotes it, the
+ * prometheus-community chart's node-cadvisor job does not. Without the fallback
+ * every chart on the second kind of cluster comes back empty, because an absent
+ * label compares equal to "" and `container!=""` then matches nothing.
+ */
+func TestEveryChartFallsBackToPodLevelSeries(t *testing.T) {
+	for kind, spec := range metricCatalogue {
+		query := spec.query(selector{namespaces: []string{"shop"}})
+
+		if !strings.Contains(query, " or ") {
+			t.Errorf("%s has no pod-level fallback: %s", kind, query)
+		}
+		// The container-level branch still excludes the rollup and the pause
+		// container, or a cluster that *does* label containers double-counts.
+		if !strings.Contains(query, `container!=""`) ||
+			!strings.Contains(query, `container!="POD"`) {
+			t.Errorf("%s lost its rollup exclusion: %s", kind, query)
+		}
+		// The fallback branch pins `pod!=""`, which is what separates the
+		// per-pod series from the node and cgroup-root ones that carry no pod
+		// and would otherwise be added to every total.
+		if !strings.Contains(query, `pod!=""`) {
+			t.Errorf("%s fallback does not exclude the node-level series: %s", kind, query)
+		}
+		// Both branches stay inside the scope.
+		if strings.Count(query, `namespace="shop"`) != 2 {
+			t.Errorf("%s does not scope both branches: %s", kind, query)
+		}
+	}
+}
+
+// The fallback branch must never name the container label — that branch exists
+// precisely because the label is missing, so matching on it would match nothing.
+func TestPodLevelFallbackDoesNotMatchTheMissingLabel(t *testing.T) {
+	sel := selector{namespaces: []string{"shop"}, pod: "checkout", container: "server"}
+
+	if got := sel.pods(); strings.Contains(got, "container") {
+		t.Fatalf("pod-level matchers = %q, want no container matcher", got)
+	}
+	if got := sel.containers(); !strings.Contains(got, `container="server"`) {
+		t.Fatalf("container-level matchers = %q, want the container pinned", got)
+	}
+}
+
+// When the fallback answers, the grouping label the chart asked for is absent —
+// so the legend has to name the granularity that actually came back rather than
+// showing a row called "unlabelled".
+func TestSeriesNameFallsBackToTheGranularityThatAnswered(t *testing.T) {
+	if got := seriesName(map[string]string{"container": "server"}, "container"); got != "server" {
+		t.Fatalf("name = %q, want the container", got)
+	}
+	if got := seriesName(map[string]string{"pod": "checkout", "namespace": "shop"}, "container"); got != "checkout" {
+		t.Fatalf("name = %q, want the pod when there is no container label", got)
+	}
+	if got := seriesName(map[string]string{}, ""); got != "total" {
+		t.Fatalf("name = %q, want a cluster total to be named", got)
+	}
+}
+
 func TestDecodeMatrixReadsThePrometheusEnvelope(t *testing.T) {
 	body := []byte(`{"status":"success","data":{"resultType":"matrix","result":[
 		{"metric":{"container":"server"},"values":[[1785315600,"12.5"],[1785315615,"13"]]},

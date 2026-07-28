@@ -101,16 +101,28 @@ type metricSpec struct {
 }
 
 /*
- * The metric names below are cadvisor's, exposed by every kubelet and scraped by
- * every one of the four supported backends under the same names. They are the
- * ones `kubectl top` is derived from, which is what makes a chart and a meter
- * comparable rather than merely adjacent.
+ * The metric names below are cadvisor's. The *names* are stable — every kubelet
+ * exports them and all four supported backends scrape them unchanged — but the
+ * **labels are not**, and that distinction is the whole reason each entry below
+ * carries a fallback.
  *
- * Two exclusions appear in every container-level selector and both matter:
- * `container!=""` drops the pod-level rollup series the kubelet also exports,
- * which would otherwise double every total; and `container!="POD"` drops the
- * pause container, which holds the network namespace and whose memory is real
- * but is not what anyone means by "what is this pod using".
+ * Whether a cadvisor series is labelled `namespace` / `pod` / `container` is
+ * decided by the scrape config's relabeling, not by cadvisor. kube-prometheus-stack
+ * promotes all three, so its series are per-container and the pod-level rollup
+ * has to be excluded or every total doubles — that is what `container!=""` is
+ * for, alongside `container!="POD"`, which drops the pause container holding the
+ * network namespace. The prometheus-community chart's `kubernetes-nodes-cadvisor`
+ * job promotes `namespace` and `pod` but **not** `container`, so on that very
+ * common setup `container!=""` matches nothing at all and every chart comes back
+ * empty — the label is absent, and an absent label compares equal to "".
+ *
+ * So each entry is `container-level or pod-level`. PromQL's `or` takes the left
+ * side wherever it has samples and fills in from the right only where it does
+ * not, which is exactly the semantics wanted: where container series exist they
+ * are used and the rollup stays excluded; where they do not, the pod-level series
+ * answer. Those pod-level series are one per pod, so summing them does not
+ * double-count — verified against the `/kubepods.slice` rollup, which they match
+ * to within sampling skew.
  */
 var metricCatalogue = map[MetricKind]metricSpec{
 	MetricPodCPU: {
@@ -119,9 +131,9 @@ var metricCatalogue = map[MetricKind]metricSpec{
 		namespaced:  true,
 		description: "CPU used per container, against the container's own limit.",
 		query: func(sel selector) string {
-			return fmt.Sprintf(
+			return withFallback(
 				`sum by (container) (rate(container_cpu_usage_seconds_total{%s}[5m])) * 1000`,
-				sel.containers())
+				sel)
 		},
 	},
 	MetricPodMemory: {
@@ -130,8 +142,7 @@ var metricCatalogue = map[MetricKind]metricSpec{
 		namespaced:  true,
 		description: "Working set per container — what the kernel cannot reclaim.",
 		query: func(sel selector) string {
-			return fmt.Sprintf(`sum by (container) (container_memory_working_set_bytes{%s})`,
-				sel.containers())
+			return withFallback(`sum by (container) (container_memory_working_set_bytes{%s})`, sel)
 		},
 	},
 
@@ -141,9 +152,8 @@ var metricCatalogue = map[MetricKind]metricSpec{
 		namespaced:  true,
 		description: "CPU used per pod in this namespace.",
 		query: func(sel selector) string {
-			return fmt.Sprintf(
-				`sum by (pod) (rate(container_cpu_usage_seconds_total{%s}[5m])) * 1000`,
-				sel.containers())
+			return withFallback(
+				`sum by (pod) (rate(container_cpu_usage_seconds_total{%s}[5m])) * 1000`, sel)
 		},
 	},
 	MetricNamespaceMemory: {
@@ -152,8 +162,7 @@ var metricCatalogue = map[MetricKind]metricSpec{
 		namespaced:  true,
 		description: "Working set per pod in this namespace.",
 		query: func(sel selector) string {
-			return fmt.Sprintf(`sum by (pod) (container_memory_working_set_bytes{%s})`,
-				sel.containers())
+			return withFallback(`sum by (pod) (container_memory_working_set_bytes{%s})`, sel)
 		},
 	},
 
@@ -162,8 +171,7 @@ var metricCatalogue = map[MetricKind]metricSpec{
 		legend:      "",
 		description: "CPU used across every namespace.",
 		query: func(sel selector) string {
-			return fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total{%s}[5m])) * 1000`,
-				sel.containers())
+			return withFallback(`sum(rate(container_cpu_usage_seconds_total{%s}[5m])) * 1000`, sel)
 		},
 	},
 	MetricClusterMemory: {
@@ -171,9 +179,18 @@ var metricCatalogue = map[MetricKind]metricSpec{
 		legend:      "",
 		description: "Working set across every namespace.",
 		query: func(sel selector) string {
-			return fmt.Sprintf(`sum(container_memory_working_set_bytes{%s})`, sel.containers())
+			return withFallback(`sum(container_memory_working_set_bytes{%s})`, sel)
 		},
 	},
+}
+
+// withFallback renders one aggregation twice — over the container-level series
+// and over the pod-level ones — and joins them with PromQL's `or`, so the same
+// entry answers on a Prometheus that labels cadvisor series with `container` and
+// on one that does not. See the note above the catalogue for why that varies.
+func withFallback(aggregation string, sel selector) string {
+	return fmt.Sprintf(aggregation, sel.containers()) +
+		" or " + fmt.Sprintf(aggregation, sel.pods())
 }
 
 // MetricKinds lists the catalogue, for a client that wants to know what it may
@@ -212,6 +229,28 @@ func (s selector) containers() string {
 	if s.container != "" {
 		matchers = append(matchers, fmt.Sprintf(`container=%q`, s.container))
 	}
+	return joinMatchers(matchers)
+}
+
+// pods renders the matchers for the pod-level rollup series — one per pod, which
+// is what a Prometheus that does not promote the `container` label leaves behind.
+// `pod!=""` is what separates them from the node and cgroup-root series, which
+// carry no pod at all and would otherwise be added to every total.
+func (s selector) pods() string {
+	matchers := []string{`pod!=""`}
+
+	switch {
+	case len(s.namespaces) == 1:
+		matchers = append(matchers, fmt.Sprintf(`namespace=%q`, s.namespaces[0]))
+	case len(s.namespaces) > 1:
+		matchers = append(matchers,
+			fmt.Sprintf(`namespace=~"%s"`, promLabelAlternation(s.namespaces)))
+	}
+	if s.pod != "" {
+		matchers = append(matchers, fmt.Sprintf(`pod=%q`, s.pod))
+	}
+	// The container is deliberately not matched: this branch exists precisely
+	// because that label is missing, so naming it would match nothing again.
 	return joinMatchers(matchers)
 }
 
@@ -489,5 +528,14 @@ func seriesName(labels map[string]string, legend string) string {
 	if name := labels[legend]; name != "" {
 		return name
 	}
-	return "unlabelled"
+	// The pod-level fallback answered, so the grouping label the chart asked for
+	// does not exist on these series. Name the series for the granularity that
+	// actually came back rather than calling it "unlabelled" — on a per-container
+	// chart of one pod, the honest legend is the pod's own name.
+	for _, alternative := range []string{"pod", "namespace"} {
+		if name := labels[alternative]; name != "" {
+			return name
+		}
+	}
+	return "total"
 }
