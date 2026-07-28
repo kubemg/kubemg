@@ -3,41 +3,47 @@ import { Check, Copy, Pencil, RefreshCw, Undo2 } from 'lucide-react'
 import { errorMessage, fetchResourceYaml, updateResourceYaml } from '../api/client'
 import type { Cluster, ResourceManifest } from '../api/types'
 import type { ResourceKey } from '../lib/resources'
-import { Button, Notice, Pill, Sheet, Spinner } from './primitives'
+import { Button, Notice, Pill, Spinner } from './primitives'
 import { YamlView } from './YamlView'
 
-/** ManifestTarget is one object addressed the way the sidebar addresses it. */
-export interface ManifestTarget {
-  kind: ResourceKey
-  /** The singular label for this kind, for the drawer's eyebrow. */
-  label: string
-  name: string
-  namespace?: string
-  /** Whether the drawer opens ready to type. */
-  editing?: boolean
-}
-
 /**
- * YamlDrawer is the whole object, rather than the handful of columns a list
- * shows. It reads through the same tunnel as every other call and writes back
- * through it too, impersonated — so what a caller may change is decided by the
+ * The whole object as YAML, read and written through the same tunnel as
+ * everything else, impersonated — so what a caller may change is decided by the
  * target cluster's RBAC, in the cluster's own words, and lands in the audit
  * trail as an `update` on the object it touched.
+ *
+ * It is a panel rather than a drawer of its own because a manifest is one way of
+ * looking at an object, not a thing beside it: it sits as a tab next to the
+ * object's overview and its events, so moving between "what is this", "why is it
+ * not ready" and "what exactly does it say" never means closing anything. Its
+ * actions live in its own bar for the same reason — the enclosing sheet's footer
+ * belongs to the object, not to whichever tab happens to be open.
  */
-export function YamlDrawer({
+export function YamlPanel({
   cluster,
-  target,
-  onClose,
+  kind,
+  name,
+  namespace,
+  editing: startEditing = false,
+  onDirtyChange,
   onApplied,
 }: {
   cluster: Cluster
-  target: ManifestTarget
-  onClose: () => void
+  kind: ResourceKey
+  name: string
+  namespace?: string
+  /** Whether the panel opens ready to type. */
+  editing?: boolean
+  /**
+   * Reports a half-typed manifest upward, so the drawer around it can ask before
+   * closing. The panel cannot ask on its own — it is not what gets closed.
+   */
+  onDirtyChange?: (dirty: boolean) => void
   onApplied?: () => Promise<void> | void
 }) {
   const [manifest, setManifest] = useState<ResourceManifest | null>(null)
   const [draft, setDraft] = useState('')
-  const [editing, setEditing] = useState(target.editing ?? false)
+  const [editing, setEditing] = useState(startEditing)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -48,7 +54,7 @@ export function YamlDrawer({
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await fetchResourceYaml(cluster.id, target.kind, target.name, target.namespace)
+      const result = await fetchResourceYaml(cluster.id, kind, name, namespace)
       setManifest(result)
       setDraft(result.yaml)
       setError(null)
@@ -58,7 +64,7 @@ export function YamlDrawer({
     } finally {
       setLoading(false)
     }
-  }, [cluster.id, target.kind, target.name, target.namespace])
+  }, [cluster.id, kind, name, namespace])
 
   useEffect(() => {
     void load()
@@ -66,12 +72,12 @@ export function YamlDrawer({
 
   const dirty = manifest !== null && draft !== manifest.yaml
 
-  // Closing on a half-typed manifest throws the edit away, so it asks first.
-  // Escape reaches the same guard, because the Sheet closes through it too.
-  const close = useCallback(() => {
-    if (dirty && !window.confirm('Discard your unsaved changes to this manifest?')) return
-    onClose()
-  }, [dirty, onClose])
+  useEffect(() => {
+    onDirtyChange?.(dirty)
+    // Unmounting clears the flag: an unmounted editor has nothing to discard,
+    // and leaving it set would make the drawer ask about an edit that is gone.
+    return () => onDirtyChange?.(false)
+  }, [dirty, onDirtyChange])
 
   async function save() {
     if (!manifest) return
@@ -79,13 +85,7 @@ export function YamlDrawer({
     setSaving(true)
     setApplied(false)
     try {
-      const result = await updateResourceYaml(
-        cluster.id,
-        target.kind,
-        target.name,
-        target.namespace,
-        draft,
-      )
+      const result = await updateResourceYaml(cluster.id, kind, name, namespace, draft)
       setManifest(result)
       setDraft(result.yaml)
       setEditing(false)
@@ -115,50 +115,7 @@ export function YamlDrawer({
   const editable = manifest?.editable ?? false
 
   return (
-    <Sheet
-      width="lg"
-      eyebrow={`${cluster.name}${target.namespace ? ` · ${target.namespace}` : ''} · ${target.label}`}
-      title={<span className="font-mono">{target.name}</span>}
-      onClose={close}
-      footer={
-        <>
-          <Button type="button" variant="ghost" onClick={close}>
-            Close
-          </Button>
-          {editing ? (
-            <>
-              <Button
-                type="button"
-                onClick={() => setDraft(manifest?.yaml ?? '')}
-                disabled={!dirty || saving}
-              >
-                <Undo2 aria-hidden="true" className="size-4" />
-                Revert
-              </Button>
-              <Button
-                type="button"
-                variant="primary"
-                onClick={() => void save()}
-                disabled={!dirty || saving}
-              >
-                {saving ? <Spinner className="size-4" /> : <Check aria-hidden="true" className="size-4" />}
-                Apply to cluster
-              </Button>
-            </>
-          ) : (
-            <Button
-              type="button"
-              variant="primary"
-              onClick={() => setEditing(true)}
-              disabled={!editable || loading}
-            >
-              <Pencil aria-hidden="true" className="size-4" />
-              Edit config
-            </Button>
-          )}
-        </>
-      }
-    >
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         {manifest ? (
           <>
@@ -176,7 +133,7 @@ export function YamlDrawer({
           </>
         ) : null}
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <Button type="button" size="sm" onClick={() => void copy()} disabled={!manifest}>
             {copied ? (
               <Check aria-hidden="true" className="size-3.5 text-ok" />
@@ -195,6 +152,45 @@ export function YamlDrawer({
             <RefreshCw aria-hidden="true" className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
             Reload
           </Button>
+
+          {editing ? (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setDraft(manifest?.yaml ?? '')}
+                disabled={!dirty || saving}
+              >
+                <Undo2 aria-hidden="true" className="size-3.5" />
+                Revert
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="primary"
+                onClick={() => void save()}
+                disabled={!dirty || saving}
+              >
+                {saving ? (
+                  <Spinner className="size-3.5" />
+                ) : (
+                  <Check aria-hidden="true" className="size-3.5" />
+                )}
+                Apply to cluster
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="primary"
+              onClick={() => setEditing(true)}
+              disabled={!editable || loading}
+            >
+              <Pencil aria-hidden="true" className="size-3.5" />
+              Edit config
+            </Button>
+          )}
         </div>
       </div>
 
@@ -224,6 +220,6 @@ export function YamlDrawer({
           ? 'Applying replaces the object through the agent tunnel under your own identity. The cluster’s RBAC decides whether you may, and the change is recorded in the audit trail.'
           : 'Read live through the agent tunnel under your own identity. Server-side bookkeeping — managed fields and kubectl’s last-applied copy — is stripped.'}
       </p>
-    </Sheet>
+    </div>
   )
 }

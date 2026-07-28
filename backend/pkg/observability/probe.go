@@ -112,6 +112,16 @@ func Probe(ctx context.Context, target Target, tunnel TunnelCall) Result {
 
 // call performs one probe request in whichever of the two shapes applies.
 func call(ctx context.Context, target Target, path string, tunnel TunnelCall) (int, []byte, error) {
+	return callLimited(ctx, target, path, tunnel, maxProbeBody, probeTimeout)
+}
+
+// callLimited is the same request with the caller's own ceilings. A probe reads
+// a few hundred bytes and a query reads a result set, so the two cannot share one
+// limit — but they must share one code path, because that path is where the
+// in-cluster and direct shapes diverge and where the credential is applied.
+func callLimited(ctx context.Context, target Target, path string, tunnel TunnelCall,
+	maxBody int64, timeout time.Duration,
+) (int, []byte, error) {
 	requestPath := target.requestPath(path)
 
 	if target.AccessMode == db.AccessInCluster {
@@ -128,13 +138,13 @@ func call(ctx context.Context, target Target, path string, tunnel TunnelCall) (i
 	}
 	applyAuth(req.Header, target)
 
-	resp, err := directClient(target).Do(req)
+	resp, err := directClientWithTimeout(target, timeout).Do(req)
 	if err != nil {
 		return 0, nil, fmt.Errorf("KubeMG could not reach %s: %w", target.Endpoint(), err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxProbeBody))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
 		return resp.StatusCode, nil, fmt.Errorf("the datasource closed the connection mid-answer: %w", err)
 	}
@@ -164,11 +174,15 @@ func applyAuth(header http.Header, target Target) {
 // verification is an explicit per-source choice, never a default: an internal
 // certificate is a reason to paste a CA, not a reason to stop checking.
 func directClient(target Target) *http.Client {
+	return directClientWithTimeout(target, probeTimeout)
+}
+
+func directClientWithTimeout(target Target, timeout time.Duration) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if target.InsecureSkipVerify {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // operator opt-in
 	}
-	return &http.Client{Transport: transport, Timeout: probeTimeout}
+	return &http.Client{Transport: transport, Timeout: timeout}
 }
 
 // explain turns a non-2xx answer into the next thing to try. A bare status code

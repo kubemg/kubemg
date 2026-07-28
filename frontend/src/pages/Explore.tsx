@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Boxes, RefreshCw } from 'lucide-react'
 import {
   errorMessage,
   fetchCRDs,
   fetchConfigMaps,
+  fetchCustomResources,
   fetchCronJobs,
   fetchDaemonSets,
   fetchDeployments,
   fetchHTTPRoutes,
+  fetchHelmReleases,
   fetchIngresses,
   fetchJobs,
   fetchNamespaces,
@@ -21,14 +23,16 @@ import {
   fetchStorageClasses,
   fetchVirtualServices,
 } from '../api/client'
-import type { Namespace, Pod } from '../api/types'
+import type { CustomResourceDefinition, HelmRelease, Namespace } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { ExploreSidebar } from '../components/ExploreSidebar'
-import { PodDrawer } from '../components/PodDrawer'
+import { HelmValuesDrawer } from '../components/HelmValuesDrawer'
+import { ResourceDetailDrawer } from '../components/ResourceDetailDrawer'
+import type { DetailTarget } from '../components/ResourceDetailDrawer'
 import { ResourceView } from '../components/ResourceTables'
 import type { LoadedResource } from '../components/ResourceTables'
-import { YamlDrawer } from '../components/YamlDrawer'
-import type { ManifestTarget } from '../components/YamlDrawer'
+import { WorkloadActionDialog } from '../components/WorkloadActionDialog'
+import type { WorkloadActionTarget } from '../components/WorkloadActionDialog'
 import {
   Button,
   EmptyState,
@@ -37,13 +41,15 @@ import {
   Pill,
   Select,
 } from '../components/primitives'
-import type { ResourceKey } from '../lib/resources'
+import type { ResourceItem, ResourceKey } from '../lib/resources'
 import {
   ALL_NAMESPACES,
-  RESOURCE_CATEGORIES,
+  discoverCategories,
+  exploreCategories,
   resourceItem,
   resourceSingular,
 } from '../lib/resources'
+import { workloadKeyFor } from '../lib/workloads'
 import { useClusters } from '../state/clusters-context'
 
 /**
@@ -52,12 +58,22 @@ import { useClusters } from '../state/clusters-context'
  * table to it.
  */
 async function loadResource(
-  resource: ResourceKey,
+  item: ResourceItem,
   clusterId: number,
   namespace: string,
   namespaces: Namespace[],
 ): Promise<LoadedResource> {
-  switch (resource) {
+  // A kind discovered from the cluster's own CRDs is read generically, by the
+  // API it is served under. There is no case for it below because there cannot
+  // be one: the set is different on every cluster.
+  if (item.custom) {
+    const list = await fetchCustomResources(clusterId, item.custom, namespace)
+    return { kind: 'custom', rows: list.items, available: list.available, reason: list.reason }
+  }
+
+  switch (item.key) {
+    case 'helmreleases':
+      return { kind: 'helmreleases', rows: await fetchHelmReleases(clusterId, namespace) }
     case 'pods':
       return { kind: 'pods', rows: await fetchPods(clusterId, namespace) }
     case 'deployments':
@@ -103,6 +119,40 @@ async function loadResource(
       // The namespace list is already loaded for the picker; showing it again
       // would be a second identical read of the cluster.
       return { kind: 'namespaces', rows: namespaces }
+    default:
+      // Every fixed key is handled above and a discovered one returned earlier,
+      // so this is only reachable if the inventory and this loader disagree.
+      throw new Error(`kubemg cannot read ${item.key}`)
+  }
+}
+
+/**
+ * The namespace an operator last chose, kept across sessions. Someone working in
+ * one namespace goes back to it every time they open Explore, and re-picking it
+ * on every visit is the kind of friction a console should absorb. It is stored
+ * as a single preference rather than one per cluster because it is a habit, not
+ * a property of a cluster — and it is only restored where it is valid, so a
+ * cluster without that namespace simply opens on its first one.
+ */
+const NAMESPACE_KEY = 'kubemg_preferred_namespace'
+
+/** What Explore opens on, and what it falls back to when a selection goes away. */
+const DEFAULT_ITEM = resourceItem('pods')!
+
+function readPreferredNamespace(): string {
+  try {
+    return localStorage.getItem(NAMESPACE_KEY) ?? ''
+  } catch {
+    // Private-mode storage refusals are not worth breaking a page over.
+    return ''
+  }
+}
+
+function writePreferredNamespace(namespace: string) {
+  try {
+    localStorage.setItem(NAMESPACE_KEY, namespace)
+  } catch {
+    /* ignored, as above */
   }
 }
 
@@ -116,11 +166,27 @@ export function Explore() {
   const [resource, setResource] = useState<ResourceKey>('pods')
 
   const [loaded, setLoaded] = useState<LoadedResource | null>(null)
-  const [selected, setSelected] = useState<Pod | null>(null)
-  const [manifest, setManifest] = useState<ManifestTarget | null>(null)
+  // One drawer for every kind, opened on whichever tab the row's action asked
+  // for. A pod carries its row along, because the list already holds everything
+  // its usage and container panels need without a second read.
+  const [detail, setDetail] = useState<DetailTarget | null>(null)
+  // A Helm release is the exception, and has to be: it has no manifest and no
+  // describe, because it is not an API object at all — it is a Secret holding a
+  // compressed blob, and what is worth reading in it is the values.
+  const [helm, setHelm] = useState<{ release: HelmRelease; editing: boolean } | null>(null)
+  // Scale and rollout restart, asked for from a row. They are writes, so they
+  // are a dialog of their own rather than something a click in a list does.
+  const [action, setAction] = useState<WorkloadActionTarget | null>(null)
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // What this particular cluster turned out to have installed. `null` means the
+  // question has not been answered yet, which is different from "none" — a
+  // discovered resource cannot be resolved until it is settled. Reading it is
+  // best-effort: a grant that cannot list CRDs still browses everything else, so
+  // a refusal narrows the sidebar rather than failing the page.
+  const [crds, setCrds] = useState<CustomResourceDefinition[] | null>(null)
 
   // Only agent clusters have a tunnel to read through; a direct-mode cluster has
   // no live state to show.
@@ -129,7 +195,15 @@ export function Explore() {
   )
   const cluster = reachable.find((entry) => entry.id === clusterId) ?? null
 
-  const item = resourceItem(resource)
+  const discovered = useMemo(() => discoverCategories(crds ?? []), [crds])
+  const categories = useMemo(() => exploreCategories(discovered), [discovered])
+
+  // A `crd:` key belongs to the cluster it was discovered on, so it resolves to
+  // nothing both while discovery is still running and on a cluster that does not
+  // have that CRD. Those are different situations: the first waits, the second
+  // falls back — see the effect below.
+  const resolved = resourceItem(resource, discovered)
+  const item = resolved ?? DEFAULT_ITEM
   const namespaced = item.scope === 'namespaced'
 
   useEffect(() => {
@@ -153,7 +227,16 @@ export function Explore() {
         if (cancelled) return
         setNamespaces(result.namespaces)
         setScoped(result.scoped)
-        if (result.namespaces.length > 0) setNamespace(result.namespaces[0].name)
+        if (result.namespaces.length === 0) return
+
+        // The remembered choice only applies where it means something here:
+        // "all" always does, a named namespace only if this cluster has it and
+        // the grant returned it.
+        const preferred = readPreferredNamespace()
+        const valid =
+          preferred === ALL_NAMESPACES ||
+          result.namespaces.some((entry) => entry.name === preferred)
+        setNamespace(valid ? preferred : result.namespaces[0].name)
       })
       .catch((err) => {
         if (!cancelled) setError(errorMessage(err, 'Could not list namespaces.'))
@@ -164,13 +247,48 @@ export function Explore() {
     }
   }, [cluster])
 
+  // Which CRDs the cluster has is read once per cluster, not per list: it is
+  // what the sidebar is built from, and it changes only when someone installs an
+  // operator.
+  useEffect(() => {
+    if (!cluster) return
+
+    let cancelled = false
+    setCrds(null)
+
+    fetchCRDs(cluster.id)
+      .then((result) => {
+        if (!cancelled) setCrds(result)
+      })
+      .catch(() => {
+        // A namespace-scoped grant cannot list CRDs cluster-wide, and that is a
+        // legitimate answer: the sidebar keeps its fixed inventory.
+        if (!cancelled) setCrds([])
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [cluster])
+
+  // Once discovery has answered, a selection it could not account for belongs to
+  // a cluster that is no longer open. Dropping it back to Pods keeps the sidebar
+  // highlight, the heading and the list describing the same thing.
+  useEffect(() => {
+    if (crds !== null && !resolved) setResource('pods')
+  }, [crds, resolved])
+
   const load = useCallback(async () => {
     if (!cluster) return
     if (namespaced && !namespace) return
+    // Nothing to read yet: the selection is a discovered kind and discovery has
+    // not come back. Reading the fallback here would show Pods under another
+    // resource's heading for as long as that takes.
+    if (!resolved) return
 
     setLoading(true)
     try {
-      setLoaded(await loadResource(resource, cluster.id, namespace, namespaces))
+      setLoaded(await loadResource(item, cluster.id, namespace, namespaces))
       setError(null)
     } catch (err) {
       setError(errorMessage(err, `Could not read ${item.label.toLowerCase()} from this cluster.`))
@@ -178,7 +296,7 @@ export function Explore() {
     } finally {
       setLoading(false)
     }
-  }, [cluster, namespace, namespaced, resource, namespaces, item.label])
+  }, [cluster, namespace, namespaced, namespaces, item, resolved])
 
   useEffect(() => {
     void load()
@@ -187,8 +305,9 @@ export function Explore() {
   // A drawer belongs to the list it was opened from; switching resources closes
   // it rather than leaving it open over a list it does not come from.
   useEffect(() => {
-    setSelected(null)
-    setManifest(null)
+    setDetail(null)
+    setHelm(null)
+    setAction(null)
   }, [resource, namespace, clusterId])
 
   if (!clustersLoading && reachable.length === 0) {
@@ -207,14 +326,16 @@ export function Explore() {
     )
   }
 
-  const unavailable = loaded?.kind === 'routes' && !loaded.available
+  const unavailable = (loaded?.kind === 'routes' || loaded?.kind === 'custom') && !loaded.available
   const count = loaded?.rows.length ?? 0
   const allNamespaces = namespaced && namespace === ALL_NAMESPACES
 
   return (
     <AppShell
       title="Explore"
-      sidebar={<ExploreSidebar selected={resource} onSelect={setResource} />}
+      sidebar={
+        <ExploreSidebar categories={categories} selected={resource} onSelect={setResource} />
+      }
       actions={
         <Button onClick={() => void load()} disabled={loading || (namespaced && !namespace)}>
           <RefreshCw aria-hidden="true" className={`size-4 ${loading ? 'animate-spin' : ''}`} />
@@ -252,7 +373,10 @@ export function Explore() {
                 size="sm"
                 value={namespace}
                 disabled={namespaces.length === 0}
-                onChange={(event) => setNamespace(event.target.value)}
+                onChange={(event) => {
+                  setNamespace(event.target.value)
+                  writePreferredNamespace(event.target.value)
+                }}
               >
                 {namespaces.length === 0 ? <option value="">No namespaces</option> : null}
                 {/* A scoped grant's "all" is its own namespaces, and it says so
@@ -291,7 +415,7 @@ export function Explore() {
               value={resource}
               onChange={(event) => setResource(event.target.value as ResourceKey)}
             >
-              {RESOURCE_CATEGORIES.map((category) => (
+              {categories.map((category) => (
                 <optgroup key={category.id} label={category.label}>
                   {category.items.map((entry) => (
                     <option key={entry.key} value={entry.key}>
@@ -340,16 +464,48 @@ export function Explore() {
             <ResourceView
               loaded={loaded}
               showNamespace={allNamespaces}
-              onSelectPod={setSelected}
+              // A pod opens the same drawer as everything else, but carrying its
+              // row: the list already holds the containers and limits its usage
+              // panel needs, so there is nothing to read again.
+              onSelectPod={(pod) =>
+                setDetail({
+                  kind: 'pods',
+                  label: 'Pod',
+                  name: pod.name,
+                  namespace: pod.namespace,
+                  pod,
+                })
+              }
               // The page is the only place that knows which resource it asked
-              // for: several kinds share a table, and a manifest has to be
-              // addressed by what the object actually is.
-              onManifest={(name, rowNamespace, editing) =>
-                setManifest({
+              // for: several kinds share a table, and an object has to be
+              // addressed by what it actually is.
+              onValues={(release, editing) => setHelm({ release, editing })}
+              // A workload row carries its own Kind and its own desired count,
+              // which is everything the dialog needs — no second read to open
+              // it, and no guess about what "currently" is.
+              onAction={(name, workload) => {
+                const kind = workloadKeyFor(workload.kind)
+                if (!kind) return
+                setAction({
+                  action: name,
+                  kind,
+                  label: workload.kind,
+                  name: workload.name,
+                  namespace: workload.namespace,
+                  replicas: workload.desired,
+                })
+              }}
+              onManifest={(name, rowNamespace, tab, editing) =>
+                setDetail({
                   kind: resource,
                   label: resourceSingular(item),
                   name,
                   namespace: namespaced ? (rowNamespace ?? namespace) : undefined,
+                  pod:
+                    loaded.kind === 'pods'
+                      ? loaded.rows.find((row) => row.name === name)
+                      : undefined,
+                  tab,
                   editing,
                 })
               }
@@ -389,20 +545,30 @@ export function Explore() {
         </p>
       </div>
 
-      {selected && cluster ? (
-        <PodDrawer
+      {detail && cluster ? (
+        <ResourceDetailDrawer
           cluster={cluster}
-          pod={selected}
-          onClose={() => setSelected(null)}
+          target={detail}
+          onClose={() => setDetail(null)}
           onRefresh={load}
         />
       ) : null}
 
-      {manifest && cluster ? (
-        <YamlDrawer
+      {action && cluster ? (
+        <WorkloadActionDialog
           cluster={cluster}
-          target={manifest}
-          onClose={() => setManifest(null)}
+          target={action}
+          onClose={() => setAction(null)}
+          onDone={load}
+        />
+      ) : null}
+
+      {helm && cluster ? (
+        <HelmValuesDrawer
+          cluster={cluster}
+          release={helm.release}
+          editing={helm.editing}
+          onClose={() => setHelm(null)}
           onApplied={load}
         />
       ) : null}

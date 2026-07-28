@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -426,6 +427,181 @@ func (s *server) discoverObservabilitySources(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"candidates": observability.Discover(services)})
+}
+
+/*
+ * The query path.
+ *
+ * Everything above is configuration. These two read from the backend that
+ * configuration names, and they are where the scope has to be enforced by hand.
+ *
+ * Every other read in KubeMG delegates authorization to the cluster: the call
+ * goes down the tunnel impersonated, and the cluster's own RBAC decides. That is
+ * not available here. A metrics or logs backend has never heard of the caller,
+ * has no notion of a Kubernetes identity, and will answer whatever it is asked —
+ * so if a namespace-scoped user could hand it a query, they would read the whole
+ * cluster's series with one line of PromQL.
+ *
+ * Hence the design in `pkg/observability`: **the caller never sends a query.**
+ * They name a chart from a fixed catalogue, or a set of Kubernetes names to
+ * search logs by, and KubeMG builds the query around a scope resolved from their
+ * grant. The scope is computed here, once, and the engines refuse anything that
+ * reaches past it.
+ *
+ * The transport is a separate question and is deliberately answered differently.
+ * An in-cluster datasource is reached through the API server's Service proxy, and
+ * that Service lives wherever the operator put it — `monitoring`, usually, which
+ * a namespace-scoped grant does not cover. Asserting the caller's own grant on
+ * that hop would mean no scoped user could ever see a chart. So the hop is made
+ * as cluster-admin, exactly as the probe and discovery calls are, and what
+ * protects the caller's scope is the query itself rather than the path. The audit
+ * trail records the call either way.
+ */
+
+// queryScope resolves what the caller may be shown, from the same grant every
+// other read uses. An admin has no stored grant and reads the cluster.
+func queryScope(user *db.User, grant db.UserClusterAccess) observability.Scope {
+	if user.IsAdmin() {
+		return observability.Scope{}
+	}
+	return observability.Scope{Namespaces: grant.NamespaceList()}
+}
+
+// queryWindow reads the range parameters. Both are optional: a caller naming
+// neither gets the engine's default window, which is what the first load of a
+// chart wants.
+func queryWindow(c *gin.Context) (observability.Window, bool) {
+	var window observability.Window
+
+	for _, field := range []struct {
+		name string
+		into *time.Time
+	}{{"start", &window.Start}, {"end", &window.End}} {
+		raw := strings.TrimSpace(c.Query(field.name))
+		if raw == "" {
+			continue
+		}
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": field.name + " has to be an RFC 3339 timestamp",
+			})
+			return window, false
+		}
+		*field.into = parsed.UTC()
+	}
+	return window, true
+}
+
+// querySource loads a cluster's datasource of one kind and refuses the read when
+// there is nothing to read from. A disabled source is treated as absent: parking
+// one is how an operator says "not this, for now".
+func (s *server) querySource(c *gin.Context, cluster *db.Cluster, kind string) (*db.ObservabilitySource, bool) {
+	source, err := s.store.ObservabilitySource(c.Request.Context(), cluster.ID, kind)
+	if errors.Is(err, db.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "this cluster has no " + kind + " datasource registered",
+			// The UI turns this into "configure one" rather than an error, which
+			// is what an unconfigured cluster actually needs to be told.
+			"unconfigured": true,
+		})
+		return nil, false
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load the datasource"})
+		return nil, false
+	}
+	if !source.Enabled {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":        "this cluster's " + kind + " datasource is turned off",
+			"unconfigured": true,
+		})
+		return nil, false
+	}
+	return source, true
+}
+
+// queryMetrics charts one catalogue entry from the cluster's metrics backend.
+func (s *server) queryMetrics(c *gin.Context) {
+	user, cluster, grant, _, ok := s.loadAuthorizedCluster(c)
+	if !ok {
+		return
+	}
+	source, ok := s.querySource(c, cluster, db.SourceMetrics)
+	if !ok {
+		return
+	}
+	window, ok := queryWindow(c)
+	if !ok {
+		return
+	}
+
+	result, err := observability.QueryMetrics(c.Request.Context(),
+		observability.TargetOf(*source), s.tunnelCall(user, cluster),
+		queryScope(user, grant),
+		observability.MetricRequest{
+			Kind:      observability.MetricKind(strings.TrimSpace(c.Query("metric"))),
+			Namespace: strings.TrimSpace(c.Query("namespace")),
+			Pod:       strings.TrimSpace(c.Query("pod")),
+			Container: strings.TrimSpace(c.Query("container")),
+			Window:    window,
+		})
+	if err != nil {
+		// A refusal here is either the caller asking for something outside their
+		// scope or the backend declining, and both are the caller's to read.
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"result":   result,
+		"provider": source.Provider,
+		"endpoint": observability.TargetOf(*source).Endpoint(),
+	})
+}
+
+// queryLogs searches the cluster's log aggregator.
+func (s *server) queryLogs(c *gin.Context) {
+	user, cluster, grant, _, ok := s.loadAuthorizedCluster(c)
+	if !ok {
+		return
+	}
+	source, ok := s.querySource(c, cluster, db.SourceLogs)
+	if !ok {
+		return
+	}
+	window, ok := queryWindow(c)
+	if !ok {
+		return
+	}
+
+	limit, err := strconv.Atoi(strings.TrimSpace(c.DefaultQuery("limit", "0")))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "limit has to be a number"})
+		return
+	}
+
+	result, err := observability.QueryLogs(c.Request.Context(),
+		observability.TargetOf(*source), s.tunnelCall(user, cluster),
+		queryScope(user, grant),
+		observability.LogRequest{
+			Namespace: strings.TrimSpace(c.Query("namespace")),
+			Pod:       strings.TrimSpace(c.Query("pod")),
+			Container: strings.TrimSpace(c.Query("container")),
+			Filter:    c.Query("filter"),
+			Window:    window,
+			Limit:     limit,
+		})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"result":   result,
+		"provider": source.Provider,
+		"endpoint": observability.TargetOf(*source).Endpoint(),
+	})
 }
 
 // tunnelCall gives the prober a way into the cluster, or nothing when there is

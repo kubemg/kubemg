@@ -3,7 +3,9 @@ import type {
   ClusterNode,
   ConfigEntry,
   CronJob,
+  CustomResource,
   CustomResourceDefinition,
+  HelmRelease,
   Ingress,
   Job,
   Namespace,
@@ -15,8 +17,11 @@ import type {
   StorageClass,
   Workload,
 } from '../api/types'
-import { FileCode2, Pencil } from 'lucide-react'
+import { FileCode2, PanelRightOpen, Pencil, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { IconButton, Pill, Row, Table, Td, Th } from './primitives'
+import type { DetailTab } from './ResourceDetailDrawer'
+import type { WorkloadActionName } from './WorkloadActionDialog'
+import { workloadCapability, workloadKeyFor } from '../lib/workloads'
 import type { Tone } from '../lib/status'
 import { TONE_FILL, podTone, workloadTone } from '../lib/status'
 import { relativeAge } from '../lib/time'
@@ -29,6 +34,7 @@ import { relativeAge } from '../lib/time'
  */
 export type LoadedResource =
   | { kind: 'pods'; rows: Pod[] }
+  | { kind: 'helmreleases'; rows: HelmRelease[] }
   | { kind: 'workloads'; rows: Workload[] }
   | { kind: 'jobs'; rows: Job[] }
   | { kind: 'cronjobs'; rows: CronJob[] }
@@ -40,11 +46,38 @@ export type LoadedResource =
   | { kind: 'storageclasses'; rows: StorageClass[] }
   | { kind: 'config'; rows: ConfigEntry[]; secrets: boolean }
   | { kind: 'crds'; rows: CustomResourceDefinition[] }
+  | { kind: 'custom'; rows: CustomResource[]; available: boolean; reason?: string }
   | { kind: 'nodes'; rows: ClusterNode[] }
   | { kind: 'namespaces'; rows: Namespace[] }
 
-/** OpenManifest opens one row's object as YAML, to read or to edit. */
-export type OpenManifest = (name: string, namespace: string | undefined, editing: boolean) => void
+/**
+ * OpenManifest opens one row's object in the detail drawer, on a named tab. The
+ * name of the type is what it has always been because every table calls it the
+ * same way; what changed is that a row now opens onto the whole object rather
+ * than onto its manifest alone.
+ */
+export type OpenManifest = (
+  name: string,
+  namespace: string | undefined,
+  tab: DetailTab,
+  editing?: boolean,
+) => void
+
+/**
+ * OpenValues opens one Helm release's values. It is separate from OpenManifest
+ * because a release has no manifest of its own: it is a Secret holding a blob,
+ * and the thing worth reading and editing is the values inside it.
+ */
+export type OpenValues = (release: HelmRelease, editing: boolean) => void
+
+/**
+ * OpenWorkloadAction asks for one of the two workload writes on a row. It is
+ * separate from OpenManifest because it is not a view of the object — it is a
+ * change to it — and because the row, not the page, is the only thing that knows
+ * which Kind it is: the workload table serves Deployments, StatefulSets and
+ * DaemonSets at once, and only two of the three can be scaled.
+ */
+export type OpenWorkloadAction = (action: WorkloadActionName, workload: Workload) => void
 
 /**
  * ResourceView renders whichever list is loaded, with the columns it deserves.
@@ -61,13 +94,25 @@ export function ResourceView({
   showNamespace = false,
   onSelectPod,
   onManifest: open,
+  onValues,
+  onAction,
 }: {
   loaded: LoadedResource
   showNamespace?: boolean
   onSelectPod: (pod: Pod) => void
   onManifest?: OpenManifest
+  onValues?: OpenValues
+  onAction?: OpenWorkloadAction
 }) {
   switch (loaded.kind) {
+    case 'helmreleases':
+      return (
+        <HelmReleaseTable
+          releases={loaded.rows}
+          showNamespace={showNamespace}
+          onValues={onValues}
+        />
+      )
     case 'pods':
       return (
         <PodTable
@@ -79,7 +124,12 @@ export function ResourceView({
       )
     case 'workloads':
       return (
-        <WorkloadTable workloads={loaded.rows} showNamespace={showNamespace} onManifest={open} />
+        <WorkloadTable
+          workloads={loaded.rows}
+          showNamespace={showNamespace}
+          onManifest={open}
+          onAction={onAction}
+        />
       )
     case 'jobs':
       return <JobTable jobs={loaded.rows} showNamespace={showNamespace} onManifest={open} />
@@ -114,6 +164,14 @@ export function ResourceView({
       )
     case 'crds':
       return <CRDTable crds={loaded.rows} onManifest={open} />
+    case 'custom':
+      return (
+        <CustomResourceTable
+          rows={loaded.rows}
+          showNamespace={showNamespace}
+          onManifest={open}
+        />
+      )
     case 'nodes':
       return <NodeTable nodes={loaded.rows} onManifest={open} />
     case 'namespaces':
@@ -134,23 +192,60 @@ function Name({
   tone,
   title,
   namespace,
+  onOpen,
 }: {
   children: ReactNode
   tone?: Tone
   title?: string
   namespace?: string
+  /**
+   * Opens the row's object. Given one, the name becomes the button it always
+   * looked like it should be — the same affordance the pod list has had, now on
+   * every list, because every kind has a detail view to open onto.
+   */
+  onOpen?: () => void
 }) {
+  const label = (
+    <>
+      {namespace ? <span className="text-faint">{namespace}/</span> : null}
+      {children}
+    </>
+  )
+
   return (
     <span className="flex items-center gap-2.5">
       {tone ? (
         <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${TONE_FILL[tone]}`} />
       ) : null}
-      <span className="min-w-0 truncate font-mono text-fg" title={title}>
-        {namespace ? <span className="text-faint">{namespace}/</span> : null}
-        {children}
-      </span>
+      {onOpen ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="min-w-0 truncate font-mono text-fg transition-colors hover:text-accent"
+          title={title}
+        >
+          {label}
+        </button>
+      ) : (
+        <span className="min-w-0 truncate font-mono text-fg" title={title}>
+          {label}
+        </span>
+      )}
     </span>
   )
+}
+
+/**
+ * opener binds a row to the detail drawer. It reads the namespace off the row
+ * rather than taking one, so a cluster-scoped kind — which has no namespace
+ * field at all — needs no special case at any call site.
+ */
+function opener(
+  onManifest: OpenManifest | undefined,
+  row: { name: string; namespace?: string },
+): (() => void) | undefined {
+  if (!onManifest) return undefined
+  return () => onManifest(row.name, row.namespace, 'overview')
 }
 
 /** List renders a set of values that is usually one value and sometimes six. */
@@ -182,31 +277,46 @@ function ManifestHead({ onManifest }: { onManifest?: OpenManifest }) {
 }
 
 /**
- * ManifestCell offers the two things you can do with an object's YAML. Editing
- * is offered separately from viewing rather than hidden inside it, because
- * opening a manifest to read is the common case and should not look like the
- * start of a change.
+ * ManifestCell offers the three things you can do with a row, each opening the
+ * same detail drawer on a different tab: look at the object, read its manifest,
+ * or start changing it. Editing is offered separately from viewing rather than
+ * hidden inside it, because opening a manifest to read is the common case and
+ * should not look like the start of a change.
  */
 function ManifestCell({
   onManifest,
   name,
   namespace,
   editable = true,
+  actions,
 }: {
   onManifest?: OpenManifest
   name: string
   namespace?: string
   editable?: boolean
+  /**
+   * Actions belonging to this kind alone, shown ahead of the three every row
+   * has. Kind-specific because they are: only a workload can be scaled.
+   */
+  actions?: ReactNode
 }) {
   if (!onManifest) return null
 
   return (
     <Td className="whitespace-nowrap">
       <span className="flex items-center justify-end gap-0.5">
+        {actions}
+        <IconButton
+          type="button"
+          label={`View details for ${name}`}
+          onClick={() => onManifest(name, namespace, 'overview')}
+        >
+          <PanelRightOpen aria-hidden="true" className="size-3.5" />
+        </IconButton>
         <IconButton
           type="button"
           label={`View ${name} as YAML`}
-          onClick={() => onManifest(name, namespace, false)}
+          onClick={() => onManifest(name, namespace, 'yaml')}
         >
           <FileCode2 aria-hidden="true" className="size-3.5" />
         </IconButton>
@@ -214,7 +324,7 @@ function ManifestCell({
           <IconButton
             type="button"
             label={`Edit ${name}`}
-            onClick={() => onManifest(name, namespace, true)}
+            onClick={() => onManifest(name, namespace, 'yaml', true)}
           >
             <Pencil aria-hidden="true" className="size-3.5" />
           </IconButton>
@@ -259,7 +369,110 @@ function jobTone(state: string): Tone {
   }
 }
 
+/**
+ * Helm's own status vocabulary. `superseded` is not a failure — it is every
+ * revision but the current one — so it reads as idle rather than as a warning,
+ * and the pending states are the only ones genuinely in motion.
+ */
+function helmTone(status: string): Tone {
+  switch (status) {
+    case 'deployed':
+      return 'ok'
+    case 'failed':
+      return 'bad'
+    case 'pending-install':
+    case 'pending-upgrade':
+    case 'pending-rollback':
+    case 'uninstalling':
+      return 'warn'
+    case 'superseded':
+    case 'uninstalled':
+      return 'idle'
+    default:
+      return 'idle'
+  }
+}
+
 /* ---------------------------------------------------------------- tables --- */
+
+/**
+ * Helm releases: what is installed here, rather than what is running. The two
+ * actions are the release's editable surface — a release has no manifest of its
+ * own, so viewing and editing both mean its values.
+ */
+function HelmReleaseTable({
+  releases,
+  showNamespace,
+  onValues,
+}: {
+  releases: HelmRelease[]
+  showNamespace: boolean
+  onValues?: OpenValues
+}) {
+  return (
+    <Table>
+      <thead>
+        <tr>
+          <Th className="w-[38%] md:w-[24%]">Release</Th>
+          <Th className="hidden md:table-cell md:w-[18%]">Chart</Th>
+          <Th className="hidden lg:table-cell lg:w-[10%]">Version</Th>
+          <Th className="hidden lg:table-cell lg:w-[10%]">App</Th>
+          <Th className="w-[12%] md:w-[7%]">Rev</Th>
+          <Th className="w-[28%] md:w-[14%]">Status</Th>
+          <Th className="w-[22%] md:w-[10%]">Updated</Th>
+          {onValues ? (
+            <Th className="w-[1%]">
+              <span className="sr-only">Values</span>
+            </Th>
+          ) : null}
+        </tr>
+      </thead>
+      <tbody>
+        {releases.map((release) => (
+          <Row key={`${release.namespace}/${release.name}`}>
+            <Td className="truncate">
+              <Name
+                tone={helmTone(release.status)}
+                title={release.description || release.name}
+                namespace={showNamespace ? release.namespace : undefined}
+              >
+                {release.name}
+              </Name>
+            </Td>
+            <Td className={`hidden md:table-cell ${MONO}`}>{release.chart_name || '—'}</Td>
+            <Td className={`hidden lg:table-cell ${MONO}`}>{release.chart_version || '—'}</Td>
+            <Td className={`hidden lg:table-cell ${MONO}`}>{release.app_version || '—'}</Td>
+            <Td className="font-mono text-[12.5px] text-muted">{release.revision}</Td>
+            <Td>
+              <Pill tone={helmTone(release.status)}>{release.status || 'unknown'}</Pill>
+            </Td>
+            <Td className={AGE}>{release.updated_at ? relativeAge(release.updated_at) : '—'}</Td>
+            {onValues ? (
+              <Td className="whitespace-nowrap">
+                <span className="flex items-center justify-end gap-0.5">
+                  <IconButton
+                    type="button"
+                    label={`View the values of ${release.name}`}
+                    onClick={() => onValues(release, false)}
+                  >
+                    <SlidersHorizontal aria-hidden="true" className="size-3.5" />
+                  </IconButton>
+                  <IconButton
+                    type="button"
+                    label={`Edit the values of ${release.name}`}
+                    onClick={() => onValues(release, true)}
+                  >
+                    <Pencil aria-hidden="true" className="size-3.5" />
+                  </IconButton>
+                </span>
+              </Td>
+            ) : null}
+          </Row>
+        ))}
+      </tbody>
+    </Table>
+  )
+}
 
 function PodTable({
   pods,
@@ -328,14 +541,60 @@ function PodTable({
   )
 }
 
+/**
+ * WorkloadActionCells are the two writes a workload row offers directly. They
+ * are icons in the row rather than a menu because there are two of them and they
+ * are the two things anyone does to a workload; what they open is a dialog, so
+ * nothing here is one click away from happening.
+ */
+function WorkloadActions({
+  workload,
+  onAction,
+}: {
+  workload: Workload
+  onAction?: OpenWorkloadAction
+}) {
+  if (!onAction) return null
+  // A row whose Kind these controls do not answer for — nothing today, but the
+  // workload list is where a new kind would land — simply offers neither.
+  const key = workloadKeyFor(workload.kind)
+  const capability = key ? workloadCapability(key) : undefined
+  if (!capability) return null
+
+  return (
+    <>
+      {capability.scale ? (
+        <IconButton
+          type="button"
+          label={`Scale ${workload.name}`}
+          onClick={() => onAction('scale', workload)}
+        >
+          <SlidersHorizontal aria-hidden="true" className="size-3.5" />
+        </IconButton>
+      ) : null}
+      {capability.restart ? (
+        <IconButton
+          type="button"
+          label={`Restart ${workload.name}`}
+          onClick={() => onAction('restart', workload)}
+        >
+          <RotateCcw aria-hidden="true" className="size-3.5" />
+        </IconButton>
+      ) : null}
+    </>
+  )
+}
+
 function WorkloadTable({
   workloads,
   showNamespace,
   onManifest,
+  onAction,
 }: {
   workloads: Workload[]
   showNamespace: boolean
   onManifest?: OpenManifest
+  onAction?: OpenWorkloadAction
 }) {
   return (
     <Table>
@@ -356,6 +615,7 @@ function WorkloadTable({
               <Name
                 tone={workloadTone(workload)}
                 title={workload.name}
+                onOpen={opener(onManifest, workload)}
                 namespace={showNamespace ? workload.namespace : undefined}
               >
                 {workload.name}
@@ -377,6 +637,7 @@ function WorkloadTable({
               onManifest={onManifest}
               name={workload.name}
               namespace={workload.namespace}
+              actions={<WorkloadActions workload={workload} onAction={onAction} />}
             />
           </Row>
         ))}
@@ -414,6 +675,7 @@ function JobTable({
               <Name
                 tone={jobTone(job.state)}
                 title={job.name}
+                onOpen={opener(onManifest, job)}
                 namespace={showNamespace ? job.namespace : undefined}
               >
                 {job.name}
@@ -473,6 +735,7 @@ function CronJobTable({
               <Name
                 tone={cronjob.suspended ? 'idle' : 'ok'}
                 title={cronjob.name}
+                onOpen={opener(onManifest, cronjob)}
                 namespace={showNamespace ? cronjob.namespace : undefined}
               >
                 {cronjob.name}
@@ -531,6 +794,7 @@ function ServiceTable({
             <Td className="truncate">
               <Name
                 title={service.name}
+                onOpen={opener(onManifest, service)}
                 namespace={showNamespace ? service.namespace : undefined}
               >
                 {service.name}
@@ -585,6 +849,7 @@ function IngressTable({
             <Td className="truncate">
               <Name
                 title={ingress.name}
+                onOpen={opener(onManifest, ingress)}
                 namespace={showNamespace ? ingress.namespace : undefined}
               >
                 {ingress.name}
@@ -685,7 +950,7 @@ function PersistentVolumeTable({
         {volumes.map((volume) => (
           <Row key={volume.name}>
             <Td className="truncate">
-              <Name tone={phaseTone(volume.status)} title={volume.name}>
+              <Name tone={phaseTone(volume.status)} title={volume.name} onOpen={opener(onManifest, volume)}>
                 {volume.name}
               </Name>
             </Td>
@@ -737,6 +1002,7 @@ function ClaimTable({
               <Name
                 tone={phaseTone(claim.status)}
                 title={claim.name}
+                onOpen={opener(onManifest, claim)}
                 namespace={showNamespace ? claim.namespace : undefined}
               >
                 {claim.name}
@@ -784,7 +1050,7 @@ function StorageClassTable({
           <Row key={entry.name}>
             <Td className="truncate">
               <span className="flex items-center gap-2">
-                <Name title={entry.name}>{entry.name}</Name>
+                <Name title={entry.name} onOpen={opener(onManifest, entry)}>{entry.name}</Name>
                 {entry.default ? (
                   <Pill tone="accent" dot={false}>
                     default
@@ -890,7 +1156,7 @@ function CRDTable({
         {crds.map((crd) => (
           <Row key={crd.name}>
             <Td className="truncate">
-              <Name title={crd.name}>{crd.name}</Name>
+              <Name title={crd.name} onOpen={opener(onManifest, crd)}>{crd.name}</Name>
             </Td>
             <Td className="truncate text-[12.5px] text-fg">{crd.kind}</Td>
             <Td className={`hidden md:table-cell ${MONO}`}>{crd.group || 'core'}</Td>
@@ -899,6 +1165,54 @@ function CRDTable({
               <List values={crd.versions} />
             </Td>
             <ManifestCell onManifest={onManifest} name={crd.name} />
+          </Row>
+        ))}
+      </tbody>
+    </Table>
+  )
+}
+
+/**
+ * The list for a kind KubeMG learned about from the cluster rather than from its
+ * own table. A CRD's spec is whatever its author decided, so there are no
+ * columns to normalise into — name, kind and age are what every Kubernetes
+ * object has. The manifest is the real view of one of these, and it is one click
+ * away in the last column.
+ */
+function CustomResourceTable({
+  rows,
+  showNamespace,
+  onManifest,
+}: {
+  rows: CustomResource[]
+  showNamespace: boolean
+  onManifest?: OpenManifest
+}) {
+  return (
+    <Table>
+      <thead>
+        <tr>
+          <Th className="w-[52%] md:w-[44%]">Name</Th>
+          <Th className="hidden md:table-cell md:w-[22%]">Kind</Th>
+          <Th className="hidden lg:table-cell lg:w-[20%]">API version</Th>
+          <Th className="w-[20%] md:w-[14%]">Age</Th>
+          <ManifestHead onManifest={onManifest} />
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <Row key={`${row.namespace}/${row.name}`}>
+            <Td className="truncate">
+              <Name title={row.name} namespace={showNamespace ? row.namespace : undefined}>
+                {row.name}
+              </Name>
+            </Td>
+            <Td className="hidden truncate text-[12.5px] text-fg md:table-cell">
+              {row.kind || '—'}
+            </Td>
+            <Td className={`hidden lg:table-cell ${MONO}`}>{row.api_version || '—'}</Td>
+            <Td className={AGE}>{relativeAge(row.created_at)}</Td>
+            <ManifestCell onManifest={onManifest} name={row.name} namespace={row.namespace} />
           </Row>
         ))}
       </tbody>
@@ -925,7 +1239,7 @@ function NodeTable({ nodes, onManifest }: { nodes: ClusterNode[]; onManifest?: O
         {nodes.map((node) => (
           <Row key={node.name}>
             <Td className="truncate">
-              <Name tone={node.ready ? 'ok' : 'bad'} title={node.name}>
+              <Name tone={node.ready ? 'ok' : 'bad'} title={node.name} onOpen={opener(onManifest, node)}>
                 {node.name}
               </Name>
             </Td>
@@ -971,7 +1285,7 @@ function NamespaceTable({
         {namespaces.map((namespace) => (
           <Row key={namespace.name}>
             <Td className="truncate">
-              <Name tone={phaseTone(namespace.status)} title={namespace.name}>
+              <Name tone={phaseTone(namespace.status)} title={namespace.name} onOpen={opener(onManifest, namespace)}>
                 {namespace.name}
               </Name>
             </Td>

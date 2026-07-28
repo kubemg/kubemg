@@ -98,6 +98,33 @@
 
   --deck-shadow: 0 1px 2px rgb(15 19 26 / 0.05), 0 8px 24px -16px rgb(15 19 26 / 0.28);
   --deck-shadow-lift: 0 2px 4px rgb(15 19 26 / 0.06), 0 18px 40px -20px rgb(15 19 26 / 0.35);
+
+  /*
+   * Chart series colours — the *only* categorical palette in the deck, and the
+   * one place a colour means "which one" rather than "how healthy".
+   *
+   * They are separate from the semantic four on purpose. Green/amber/red here
+   * carry state, and a chart with six containers on it needs six identities and
+   * no state at all; reusing the state colours would have a container turn amber
+   * for being third in the legend. Nothing outside a chart may use these.
+   *
+   * The order is not cosmetic — it is the colour-blindness safety mechanism, and
+   * both decks are validated as sets (worst adjacent CVD ΔE 9.1 light / 8.4 dark
+   * under protanopia and deuteranopia; normal-vision floor 19.6 / 19.3). Do not
+   * reorder them, and do not add a ninth: past eight series a chart folds the
+   * rest into one line rather than inventing a hue.
+   *
+   * Three light-mode slots sit below 3:1 on white, which is why every chart
+   * ships a legend with written names — identity is never colour alone.
+   */
+  --deck-chart-1: #2a78d6;
+  --deck-chart-2: #eb6834;
+  --deck-chart-3: #1baf7a;
+  --deck-chart-4: #eda100;
+  --deck-chart-5: #e87ba4;
+  --deck-chart-6: #008300;
+  --deck-chart-7: #4a3aa7;
+  --deck-chart-8: #e34948;
 }
 
 /* Dark deck — the default. */
@@ -136,6 +163,17 @@
 
   --deck-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
   --deck-shadow-lift: 0 2px 6px rgb(0 0 0 / 0.45), 0 20px 44px -24px rgb(0 0 0 / 0.7);
+
+  /* The same eight hues, stepped for the dark surface — a selected dark palette,
+     not an automatic flip of the light one. All eight clear 3:1 here. */
+  --deck-chart-1: #3987e5;
+  --deck-chart-2: #d95926;
+  --deck-chart-3: #199e70;
+  --deck-chart-4: #c98500;
+  --deck-chart-5: #d55181;
+  --deck-chart-6: #008300;
+  --deck-chart-7: #9085e9;
+  --deck-chart-8: #e66767;
 }
 
 @theme inline {
@@ -168,6 +206,15 @@
   --color-warn-soft: var(--deck-warn-soft);
   --color-danger: var(--deck-danger);
   --color-danger-soft: var(--deck-danger-soft);
+
+  --color-chart-1: var(--deck-chart-1);
+  --color-chart-2: var(--deck-chart-2);
+  --color-chart-3: var(--deck-chart-3);
+  --color-chart-4: var(--deck-chart-4);
+  --color-chart-5: var(--deck-chart-5);
+  --color-chart-6: var(--deck-chart-6);
+  --color-chart-7: var(--deck-chart-7);
+  --color-chart-8: var(--deck-chart-8);
 
   --radius-card: 12px;
   --radius-control: 8px;

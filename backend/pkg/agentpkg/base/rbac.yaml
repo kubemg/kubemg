@@ -76,6 +76,108 @@ subjects:
     kind: Group
     name: kubemg:cluster-admin
 ---
+# Which CRDs a cluster has is what the Explore sidebar is built from, and the
+# built-in view role does not cover them: reading the *definitions* is inventory
+# — a schema, not the data any of them hold — so it is granted to every subject
+# that reaches the cluster at all. Without this a "view" grant browses a sidebar
+# with no custom resources in it and no explanation for their absence.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubemg-crd-discovery
+rules:
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubemg-crd-discovery
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubemg-crd-discovery
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: kubemg:users
+---
+# Reading the objects those CRDs serve is a second gap: the built-in view role
+# covers the API groups Kubernetes ships with, and a CRD is only picked up by it
+# if its author labelled a ClusterRole `aggregate-to-view`, which most do not.
+#
+# The groups are enumerated rather than wildcarded on purpose. `apiGroups: ["*"]`
+# would include the core group, and the core group is where Secrets live — a
+# blanket read here would hand every KubeMG user every secret in the cluster,
+# which is the opposite of what a "view" grant means. So this lists the APIs
+# KubeMG surfaces as first-class views, and nothing else.
+#
+# To browse another operator's CRDs, add its API group below and re-apply. The
+# generic list and the YAML editor work for any CRD; this is the only thing
+# standing between them and a kind KubeMG has never heard of.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubemg-custom-resource-view
+rules:
+  - apiGroups:
+      - "gateway.networking.k8s.io"
+      - "networking.istio.io"
+      - "security.istio.io"
+      - "telemetry.istio.io"
+      - "extensions.istio.io"
+      - "install.istio.io"
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+---
+# Bound to kubemg:users rather than kubemg:view because every grant level is at
+# least a view, and every proxied call carries this group. Namespace scope is
+# still enforced by the bastion, which the cluster cannot express.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubemg-custom-resource-view
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubemg-custom-resource-view
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: kubemg:users
+---
+# The write half, so an "edit" grant can apply an edited manifest for the same
+# kinds it can read. cluster-admin already covers this; view deliberately does
+# not get it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubemg-custom-resource-edit
+rules:
+  - apiGroups:
+      - "gateway.networking.k8s.io"
+      - "networking.istio.io"
+      - "security.istio.io"
+      - "telemetry.istio.io"
+      - "extensions.istio.io"
+      - "install.istio.io"
+    resources: ["*"]
+    verbs: ["create", "update", "patch", "delete", "deletecollection"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubemg-custom-resource-edit
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubemg-custom-resource-edit
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: kubemg:edit
+---
 # Every proxied call also carries kubemg:users. Discovery is what kubectl needs
 # before it can resolve a single resource, so grant it here rather than leaving
 # a "view" user unable to run `kubectl api-resources`.

@@ -493,7 +493,14 @@ func (v workloadView) sortKey() (string, string) { return v.Namespace, v.Name }
 // caller's grant. A scoped grant with no namespace given defaults to its first
 // one rather than erroring, so the UI can open on something useful.
 func (s *server) resourceNamespace(c *gin.Context, grant db.UserClusterAccess) (string, bool) {
-	requested := strings.TrimSpace(c.Query("namespace"))
+	return s.scopedNamespace(c, grant, c.Query("namespace"))
+}
+
+// scopedNamespace is that same rule for a namespace that arrived somewhere other
+// than the query string — an action route carries it in its body — so the two
+// cannot drift apart.
+func (s *server) scopedNamespace(c *gin.Context, grant db.UserClusterAccess, named string) (string, bool) {
+	requested := strings.TrimSpace(named)
 	allowed := grant.NamespaceList()
 
 	if requested == "" {

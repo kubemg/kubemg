@@ -5,6 +5,7 @@ import { checkCluster, errorMessage, fetchCluster, fetchNodeMetrics } from '../a
 import type { Cluster, NodeMetrics } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { DatasourcePanel } from '../components/DatasourcePanel'
+import { MetricsChart } from '../components/MetricsChart'
 import { KubeconfigDrawer } from '../components/KubeconfigDrawer'
 import { LinkStrand, StrandNode } from '../components/LinkStrand'
 import {
@@ -178,6 +179,25 @@ export function ClusterDetail() {
             {/* Capacity above is a live sample and nothing more; this is where
                 the history behind it comes from, wired per cluster. */}
             <DatasourcePanel cluster={cluster} />
+
+            {/* And this is that history, once there is somewhere to read it
+                from. It sits directly under the datasource that answers it, so
+                a chart that says "no datasource" is next to the form that fixes
+                that rather than on some other page. */}
+            {viaAgent ? (
+              <section className="flex flex-col gap-3">
+                <MetricsChart
+                  cluster={cluster}
+                  title="Cluster CPU"
+                  metric="cluster_cpu"
+                />
+                <MetricsChart
+                  cluster={cluster}
+                  title="Cluster memory"
+                  metric="cluster_memory"
+                />
+              </section>
+            ) : null}
 
             <AccessPath cluster={cluster} username={user?.username ?? 'you'} />
 
