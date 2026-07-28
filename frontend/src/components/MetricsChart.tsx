@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { LineChart, RefreshCw } from 'lucide-react'
-import { errorMessage, queryMetrics, unconfigured } from '../api/client'
+import { queryError, queryMetrics, unconfigured } from '../api/client'
 import type { Cluster, MetricKind, MetricResult, MetricSeries } from '../api/types'
 import { formatCPU, formatMemory } from '../lib/units'
 import { Button, EmptyState, Notice, Select } from './primitives'
@@ -90,7 +90,7 @@ export function MetricsChart({
       // "No datasource yet" is not a failure, it is a setup step — and it reads
       // completely differently on screen.
       setMissing(unconfigured(err))
-      setError(errorMessage(err, 'Could not read metrics for this window.'))
+      setError(queryError(err, 'Could not read metrics for this window.'))
       setResult(null)
     } finally {
       setLoading(false)
