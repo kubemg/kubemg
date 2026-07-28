@@ -135,8 +135,15 @@ func (s *server) resourceObjectTarget(c *gin.Context, grant db.UserClusterAccess
 	key := strings.TrimSpace(c.Query("kind"))
 	kind, known := objectKinds[key]
 	if !known {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "kubemg does not serve manifests for " + key})
-		return none, "", "", false
+		// A CRD-served kind is not in the table and cannot be: which CRDs exist
+		// is a property of the cluster. Its path is built from the same three
+		// validated components the custom list route uses, so it is still a path
+		// KubeMG constructs rather than one the caller supplies, and the call is
+		// still impersonated — the cluster's RBAC decides whether it is allowed.
+		if kind, known = customObjectKind(key, c.Query("namespace")); !known {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "kubemg does not serve manifests for " + key})
+			return none, "", "", false
+		}
 	}
 
 	name := strings.TrimSpace(c.Query("name"))
@@ -172,6 +179,31 @@ func (k objectKind) objectPaths(namespace, name string) []string {
 	return out
 }
 
+// readObject fetches one object, walking the kind's candidate API versions. A
+// 404 on anything but the last candidate means the cluster serves an older
+// version of an optional CRD; on the last one it means what it says. Any other
+// refusal is written to the client in the cluster's own words.
+func (s *server) readObject(c *gin.Context, user *db.User, cluster *db.Cluster,
+	grant db.UserClusterAccess, kind objectKind, namespace, name string,
+) ([]byte, bool) {
+	paths := kind.objectPaths(namespace, name)
+	for i, path := range paths {
+		resp, callOK := s.callResource(c, user, cluster, grant, path)
+		if !callOK {
+			return nil, false
+		}
+		if resp.Status == http.StatusNotFound && i < len(paths)-1 {
+			continue
+		}
+		if resp.Status < 200 || resp.Status >= 300 {
+			c.JSON(resp.Status, gin.H{"error": kubeErrorMessage(resp.Body, resp.Status)})
+			return nil, false
+		}
+		return resp.Body, true
+	}
+	return nil, false
+}
+
 // showResourceObject returns one object as YAML.
 func (s *server) showResourceObject(c *gin.Context) {
 	user, cluster, grant, ok := s.resourceCluster(c)
@@ -183,24 +215,9 @@ func (s *server) showResourceObject(c *gin.Context) {
 		return
 	}
 
-	var body []byte
-	paths := kind.objectPaths(namespace, name)
-	for i, path := range paths {
-		resp, callOK := s.callResource(c, user, cluster, grant, path)
-		if !callOK {
-			return
-		}
-		// A 404 on an optional CRD's newer API version means try the older one.
-		// On the last candidate it means what it says: no such object.
-		if resp.Status == http.StatusNotFound && i < len(paths)-1 {
-			continue
-		}
-		if resp.Status < 200 || resp.Status >= 300 {
-			c.JSON(resp.Status, gin.H{"error": kubeErrorMessage(resp.Body, resp.Status)})
-			return
-		}
-		body = resp.Body
-		break
+	body, ok := s.readObject(c, user, cluster, grant, kind, namespace, name)
+	if !ok {
+		return
 	}
 
 	view, err := renderObject(body, c.Query("kind"), kind)

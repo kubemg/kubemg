@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDownToLine, Pause, Play, RefreshCw, WrapText } from 'lucide-react'
 import {
   errorMessage,
@@ -8,114 +8,21 @@ import {
   readToken,
 } from '../api/client'
 import type { Cluster, ContainerUsage, Pod, PodContainer, PodUsage } from '../api/types'
-import {
-  Button,
-  Chip,
-  DetailList,
-  Meter,
-  Notice,
-  Pill,
-  SearchInput,
-  Segmented,
-  Select,
-  Sheet,
-} from './primitives'
-import { podTone } from '../lib/status'
+import { MetricsChart } from './MetricsChart'
+import { Button, Chip, DetailList, Meter, Notice, Pill, SearchInput } from './primitives'
 import { relativeAge } from '../lib/time'
 import { formatCPU, formatMemory, ratio } from '../lib/units'
 
-// The terminal emulator is by far the heaviest thing in the app and most sessions
-// never open one, so it is fetched on demand rather than shipped to everyone who
-// loads the console.
-const PodTerminal = lazy(() =>
-  import('./PodTerminal').then((module) => ({ default: module.PodTerminal })),
-)
-
-type Tab = 'overview' | 'logs' | 'terminal'
-
-/**
- * PodDrawer is everything you can do to one pod without leaving the list: read
- * its state, follow its logs, or open a shell in it. All three go through the
- * same audited tunnel.
+/*
+ * The two pod-specific panels: what a pod is doing, and what it is saying. They
+ * are panels rather than a drawer of their own because a pod is not a special
+ * kind of object — it is one row in a list like any other, and it opens in the
+ * same ResourceDetailDrawer as a Service or a CRD. What makes it different is
+ * only that there is more to show for it: live usage against each container's
+ * own limits, and a log to follow.
+ *
+ * Both go through the same audited tunnel as every other read.
  */
-export function PodDrawer({
-  cluster,
-  pod,
-  onClose,
-  onRefresh,
-}: {
-  cluster: Cluster
-  pod: Pod
-  onClose: () => void
-  onRefresh: () => Promise<void> | void
-}) {
-  const [tab, setTab] = useState<Tab>('overview')
-  const [container, setContainer] = useState(pod.containers[0]?.name ?? '')
-
-  return (
-    <Sheet
-      width="lg"
-      eyebrow={`${cluster.name} · ${pod.namespace}`}
-      title={<span className="font-mono">{pod.name}</span>}
-      onClose={onClose}
-      footer={
-        <>
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Close
-          </Button>
-          <Button type="button" onClick={() => void onRefresh()}>
-            <RefreshCw aria-hidden="true" className="size-4" />
-            Refresh
-          </Button>
-        </>
-      }
-    >
-      <div className="flex flex-wrap items-center gap-3">
-        <Segmented<Tab>
-          ariaLabel="Pod view"
-          value={tab}
-          onChange={setTab}
-          options={[
-            { value: 'overview', label: 'Overview' },
-            { value: 'logs', label: 'Logs' },
-            { value: 'terminal', label: 'Terminal' },
-          ]}
-        />
-        <Pill tone={podTone(pod)}>{pod.phase}</Pill>
-
-        {pod.containers.length > 1 && tab !== 'overview' ? (
-          <div className="ml-auto w-44">
-            <Select
-              aria-label="Container"
-              size="sm"
-              value={container}
-              onChange={(event) => setContainer(event.target.value)}
-            >
-              {pod.containers.map((entry) => (
-                <option key={entry.name} value={entry.name}>
-                  {entry.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-        ) : null}
-      </div>
-
-      {tab === 'overview' ? <Overview cluster={cluster} pod={pod} /> : null}
-      {tab === 'logs' ? <LogView cluster={cluster} pod={pod} container={container} /> : null}
-      {tab === 'terminal' ? (
-        <Suspense fallback={<p className="text-[13px] text-muted">Loading the terminal…</p>}>
-          <PodTerminal
-            clusterId={cluster.id}
-            namespace={pod.namespace}
-            pod={pod.name}
-            container={container}
-          />
-        </Suspense>
-      ) : null}
-    </Sheet>
-  )
-}
 
 /**
  * usePodUsage polls one pod's live consumption while the drawer is open.
@@ -160,7 +67,8 @@ function usePodUsage(cluster: Cluster, pod: Pod, enabled: boolean) {
   return { usage, unavailable, error }
 }
 
-function Overview({ cluster, pod }: { cluster: Cluster; pod: Pod }) {
+/** PodOverview is a pod's live state: what it is scheduled on, and what it is using. */
+export function PodOverview({ cluster, pod }: { cluster: Cluster; pod: Pod }) {
   // A pod that is not running has nothing to sample, and asking would only
   // spend a round trip to be told so.
   const running = pod.phase === 'Running'
@@ -218,6 +126,28 @@ function Overview({ cluster, pod }: { cluster: Cluster; pod: Pod }) {
           ) : null}
         </div>
       ) : null}
+
+      {/* History, where the cluster has somewhere to keep it. The meters above
+          are a two-minute window — enough to say "this is at its limit" and
+          never enough to say "since when", which is the question anyone asks
+          next. A cluster with no metrics datasource simply says so here. */}
+      <div className="flex flex-col gap-3">
+        <span className="label">Over time</span>
+        <MetricsChart
+          cluster={cluster}
+          title="CPU per container"
+          metric="pod_cpu"
+          namespace={pod.namespace}
+          pod={pod.name}
+        />
+        <MetricsChart
+          cluster={cluster}
+          title="Memory per container"
+          metric="pod_memory"
+          namespace={pod.namespace}
+          pod={pod.name}
+        />
+      </div>
 
       <div className="flex flex-col gap-2">
         <span className="label">Containers</span>
@@ -308,7 +238,15 @@ function podLimit(containers: PodContainer[], resource: 'cpu' | 'memory'): numbe
  * uses the proxy's stream path directly rather than polling — the same one
  * `kubectl logs -f` takes.
  */
-function LogView({ cluster, pod, container }: { cluster: Cluster; pod: Pod; container: string }) {
+export function PodLogView({
+  cluster,
+  pod,
+  container,
+}: {
+  cluster: Cluster
+  pod: Pod
+  container: string
+}) {
   const [lines, setLines] = useState('')
   const [following, setFollowing] = useState(false)
   const [loading, setLoading] = useState(true)

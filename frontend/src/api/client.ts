@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { ResourceKey } from '../lib/resources'
+import type { CustomResourceRef, ResourceKey } from '../lib/resources'
 import { ALL_NAMESPACES } from '../lib/resources'
 import type {
   AgentInstall,
@@ -11,15 +11,19 @@ import type {
   ClusterNode,
   ConfigEntry,
   CronJob,
+  CustomResource,
   CustomResourceDefinition,
   DatasourceCandidate,
   DatasourceCheck,
   DatasourceInput,
   DatasourceKind,
   Group,
+  HelmRelease,
+  HelmValues,
   Ingress,
   Job,
   Kubeconfig,
+  LogQueryResponse,
   LoginResponse,
   Namespace,
   NewCluster,
@@ -28,6 +32,8 @@ import type {
   NewUser,
   NodeMetrics,
   OptionalList,
+  MetricKind,
+  MetricQueryResponse,
   Permission,
   PermissionGrant,
   PermissionMatrix,
@@ -35,6 +41,7 @@ import type {
   PersistentVolumeClaim,
   Pod,
   PodMetrics,
+  ResourceDescribeResult,
   ResourceManifest,
   Route,
   Service,
@@ -45,6 +52,7 @@ import type {
   User,
   UserPatch,
   Workload,
+  WorkloadActionResult,
 } from './types'
 
 const TOKEN_KEY = 'kubemg.token'
@@ -393,12 +401,102 @@ export function fetchNodes(clusterId: number): Promise<ClusterNode[]> {
   return fetchList<ClusterNode>(clusterId, 'nodes', 'nodes')
 }
 
+/**
+ * fetchCustomResources reads a list served by one of the cluster's own CRDs. The
+ * API is named rather than picked from a table — that is the whole point, since
+ * which CRDs exist is discovered per cluster — but the backend builds the path
+ * from the three components rather than taking one, and the read is impersonated
+ * and audited like every other. A CRD uninstalled since the sidebar was built
+ * comes back unavailable rather than as a failure.
+ */
+export function fetchCustomResources(
+  clusterId: number,
+  ref: CustomResourceRef,
+  namespace: string,
+): Promise<OptionalList<CustomResource>> {
+  const scope =
+    ref.scope === 'cluster' ? { scope: 'cluster' } : scopeParams(namespace)
+  return http
+    .get<Record<string, unknown>>(resourceURL(clusterId, 'custom'), {
+      params: { group: ref.group, version: ref.version, plural: ref.plural, ...scope },
+    })
+    .then(({ data }) => ({
+      items: (data.items as CustomResource[] | undefined) ?? [],
+      available: data.available !== false,
+      reason: data.reason as string | undefined,
+    }))
+}
+
+/*
+ * Helm releases. Helm keeps a release as a labelled Secret and nothing else, so
+ * these are the same impersonated reads as everything above — the cluster's RBAC
+ * decides, and a grant that may not read Secrets is refused here, which is the
+ * right answer rather than a bug.
+ */
+
+export function fetchHelmReleases(clusterId: number, namespace: string): Promise<HelmRelease[]> {
+  return fetchList<HelmRelease>(clusterId, 'helm/releases', 'releases', namespace)
+}
+
+/** helmValuesURL addresses one release's values. */
+function helmValuesURL(clusterId: number, name: string): string {
+  return `${resourceURL(clusterId, 'helm/releases')}/${encodeURIComponent(name)}/values`
+}
+
+export async function fetchHelmValues(
+  clusterId: number,
+  name: string,
+  namespace: string,
+): Promise<HelmValues> {
+  const { data } = await http.get<HelmValues>(helmValuesURL(clusterId, name), {
+    params: { namespace },
+  })
+  return data
+}
+
+/**
+ * updateHelmValues appends a Helm revision carrying the new values. It records
+ * what the next `helm upgrade` starts from; it does not re-render the chart, so
+ * nothing running changes — the response carries that warning and the drawer
+ * shows it.
+ */
+export async function updateHelmValues(
+  clusterId: number,
+  name: string,
+  namespace: string,
+  yaml: string,
+): Promise<HelmValues> {
+  const { data } = await http.put<HelmValues>(
+    helmValuesURL(clusterId, name),
+    { yaml },
+    { params: { namespace } },
+  )
+  return data
+}
+
 /*
  * One object as YAML. Both calls address the object by the same key the Explore
  * sidebar uses, so the browser never names an API path — the backend builds it
  * from a fixed table, and the write goes down the impersonated tunnel like every
  * other call.
  */
+
+/**
+ * fetchResourceDescribe reads one object plus the events the cluster recorded
+ * against it. It addresses the object by the same key as the manifest calls, so
+ * the browser still never names an API path.
+ */
+export async function fetchResourceDescribe(
+  clusterId: number,
+  kind: ResourceKey,
+  name: string,
+  namespace?: string,
+): Promise<ResourceDescribeResult> {
+  const { data } = await http.get<ResourceDescribeResult>(resourceURL(clusterId, 'describe'), {
+    params: { kind, name, namespace: namespace || undefined },
+  })
+  return data
+}
 
 export async function fetchResourceYaml(
   clusterId: number,
@@ -424,6 +522,51 @@ export async function updateResourceYaml(
     { yaml },
     { params: { kind, name, namespace: namespace || undefined } },
   )
+  return data
+}
+
+/*
+ * The two workload writes that are not worth opening a manifest for. They name
+ * the object the same way every other resource call does — by the sidebar's own
+ * key — so the browser still never names an API path, and the backend still
+ * builds one from its fixed table.
+ */
+
+/**
+ * scaleWorkload sets a replica count. Zero is a real answer: it is how a
+ * workload is stopped without being deleted.
+ */
+export async function scaleWorkload(
+  clusterId: number,
+  kind: ResourceKey,
+  name: string,
+  namespace: string | undefined,
+  replicas: number,
+): Promise<WorkloadActionResult> {
+  const { data } = await http.post<WorkloadActionResult>(resourceURL(clusterId, 'scale'), {
+    kind,
+    name,
+    namespace,
+    replicas,
+  })
+  return data
+}
+
+/**
+ * restartWorkload rolls a workload's pods by stamping its pod template, the same
+ * way `kubectl rollout restart` does. Nothing about the workload's spec changes.
+ */
+export async function restartWorkload(
+  clusterId: number,
+  kind: ResourceKey,
+  name: string,
+  namespace: string | undefined,
+): Promise<WorkloadActionResult> {
+  const { data } = await http.post<WorkloadActionResult>(resourceURL(clusterId, 'restart'), {
+    kind,
+    name,
+    namespace,
+  })
   return data
 }
 
@@ -571,4 +714,91 @@ export async function discoverDatasources(clusterId: number): Promise<Datasource
     `/clusters/${clusterId}/observability/discover`,
   )
   return data.candidates ?? []
+}
+
+/*
+ * The query path. Note what is *not* here: a query parameter. The browser names
+ * a chart from the server's catalogue and the Kubernetes names to narrow it to,
+ * and the server writes the PromQL around the caller's own namespace scope —
+ * because a metrics backend has never heard of the caller and would answer
+ * anything it was asked.
+ */
+
+/** MetricQueryOptions narrows a chart. An absent range is the server's default. */
+export interface MetricQueryOptions {
+  namespace?: string
+  pod?: string
+  container?: string
+  start?: Date
+  end?: Date
+}
+
+export async function queryMetrics(
+  clusterId: number,
+  metric: MetricKind,
+  options: MetricQueryOptions = {},
+): Promise<MetricQueryResponse> {
+  const { data } = await http.get<MetricQueryResponse>(
+    `/clusters/${clusterId}/observability/metrics/query`,
+    {
+      params: {
+        metric,
+        namespace: options.namespace || undefined,
+        pod: options.pod || undefined,
+        container: options.container || undefined,
+        start: options.start?.toISOString(),
+        end: options.end?.toISOString(),
+      },
+    },
+  )
+  return data
+}
+
+export interface LogQueryOptions {
+  namespace?: string
+  pod?: string
+  container?: string
+  /**
+   * Free text to look for in the message. This is the one value that is not a
+   * Kubernetes name, and the server quotes it into the query as a literal
+   * rather than validating it — an operator searching logs needs to be able to
+   * type a quote or a brace.
+   */
+  filter?: string
+  start?: Date
+  end?: Date
+  limit?: number
+}
+
+export async function queryLogs(
+  clusterId: number,
+  options: LogQueryOptions = {},
+): Promise<LogQueryResponse> {
+  const { data } = await http.get<LogQueryResponse>(
+    `/clusters/${clusterId}/observability/logs/query`,
+    {
+      params: {
+        namespace: options.namespace || undefined,
+        pod: options.pod || undefined,
+        container: options.container || undefined,
+        filter: options.filter || undefined,
+        start: options.start?.toISOString(),
+        end: options.end?.toISOString(),
+        limit: options.limit || undefined,
+      },
+    },
+  )
+  return data
+}
+
+/**
+ * unconfigured reports whether a query failed because the cluster has no
+ * datasource rather than because the query was wrong. The two need different
+ * words on screen: one is "set this up", the other is "this went wrong".
+ */
+export function unconfigured(err: unknown): boolean {
+  return Boolean(
+    axios.isAxiosError(err) &&
+      (err.response?.data as { unconfigured?: boolean } | undefined)?.unconfigured,
+  )
 }

@@ -1,16 +1,25 @@
-# Task: Implement Resource YAML Viewer/Editor and Pod Multi-Shell Exec Terminal
+# Task: Implement VictoriaMetrics & VictoriaLogs Query Engines (Phase 3 Remaining Items)
 
-Please implement the following two features in KubeMG based on the implementation plan:
+Codebase Audit Note:
+- **Universal Resource Detail View & Describe Engine** is already **COMPLETED** (`ResourceDetailDrawer.tsx`). Do NOT touch or re-implement it.
+- **Observability Datasource Registration & Discovery** is already **COMPLETED** (`DatasourcePanel.tsx`, `backend/pkg/observability/`).
 
-1. **Resource YAML Viewer & Live Editor:**
-   - Add "View YAML" and "Edit Config" buttons to resource action menus (Deployments, Pods, Services, Ingresses, ConfigMaps, etc.).
-   - Create a drawer/modal component with a syntax-highlighted YAML editor to view and live-edit Kubernetes resources.
-   - Backend API endpoints to retrieve resource YAML and apply YAML updates (`PUT`/`PATCH`) via the KubeMG Bastion reverse proxy with K8s Impersonation.
+Your task is to implement the **Query Paths** for historical metrics and aggregated log search:
 
-2. **Pod Exec Terminal Shell Selector (`bash` / `sh`):**
-   - Add shell selection capability (`/bin/bash` vs `/bin/sh`) in the Pod interactive container terminal UI.
-   - Ensure the backend/tunnel exec handler forwards the chosen shell executable to the Kubernetes API exec WebSocket stream.
+## 1. VictoriaMetrics Historical Metrics Query Engine (Query Path)
+- Create `backend/pkg/observability/metrics_query.go` to proxy PromQL queries (`/api/v1/query_range`, `/api/v1/query`) to the active `metrics` datasource using `Target.requestPath(...)`.
+- Add endpoint `GET /api/v1/clusters/:id/observability/metrics/query` in `backend/pkg/api/observability.go`.
+- Create `frontend/src/components/MetricsChart.tsx` for responsive CPU/Memory time-series line charts.
+- Embed `MetricsChart` into `PodPanels.tsx` and cluster overview when a `metrics` datasource is active.
 
-3. **Verification & Testing:**
-   - Run all builds, tests, and verifications using `make verify` inside Docker containers.
-   - Update completed tasks in `roadmap.md`.
+## 2. VictoriaLogs / Loki Aggregated Logs Query Engine (Query Path)
+- Create `backend/pkg/observability/logs_query.go` to proxy LogSQL/LogQL queries to the active `logs` datasource using `Target.requestPath(...)`.
+- Add endpoint `GET /api/v1/clusters/:id/observability/logs/query` in `backend/pkg/api/observability.go`.
+- Create `frontend/src/components/LogExplorer.tsx` to search and filter historic/multi-pod logs.
+
+## 3. Verification & Roadmap Update
+- Run `make verify` and `make test` inside Docker.
+- Open `roadmap.md` and check off completed Phase 3 items:
+  - `- [x] Universal Resource Detail View & Describe Engine...`
+  - `- [x] Integrate VictoriaMetrics for minimal footprint metrics...`
+  - `- [x] Integrate VictoriaLogs/Promtail for minimal footprint logs...`

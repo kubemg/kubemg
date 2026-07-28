@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -548,6 +548,39 @@ export function Td({
  * actions in the footer. Every editing surface uses this — there is no second
  * dialog pattern.
  */
+/**
+ * How wide a sheet opens. The narrow two are for editing a handful of fields;
+ * the wide ones are for reading, where the content is a table or a manifest and
+ * the constraint is the line, not the form.
+ *
+ * `wide` is a viewport fraction rather than a pixel figure on purpose: it is for
+ * a surface with several tabs of dense content, where on a large display the
+ * right width is "most of the screen" and on a small one the max-width never
+ * binds anyway — the sheet is already full width below its own breakpoint.
+ *
+ * The classes are a lookup rather than an interpolation because Tailwind reads
+ * the source for literal class names; a template string would compile to a rule
+ * that does not exist.
+ */
+export type SheetWidth = 'md' | 'lg' | 'xl' | '2xl' | 'wide'
+
+/**
+ * The sheets currently on screen, innermost last. A sheet can open over another
+ * one — a workload action from the detail drawer is one surface acting on the
+ * object another surface is showing — and with a listener each on `window` an
+ * Escape would otherwise close the whole stack at once, throwing away the
+ * drawer somebody was reading because they cancelled a dialog.
+ */
+const openSheets: symbol[] = []
+
+const SHEET_WIDTH: Record<SheetWidth, string> = {
+  md: 'max-w-[520px]',
+  lg: 'max-w-[680px]',
+  xl: 'max-w-[900px]',
+  '2xl': 'max-w-[1100px]',
+  wide: 'max-w-[85vw]',
+}
+
 export function Sheet({
   title,
   eyebrow,
@@ -564,16 +597,26 @@ export function Sheet({
   footer?: ReactNode
   /** When given, the body is wrapped in a form so Enter submits. */
   onSubmit?: (event: React.FormEvent<HTMLFormElement>) => void
-  width?: 'md' | 'lg'
+  width?: SheetWidth
 }) {
   const titleId = useId()
+  const id = useRef(Symbol('sheet'))
 
   useEffect(() => {
+    const self = id.current
+    openSheets.push(self)
+
     function onKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
+      // Only the topmost sheet answers Escape; the ones underneath stay open.
+      if (event.key === 'Escape' && openSheets.at(-1) === self) onClose()
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      const at = openSheets.lastIndexOf(self)
+      if (at >= 0) openSheets.splice(at, 1)
+    }
   }, [onClose])
 
   const body = (
@@ -600,9 +643,7 @@ export function Sheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`sheet-in relative flex h-full w-full flex-col border-l border-line bg-surface lift ${
-          width === 'lg' ? 'max-w-[680px]' : 'max-w-[520px]'
-        }`}
+        className={`sheet-in relative flex h-full w-full flex-col border-l border-line bg-surface lift ${SHEET_WIDTH[width]}`}
       >
         <header className="flex min-h-14 shrink-0 items-start justify-between gap-3 border-b border-line-soft px-4 py-3">
           <div className="min-w-0">

@@ -249,6 +249,17 @@ func NewRouter(opts Options) *gin.Engine {
 		// records the verdict.
 		sources.POST("/sources/:kind/test", requireAdmin, s.testObservabilitySource)
 		sources.POST("/sources/:kind/check", requireAdmin, s.checkObservabilitySource)
+
+		// The query path: reading history out of the backend the rows above
+		// name. Open to anyone the cluster is granted to, because the scope is
+		// enforced *inside* the query — a caller never sends one, they name a
+		// chart from a fixed catalogue or a set of Kubernetes names, and KubeMG
+		// builds the query around the namespaces their grant covers. There is no
+		// cluster RBAC to fall back on here: a metrics backend has never heard of
+		// the caller and answers whatever it is asked.
+		sources.GET("/metrics/query", s.queryMetrics)
+		sources.GET("/logs/query", s.queryLogs)
+
 		if opts.Proxy != nil {
 			// Most clusters are already running one of these. Looking first is
 			// the difference between metrics that get connected and metrics that
@@ -297,12 +308,41 @@ func NewRouter(opts Options) *gin.Engine {
 			resources.GET("/crds", s.listCRDs)
 			resources.GET("/nodes", s.listNodes)
 
+			// Anything a CRD serves. There cannot be a route per kind here —
+			// which CRDs exist is a property of the cluster, discovered from its
+			// own CRD list — so this one names the API instead, built from three
+			// validated components and read down the same impersonated tunnel.
+			resources.GET("/custom", s.listCustomResources)
+
+			// Helm keeps its releases as labelled Secrets and nothing else, so
+			// these are the secrets list read through the same impersonated
+			// tunnel with the payload decoded here. Writing values appends a
+			// revision the way an upgrade does; it records what Helm will start
+			// from and renders nothing, which every response says.
+			helm := resources.Group("/helm/releases")
+			helm.GET("", s.listHelmReleases)
+			helm.GET("/:name/values", s.showHelmReleaseValues)
+			helm.PUT("/:name/values", s.updateHelmReleaseValues)
+
 			// One object in full, as the YAML an operator already reads. The
 			// PUT is the only write path in the resource API; it goes down the
 			// same impersonated tunnel, so the cluster's RBAC decides whether
 			// the caller may actually change anything.
 			resources.GET("/object", s.showResourceObject)
 			resources.PUT("/object", s.updateResourceObject)
+
+			// The two workload writes that are not worth hand-editing a
+			// manifest for. Both are read-modify-writes down the same
+			// impersonated tunnel, conditional on the resourceVersion they
+			// read, so they add no reach the manifest editor did not have.
+			resources.POST("/scale", s.scaleWorkload)
+			resources.POST("/restart", s.restartWorkload)
+
+			// `kubectl describe`: the same object, addressed the same way, plus
+			// the events the cluster recorded against it. Those events are the
+			// part neither the list nor the manifest has — a spec is what was
+			// asked for, and only an event says why it did not happen.
+			resources.GET("/describe", s.describeResource)
 
 			// Live utilisation from the cluster's own Metrics API. It rides the
 			// same tunnel, grant and audit trail as the lists above; a cluster

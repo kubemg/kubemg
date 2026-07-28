@@ -25,6 +25,7 @@ import { strandState } from '../lib/status'
 import { CommandPalette } from './CommandPalette'
 import type { CommandTarget } from './CommandPalette'
 import { LinkStrand } from './LinkStrand'
+import { Mark } from './Mark'
 import { EnvironmentDot, IconButton, KeyHint } from './primitives'
 
 /**
@@ -74,24 +75,6 @@ function sectionForPath(pathname: string): string {
   if (pathname.startsWith('/settings')) return 'system'
   if (ACCESS_ROUTES.some((route) => pathname.startsWith(route))) return 'access'
   return 'fleet'
-}
-
-/** The mark is the strand motif: three links converging on one node. */
-function Mark({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 20 20"
-      aria-hidden="true"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.9"
-      strokeLinecap="round"
-    >
-      <path d="M2.5 5.5h5.5M2.5 10h9.5M2.5 14.5h5.5" />
-      <circle cx="16" cy="10" r="2.1" fill="currentColor" stroke="none" />
-    </svg>
-  )
 }
 
 export function AppShell({
@@ -177,14 +160,17 @@ export function AppShell({
       {/* Level one: which part of KubeMG. */}
       <nav
         aria-label="Sections"
-        className="fixed inset-y-0 left-0 z-30 hidden w-15 flex-col items-center gap-1 border-r border-rail-line bg-rail py-3 lg:flex"
+        className="fixed inset-y-0 left-0 z-30 hidden w-15 flex-col items-center gap-1 border-r border-rail-line bg-rail pb-3 lg:flex"
       >
-        <Link
-          to="/"
-          title="KubeMG"
-          className="mb-2 grid size-9 place-items-center rounded-control text-accent transition-colors hover:bg-rail-raised"
-        >
-          <Mark className="size-5" />
+        {/* The mark sits in a slot exactly as tall as the section panel's own
+            header, so it shares a centreline with the KubeMG wordmark beside it
+            rather than floating two pixels above it. */}
+        <Link to="/" title="KubeMG" className="grid h-14 w-full shrink-0 place-items-center">
+          {/* The hit target matches a section icon's; only the slot around it is
+              taller, so the mark lands on the wordmark's line. */}
+          <span className="grid size-10 place-items-center rounded-control text-accent transition-colors hover:bg-rail-raised">
+            <Mark className="size-6.5" />
+          </span>
           <span className="sr-only">KubeMG</span>
         </Link>
 
@@ -530,7 +516,7 @@ function MobileNav({
         className="relative flex h-full w-[19rem] max-w-[85%] flex-col border-r border-rail-line bg-rail"
       >
         <div className="flex h-14 shrink-0 items-center gap-2.5 px-4">
-          <Mark className="size-5 text-accent" />
+          <Mark className="size-6.5 shrink-0 text-accent" />
           <span className="text-[15px] font-semibold tracking-[-0.02em]">
             <span className="text-rail-fg">Kube</span>
             <span className="text-accent">MG</span>

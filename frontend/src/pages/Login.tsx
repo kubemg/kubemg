@@ -4,6 +4,7 @@ import { ArrowRight } from 'lucide-react'
 import { errorMessage } from '../api/client'
 import { Button, Field, Notice, TextInput } from '../components/primitives'
 import { LinkStrand } from '../components/LinkStrand'
+import { Mark } from '../components/Mark'
 import { useAuth } from '../state/auth-context'
 
 export function Login() {
@@ -31,18 +32,7 @@ export function Login() {
           everything an operator does travels back along those strands. */}
       <section className="relative hidden flex-col justify-between overflow-hidden bg-rail p-10 lg:flex">
         <div className="flex items-center gap-2.5">
-          <svg
-            viewBox="0 0 20 20"
-            aria-hidden="true"
-            className="size-5 text-accent"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.9"
-            strokeLinecap="round"
-          >
-            <path d="M2.5 5.5h5.5M2.5 10h9.5M2.5 14.5h5.5" />
-            <circle cx="16" cy="10" r="2.1" fill="currentColor" stroke="none" />
-          </svg>
+          <Mark className="size-7 shrink-0 text-accent" />
           <span className="text-[16px] font-semibold tracking-[-0.02em]">
             <span className="text-rail-fg">Kube</span>
             <span className="text-accent">MG</span>

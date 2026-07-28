@@ -340,6 +340,114 @@ export interface CustomResourceDefinition {
   versions: string[]
 }
 
+/**
+ * One object of a kind served by a CRD. A CRD's spec is whatever its author
+ * decided, so the only fields that hold for all of them are the ones every
+ * Kubernetes object carries — which is why this list has the columns it has.
+ */
+export interface CustomResource {
+  name: string
+  namespace: string
+  created_at: string
+  kind?: string
+  api_version?: string
+}
+
+/**
+ * One Kubernetes Event recorded against an object. This is the part of describe
+ * that neither a list nor a manifest has: a spec is what was asked for, and only
+ * an event says why it did not happen.
+ */
+export interface K8sEvent {
+  type: string
+  reason: string
+  message: string
+  count: number
+  /** What reported it — the scheduler, a kubelet on a named node, a controller. */
+  source?: string
+  first_seen?: string
+  last_seen?: string
+}
+
+/** One entry of an object's `status.conditions`. */
+export interface ResourceCondition {
+  type: string
+  status: string
+  reason?: string
+  message?: string
+  last_transition_at?: string
+}
+
+/** One line of a flattened spec or status: a dotted path and its value. */
+export interface ResourceField {
+  path: string
+  value: string
+}
+
+/**
+ * `kubectl describe`, generically. KubeMG has no per-kind describer — kubectl
+ * hand-writes one for every kind, which would be the wrong shape here and
+ * impossible for a CRD nobody has heard of — so what comes back is the three
+ * things that hold for every Kubernetes object: its metadata, its conditions,
+ * and a bounded flatten of spec and status. The YAML tab is the complete view,
+ * and `spec_truncated` / `status_truncated` say when the flatten stopped short.
+ */
+export interface ResourceDescribeResult {
+  kind: string
+  api_version?: string
+  name: string
+  namespace?: string
+  created_at: string
+  labels?: Record<string, string>
+  annotations?: Record<string, string>
+  conditions: ResourceCondition[]
+  spec_summary: ResourceField[]
+  spec_truncated?: boolean
+  status_summary: ResourceField[]
+  status_truncated?: boolean
+  events: K8sEvent[]
+  /**
+   * Events are their own resource with their own RBAC. A grant that can read a
+   * Deployment but not the events in its namespace still gets the Deployment —
+   * so a refusal narrows the answer and says so, rather than showing an empty
+   * table that reads as "nothing happened".
+   */
+  events_available: boolean
+  events_reason?: string
+}
+
+/**
+ * One Helm release, at the revision that is current. Helm 3 has no API of its
+ * own — a release is a labelled Secret holding a compressed blob — so this is
+ * what the backend decoded out of that blob, never the blob itself: the release
+ * object also carries the chart's rendered manifest, which for many charts holds
+ * generated passwords, and it does not leave the cluster.
+ */
+export interface HelmRelease {
+  name: string
+  namespace: string
+  chart_name: string
+  chart_version: string
+  app_version: string
+  revision: number
+  status: string
+  description?: string
+  updated_at: string
+}
+
+/**
+ * A release's values, as `helm get values` shows them: what the operator
+ * supplied, not the chart's defaults merged into it. `warning` is the standing
+ * caveat on writing them — a saved revision records what Helm will start from
+ * and renders nothing — and it comes from the backend so a client that ignores
+ * it is still told.
+ */
+export interface HelmValues {
+  release: HelmRelease
+  yaml: string
+  warning: string
+}
+
 export interface ClusterNode {
   name: string
   created_at: string
@@ -480,6 +588,100 @@ export interface ResourceManifest {
   resource_version?: string
   editable: boolean
   reason?: string
+}
+
+/**
+ * What a workload action did. Both routes are read-modify-writes down the same
+ * impersonated tunnel as every other call, so a refusal here is the cluster's
+ * own RBAC answering — and `message` is what the console says afterwards, in the
+ * cluster's terms rather than in HTTP's.
+ */
+export interface WorkloadActionResult {
+  kind: string
+  name: string
+  namespace: string
+  replicas?: number
+  restarted_at?: string
+  message: string
+}
+
+/* ------------------------------------------------ observability queries --- */
+
+/**
+ * The charts KubeMG can draw. It is a closed set because each one is a
+ * hand-written PromQL template on the server — the browser never sends a query,
+ * because a metrics backend has never heard of the caller and would answer
+ * anything it was asked, so the namespace scope has to be enforced by KubeMG
+ * being the one that writes the query.
+ */
+export type MetricKind =
+  | 'pod_cpu'
+  | 'pod_memory'
+  | 'namespace_cpu'
+  | 'namespace_memory'
+  | 'cluster_cpu'
+  | 'cluster_memory'
+
+/** The two units the server normalises to, the same pair the meters use. */
+export type MetricUnit = 'millicores' | 'bytes'
+
+export interface MetricPoint {
+  at: string
+  value: number
+}
+
+export interface MetricSeries {
+  name: string
+  labels?: Record<string, string>
+  points: MetricPoint[]
+}
+
+export interface MetricResult {
+  kind: MetricKind
+  unit: MetricUnit
+  series: MetricSeries[]
+  start: string
+  end: string
+  step_seconds: number
+  /** More series existed than were sent; the chart says so rather than lying. */
+  truncated?: boolean
+  /**
+   * The PromQL KubeMG built. An empty chart is almost always a backend that
+   * labels its series differently, and there is no way to see that without
+   * seeing the query — so it is shown rather than hidden.
+   */
+  query: string
+  description?: string
+}
+
+export interface MetricQueryResponse {
+  result: MetricResult
+  provider: MetricsProvider
+  endpoint: string
+}
+
+export interface LogEntry {
+  at: string
+  message: string
+  namespace?: string
+  pod?: string
+  container?: string
+  truncated?: boolean
+}
+
+export interface LogQueryResult {
+  entries: LogEntry[]
+  start: string
+  end: string
+  /** The page hit its limit — there is more inside this window, not none. */
+  limited?: boolean
+  query: string
+}
+
+export interface LogQueryResponse {
+  result: LogQueryResult
+  provider: LogsProvider
+  endpoint: string
 }
 
 /* ------------------------------------------------------- observability --- */
