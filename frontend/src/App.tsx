@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuditTrail } from './pages/AuditTrail'
+import { AuthCallback } from './pages/AuthCallback'
 import { ClusterDetail } from './pages/ClusterDetail'
 import { ClusterManagement } from './pages/ClusterManagement'
 import { ClusterWizard } from './pages/ClusterWizard'
@@ -45,12 +46,23 @@ function LoginRoute() {
   return user ? <Navigate to="/" replace /> : <Login />
 }
 
+/** The SSO landing page, which becomes a redirect the moment it has a session. */
+function CallbackRoute() {
+  const { user } = useAuth()
+
+  return user ? <Navigate to="/" replace /> : <AuthCallback />
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
+          {/* Where an interactive SSO sign-in comes back to. It is outside
+              RequireAuth because it is what creates the session; once it has,
+              the redirect below sends the browser on. */}
+          <Route path="/auth/callback" element={<CallbackRoute />} />
           <Route
             path="/"
             element={

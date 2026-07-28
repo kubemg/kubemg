@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,12 +18,15 @@ type loginRequest struct {
 }
 
 type userResponse struct {
-	ID          uint       `json:"id"`
-	Username    string     `json:"username"`
-	Email       string     `json:"email,omitempty"`
-	Role        string     `json:"role"`
-	SystemRole  string     `json:"system_role"`
-	IsActive    bool       `json:"is_active"`
+	ID         uint   `json:"id"`
+	Username   string `json:"username"`
+	Email      string `json:"email,omitempty"`
+	Role       string `json:"role"`
+	SystemRole string `json:"system_role"`
+	IsActive   bool   `json:"is_active"`
+	// AuthSource says where this account's credentials live. The console reads
+	// it to stop offering a password field for an account that has none.
+	AuthSource  string     `json:"auth_source"`
 	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 }
@@ -45,9 +49,19 @@ func toUserResponse(u *db.User) userResponse {
 		Role:        normalized.Role,
 		SystemRole:  normalized.SystemRole,
 		IsActive:    normalized.IsActive,
+		AuthSource:  authSourceOf(normalized),
 		LastLoginAt: normalized.LastLoginAt,
 		CreatedAt:   normalized.CreatedAt,
 	}
+}
+
+// authSourceOf renders an account's credential source, reading a row written
+// before federation existed as the local account it is.
+func authSourceOf(user db.User) string {
+	if strings.TrimSpace(user.AuthSource) == "" {
+		return db.AuthSourceLocal
+	}
+	return user.AuthSource
 }
 
 // login exchanges username/password credentials for a JWT.
@@ -65,6 +79,17 @@ func (s *server) login(c *gin.Context) {
 	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not verify credentials"})
+		return
+	}
+
+	// A federated account has no password here at all, so this is not a wrong
+	// one — it is the wrong form. Saying which provider owns the account is what
+	// stops someone trying their directory password against this box until they
+	// are locked out of the directory instead.
+	if user.IsFederated() {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "this account signs in through an identity provider",
+		})
 		return
 	}
 

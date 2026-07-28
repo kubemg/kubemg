@@ -13,9 +13,18 @@ export interface User {
   role: Role
   system_role: SystemRole
   is_active: boolean
+  /**
+   * Where this account's credentials live: `local` for a password stored by
+   * KubeMG, or the protocol of the identity provider that vouches for it. A
+   * federated account has no password here, so the editor offers none.
+   */
+  auth_source: AuthSource
   last_login_at?: string
   created_at: string
 }
+
+/** `local`, or the federation protocol that authenticates the account. */
+export type AuthSource = 'local' | SSOProtocol
 
 export interface NewUser {
   username: string
@@ -776,4 +785,156 @@ export interface DatasourceCandidate {
   /** 2 when it matched on the provider's own port, 1 when only on its name. */
   score: number
   reason: string
+}
+
+/*
+ * Enterprise sign-in.
+ *
+ * Two shapes, because the server has two: the public list a login page reads
+ * before anyone is authenticated, which carries a name and nothing else, and the
+ * administrative configuration behind it. No secret is ever in either — a stored
+ * one is represented by its `has_*` flag, and sending the field back is how it is
+ * changed.
+ */
+
+export type SSOProtocol = 'oidc' | 'saml' | 'ldap'
+
+/** One provider as the login page sees it. */
+export interface SSOProviderSummary {
+  id: number
+  name: string
+  protocol: SSOProtocol
+  /** False for LDAP, which takes credentials on KubeMG's own form. */
+  interactive: boolean
+}
+
+/** One provider as an administrator sees it. */
+export interface SSOProvider {
+  id: number
+  name: string
+  protocol: SSOProtocol
+  enabled: boolean
+
+  issuer_url?: string
+  client_id?: string
+  scopes?: string
+
+  saml_metadata_url?: string
+  saml_entity_id?: string
+
+  ldap_host?: string
+  ldap_port?: number
+  ldap_use_tls: boolean
+  ldap_start_tls: boolean
+  ldap_skip_verify: boolean
+  ldap_bind_dn?: string
+  ldap_base_dn?: string
+  ldap_user_filter?: string
+  ldap_user_attribute?: string
+  ldap_email_attribute?: string
+  ldap_group_attribute?: string
+  ldap_group_filter?: string
+  ldap_group_base_dn?: string
+  ldap_group_name_attribute?: string
+
+  username_claim?: string
+  email_claim?: string
+  groups_claim?: string
+
+  allow_jit: boolean
+  default_system_role: 'user' | 'admin'
+
+  last_status: 'pending' | 'healthy' | 'unhealthy'
+  last_message?: string
+  last_checked_at?: string
+
+  has_client_secret: boolean
+  has_bind_password: boolean
+
+  /** What has to be registered in the IdP: redirect URI / assertion consumer. */
+  redirect_url: string
+  entity_id?: string
+  metadata_url?: string
+}
+
+/**
+ * The provider form. Every secret is optional on the way in: omitted keeps the
+ * stored one, so changing a port never means re-typing a credential.
+ */
+export interface SSOProviderInput {
+  name: string
+  protocol: SSOProtocol
+  enabled?: boolean
+
+  issuer_url?: string
+  client_id?: string
+  client_secret?: string
+  scopes?: string
+
+  saml_metadata_url?: string
+  saml_metadata_xml?: string
+  saml_entity_id?: string
+
+  ldap_host?: string
+  ldap_port?: number
+  ldap_use_tls?: boolean
+  ldap_start_tls?: boolean
+  ldap_skip_verify?: boolean
+  ldap_bind_dn?: string
+  ldap_bind_password?: string
+  ldap_base_dn?: string
+  ldap_user_filter?: string
+  ldap_user_attribute?: string
+  ldap_email_attribute?: string
+  ldap_group_attribute?: string
+  ldap_group_filter?: string
+  ldap_group_base_dn?: string
+  ldap_group_name_attribute?: string
+
+  username_claim?: string
+  email_claim?: string
+  groups_claim?: string
+
+  allow_jit?: boolean
+  default_system_role?: 'user' | 'admin'
+}
+
+export interface SSOProviderListResponse {
+  providers: SSOProvider[]
+  /** Origins the server will hand a finished sign-in back to. */
+  console_origins: string[]
+}
+
+export interface SSOProviderCheck {
+  status: 'healthy' | 'unhealthy'
+  message: string
+}
+
+/**
+ * What one external group is worth. A rule can put someone in a local group,
+ * grant a Kubernetes role across an environment, or elevate the account itself —
+ * and must do at least one of the three, since a rule that confers nothing looks
+ * exactly like a rule whose pattern is wrong.
+ */
+export interface SSOGroupMapping {
+  id: number
+  provider_id: number
+  external_group_pattern: string
+  target_group_id?: number
+  target_k8s_role?: K8sRole
+  environment_filter?: Environment
+  namespaces: string[]
+  target_system_role?: 'user' | 'admin'
+  created_at: string
+  updated_at: string
+}
+
+export interface SSOGroupMappingInput {
+  provider_id: number
+  external_group_pattern: string
+  target_group_id?: number
+  target_k8s_role?: K8sRole | ''
+  environment_filter?: Environment | ''
+  namespaces?: string[]
+  target_system_role?: 'user' | 'admin' | ''
 }

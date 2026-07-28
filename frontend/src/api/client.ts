@@ -47,6 +47,13 @@ import type {
   Service,
   SettingsPatch,
   SettingsResponse,
+  SSOGroupMapping,
+  SSOGroupMappingInput,
+  SSOProvider,
+  SSOProviderCheck,
+  SSOProviderInput,
+  SSOProviderListResponse,
+  SSOProviderSummary,
   StorageClass,
   SubjectType,
   User,
@@ -126,6 +133,94 @@ export async function login(username: string, password: string): Promise<LoginRe
 export async function fetchMe(): Promise<User> {
   const { data } = await http.get<User>('/auth/me')
   return data
+}
+
+/* ---------------------------------------------------------------- sso --- */
+
+/**
+ * The providers the login page offers. It is the one call made with no session
+ * at all, so a failure here is not worth surfacing as an error: an install with
+ * no identity provider configured answers an empty list, and one whose server is
+ * unreachable will fail the sign-in itself a moment later with a better message.
+ */
+export async function fetchSSOProviders(): Promise<SSOProviderSummary[]> {
+  const { data } = await http.get<{ providers: SSOProviderSummary[] }>('/auth/sso/providers')
+  return data.providers ?? []
+}
+
+/**
+ * Where the browser goes to start an interactive sign-in. The console's own
+ * origin travels with it so the server knows where to hand the session back —
+ * and refuses any origin it was not configured to trust.
+ */
+export function ssoLoginURL(providerId: number): string {
+  const redirect = encodeURIComponent(window.location.origin)
+  return `${baseURL}/auth/sso/providers/${providerId}/login?redirect_uri=${redirect}`
+}
+
+/** LDAP has no redirect: the credentials are checked against the directory here. */
+export async function ssoPasswordLogin(
+  providerId: number,
+  username: string,
+  password: string,
+): Promise<LoginResponse> {
+  const { data } = await http.post<LoginResponse>(`/auth/sso/providers/${providerId}/login`, {
+    username,
+    password,
+  })
+  return data
+}
+
+export async function fetchSSOAdminProviders(): Promise<SSOProviderListResponse> {
+  const { data } = await http.get<SSOProviderListResponse>('/admin/sso/providers')
+  return { providers: data.providers ?? [], console_origins: data.console_origins ?? [] }
+}
+
+export async function createSSOProvider(input: SSOProviderInput): Promise<SSOProvider> {
+  const { data } = await http.post<SSOProvider>('/admin/sso/providers', input)
+  return data
+}
+
+export async function updateSSOProvider(
+  id: number,
+  input: SSOProviderInput,
+): Promise<SSOProvider> {
+  const { data } = await http.put<SSOProvider>(`/admin/sso/providers/${id}`, input)
+  return data
+}
+
+export async function deleteSSOProvider(id: number): Promise<void> {
+  await http.delete(`/admin/sso/providers/${id}`)
+}
+
+/** Proves the configuration reaches the directory, and records the verdict. */
+export async function checkSSOProvider(id: number): Promise<SSOProviderCheck> {
+  const { data } = await http.post<SSOProviderCheck>(`/admin/sso/providers/${id}/check`)
+  return data
+}
+
+export async function fetchSSOMappings(providerId?: number): Promise<SSOGroupMapping[]> {
+  const { data } = await http.get<{ mappings: SSOGroupMapping[] }>('/admin/sso/mappings', {
+    params: providerId ? { provider_id: providerId } : undefined,
+  })
+  return (data.mappings ?? []).map((mapping) => ({ ...mapping, namespaces: mapping.namespaces ?? [] }))
+}
+
+export async function createSSOMapping(input: SSOGroupMappingInput): Promise<SSOGroupMapping> {
+  const { data } = await http.post<SSOGroupMapping>('/admin/sso/mappings', input)
+  return data
+}
+
+export async function updateSSOMapping(
+  id: number,
+  input: SSOGroupMappingInput,
+): Promise<SSOGroupMapping> {
+  const { data } = await http.put<SSOGroupMapping>(`/admin/sso/mappings/${id}`, input)
+  return data
+}
+
+export async function deleteSSOMapping(id: number): Promise<void> {
+  await http.delete(`/admin/sso/mappings/${id}`)
 }
 
 export async function fetchClusters(): Promise<Cluster[]> {

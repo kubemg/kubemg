@@ -42,8 +42,31 @@ func Migrate(gdb *gorm.DB) error {
 		&AuditEvent{},
 		&Setting{},
 		&ObservabilitySource{},
+		&SSOProviderConfig{},
+		&SSOGroupMapping{},
 	); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
+	}
+
+	// Every account predating federation is a local one, and every grant and
+	// membership predating it was written by an administrator. Saying so
+	// explicitly matters more here than elsewhere: the federation sync deletes
+	// the rows it considers its own, and a blank provenance it read as "mine"
+	// would revoke access nobody asked it to touch.
+	if err := gdb.Model(&User{}).
+		Where("auth_source IS NULL OR auth_source = ''").
+		Update("auth_source", AuthSourceLocal).Error; err != nil {
+		return fmt.Errorf("backfill auth_source: %w", err)
+	}
+	if err := gdb.Model(&UserClusterAccess{}).
+		Where("source IS NULL OR source = ''").
+		Update("source", GrantSourceLocal).Error; err != nil {
+		return fmt.Errorf("backfill user access source: %w", err)
+	}
+	if err := gdb.Model(&UserGroup{}).
+		Where("source IS NULL OR source = ''").
+		Update("source", GrantSourceLocal).Error; err != nil {
+		return fmt.Errorf("backfill membership source: %w", err)
 	}
 
 	// Accounts predating the IAM schema have an empty system_role. Derive it

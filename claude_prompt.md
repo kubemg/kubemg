@@ -1,25 +1,33 @@
-# Task: Implement VictoriaMetrics & VictoriaLogs Query Engines (Phase 3 Remaining Items)
+# Task: Implement Phase 4 - Enterprise SSO & Identity Provider Federation
 
-Codebase Audit Note:
-- **Universal Resource Detail View & Describe Engine** is already **COMPLETED** (`ResourceDetailDrawer.tsx`). Do NOT touch or re-implement it.
-- **Observability Datasource Registration & Discovery** is already **COMPLETED** (`DatasourcePanel.tsx`, `backend/pkg/observability/`).
+Refer to `implementation_plan.md` and `PROJECT_KNOWLEDGE.md` before starting. Follow `agentrule.md` strictly (run builds and tests via Docker using `make verify` / `make test`).
 
-Your task is to implement the **Query Paths** for historical metrics and aggregated log search:
+## Key Tasks to Implement:
 
-## 1. VictoriaMetrics Historical Metrics Query Engine (Query Path)
-- Create `backend/pkg/observability/metrics_query.go` to proxy PromQL queries (`/api/v1/query_range`, `/api/v1/query`) to the active `metrics` datasource using `Target.requestPath(...)`.
-- Add endpoint `GET /api/v1/clusters/:id/observability/metrics/query` in `backend/pkg/api/observability.go`.
-- Create `frontend/src/components/MetricsChart.tsx` for responsive CPU/Memory time-series line charts.
-- Embed `MetricsChart` into `PodPanels.tsx` and cluster overview when a `metrics` datasource is active.
+1. **Database Schema & Models (`backend/pkg/db/sso_models.go`, `store.go`)**:
+   - Create `SSOProviderConfig` model (`protocol`: `oidc`|`saml`|`ldap`, `name`, `client_id`, `client_secret`, `issuer_url`, `saml_metadata_url`, `ldap_host`, etc.).
+   - Create `SSOGroupMapping` model (`external_group_pattern`, `target_group_id`, `target_k8s_role`, `environment_filter`).
+   - Add `AuthSource` and `ExternalID` fields to `User` model.
+   - Implement `SyncSSOUserAndGroups` in `store.go` for JIT provisioning and group synchronization.
 
-## 2. VictoriaLogs / Loki Aggregated Logs Query Engine (Query Path)
-- Create `backend/pkg/observability/logs_query.go` to proxy LogSQL/LogQL queries to the active `logs` datasource using `Target.requestPath(...)`.
-- Add endpoint `GET /api/v1/clusters/:id/observability/logs/query` in `backend/pkg/api/observability.go`.
-- Create `frontend/src/components/LogExplorer.tsx` to search and filter historic/multi-pod logs.
+2. **Auth Engines (`backend/pkg/auth/`)**:
+   - Create `oidc.go`: OIDC Discovery, PKCE authorization URL generation, code exchange, and JWT/ID-token verification.
+   - Create `saml.go`: SAML 2.0 SP metadata generator, AuthnRequest, and ACS assertion parser.
+   - Create `ldap.go`: LDAP bind authenticator and group membership query engine (`memberOf`).
 
-## 3. Verification & Roadmap Update
-- Run `make verify` and `make test` inside Docker.
-- Open `roadmap.md` and check off completed Phase 3 items:
-  - `- [x] Universal Resource Detail View & Describe Engine...`
-  - `- [x] Integrate VictoriaMetrics for minimal footprint metrics...`
-  - `- [x] Integrate VictoriaLogs/Promtail for minimal footprint logs...`
+3. **API Endpoints (`backend/pkg/api/sso.go`, `routes.go`)**:
+   - `GET /api/v1/auth/sso/providers`: Public list of active SSO providers.
+   - `GET /api/v1/auth/sso/:id/login`: Redirect to IdP.
+   - `GET/POST /api/v1/auth/sso/:id/callback`: Process callback, sync user/groups, issue KubeMG JWT.
+   - `GET|PUT|DELETE /api/v1/admin/sso/providers` and `/mappings`: Admin management endpoints.
+
+4. **Frontend UI (`frontend/src/components/`)**:
+   - Create `SsoLoginPage.tsx`: SSO login buttons on authentication page.
+   - Create `SsoSettingsPanel.tsx`: Admin panel for configuring OIDC, SAML, and LDAP providers.
+   - Create `GroupMappingEditor.tsx`: Rule editor for mapping IdP groups to local groups & K8s roles.
+
+5. **Verification & Cleanup**:
+   - Run `make verify` and `make test` inside Docker.
+   - Update `roadmap.md` to check off completed Phase 4 items:
+     - `- [x] Implement SAML/OIDC/LDAP integration module`
+     - `- [x] Implement IdP group federation mapping logic to local groups and K8s RoleBindings`

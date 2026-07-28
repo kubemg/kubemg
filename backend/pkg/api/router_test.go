@@ -41,7 +41,17 @@ type fakeStore struct {
 	// sources holds the observability datasources, keyed the way the table is:
 	// one per cluster per kind.
 	sources map[uint]map[string]db.ObservabilitySource
-	nextID      uint
+	// Federation: the providers and the rules that say what an external group is
+	// worth. Keyed by id like the tables they stand in for.
+	providers   map[uint]*db.SSOProviderConfig
+	mappings    map[uint]*db.SSOGroupMapping
+	syncResults map[string]*db.SSOSyncResult
+	syncErr     error
+	// syncedIdentities records what the handlers passed down, so a test can
+	// assert on the identity a protocol engine resolved rather than only on the
+	// session that came back.
+	syncedIdentities []db.SSOIdentity
+	nextID           uint
 	createErr   error
 	// pruned records the cutoff of every retention pass, so a test can assert
 	// on the window the pruner chose rather than only on what survived.
@@ -59,6 +69,9 @@ func newFakeStore() *fakeStore {
 		groupAccess: map[uint]map[uint]db.GroupClusterAccess{},
 		settings:    map[string]string{},
 		sources:     map[uint]map[string]db.ObservabilitySource{},
+		providers:   map[uint]*db.SSOProviderConfig{},
+		mappings:    map[uint]*db.SSOGroupMapping{},
+		syncResults: map[string]*db.SSOSyncResult{},
 		nextID:      1,
 	}
 }

@@ -50,9 +50,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(session.user)
   }, [])
 
+  const adoptSession = useCallback(async (token: string, session?: User) => {
+    writeToken(token)
+    if (session) {
+      setUser(session)
+      return
+    }
+    // A token that arrived in a URL fragment says nothing trustworthy about who
+    // it belongs to, so the account is read back from the server — which also
+    // catches a token that is already expired or has been revoked.
+    try {
+      setUser(await fetchMe())
+    } catch (err) {
+      writeToken(null)
+      throw err
+    }
+  }, [])
+
   const value = useMemo<AuthState>(
-    () => ({ user, loading, signIn, signOut }),
-    [user, loading, signIn, signOut],
+    () => ({ user, loading, signIn, adoptSession, signOut }),
+    [user, loading, signIn, adoptSession, signOut],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
