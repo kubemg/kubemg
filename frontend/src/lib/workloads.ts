@@ -31,6 +31,31 @@ export function workloadCapability(key: string): WorkloadCapability | undefined 
 }
 
 /**
+ * The kinds whose logs are their pods' logs, read together.
+ *
+ * It is a wider set than the two lifecycle controls above, and deliberately so:
+ * a DaemonSet cannot be scaled but reading its log across every node is most of
+ * why anyone opens one, and a Job's pods are the only place its failure is
+ * written down. What every entry has in common is a `spec.selector` the backend
+ * can derive the pod set from — which is why a CronJob is absent: it owns Jobs,
+ * not pods, and has no selector of its own.
+ */
+const WORKLOAD_LOG_KINDS: readonly ResourceKey[] = [
+  'deployments',
+  'statefulsets',
+  'daemonsets',
+  'jobs',
+]
+
+/**
+ * supportsWorkloadLogs says whether a kind's detail drawer offers the pooled log
+ * view. A pod has its own, which is the per-pod one.
+ */
+export function supportsWorkloadLogs(key: string): boolean {
+  return WORKLOAD_LOG_KINDS.includes(key as ResourceKey)
+}
+
+/**
  * workloadKeyFor turns the Kind a workload row carries into the resource key the
  * API is addressed by. The workload table serves three kinds at once, so a row
  * knows what it is in Kubernetes' terms rather than in the sidebar's.

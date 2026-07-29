@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { fetchMe, login, readToken, setUnauthorizedHandler, writeToken } from '../api/client'
 import type { User } from '../api/types'
+import { invalidateQueries } from '../lib/query'
 import { AuthContext } from './auth-context'
 import type { AuthState } from './auth-context'
 
@@ -12,6 +13,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(() => {
     writeToken(null)
     setUser(null)
+    // Cached reads belong to the identity that asked for them. The next person
+    // at this browser is a different identity, so nothing is carried over.
+    invalidateQueries()
   }, [])
 
   // Restore the session from a stored token, dropping it if the server no

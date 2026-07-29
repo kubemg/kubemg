@@ -61,6 +61,7 @@ import type {
   UserPatch,
   Workload,
   WorkloadActionResult,
+  WorkloadPods,
 } from './types'
 
 const TOKEN_KEY = 'kubemg.token'
@@ -98,10 +99,40 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
   onUnauthorized = handler
 }
 
+/*
+ * Asking the cluster rather than a cache.
+ *
+ * KubeMG holds a recently-answered read in memory on the server for a few
+ * seconds, keyed to the caller, so the console's own navigation does not cost a
+ * tunnel round trip per click. `Cache-Control: no-cache` is how a caller opts
+ * out of that, and Refresh is what sends it: an operator asking again explicitly
+ * is asking the cluster.
+ *
+ * It is a depth counter around a block rather than an argument on forty fetch
+ * functions, because a refresh is usually several reads at once — a pod list and
+ * its usage, a manifest and its events — and threading a flag through each of
+ * them would be a change to every signature for one header. Anything else that
+ * happens to be requested inside the block is sent uncached too; that costs one
+ * round trip and cannot return anything wrong.
+ */
+let freshDepth = 0
+
+export async function withFreshReads<T>(run: () => Promise<T>): Promise<T> {
+  freshDepth += 1
+  try {
+    return await run()
+  } finally {
+    freshDepth -= 1
+  }
+}
+
 http.interceptors.request.use((config) => {
   const token = readToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  if (freshDepth > 0) {
+    config.headers['Cache-Control'] = 'no-cache'
   }
   return config
 })
@@ -664,6 +695,30 @@ export async function restartWorkload(
     namespace,
   })
   return data
+}
+
+/**
+ * The pods a workload owns. The browser never sends a label selector — it names
+ * the workload the same way every other resource call does, and the backend
+ * derives the selector from the object.
+ */
+export async function fetchWorkloadPods(
+  clusterId: number,
+  kind: ResourceKey,
+  name: string,
+  namespace: string,
+): Promise<WorkloadPods> {
+  const { data } = await http.get<WorkloadPods>(resourceURL(clusterId, 'workload/pods'), {
+    params: { kind, name, namespace },
+  })
+  return {
+    pods: data.pods ?? [],
+    namespace: data.namespace ?? namespace,
+    kind: data.kind ?? '',
+    selector: data.selector ?? '',
+    containers: data.containers ?? [],
+    truncated: data.truncated ?? false,
+  }
 }
 
 export async function fetchPodLogs(
