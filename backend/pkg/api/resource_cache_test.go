@@ -229,6 +229,16 @@ func TestPreflightAllowsCacheControl(t *testing.T) {
 	if !strings.Contains(allowed, "cache-control") {
 		t.Fatalf("allow-headers = %q, want cache-control", allowed)
 	}
+
+	// Expose-Headers is asserted on a real cross-origin response rather than on
+	// the preflight: that is where it belongs and where the middleware writes it.
+	// A preflight answers what the browser may *send*; what it may *read* is
+	// declared on the answer it reads.
+	req = httptest.NewRequest(http.MethodGet, "/health", nil)
+	req.Header.Set("Origin", devOrigin)
+	rec = httptest.NewRecorder()
+	env.router.ServeHTTP(rec, req)
+
 	exposed := strings.ToLower(rec.Header().Get("Access-Control-Expose-Headers"))
 	if !strings.Contains(exposed, strings.ToLower(cacheStatusHeader)) {
 		t.Fatalf("expose-headers = %q, want %s", exposed, cacheStatusHeader)
