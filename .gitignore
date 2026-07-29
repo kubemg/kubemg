@@ -29,6 +29,7 @@ pnpm-debug.log*
 # private working surface of this repository's development process, not part of
 # the product, and they stay local. Anything meant for readers of the public
 # repository belongs in README.md.
+.claude/*
 /CLAUDE.md
 /AGENT_RULES.md
 /PROJECT_KNOWLEDGE.md
