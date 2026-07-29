@@ -11,7 +11,7 @@ import type { Cluster, ContainerUsage, Pod, PodContainer, PodUsage } from '../ap
 import { MetricsChart } from './MetricsChart'
 import { Button, Chip, DetailList, Meter, Notice, Pill, SearchInput } from './primitives'
 import { relativeAge } from '../lib/time'
-import { formatCPU, formatMemory, ratio } from '../lib/units'
+import { formatCPU, formatMemory, podLimit, ratio } from '../lib/units'
 
 /*
  * The two pod-specific panels: what a pod is doing, and what it is saying. They
@@ -215,22 +215,6 @@ function ContainerUsageBars({
 function bound(used: number, limit: number, format: (value: number) => string) {
   if (limit <= 0) return {}
   return { percent: ratio(used, limit), capacity: format(limit) }
-}
-
-/**
- * podLimit sums a pod's container limits. A pod is only bounded if *every*
- * container is: one unlimited container makes the pod unlimited, so a total
- * across the rest would be a ceiling that does not exist.
- */
-function podLimit(containers: PodContainer[], resource: 'cpu' | 'memory'): number {
-  let total = 0
-  for (const container of containers) {
-    const limit =
-      resource === 'cpu' ? container.cpu_limit_millicores : container.memory_limit_bytes
-    if (limit <= 0) return 0
-    total += limit
-  }
-  return total
 }
 
 /**

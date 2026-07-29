@@ -8,6 +8,8 @@ import {
   LogOut,
   Menu,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   ScrollText,
   Server,
   Shield,
@@ -71,6 +73,87 @@ const ACCESS_ROUTES = ['/users', '/groups', '/permissions', '/audit']
 /* The palette answers to both chords; the hint shows the one this keyboard has. */
 const PALETTE_HINT = /mac/i.test(navigator.platform) ? '⌘K' : 'Ctrl K'
 
+/**
+ * How much room the section panel is taking.
+ *
+ * `full` is the 240px panel. `responsive` is the panel on a page that also has a
+ * third level: it reads as icons until `xl`, where all three columns fit.
+ * `icon` is the operator's own choice to keep it at the rail's width at every
+ * size — on Explore three full columns leave the work itself with less room than
+ * the navigation to it, so that is where the choice matters and where it is the
+ * default.
+ *
+ * Tailwind scans the source for literal class names, so these are lookups
+ * rather than interpolations.
+ */
+type PanelMode = 'full' | 'responsive' | 'icon'
+
+const PANEL_WIDTH: Record<PanelMode, string> = {
+  full: 'w-60',
+  responsive: 'w-15 xl:w-60',
+  icon: 'w-15',
+}
+
+const PANEL_HEADER: Record<PanelMode, string> = {
+  full: 'px-4',
+  responsive: 'justify-center xl:justify-start xl:px-4',
+  icon: 'justify-center',
+}
+
+const PANEL_BODY: Record<PanelMode, string> = {
+  full: 'px-2.5',
+  responsive: 'px-2 xl:px-2.5',
+  icon: 'px-2',
+}
+
+const PANEL_FOOTER: Record<PanelMode, string> = {
+  full: 'px-3',
+  responsive: 'flex-col px-2 xl:flex-row xl:px-3',
+  icon: 'flex-col px-2',
+}
+
+/** The section heading, and any other line that only exists to be read. */
+const PANEL_HEADING: Record<PanelMode, string> = {
+  full: 'px-2',
+  responsive: 'hidden xl:block xl:px-2',
+  icon: 'hidden',
+}
+
+/** A label beside a glyph: `inline` for text, `block` for a truncating cell. */
+const PANEL_LABEL: Record<PanelMode, { inline: string; block: string }> = {
+  full: { inline: '', block: '' },
+  responsive: { inline: 'hidden xl:inline', block: 'hidden xl:block' },
+  icon: { inline: 'hidden', block: 'hidden' },
+}
+
+const PANEL_ROW: Record<PanelMode, string> = {
+  full: 'px-2',
+  responsive: 'justify-center px-0 xl:justify-start xl:px-2',
+  icon: 'justify-center px-0',
+}
+
+/** Where the main column starts: the rail, the panel, and a third level if any. */
+const MAIN_OFFSET: Record<string, string> = {
+  full: 'lg:ml-75',
+  responsive: 'lg:ml-86 xl:ml-131',
+  icon: 'lg:ml-30',
+  'icon+sidebar': 'lg:ml-86',
+}
+
+const PANEL_COLLAPSED_KEY = 'kubemg_panel_collapsed'
+
+/** `null` when the operator has never said, which is what lets a page default. */
+function storedPanelCollapsed(): boolean | null {
+  try {
+    const raw = localStorage.getItem(PANEL_COLLAPSED_KEY)
+    if (raw === '1') return true
+    if (raw === '0') return false
+  } catch {
+    // Storage can be denied outright; the default is still a working deck.
+  }
+  return null
+}
+
 function sectionForPath(pathname: string): string {
   if (pathname.startsWith('/settings')) return 'system'
   if (ACCESS_ROUTES.some((route) => pathname.startsWith(route))) return 'access'
@@ -109,6 +192,7 @@ export function AppShell({
 
   const [navOpen, setNavOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [panelPref, setPanelPref] = useState<boolean | null>(storedPanelCollapsed)
 
   const isAdmin = user?.role === 'admin'
   const sections = SECTIONS.map((section) => ({
@@ -151,9 +235,22 @@ export function AppShell({
 
   const initials = (user?.username ?? '').slice(0, 2).toUpperCase()
 
-  // With a third level on screen the section panel gives up its width between
-  // `lg` and `xl` and reads as icons only, the same 60px as the rail.
-  const compact = Boolean(sidebar)
+  // A page with a third level is where the panel's 240px costs the most, so it
+  // starts collapsed there; an explicit toggle wins over that default, in both
+  // directions, and is remembered.
+  const collapsed = panelPref ?? Boolean(sidebar)
+  const mode: PanelMode = collapsed ? 'icon' : sidebar ? 'responsive' : 'full'
+  const label = PANEL_LABEL[mode]
+
+  function togglePanel() {
+    const next = !collapsed
+    setPanelPref(next)
+    try {
+      localStorage.setItem(PANEL_COLLAPSED_KEY, next ? '1' : '0')
+    } catch {
+      // The choice still holds for this session.
+    }
+  }
 
   return (
     <div className="min-h-svh bg-bg">
@@ -221,32 +318,46 @@ export function AppShell({
 
       {/* Level two: what inside it. */}
       <aside
-        className={`fixed inset-y-0 left-15 z-20 hidden flex-col border-r border-rail-line bg-rail lg:flex ${
-          compact ? 'w-15 xl:w-60' : 'w-60'
-        }`}
+        className={`fixed inset-y-0 left-15 z-20 hidden flex-col border-r border-rail-line bg-rail lg:flex ${PANEL_WIDTH[mode]}`}
       >
         <div
-          className={`flex h-14 shrink-0 items-center text-[15px] font-semibold tracking-[-0.02em] ${
-            compact ? 'justify-center xl:justify-start xl:px-4' : 'px-4'
-          }`}
+          className={`flex h-14 shrink-0 items-center text-[15px] font-semibold tracking-[-0.02em] ${PANEL_HEADER[mode]}`}
         >
-          <span className={compact ? 'hidden xl:inline' : undefined}>
+          <span className={label.inline}>
             <span className="text-rail-fg">Kube</span>
             <span className="text-accent">MG</span>
           </span>
-          {compact ? (
+          {mode === 'responsive' ? (
             <span aria-hidden="true" className="font-mono text-[13px] text-accent xl:hidden">
               MG
             </span>
           ) : null}
-        </div>
-
-        <div className={`min-h-0 flex-1 overflow-y-auto pb-3 ${compact ? 'px-2 xl:px-2.5' : 'px-2.5'}`}>
-          <p
-            className={`label pt-1 pb-2 text-rail-faint ${
-              compact ? 'hidden xl:block xl:px-2' : 'px-2'
+          {/* Collapsed there is no wordmark to sit beside, so the toggle takes
+              the slot; expanded it sits at the end of the header. Between `lg`
+              and `xl` the panel is already at rail width, so there is nothing
+              for it to give up and it stays out of the way. */}
+          <button
+            type="button"
+            onClick={togglePanel}
+            aria-expanded={!collapsed}
+            title={collapsed ? 'Expand the section panel' : 'Collapse the section panel'}
+            className={`grid size-8 shrink-0 place-items-center rounded-control text-rail-muted transition-colors hover:bg-rail-raised hover:text-rail-fg ${
+              mode === 'responsive' ? 'ml-auto hidden xl:grid' : mode === 'full' ? 'ml-auto' : ''
             }`}
           >
+            {collapsed ? (
+              <PanelLeftOpen aria-hidden="true" className="size-4" />
+            ) : (
+              <PanelLeftClose aria-hidden="true" className="size-4" />
+            )}
+            <span className="sr-only">
+              {collapsed ? 'Expand the section panel' : 'Collapse the section panel'}
+            </span>
+          </button>
+        </div>
+
+        <div className={`min-h-0 flex-1 overflow-y-auto pb-3 ${PANEL_BODY[mode]}`}>
+          <p className={`label pt-1 pb-2 text-rail-faint ${PANEL_HEADING[mode]}`}>
             {activeSection?.label}
           </p>
           <ul className="flex flex-col gap-0.5">
@@ -255,35 +366,31 @@ export function AppShell({
                 <NavLink
                   to={item.to}
                   end={item.to === '/'}
-                  title={compact ? item.label : undefined}
-                  className={compact ? compactRailLinkClass : railLinkClass}
+                  title={mode === 'full' ? undefined : item.label}
+                  className={railLink(mode)}
                 >
                   <item.icon aria-hidden="true" className="size-4 shrink-0" />
-                  <span className={compact ? 'hidden xl:inline' : undefined}>{item.label}</span>
+                  <span className={label.inline}>{item.label}</span>
                 </NavLink>
               </li>
             ))}
           </ul>
 
           {activeSection?.id === 'fleet' ? (
-            <FleetList clusters={clusters} pathname={pathname} compact={compact} />
+            <FleetList clusters={clusters} pathname={pathname} mode={mode} />
           ) : null}
         </div>
 
         <div
-          className={`flex shrink-0 items-center gap-2.5 border-t border-rail-line py-3 ${
-            compact ? 'flex-col px-2 xl:flex-row xl:px-3' : 'px-3'
-          }`}
+          className={`flex shrink-0 items-center gap-2.5 border-t border-rail-line py-3 ${PANEL_FOOTER[mode]}`}
         >
           <span
-            title={compact ? user?.username : undefined}
+            title={mode === 'full' ? undefined : user?.username}
             className="grid size-8 shrink-0 place-items-center rounded-full bg-rail-raised font-mono text-[12px] font-semibold text-rail-fg"
           >
             {initials}
           </span>
-          <span
-            className={`min-w-0 flex-1 leading-tight ${compact ? 'hidden xl:block' : undefined}`}
-          >
+          <span className={`min-w-0 flex-1 leading-tight ${label.block}`}>
             <span className="block truncate text-[13px] text-rail-fg">{user?.username}</span>
             <span className="label block text-rail-faint">{user?.role}</span>
           </span>
@@ -315,12 +422,20 @@ export function AppShell({
 
       {/* Level three, when a page has one. */}
       {sidebar ? (
-        <div className="fixed inset-y-0 left-30 z-10 hidden w-56 border-r border-rail-line bg-rail lg:block xl:left-75">
+        <div
+          className={`fixed inset-y-0 left-30 z-10 hidden w-56 border-r border-rail-line bg-rail lg:block ${
+            mode === 'responsive' ? 'xl:left-75' : ''
+          }`}
+        >
           {sidebar}
         </div>
       ) : null}
 
-      <div className={`flex min-w-0 flex-col ${sidebar ? 'lg:ml-86 xl:ml-131' : 'lg:ml-75'}`}>
+      <div
+        className={`flex min-w-0 flex-col ${
+          MAIN_OFFSET[mode === 'icon' && sidebar ? 'icon+sidebar' : mode]
+        }`}
+      >
         <header className="sticky top-0 z-10 border-b border-line bg-bg/85 backdrop-blur">
           <div className="flex h-14 items-center gap-3 px-4 xl:px-6">
             <IconButton
@@ -379,20 +494,17 @@ export function AppShell({
 }
 
 function railLinkClass({ isActive }: { isActive: boolean }) {
-  const base =
-    'flex items-center gap-2.5 rounded-control px-2 py-1.5 text-[13.5px] transition-colors'
-  return isActive
-    ? `${base} bg-rail-raised font-medium text-rail-fg`
-    : `${base} text-rail-muted hover:bg-rail-raised/60 hover:text-rail-fg`
+  return railLink('full')({ isActive })
 }
 
-/** The same link, sized for the collapsed panel: glyph only, name on hover. */
-function compactRailLinkClass({ isActive }: { isActive: boolean }) {
-  const base =
-    'flex items-center gap-2.5 rounded-control py-1.5 text-[13.5px] transition-colors justify-center xl:justify-start px-0 xl:px-2'
-  return isActive
-    ? `${base} bg-rail-raised font-medium text-rail-fg`
-    : `${base} text-rail-muted hover:bg-rail-raised/60 hover:text-rail-fg`
+/** The same link at whatever width the panel currently has: collapsed it is a glyph, with the name on hover. */
+function railLink(mode: PanelMode) {
+  return ({ isActive }: { isActive: boolean }) => {
+    const base = `flex items-center gap-2.5 rounded-control py-1.5 text-[13.5px] transition-colors ${PANEL_ROW[mode]}`
+    return isActive
+      ? `${base} bg-rail-raised font-medium text-rail-fg`
+      : `${base} text-rail-muted hover:bg-rail-raised/60 hover:text-rail-fg`
+  }
 }
 
 /**
@@ -407,29 +519,30 @@ function compactRailLinkClass({ isActive }: { isActive: boolean }) {
 function FleetList({
   clusters,
   pathname,
-  compact = false,
+  mode = 'full',
 }: {
   clusters: ReturnType<typeof useClusters>['clusters']
   pathname: string
-  compact?: boolean
+  mode?: PanelMode
 }) {
+  const label = PANEL_LABEL[mode]
   return (
     <div className="mt-5">
       <p
         className={`label flex items-center justify-between pb-2 text-rail-faint ${
-          compact ? 'justify-center px-0 xl:justify-between xl:px-2' : 'px-2'
+          mode === 'full'
+            ? 'px-2'
+            : mode === 'responsive'
+              ? 'justify-center px-0 xl:justify-between xl:px-2'
+              : 'justify-center px-0'
         }`}
       >
-        <span className={compact ? 'hidden xl:inline' : undefined}>Clusters</span>
+        <span className={label.inline}>Clusters</span>
         <span className="font-mono">{clusters.length}</span>
       </p>
 
       {clusters.length === 0 ? (
-        <p
-          className={`text-[12px] text-rail-faint ${compact ? 'hidden xl:block xl:px-2' : 'px-2'}`}
-        >
-          None registered yet.
-        </p>
+        <p className={`text-[12px] text-rail-faint ${PANEL_HEADING[mode]}`}>None registered yet.</p>
       ) : (
         <ul className="flex flex-col gap-0.5">
           {clusters.map((cluster) => {
@@ -439,23 +552,20 @@ function FleetList({
                 <Link
                   to={`/clusters/${cluster.id}`}
                   aria-current={active ? 'page' : undefined}
-                  title={compact ? cluster.name : undefined}
+                  title={mode === 'full' ? undefined : cluster.name}
                   className={`flex items-center gap-2 rounded-control py-1.5 transition-colors ${
-                    compact ? 'justify-center px-0 xl:justify-start xl:px-2' : 'px-2'
+                    PANEL_ROW[mode]
                   } ${active ? 'bg-rail-raised' : 'hover:bg-rail-raised/60'}`}
                 >
                   <EnvironmentDot environment={cluster.environment} />
                   <span
                     className={`min-w-0 flex-1 truncate font-mono text-[12.5px] ${
                       active ? 'text-rail-fg' : 'text-rail-muted'
-                    } ${compact ? 'hidden xl:block' : ''}`}
+                    } ${label.block}`}
                   >
                     {cluster.name}
                   </span>
-                  <LinkStrand
-                    state={strandState(cluster)}
-                    className={`w-8 shrink-0 ${compact ? 'hidden xl:block' : ''}`}
-                  />
+                  <LinkStrand state={strandState(cluster)} className={`w-8 shrink-0 ${label.block}`} />
                 </Link>
               </li>
             )

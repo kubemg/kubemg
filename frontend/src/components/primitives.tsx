@@ -6,7 +6,18 @@ import type {
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from 'react'
-import { Check, ChevronDown, Copy, Eye, EyeOff, Loader2, Search, X } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
+  Copy,
+  Eye,
+  EyeOff,
+  Loader2,
+  Search,
+  X,
+} from 'lucide-react'
 import type { Cluster, Environment } from '../api/types'
 import { clusterStateLabel, clusterTone } from '../lib/status'
 import type { Tone } from '../lib/status'
@@ -500,6 +511,66 @@ export function Th({
       } ${className ?? ''}`}
     >
       {children}
+    </th>
+  )
+}
+
+/** Which way a sorted column is ordered, or `null` for a column nobody sorted by. */
+export type SortDirection = 'asc' | 'desc' | null
+
+/**
+ * SortTh is a heading that sorts its column. The control is a button *inside*
+ * the cell rather than a click handler on the cell, so it is reachable by
+ * keyboard and announced as something that does anything; `aria-sort` goes on
+ * the cell itself, which is where a screen reader looks for it.
+ *
+ * An unsorted column shows its arrows faintly on hover only — a list of eight
+ * headings each with a permanent glyph reads as decoration, and the point of the
+ * affordance is to be found when it is wanted.
+ */
+export function SortTh({
+  children,
+  className,
+  align = 'left',
+  direction,
+  onSort,
+}: {
+  children?: ReactNode
+  className?: string
+  align?: 'left' | 'right'
+  direction: SortDirection
+  onSort: () => void
+}) {
+  const arrow =
+    direction === 'asc' ? (
+      <ChevronUp aria-hidden="true" className="size-3 text-accent" />
+    ) : direction === 'desc' ? (
+      <ChevronDown aria-hidden="true" className="size-3 text-accent" />
+    ) : (
+      <ChevronsUpDown
+        aria-hidden="true"
+        className="size-3 text-faint opacity-0 transition-opacity group-hover:opacity-100"
+      />
+    )
+
+  return (
+    <th
+      scope="col"
+      aria-sort={direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'}
+      className={`label sticky top-0 z-1 bg-surface px-4 py-2.5 ${
+        align === 'right' ? 'text-right' : 'text-left'
+      } ${className ?? ''}`}
+    >
+      <button
+        type="button"
+        onClick={onSort}
+        className={`group label flex w-full items-center gap-1 transition-colors hover:text-fg ${
+          align === 'right' ? 'justify-end' : ''
+        } ${direction ? 'text-fg' : ''}`}
+      >
+        <span className="min-w-0 truncate">{children}</span>
+        {arrow}
+      </button>
     </th>
   )
 }

@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
   ClusterNode,
@@ -12,19 +13,22 @@ import type {
   PersistentVolume,
   PersistentVolumeClaim,
   Pod,
+  PodUsage,
   Route,
   Service,
   StorageClass,
   Workload,
 } from '../api/types'
 import { FileCode2, PanelRightOpen, Pencil, RotateCcw, SlidersHorizontal } from 'lucide-react'
-import { IconButton, Pill, Row, Table, Td, Th } from './primitives'
+import { IconButton, Pill, Row, SortTh, Table, Td, Th } from './primitives'
 import type { DetailTab } from './ResourceDetailDrawer'
 import type { WorkloadActionName } from './WorkloadActionDialog'
 import { workloadCapability, workloadKeyFor } from '../lib/workloads'
 import type { Tone } from '../lib/status'
 import { TONE_FILL, podTone, workloadTone } from '../lib/status'
 import { relativeAge } from '../lib/time'
+import { formatCPU, formatMemory, podLimit, ratio, usageTone } from '../lib/units'
+import type { PodUsageIndex } from '../lib/units'
 
 /**
  * One loaded resource list, tagged by the shape it came back in. The tag is what
@@ -33,7 +37,15 @@ import { relativeAge } from '../lib/time'
  * agree.
  */
 export type LoadedResource =
-  | { kind: 'pods'; rows: Pod[] }
+  /**
+   * A pod list carries the live usage of the same scope alongside it. It is part
+   * of the loaded list rather than something the table fetches because the two
+   * reads have to describe the same set of namespaces to line up row for row,
+   * and only the loader knows what scope it asked for. `usage: null` is a real
+   * answer — no metrics-server, or a grant that may not read metrics.k8s.io —
+   * and reads as a dash with the cluster's own reason, not as a failed list.
+   */
+  | { kind: 'pods'; rows: Pod[]; usage: PodUsageIndex | null; usageReason?: string }
   | { kind: 'helmreleases'; rows: HelmRelease[] }
   | { kind: 'workloads'; rows: Workload[] }
   | { kind: 'jobs'; rows: Job[] }
@@ -117,6 +129,7 @@ export function ResourceView({
       return (
         <PodTable
           pods={loaded.rows}
+          usage={loaded.usage}
           showNamespace={showNamespace}
           onSelect={onSelectPod}
           onManifest={open}
@@ -263,14 +276,33 @@ const MONO = 'truncate font-mono text-[12.5px] text-muted'
 const AGE = 'text-[12.5px] text-muted'
 
 /**
+ * The width the row actions actually need. A `table-fixed` table hands a column
+ * exactly what it asked for, so a column asking for 1% gets 1% and its buttons
+ * are drawn on top of whatever is to their left — which is why this is a real
+ * measurement rather than a nominal one: 32px per button plus the cell's own
+ * padding, at the number of buttons that breakpoint shows.
+ */
+const ROW_ACTIONS_WIDTH = 'w-[64px] md:w-[100px] lg:w-[132px]'
+
+/**
  * The manifest column. It is the last column of every list and carries no
  * heading — the two icons are titled, and a word above them would be a column
  * name for something that is not data.
  */
-function ManifestHead({ onManifest }: { onManifest?: OpenManifest }) {
+function ManifestHead({
+  onManifest,
+  width = 'w-[1%]',
+}: {
+  onManifest?: OpenManifest
+  /**
+   * How much room the buttons need. It is per table because the count is: a
+   * workload row carries two more than everything else.
+   */
+  width?: string
+}) {
   if (!onManifest) return null
   return (
-    <Th className="w-[1%]">
+    <Th className={width}>
       <span className="sr-only">Manifest</span>
     </Th>
   )
@@ -313,21 +345,30 @@ function ManifestCell({
         >
           <PanelRightOpen aria-hidden="true" className="size-3.5" />
         </IconButton>
-        <IconButton
-          type="button"
-          label={`View ${name} as YAML`}
-          onClick={() => onManifest(name, namespace, 'yaml')}
-        >
-          <FileCode2 aria-hidden="true" className="size-3.5" />
-        </IconButton>
-        {editable ? (
+        {/* Three buttons need 132px, which a narrow table does not have to give
+            without taking it from the name. The drawer the first button opens
+            reaches the manifest and its editor on its own tabs, so what is given
+            up below those widths is a shortcut and not a destination. `contents`
+            keeps the button a direct flex child at the widths it does show. */}
+        <span className="hidden md:contents">
           <IconButton
             type="button"
-            label={`Edit ${name}`}
-            onClick={() => onManifest(name, namespace, 'yaml', true)}
+            label={`View ${name} as YAML`}
+            onClick={() => onManifest(name, namespace, 'yaml')}
           >
-            <Pencil aria-hidden="true" className="size-3.5" />
+            <FileCode2 aria-hidden="true" className="size-3.5" />
           </IconButton>
+        </span>
+        {editable ? (
+          <span className="hidden lg:contents">
+            <IconButton
+              type="button"
+              label={`Edit ${name}`}
+              onClick={() => onManifest(name, namespace, 'yaml', true)}
+            >
+              <Pencil aria-hidden="true" className="size-3.5" />
+            </IconButton>
+          </span>
         ) : null}
       </span>
     </Td>
@@ -474,33 +515,160 @@ function HelmReleaseTable({
   )
 }
 
+/*
+ * Sorting the pod list. It is done in the browser and not asked of the cluster,
+ * which is the honest shape of it: the list is already fully in hand, and two of
+ * the columns worth sorting by — the live CPU and memory readings — come from a
+ * different read that the Kubernetes API cannot order a pod list by at all.
+ */
+
+type PodSortKey = 'name' | 'phase' | 'ready' | 'cpu' | 'memory' | 'restarts' | 'node' | 'age'
+
+type PodSort = { key: PodSortKey; direction: 'asc' | 'desc' }
+
+/**
+ * Which way a column sorts on its *first* click. It is per column because the
+ * interesting end differs: the biggest consumer and the most-restarted pod are
+ * what anyone is looking for, while a name reads alphabetically and "age
+ * ascending" means the youngest — the pod that just appeared.
+ */
+const POD_SORT_FIRST: Record<PodSortKey, 'asc' | 'desc'> = {
+  name: 'asc',
+  phase: 'asc',
+  ready: 'asc',
+  cpu: 'desc',
+  memory: 'desc',
+  restarts: 'desc',
+  node: 'asc',
+  age: 'asc',
+}
+
+/**
+ * podSortValue is what one column of one row is worth. A missing reading answers
+ * -1 rather than 0, so "no sample" sorts below a pod genuinely using nothing
+ * instead of being mixed in with it.
+ */
+function podSortValue(pod: Pod, usage: PodUsageIndex | null, key: PodSortKey): string | number {
+  const sample = usage?.get(`${pod.namespace}/${pod.name}`)
+  switch (key) {
+    case 'name':
+      return `${pod.namespace}/${pod.name}`
+    case 'phase':
+      return pod.phase
+    case 'ready':
+      // The fraction, not the count: 1/1 is ready and 1/3 is not, and a list is
+      // asked which pods are short rather than which have the fewest containers.
+      return pod.total > 0 ? pod.ready / pod.total : 0
+    case 'cpu':
+      return sample ? sample.cpu_millicores : -1
+    case 'memory':
+      return sample ? sample.memory_bytes : -1
+    case 'restarts':
+      return pod.restarts
+    case 'node':
+      return pod.node
+    case 'age':
+      // Ascending age is the newest first, so the value is the timestamp
+      // negated: an unparseable one sorts last either way.
+      return -(Date.parse(pod.created_at) || 0)
+  }
+}
+
+/**
+ * sortPods orders a copy. Unsorted is the order the server sent — namespace then
+ * name, the order kubectl prints — which is why there is no third "off" click to
+ * get back to it: sorting by name ascending *is* that order.
+ */
+function sortPods(pods: Pod[], usage: PodUsageIndex | null, sort: PodSort | null): Pod[] {
+  if (!sort) return pods
+
+  const factor = sort.direction === 'asc' ? 1 : -1
+  return [...pods].sort((a, b) => {
+    const left = podSortValue(a, usage, sort.key)
+    const right = podSortValue(b, usage, sort.key)
+    if (typeof left === 'number' && typeof right === 'number') {
+      // A tie falls back to the name, so equal readings do not shuffle between
+      // renders — most of a cluster's pods are using nothing measurable.
+      return factor * (left - right) || a.name.localeCompare(b.name)
+    }
+    // `numeric` so pod-2 comes before pod-10, which is what a replica suffix is.
+    return (
+      factor * String(left).localeCompare(String(right), undefined, { numeric: true }) ||
+      a.name.localeCompare(b.name)
+    )
+  })
+}
+
 function PodTable({
   pods,
+  usage,
   showNamespace,
   onSelect,
   onManifest,
 }: {
   pods: Pod[]
+  usage: PodUsageIndex | null
   showNamespace: boolean
   onSelect: (pod: Pod) => void
   onManifest?: OpenManifest
 }) {
+  const [sort, setSort] = useState<PodSort | null>(null)
+  const rows = useMemo(() => sortPods(pods, usage, sort), [pods, usage, sort])
+
+  /** Every heading sorts the same way, so the wiring is written once. */
+  const column = (key: PodSortKey) => ({
+    direction: sort?.key === key ? sort.direction : null,
+    onSort: () =>
+      setSort((current) =>
+        current?.key === key
+          ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+          : { key, direction: POD_SORT_FIRST[key] },
+      ),
+  })
+
   return (
     <Table>
       <thead>
         <tr>
-          <Th className="w-[46%] md:w-[32%]">Pod</Th>
-          <Th className="w-[20%] md:w-[13%]">Phase</Th>
-          <Th className="w-[14%] md:w-[8%]">Ready</Th>
-          <Th className="hidden md:table-cell md:w-[9%]">Restarts</Th>
-          <Th className="hidden lg:table-cell lg:w-[20%]">Node</Th>
-          <Th className="w-[20%] md:w-[10%]">Age</Th>
-          <ManifestHead onManifest={onManifest} />
+          {/* The name column asks for no width: `table-fixed` gives an
+              unsized column whatever the sized ones leave, which is exactly what
+              a name should have — the readings, the counts and the buttons all
+              need a known amount of room and a pod name will take any. */}
+          <SortTh {...column('name')}>Pod</SortTh>
+          <SortTh className="w-[22%] sm:w-[16%] md:w-[12%]" {...column('phase')}>
+            Phase
+          </SortTh>
+          <SortTh className="w-[16%] sm:w-[10%] md:w-[8%]" {...column('ready')}>
+            Ready
+          </SortTh>
+          {/* CPU and memory are the two numbers `kubectl top` answers with, in
+              the same order, so they read as the same thing. They are the first
+              columns to go on a narrow screen: a phase and a restart count say
+              whether a pod is in trouble, a reading says how much. */}
+          <SortTh className="hidden sm:table-cell sm:w-[14%] md:w-[11%]" {...column('cpu')}>
+            CPU
+          </SortTh>
+          <SortTh className="hidden sm:table-cell sm:w-[14%] md:w-[12%]" {...column('memory')}>
+            Memory
+          </SortTh>
+          <SortTh className="hidden md:table-cell md:w-[8%]" {...column('restarts')}>
+            Restarts
+          </SortTh>
+          {/* A node name is long and this table is the one with the most columns,
+              so it waits for the width that can hold it — at `lg` the resource
+              tree is on screen too and there is nothing spare. */}
+          <SortTh className="hidden xl:table-cell xl:w-[14%]" {...column('node')}>
+            Node
+          </SortTh>
+          <SortTh className="w-[20%] sm:w-[14%] md:w-[9%]" {...column('age')}>
+            Age
+          </SortTh>
+          <ManifestHead onManifest={onManifest} width={ROW_ACTIONS_WIDTH} />
         </tr>
       </thead>
       <tbody>
-        {pods.map((pod) => (
-          <Row key={pod.name}>
+        {rows.map((pod) => (
+          <Row key={`${pod.namespace}/${pod.name}`}>
             <Td className="truncate">
               <span className="flex items-center gap-2.5">
                 <span
@@ -524,6 +692,20 @@ function PodTable({
             <Td className="font-mono text-[12.5px] text-muted">
               {pod.ready}/{pod.total}
             </Td>
+            <UsageCell
+              usage={usage}
+              pod={pod}
+              resource="cpu"
+              read={(sample) => sample.cpu_millicores}
+              format={formatCPU}
+            />
+            <UsageCell
+              usage={usage}
+              pod={pod}
+              resource="memory"
+              read={(sample) => sample.memory_bytes}
+              format={formatMemory}
+            />
             <Td
               className={`hidden font-mono text-[12.5px] md:table-cell ${
                 pod.restarts > 0 ? 'text-warn' : 'text-muted'
@@ -531,13 +713,73 @@ function PodTable({
             >
               {pod.restarts}
             </Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>{pod.node || '—'}</Td>
-            <Td className={AGE}>{relativeAge(pod.created_at)}</Td>
+            <Td className={`hidden xl:table-cell ${MONO}`}>{pod.node || '—'}</Td>
+            <Td className={`whitespace-nowrap ${AGE}`}>{relativeAge(pod.created_at)}</Td>
             <ManifestCell onManifest={onManifest} name={pod.name} namespace={pod.namespace} />
           </Row>
         ))}
       </tbody>
     </Table>
+  )
+}
+
+/** How a reading against its ceiling reads: comfortable, worth a look, at it. */
+const USAGE_TEXT = { ok: 'text-muted', warn: 'text-warn', bad: 'text-danger' } as const
+
+/**
+ * UsageCell is one live reading in a pod row. It is a number and not a bar: a
+ * meter needs a denominator, and in a list of a hundred pods most of the
+ * denominators are missing — a pod is only bounded when every one of its
+ * containers declares a limit. Where there *is* a ceiling the row says how close
+ * to it the pod is and colours the reading, which is the whole reason to put the
+ * number in a list rather than leave it in the drawer.
+ *
+ * A dash means one of three honest things, and the title says which: the cluster
+ * serves no Metrics API, the pod is not running, or metrics-server has not
+ * sampled it yet.
+ */
+function UsageCell({
+  usage,
+  pod,
+  resource,
+  read,
+  format,
+}: {
+  usage: PodUsageIndex | null
+  pod: Pod
+  resource: 'cpu' | 'memory'
+  read: (sample: PodUsage) => number
+  format: (value: number) => string
+}) {
+  const sample = usage?.get(`${pod.namespace}/${pod.name}`)
+  if (!sample) {
+    return (
+      <Td className="hidden font-mono text-[12.5px] text-faint sm:table-cell">
+        <span title={usage ? 'No sample for this pod yet' : 'This cluster serves no Metrics API'}>
+          —
+        </span>
+      </Td>
+    )
+  }
+
+  const used = read(sample)
+  const limit = podLimit(pod.containers, resource)
+  const percent = limit > 0 ? ratio(used, limit) : null
+
+  return (
+    <Td className="hidden whitespace-nowrap sm:table-cell">
+      <span
+        className={`font-mono text-[12.5px] ${
+          percent === null ? 'text-muted' : USAGE_TEXT[usageTone(percent)]
+        }`}
+        title={limit > 0 ? `${format(used)} of a ${format(limit)} limit` : `${format(used)}, no limit`}
+      >
+        {format(used)}
+      </span>
+      {percent === null ? null : (
+        <span className="ml-1.5 font-mono text-[11.5px] text-faint">{Math.round(percent)}%</span>
+      )}
+    </Td>
   )
 }
 
