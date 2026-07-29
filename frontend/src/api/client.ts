@@ -57,6 +57,9 @@ import type {
   SSOProviderSummary,
   StorageClass,
   SubjectType,
+  TerminalSession,
+  TerminalSessionPage,
+  TerminalSessionQuery,
   User,
   UserPatch,
   Workload,
@@ -376,6 +379,47 @@ export async function fetchAudit(query: AuditQuery = {}): Promise<AuditPage> {
 export async function fetchAuditSummary(): Promise<AuditSummary> {
   const { data } = await http.get<AuditSummary>('/audit/summary')
   return data
+}
+
+export async function fetchTerminalSessions(
+  query: TerminalSessionQuery = {},
+): Promise<TerminalSessionPage> {
+  const params: Record<string, string> = {}
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === '' || value === false) continue
+    params[key] = String(value)
+  }
+  const { data } = await http.get<TerminalSessionPage>('/audit/terminal-sessions', { params })
+  return {
+    sessions: data.sessions ?? [],
+    total: data.total ?? 0,
+    limit: data.limit ?? 0,
+    offset: data.offset ?? 0,
+    recording_enabled: data.recording_enabled ?? false,
+    scoped_to_self: data.scoped_to_self ?? false,
+  }
+}
+
+export async function fetchTerminalSession(id: number): Promise<TerminalSession> {
+  const { data } = await http.get<TerminalSession>(`/audit/terminal-sessions/${id}`)
+  return data
+}
+
+/**
+ * The recording itself, as an asciinema v2 stream: a header line followed by one
+ * event per line. It comes back as text and is left untransformed — axios would
+ * otherwise try to parse the first line as JSON and hand back an object.
+ */
+export async function fetchTerminalSessionCast(id: number): Promise<string> {
+  const { data } = await http.get<string>(`/audit/terminal-sessions/${id}/stream`, {
+    responseType: 'text',
+    transformResponse: (raw: string) => raw,
+  })
+  return data
+}
+
+export async function deleteTerminalSession(id: number): Promise<void> {
+  await http.delete(`/audit/terminal-sessions/${id}`)
 }
 
 export async function fetchNamespaces(

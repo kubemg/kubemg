@@ -65,6 +65,10 @@ Still open from the streaming work:
 
 ## Phase 5: Advanced Zero-Trust Security, AI SRE & Enterprise Features
 - [/] Interactive Terminal Session Recording & Replay (Record `kubectl exec` & web terminal sessions for audit & UI playback)
+- [ ] Configurable Audit & Terminal Session Recording Retention Policies (Settings UI settings for `audit_retention_days` and `session_recording_retention_days` with automated background pruning pass for audit database records and recording `.cast` files)
+- [ ] Audit Log Date & Time Range Filtering (Backend API query parameters `from`/`to` and frontend DateTime picker / quick range filters on Audit UI)
+- [ ] External SIEM & Webhook Audit Exporter Engine (Asynchronous webhook dispatcher supporting real-time/batched forwarding to external aggregators such as Elasticsearch, QRadar, or ClickHouse with custom headers and payload formatting)
+- [ ] Denied Operation Security Alarms & Alerting System (Rule engine and real-time triggers for `Denied` actions e.g. unauthorized API requests, forbidden exec, or blocked dangerous commands with Slack/Webhook notifications)
 - [ ] Just-In-Time (JIT) Elevated Access & Approval Workflows (Time-bound privilege escalation with Slack/Teams & UI approval workflow)
 - [ ] Command Guardrails & Safety Policies (Proxy-level policy engine to block dangerous commands e.g., `kubectl delete ns`, `rm -rf`)
 - [ ] AI-Powered Root Cause Analysis (RCA) & Intelligent Cluster Assistant (Automated pod failure diagnosis for `OOMKilled`/`CrashLoopBackOff` & natural language search)
@@ -72,4 +76,5 @@ Still open from the streaming work:
 - [ ] Node Capacity Heatmap & Oversubscription Analyzer (Visual matrix for CPU/Memory requests vs limits vs actual usage)
 - [ ] FinOps Cost Estimation & Resource Waste Triage (Workload monthly cost estimation and right-sizing suggestions)
 - [ ] GitOps Drift Detection (Live cluster state vs Git manifest drift analyzer)
+
 

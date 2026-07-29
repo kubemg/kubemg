@@ -66,6 +66,16 @@ type Store interface {
 	AuditSummary(ctx context.Context, since time.Time) (db.AuditStats, error)
 	PruneAuditEvents(ctx context.Context, before time.Time) (int64, error)
 
+	// Recorded interactive sessions. The rows are the index; the recordings
+	// themselves are files, which is why pruning hands them back rather than
+	// only counting them.
+	ListTerminalSessions(
+		ctx context.Context, filter db.TerminalSessionFilter,
+	) ([]db.TerminalSession, int64, error)
+	TerminalSessionByID(ctx context.Context, id uint) (*db.TerminalSession, error)
+	DeleteTerminalSession(ctx context.Context, id uint) error
+	PruneTerminalSessions(ctx context.Context, before time.Time) ([]db.TerminalSession, error)
+
 	Settings(ctx context.Context) (map[string]string, error)
 	PutSettings(ctx context.Context, values map[string]string, updatedBy uint) error
 
@@ -126,6 +136,11 @@ type Options struct {
 	// a certificate the public CAs do not vouch for — a self-signed one — and
 	// leave it empty otherwise.
 	BastionCA string
+	// RecordingDir is where terminal session recordings live. It is the directory
+	// a stored path is confined to before anything reads it, so the replay routes
+	// answer "recording is not enabled" while it is empty rather than trusting
+	// whatever a row happens to name.
+	RecordingDir string
 	// AuditRetentionDays is the boot-time default retention window, overridable
 	// at runtime from the Settings page. Zero falls back to
 	// defaultAuditRetentionDays.
@@ -160,6 +175,9 @@ type server struct {
 	agentImage         string
 	agentNamespace     string
 	bastionCA          string
+	// recordings is the directory terminal recordings are read back from. Empty
+	// means this server is not recording sessions.
+	recordings         string
 	auditRetentionDays int
 	logger             *slog.Logger
 	// reads holds recently-answered live reads, keyed by caller and question.
@@ -211,6 +229,7 @@ func NewRouter(opts Options) *gin.Engine {
 		agentImage:         opts.AgentImage,
 		agentNamespace:     opts.AgentNamespace,
 		bastionCA:          opts.BastionCA,
+		recordings:         strings.TrimSpace(opts.RecordingDir),
 		auditRetentionDays: retention,
 		logger:             opts.Logger,
 		allowedOrigins:     opts.AllowedOrigins,
@@ -453,6 +472,18 @@ func NewRouter(opts Options) *gin.Engine {
 		audit := v1.Group("/audit", requireAuth)
 		audit.GET("", s.listAudit)
 		audit.GET("/summary", s.auditSummary)
+
+		// Recorded interactive sessions. They live under /audit because that is
+		// what they are — the trail says a shell was opened in production, and
+		// this is what was done in it — and they follow the same rule: a
+		// non-admin sees their own sessions and nothing else, enforced on the
+		// single recording as well as on the list. Deleting one is
+		// administrative, because the person a recording is evidence about must
+		// not be the one who decides it stops existing.
+		audit.GET("/terminal-sessions", s.listTerminalSessions)
+		audit.GET("/terminal-sessions/:id", s.showTerminalSession)
+		audit.GET("/terminal-sessions/:id/stream", s.streamTerminalSession)
+		audit.DELETE("/terminal-sessions/:id", requireAdmin, s.deleteTerminalSession)
 
 		// Configuring federation: who may sign in at all, and what an external
 		// group is worth once they have. Both decide platform-wide access, so

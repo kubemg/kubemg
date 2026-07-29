@@ -31,6 +31,9 @@ services:
       # The self-signed certificate survives a rebuild, so agents already
       # holding a pinned copy of it keep connecting.
       - tls-certs:/etc/kubemg/tls
+      # Session recordings have to outlive the container: a replay that vanishes
+      # on the next deploy is not audit evidence.
+      - session-recordings:/var/lib/kubemg/recordings
     environment:
       - GIN_MODE=debug
       - DB_HOST=postgres
@@ -67,6 +70,11 @@ services:
       - KUBEMG_PUBLIC_URL=https://100.112.67.6:8443
       - KUBEMG_AGENT_IMAGE=docker.io/ozkanpoyrazoglu/kubemg-agent:0.2.0
       - KUBEMG_AGENT_NAMESPACE=kubemg-system
+      # Every exec and attach is recorded for replay from the audit trail. Turn
+      # it off with KUBEMG_SESSION_RECORDING_ENABLED=false; the directory is the
+      # mounted volume above, so recordings survive a rebuild.
+      - KUBEMG_SESSION_RECORDING_ENABLED=true
+      - KUBEMG_SESSION_RECORDING_DIR=/var/lib/kubemg/recordings
     depends_on:
       postgres:
         condition: service_healthy
@@ -102,5 +110,6 @@ services:
 volumes:
   postgres-data:
   tls-certs:
+  session-recordings:
   go-mod-cache:
   go-build-cache:

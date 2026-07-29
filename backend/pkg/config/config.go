@@ -59,10 +59,26 @@ type Config struct {
 	// far fewer tunnel round trips, impersonated API calls and audit records on
 	// the reads a console repeats. A negative value turns the cache off.
 	ReadCacheTTL time.Duration
+	// SessionRecording captures interactive container sessions for replay.
+	SessionRecording SessionRecording
 	// TLS is how the bastion terminates HTTPS. It is not decoration: client-go
 	// refuses to send a bearer token over plain http, so kubectl cannot use the
 	// proxy at all without it.
 	TLS TLS
+}
+
+// SessionRecording configures replay capture for exec and attach sessions.
+//
+// It is on by default, because a gateway whose whole claim is that it can tell
+// you what somebody did in a production shell should be able to show you. The
+// directory is what makes it real: recordings have to outlive the container, so
+// an unmounted volume means recordings that vanish on the next deploy.
+type SessionRecording struct {
+	Enabled bool
+	// Dir is where .cast.gz recordings are written. Mount it.
+	Dir string
+	// MaxBytes caps one recording. Zero takes the recorder's own default.
+	MaxBytes int64
 }
 
 // TLS configures the bastion's own listener.
@@ -115,6 +131,11 @@ func Load() Config {
 		AgentNamespace:     env("KUBEMG_AGENT_NAMESPACE", agentpkg.DefaultNamespace),
 		AuditRetentionDays: envInt("KUBEMG_AUDIT_RETENTION_DAYS", 30),
 		ReadCacheTTL:       envDuration("KUBEMG_RESOURCE_CACHE_TTL", cache.DefaultTTL),
+		SessionRecording: SessionRecording{
+			Enabled:  envBool("KUBEMG_SESSION_RECORDING_ENABLED", true),
+			Dir:      env("KUBEMG_SESSION_RECORDING_DIR", "/var/lib/kubemg/recordings"),
+			MaxBytes: int64(envInt("KUBEMG_SESSION_RECORDING_MAX_BYTES", 0)),
+		},
 		TLS: TLS{
 			Enabled:  envBool("KUBEMG_TLS_ENABLED", false),
 			CertFile: env("KUBEMG_TLS_CERT_FILE", "/etc/kubemg/tls/tls.crt"),

@@ -254,6 +254,11 @@ type AuditEvent struct {
 	Phase     string `gorm:"size:10" json:"phase,omitempty"`
 	BytesOut  int64  `json:"bytes_out,omitempty"`
 	BytesIn   int64  `json:"bytes_in,omitempty"`
+	// SessionID identifies one interactive session across both of its records,
+	// and is what a terminal recording of that session is filed under. Empty on
+	// everything that is not a session, and on sessions recorded before it
+	// existed.
+	SessionID string `gorm:"size:64;index" json:"session_id,omitempty"`
 
 	Error string `gorm:"type:text" json:"error,omitempty"`
 }

@@ -48,6 +48,10 @@ type Event struct {
 	// from the cluster, and what the user typed into it.
 	BytesOut int64
 	BytesIn  int64
+	// SessionID identifies one interactive session, carried on both of its
+	// records. It is also what a terminal recording is filed under, so it is the
+	// join between a line in the trail and the replay of it.
+	SessionID string
 }
 
 // Audit phases for a streaming call. A non-streaming call carries neither.
@@ -106,6 +110,9 @@ func (a *SlogAuditor) Record(ctx context.Context, event Event) {
 	}
 	if event.Streaming {
 		attrs = append(attrs, slog.Bool("streaming", true), slog.String("phase", event.Phase))
+	}
+	if event.SessionID != "" {
+		attrs = append(attrs, slog.String("session_id", event.SessionID))
 	}
 	if event.BytesOut != 0 || event.BytesIn != 0 {
 		attrs = append(attrs,

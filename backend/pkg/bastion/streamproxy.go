@@ -1,6 +1,7 @@
 package bastion
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -134,8 +135,13 @@ func (p *Proxy) serveBodyStream(c *gin.Context, tunnel *Tunnel, event *Event, he
 //
 // offered is what to ask the cluster for when the client named no subprotocol
 // of its own; a client that named some gets exactly those forwarded.
+//
+// An exec or an attach is also recorded when a recorder is configured. The
+// recording reads the same frames the bridge is already carrying rather than
+// re-requesting anything: it is a tee, not a second session, so a recorded shell
+// and an unrecorded one reach the cluster identically.
 func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
-	header map[string][]string, offered []string,
+	header map[string][]string, offered []string, parsed APIPath,
 ) {
 	requested := websocket.Subprotocols(c.Request)
 	if len(requested) == 0 {
@@ -177,6 +183,15 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 	event.Duration = time.Since(event.At)
 	p.auditor.Record(c.Request.Context(), *event)
 
+	// Recording starts only once the session is genuinely up, so a refused exec
+	// leaves no empty recording behind. The context is detached from the request
+	// on purpose: the recording is closed out *because* the request ended, and a
+	// cancelled context cannot write that closing row.
+	sink := p.beginRecording(context.WithoutCancel(c.Request.Context()), event, parsed)
+	if sink != nil {
+		defer func() { sink.Close(stream.Err()) }()
+	}
+
 	var fromClient, fromCluster int64
 	done := make(chan struct{})
 
@@ -190,6 +205,7 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 				return
 			}
 			fromClient += int64(len(payload))
+			recordFromClient(sink, payload)
 			if err := stream.Send(StreamData{
 				Data:   payload,
 				Binary: kind == websocket.BinaryMessage,
@@ -219,6 +235,7 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 				return
 			}
 			fromCluster += int64(len(chunk.Data))
+			recordFromCluster(sink, chunk.Data)
 
 		case <-done:
 			p.recordStreamClose(c, event, fromCluster, fromClient, nil)
