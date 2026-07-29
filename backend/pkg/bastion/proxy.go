@@ -78,6 +78,9 @@ type Proxy struct {
 	store    ProxyStore
 	registry *Registry
 	auditor  Auditor
+	// recorder captures interactive sessions. Nil means recording is off, which
+	// changes nothing else about how a session is proxied.
+	recorder SessionRecorder
 }
 
 // ProxyOptions wires the proxy handler.
@@ -87,6 +90,9 @@ type ProxyOptions struct {
 	// Auditor records every proxied call. A no-op default is not provided on
 	// purpose — an unaudited gateway is the thing this product exists to avoid.
 	Auditor Auditor
+	// Recorder captures exec and attach sessions for replay. Left nil, sessions
+	// are proxied exactly as before and only the audit records describe them.
+	Recorder SessionRecorder
 }
 
 // NewProxy builds the kubectl proxy handler.
@@ -99,7 +105,12 @@ func NewProxy(opts ProxyOptions) *Proxy {
 	if registry == nil {
 		registry = NewRegistry()
 	}
-	return &Proxy{store: opts.Store, registry: registry, auditor: auditor}
+	return &Proxy{
+		store:    opts.Store,
+		registry: registry,
+		auditor:  auditor,
+		recorder: opts.Recorder,
+	}
 }
 
 // Handle serves one proxied Kubernetes API request. It is mounted behind the
@@ -166,7 +177,11 @@ func (p *Proxy) Handle(c *gin.Context) {
 	switch {
 	case wantsUpgrade(parsed):
 		event.Streaming = true
-		p.serveUpgradeStream(c, tunnel, &event, header, offeredSubprotocols(parsed))
+		// One id for the whole session, carried on both of its audit records and
+		// on its recording — that is what makes the trail and the replay one
+		// thing rather than two lists a person has to line up by timestamp.
+		event.SessionID = newSessionID()
+		p.serveUpgradeStream(c, tunnel, &event, header, offeredSubprotocols(parsed), parsed)
 		return
 	case wantsBodyStream(parsed, path):
 		event.Streaming = true

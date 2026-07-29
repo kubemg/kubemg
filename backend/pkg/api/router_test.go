@@ -37,6 +37,8 @@ type fakeStore struct {
 	members     map[uint]map[uint]bool                  // groupID -> userID -> member
 	groupAccess map[uint]map[uint]db.GroupClusterAccess // groupID -> clusterID -> grant
 	audit       []db.AuditEvent
+	// recordings stands in for the terminal_sessions table.
+	recordings  []db.TerminalSession
 	settings    map[string]string
 	// sources holds the observability datasources, keyed the way the table is:
 	// one per cluster per kind.
@@ -587,6 +589,97 @@ func (f *fakeStore) PruneAuditEvents(_ context.Context, before time.Time) (int64
 	f.audit = kept
 	f.pruned = append(f.pruned, before)
 	return removed, nil
+}
+
+func (f *fakeStore) addTerminalSession(session db.TerminalSession) db.TerminalSession {
+	if session.StartedAt.IsZero() {
+		session.StartedAt = time.Now()
+	}
+	if session.SessionID == "" {
+		session.SessionID = "session-" + itoa(f.nextID)
+	}
+	session.ID = f.nextID
+	f.nextID++
+	f.recordings = append(f.recordings, session)
+	return session
+}
+
+func (f *fakeStore) ListTerminalSessions(
+	_ context.Context, filter db.TerminalSessionFilter,
+) ([]db.TerminalSession, int64, error) {
+	matched := []db.TerminalSession{}
+	for _, session := range f.recordings {
+		if filter.UserID != 0 && session.UserID != filter.UserID {
+			continue
+		}
+		if filter.ClusterID != 0 && session.ClusterID != filter.ClusterID {
+			continue
+		}
+		if filter.Namespace != "" && session.Namespace != filter.Namespace {
+			continue
+		}
+		if filter.Pod != "" && session.PodName != filter.Pod {
+			continue
+		}
+		if filter.SessionID != "" && session.SessionID != filter.SessionID {
+			continue
+		}
+		if filter.OpenOnly && !session.IsOpen() {
+			continue
+		}
+		if filter.Search != "" && !strings.Contains(
+			strings.ToLower(session.PodName+session.ContainerName+session.Username+session.Namespace),
+			strings.ToLower(filter.Search),
+		) {
+			continue
+		}
+		matched = append(matched, session)
+	}
+
+	slices.SortFunc(matched, func(a, b db.TerminalSession) int {
+		return b.StartedAt.Compare(a.StartedAt)
+	})
+	return matched, int64(len(matched)), nil
+}
+
+func (f *fakeStore) TerminalSessionByID(_ context.Context, id uint) (*db.TerminalSession, error) {
+	for i := range f.recordings {
+		if f.recordings[i].ID == id {
+			session := f.recordings[i]
+			return &session, nil
+		}
+	}
+	return nil, db.ErrNotFound
+}
+
+func (f *fakeStore) DeleteTerminalSession(_ context.Context, id uint) error {
+	for i := range f.recordings {
+		if f.recordings[i].ID == id {
+			f.recordings = slices.Delete(f.recordings, i, i+1)
+			return nil
+		}
+	}
+	return db.ErrNotFound
+}
+
+func (f *fakeStore) PruneTerminalSessions(
+	_ context.Context, before time.Time,
+) ([]db.TerminalSession, error) {
+	if f.pruneErr != nil {
+		return nil, f.pruneErr
+	}
+
+	stale := []db.TerminalSession{}
+	kept := make([]db.TerminalSession, 0, len(f.recordings))
+	for _, session := range f.recordings {
+		if session.StartedAt.Before(before) {
+			stale = append(stale, session)
+			continue
+		}
+		kept = append(kept, session)
+	}
+	f.recordings = kept
+	return stale, nil
 }
 
 func (f *fakeStore) Settings(_ context.Context) (map[string]string, error) {

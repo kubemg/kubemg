@@ -34,7 +34,10 @@ type auditEventResponse struct {
 	Phase              string    `json:"phase,omitempty"`
 	BytesOut           int64     `json:"bytes_out,omitempty"`
 	BytesIn            int64     `json:"bytes_in,omitempty"`
-	Error              string    `json:"error,omitempty"`
+	// SessionID is set on an interactive session, and is what a recording of
+	// that session is filed under — the join between this row and its replay.
+	SessionID string `json:"session_id,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 func toAuditResponse(event db.AuditEvent) auditEventResponse {
@@ -62,6 +65,7 @@ func toAuditResponse(event db.AuditEvent) auditEventResponse {
 		Phase:              event.Phase,
 		BytesOut:           event.BytesOut,
 		BytesIn:            event.BytesIn,
+		SessionID:          event.SessionID,
 		Error:              event.Error,
 	}
 }

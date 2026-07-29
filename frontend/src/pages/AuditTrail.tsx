@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Radio, RefreshCw, ScrollText } from 'lucide-react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
+import { ChevronLeft, ChevronRight, PlayCircle, Radio, RefreshCw, ScrollText } from 'lucide-react'
 import { errorMessage, fetchAudit, fetchAuditSummary, fetchUsers } from '../api/client'
 import type { AuditEvent, AuditQuery, AuditSummary, User } from '../api/types'
 import { AppShell } from '../components/AppShell'
@@ -7,15 +7,25 @@ import {
   Button,
   Chip,
   EmptyState,
+  IconButton,
   Notice,
   Pill,
   Row,
   SearchInput,
   Select,
+  Sheet,
   Table,
   Td,
   Th,
 } from '../components/primitives'
+
+// The player carries the terminal emulator, which is the heaviest thing in the
+// app; an audit trail nobody replays from should not pay for it.
+const TerminalSessionPlayer = lazy(() =>
+  import('../components/terminal/TerminalSessionPlayer').then((module) => ({
+    default: module.TerminalSessionPlayer,
+  })),
+)
 import type { Tone } from '../lib/status'
 import { relativeAge } from '../lib/time'
 import { useAuth } from '../state/auth-context'
@@ -28,6 +38,15 @@ const PAGE_SIZE = 50
 const VERBS = ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete', 'exec', 'log']
 
 const MUTATING = new Set(['create', 'update', 'patch', 'delete'])
+
+/* The verbs that produce a recording. Everything else is a request, not a
+   session, and there is nothing to watch. */
+const REPLAYABLE = new Set(['exec', 'attach'])
+
+/** A session is replayable when it was recorded, which is what the id says. */
+function replayable(event: AuditEvent): boolean {
+  return Boolean(event.session_id) && REPLAYABLE.has(event.verb)
+}
 
 /** A refusal reads as a refusal, a mutation as something to look twice at. */
 function statusTone(event: AuditEvent): Tone {
@@ -55,6 +74,8 @@ export function AuditTrail() {
   const [failedOnly, setFailedOnly] = useState(false)
   const [streamsOnly, setStreamsOnly] = useState(false)
   const [offset, setOffset] = useState(0)
+  // The session being replayed, addressed by the id its audit rows carry.
+  const [replaying, setReplaying] = useState<AuditEvent | null>(null)
 
   const query = useMemo<AuditQuery>(
     () => ({
@@ -224,8 +245,11 @@ export function AuditTrail() {
                 <Th className="w-[22%] md:w-[12%]">Who</Th>
                 <Th className="hidden md:table-cell md:w-[12%]">Cluster</Th>
                 <Th className="w-[18%] md:w-[9%]">Verb</Th>
-                <Th className="hidden lg:table-cell lg:w-[35%]">Path</Th>
+                <Th className="hidden lg:table-cell lg:w-[32%]">Path</Th>
                 <Th className="w-[18%] md:w-[12%]">Result</Th>
+                <Th className="w-[6%]">
+                  <span className="sr-only">Replay</span>
+                </Th>
               </tr>
             </thead>
             <tbody>
@@ -261,6 +285,19 @@ export function AuditTrail() {
                           ? 'open'
                           : String(event.status)}
                     </Pill>
+                  </Td>
+                  <Td>
+                    {/* A shell in a production pod is the line an auditor stops
+                        on, so the replay is offered right there rather than on a
+                        page of its own. */}
+                    {replayable(event) ? (
+                      <IconButton
+                        label="Replay terminal session"
+                        onClick={() => setReplaying(event)}
+                      >
+                        <PlayCircle aria-hidden="true" className="size-4" />
+                      </IconButton>
+                    ) : null}
                   </Td>
                 </Row>
               ))}
@@ -309,9 +346,23 @@ export function AuditTrail() {
 
         <p className="text-[12px] text-muted">
           A session — exec, attach, watch or a followed log — is recorded twice: once when it opens
-          and once when it ends, with how long it ran and how much passed through it.
+          and once when it ends, with how long it ran and how much passed through it. An exec or an
+          attach is also recorded in full, and plays back from the row it is on.
         </p>
       </div>
+
+      {replaying?.session_id ? (
+        <Sheet
+          width="wide"
+          eyebrow={`${replaying.cluster} · ${replaying.username} · ${relativeAge(replaying.at)}`}
+          title="Session replay"
+          onClose={() => setReplaying(null)}
+        >
+          <Suspense fallback={<p className="text-[13px] text-muted">Loading the player…</p>}>
+            <TerminalSessionPlayer sessionId={replaying.session_id} />
+          </Suspense>
+        </Sheet>
+      ) : null}
     </AppShell>
   )
 }

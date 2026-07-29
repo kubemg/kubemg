@@ -162,6 +162,7 @@ func toAuditRow(event Event) db.AuditEvent {
 		Phase:              event.Phase,
 		BytesOut:           event.BytesOut,
 		BytesIn:            event.BytesIn,
+		SessionID:          event.SessionID,
 		Error:              event.Error,
 	}
 }

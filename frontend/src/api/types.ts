@@ -145,7 +145,63 @@ export interface AuditEvent {
   phase?: 'open' | 'close'
   bytes_out?: number
   bytes_in?: number
+  /** Set on an interactive session; a recorded one is replayable by this id. */
+  session_id?: string
   error?: string
+}
+
+/**
+ * A recorded interactive session. The row is the index — who ran a shell where,
+ * and for how long — and the recording itself is fetched separately, because a
+ * list of sessions must not drag a megabyte of terminal output with it.
+ */
+export interface TerminalSession {
+  id: number
+  session_id: string
+  user_id: number
+  username: string
+  cluster_id: number
+  cluster: string
+  namespace?: string
+  pod_name?: string
+  container_name?: string
+  shell?: string
+  verb?: string
+  started_at: string
+  ended_at?: string
+  duration_seconds: number
+  byte_count: number
+  /** The session outgrew the per-recording cap; the replay stops before it did. */
+  truncated: boolean
+  /** Still running: a shell somebody is in right now. */
+  open: boolean
+  error?: string
+}
+
+export interface TerminalSessionPage {
+  sessions: TerminalSession[]
+  total: number
+  limit: number
+  offset: number
+  /**
+   * Whether this server records sessions at all. Without it an empty list is
+   * ambiguous — nobody opened a shell, or nobody was recording when they did.
+   */
+  recording_enabled: boolean
+  scoped_to_self: boolean
+}
+
+export interface TerminalSessionQuery {
+  cluster_id?: number
+  user_id?: number
+  namespace?: string
+  pod?: string
+  /** The correlation id an audit row carries, which is how a row finds its replay. */
+  session_id?: string
+  open?: boolean
+  q?: string
+  limit?: number
+  offset?: number
 }
 
 export interface AuditPage {

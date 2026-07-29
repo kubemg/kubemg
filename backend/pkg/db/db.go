@@ -40,6 +40,7 @@ func Migrate(gdb *gorm.DB) error {
 		&UserGroup{},
 		&GroupClusterAccess{},
 		&AuditEvent{},
+		&TerminalSession{},
 		&Setting{},
 		&ObservabilitySource{},
 		&SSOProviderConfig{},

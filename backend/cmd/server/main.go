@@ -17,6 +17,7 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/config"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
+	"github.com/kubemg/kubemg/backend/pkg/terminal"
 )
 
 func main() {
@@ -54,10 +55,18 @@ func main() {
 		auditStore.Wait()
 	}()
 
+	// Interactive sessions are recorded for replay when a directory is
+	// configured. A recorder that cannot be prepared leaves recording off rather
+	// than stopping the server: an unmountable volume must not take the console
+	// down with it, and the gap is loud in the log and visible in the UI, which
+	// says whether this server is recording at all.
+	recorder, recordingDir := resolveRecorder(cfg, store, logger)
+
 	proxy := bastion.NewProxy(bastion.ProxyOptions{
 		Store:    store,
 		Registry: gateway.Registry(),
 		Auditor:  bastion.NewMultiAuditor(bastion.NewAuditor(logger), auditStore),
+		Recorder: recorder,
 	})
 
 	// TLS is resolved before the router is built: an agent's install package
@@ -85,6 +94,7 @@ func main() {
 		// work that has to stop when the process is winding down.
 		AuditRetentionDays: cfg.AuditRetentionDays,
 		ReadCacheTTL:       cfg.ReadCacheTTL,
+		RecordingDir:       recordingDir,
 		Background:         auditCtx,
 		Logger:             logger,
 	})
@@ -111,6 +121,38 @@ func main() {
 	if err := router.Run(cfg.ListenAddr); err != nil {
 		log.Fatalf("server exited: %v", err)
 	}
+}
+
+// resolveRecorder prepares terminal session recording, returning the recorder
+// the proxy tees sessions into and the directory the API reads recordings back
+// from. Both are empty when recording is off — which is what the replay routes
+// report, rather than answering with a file path nothing wrote.
+func resolveRecorder(
+	cfg config.Config, store *db.Store, logger *slog.Logger,
+) (bastion.SessionRecorder, string) {
+	if !cfg.SessionRecording.Enabled {
+		logger.Info("terminal session recording is off",
+			slog.String("enable", "KUBEMG_SESSION_RECORDING_ENABLED=true"))
+		return nil, ""
+	}
+
+	recorder, err := terminal.NewRecorder(terminal.Options{
+		Dir:      cfg.SessionRecording.Dir,
+		Sessions: store,
+		MaxBytes: cfg.SessionRecording.MaxBytes,
+		Logger:   logger,
+	})
+	if err != nil {
+		logger.Error("terminal session recording is enabled but could not be started; "+
+			"sessions will be audited but not recorded",
+			slog.String("directory", cfg.SessionRecording.Dir),
+			slog.String("error", err.Error()))
+		return nil, ""
+	}
+
+	logger.Info("recording interactive sessions for replay",
+		slog.String("directory", recorder.Dir()))
+	return recorder, recorder.Dir()
 }
 
 // tlsMaterial is what the rest of the process needs to know about TLS: the
