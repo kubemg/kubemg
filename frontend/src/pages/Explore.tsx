@@ -16,6 +16,7 @@ import {
   fetchNodes,
   fetchPersistentVolumeClaims,
   fetchPersistentVolumes,
+  fetchPodListMetrics,
   fetchPods,
   fetchSecrets,
   fetchServices,
@@ -49,6 +50,7 @@ import {
   resourceItem,
   resourceSingular,
 } from '../lib/resources'
+import { podUsageIndex } from '../lib/units'
 import { workloadKeyFor } from '../lib/workloads'
 import { useClusters } from '../state/clusters-context'
 
@@ -74,8 +76,22 @@ async function loadResource(
   switch (item.key) {
     case 'helmreleases':
       return { kind: 'helmreleases', rows: await fetchHelmReleases(clusterId, namespace) }
-    case 'pods':
-      return { kind: 'pods', rows: await fetchPods(clusterId, namespace) }
+    case 'pods': {
+      // The list and its usage are read together, and the usage read is allowed
+      // to come back with nothing: metrics-server is optional and reading
+      // metrics.k8s.io is its own permission, so a cluster that cannot answer
+      // must still show its pods. `null` is what the table draws a dash for.
+      const [rows, metrics] = await Promise.all([
+        fetchPods(clusterId, namespace),
+        fetchPodListMetrics(clusterId, namespace).catch(() => null),
+      ])
+      return {
+        kind: 'pods',
+        rows,
+        usage: metrics?.available ? podUsageIndex(metrics.pods) : null,
+        usageReason: metrics && !metrics.available ? metrics.reason : undefined,
+      }
+    }
     case 'deployments':
       return { kind: 'workloads', rows: await fetchDeployments(clusterId, namespace) }
     case 'statefulsets':
@@ -458,6 +474,15 @@ export function Explore() {
                 {loaded.reason ?? 'This cluster does not serve that resource.'}
               </Notice>
             </div>
+          ) : null}
+
+          {/* A column of dashes needs one line saying why, and it is a line
+              rather than a notice: metrics-server is missing on plenty of
+              clusters and the pod list is still the thing being read. */}
+          {loaded?.kind === 'pods' && loaded.usageReason && count > 0 ? (
+            <p className="border-b border-line-soft px-4 py-2 text-[12px] text-muted">
+              {loaded.usageReason}
+            </p>
           ) : null}
 
           {loaded && !unavailable ? (

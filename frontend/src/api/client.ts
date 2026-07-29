@@ -40,6 +40,7 @@ import type {
   PersistentVolume,
   PersistentVolumeClaim,
   Pod,
+  PodListMetrics,
   PodMetrics,
   ResourceDescribeResult,
   ResourceManifest,
@@ -693,6 +694,22 @@ export async function fetchNodeMetrics(clusterId: number): Promise<NodeMetrics> 
     nodes: data.nodes ?? [],
     summary: data.summary ?? EMPTY_USAGE,
   }
+}
+
+/**
+ * Usage for a whole list, read with the same scope the pod list itself was read
+ * with so the two line up row for row. A grant that cannot read metrics.k8s.io
+ * is refused here and nowhere else, which is why the caller treats this as an
+ * annotation on the list rather than as part of loading it.
+ */
+export async function fetchPodListMetrics(
+  clusterId: number,
+  namespace: string,
+): Promise<PodListMetrics> {
+  const { data } = await http.get<PodListMetrics>(`/clusters/${clusterId}/metrics/pods`, {
+    params: scopeParams(namespace),
+  })
+  return { available: data.available ?? false, reason: data.reason, pods: data.pods ?? [] }
 }
 
 export async function fetchPodMetrics(

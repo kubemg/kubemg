@@ -526,6 +526,17 @@ export interface PodMetrics {
   pod: PodUsage | null
 }
 
+/**
+ * Every pod in a scope, which is what a list view needs: reading one pod at a
+ * time would be a call per row. Same scope rules as the pod list beside it, so
+ * the two answer for the same set of namespaces.
+ */
+export interface PodListMetrics {
+  available: boolean
+  reason?: string
+  pods: PodUsage[]
+}
+
 /** Everything needed to install the agent into a freshly registered cluster. */
 export interface AgentInstall {
   cluster_id: number

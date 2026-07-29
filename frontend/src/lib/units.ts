@@ -5,6 +5,8 @@
  * at a glance.
  */
 
+import type { PodContainer, PodUsage } from '../api/types'
+
 /** formatCPU renders millicores the way `kubectl top` does: milli, then cores. */
 export function formatCPU(millicores: number): string {
   if (!Number.isFinite(millicores) || millicores <= 0) return '0m'
@@ -49,4 +51,34 @@ export function usageTone(percent: number): 'ok' | 'warn' | 'bad' {
   if (percent >= 90) return 'bad'
   if (percent >= 75) return 'warn'
   return 'ok'
+}
+
+/**
+ * podLimit sums a pod's container limits, and answers 0 — "unbounded" — unless
+ * *every* container declares one: a single unlimited container makes the pod
+ * unlimited, so a total across the rest would be a ceiling that does not exist.
+ * It lives here rather than beside either of its callers because the pod list
+ * and the pod drawer must not disagree about what a pod's ceiling is.
+ */
+export function podLimit(containers: PodContainer[], resource: 'cpu' | 'memory'): number {
+  let total = 0
+  for (const container of containers) {
+    const limit =
+      resource === 'cpu' ? container.cpu_limit_millicores : container.memory_limit_bytes
+    if (limit <= 0) return 0
+    total += limit
+  }
+  return total
+}
+
+/**
+ * Live usage keyed by `namespace/name`, which is what identifies a pod in a list
+ * that may span namespaces. Built once per load rather than searched per row: a
+ * scan per row over a thousand-pod cluster is a thousand scans.
+ */
+export type PodUsageIndex = Map<string, PodUsage>
+
+/** podUsageIndex keys a metrics list the way a pod row can look itself up. */
+export function podUsageIndex(pods: PodUsage[]): PodUsageIndex {
+  return new Map(pods.map((usage) => [`${usage.namespace}/${usage.name}`, usage]))
 }
