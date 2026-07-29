@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { AlertTriangle, ChevronRight, KeyRound, RefreshCw } from 'lucide-react'
 import { checkCluster, errorMessage, fetchCluster, fetchNodeMetrics } from '../api/client'
@@ -17,6 +17,8 @@ import {
   Notice,
   Panel,
 } from '../components/primitives'
+import { CardSkeleton, MeterGridSkeleton } from '../components/SkeletonLoader'
+import { queryKey, useCachedQuery } from '../lib/query'
 import { strandState } from '../lib/status'
 import { relativeAge } from '../lib/time'
 import { formatCPU, formatMemory } from '../lib/units'
@@ -25,41 +27,41 @@ import { useAuth } from '../state/auth-context'
 export function ClusterDetail() {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuth()
-  const [cluster, setCluster] = useState<Cluster | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  // A health check answers with the cluster as it now is, and that answer is
+  // newer than anything cached — so it wins until the page moves to another
+  // cluster.
+  const [checked, setChecked] = useState<Cluster | null>(null)
+  const [checkError, setCheckError] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   const clusterId = Number(id)
+  const valid = Number.isFinite(clusterId)
 
-  const load = useCallback(async () => {
-    if (!Number.isFinite(clusterId)) {
-      setError('That cluster id is not valid.')
-      setLoading(false)
-      return
-    }
-    try {
-      setCluster(await fetchCluster(clusterId))
-      setError(null)
-    } catch (err) {
-      setError(errorMessage(err, 'Could not load this cluster.'))
-    } finally {
-      setLoading(false)
-    }
-  }, [clusterId])
+  // Read through the query cache: coming back here from Explore or the fleet
+  // list inside the window draws the cluster immediately instead of spending a
+  // round trip on facts that have not moved.
+  const query = useCachedQuery<Cluster>(valid ? queryKey('cluster', clusterId) : null, () =>
+    fetchCluster(clusterId),
+  )
 
   useEffect(() => {
-    void load()
-  }, [load])
+    setChecked(null)
+    setCheckError(null)
+  }, [clusterId])
+
+  const cluster = checked ?? query.data
+  const error = !valid
+    ? 'That cluster id is not valid.'
+    : (checkError ?? (query.error ? errorMessage(query.error, 'Could not load this cluster.') : null))
 
   async function check() {
     setChecking(true)
     try {
-      setCluster(await checkCluster(clusterId))
-      setError(null)
+      setChecked(await checkCluster(clusterId))
+      setCheckError(null)
     } catch (err) {
-      setError(errorMessage(err, 'Could not check this cluster.'))
+      setCheckError(errorMessage(err, 'Could not check this cluster.'))
     } finally {
       setChecking(false)
     }
@@ -93,7 +95,10 @@ export function ClusterDetail() {
     >
       <div className="flex flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
-        {loading ? <p className="text-[13px] text-muted">Loading…</p> : null}
+        {/* The card that is coming, at the size it will be: this page opens with
+            a header, a strand and a four-row detail list, and drawing that shape
+            keeps the whole page from shifting when the cluster arrives. */}
+        {query.loading ? <CardSkeleton lines={4} label="Loading this cluster" /> : null}
 
         {cluster ? (
           <>
@@ -295,7 +300,9 @@ function Capacity({ cluster }: { cluster: Cluster }) {
       {!error && metrics && !metrics.available ? (
         <Notice tone="info">{metrics.reason}</Notice>
       ) : null}
-      {loading && !metrics ? <p className="text-[13px] text-muted">Reading usage…</p> : null}
+      {/* Two meters, at the height two meters occupy: the panel does not grow
+          when the first sample lands. */}
+      {loading && !metrics ? <MeterGridSkeleton count={2} /> : null}
 
       {metrics?.available && summary ? (
         <>

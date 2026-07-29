@@ -279,10 +279,32 @@ const AGE = 'text-[12.5px] text-muted'
  * The width the row actions actually need. A `table-fixed` table hands a column
  * exactly what it asked for, so a column asking for 1% gets 1% and its buttons
  * are drawn on top of whatever is to their left — which is why this is a real
- * measurement rather than a nominal one: 32px per button plus the cell's own
- * padding, at the number of buttons that breakpoint shows.
+ * measurement rather than a nominal one: 32px per button, 2px of gap between
+ * them and 32px of cell padding, at the number of buttons that breakpoint shows.
+ *
+ * It is the default rather than something each table opts into, because a table
+ * that forgets it does not look wrong until there are buttons in it — and by then
+ * the overlap reads as a rendering bug rather than as a missing width. The other
+ * half of the same rule is that the **name column asks for no width at all**:
+ * `table-fixed` gives an unsized column whatever the sized ones leave, so the
+ * buttons take their measurement and the name takes the rest. A name column with
+ * a percentage of its own is what put the two in competition.
  */
 const ROW_ACTIONS_WIDTH = 'w-[64px] md:w-[100px] lg:w-[132px]'
+
+/**
+ * A workload row carries two more: it can be scaled and it can be rolled. Below
+ * `md` they fold away with the manifest shortcuts, for the same reason those do —
+ * the drawer the first button opens offers both in its footer, so what is given up
+ * on a narrow screen is a shortcut and not a destination.
+ */
+const WORKLOAD_ACTIONS_WIDTH = 'w-[64px] md:w-[166px] lg:w-[200px]'
+
+/**
+ * A Helm release has two actions at every width and no third: a release has no
+ * manifest, so viewing and editing both mean its values.
+ */
+const VALUES_ACTIONS_WIDTH = 'w-[98px]'
 
 /**
  * The manifest column. It is the last column of every list and carries no
@@ -291,12 +313,12 @@ const ROW_ACTIONS_WIDTH = 'w-[64px] md:w-[100px] lg:w-[132px]'
  */
 function ManifestHead({
   onManifest,
-  width = 'w-[1%]',
+  width = ROW_ACTIONS_WIDTH,
 }: {
   onManifest?: OpenManifest
   /**
-   * How much room the buttons need. It is per table because the count is: a
-   * workload row carries two more than everything else.
+   * How much room the buttons need. It is overridable because the count is per
+   * table: a workload row carries two more than everything else.
    */
   width?: string
 }) {
@@ -454,7 +476,7 @@ function HelmReleaseTable({
     <Table>
       <thead>
         <tr>
-          <Th className="w-[38%] md:w-[24%]">Release</Th>
+          <Th>Release</Th>
           <Th className="hidden md:table-cell md:w-[18%]">Chart</Th>
           <Th className="hidden lg:table-cell lg:w-[10%]">Version</Th>
           <Th className="hidden lg:table-cell lg:w-[10%]">App</Th>
@@ -462,7 +484,7 @@ function HelmReleaseTable({
           <Th className="w-[28%] md:w-[14%]">Status</Th>
           <Th className="w-[22%] md:w-[10%]">Updated</Th>
           {onValues ? (
-            <Th className="w-[1%]">
+            <Th className={VALUES_ACTIONS_WIDTH}>
               <span className="sr-only">Values</span>
             </Th>
           ) : null}
@@ -663,7 +685,7 @@ function PodTable({
           <SortTh className="w-[20%] sm:w-[14%] md:w-[9%]" {...column('age')}>
             Age
           </SortTh>
-          <ManifestHead onManifest={onManifest} width={ROW_ACTIONS_WIDTH} />
+          <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
       <tbody>
@@ -803,8 +825,12 @@ function WorkloadActions({
   const capability = key ? workloadCapability(key) : undefined
   if (!capability) return null
 
+  // Below `md` they fold away with the manifest shortcuts: five buttons need
+  // 200px, which a phone-width table cannot give without taking it from the name.
+  // The drawer the first button opens offers both in its footer, so nothing is
+  // out of reach — `contents` keeps each one a direct flex child where it shows.
   return (
-    <>
+    <span className="hidden md:contents">
       {capability.scale ? (
         <IconButton
           type="button"
@@ -823,7 +849,7 @@ function WorkloadActions({
           <RotateCcw aria-hidden="true" className="size-3.5" />
         </IconButton>
       ) : null}
-    </>
+    </span>
   )
 }
 
@@ -842,12 +868,14 @@ function WorkloadTable({
     <Table>
       <thead>
         <tr>
-          <Th className="w-[46%] md:w-[30%]">Name</Th>
+          {/* No width, on purpose: the sized columns and the five buttons take
+              their measurements and the name takes what is left. */}
+          <Th>Name</Th>
           <Th className="w-[22%] md:w-[13%]">Kind</Th>
           <Th className="w-[16%] md:w-[9%]">Ready</Th>
-          <Th className="hidden lg:table-cell lg:w-[32%]">Image</Th>
+          <Th className="hidden lg:table-cell lg:w-[26%]">Image</Th>
           <Th className="w-[16%] md:w-[10%]">Age</Th>
-          <ManifestHead onManifest={onManifest} />
+          <ManifestHead onManifest={onManifest} width={WORKLOAD_ACTIONS_WIDTH} />
         </tr>
       </thead>
       <tbody>
@@ -901,7 +929,7 @@ function JobTable({
     <Table>
       <thead>
         <tr>
-          <Th className="w-[42%] md:w-[30%]">Job</Th>
+          <Th>Job</Th>
           <Th className="w-[22%] md:w-[14%]">State</Th>
           <Th className="w-[18%] md:w-[10%]">Completed</Th>
           <Th className="hidden md:table-cell md:w-[8%]">Failed</Th>
@@ -961,7 +989,7 @@ function CronJobTable({
     <Table>
       <thead>
         <tr>
-          <Th className="w-[40%] md:w-[28%]">CronJob</Th>
+          <Th>CronJob</Th>
           <Th className="w-[28%] md:w-[16%]">Schedule</Th>
           <Th className="w-[16%] md:w-[12%]">State</Th>
           <Th className="hidden md:table-cell md:w-[8%]">Active</Th>
@@ -1021,7 +1049,7 @@ function ServiceTable({
     <Table>
       <thead>
         <tr>
-          <Th className="w-[40%] md:w-[26%]">Service</Th>
+          <Th>Service</Th>
           <Th className="w-[24%] md:w-[13%]">Type</Th>
           <Th className="hidden md:table-cell md:w-[15%]">Cluster IP</Th>
           <Th className="hidden lg:table-cell lg:w-[18%]">External</Th>
@@ -1076,7 +1104,7 @@ function IngressTable({
     <Table>
       <thead>
         <tr>
-          <Th className="w-[36%] md:w-[24%]">Ingress</Th>
+          <Th>Ingress</Th>
           <Th className="w-[24%] md:w-[14%]">Class</Th>
           <Th className="w-[24%] md:w-[26%]">Hosts</Th>
           <Th className="hidden lg:table-cell lg:w-[18%]">Address</Th>
@@ -1133,7 +1161,7 @@ function RouteTable({
     <Table>
       <thead>
         <tr>
-          <Th className="w-[36%] md:w-[26%]">Route</Th>
+          <Th>Route</Th>
           <Th className="w-[32%] md:w-[30%]">Hostnames</Th>
           <Th className="hidden md:table-cell md:w-[24%]">Attached to</Th>
           <Th className="hidden md:table-cell md:w-[8%]">Rules</Th>
@@ -1178,7 +1206,7 @@ function PersistentVolumeTable({
     <Table>
       <thead>
         <tr>
-          <Th className="w-[34%] md:w-[24%]">Volume</Th>
+          <Th>Volume</Th>
           <Th className="w-[20%] md:w-[12%]">Status</Th>
           <Th className="w-[16%] md:w-[10%]">Capacity</Th>
           <Th className="hidden md:table-cell md:w-[12%]">Access</Th>
@@ -1227,7 +1255,7 @@ function ClaimTable({
     <Table>
       <thead>
         <tr>
-          <Th className="w-[34%] md:w-[26%]">Claim</Th>
+          <Th>Claim</Th>
           <Th className="w-[20%] md:w-[12%]">Status</Th>
           <Th className="w-[16%] md:w-[10%]">Capacity</Th>
           <Th className="hidden md:table-cell md:w-[12%]">Access</Th>
@@ -1279,7 +1307,7 @@ function StorageClassTable({
     <Table>
       <thead>
         <tr>
-          <Th className="w-[34%] md:w-[26%]">Class</Th>
+          <Th>Class</Th>
           <Th className="w-[34%] md:w-[26%]">Provisioner</Th>
           <Th className="hidden md:table-cell md:w-[14%]">Reclaim</Th>
           <Th className="hidden lg:table-cell lg:w-[14%]">Binding</Th>
@@ -1327,7 +1355,7 @@ function ConfigTable({
     <Table>
       <thead>
         <tr>
-          <Th className="w-[38%] md:w-[28%]">{secrets ? 'Secret' : 'ConfigMap'}</Th>
+          <Th>{secrets ? 'Secret' : 'ConfigMap'}</Th>
           {secrets ? <Th className="hidden md:table-cell md:w-[20%]">Type</Th> : null}
           <Th className="w-[14%] md:w-[8%]">Keys</Th>
           <Th className={`hidden lg:table-cell ${secrets ? 'lg:w-[26%]' : 'lg:w-[46%]'}`}>
@@ -1386,7 +1414,7 @@ function CRDTable({
     <Table>
       <thead>
         <tr>
-          <Th className="w-[42%] md:w-[34%]">Definition</Th>
+          <Th>Definition</Th>
           <Th className="w-[24%] md:w-[18%]">Kind</Th>
           <Th className="hidden md:table-cell md:w-[20%]">Group</Th>
           <Th className="hidden lg:table-cell lg:w-[10%]">Scope</Th>
@@ -1434,7 +1462,7 @@ function CustomResourceTable({
     <Table>
       <thead>
         <tr>
-          <Th className="w-[52%] md:w-[44%]">Name</Th>
+          <Th>Name</Th>
           <Th className="hidden md:table-cell md:w-[22%]">Kind</Th>
           <Th className="hidden lg:table-cell lg:w-[20%]">API version</Th>
           <Th className="w-[20%] md:w-[14%]">Age</Th>
@@ -1467,7 +1495,7 @@ function NodeTable({ nodes, onManifest }: { nodes: ClusterNode[]; onManifest?: O
     <Table>
       <thead>
         <tr>
-          <Th className="w-[34%] md:w-[24%]">Node</Th>
+          <Th>Node</Th>
           <Th className="w-[26%] md:w-[16%]">Status</Th>
           <Th className="hidden md:table-cell md:w-[16%]">Roles</Th>
           <Th className="w-[22%] md:w-[12%]">Version</Th>
@@ -1516,7 +1544,7 @@ function NamespaceTable({
     <Table>
       <thead>
         <tr>
-          <Th className="w-[50%] md:w-[40%]">Namespace</Th>
+          <Th>Namespace</Th>
           <Th className="w-[26%] md:w-[20%]">Status</Th>
           <Th className="hidden md:table-cell md:w-[20%]">Your access</Th>
           <Th className="w-[24%] md:w-[20%]">Age</Th>

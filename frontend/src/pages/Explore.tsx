@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Boxes, RefreshCw } from 'lucide-react'
 import {
   errorMessage,
@@ -31,6 +31,7 @@ import { HelmValuesDrawer } from '../components/HelmValuesDrawer'
 import { ResourceDetailDrawer } from '../components/ResourceDetailDrawer'
 import type { DetailTarget } from '../components/ResourceDetailDrawer'
 import { ResourceView } from '../components/ResourceTables'
+import { TableSkeleton } from '../components/SkeletonLoader'
 import type { LoadedResource } from '../components/ResourceTables'
 import { WorkloadActionDialog } from '../components/WorkloadActionDialog'
 import type { WorkloadActionTarget } from '../components/WorkloadActionDialog'
@@ -50,6 +51,7 @@ import {
   resourceItem,
   resourceSingular,
 } from '../lib/resources'
+import { queryKey, useCachedQuery } from '../lib/query'
 import { podUsageIndex } from '../lib/units'
 import { workloadKeyFor } from '../lib/workloads'
 import { useClusters } from '../state/clusters-context'
@@ -143,6 +145,35 @@ async function loadResource(
 }
 
 /**
+ * How many columns a resource's table has, for the skeleton drawn before the
+ * first answer arrives. It is an approximation on purpose — a skeleton is
+ * scaffolding, and one column out is invisible — but it is close enough that the
+ * table does not visibly resize when the rows land, which is the whole point of
+ * drawing one.
+ */
+const SKELETON_COLUMNS: Partial<Record<string, number>> = {
+  pods: 6,
+  deployments: 5,
+  statefulsets: 5,
+  daemonsets: 5,
+  jobs: 5,
+  cronjobs: 5,
+  services: 5,
+  ingresses: 4,
+  nodes: 5,
+  persistentvolumes: 5,
+  persistentvolumeclaims: 5,
+  configmaps: 4,
+  secrets: 4,
+  helmreleases: 5,
+  namespaces: 3,
+}
+
+function skeletonColumns(item: ResourceItem, showNamespace: boolean): number {
+  return (SKELETON_COLUMNS[item.key] ?? 4) + (showNamespace ? 1 : 0)
+}
+
+/**
  * The namespace an operator last chose, kept across sessions. Someone working in
  * one namespace goes back to it every time they open Explore, and re-picking it
  * on every visit is the kind of friction a console should absorb. It is stored
@@ -181,7 +212,6 @@ export function Explore() {
   const [scoped, setScoped] = useState(false)
   const [resource, setResource] = useState<ResourceKey>('pods')
 
-  const [loaded, setLoaded] = useState<LoadedResource | null>(null)
   // One drawer for every kind, opened on whichever tab the row's action asked
   // for. A pod carries its row along, because the list already holds everything
   // its usage and container panels need without a second read.
@@ -194,8 +224,10 @@ export function Explore() {
   // are a dialog of their own rather than something a click in a list does.
   const [action, setAction] = useState<WorkloadActionTarget | null>(null)
 
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // Listing namespaces is its own read with its own failure — a grant can browse
+  // a cluster it cannot enumerate — so it keeps its own error rather than
+  // sharing the list's.
+  const [namespaceError, setNamespaceError] = useState<string | null>(null)
 
   // What this particular cluster turned out to have installed. `null` means the
   // question has not been answered yet, which is different from "none" — a
@@ -236,7 +268,7 @@ export function Explore() {
     let cancelled = false
     setNamespace('')
     setNamespaces([])
-    setError(null)
+    setNamespaceError(null)
 
     fetchNamespaces(cluster.id)
       .then((result) => {
@@ -255,7 +287,7 @@ export function Explore() {
         setNamespace(valid ? preferred : result.namespaces[0].name)
       })
       .catch((err) => {
-        if (!cancelled) setError(errorMessage(err, 'Could not list namespaces.'))
+        if (!cancelled) setNamespaceError(errorMessage(err, 'Could not list namespaces.'))
       })
 
     return () => {
@@ -294,29 +326,48 @@ export function Explore() {
     if (crds !== null && !resolved) setResource('pods')
   }, [crds, resolved])
 
-  const load = useCallback(async () => {
-    if (!cluster) return
-    if (namespaced && !namespace) return
-    // Nothing to read yet: the selection is a discovered kind and discovery has
-    // not come back. Reading the fallback here would show Pods under another
-    // resource's heading for as long as that takes.
-    if (!resolved) return
+  /*
+   * The list is read through the query cache, which is what makes the sidebar
+   * feel like one surface: a click to Services and straight back to Pods is two
+   * navigations and no cluster reads, because the answer is seconds old and
+   * still on hand. A null key means there is nothing to read yet — no reachable
+   * cluster, no namespace resolved, or a discovered kind whose discovery has not
+   * come back — and reading the fallback there would show Pods under another
+   * resource's heading for as long as that takes.
+   */
+  const readKey =
+    cluster && resolved && (!namespaced || namespace)
+      ? queryKey(
+          'resources',
+          cluster.id,
+          item.key,
+          namespaced ? namespace : '-',
+          // The namespace list is the one resource read from state rather than
+          // from the cluster, so its answer changes when that state arrives.
+          item.key === 'namespaces' ? namespaces.length : '',
+        )
+      : null
 
-    setLoading(true)
-    try {
-      setLoaded(await loadResource(item, cluster.id, namespace, namespaces))
-      setError(null)
-    } catch (err) {
-      setError(errorMessage(err, `Could not read ${item.label.toLowerCase()} from this cluster.`))
-      setLoaded(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [cluster, namespace, namespaced, namespaces, item, resolved])
+  const list = useCachedQuery<LoadedResource>(readKey, async () => {
+    // Unreachable while the key is null, which is the only state without a
+    // cluster; it is written as a guard rather than an assertion so the two
+    // cannot drift apart silently.
+    if (!cluster) throw new Error('no cluster is selected')
+    return loadResource(item, cluster.id, namespace, namespaces)
+  })
 
-  useEffect(() => {
-    void load()
-  }, [load])
+  const loaded = list.data
+  // Anything in flight counts as loading for the header's live note; only
+  // `list.loading` — nothing on screen yet — is what draws a skeleton.
+  const loading = list.loading || list.revalidating
+  const error =
+    namespaceError ??
+    (list.error
+      ? errorMessage(list.error, `Could not read ${item.label.toLowerCase()} from this cluster.`)
+      : null)
+  // Refresh, and what a write comes back to: it skips this cache and the
+  // server's, so it really does ask the cluster.
+  const load = list.refresh
 
   // A drawer belongs to the list it was opened from; switching resources closes
   // it rather than leaving it open over a list it does not come from.
@@ -558,8 +609,16 @@ export function Explore() {
             </p>
           ) : null}
 
-          {loading && !loaded ? (
-            <p className="px-4 py-10 text-center text-[13px] text-muted">Reading the cluster…</p>
+          {/* Nothing has ever been drawn for this question, so the wait is spent
+              showing what is coming rather than a spinner in an empty panel. A
+              list that is already on screen is left alone while it is re-read —
+              replacing it with its own outline would be a regression. */}
+          {list.loading ? (
+            <TableSkeleton
+              columns={skeletonColumns(item, allNamespaces)}
+              rows={8}
+              label={`Reading ${item.label.toLowerCase()} from ${cluster?.name ?? 'the cluster'}`}
+            />
           ) : null}
         </div>
 

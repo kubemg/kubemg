@@ -224,6 +224,24 @@ export interface Pod {
   containers: PodContainer[]
 }
 
+/**
+ * The pods one workload owns, resolved from the workload's own selector. It is
+ * what turns "this Deployment's logs" into a set of per-pod reads: the log itself
+ * is still read one pod at a time, which is why this carries whole `Pod` rows
+ * rather than names — a log view needs the containers too.
+ */
+export interface WorkloadPods {
+  pods: Pod[]
+  namespace: string
+  kind: string
+  /** The label selector the backend derived, so the read is explainable. */
+  selector: string
+  /** Every container name appearing in any of the pods. */
+  containers: string[]
+  /** Set when the workload has more pods than one read answers with. */
+  truncated: boolean
+}
+
 /*
  * The rest of the inventory the Explore sidebar browses. Every list is
  * normalised by the backend into the columns a list view shows — the browser

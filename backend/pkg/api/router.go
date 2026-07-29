@@ -13,6 +13,7 @@ import (
 
 	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/bastion"
+	"github.com/kubemg/kubemg/backend/pkg/cache"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
 )
@@ -129,6 +130,10 @@ type Options struct {
 	// at runtime from the Settings page. Zero falls back to
 	// defaultAuditRetentionDays.
 	AuditRetentionDays int
+	// ReadCacheTTL is how long a live read is served from memory before it is
+	// asked of the cluster again. Zero takes cache.DefaultTTL; a negative value
+	// turns the cache off, so every read is a tunnel call as it was before.
+	ReadCacheTTL time.Duration
 	// Background scopes the housekeeping goroutines that run alongside the
 	// handlers — today just the audit retention pruner. Left nil, as the tests
 	// leave it, nothing is started and the router is purely request-driven.
@@ -157,6 +162,9 @@ type server struct {
 	bastionCA          string
 	auditRetentionDays int
 	logger             *slog.Logger
+	// reads holds recently-answered live reads, keyed by caller and question.
+	// Nil turns caching off entirely; see cachedRead.
+	reads *cache.Cache[cachedResponse]
 	// allowedOrigins is where a browser app may live. Federation reads it as the
 	// set of consoles a finished sign-in may be handed back to, which is what
 	// keeps the callback from being an open redirect for session tokens.
@@ -210,6 +218,12 @@ func NewRouter(opts Options) *gin.Engine {
 	}
 	if opts.Bastion != nil {
 		s.tunnels = opts.Bastion.Registry()
+	}
+	// A repeated read costs a tunnel round trip, an impersonated API call and an
+	// audit record. Holding the answer for a few seconds is what makes the
+	// console feel like one surface rather than forty round trips.
+	if opts.ReadCacheTTL >= 0 {
+		s.reads = cache.New[cachedResponse](opts.ReadCacheTTL)
 	}
 	if opts.Background != nil {
 		// The audit table is the one thing here that grows without an operator
@@ -300,7 +314,12 @@ func NewRouter(opts Options) *gin.Engine {
 		// builds the query around the namespaces their grant covers. There is no
 		// cluster RBAC to fall back on here: a metrics backend has never heard of
 		// the caller and answers whatever it is asked.
-		sources.GET("/metrics/query", s.queryMetrics)
+		// A chart is the one read a browser repeats without being asked to: a
+		// resize, a legend toggle or a tab coming back re-renders the same
+		// window. A range query is also the most expensive read here, so it is
+		// cached on the same terms — a chart genuinely asking for a different
+		// window still misses, because the window is part of the key.
+		sources.GET("/metrics/query", s.cachedRead(), s.queryMetrics)
 		sources.GET("/logs/query", s.queryLogs)
 
 		if opts.Proxy != nil {
@@ -317,12 +336,22 @@ func NewRouter(opts Options) *gin.Engine {
 			// Live cluster state, read on demand through the same tunnel and
 			// under the same impersonated identity as a kubectl call — the UI
 			// gets no privileged shortcut.
-			resources := clusters.Group("/:id/resources")
+			// cachedRead sits in front of the whole group: every read here is
+			// keyed by caller and question and served from memory for a few
+			// seconds, and every write here drops the cluster's entries so a
+			// scale or a restart is visible in the next list.
+			resources := clusters.Group("/:id/resources", s.cachedRead())
 			resources.GET("/namespaces", s.listNamespaces)
 			resources.GET("/workloads", s.listWorkloads)
 			resources.GET("/pods", s.listPods)
 			resources.GET("/pods/:pod", s.showPod)
 			resources.GET("/pods/:pod/logs", s.podLogs)
+
+			// Which pods a workload owns, so their logs can be read together.
+			// It resolves the workload's own selector rather than accepting one
+			// from the caller, and the logs themselves are still the per-pod
+			// reads above — one per pod, audited one per pod.
+			resources.GET("/workload/pods", s.listWorkloadPods)
 
 			// The rest of the inventory behind the Explore sidebar: one route
 			// per list an operator can be looking at. The cluster-scoped ones
@@ -390,7 +419,10 @@ func NewRouter(opts Options) *gin.Engine {
 			// Live utilisation from the cluster's own Metrics API. It rides the
 			// same tunnel, grant and audit trail as the lists above; a cluster
 			// with no metrics-server answers "unavailable" rather than failing.
-			metrics := clusters.Group("/:id/metrics")
+			// Cached on the same terms as the lists above. metrics-server
+			// resamples every 15s or so, so a reading a few seconds old is
+			// the same reading — and the console polls these on a timer.
+			metrics := clusters.Group("/:id/metrics", s.cachedRead())
 			metrics.GET("/nodes", s.nodeMetrics)
 			metrics.GET("/pods", s.podMetrics)
 			metrics.GET("/pods/:pod", s.showPodMetrics)
@@ -466,8 +498,13 @@ func corsConfig(origins []string) cors.Config {
 			http.MethodDelete,
 			http.MethodOptions,
 		},
-		AllowHeaders:  []string{"Origin", "Content-Type", "Accept", "Authorization"},
-		ExposeHeaders: []string{"Content-Length"},
+		// Cache-Control is how the console asks for a read the in-memory cache
+		// must not answer — the Refresh button — so a browser has to be allowed
+		// to send it, and the reply says which way it was answered.
+		AllowHeaders: []string{
+			"Origin", "Content-Type", "Accept", "Authorization", "Cache-Control", "Pragma",
+		},
+		ExposeHeaders: []string{"Content-Length", cacheStatusHeader},
 		MaxAge:        12 * time.Hour,
 	}
 	if slices.Contains(origins, "*") {

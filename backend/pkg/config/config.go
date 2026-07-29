@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kubemg/kubemg/backend/pkg/agentpkg"
+	"github.com/kubemg/kubemg/backend/pkg/cache"
 )
 
 // DB holds PostgreSQL connection settings.
@@ -53,6 +54,11 @@ type Config struct {
 	// background pruner drops them. Like the settings above it is only the
 	// boot-time default; an operator overrides it from the Settings page.
 	AuditRetentionDays int
+	// ReadCacheTTL is how long a live cluster read is served from memory before
+	// being asked of the cluster again. It trades a few seconds of staleness for
+	// far fewer tunnel round trips, impersonated API calls and audit records on
+	// the reads a console repeats. A negative value turns the cache off.
+	ReadCacheTTL time.Duration
 	// TLS is how the bastion terminates HTTPS. It is not decoration: client-go
 	// refuses to send a bearer token over plain http, so kubectl cannot use the
 	// proxy at all without it.
@@ -108,6 +114,7 @@ func Load() Config {
 		AgentImage:     env("KUBEMG_AGENT_IMAGE", agentpkg.DefaultImage),
 		AgentNamespace:     env("KUBEMG_AGENT_NAMESPACE", agentpkg.DefaultNamespace),
 		AuditRetentionDays: envInt("KUBEMG_AUDIT_RETENTION_DAYS", 30),
+		ReadCacheTTL:       envDuration("KUBEMG_RESOURCE_CACHE_TTL", cache.DefaultTTL),
 		TLS: TLS{
 			Enabled:  envBool("KUBEMG_TLS_ENABLED", false),
 			CertFile: env("KUBEMG_TLS_CERT_FILE", "/etc/kubemg/tls/tls.crt"),

@@ -84,6 +84,7 @@ func main() {
 		// Housekeeping shares the audit writer's lifetime: both are background
 		// work that has to stop when the process is winding down.
 		AuditRetentionDays: cfg.AuditRetentionDays,
+		ReadCacheTTL:       cfg.ReadCacheTTL,
 		Background:         auditCtx,
 		Logger:             logger,
 	})

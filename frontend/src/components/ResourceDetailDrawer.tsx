@@ -16,7 +16,8 @@ import { LogExplorer } from './LogExplorer'
 import { PodLogView, PodOverview } from './PodPanels'
 import { WorkloadActionDialog } from './WorkloadActionDialog'
 import type { WorkloadActionName, WorkloadActionTarget } from './WorkloadActionDialog'
-import { workloadCapability } from '../lib/workloads'
+import { supportsWorkloadLogs, workloadCapability } from '../lib/workloads'
+import { WorkloadLogView } from './WorkloadLogView'
 import { YamlPanel } from './YamlPanel'
 import {
   Button,
@@ -112,6 +113,15 @@ export function ResourceDetailDrawer({
   const [action, setAction] = useState<WorkloadActionName | null>(null)
   const capability = workloadCapability(target.kind)
 
+  /*
+   * A workload's logs are its pods' logs. Almost nothing anyone asks of a log is
+   * about one pod — a Deployment fails on one replica out of ten, and finding
+   * which one meant opening ten drawers — so a workload gets the same tab, backed
+   * by the pooled view instead of the single-pod one. It needs a namespace,
+   * because a pod set is resolved inside one.
+   */
+  const workloadLogs = !pod && !!target.namespace && supportsWorkloadLogs(target.kind)
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -149,6 +159,10 @@ export function ResourceDetailDrawer({
     { value: 'yaml', label: 'YAML' },
   ]
   if (pod) tabs.push({ value: 'logs', label: 'Logs & Terminal' })
+  // A workload has no terminal and no history of its own — there is no one pod to
+  // attach to, and the history view searches by pod — so the tab is named for
+  // what it holds.
+  else if (workloadLogs) tabs.push({ value: 'logs', label: 'Logs' })
 
   // What the object says it is running, for the scale dialog's prefill. It comes
   // from the describe already on screen rather than from a read of its own.
@@ -293,6 +307,16 @@ export function ResourceDetailDrawer({
               </Suspense>
             ) : null}
           </div>
+        ) : null}
+
+        {tab === 'logs' && !pod && workloadLogs && target.namespace ? (
+          <WorkloadLogView
+            cluster={cluster}
+            kind={target.kind}
+            name={target.name}
+            namespace={target.namespace}
+            label={describe?.kind || target.label}
+          />
         ) : null}
       </Sheet>
 
