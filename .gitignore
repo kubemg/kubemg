@@ -24,6 +24,27 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Working documents for the AI agents on this project — the planning, context
+# and prompt files Antigravity and Claude-CLI read and write. They are the
+# private working surface of this repository's development process, not part of
+# the product, and they stay local. Anything meant for readers of the public
+# repository belongs in README.md.
+/CLAUDE.md
+/AGENT_RULES.md
+/PROJECT_KNOWLEDGE.md
+/implementation_plan.md
+/claude_prompt.md
+/roadmap.md
+/notes.txt
+/.cursorrules
+/.clinerules
+/.windsurfrules
+/.agents/
+/.claude/
+/.cursor/
+/.windsurf/
+/.aider*
+
 # Credentials and local overrides. The dev stack's defaults live in
 # docker-compose.yml; anything real belongs in an untracked env file.
 .env
@@ -37,6 +58,42 @@ pnpm-debug.log*
 kubeconfig
 kubeconfig-*.yaml
 *.kubeconfig
+
+# Certificates and keystores. The bastion mints its own TLS material at boot and
+# an operator mounts real material in; neither has any business in git.
+*.crt
+*.cer
+*.der
+*.csr
+*.srl
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.p8
+*.ppk
+!**/testdata/**/*.crt
+!**/testdata/**/*.cer
+/certs/
+/tls/
+id_rsa*
+id_ecdsa*
+id_ed25519*
+.netrc
+.npmrc
+*.htpasswd
+
+# Rendered agent install packages, checked out locally to apply by hand. The
+# secret inside carries a live cluster registration token — this is the shape of
+# the one credential that has already been committed here once.
+/kubemg-agent/
+/agent-install*/
+
+# Recorded terminal sessions, if the recording directory is ever pointed inside
+# the tree. A recording holds everything that crossed a production shell.
+/recordings/
+*.cast
+*.cast.gz
 
 # Rendered agent install packages. These carry a cluster registration token —
 # they are generated per cluster and must never be committed.
