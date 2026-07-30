@@ -19,6 +19,19 @@ const (
 	// table. It is stored as a decimal string like every other setting so the
 	// key/value table needs no second column.
 	SettingAuditRetentionDays = "audit_retention_days"
+	// SettingSessionRecordingRetentionDays is how long a terminal recording is
+	// kept. It defaults to the audit window and may only be *shorter*: a replay
+	// of a shell outliving the trail that says the shell was opened would be the
+	// wrong way round, and it is the heavier artefact of the two.
+	SettingSessionRecordingRetentionDays = "session_recording_retention_days"
+	// SettingAuditVerbs is the comma-separated list of verbs that reach the audit
+	// table. Empty means every verb, which is the default and the only setting
+	// value that cannot lose information.
+	SettingAuditVerbs = "audit_verbs"
+	// SettingRecordExecSessions turns interactive session recording on or off at
+	// runtime, within what the process was started able to do — a server with no
+	// recording directory cannot be talked into recording by a database row.
+	SettingRecordExecSessions = "record_exec_sessions"
 )
 
 // SettingKeys enumerates the runtime-configurable settings.
@@ -27,6 +40,9 @@ var SettingKeys = []string{
 	SettingAgentImage,
 	SettingAgentNamespace,
 	SettingAuditRetentionDays,
+	SettingSessionRecordingRetentionDays,
+	SettingAuditVerbs,
+	SettingRecordExecSessions,
 }
 
 // Setting is one operator-configurable value. An empty Value means "unset" and

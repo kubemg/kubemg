@@ -2,9 +2,11 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react
 import {
   ChevronLeft,
   ChevronRight,
+  Lock,
   MonitorPlay,
   PlayCircle,
   RefreshCw,
+  ShieldAlert,
   Trash2,
 } from 'lucide-react'
 import {
@@ -84,15 +86,22 @@ function sessionTarget(session: TerminalSession): string {
  * not a question a trail of individual calls answers, because a session is one
  * row among thousands there.
  *
- * It follows the trail's rule exactly: an admin sees the fleet, everyone else
- * sees their own sessions and is told so. Deleting is administrative only,
- * because the subject of a recording must not decide it stops existing.
+ * It follows the trail's rule with one addition: everyone sees their own
+ * sessions, and seeing anybody else's needs the recording-viewer capability on
+ * top of the admin role — administering KubeMG is not the same claim as watching
+ * what a colleague typed into production. Deleting needs the same capability,
+ * because destroying evidence you may not look at is not a lesser act, and the
+ * subject of a recording never decides it stops existing.
  */
 export function SessionRecordings() {
   const { user } = useAuth()
   const { clusters } = useClusters()
 
-  const isAdmin = user?.role === 'admin'
+  // Watching somebody else's session is its own capability, not part of the
+  // admin role. The server is authoritative — it narrows the list itself and
+  // answers 404 for a recording that is not the caller's — so this only decides
+  // which affordances are worth drawing.
+  const mayViewAll = Boolean(user?.can_view_recordings)
 
   const [sessions, setSessions] = useState<TerminalSession[]>([])
   const [total, setTotal] = useState(0)
@@ -147,11 +156,11 @@ export function SessionRecordings() {
 
   // The user filter is an admin affordance; a scoped viewer has nothing to pick.
   useEffect(() => {
-    if (!isAdmin) return
+    if (!mayViewAll) return
     fetchUsers()
       .then(setUsers)
       .catch(() => setUsers([]))
-  }, [isAdmin])
+  }, [mayViewAll])
 
   // Any filter change invalidates the current page offset.
   function narrow(apply: () => void) {
@@ -207,7 +216,8 @@ export function SessionRecordings() {
 
         {scopedToSelf ? (
           <Notice tone="info">
-            You are seeing your own sessions. Fleet-wide recordings are an administrator view.
+            You are seeing your own sessions. Replaying somebody else&rsquo;s is a capability of
+            its own, separate from administering KubeMG, and only a super admin can grant it.
           </Notice>
         ) : null}
 
@@ -237,7 +247,7 @@ export function SessionRecordings() {
               </Select>
             </div>
 
-            {isAdmin ? (
+            {mayViewAll ? (
               <div className="w-36">
                 <Select
                   aria-label="Filter by user"
@@ -303,9 +313,28 @@ export function SessionRecordings() {
                     {formatMemory(session.byte_count)}
                   </Td>
                   <Td>
-                    <Pill tone={sessionTone(session)} title={session.error}>
-                      {sessionState(session)}
-                    </Pill>
+                    <span className="flex items-center gap-1.5">
+                      <Pill tone={sessionTone(session)} title={session.error}>
+                        {sessionState(session)}
+                      </Pill>
+                      {/* How this file was written, which is a property of the
+                          recording and not of current configuration — and the
+                          difference between a stolen volume snapshot being an
+                          inconvenience and being every password anyone typed. */}
+                      <span
+                        title={session.encrypted ? 'Encrypted at rest' : 'Not encrypted at rest'}
+                        className="inline-flex shrink-0"
+                      >
+                        {session.encrypted ? (
+                          <Lock aria-hidden="true" className="size-3 text-faint" />
+                        ) : (
+                          <ShieldAlert aria-hidden="true" className="size-3 text-warn" />
+                        )}
+                        <span className="sr-only">
+                          {session.encrypted ? 'Encrypted at rest' : 'Not encrypted at rest'}
+                        </span>
+                      </span>
+                    </span>
                   </Td>
                   <Td>
                     <div className="flex items-center justify-end gap-1">
@@ -318,7 +347,7 @@ export function SessionRecordings() {
                       {/* A recording is evidence about someone, so removing one
                           is administrative — and never offered while the session
                           it records is still running. */}
-                      {isAdmin ? (
+                      {mayViewAll ? (
                         <IconButton
                           // IconButton titles itself from its label, so the
                           // reason a disabled one cannot be used belongs in the
@@ -389,6 +418,10 @@ export function SessionRecordings() {
           says the second, this says the first. Only output is drawn on the terminal; what was typed
           has its own view, because a pty echoes keystrokes back and drawing both would double every
           character. Recordings are pruned on the same retention window as the audit trail.
+        </p>
+        <p className="text-[12px] text-muted">
+          Watching a recording is itself audited — the trail records who replayed which session,
+          refusals included — and a recording written under a recording key is encrypted at rest.
         </p>
       </div>
 

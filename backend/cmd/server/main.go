@@ -11,12 +11,14 @@ import (
 	"strings"
 
 	"github.com/kubemg/kubemg/backend/pkg/api"
+	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
 	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/certs"
 	"github.com/kubemg/kubemg/backend/pkg/config"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
+	"github.com/kubemg/kubemg/backend/pkg/observability"
 	"github.com/kubemg/kubemg/backend/pkg/terminal"
 )
 
@@ -44,10 +46,18 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	gateway := bastion.NewServer(bastion.ServerOptions{Store: store, Logger: logger})
 
+	// Which verbs reach the audit table and whether shells are recorded are
+	// runtime settings, and both are read on the gateway's hot path. The policy is
+	// the handoff: the HTTP layer resolves it from the database and publishes it
+	// here, the gateway reads it lock-free. It starts out recording everything, so
+	// a server that has not read its settings yet keeps a complete trail.
+	policy := auditpolicy.New()
+
 	// The trail goes two places on purpose: structured logs are what a SIEM
 	// already tails, and the table is what the audit page queries. Persisting
-	// is asynchronous so a slow database never becomes a slow kubectl.
-	auditStore := bastion.NewStoreAuditor(store, logger)
+	// is asynchronous so a slow database never becomes a slow kubectl. The verb
+	// selection applies to the table only — see StoreAuditor.
+	auditStore := bastion.NewStoreAuditor(store, logger, policy)
 	auditCtx, stopAudit := context.WithCancel(context.Background())
 	go auditStore.Run(auditCtx)
 	defer func() {
@@ -55,18 +65,40 @@ func main() {
 		auditStore.Wait()
 	}()
 
+	// Alarms are the third consumer of the same records, and the only one that
+	// pushes: a refused action or an OOMKilled pod goes to whoever has to know
+	// now. It is started unconditionally because it costs nothing until a rule
+	// exists — with none configured, Observe returns immediately and nothing polls.
+	alarms := observability.NewDispatcher(observability.DispatcherOptions{
+		Store:  store,
+		Logger: logger,
+		Origin: cfg.PublicURL,
+	})
+	go alarms.Run(auditCtx)
+	defer alarms.Wait()
+
 	// Interactive sessions are recorded for replay when a directory is
 	// configured. A recorder that cannot be prepared leaves recording off rather
 	// than stopping the server: an unmountable volume must not take the console
 	// down with it, and the gap is loud in the log and visible in the UI, which
 	// says whether this server is recording at all.
-	recorder, recordingDir := resolveRecorder(cfg, store, logger)
+	recorder, recording := resolveRecorder(cfg, store, logger)
+
+	// One auditor, two consumers: the proxy records what it forwarded to a
+	// cluster, and the API records the one thing it does that is more sensitive
+	// than most of that — serving somebody a recording of a production shell.
+	auditor := bastion.NewMultiAuditor(
+		bastion.NewAuditor(logger),
+		auditStore,
+		api.NewAlarmAuditor(alarms),
+	)
 
 	proxy := bastion.NewProxy(bastion.ProxyOptions{
 		Store:    store,
 		Registry: gateway.Registry(),
-		Auditor:  bastion.NewMultiAuditor(bastion.NewAuditor(logger), auditStore),
+		Auditor:  auditor,
 		Recorder: recorder,
+		Policy:   policy,
 	})
 
 	// TLS is resolved before the router is built: an agent's install package
@@ -94,7 +126,12 @@ func main() {
 		// work that has to stop when the process is winding down.
 		AuditRetentionDays: cfg.AuditRetentionDays,
 		ReadCacheTTL:       cfg.ReadCacheTTL,
-		RecordingDir:       recordingDir,
+		RecordingDir:       recording.dir,
+		RecordingKey:       recording.key,
+		RecordingInput:     recording.input,
+		Auditor:            auditor,
+		AuditPolicy:        policy,
+		Alarms:             alarms,
 		Background:         auditCtx,
 		Logger:             logger,
 	})
@@ -123,36 +160,76 @@ func main() {
 	}
 }
 
-// resolveRecorder prepares terminal session recording, returning the recorder
-// the proxy tees sessions into and the directory the API reads recordings back
-// from. Both are empty when recording is off — which is what the replay routes
-// report, rather than answering with a file path nothing wrote.
+// recordingSetup is what the HTTP layer needs to serve recordings back: where
+// they are, the key they were written with, and whether keystrokes are part of
+// them. All three are zero when recording is off, which is what the replay routes
+// report rather than answering with a file path nothing wrote.
+type recordingSetup struct {
+	dir   string
+	key   []byte
+	input bool
+}
+
+// resolveRecorder prepares terminal session recording, returning the recorder the
+// proxy tees sessions into alongside that setup.
+//
+// A misconfigured key stops recording rather than silently writing recordings in
+// the clear: an operator who set a key believes the files are encrypted, and a
+// server that quietly disagreed with them would be worse than one that says so.
+// A *missing* key is different — it is the documented default and the state every
+// install before this upgrade is in — so it warns loudly and carries on.
 func resolveRecorder(
 	cfg config.Config, store *db.Store, logger *slog.Logger,
-) (bastion.SessionRecorder, string) {
+) (bastion.SessionRecorder, recordingSetup) {
 	if !cfg.SessionRecording.Enabled {
 		logger.Info("terminal session recording is off",
 			slog.String("enable", "KUBEMG_SESSION_RECORDING_ENABLED=true"))
-		return nil, ""
+		return nil, recordingSetup{}
+	}
+
+	key, err := terminal.ParseKey(cfg.SessionRecording.Key)
+	if err != nil {
+		logger.Error("terminal session recording is enabled but the recording key is unusable; "+
+			"sessions will be audited but not recorded",
+			slog.String("error", err.Error()))
+		return nil, recordingSetup{}
 	}
 
 	recorder, err := terminal.NewRecorder(terminal.Options{
-		Dir:      cfg.SessionRecording.Dir,
-		Sessions: store,
-		MaxBytes: cfg.SessionRecording.MaxBytes,
-		Logger:   logger,
+		Dir:       cfg.SessionRecording.Dir,
+		Sessions:  store,
+		MaxBytes:  cfg.SessionRecording.MaxBytes,
+		Key:       key,
+		OmitInput: !cfg.SessionRecording.Input,
+		Logger:    logger,
 	})
 	if err != nil {
 		logger.Error("terminal session recording is enabled but could not be started; "+
 			"sessions will be audited but not recorded",
 			slog.String("directory", cfg.SessionRecording.Dir),
 			slog.String("error", err.Error()))
-		return nil, ""
+		return nil, recordingSetup{}
+	}
+
+	if !recorder.Encrypting() {
+		// Loud, once, at boot: this is the difference between a stolen volume
+		// snapshot being an inconvenience and it being every password anyone
+		// typed into a production shell.
+		logger.Warn("session recordings are being written unencrypted; "+
+			"they hold production shell output and keystrokes",
+			slog.String("fix", "set KUBEMG_SESSION_RECORDING_KEY (openssl rand -base64 32)"),
+			slog.String("directory", recorder.Dir()))
 	}
 
 	logger.Info("recording interactive sessions for replay",
-		slog.String("directory", recorder.Dir()))
-	return recorder, recorder.Dir()
+		slog.String("directory", recorder.Dir()),
+		slog.Bool("encrypted", recorder.Encrypting()),
+		slog.Bool("keystrokes", recorder.RecordingInput()))
+	return recorder, recordingSetup{
+		dir:   recorder.Dir(),
+		key:   recorder.Key(),
+		input: recorder.RecordingInput(),
+	}
 }
 
 // tlsMaterial is what the rest of the process needs to know about TLS: the

@@ -202,3 +202,126 @@ func TestAuditSummary(t *testing.T) {
 		t.Fatalf("streams = %d, want 1 session", body["streams"])
 	}
 }
+
+func TestAuditFiltersByAVerbSet(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+
+	for _, verb := range []string{"get", "list", "delete", "exec"} {
+		env.store.addAuditEvent(db.AuditEvent{
+			UserID: admin.ID, Username: "admin", Verb: verb, Status: 200,
+		})
+	}
+
+	// A badge multi-select sends several verbs; a dropdown sends one. Both are the
+	// same question and both have to be answered.
+	rec := env.do(t, http.MethodGet,
+		"/api/v1/audit?verb=delete,exec", env.tokenFor(t, admin), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	body := decode[auditListResponse](t, rec)
+	if len(body.Events) != 2 {
+		t.Fatalf("expected the two selected verbs, got %d", len(body.Events))
+	}
+	for _, event := range body.Events {
+		if event.Verb != "delete" && event.Verb != "exec" {
+			t.Fatalf("unexpected verb %q in the page", event.Verb)
+		}
+	}
+
+	// Repeated parameters are the other shape a form produces.
+	rec = env.do(t, http.MethodGet,
+		"/api/v1/audit?verb=delete&verb=exec", env.tokenFor(t, admin), nil)
+	if got := decode[auditListResponse](t, rec); len(got.Events) != 2 {
+		t.Fatalf("repeated verb parameters should narrow the same way, got %d", len(got.Events))
+	}
+
+	// A single verb still takes the singular path.
+	rec = env.do(t, http.MethodGet, "/api/v1/audit?verb=exec", env.tokenFor(t, admin), nil)
+	if got := decode[auditListResponse](t, rec); len(got.Events) != 1 {
+		t.Fatalf("expected one exec record, got %d", len(got.Events))
+	}
+}
+
+func TestAuditFiltersByStatus(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+
+	env.store.addAuditEvent(db.AuditEvent{UserID: admin.ID, Verb: "get", Status: 200})
+	env.store.addAuditEvent(db.AuditEvent{UserID: admin.ID, Verb: "delete", Status: 403})
+	env.store.addAuditEvent(db.AuditEvent{UserID: admin.ID, Verb: "create", Status: 500})
+
+	rec := env.do(t, http.MethodGet, "/api/v1/audit?status=403", env.tokenFor(t, admin), nil)
+	body := decode[auditListResponse](t, rec)
+	if len(body.Events) != 1 || body.Events[0].Status != 403 {
+		t.Fatalf("expected only the 403, got %+v", body.Events)
+	}
+
+	rec = env.do(t, http.MethodGet, "/api/v1/audit?status=99", env.tokenFor(t, admin), nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("a status outside the HTTP range should be refused, got %d", rec.Code)
+	}
+}
+
+func TestAuditQuickRangeNarrowsTheWindow(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+
+	now := time.Now()
+	env.store.addAuditEvent(db.AuditEvent{UserID: admin.ID, Verb: "get", At: now.Add(-5 * time.Minute)})
+	env.store.addAuditEvent(db.AuditEvent{UserID: admin.ID, Verb: "get", At: now.Add(-3 * time.Hour)})
+	env.store.addAuditEvent(db.AuditEvent{UserID: admin.ID, Verb: "get", At: now.Add(-8 * 24 * time.Hour)})
+
+	// The preset is resolved on the server so "the last hour" means the same
+	// window to the count, the page and anything that is not the console.
+	for _, tc := range []struct {
+		window string
+		want   int
+	}{
+		{"15m", 1},
+		{"24h", 2},
+		{"30d", 3},
+		{"all", 3},
+	} {
+		rec := env.do(t, http.MethodGet,
+			"/api/v1/audit?range="+tc.window, env.tokenFor(t, admin), nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("range=%s: expected %d, got %d", tc.window, http.StatusOK, rec.Code)
+		}
+		if got := decode[auditListResponse](t, rec); len(got.Events) != tc.want {
+			t.Errorf("range=%s: expected %d records, got %d", tc.window, tc.want, len(got.Events))
+		}
+	}
+
+	rec := env.do(t, http.MethodGet, "/api/v1/audit?range=3y", env.tokenFor(t, admin), nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("an unknown preset should be refused, got %d", rec.Code)
+	}
+}
+
+func TestAuditFromAndToAreAcceptedAlongsideSinceAndUntil(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+
+	now := time.Now().UTC()
+	env.store.addAuditEvent(db.AuditEvent{UserID: admin.ID, Verb: "get", At: now.Add(-2 * time.Hour)})
+	env.store.addAuditEvent(db.AuditEvent{UserID: admin.ID, Verb: "get", At: now.Add(-30 * time.Minute)})
+
+	from := now.Add(-time.Hour).Format(time.RFC3339)
+	rec := env.do(t, http.MethodGet, "/api/v1/audit?from="+from, env.tokenFor(t, admin), nil)
+	if got := decode[auditListResponse](t, rec); len(got.Events) != 1 {
+		t.Fatalf("from should narrow like since, got %d", len(got.Events))
+	}
+
+	// An explicit boundary wins over a preset: it is the more specific statement.
+	rec = env.do(t, http.MethodGet, "/api/v1/audit?from="+from+"&range=30d", env.tokenFor(t, admin), nil)
+	if got := decode[auditListResponse](t, rec); len(got.Events) != 1 {
+		t.Fatalf("an explicit from should beat a preset, got %d", len(got.Events))
+	}
+
+	rec = env.do(t, http.MethodGet, "/api/v1/audit?from=yesterday", env.tokenFor(t, admin), nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("a malformed timestamp should be refused, got %d", rec.Code)
+	}
+}

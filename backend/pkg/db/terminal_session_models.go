@@ -49,6 +49,18 @@ type TerminalSession struct {
 	// configured recording directory on the way out, never trusted on its own.
 	StoragePath string `gorm:"type:text" json:"-"`
 
+	// Encrypted records whether this file was written under a recording key.
+	// It is a property of the file rather than of current configuration — a key
+	// can be added to a server that already holds plain recordings, and reading
+	// one back has to follow how it was written, not how the next one would be.
+	Encrypted bool `gorm:"not null;default:false" json:"encrypted"`
+	// InputRecorded says whether keystrokes were collected. Without it an empty
+	// keystroke view is ambiguous: nothing was typed, or typing was deliberately
+	// not stored. Recordings written before this column existed default to false,
+	// which is the honest answer — nothing here can prove what an older file
+	// contains, and the file itself is what the player reads.
+	InputRecorded bool `gorm:"not null;default:false" json:"input_recorded"`
+
 	// Error explains a recording that ended badly — a broken tunnel, or a disk
 	// that stopped accepting writes half way through.
 	Error string `gorm:"type:text" json:"error,omitempty"`

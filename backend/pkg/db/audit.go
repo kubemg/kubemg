@@ -15,7 +15,15 @@ type AuditFilter struct {
 	UserID    uint
 	ClusterID uint
 	Verb      string
+	// Verbs narrows to a set of verbs. It is separate from Verb rather than
+	// replacing it because the two are asked differently: a single verb is one
+	// equality test, and a set is what a badge multi-select produces. Both may be
+	// supplied, and both are applied.
+	Verbs     []string
 	Namespace string
+	// Status keeps one exact HTTP status. A 403 is the row an auditor looks for by
+	// name, which FailedOnly's "anything that went wrong" does not isolate.
+	Status int
 	// Streaming, when set, keeps only the long-lived calls.
 	Streaming bool
 	// FailedOnly keeps refusals and errors — the rows an auditor looks at first.
@@ -57,6 +65,12 @@ func (s *Store) ListAuditEvents(ctx context.Context, filter AuditFilter) ([]Audi
 	}
 	if filter.Verb != "" {
 		query = query.Where("verb = ?", filter.Verb)
+	}
+	if len(filter.Verbs) > 0 {
+		query = query.Where("verb IN ?", filter.Verbs)
+	}
+	if filter.Status != 0 {
+		query = query.Where("status = ?", filter.Status)
 	}
 	if filter.Namespace != "" {
 		query = query.Where("namespace = ?", filter.Namespace)

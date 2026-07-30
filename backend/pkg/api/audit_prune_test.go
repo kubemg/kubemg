@@ -172,3 +172,45 @@ func TestAuditRetentionIsConfigurableThroughSettings(t *testing.T) {
 		}
 	}
 }
+
+// A recording is two orders of magnitude larger than the audit row describing
+// it, so the useful direction for its window is shorter than the trail's.
+func TestRecordingPrunerHonoursItsOwnShorterWindow(t *testing.T) {
+	store := newFakeStore()
+	now := time.Now().UTC()
+	store.settings[db.SettingAuditRetentionDays] = "90"
+	store.settings[db.SettingSessionRecordingRetentionDays] = "7"
+
+	store.audit = []db.AuditEvent{{ID: 1, At: now.AddDate(0, 0, -30)}}
+	store.addTerminalSession(db.TerminalSession{StartedAt: now.AddDate(0, 0, -30)})
+	store.addTerminalSession(db.TerminalSession{StartedAt: now.AddDate(0, 0, -1)})
+
+	newPruneServer(store, 30).pruneAudit(context.Background())
+
+	// The trail keeps its 30-day-old row; the recording of the same age goes.
+	if len(store.audit) != 1 {
+		t.Fatalf("the 90 day audit window should have kept the record, got %d", len(store.audit))
+	}
+	if len(store.recordings) != 1 {
+		t.Fatalf("the 7 day recording window should have kept one, got %d", len(store.recordings))
+	}
+}
+
+// A recording must never outlive the trail saying the shell was opened, so a
+// window longer than the audit one is clamped rather than honoured.
+func TestRecordingPrunerIsCappedByTheAuditWindow(t *testing.T) {
+	store := newFakeStore()
+	now := time.Now().UTC()
+	store.settings[db.SettingAuditRetentionDays] = "7"
+	store.settings[db.SettingSessionRecordingRetentionDays] = "365"
+
+	store.addTerminalSession(db.TerminalSession{StartedAt: now.AddDate(0, 0, -30)})
+	store.addTerminalSession(db.TerminalSession{StartedAt: now})
+
+	newPruneServer(store, 30).pruneAudit(context.Background())
+
+	if len(store.recordings) != 1 {
+		t.Fatalf("the recording window should have been clamped to 7 days, got %d",
+			len(store.recordings))
+	}
+}

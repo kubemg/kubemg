@@ -27,6 +27,10 @@ type UserUpdate struct {
 	Email        *string
 	SystemRole   *string
 	PasswordHash *string
+	// CanViewRecordings is the recording-viewer capability. Only a super admin
+	// may set it; the handler enforces that, because it is an authorization rule
+	// rather than a storage one.
+	CanViewRecordings *bool
 }
 
 // UpdateUser applies a partial update and returns the stored record.
@@ -42,6 +46,9 @@ func (s *Store) UpdateUser(ctx context.Context, id uint, update UserUpdate) (*Us
 		fields["system_role"] = *update.SystemRole
 		// Keep the coarse role the JWT carries in step with the system role.
 		fields["role"] = LegacyRoleFor(*update.SystemRole)
+	}
+	if update.CanViewRecordings != nil {
+		fields["can_view_recordings"] = *update.CanViewRecordings
 	}
 	if update.PasswordHash != nil {
 		fields["password_hash"] = *update.PasswordHash

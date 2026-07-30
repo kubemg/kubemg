@@ -45,6 +45,8 @@ func Migrate(gdb *gorm.DB) error {
 		&ObservabilitySource{},
 		&SSOProviderConfig{},
 		&SSOGroupMapping{},
+		&AlarmChannel{},
+		&AlarmRule{},
 	); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
 	}
@@ -96,6 +98,50 @@ func Migrate(gdb *gorm.DB) error {
 		Where("role = ? AND system_role = ?", RoleAdmin, SystemRoleUser).
 		Update("system_role", SystemRoleAdmin).Error; err != nil {
 		return fmt.Errorf("repair backfilled system_role: %w", err)
+	}
+
+	if err := backfillRecordingAccess(gdb); err != nil {
+		return err
+	}
+	return nil
+}
+
+// recordingAccessBackfilled marks the one-time grant below as done. It has to be
+// recorded, and the settings table is where this schema already keeps facts about
+// itself: without a marker the backfill would run on every boot and re-grant a
+// capability an administrator had deliberately revoked, which would make the
+// whole control decorative.
+const recordingAccessBackfilled = "recording_access_backfilled"
+
+// backfillRecordingAccess grandfathers existing administrators into the
+// recording-viewer capability.
+//
+// The capability is new and defaults to off, so introducing it would otherwise
+// silently take the recordings page away from every admin of a running install —
+// an upgrade must not quietly remove access somebody had yesterday. New accounts
+// start without it, so the default for anything created from here on is the
+// restrictive one.
+func backfillRecordingAccess(gdb *gorm.DB) error {
+	var marked int64
+	if err := gdb.Model(&Setting{}).
+		Where("key = ?", recordingAccessBackfilled).
+		Count(&marked).Error; err != nil {
+		return fmt.Errorf("read recording access marker: %w", err)
+	}
+	if marked > 0 {
+		return nil
+	}
+
+	if err := gdb.Model(&User{}).
+		Where("system_role IN ?", []string{SystemRoleAdmin, SystemRoleSuperAdmin}).
+		Update("can_view_recordings", true).Error; err != nil {
+		return fmt.Errorf("backfill recording access: %w", err)
+	}
+	if err := gdb.Save(&Setting{
+		Key:   recordingAccessBackfilled,
+		Value: "1",
+	}).Error; err != nil {
+		return fmt.Errorf("mark recording access backfill: %w", err)
 	}
 	return nil
 }

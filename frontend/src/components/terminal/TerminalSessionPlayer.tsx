@@ -317,14 +317,30 @@ export function TerminalSessionPlayer({
           onChange={setView}
           options={[
             { value: 'terminal', label: 'Replay' },
-            { value: 'keystrokes', label: `Keystrokes${keystrokes.length ? '' : ' (none)'}` },
+            {
+              value: 'keystrokes',
+              // "not recorded" and "none" are different answers and the row says
+              // which, so the tab does too rather than implying nothing was typed.
+              label: session.input_recorded
+                ? `Keystrokes${keystrokes.length ? '' : ' (none)'}`
+                : 'Keystrokes (not recorded)',
+            },
           ]}
         />
         {session.error ? <Pill tone="warn">{session.error}</Pill> : null}
       </div>
 
       {view === 'keystrokes' ? (
-        keystrokes.length === 0 ? (
+        !session.input_recorded ? (
+          /* A policy, not an absence: this server was configured not to collect
+             keystrokes, which is what an operator does when people type
+             credentials into interactive tools. Reporting it as "nothing was
+             typed" would misrepresent the evidence. */
+          <Notice tone="info">
+            Keystrokes were not recorded for this session — this server captures output only. What
+            was typed and echoed back by the shell is still in the replay.
+          </Notice>
+        ) : keystrokes.length === 0 ? (
           <Notice tone="info">
             Nothing was typed into this session — it was recorded with no stdin, or the operator only
             watched.

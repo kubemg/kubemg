@@ -19,6 +19,15 @@ export interface User {
    * federated account has no password here, so the editor offers none.
    */
   auth_source: AuthSource
+  /**
+   * Whether this account may replay *other people's* terminal recordings. It is
+   * a capability of its own rather than part of the admin role: a recording holds
+   * everything that crossed a production shell, so "may administer KubeMG" is not
+   * the same claim as "may watch what a colleague typed". Own sessions are always
+   * readable and are not governed by it, a super admin holds it implicitly, and
+   * only a super admin may grant it.
+   */
+  can_view_recordings: boolean
   last_login_at?: string
   created_at: string
 }
@@ -31,6 +40,8 @@ export interface NewUser {
   email: string
   password: string
   system_role: SystemRole
+  /** Super-admin-only, like every other way of setting it. */
+  can_view_recordings?: boolean
 }
 
 export interface UserPatch {
@@ -38,6 +49,7 @@ export interface UserPatch {
   email?: string
   password?: string
   system_role?: SystemRole
+  can_view_recordings?: boolean
 }
 
 export interface Group {
@@ -173,6 +185,14 @@ export interface TerminalSession {
   byte_count: number
   /** The session outgrew the per-recording cap; the replay stops before it did. */
   truncated: boolean
+  /**
+   * How this file was written, not how the server is configured now: a key can be
+   * added to a server that already holds plain recordings, and keystroke
+   * collection can be switched off. `input_recorded: false` is why an empty
+   * keystroke view is not the same as a session in which nothing was typed.
+   */
+  encrypted: boolean
+  input_recorded: boolean
   /** Still running: a shell somebody is in right now. */
   open: boolean
   error?: string
@@ -189,6 +209,18 @@ export interface TerminalSessionPage {
    */
   recording_enabled: boolean
   scoped_to_self: boolean
+}
+
+/**
+ * What this server captures. Readable by anyone, because anyone might be
+ * recorded — a console that opens a shell has to be able to say what is kept
+ * before a keystroke is typed into it.
+ */
+export interface RecordingPolicy {
+  enabled: boolean
+  input_recorded: boolean
+  encrypted: boolean
+  retention_days: number
 }
 
 export interface TerminalSessionQuery {
@@ -220,14 +252,26 @@ export interface AuditSummary {
   window_hours: number
 }
 
+/** The quick ranges the audit page offers. Resolved server-side so the preset
+    means the same window to the count, the page and anything that is not the
+    console. `all` clears it. */
+export type AuditRange = '15m' | '1h' | '6h' | '24h' | '7d' | '30d' | 'all'
+
 export interface AuditQuery {
   cluster_id?: number
   user_id?: number
-  verb?: string
+  /** One verb, or several — the API accepts a comma-separated set. */
+  verb?: string | string[]
   namespace?: string
+  /** One exact HTTP status. `failed` is the broader "anything that went wrong". */
+  status?: number
   streaming?: boolean
   failed?: boolean
   q?: string
+  /** RFC 3339 bounds. An explicit `from` beats `range`. */
+  from?: string
+  to?: string
+  range?: AuditRange
   limit?: number
   offset?: number
 }
@@ -657,6 +701,19 @@ export interface RuntimeSettings {
   agent_namespace: string
   /** Retention window for the audit trail. 0 in `overrides` means unset. */
   audit_retention_days: number
+  /** Retention window for terminal recordings. 0 means "follow the audit
+      window", which is also its ceiling — a replay must not outlive the trail
+      saying the shell was opened. */
+  session_recording_retention_days: number
+  /** The verbs that reach the audit table. Empty with `audit_verbs_selected`
+      false means every verb, which is the default. */
+  audit_verbs: string[]
+  audit_verbs_selected: boolean
+  /** Whether interactive sessions are being recorded right now. */
+  record_exec_sessions: boolean
+  /** Whether this server *can* record at all. Without a recording directory the
+      switch above can only ever be off. */
+  recording_available: boolean
 }
 
 export interface SettingsResponse {
@@ -667,6 +724,117 @@ export interface SettingsResponse {
 }
 
 export type SettingsPatch = Partial<RuntimeSettings>
+
+/* ------------------------------------------------------------- alarms --- */
+
+export type AlarmChannelKind =
+  | 'alertmanager'
+  | 'slack'
+  | 'pagerduty'
+  | 'servicenow'
+  | 'webhook'
+
+export type AlarmAuthMode = 'none' | 'bearer' | 'basic' | 'key'
+
+export type AlarmTrigger = 'cluster_event' | 'audit'
+
+export type AlarmSeverity = 'info' | 'warning' | 'critical'
+
+/** One destination alarms are delivered to. The credential is never read back:
+    `has_secret` is what stands in for it, which is what makes an empty token box
+    mean "keep what is stored" rather than "there is nothing stored". */
+export interface AlarmChannel {
+  id: number
+  name: string
+  kind: AlarmChannelKind
+  url: string
+  auth_mode: AlarmAuthMode
+  username?: string
+  headers?: string
+  enabled: boolean
+  has_secret: boolean
+  last_status?: string
+  last_message?: string
+  last_attempt_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AlarmChannelInput {
+  name: string
+  kind: AlarmChannelKind
+  url: string
+  auth_mode: AlarmAuthMode
+  username?: string
+  /** Omit to keep the stored credential. */
+  secret?: string
+  headers?: string
+  enabled?: boolean
+}
+
+export interface AlarmChannelList {
+  channels: AlarmChannel[]
+  kinds: AlarmChannelKind[]
+}
+
+/** One condition worth sending somewhere. The matcher fields are stored as
+    comma-separated lists, which is what the API returns. */
+export interface AlarmRule {
+  id: number
+  name: string
+  description?: string
+  channel_id: number
+  enabled: boolean
+  trigger: AlarmTrigger
+  /** 0 means every cluster, including ones registered later. */
+  cluster_id: number
+  namespaces?: string
+  event_reasons?: string
+  event_type?: string
+  verbs?: string
+  denied_only: boolean
+  min_status?: number
+  severity: AlarmSeverity
+  cooloff_seconds?: number
+  last_fired_at?: string
+  fire_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AlarmRuleInput {
+  name: string
+  description?: string
+  channel_id: number
+  enabled?: boolean
+  trigger: AlarmTrigger
+  cluster_id?: number
+  namespaces?: string[]
+  event_reasons?: string[]
+  event_type?: string
+  verbs?: string[]
+  denied_only?: boolean
+  min_status?: number
+  severity: AlarmSeverity
+  cooloff_seconds?: number
+}
+
+export interface AlarmRuleList {
+  rules: AlarmRule[]
+  triggers: AlarmTrigger[]
+  severities: AlarmSeverity[]
+  suggested_reasons: string[]
+  /** False when this server has no proxy, so no tunnel to read events down. */
+  cluster_events_available: boolean
+  /** False when no dispatcher is running: rules would never fire, and the panel
+      says so rather than looking configured. */
+  dispatcher_running: boolean
+}
+
+export interface AlarmChannelTest {
+  ok: boolean
+  message: string
+}
 
 /**
  * One object in full, as the YAML an operator already knows how to read.

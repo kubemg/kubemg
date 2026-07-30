@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 
+	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
 	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 )
@@ -81,6 +82,10 @@ type Proxy struct {
 	// recorder captures interactive sessions. Nil means recording is off, which
 	// changes nothing else about how a session is proxied.
 	recorder SessionRecorder
+	// policy is the runtime switch in front of that recorder. It can only ever
+	// turn recording off — a process with no recorder has nowhere to write, and no
+	// database row changes that.
+	policy *auditpolicy.Policy
 }
 
 // ProxyOptions wires the proxy handler.
@@ -93,6 +98,9 @@ type ProxyOptions struct {
 	// Recorder captures exec and attach sessions for replay. Left nil, sessions
 	// are proxied exactly as before and only the audit records describe them.
 	Recorder SessionRecorder
+	// Policy is the runtime audit configuration. Nil records everything, which is
+	// what the tests and a server wired without settings do.
+	Policy *auditpolicy.Policy
 }
 
 // NewProxy builds the kubectl proxy handler.
@@ -110,6 +118,7 @@ func NewProxy(opts ProxyOptions) *Proxy {
 		registry: registry,
 		auditor:  auditor,
 		recorder: opts.Recorder,
+		policy:   opts.Policy,
 	}
 }
 

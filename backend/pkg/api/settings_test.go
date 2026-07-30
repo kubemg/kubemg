@@ -121,3 +121,146 @@ func TestLoopbackPublicURLIsAcceptedWithAWarning(t *testing.T) {
 		t.Fatalf("expected a warning about the loopback address")
 	}
 }
+
+func TestAuditVerbSelectionRoundTrips(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+
+	// No selection means every verb, which is the default and the only value that
+	// cannot lose information.
+	body := decode[settingsResponse](t,
+		env.do(t, http.MethodGet, "/api/v1/settings", token, nil))
+	if body.Effective.AuditVerbsSelected {
+		t.Fatal("a fresh install has no verb selection")
+	}
+
+	rec := env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]any{
+		"audit_verbs": []string{"delete", "create", "exec"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	body = decode[settingsResponse](t, rec)
+	if !body.Effective.AuditVerbsSelected {
+		t.Fatal("a selection was saved and should be reported as in force")
+	}
+	if got := strings.Join(body.Effective.AuditVerbs, ","); got != "create,delete,exec" {
+		t.Fatalf("expected a sorted selection, got %q", got)
+	}
+
+	// Unticking every box means "back to everything", not "record nothing" — the
+	// floor would keep recording refusals and sessions regardless, and a server
+	// claiming to be silent would be lying about itself.
+	rec = env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]any{
+		"audit_verbs": []string{},
+	})
+	body = decode[settingsResponse](t, rec)
+	if body.Effective.AuditVerbsSelected {
+		t.Fatalf("an empty selection should clear it, got %v", body.Effective.AuditVerbs)
+	}
+}
+
+func TestAuditVerbSelectionRefusesAnUnknownVerb(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+
+	rec := env.do(t, http.MethodPut, "/api/v1/settings", env.tokenFor(t, admin), map[string]any{
+		"audit_verbs": []string{"delete", "telekinesis"},
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected %d, got %d (%s)", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+}
+
+func TestRecordingRetentionDefaultsToAndIsCappedByTheAuditWindow(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+
+	// Unset follows the audit window: a recording is evidence about a line in the
+	// trail, so it must not outlive it.
+	body := decode[settingsResponse](t,
+		env.do(t, http.MethodGet, "/api/v1/settings", token, nil))
+	if body.Effective.SessionRecordingRetentionDays != body.Effective.AuditRetentionDays {
+		t.Fatalf("expected the recording window to default to the audit one, got %d vs %d",
+			body.Effective.SessionRecordingRetentionDays, body.Effective.AuditRetentionDays)
+	}
+
+	// Shorter is the useful direction and is honoured.
+	rec := env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]any{
+		"audit_retention_days":             90,
+		"session_recording_retention_days": 14,
+	})
+	body = decode[settingsResponse](t, rec)
+	if body.Effective.SessionRecordingRetentionDays != 14 {
+		t.Fatalf("expected 14 days of recordings, got %d",
+			body.Effective.SessionRecordingRetentionDays)
+	}
+
+	// Longer than the trail is clamped rather than refused, because the audit
+	// window is itself editable — shortening it has to pull recordings in with it.
+	rec = env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]any{
+		"session_recording_retention_days": 365,
+	})
+	body = decode[settingsResponse](t, rec)
+	if body.Effective.SessionRecordingRetentionDays != 90 {
+		t.Fatalf("expected the recording window clamped to the audit window, got %d",
+			body.Effective.SessionRecordingRetentionDays)
+	}
+
+	// And when the audit window moves down, the stored 365 follows it rather than
+	// becoming a validation error nobody can see.
+	rec = env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]any{
+		"audit_retention_days": 30,
+	})
+	body = decode[settingsResponse](t, rec)
+	if body.Effective.SessionRecordingRetentionDays != 30 {
+		t.Fatalf("expected the clamp to follow the audit window down, got %d",
+			body.Effective.SessionRecordingRetentionDays)
+	}
+}
+
+func TestRecordingSwitchCannotTurnRecordingOnWhereThereIsNone(t *testing.T) {
+	// A server started without a recording directory has nowhere to write, and no
+	// database row changes that. A switch that silently did nothing would be worse
+	// than one that says why.
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+
+	rec := env.do(t, http.MethodPut, "/api/v1/settings", env.tokenFor(t, admin), map[string]any{
+		"record_exec_sessions": true,
+	})
+	body := decode[settingsResponse](t, rec)
+	if body.Effective.RecordingAvailable {
+		t.Fatal("the default test stack has no recording directory")
+	}
+	if body.Effective.RecordExecSessions {
+		t.Fatal("recording must stay off where the process cannot record")
+	}
+}
+
+func TestRecordingSwitchTurnsRecordingOff(t *testing.T) {
+	env := newTestEnvWith(t, func(opts *Options) {
+		opts.RecordingDir = t.TempDir()
+	})
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+
+	body := decode[settingsResponse](t,
+		env.do(t, http.MethodGet, "/api/v1/settings", token, nil))
+	if !body.Effective.RecordExecSessions || !body.Effective.RecordingAvailable {
+		t.Fatalf("a server with a recording directory records by default: %+v", body.Effective)
+	}
+
+	rec := env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]any{
+		"record_exec_sessions": false,
+	})
+	body = decode[settingsResponse](t, rec)
+	if body.Effective.RecordExecSessions {
+		t.Fatal("the switch should have turned recording off")
+	}
+	if !body.Effective.RecordingAvailable {
+		t.Fatal("the capability is still there; only the setting changed")
+	}
+}

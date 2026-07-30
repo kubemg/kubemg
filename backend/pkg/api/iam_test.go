@@ -118,6 +118,61 @@ func TestCreateSuperAdminRequiresSuperAdmin(t *testing.T) {
 	}
 }
 
+func TestOnlyASuperAdminMayGrantRecordingAccess(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	root := env.store.addSuperAdmin("root", "pw")
+	target := env.store.addUser("security", "pw", db.RoleAdmin)
+
+	// An admin granting it to anyone — themselves included — would make the
+	// capability decorative, so this is refused rather than ignored: an
+	// administrator who believed it had been granted would believe the wrong
+	// thing about who can watch recordings.
+	rec := env.do(t, http.MethodPut, "/api/v1/users/"+itoa(target.ID), env.tokenFor(t, admin),
+		map[string]any{"can_view_recordings": true})
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusForbidden, rec.Code, rec.Body.String())
+	}
+	if target.CanViewRecordings {
+		t.Fatal("the capability must not have been granted")
+	}
+
+	rec = env.do(t, http.MethodPut, "/api/v1/users/"+itoa(target.ID), env.tokenFor(t, root),
+		map[string]any{"can_view_recordings": true})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if body := decode[userResponse](t, rec); !body.CanViewRecordings {
+		t.Fatal("a super admin's grant must take effect")
+	}
+
+	// Creating an account with it is the same authorization.
+	payload := validUserPayload()
+	payload["username"] = "watcher"
+	payload["can_view_recordings"] = true
+	rec = env.do(t, http.MethodPost, "/api/v1/users", env.tokenFor(t, admin), payload)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d creating a viewer, got %d (%s)",
+			http.StatusForbidden, rec.Code, rec.Body.String())
+	}
+}
+
+func TestSuperAdminReportsTheRecordingCapabilityImplicitly(t *testing.T) {
+	env := newTestEnv(t)
+	root := env.store.addSuperAdmin("root", "pw")
+
+	// Nothing sets the column on this account. The console draws its
+	// affordances from what the server resolves, so what it is told has to match
+	// what the server will actually allow.
+	rec := env.do(t, http.MethodGet, "/api/v1/auth/me", env.tokenFor(t, root), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if body := decode[userResponse](t, rec); !body.CanViewRecordings {
+		t.Fatal("a super admin holds the recording capability implicitly")
+	}
+}
+
 func TestUpdateUserChangesSystemRole(t *testing.T) {
 	env := newTestEnv(t)
 	admin := env.store.addUser("admin", "pw", db.RoleAdmin)

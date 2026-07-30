@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
@@ -35,22 +36,30 @@ type AuditSink interface {
 type StoreAuditor struct {
 	sink   AuditSink
 	logger *slog.Logger
+	// policy decides which verbs reach the table. It is applied *here* and not in
+	// the SlogAuditor on purpose: the selection exists to keep a queryable table
+	// from filling with reads nobody queries, and the structured log — which is
+	// what a SIEM tails — stays complete either way. Turning down the table is a
+	// storage decision; turning down the log would be an audit decision.
+	policy *auditpolicy.Policy
 
 	queue chan db.AuditEvent
 
-	dropped atomic.Int64
-	done    chan struct{}
+	dropped   atomic.Int64
+	suppressed atomic.Int64
+	done      chan struct{}
 }
 
 // NewStoreAuditor builds the persistent auditor. Run must be started for it to
-// write anything.
-func NewStoreAuditor(sink AuditSink, logger *slog.Logger) *StoreAuditor {
+// write anything. A nil policy records every verb.
+func NewStoreAuditor(sink AuditSink, logger *slog.Logger, policy *auditpolicy.Policy) *StoreAuditor {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &StoreAuditor{
 		sink:   sink,
 		logger: logger,
+		policy: policy,
 		queue:  make(chan db.AuditEvent, auditQueueSize),
 		done:   make(chan struct{}),
 	}
@@ -59,6 +68,10 @@ func NewStoreAuditor(sink AuditSink, logger *slog.Logger) *StoreAuditor {
 // Record enqueues an audit event. It is safe from any goroutine and never
 // blocks.
 func (a *StoreAuditor) Record(_ context.Context, event Event) {
+	if !a.policy.Records(event.Verb, event.Status, event.Error != "", event.Streaming) {
+		a.suppressed.Add(1)
+		return
+	}
 	select {
 	case a.queue <- toAuditRow(event):
 	default:
@@ -116,6 +129,12 @@ func (a *StoreAuditor) Run(ctx context.Context) {
 
 // Wait blocks until Run has finished flushing, for an orderly shutdown.
 func (a *StoreAuditor) Wait() { <-a.done }
+
+// Suppressed is how many records the verb policy kept out of the table. It is
+// not a failure count — it is the setting working — but it is worth being able
+// to read, because "the trail looks empty" and "the trail is switched off" are
+// answered by very different actions.
+func (a *StoreAuditor) Suppressed() int64 { return a.suppressed.Load() }
 
 // flush writes a batch and returns an empty slice to keep filling.
 func (a *StoreAuditor) flush(batch []db.AuditEvent) []db.AuditEvent {

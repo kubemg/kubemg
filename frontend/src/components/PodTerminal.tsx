@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
-import { proxyURL, readToken } from '../api/client'
+import { Circle, Lock, ShieldAlert } from 'lucide-react'
+import { fetchRecordingPolicy, proxyURL, readToken } from '../api/client'
+import type { RecordingPolicy } from '../api/types'
 import { Select } from './primitives'
 
 /*
@@ -70,6 +72,29 @@ export function PodTerminal({
   const [status, setStatus] = useState<Status>('connecting')
   const [detail, setDetail] = useState<string | null>(null)
   const [shell, setShell] = useState(DEFAULT_SHELL)
+  // What this server captures. It is read once and shown before the first
+  // keystroke: telling somebody afterwards that everything they typed was kept
+  // is not disclosure, and in several jurisdictions it is not lawful either.
+  // `null` means the answer has not arrived — the notice is drawn only for a
+  // definite answer, because a banner that flickers "recorded" and then
+  // disappears is worse than one that arrives a moment late.
+  const [policy, setPolicy] = useState<RecordingPolicy | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetchRecordingPolicy()
+      .then((result) => {
+        if (!cancelled) setPolicy(result)
+      })
+      .catch(() => {
+        // A server that will not answer is not a reason to refuse a shell; the
+        // notice is simply not drawn.
+        if (!cancelled) setPolicy(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     const element = host.current
@@ -267,10 +292,51 @@ export function PodTerminal({
           </div>
         </div>
       </div>
+      {policy?.enabled ? <RecordingNotice policy={policy} /> : null}
+
       <div
         ref={host}
         className="min-h-[280px] flex-1 overflow-hidden rounded-card border border-line bg-sunken p-2"
       />
     </div>
+  )
+}
+
+/**
+ * RecordingNotice tells an operator what is being captured, before they type.
+ *
+ * It is a line rather than a dialog on purpose: a shell that has to be
+ * acknowledged before it opens would be dismissed by reflex within a week, and
+ * the point is that the fact stays visible for the whole session. What it says is
+ * specific — keystrokes or only output, encrypted at rest or not, and for how
+ * long — because "this session may be monitored" is the kind of notice people
+ * stop reading.
+ */
+function RecordingNotice({ policy }: { policy: RecordingPolicy }) {
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-control border border-line-soft bg-raised/60 px-2.5 py-1.5 text-[12px] text-muted">
+      <Circle aria-hidden="true" className="size-3 shrink-0 fill-danger text-danger" />
+      <span className="text-fg">This session is being recorded.</span>
+      <span>
+        {policy.input_recorded
+          ? 'Output and keystrokes are captured'
+          : 'Output is captured; keystrokes are not'}
+        {policy.retention_days > 0 ? ` and kept for ${policy.retention_days} days` : ''}.
+      </span>
+      {policy.encrypted ? (
+        <span className="inline-flex items-center gap-1 text-faint">
+          <Lock aria-hidden="true" className="size-3 shrink-0" />
+          encrypted at rest
+        </span>
+      ) : (
+        /* Said plainly, because it changes what an operator should be willing to
+           type: an unencrypted recording is a plaintext file holding whatever a
+           prompt did not echo. */
+        <span className="inline-flex items-center gap-1 text-warn">
+          <ShieldAlert aria-hidden="true" className="size-3 shrink-0" />
+          not encrypted at rest
+        </span>
+      )}
+    </p>
   )
 }
