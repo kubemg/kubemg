@@ -79,6 +79,20 @@ type SessionRecording struct {
 	Dir string
 	// MaxBytes caps one recording. Zero takes the recorder's own default.
 	MaxBytes int64
+	// Key encrypts recordings at rest: 32 bytes as hex or base64, from
+	// KUBEMG_SESSION_RECORDING_KEY. Empty writes plain gzip and warns at boot.
+	//
+	// It is read from the environment rather than stored in the database on
+	// purpose. The database is the one thing that is always backed up alongside
+	// the recordings volume, and a key kept next to the ciphertext protects
+	// against nothing. Losing it means losing the recordings — that is the trade,
+	// and it is the same trade every at-rest encryption makes.
+	Key string
+	// Input records keystrokes as well as output. On by default, because a
+	// keystroke log is the half of a recording an auditor cannot reconstruct from
+	// the other. Turn it off where operators type credentials into interactive
+	// tools: what is lost is exactly what a prompt does not echo.
+	Input bool
 }
 
 // TLS configures the bastion's own listener.
@@ -135,6 +149,8 @@ func Load() Config {
 			Enabled:  envBool("KUBEMG_SESSION_RECORDING_ENABLED", true),
 			Dir:      env("KUBEMG_SESSION_RECORDING_DIR", "/var/lib/kubemg/recordings"),
 			MaxBytes: int64(envInt("KUBEMG_SESSION_RECORDING_MAX_BYTES", 0)),
+			Key:      env("KUBEMG_SESSION_RECORDING_KEY", ""),
+			Input:    envBool("KUBEMG_SESSION_RECORDING_INPUT", true),
 		},
 		TLS: TLS{
 			Enabled:  envBool("KUBEMG_TLS_ENABLED", false),

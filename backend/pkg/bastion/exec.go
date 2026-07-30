@@ -93,6 +93,14 @@ func (p *Proxy) beginRecording(ctx context.Context, event *Event, parsed APIPath
 	if p.recorder == nil || event.SessionID == "" {
 		return nil
 	}
+	// The runtime switch. It sits here rather than inside the recorder because
+	// this is the one place that knows a session is starting: flipping the setting
+	// stops the next shell from being recorded and leaves the ones already running
+	// alone, which is the only behaviour that does not produce a recording with a
+	// hole in the middle of it.
+	if p.policy != nil && !p.policy.RecordSessions() {
+		return nil
+	}
 	switch parsed.Subresource {
 	case "exec", "attach":
 	default:

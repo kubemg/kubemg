@@ -274,7 +274,7 @@ func TestOpenDecompressesAndConfines(t *testing.T) {
 	sink.Output([]byte("visible"))
 	sink.Close(nil)
 
-	reader, err := Open(dir, sessions.created[0].StoragePath)
+	reader, err := Open(dir, sessions.created[0].StoragePath, nil)
 	if err != nil {
 		t.Fatalf("open recording: %v", err)
 	}
@@ -289,14 +289,14 @@ func TestOpenDecompressesAndConfines(t *testing.T) {
 	}
 
 	// A path out of a database row is not a filesystem instruction.
-	if _, err := Open(dir, filepath.Join(dir, "..", "etc", "passwd")); !errors.Is(err, ErrOutsideDir) {
+	if _, err := Open(dir, filepath.Join(dir, "..", "etc", "passwd"), nil); !errors.Is(err, ErrOutsideDir) {
 		t.Fatalf("expected the escape to be refused, got %v", err)
 	}
 	// A sibling whose name merely starts with the directory's must not pass.
-	if _, err := Open(dir, dir+"-elsewhere/x.cast.gz"); !errors.Is(err, ErrOutsideDir) {
+	if _, err := Open(dir, dir+"-elsewhere/x.cast.gz", nil); !errors.Is(err, ErrOutsideDir) {
 		t.Fatalf("expected a sibling directory to be refused, got %v", err)
 	}
-	if _, err := Open(dir, filepath.Join(dir, "missing.cast.gz")); !errors.Is(err, ErrMissing) {
+	if _, err := Open(dir, filepath.Join(dir, "missing.cast.gz"), nil); !errors.Is(err, ErrMissing) {
 		t.Fatalf("expected a missing recording to be reported as such, got %v", err)
 	}
 }

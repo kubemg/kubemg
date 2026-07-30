@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -59,6 +60,8 @@ type fakeStore struct {
 	// on the window the pruner chose rather than only on what survived.
 	pruned   []time.Time
 	pruneErr error
+	// alarms holds the channel and rule tables; see alarms_fake_test.go.
+	alarms *alarmTables
 }
 
 func newFakeStore() *fakeStore {
@@ -94,6 +97,25 @@ func (f *fakeStore) addUser(username, password, role string) *db.User {
 	}
 	f.nextID++
 	f.users[user.ID] = user
+	return user
+}
+
+// addSuperAdmin is the protected top-level account. The legacy role column is
+// what the JWT and the admin middleware read, so it stays "admin"; the system
+// role is what the IAM rules reason about.
+func (f *fakeStore) addSuperAdmin(username, password string) *db.User {
+	user := f.addUser(username, password, db.RoleAdmin)
+	user.SystemRole = db.SystemRoleSuperAdmin
+	return user
+}
+
+// addRecordingViewer is an administrator who also holds the recording-viewer
+// capability — the account that may replay somebody else's session. The two are
+// separate on purpose, so a test that only needs an admin does not accidentally
+// assert that every admin can watch recordings.
+func (f *fakeStore) addRecordingViewer(username, password string) *db.User {
+	user := f.addUser(username, password, db.RoleAdmin)
+	user.CanViewRecordings = true
 	return user
 }
 
@@ -348,6 +370,9 @@ func (f *fakeStore) UpdateUser(_ context.Context, id uint, update db.UserUpdate)
 		user.SystemRole = *update.SystemRole
 		user.Role = db.LegacyRoleFor(*update.SystemRole)
 	}
+	if update.CanViewRecordings != nil {
+		user.CanViewRecordings = *update.CanViewRecordings
+	}
 	return user, nil
 }
 
@@ -519,6 +544,18 @@ func (f *fakeStore) ListAuditEvents(_ context.Context, filter db.AuditFilter) ([
 			continue
 		}
 		if filter.Verb != "" && event.Verb != filter.Verb {
+			continue
+		}
+		if len(filter.Verbs) > 0 && !slices.Contains(filter.Verbs, event.Verb) {
+			continue
+		}
+		if filter.Status != 0 && event.Status != filter.Status {
+			continue
+		}
+		if filter.Since != nil && event.At.Before(*filter.Since) {
+			continue
+		}
+		if filter.Until != nil && event.At.After(*filter.Until) {
 			continue
 		}
 		if filter.Namespace != "" && event.Namespace != filter.Namespace {
@@ -794,6 +831,25 @@ type testEnv struct {
 	health   *fakeChecker
 	gateway  *bastion.Server
 	registry *bastion.Registry
+}
+
+// recordingAuditor captures the audit records the API writes about itself, which
+// is how the tests assert that watching a recording leaves a trail.
+type recordingAuditor struct {
+	mu     sync.Mutex
+	events []bastion.Event
+}
+
+func (a *recordingAuditor) Record(_ context.Context, event bastion.Event) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.events = append(a.events, event)
+}
+
+func (a *recordingAuditor) all() []bastion.Event {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]bastion.Event(nil), a.events...)
 }
 
 func authManagerForTest() *auth.Manager {

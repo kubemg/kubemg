@@ -3,6 +3,13 @@ import type { CustomResourceRef, ResourceKey } from '../lib/resources'
 import { ALL_NAMESPACES } from '../lib/resources'
 import type {
   AgentInstall,
+  AlarmChannel,
+  AlarmChannelInput,
+  AlarmChannelList,
+  AlarmChannelTest,
+  AlarmRule,
+  AlarmRuleInput,
+  AlarmRuleList,
   AuditPage,
   AuditQuery,
   AuditSummary,
@@ -57,6 +64,7 @@ import type {
   SSOProviderSummary,
   StorageClass,
   SubjectType,
+  RecordingPolicy,
   TerminalSession,
   TerminalSessionPage,
   TerminalSessionQuery,
@@ -364,6 +372,14 @@ export async function fetchAudit(query: AuditQuery = {}): Promise<AuditPage> {
   const params: Record<string, string> = {}
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined || value === '' || value === false) continue
+    // A verb filter is a set as often as it is one value; the API reads both a
+    // comma-separated list and repeated parameters, and a comma keeps the URL
+    // short enough to still be a link somebody pastes into a ticket.
+    if (Array.isArray(value)) {
+      if (value.length === 0) continue
+      params[key] = value.join(',')
+      continue
+    }
     params[key] = String(value)
   }
   const { data } = await http.get<AuditPage>('/audit', { params })
@@ -398,6 +414,17 @@ export async function fetchTerminalSessions(
     recording_enabled: data.recording_enabled ?? false,
     scoped_to_self: data.scoped_to_self ?? false,
   }
+}
+
+/**
+ * What this server records. It is a policy read, not a data read: it says whether
+ * recording is on, whether keystrokes are part of it, whether files are encrypted
+ * at rest and how long they are kept — which is what an operator is owed before
+ * typing into a shell that is being captured.
+ */
+export async function fetchRecordingPolicy(): Promise<RecordingPolicy> {
+  const { data } = await http.get<RecordingPolicy>('/audit/recording-policy')
+  return data
 }
 
 export async function fetchTerminalSession(id: number): Promise<TerminalSession> {
@@ -869,6 +896,64 @@ export async function fetchSettings(): Promise<SettingsResponse> {
 export async function updateSettings(patch: SettingsPatch): Promise<SettingsResponse> {
   const { data } = await http.put<SettingsResponse>('/settings', patch)
   return { ...data, warnings: data.warnings ?? [] }
+}
+
+/* -------------------------------------------------------------- alarms --- */
+
+export async function fetchAlarmChannels(): Promise<AlarmChannelList> {
+  const { data } = await http.get<AlarmChannelList>('/alarms/channels')
+  return { channels: data.channels ?? [], kinds: data.kinds ?? [] }
+}
+
+export async function createAlarmChannel(input: AlarmChannelInput): Promise<AlarmChannel> {
+  const { data } = await http.post<AlarmChannel>('/alarms/channels', input)
+  return data
+}
+
+export async function updateAlarmChannel(
+  id: number,
+  input: AlarmChannelInput,
+): Promise<AlarmChannel> {
+  const { data } = await http.put<AlarmChannel>(`/alarms/channels/${id}`, input)
+  return data
+}
+
+export async function deleteAlarmChannel(id: number): Promise<void> {
+  await http.delete(`/alarms/channels/${id}`)
+}
+
+/** testAlarmChannel asks whether the endpoint accepts KubeMG's payload. A
+    refusal comes back as `ok: false` with the endpoint's own words rather than
+    as a thrown error — the operator asked a question and that is the answer. */
+export async function testAlarmChannel(id: number): Promise<AlarmChannelTest> {
+  const { data } = await http.post<AlarmChannelTest>(`/alarms/channels/${id}/test`)
+  return data
+}
+
+export async function fetchAlarmRules(): Promise<AlarmRuleList> {
+  const { data } = await http.get<AlarmRuleList>('/alarms/rules')
+  return {
+    rules: data.rules ?? [],
+    triggers: data.triggers ?? [],
+    severities: data.severities ?? [],
+    suggested_reasons: data.suggested_reasons ?? [],
+    cluster_events_available: data.cluster_events_available ?? false,
+    dispatcher_running: data.dispatcher_running ?? false,
+  }
+}
+
+export async function createAlarmRule(input: AlarmRuleInput): Promise<AlarmRule> {
+  const { data } = await http.post<AlarmRule>('/alarms/rules', input)
+  return data
+}
+
+export async function updateAlarmRule(id: number, input: AlarmRuleInput): Promise<AlarmRule> {
+  const { data } = await http.put<AlarmRule>(`/alarms/rules/${id}`, input)
+  return data
+}
+
+export async function deleteAlarmRule(id: number): Promise<void> {
+  await http.delete(`/alarms/rules/${id}`)
 }
 
 /* ------------------------------------------------------- observability --- */

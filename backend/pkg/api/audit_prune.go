@@ -18,6 +18,12 @@ const auditPruneInterval = 12 * time.Hour
 // operator has said otherwise.
 const defaultAuditRetentionDays = 30
 
+// auditPolicyRefreshInterval is how often the audit settings are re-read into the
+// in-memory policy the gateway consults. A save republishes immediately, so this
+// tick exists for the other case: a second replica, whose own memory knows
+// nothing about a change saved through its sibling.
+const auditPolicyRefreshInterval = 30 * time.Second
+
 // startAuditPruner applies the audit retention policy on a schedule until the
 // context is cancelled. It runs once immediately, because a server that has
 // been down for a week should not wait another twelve hours before honouring a
@@ -41,19 +47,49 @@ func (s *server) startAuditPruner(ctx context.Context) {
 	}
 }
 
+// startAuditPolicyRefresher keeps the in-memory audit policy in step with the
+// stored settings. It publishes once immediately so a restart honours the
+// selection from its first proxied call rather than recording everything until
+// the first tick.
+func (s *server) startAuditPolicyRefresher(ctx context.Context) {
+	ticker := time.NewTicker(auditPolicyRefreshInterval)
+	defer ticker.Stop()
+
+	for {
+		s.publishAuditPolicy(ctx)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
 // pruneAudit deletes everything older than the configured window. A failure is
 // logged and left for the next pass: an audit table that is temporarily too big
 // is a far smaller problem than a background goroutine that gives up on the
 // first transient database error.
 func (s *server) pruneAudit(ctx context.Context) {
-	days := s.settings(ctx).AuditRetentionDays
+	resolved := s.settings(ctx)
+	days := resolved.AuditRetentionDays
 	if days < minAuditRetentionDays {
 		days = defaultAuditRetentionDays
 	}
 
-	before := time.Now().UTC().AddDate(0, 0, -days)
-	s.pruneRecordings(ctx, before)
+	now := time.Now().UTC()
 
+	// Recordings have a window of their own, defaulting to the audit window and
+	// never exceeding it. A shorter one is the useful direction: a recording is
+	// two orders of magnitude larger than the audit row describing it, so a fleet
+	// that wants a year of trail rarely wants a year of shell transcripts.
+	recordingDays := clampRecordingRetention(resolved.SessionRecordingRetentionDays, days)
+	if recordingDays < minAuditRetentionDays {
+		recordingDays = days
+	}
+	s.pruneRecordings(ctx, now.AddDate(0, 0, -recordingDays))
+
+	before := now.AddDate(0, 0, -days)
 	removed, err := s.store.PruneAuditEvents(ctx, before)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -72,10 +108,10 @@ func (s *server) pruneAudit(ctx context.Context) {
 	}
 }
 
-// pruneRecordings drops session recordings past the same window, files
-// included. It shares the audit window rather than having one of its own: a
-// recording *is* audit evidence, and keeping the replay of a shell after the
-// trail that says it was opened has been deleted would be the wrong way round.
+// pruneRecordings drops session recordings past their window, files included.
+// The window defaults to the audit one and is capped by it, because a recording
+// *is* audit evidence: keeping the replay of a shell after the trail saying it
+// was opened has been deleted would be the wrong way round.
 //
 // Rows are deleted with their files in one pass, and only a row whose file is
 // gone or unreachable is left behind — the alternative is a directory of

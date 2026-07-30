@@ -7,11 +7,13 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
@@ -26,6 +28,23 @@ type runtimeSettings struct {
 	// the overrides means "unset", exactly as an empty string does for the
 	// others.
 	AuditRetentionDays int `json:"audit_retention_days"`
+	// SessionRecordingRetentionDays is how long a terminal recording is kept.
+	// Zero means "the audit window", which is both the default and the ceiling —
+	// see clampRecordingRetention.
+	SessionRecordingRetentionDays int `json:"session_recording_retention_days"`
+	// AuditVerbs are the verbs that reach the audit table. It is empty when no
+	// selection is in force, in which case every verb is recorded — and
+	// AuditVerbsSelected is what distinguishes that from a selection that happens
+	// to list nothing, which the write path refuses to store.
+	AuditVerbs []string `json:"audit_verbs"`
+	// AuditVerbsSelected reports whether a selection is in force at all.
+	AuditVerbsSelected bool `json:"audit_verbs_selected"`
+	// RecordExecSessions is the runtime switch on interactive session recording.
+	RecordExecSessions bool `json:"record_exec_sessions"`
+	// RecordingAvailable says whether this process *can* record at all — a server
+	// started without a recording directory cannot be talked into it from here, and
+	// a switch that silently does nothing is worse than one that says why.
+	RecordingAvailable bool `json:"recording_available"`
 }
 
 type settingsResponse struct {
@@ -48,6 +67,19 @@ type updateSettingsRequest struct {
 	AgentNamespace *string `json:"agent_namespace"`
 	// AuditRetentionDays accepts 0 to clear the override back to the default.
 	AuditRetentionDays *int `json:"audit_retention_days"`
+	// SessionRecordingRetentionDays accepts 0 to fall back to the audit window.
+	SessionRecordingRetentionDays *int `json:"session_recording_retention_days"`
+	// AuditVerbs replaces the enabled set. Omitting it leaves the stored value
+	// alone; sending an **empty** array clears the selection back to "every verb"
+	// rather than meaning "no verbs at all".
+	//
+	// That is a deliberate reading of an ambiguous input. "Record nothing" is not a
+	// state a settings form should be able to reach — the floor in auditpolicy
+	// would keep recording refusals and sessions regardless, so a server claiming
+	// to be silent would be lying about itself. Unticking every box therefore means
+	// the same thing as never having ticked one.
+	AuditVerbs         *[]string `json:"audit_verbs"`
+	RecordExecSessions *bool     `json:"record_exec_sessions"`
 }
 
 // Audit retention bounds. The floor stops an operator from silently emptying
@@ -67,10 +99,20 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 		AgentImage:         s.agentImage,
 		AgentNamespace:     s.agentNamespace,
 		AuditRetentionDays: s.auditRetentionDays,
+		// Recording follows the process: a server started with no recording
+		// directory cannot record, and the switch below can only turn that off.
+		RecordExecSessions: s.recordings != "",
+		RecordingAvailable: s.recordings != "",
 	}
 	stored, err := s.store.Settings(ctx)
 	if err != nil {
 		return out
+	}
+	out.AuditVerbs, out.AuditVerbsSelected = storedAuditVerbs(stored)
+	if v := strings.TrimSpace(stored[db.SettingRecordExecSessions]); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			out.RecordExecSessions = out.RecordingAvailable && enabled
+		}
 	}
 	if v := strings.TrimSpace(stored[db.SettingPublicURL]); v != "" {
 		out.PublicURL = strings.TrimRight(v, "/")
@@ -84,14 +126,59 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 	if v := storedRetentionDays(stored); v > 0 {
 		out.AuditRetentionDays = v
 	}
+	out.SessionRecordingRetentionDays = clampRecordingRetention(
+		storedDays(stored, db.SettingSessionRecordingRetentionDays), out.AuditRetentionDays)
 	return out
 }
 
-// storedRetentionDays reads the retention override. A value that is not a
-// usable number reads as unset, so a hand-edited row cannot turn the pruner
-// into something that deletes everything.
-func storedRetentionDays(stored map[string]string) int {
-	raw := strings.TrimSpace(stored[db.SettingAuditRetentionDays])
+// clampRecordingRetention resolves how long recordings are kept. Unset takes the
+// audit window, and a value longer than it is clamped down to it rather than
+// refused on the way in.
+//
+// The ceiling is the point: a recording is evidence *about* a line in the trail,
+// so a replay that outlives the record saying the shell was ever opened is
+// orphaned evidence. Clamping rather than refusing matters because the audit
+// window is itself editable — shortening audit retention has to pull recordings
+// in with it, and a stored recording window that was legal when it was written
+// must not become a validation error nobody can see.
+func clampRecordingRetention(stored, auditDays int) int {
+	if stored <= 0 || stored > auditDays {
+		return auditDays
+	}
+	return stored
+}
+
+// storedAuditVerbs reads the enabled verb selection, reporting whether one is in
+// force at all. An unrecognised verb in the stored list is dropped, and a list
+// that ends up empty reads as "no selection" — a hand-edited row must not be able
+// to switch the trail off.
+func storedAuditVerbs(stored map[string]string) ([]string, bool) {
+	raw := strings.TrimSpace(stored[db.SettingAuditVerbs])
+	if raw == "" {
+		return nil, false
+	}
+	out := make([]string, 0, len(auditpolicy.Verbs))
+	seen := map[string]bool{}
+	for _, part := range strings.Split(raw, ",") {
+		verb := strings.ToLower(strings.TrimSpace(part))
+		if verb == "" || seen[verb] || !slices.Contains(auditpolicy.Verbs, verb) {
+			continue
+		}
+		seen[verb] = true
+		out = append(out, verb)
+	}
+	if len(out) == 0 {
+		return nil, false
+	}
+	slices.Sort(out)
+	return out, true
+}
+
+// storedDays reads a day count, treating anything outside the retention bounds
+// as unset for the same reason storedRetentionDays does: a window read wrong is
+// a trail deleted.
+func storedDays(stored map[string]string, key string) int {
+	raw := strings.TrimSpace(stored[key])
 	if raw == "" {
 		return 0
 	}
@@ -100,6 +187,34 @@ func storedRetentionDays(stored map[string]string) int {
 		return 0
 	}
 	return days
+}
+
+// auditPolicySnapshot is the settings above reduced to the two questions the
+// gateway's hot path asks.
+func (s *server) auditPolicySnapshot(ctx context.Context) auditpolicy.Snapshot {
+	resolved := s.settings(ctx)
+	var verbs []string
+	if resolved.AuditVerbsSelected {
+		verbs = resolved.AuditVerbs
+	}
+	return auditpolicy.NewSnapshot(verbs, resolved.RecordExecSessions)
+}
+
+// publishAuditPolicy resolves the audit settings and hands them to the gateway.
+// It is called at boot, after every settings write, and on a timer — the timer is
+// what makes a second replica pick up a change one of its siblings saved.
+func (s *server) publishAuditPolicy(ctx context.Context) {
+	if s.auditPolicy == nil {
+		return
+	}
+	s.auditPolicy.Store(s.auditPolicySnapshot(ctx))
+}
+
+// storedRetentionDays reads the audit retention override. A value that is not a
+// usable number reads as unset, so a hand-edited row cannot turn the pruner
+// into something that deletes everything.
+func storedRetentionDays(stored map[string]string) int {
+	return storedDays(stored, db.SettingAuditRetentionDays)
 }
 
 // getSettings returns the effective settings alongside the stored overrides and
@@ -112,19 +227,32 @@ func (s *server) getSettings(c *gin.Context) {
 	}
 
 	effective := s.settings(c.Request.Context())
+	overrideVerbs, verbsSelected := storedAuditVerbs(stored)
+	overrides := runtimeSettings{
+		PublicURL:                     strings.TrimSpace(stored[db.SettingPublicURL]),
+		AgentImage:                    strings.TrimSpace(stored[db.SettingAgentImage]),
+		AgentNamespace:                strings.TrimSpace(stored[db.SettingAgentNamespace]),
+		AuditRetentionDays:            storedRetentionDays(stored),
+		SessionRecordingRetentionDays: storedDays(stored, db.SettingSessionRecordingRetentionDays),
+		AuditVerbs:                    overrideVerbs,
+		AuditVerbsSelected:            verbsSelected,
+		RecordExecSessions:            effective.RecordExecSessions,
+		RecordingAvailable:            effective.RecordingAvailable,
+	}
+
 	c.JSON(http.StatusOK, settingsResponse{
 		Effective: effective,
-		Overrides: runtimeSettings{
-			PublicURL:          strings.TrimSpace(stored[db.SettingPublicURL]),
-			AgentImage:         strings.TrimSpace(stored[db.SettingAgentImage]),
-			AgentNamespace:     strings.TrimSpace(stored[db.SettingAgentNamespace]),
-			AuditRetentionDays: storedRetentionDays(stored),
-		},
+		Overrides: overrides,
 		Defaults: runtimeSettings{
 			PublicURL:          s.publicURL,
 			AgentImage:         s.agentImage,
 			AgentNamespace:     s.agentNamespace,
 			AuditRetentionDays: s.auditRetentionDays,
+			// The recording window's default is not an environment variable: it is
+			// whatever the audit window resolves to, because that is its ceiling.
+			SessionRecordingRetentionDays: effective.AuditRetentionDays,
+			RecordExecSessions:            effective.RecordingAvailable,
+			RecordingAvailable:            effective.RecordingAvailable,
 		},
 		Warnings: settingsWarnings(effective),
 	})
@@ -185,13 +313,70 @@ func (s *server) updateSettings(c *gin.Context) {
 			values[db.SettingAuditRetentionDays] = strconv.Itoa(days)
 		}
 	}
+	if req.SessionRecordingRetentionDays != nil {
+		days := *req.SessionRecordingRetentionDays
+		switch {
+		case days == 0:
+			values[db.SettingSessionRecordingRetentionDays] = ""
+		case days < minAuditRetentionDays || days > maxAuditRetentionDays:
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf(
+					"recording retention must be between %d and %d days, or 0 to follow the audit window",
+					minAuditRetentionDays, maxAuditRetentionDays),
+			})
+			return
+		default:
+			// Stored as asked even when it exceeds the audit window; the read side
+			// clamps it. See clampRecordingRetention — the audit window moves, and a
+			// value that was legal when it was saved must not become an error.
+			values[db.SettingSessionRecordingRetentionDays] = strconv.Itoa(days)
+		}
+	}
+	if req.AuditVerbs != nil {
+		verbs, err := normalizeAuditVerbs(*req.AuditVerbs)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		values[db.SettingAuditVerbs] = strings.Join(verbs, ",")
+	}
+	if req.RecordExecSessions != nil {
+		values[db.SettingRecordExecSessions] = strconv.FormatBool(*req.RecordExecSessions)
+	}
 
 	if err := s.store.PutSettings(c.Request.Context(), values, caller.ID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save the settings"})
 		return
 	}
 
+	// The gateway reads the policy from memory on every proxied call, so a save
+	// that did not republish it would take effect at the next refresh tick instead
+	// of now — which reads as a settings page that does not work.
+	s.publishAuditPolicy(c.Request.Context())
+
 	s.getSettings(c)
+}
+
+// normalizeAuditVerbs validates a submitted verb selection. An empty result is
+// legal and means "no selection": see updateSettingsRequest.AuditVerbs.
+func normalizeAuditVerbs(raw []string) ([]string, error) {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(raw))
+	for _, entry := range raw {
+		verb := strings.ToLower(strings.TrimSpace(entry))
+		if verb == "" || seen[verb] {
+			continue
+		}
+		if !slices.Contains(auditpolicy.Verbs, verb) {
+			return nil, fmt.Errorf(
+				"%q is not an auditable verb; choose from %s",
+				entry, strings.Join(auditpolicy.Verbs, ", "))
+		}
+		seen[verb] = true
+		out = append(out, verb)
+	}
+	slices.Sort(out)
+	return out, nil
 }
 
 // validatePublicURL rejects anything an agent could not dial. The address ends

@@ -157,14 +157,36 @@ func auditFilterFrom(c *gin.Context) (db.AuditFilter, bool) {
 	filter.ClusterID = clusterID
 	filter.UserID = userID
 
-	filter.Verb = strings.TrimSpace(c.Query("verb"))
 	filter.Namespace = strings.TrimSpace(c.Query("namespace"))
 	filter.Search = strings.TrimSpace(c.Query("q"))
 	filter.Streaming = c.Query("streaming") == "true"
 	filter.FailedOnly = c.Query("failed") == "true"
 
+	// A verb may arrive singular or as a comma-separated set, because those are
+	// the two ways the question gets asked: a dropdown sends one and a badge
+	// multi-select sends several. A single value stays on the singular field so an
+	// existing caller's query is answered by exactly the SQL it was answered by
+	// before.
+	verbs := listParam(c, "verb")
+	switch len(verbs) {
+	case 0:
+	case 1:
+		filter.Verb = verbs[0]
+	default:
+		filter.Verbs = verbs
+	}
+
+	if raw := strings.TrimSpace(c.Query("status")); raw != "" {
+		status, err := strconv.Atoi(raw)
+		if err != nil || status < 100 || status > 599 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "status must be an HTTP status code"})
+			return filter, false
+		}
+		filter.Status = status
+	}
+
 	timeParam := func(name string) (*time.Time, bool) {
-		raw := c.Query(name)
+		raw := strings.TrimSpace(c.Query(name))
 		if raw == "" {
 			return nil, true
 		}
@@ -176,16 +198,33 @@ func auditFilterFrom(c *gin.Context) (db.AuditFilter, bool) {
 		return &parsed, true
 	}
 
-	since, ok := timeParam("since")
+	// `from`/`to` are the names the filter UI uses and `since`/`until` are the
+	// ones the API shipped with. Both are accepted rather than one being renamed:
+	// a saved link into the audit trail is a thing auditors keep, and breaking it
+	// to tidy a parameter name is not worth it.
+	since, ok := firstTime(c, timeParam, "since", "from")
 	if !ok {
 		return filter, false
 	}
-	until, ok := timeParam("until")
+	until, ok := firstTime(c, timeParam, "until", "to")
 	if !ok {
 		return filter, false
 	}
 	filter.Since = since
 	filter.Until = until
+
+	// A quick range is resolved here rather than in the browser so that "the last
+	// hour" means the same window to the row count, the page and any client that
+	// is not the console. An explicit `from` wins, since it is the more specific
+	// statement of the two.
+	if filter.Since == nil {
+		if window, ok := rangeWindow(c); !ok {
+			return filter, false
+		} else if window > 0 {
+			since := time.Now().UTC().Add(-window)
+			filter.Since = &since
+		}
+	}
 
 	if raw := c.Query("limit"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
@@ -205,4 +244,69 @@ func auditFilterFrom(c *gin.Context) (db.AuditFilter, bool) {
 	}
 
 	return filter, true
+}
+
+// listParam reads a repeatable, comma-separated query parameter into a
+// deduplicated lowercase set. Verbs are the only thing it is used for and they
+// are a closed vocabulary, so an unrecognised one is dropped rather than
+// refused — a stale bookmark naming a verb this build no longer produces should
+// narrow to nothing, not fail.
+func listParam(c *gin.Context, name string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, raw := range c.QueryArray(name) {
+		for _, part := range strings.Split(raw, ",") {
+			part = strings.ToLower(strings.TrimSpace(part))
+			if part == "" || seen[part] {
+				continue
+			}
+			seen[part] = true
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+// firstTime reads whichever of the given parameter names is present, preferring
+// the earlier one.
+func firstTime(
+	c *gin.Context, parse func(string) (*time.Time, bool), names ...string,
+) (*time.Time, bool) {
+	for _, name := range names {
+		if strings.TrimSpace(c.Query(name)) == "" {
+			continue
+		}
+		return parse(name)
+	}
+	return nil, true
+}
+
+// auditRanges are the presets the audit page leads with. They are a fixed table
+// rather than a parsed duration so the set the UI offers and the set the API
+// accepts cannot drift apart, and so no caller can ask for a window wide enough
+// to be a table scan dressed as a filter.
+var auditRanges = map[string]time.Duration{
+	"15m": 15 * time.Minute,
+	"1h":  time.Hour,
+	"6h":  6 * time.Hour,
+	"24h": 24 * time.Hour,
+	"7d":  7 * 24 * time.Hour,
+	"30d": 30 * 24 * time.Hour,
+}
+
+// rangeWindow resolves the `range` parameter. Zero with ok means "no preset",
+// which includes the explicit "all" the UI sends when a preset is cleared.
+func rangeWindow(c *gin.Context) (time.Duration, bool) {
+	raw := strings.ToLower(strings.TrimSpace(c.Query("range")))
+	if raw == "" || raw == "all" {
+		return 0, true
+	}
+	window, known := auditRanges[raw]
+	if !known {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "range must be one of 15m, 1h, 6h, 24h, 7d, 30d or all",
+		})
+		return 0, false
+	}
+	return window, true
 }

@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -69,16 +70,38 @@ type Options struct {
 	Sessions Sessions
 	// MaxBytes caps one recording. Zero takes DefaultMaxBytes.
 	MaxBytes int64
-	Logger   *slog.Logger
+	// Key encrypts recordings at rest. Empty writes them as plain gzip, which is
+	// what every recording written before a key was configured is — reading is
+	// decided per file, so turning encryption on does not orphan them.
+	//
+	// A recording holds a production shell's output and, unless OmitInput is
+	// set, its keystrokes. File permissions do not protect that from a volume
+	// snapshot, a backup, or root on the node, so a deployment handling anything
+	// regulated should set this.
+	Key []byte
+	// OmitInput stops keystrokes being recorded, keeping only what the container
+	// printed.
+	//
+	// The negative name is deliberate: the zero value has to keep recording
+	// input, because that is what every existing deployment does and a silent
+	// switch to less evidence than an auditor expects would be worse than a
+	// clumsy field name. Turning it on is the right choice where operators type
+	// credentials into interactive tools — a pty echoes what was typed, so most
+	// of it is in the output stream anyway; what is lost is precisely the input a
+	// prompt deliberately does not echo, which is the part worth not storing.
+	OmitInput bool
+	Logger    *slog.Logger
 }
 
 // Recorder writes asciinema recordings into a directory and indexes them in the
 // database. It satisfies bastion.SessionRecorder.
 type Recorder struct {
-	dir      string
-	sessions Sessions
-	maxBytes int64
-	logger   *slog.Logger
+	dir       string
+	sessions  Sessions
+	maxBytes  int64
+	key       []byte
+	omitInput bool
+	logger    *slog.Logger
 }
 
 // NewRecorder prepares the recording directory. It fails rather than silently
@@ -107,8 +130,36 @@ func NewRecorder(opts Options) (*Recorder, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Recorder{dir: dir, sessions: opts.Sessions, maxBytes: maxBytes, logger: logger}, nil
+	// A key of the wrong length is refused here rather than at the first
+	// session: recording either works as configured or is explicitly off, and a
+	// half-configured key that turns out to be unusable at 3am is the worst of
+	// both.
+	if len(opts.Key) > 0 && !Encrypted(opts.Key) {
+		return nil, fmt.Errorf("terminal recording: key must be %d bytes", KeySize)
+	}
+	return &Recorder{
+		dir:       dir,
+		sessions:  opts.Sessions,
+		maxBytes:  maxBytes,
+		key:       opts.Key,
+		omitInput: opts.OmitInput,
+		logger:    logger,
+	}, nil
 }
+
+// Encrypting reports whether this recorder encrypts what it writes. The HTTP
+// layer surfaces it so an operator can see the answer without reading the
+// process's environment.
+func (r *Recorder) Encrypting() bool { return Encrypted(r.key) }
+
+// RecordingInput reports whether keystrokes are being recorded. It is surfaced
+// for the same reason: an empty keystroke view has to be distinguishable from a
+// policy that does not collect them.
+func (r *Recorder) RecordingInput() bool { return !r.omitInput }
+
+// Key is the material a recording is read back with. The HTTP layer needs it to
+// serve a replay, and nothing else does.
+func (r *Recorder) Key() []byte { return r.key }
 
 // Dir is where this recorder writes, which is also the directory the HTTP layer
 // confines a stored path to before reading it back.
@@ -141,12 +192,32 @@ func (r *Recorder) Begin(ctx context.Context, meta bastion.SessionMeta) bastion.
 		return nil
 	}
 
+	// The layering is file → cipher → gzip → frames, so what lands on disk is
+	// encrypted and what is encrypted is already compressed. `crypt` is nil when
+	// no key is configured, and then the gzip writes to the file directly, which
+	// is byte-for-byte the format written before encryption existed.
+	var sink io.Writer = file
+	var crypt io.WriteCloser
+	if Encrypted(r.key) {
+		encrypted, err := newChunkedWriter(file, r.key)
+		if err != nil {
+			r.logger.Error("could not encrypt a terminal recording",
+				slog.String("session_id", meta.SessionID),
+				slog.String("error", err.Error()))
+			_ = file.Close()
+			_ = os.Remove(path)
+			return nil
+		}
+		crypt, sink = encrypted, encrypted
+	}
+
 	recording := &cast{
 		recorder: r,
 		meta:     meta,
 		started:  started,
 		file:     file,
-		gz:       gzip.NewWriter(file),
+		crypt:    crypt,
+		gz:       gzip.NewWriter(sink),
 		cols:     defaultCols,
 		rows:     defaultRows,
 	}
@@ -168,6 +239,11 @@ func (r *Recorder) Begin(ctx context.Context, meta bastion.SessionMeta) bastion.
 		Verb:          meta.Verb,
 		StartedAt:     started,
 		StoragePath:   path,
+		// Both are properties of this file, not of current configuration: a key
+		// can be added later and input recording switched off, and a recording
+		// has to keep saying how it was written.
+		Encrypted:     Encrypted(r.key),
+		InputRecorded: !r.omitInput,
 	}
 	if err := r.sessions.CreateTerminalSession(ctx, session); err != nil {
 		// Without a row the recording is unreachable, so there is no point
@@ -198,9 +274,13 @@ type cast struct {
 	meta     bastion.SessionMeta
 	started  time.Time
 
-	mu        sync.Mutex
-	file      *os.File
-	gz        *gzip.Writer
+	mu   sync.Mutex
+	file *os.File
+	// crypt is the cipher stream between the gzip and the file, or nil when
+	// recordings are not encrypted. It has to be closed after the gzip and
+	// before the file, so the final authenticated chunk covers the gzip tail.
+	crypt io.WriteCloser
+	gz    *gzip.Writer
 	cols      int
 	rows      int
 	bytes     int64
@@ -214,8 +294,15 @@ type cast struct {
 // Output records what the container printed.
 func (c *cast) Output(data []byte) { c.event("o", data) }
 
-// Input records what the operator typed.
-func (c *cast) Input(data []byte) { c.event("i", data) }
+// Input records what the operator typed, unless this recorder is configured not
+// to. Dropping it here rather than at the call site keeps the tee in one place:
+// the proxy carries the stream the same way either way.
+func (c *cast) Input(data []byte) {
+	if c.recorder.omitInput {
+		return
+	}
+	c.event("i", data)
+}
 
 // Resize records a geometry change.
 func (c *cast) Resize(cols, rows int) {
@@ -317,6 +404,14 @@ func (c *cast) Close(cause error) {
 	if err := c.gz.Close(); err != nil && c.broken == nil {
 		c.broken = err
 	}
+	// Sealing the last chunk is what marks the stream complete; without it the
+	// file reads as truncated, which is exactly what an interrupted write should
+	// look like.
+	if c.crypt != nil {
+		if err := c.crypt.Close(); err != nil && c.broken == nil {
+			c.broken = err
+		}
+	}
 	if err := c.file.Close(); err != nil && c.broken == nil {
 		c.broken = err
 	}
@@ -353,6 +448,9 @@ func (c *cast) Close(cause error) {
 func (c *cast) abandon(cause error) {
 	c.closed = true
 	_ = c.gz.Close()
+	if c.crypt != nil {
+		_ = c.crypt.Close()
+	}
 	name := c.file.Name()
 	_ = c.file.Close()
 	_ = os.Remove(name)

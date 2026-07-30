@@ -2,10 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { RotateCcw } from 'lucide-react'
 import { errorMessage, fetchSettings, updateSettings } from '../api/client'
-import type { RuntimeSettings, SettingsResponse } from '../api/types'
+import type { SettingsResponse } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { Button, Field, Notice, Panel, TextInput } from '../components/primitives'
+import { AlarmSettingsPanel } from '../components/settings/AlarmSettingsPanel'
+import { AuditSettingsPanel } from '../components/settings/AuditSettingsPanel'
 import { SsoSettingsPanel } from '../components/SsoSettingsPanel'
+import { useClusters } from '../state/clusters-context'
 
 /**
  * Blank means "use the default", so the form state is the override, not the
@@ -17,6 +20,11 @@ type Draft = {
   agent_image: string
   agent_namespace: string
   audit_retention_days: string
+  session_recording_retention_days: string
+  /** Null means no verb selection is in force, which records every verb. It is
+      not the same as an empty array, and the API preserves the difference. */
+  audit_verbs: string[] | null
+  record_exec_sessions: boolean
 }
 
 const EMPTY: Draft = {
@@ -24,12 +32,16 @@ const EMPTY: Draft = {
   agent_image: '',
   agent_namespace: '',
   audit_retention_days: '',
+  session_recording_retention_days: '',
+  audit_verbs: null,
+  record_exec_sessions: true,
 }
 
 const KEYS = ['public_url', 'agent_image', 'agent_namespace'] as const
 
 /** draftOf turns a settings response into the form's own shape. */
-function draftOf(overrides: RuntimeSettings): Draft {
+function draftOf(settings: SettingsResponse): Draft {
+  const { overrides, effective } = settings
   return {
     public_url: overrides.public_url,
     agent_image: overrides.agent_image,
@@ -37,10 +49,29 @@ function draftOf(overrides: RuntimeSettings): Draft {
     // 0 is how the API says "unset", which the form shows as an empty box.
     audit_retention_days:
       overrides.audit_retention_days > 0 ? String(overrides.audit_retention_days) : '',
+    session_recording_retention_days:
+      overrides.session_recording_retention_days > 0
+        ? String(overrides.session_recording_retention_days)
+        : '',
+    audit_verbs: overrides.audit_verbs_selected ? overrides.audit_verbs : null,
+    // Recording follows the process, so the effective value is the truth here —
+    // there is no "unset" state for a boolean to fall back to.
+    record_exec_sessions: effective.record_exec_sessions,
   }
 }
 
+/** sameVerbs compares two selections, treating "no selection" as its own value
+    rather than as an empty one — they save differently. */
+function sameVerbs(a: string[] | null, b: string[] | null): boolean {
+  if (a === null || b === null) return a === b
+  if (a.length !== b.length) return false
+  const left = [...a].sort()
+  const right = [...b].sort()
+  return left.every((entry, index) => entry === right[index])
+}
+
 export function Settings() {
+  const { clusters } = useClusters()
   const [settings, setSettings] = useState<SettingsResponse | null>(null)
   const [draft, setDraft] = useState<Draft>(EMPTY)
   const [loading, setLoading] = useState(true)
@@ -52,7 +83,7 @@ export function Settings() {
     try {
       const next = await fetchSettings()
       setSettings(next)
-      setDraft(draftOf(next.overrides))
+      setDraft(draftOf(next))
       setError(null)
     } catch (err) {
       setError(errorMessage(err, 'Could not load the settings.'))
@@ -77,9 +108,14 @@ export function Settings() {
         agent_namespace: draft.agent_namespace.trim(),
         // An empty box clears the override, which the API spells as 0.
         audit_retention_days: retentionDays,
+        session_recording_retention_days: recordingRetentionDays,
+        // No selection is sent as an empty array, which the API reads as "clear
+        // it back to every verb" rather than as "record nothing".
+        audit_verbs: draft.audit_verbs ?? [],
+        record_exec_sessions: draft.record_exec_sessions,
       })
       setSettings(next)
-      setDraft(draftOf(next.overrides))
+      setDraft(draftOf(next))
       setSaved(true)
     } catch (err) {
       setError(errorMessage(err, 'Could not save the settings.'))
@@ -88,7 +124,7 @@ export function Settings() {
     }
   }
 
-  function set(key: keyof Draft, value: string) {
+  function set(key: keyof Draft, value: Draft[keyof Draft]) {
     setDraft((current) => ({ ...current, [key]: value }))
     setSaved(false)
   }
@@ -97,10 +133,24 @@ export function Settings() {
   const retentionValid =
     Number.isInteger(retentionDays) && retentionDays >= 0 && retentionDays <= 3650
 
+  const recordingRetentionDays = Number(draft.session_recording_retention_days.trim() || 0)
+  const recordingRetentionValid =
+    Number.isInteger(recordingRetentionDays) &&
+    recordingRetentionDays >= 0 &&
+    recordingRetentionDays <= 3650
+
   const dirty =
     settings !== null &&
     (KEYS.some((key) => draft[key].trim() !== settings.overrides[key]) ||
-      retentionDays !== settings.overrides.audit_retention_days)
+      retentionDays !== settings.overrides.audit_retention_days ||
+      recordingRetentionDays !== settings.overrides.session_recording_retention_days ||
+      !sameVerbs(
+        draft.audit_verbs,
+        settings.overrides.audit_verbs_selected ? settings.overrides.audit_verbs : null,
+      ) ||
+      draft.record_exec_sessions !== settings.effective.record_exec_sessions)
+
+  const valid = retentionValid && recordingRetentionValid
 
   return (
     <AppShell
@@ -113,7 +163,7 @@ export function Settings() {
               variant="ghost"
               disabled={busy || !dirty}
               onClick={() => {
-                setDraft(draftOf(settings.overrides))
+                setDraft(draftOf(settings))
                 setSaved(false)
               }}
             >
@@ -124,7 +174,7 @@ export function Settings() {
               type="submit"
               form="settings-form"
               variant="primary"
-              disabled={busy || !dirty || !retentionValid}
+              disabled={busy || !dirty || !valid}
             >
               {busy ? 'Saving…' : 'Save settings'}
             </Button>
@@ -202,35 +252,35 @@ export function Settings() {
               <Effective label="In use" value={settings.effective.agent_namespace} />
             </Panel>
 
-            <Panel
-              eyebrow="Audit"
-              title="How long the trail is kept"
-              description="Every proxied call is recorded, including refusals and both ends of a streamed session, so the table grows with fleet activity rather than with fleet size. A background pass prunes anything past this window twice a day."
-              bodyClassName="flex flex-col gap-4 p-4"
-            >
-              <Field
-                label="Retention (days)"
-                htmlFor="audit_retention_days"
-                hint={`Records older than this are deleted and cannot be recovered. Leave empty for ${settings.defaults.audit_retention_days} days.`}
-                error={
-                  retentionValid ? undefined : 'Retention must be a whole number of days, up to 3650.'
-                }
-              >
-                <TextInput
-                  id="audit_retention_days"
-                  type="number"
-                  min={1}
-                  max={3650}
-                  step={1}
-                  inputMode="numeric"
-                  className="max-w-40 font-mono text-[12.5px]"
-                  placeholder={String(settings.defaults.audit_retention_days)}
-                  value={draft.audit_retention_days}
-                  onChange={(event) => set('audit_retention_days', event.target.value)}
-                />
-              </Field>
-              <Effective label="In use" value={`${settings.effective.audit_retention_days} days`} />
-            </Panel>
+            {/* What the trail keeps, for how long, and whether shells are
+                recorded. Three panels rather than one, because they are three
+                decisions with different consequences. */}
+            <AuditSettingsPanel
+              settings={settings}
+              selectedVerbs={draft.audit_verbs}
+              onVerbsChange={(next) => set('audit_verbs', next)}
+              recordSessions={draft.record_exec_sessions}
+              onRecordSessionsChange={(next) => set('record_exec_sessions', next)}
+              retentionDays={draft.audit_retention_days}
+              onRetentionChange={(next) => set('audit_retention_days', next)}
+              recordingRetentionDays={draft.session_recording_retention_days}
+              onRecordingRetentionChange={(next) =>
+                set('session_recording_retention_days', next)
+              }
+              retentionError={
+                retentionValid ? undefined : 'Retention must be a whole number of days, up to 3650.'
+              }
+              recordingRetentionError={
+                recordingRetentionValid
+                  ? undefined
+                  : 'Retention must be a whole number of days, up to 3650.'
+              }
+            />
+
+            {/* Where a cluster event or a refused action goes. Like the SSO
+                panel it owns its own saving — a channel is edited in a sheet and
+                saved on its own, not by the page's Save button. */}
+            <AlarmSettingsPanel clusters={clusters} />
 
             {/* Who may sign in at all. It sits inside the settings form's flow
                 but owns its own saving — a provider is edited in a sheet and

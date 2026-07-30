@@ -22,13 +22,31 @@ type createUserRequest struct {
 	Email      string `json:"email" binding:"omitempty,email"`
 	Password   string `json:"password" binding:"required"`
 	SystemRole string `json:"system_role" binding:"required,oneof=superadmin admin user"`
+	// CanViewRecordings grants the recording-viewer capability at creation.
+	// Super-admin-only, like every other way of setting it.
+	CanViewRecordings *bool `json:"can_view_recordings"`
 }
 
 type updateUserRequest struct {
-	Username   *string `json:"username"`
-	Email      *string `json:"email" binding:"omitempty,email"`
-	Password   *string `json:"password"`
-	SystemRole *string `json:"system_role" binding:"omitempty,oneof=superadmin admin user"`
+	Username          *string `json:"username"`
+	Email             *string `json:"email" binding:"omitempty,email"`
+	Password          *string `json:"password"`
+	SystemRole        *string `json:"system_role" binding:"omitempty,oneof=superadmin admin user"`
+	CanViewRecordings *bool   `json:"can_view_recordings"`
+}
+
+// recordingCapabilityDenied refuses a caller who is not a super admin. Watching
+// other people's shells is the most invasive read in the product, so the account
+// that may hand that out is the same one that may create another super admin —
+// otherwise an admin grants it to itself and the capability is decorative.
+func recordingCapabilityDenied(c *gin.Context, caller *db.User) bool {
+	if caller.IsSuperAdmin() {
+		return false
+	}
+	c.JSON(http.StatusForbidden, gin.H{
+		"error": "only a super admin can grant or revoke access to other people's session recordings",
+	})
+	return true
 }
 
 type userStatusRequest struct {
@@ -87,12 +105,22 @@ func (s *server) createUser(c *gin.Context) {
 		return
 	}
 
+	// Asking for the capability is a separate authorization from asking for the
+	// role, and is refused rather than ignored: an admin who thinks it was
+	// granted would believe the wrong thing about who can see recordings.
+	if req.CanViewRecordings != nil && *req.CanViewRecordings && recordingCapabilityDenied(c, caller) {
+		return
+	}
+
 	user := db.User{
 		Username:     username,
 		Email:        strings.TrimSpace(req.Email),
 		PasswordHash: hash,
 		SystemRole:   req.SystemRole,
 		IsActive:     true,
+	}
+	if req.CanViewRecordings != nil {
+		user.CanViewRecordings = *req.CanViewRecordings
 	}
 	err = s.store.CreateUser(c.Request.Context(), &user)
 	if errors.Is(err, db.ErrConflict) {
@@ -151,6 +179,12 @@ func (s *server) updateUser(c *gin.Context) {
 			return
 		}
 		update.SystemRole = req.SystemRole
+	}
+	if req.CanViewRecordings != nil && *req.CanViewRecordings != target.CanViewRecordings {
+		if recordingCapabilityDenied(c, caller) {
+			return
+		}
+		update.CanViewRecordings = req.CanViewRecordings
 	}
 
 	user, err := s.store.UpdateUser(c.Request.Context(), target.ID, update)

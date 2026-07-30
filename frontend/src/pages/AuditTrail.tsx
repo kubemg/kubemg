@@ -1,22 +1,33 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, PlayCircle, Radio, RefreshCw, ScrollText } from 'lucide-react'
+import {
+  CalendarClock,
+  ChevronLeft,
+  ChevronRight,
+  PlayCircle,
+  Radio,
+  RefreshCw,
+  ScrollText,
+} from 'lucide-react'
 import { errorMessage, fetchAudit, fetchAuditSummary, fetchUsers } from '../api/client'
-import type { AuditEvent, AuditQuery, AuditSummary, User } from '../api/types'
+import type { AuditEvent, AuditQuery, AuditRange, AuditSummary, User } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import {
   Button,
   Chip,
   EmptyState,
+  Field,
   IconButton,
   Notice,
   Pill,
   Row,
   SearchInput,
+  Segmented,
   Select,
   Sheet,
   Table,
   Td,
   Th,
+  TextInput,
 } from '../components/primitives'
 
 // The player carries the terminal emulator, which is the heaviest thing in the
@@ -35,9 +46,50 @@ const PAGE_SIZE = 50
 
 /* The verbs worth filtering by. Anything else still shows in the table; this is
    the shortlist an auditor actually reaches for. */
-const VERBS = ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete', 'exec', 'log']
+/* `replay` and `recording-delete` are not Kubernetes verbs — nothing about them
+   touches a cluster — but they belong in this filter: they are how the trail
+   answers who watched, or destroyed, a recording of somebody else's shell. */
+const VERBS = [
+  'get',
+  'list',
+  'watch',
+  'create',
+  'update',
+  'patch',
+  'delete',
+  'exec',
+  'log',
+  'replay',
+  'recording-delete',
+]
 
 const MUTATING = new Set(['create', 'update', 'patch', 'delete'])
+
+/* The quick ranges. They are resolved on the server, so a preset means the same
+   window to the record count, the page and a link somebody pastes into a ticket
+   — none of which would agree if the browser computed the boundary itself. */
+const RANGES: Array<{ value: AuditRange; label: string }> = [
+  { value: '15m', label: '15m' },
+  { value: '1h', label: '1h' },
+  { value: '24h', label: '24h' },
+  { value: '7d', label: '7d' },
+  { value: '30d', label: '30d' },
+  { value: 'all', label: 'All' },
+]
+
+/* An auditor asks for a status by name far more often than by class: "show me
+   the 403s" is the question, and "anything that failed" is the other one, which
+   the Refused chip already answers. */
+const STATUSES = [200, 201, 400, 401, 403, 404, 409, 422, 500, 502, 503]
+
+/** toRFC3339 converts what a datetime-local input produces — a wall-clock string
+    with no zone — into the instant the API expects. The browser's own zone is the
+    right reading: an operator typing 09:00 means nine o'clock where they are. */
+function toRFC3339(local: string): string | undefined {
+  if (!local) return undefined
+  const parsed = new Date(local)
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString()
+}
 
 /* The verbs that produce a recording. Everything else is a request, not a
    session, and there is nothing to watch. */
@@ -69,10 +121,20 @@ export function AuditTrail() {
 
   const [clusterId, setClusterId] = useState('')
   const [userId, setUserId] = useState('')
-  const [verb, setVerb] = useState('')
+  // A set rather than one value: an auditor narrowing to "the writes" is picking
+  // four verbs, not making four consecutive single-verb queries.
+  const [verbs, setVerbs] = useState<string[]>([])
+  const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
   const [failedOnly, setFailedOnly] = useState(false)
   const [streamsOnly, setStreamsOnly] = useState(false)
+  // The window. A preset is the common case; the two boxes are for the case a
+  // preset cannot express, which is most of the ones that matter — an incident
+  // has a start and an end, not a duration ending now.
+  const [range, setRange] = useState<AuditRange>('24h')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [showWindow, setShowWindow] = useState(false)
   const [offset, setOffset] = useState(0)
   // The session being replayed, addressed by the id its audit rows carry.
   const [replaying, setReplaying] = useState<AuditEvent | null>(null)
@@ -81,14 +143,21 @@ export function AuditTrail() {
     () => ({
       cluster_id: clusterId ? Number(clusterId) : undefined,
       user_id: userId ? Number(userId) : undefined,
-      verb: verb || undefined,
+      verb: verbs.length > 0 ? verbs : undefined,
+      status: status ? Number(status) : undefined,
       q: search.trim() || undefined,
       failed: failedOnly || undefined,
       streaming: streamsOnly || undefined,
+      // An explicit boundary beats the preset on the server too, so sending both
+      // is not ambiguous — but sending neither has to mean "everything", which is
+      // what `all` says.
+      from: toRFC3339(from),
+      to: toRFC3339(to),
+      range: from ? undefined : range,
       limit: PAGE_SIZE,
       offset,
     }),
-    [clusterId, userId, verb, search, failedOnly, streamsOnly, offset],
+    [clusterId, userId, verbs, status, search, failedOnly, streamsOnly, from, to, range, offset],
   )
 
   const load = useCallback(async () => {
@@ -206,15 +275,15 @@ export function AuditTrail() {
 
             <div className="w-32">
               <Select
-                aria-label="Filter by verb"
+                aria-label="Filter by status"
                 size="sm"
-                value={verb}
-                onChange={(event) => narrow(() => setVerb(event.target.value))}
+                value={status}
+                onChange={(event) => narrow(() => setStatus(event.target.value))}
               >
-                <option value="">All verbs</option>
-                {VERBS.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
+                <option value="">Any status</option>
+                {STATUSES.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
                   </option>
                 ))}
               </Select>
@@ -236,6 +305,115 @@ export function AuditTrail() {
             <span className="ml-auto text-[13px] text-muted">
               {total} {total === 1 ? 'record' : 'records'}
             </span>
+          </div>
+
+          {/* The window, on a row of its own. It is the first thing an auditor
+              sets and the last thing they change, so it does not belong crowded
+              in among the narrowing filters above. */}
+          <div className="flex flex-wrap items-center gap-2.5 border-b border-line-soft px-4 py-2.5">
+            <Segmented
+              ariaLabel="Time range"
+              value={range}
+              onChange={(next) =>
+                narrow(() => {
+                  setRange(next)
+                  // A preset and a hand-typed boundary are two answers to one
+                  // question; picking a preset clears the boundary rather than
+                  // leaving a filter in force that the control no longer shows.
+                  setFrom('')
+                  setTo('')
+                })
+              }
+              options={RANGES}
+            />
+
+            <Chip active={showWindow} onClick={() => setShowWindow((current) => !current)}>
+              <CalendarClock aria-hidden="true" className="size-3.5" />
+              Exact window
+            </Chip>
+
+            {from || to ? (
+              <span className="font-mono text-[12px] text-accent">
+                {from ? new Date(from).toLocaleString() : 'anything'} →{' '}
+                {to ? new Date(to).toLocaleString() : 'now'}
+              </span>
+            ) : null}
+          </div>
+
+          {showWindow ? (
+            <div className="flex flex-wrap items-end gap-3 border-b border-line-soft px-4 py-3">
+              <div className="w-56">
+                <Field label="From" htmlFor="audit-from">
+                  <TextInput
+                    id="audit-from"
+                    type="datetime-local"
+                    className="font-mono text-[12.5px]"
+                    value={from}
+                    onChange={(event) => narrow(() => setFrom(event.target.value))}
+                  />
+                </Field>
+              </div>
+              <div className="w-56">
+                <Field label="To" htmlFor="audit-to">
+                  <TextInput
+                    id="audit-to"
+                    type="datetime-local"
+                    className="font-mono text-[12.5px]"
+                    value={to}
+                    onChange={(event) => narrow(() => setTo(event.target.value))}
+                  />
+                </Field>
+              </div>
+              {from || to ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    narrow(() => {
+                      setFrom('')
+                      setTo('')
+                    })
+                  }
+                >
+                  Clear
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* Verbs as badges rather than a dropdown: the question is almost
+              always a set — "the writes", "the sessions" — and a dropdown makes
+              a set into one query per member. */}
+          <div className="flex flex-wrap items-center gap-2 border-b border-line-soft px-4 py-2.5">
+            <span className="label mr-1">Verbs</span>
+            {VERBS.map((value) => (
+              <Chip
+                key={value}
+                active={verbs.includes(value)}
+                onClick={() =>
+                  narrow(() =>
+                    setVerbs((current) =>
+                      current.includes(value)
+                        ? current.filter((entry) => entry !== value)
+                        : [...current, value],
+                    ),
+                  )
+                }
+              >
+                <span className="font-mono text-[12.5px]">{value}</span>
+              </Chip>
+            ))}
+            {verbs.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => narrow(() => setVerbs([]))}
+                className="ml-1 text-[12.5px] text-accent hover:underline"
+              >
+                Clear
+              </button>
+            ) : (
+              <span className="ml-1 text-[12px] text-faint">none selected — every verb</span>
+            )}
           </div>
 
           <Table>

@@ -65,8 +65,25 @@ The parts worth reading before trusting it with production:
   is teed into a gzipped [asciinema](https://asciinema.org) v2 cast and played
   back from the audit row it belongs to — or from the **Recordings** index, which
   lists sessions rather than calls and shows which shells are open right now —
-  with a keystroke view alongside the terminal. Non-admins can only ever reach
-  their own sessions; deleting a recording is an administrative act.
+  with a keystroke view alongside the terminal.
+- **Recordings are treated as the most sensitive thing here, because they are.**
+  They hold everything a production shell printed and, by default, everything
+  typed into one — including what a prompt never echoes. So: they are
+  **encrypted at rest** with a key from the environment (`KUBEMG_SESSION_RECORDING_KEY`,
+  chunked AES-256-GCM, so a trimmed or altered file fails to authenticate rather
+  than replaying short); keystroke capture can be turned off
+  (`KUBEMG_SESSION_RECORDING_INPUT=false`) where operators type credentials into
+  interactive tools; **watching one is itself audited**, refusals included, because
+  a surveillance capability with no trail of its own is the first thing an auditor
+  asks about; and reaching somebody else's needs a capability separate from the
+  admin role, grantable only by a super admin. Everyone may always replay their
+  own. Deleting needs that same capability — destroying evidence you may not look
+  at is not a lesser act — and the deletion is recorded before the file goes.
+- **Anyone who might be recorded is told before they type.** The in-browser
+  terminal states what is captured, whether keystrokes are part of it, whether it
+  is encrypted and how long it is kept — the disclosure most employee-monitoring
+  law turns on, and a line rather than a dialog so it stays visible for the whole
+  session.
 - **Scoped kubeconfig tokens.** A kubeconfig lives on a laptop, so the token
   inside one is minted for exactly one cluster's proxy route and is not a session
   key for the rest of the API. Revocation works because every proxied call
@@ -161,6 +178,8 @@ Server (all optional; these are the defaults):
 | `KUBEMG_SESSION_RECORDING_ENABLED` | `true` | Record `exec`/`attach` for replay |
 | `KUBEMG_SESSION_RECORDING_DIR` | `/var/lib/kubemg/recordings` | Where casts are written. **Mount it** — recordings must outlive the container |
 | `KUBEMG_SESSION_RECORDING_MAX_BYTES` | 32 MiB | Per-recording cap |
+| `KUBEMG_SESSION_RECORDING_KEY` | — | 32 bytes, hex or base64 (`openssl rand -base64 32`): encrypts recordings at rest. **Set it.** Keep it out of the backup that holds the recordings volume; losing it loses the recordings |
+| `KUBEMG_SESSION_RECORDING_INPUT` | `true` | Record keystrokes as well as output. `false` keeps only what the container printed |
 
 Agent: `KUBEMG_BASTION_URL`, `KUBEMG_CLUSTER_TOKEN`, `KUBEMG_BASTION_CA`
 (added to the system roots, not replacing them), and

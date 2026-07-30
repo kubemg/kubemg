@@ -24,6 +24,11 @@ type userResponse struct {
 	Role       string `json:"role"`
 	SystemRole string `json:"system_role"`
 	IsActive   bool   `json:"is_active"`
+	// CanViewRecordings is the recording-viewer capability, reported as the
+	// server resolves it: a super admin holds it implicitly. The console reads it
+	// to decide which affordances to draw, and the server still decides what a
+	// request may see.
+	CanViewRecordings bool `json:"can_view_recordings"`
 	// AuthSource says where this account's credentials live. The console reads
 	// it to stop offering a password field for an account that has none.
 	AuthSource  string     `json:"auth_source"`
@@ -49,6 +54,7 @@ func toUserResponse(u *db.User) userResponse {
 		Role:        normalized.Role,
 		SystemRole:  normalized.SystemRole,
 		IsActive:    normalized.IsActive,
+		CanViewRecordings: normalized.MayViewAllRecordings(),
 		AuthSource:  authSourceOf(normalized),
 		LastLoginAt: normalized.LastLoginAt,
 		CreatedAt:   normalized.CreatedAt,

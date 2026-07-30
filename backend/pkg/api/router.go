@@ -11,11 +11,13 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 
+	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
 	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/cache"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
+	"github.com/kubemg/kubemg/backend/pkg/observability"
 )
 
 // defaultSANamespace is where KubeMG provisions per-user service accounts when
@@ -61,6 +63,19 @@ type Store interface {
 	AssignGroupAccess(ctx context.Context, grant *db.GroupClusterAccess) error
 	RevokeUserAccess(ctx context.Context, userID, clusterID uint) error
 	RevokeGroupAccess(ctx context.Context, groupID, clusterID uint) error
+
+	// Alarm channels and rules. The dispatcher reads them too, through its own
+	// narrower interface — see observability.AlarmStore.
+	ListAlarmChannels(ctx context.Context) ([]db.AlarmChannel, error)
+	AlarmChannelByID(ctx context.Context, id uint) (*db.AlarmChannel, error)
+	CreateAlarmChannel(ctx context.Context, channel *db.AlarmChannel) error
+	UpdateAlarmChannel(ctx context.Context, channel *db.AlarmChannel) error
+	DeleteAlarmChannel(ctx context.Context, id uint) error
+	ListAlarmRules(ctx context.Context) ([]db.AlarmRule, error)
+	AlarmRuleByID(ctx context.Context, id uint) (*db.AlarmRule, error)
+	CreateAlarmRule(ctx context.Context, rule *db.AlarmRule) error
+	UpdateAlarmRule(ctx context.Context, rule *db.AlarmRule) error
+	DeleteAlarmRule(ctx context.Context, id uint) error
 
 	ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]db.AuditEvent, int64, error)
 	AuditSummary(ctx context.Context, since time.Time) (db.AuditStats, error)
@@ -141,10 +156,33 @@ type Options struct {
 	// answer "recording is not enabled" while it is empty rather than trusting
 	// whatever a row happens to name.
 	RecordingDir string
+	// RecordingKey decrypts recordings on the way out. It has to be the key they
+	// were written with; a recording written without one is read without one, so
+	// this being empty is not an error until an encrypted file is opened.
+	RecordingKey []byte
+	// RecordingInput reports whether this server is collecting keystrokes as well
+	// as output, so the console can tell an operator what is being recorded
+	// *before* they type into a shell.
+	RecordingInput bool
+	// Auditor records what this server itself did, as opposed to what it proxied.
+	// Today that is one thing and it is the sensitive one: who replayed or deleted
+	// a recording of somebody else's session. Nil turns those records off, which
+	// is what the tests that do not assert on them leave it as.
+	Auditor bastion.Auditor
 	// AuditRetentionDays is the boot-time default retention window, overridable
 	// at runtime from the Settings page. Zero falls back to
 	// defaultAuditRetentionDays.
 	AuditRetentionDays int
+	// AuditPolicy is the shared snapshot of which verbs reach the audit table and
+	// whether sessions are recorded. This router resolves it from the settings and
+	// publishes it; the gateway reads it. Nil means the gateway records everything,
+	// which is what a server wired without it does.
+	AuditPolicy *auditpolicy.Policy
+	// Alarms delivers cluster events and refused actions to their configured
+	// destinations. Nil leaves the alarm routes unregistered and nothing polling —
+	// the console then says the dispatcher is not running rather than offering rules
+	// that could never fire.
+	Alarms *observability.Dispatcher
 	// ReadCacheTTL is how long a live read is served from memory before it is
 	// asked of the cluster again. Zero takes cache.DefaultTTL; a negative value
 	// turns the cache off, so every read is a tunnel call as it was before.
@@ -178,7 +216,15 @@ type server struct {
 	// recordings is the directory terminal recordings are read back from. Empty
 	// means this server is not recording sessions.
 	recordings         string
+	recordingKey       []byte
+	recordingInput     bool
+	// auditor records this server's own sensitive reads. See Options.Auditor.
+	auditor            bastion.Auditor
 	auditRetentionDays int
+	// auditPolicy is published from the settings; see Options.AuditPolicy.
+	auditPolicy *auditpolicy.Policy
+	// alarms is the dispatcher, or nil when this server runs without one.
+	alarms *observability.Dispatcher
 	logger             *slog.Logger
 	// reads holds recently-answered live reads, keyed by caller and question.
 	// Nil turns caching off entirely; see cachedRead.
@@ -230,7 +276,12 @@ func NewRouter(opts Options) *gin.Engine {
 		agentNamespace:     opts.AgentNamespace,
 		bastionCA:          opts.BastionCA,
 		recordings:         strings.TrimSpace(opts.RecordingDir),
+		recordingKey:       opts.RecordingKey,
+		recordingInput:     opts.RecordingInput,
+		auditor:            opts.Auditor,
 		auditRetentionDays: retention,
+		auditPolicy:        opts.AuditPolicy,
+		alarms:             opts.Alarms,
 		logger:             opts.Logger,
 		allowedOrigins:     opts.AllowedOrigins,
 		ssoFlows:           newFlowStore(),
@@ -249,6 +300,16 @@ func NewRouter(opts Options) *gin.Engine {
 		// touching it, so enforcing its retention is a server responsibility
 		// rather than a cron job someone has to remember to install.
 		go s.startAuditPruner(opts.Background)
+		// What reaches that table is a setting, and the gateway reads it from
+		// memory on every call — so it has to be resolved here and republished.
+		if s.auditPolicy != nil {
+			go s.startAuditPolicyRefresher(opts.Background)
+		}
+		// Cluster events only reach an alarm if something goes and reads them.
+		// Nothing is read until a cluster-event rule exists; see alarms_watch.go.
+		if s.alarms != nil && opts.Proxy != nil {
+			go s.startAlarmWatcher(opts.Background)
+		}
 	}
 	requireAuth := auth.RequireAuth(s.jwt)
 	requireAdmin := auth.RequireRole(db.RoleAdmin)
@@ -480,9 +541,19 @@ func NewRouter(opts Options) *gin.Engine {
 		// single recording as well as on the list. Deleting one is
 		// administrative, because the person a recording is evidence about must
 		// not be the one who decides it stops existing.
+		// What this server records, readable by anyone who might be recorded —
+		// which is everyone. A console that puts a terminal in front of an
+		// operator has to be able to tell them what is being captured before they
+		// type into it, and that cannot be an admin-only fact. It is a sibling of
+		// the recordings collection rather than a child of it, because gin cannot
+		// hold a static and a parameterised segment at the same level.
+		audit.GET("/recording-policy", s.recordingPolicy)
 		audit.GET("/terminal-sessions", s.listTerminalSessions)
 		audit.GET("/terminal-sessions/:id", s.showTerminalSession)
 		audit.GET("/terminal-sessions/:id/stream", s.streamTerminalSession)
+		// Deleting is administrative *and* needs the recording-viewer capability:
+		// an admin who may not watch a recording has no business destroying one
+		// either, and the handler checks it.
 		audit.DELETE("/terminal-sessions/:id", requireAdmin, s.deleteTerminalSession)
 
 		// Configuring federation: who may sign in at all, and what an external
@@ -501,6 +572,24 @@ func NewRouter(opts Options) *gin.Engine {
 		admin.POST("/mappings", s.createSSOMapping)
 		admin.PUT("/mappings/:id", s.updateSSOMapping)
 		admin.DELETE("/mappings/:id", s.deleteSSOMapping)
+
+		// Alarms: where a cluster event or a refused action goes when somebody has
+		// to know about it now. Administrative throughout, and not only because it
+		// is fleet-wide configuration — a channel is an outbound destination for
+		// audit records, so adding one is a data-egress decision.
+		alarms := v1.Group("/alarms", requireAuth, requireAdmin)
+		alarms.GET("/channels", s.listAlarmChannels)
+		alarms.POST("/channels", s.createAlarmChannel)
+		alarms.PUT("/channels/:id", s.updateAlarmChannel)
+		alarms.DELETE("/channels/:id", s.deleteAlarmChannel)
+		// Proving the endpoint accepts KubeMG's payload, so an operator finds out
+		// here rather than from the incident nobody was paged for.
+		alarms.POST("/channels/:id/test", s.testAlarmChannel)
+
+		alarms.GET("/rules", s.listAlarmRules)
+		alarms.POST("/rules", s.createAlarmRule)
+		alarms.PUT("/rules/:id", s.updateAlarmRule)
+		alarms.DELETE("/rules/:id", s.deleteAlarmRule)
 
 		// Server-wide settings. The public URL lands inside manifests applied on
 		// other people's clusters, so this is an administrative surface.

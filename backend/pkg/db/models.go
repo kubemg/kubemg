@@ -96,6 +96,20 @@ type User struct {
 	// IsActive gates sign-in without destroying the account or its grants.
 	IsActive bool `gorm:"not null;default:true" json:"is_active"`
 
+	// CanViewRecordings lets an administrator replay *other people's* terminal
+	// recordings. It is a capability of its own rather than part of the admin
+	// role because a recording is the most invasive thing this product stores —
+	// it holds everything that crossed a production shell — and "may administer
+	// KubeMG" is not the same claim as "may watch what a colleague typed". An
+	// auditor asks who could see those files, and the honest answer has to be a
+	// short list rather than "every admin".
+	//
+	// It only ever *widens* what an admin sees. Everyone may replay their own
+	// sessions without it, and it grants a non-admin nothing: reading the fleet's
+	// recordings needs both. A super admin has it implicitly, because the account
+	// that can grant it can already take it.
+	CanViewRecordings bool `gorm:"not null;default:false" json:"can_view_recordings"`
+
 	// AuthSource is where this account's credentials live: AuthSourceLocal for a
 	// bcrypt hash in this database, or a federation protocol for an account an
 	// identity provider vouches for. A federated account has no usable password,
@@ -132,6 +146,16 @@ func (u *User) Normalize() {
 // IsAdmin reports whether the user holds the KubeMG admin privilege.
 func (u User) IsAdmin() bool {
 	return u.Role == RoleAdmin || u.SystemRole == SystemRoleAdmin || u.SystemRole == SystemRoleSuperAdmin
+}
+
+// MayViewAllRecordings reports whether this account may replay other people's
+// terminal recordings. Own sessions are always readable and are not decided
+// here.
+func (u User) MayViewAllRecordings() bool {
+	if !u.IsAdmin() {
+		return false
+	}
+	return u.IsSuperAdmin() || u.CanViewRecordings
 }
 
 // IsSuperAdmin reports whether the user is protected from administrative edits

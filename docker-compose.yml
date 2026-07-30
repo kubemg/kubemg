@@ -75,6 +75,17 @@ services:
       # mounted volume above, so recordings survive a rebuild.
       - KUBEMG_SESSION_RECORDING_ENABLED=true
       - KUBEMG_SESSION_RECORDING_DIR=/var/lib/kubemg/recordings
+      # Recordings hold production shell output and keystrokes, so they are
+      # encrypted at rest. This key is a *development* constant — generate a real
+      # one per install with `openssl rand -base64 32` and keep it out of the
+      # image, out of git, and out of the backup that holds the recordings volume.
+      # Losing it means losing the recordings; that is the trade every at-rest
+      # encryption makes.
+      - KUBEMG_SESSION_RECORDING_KEY=uR+xjEmHZ9QqgCKU6EwDWM8FJOPkuK3GSdjdyNIs4ts=
+      # Keystrokes are recorded as well as output. Set this to false where
+      # operators type credentials into interactive tools: what is lost is exactly
+      # what a prompt does not echo.
+      - KUBEMG_SESSION_RECORDING_INPUT=true
     depends_on:
       postgres:
         condition: service_healthy

@@ -398,6 +398,21 @@ type eventObject struct {
 		Component string `json:"component"`
 		Host      string `json:"host"`
 	} `json:"source"`
+
+	// The fields below are unused by the describe view, which already knows which
+	// object it asked about. The alarm watcher reads the same list cluster-wide and
+	// has to be told — see alarms_watch.go.
+	Metadata struct {
+		Name              string     `json:"name"`
+		Namespace         string     `json:"namespace"`
+		UID               string     `json:"uid"`
+		CreationTimestamp *time.Time `json:"creationTimestamp"`
+	} `json:"metadata"`
+	InvolvedObject struct {
+		Kind      string `json:"kind"`
+		Name      string `json:"name"`
+		Namespace string `json:"namespace"`
+	} `json:"involvedObject"`
 }
 
 func (e eventObject) view() eventView {

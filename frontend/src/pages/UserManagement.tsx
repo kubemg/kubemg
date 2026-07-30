@@ -14,6 +14,7 @@ import { AppShell } from '../components/AppShell'
 import {
   ActivityTag,
   Button,
+  Chip,
   Field,
   IconButton,
   Notice,
@@ -46,6 +47,10 @@ const BLANK = {
 
 export function UserManagement() {
   const { user: currentUser } = useAuth()
+  // Granting the recording-viewer capability is the one edit here that an
+  // ordinary admin may not make — otherwise an admin would grant it to itself
+  // and the control would be decorative.
+  const isSuperAdmin = currentUser?.system_role === 'superadmin'
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -138,6 +143,12 @@ export function UserManagement() {
                 <Th className="hidden md:table-cell md:w-[24%]">Email</Th>
                 <Th className="w-[28%] md:w-[16%]">System role</Th>
                 <Th className="w-[24%] md:w-[14%]">Status</Th>
+                {/* Only the account that may grant the capability is shown the
+                    control for it, so the column is not a row of disabled
+                    switches for everyone else. */}
+                {isSuperAdmin ? (
+                  <Th className="hidden lg:table-cell lg:w-[13%]">Recordings</Th>
+                ) : null}
                 <Th className="hidden md:table-cell md:w-[16%]">Last sign-in</Th>
                 <Th align="right" className="w-[12%] md:w-[10%]">
                   <span className="sr-only">Actions</span>
@@ -208,6 +219,39 @@ export function UserManagement() {
                         <ActivityTag active={row.is_active} />
                       </button>
                     </Td>
+                    {/* Who may replay somebody else's terminal session. It is
+                        separate from the admin role because a recording holds
+                        everything that crossed a production shell, and it is only
+                        offered for an account that could act on it: a non-admin
+                        sees their own sessions either way, so granting it there
+                        would suggest it did something. */}
+                    {isSuperAdmin ? (
+                      <Td className="hidden lg:table-cell">
+                        {row.system_role === 'user' ? (
+                          <span className="text-[12.5px] text-faint">—</span>
+                        ) : row.system_role === 'superadmin' ? (
+                          <span
+                            className="text-[12.5px] text-muted"
+                            title="A super admin holds it implicitly"
+                          >
+                            implicit
+                          </span>
+                        ) : (
+                          <Chip
+                            active={row.can_view_recordings}
+                            onClick={() =>
+                              run(row.id, `Could not update ${row.username}.`, () =>
+                                updateUser(row.id, {
+                                  can_view_recordings: !row.can_view_recordings,
+                                }),
+                              )
+                            }
+                          >
+                            {row.can_view_recordings ? 'may replay' : 'own only'}
+                          </Chip>
+                        )}
+                      </Td>
+                    ) : null}
                     <Td className="hidden truncate text-[12.5px] text-muted md:table-cell">
                       {relativeAge(row.last_login_at)}
                     </Td>
