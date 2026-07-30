@@ -63,9 +63,10 @@ The parts worth reading before trusting it with production:
   reads as `exec` and not as a `get`.
 - **Interactive sessions are recorded and replayable.** Every `exec` and `attach`
   is teed into a gzipped [asciinema](https://asciinema.org) v2 cast and played
-  back from the audit row it belongs to, with a keystroke view alongside the
-  terminal. Non-admins can only ever reach their own sessions; deleting a
-  recording is an administrative act.
+  back from the audit row it belongs to — or from the **Recordings** index, which
+  lists sessions rather than calls and shows which shells are open right now —
+  with a keystroke view alongside the terminal. Non-admins can only ever reach
+  their own sessions; deleting a recording is an administrative act.
 - **Scoped kubeconfig tokens.** A kubeconfig lives on a laptop, so the token
   inside one is minted for exactly one cluster's proxy route and is not a session
   key for the rest of the API. Revocation works because every proxied call
@@ -114,8 +115,9 @@ the caller and will answer whatever it is asked.
 permission matrix, and federation with OIDC, SAML and LDAP including IdP group
 mapping. Federated grants are revocable because their provenance is recorded.
 
-**Audit** — a queryable trail with session replay. Readable by everyone, but a
-non-admin only ever sees their own actions.
+**Audit** — a queryable trail with session replay, and a recordings index beside
+it for the sessions themselves. Both are readable by everyone, and both narrow a
+non-admin to their own activity.
 
 ## Quick start
 

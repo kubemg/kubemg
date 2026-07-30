@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import type { Cluster } from '../api/types'
 import { EnvironmentDot, KeyHint } from './primitives'
 import { LinkStrand } from './LinkStrand'
+import { clusterHref } from '../lib/navigation'
 import { strandState } from '../lib/status'
 
 export interface CommandTarget {
@@ -41,7 +42,9 @@ export function CommandPalette({
         id: `cluster-${cluster.id}`,
         label: cluster.name,
         hint: cluster.connection_mode === 'agent' ? 'Cluster · agent' : 'Cluster · direct',
-        to: `/clusters/${cluster.id}`,
+        // The same rule as the fleet list: a cluster with a tunnel opens on its
+        // resources, one without opens on its own page.
+        to: clusterHref(cluster),
         cluster,
       })),
       ...pages,

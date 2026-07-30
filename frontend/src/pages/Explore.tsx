@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Boxes, RefreshCw } from 'lucide-react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   errorMessage,
   fetchCRDs,
@@ -203,10 +204,23 @@ function writePreferredNamespace(namespace: string) {
   }
 }
 
+/** The cluster id in `/explore/:clusterId`, or null when the path carries none. */
+function readClusterParam(raw: string | undefined): number | null {
+  if (!raw) return null
+  const id = Number(raw)
+  return Number.isInteger(id) && id > 0 ? id : null
+}
+
 export function Explore() {
   const { clusters, loading: clustersLoading } = useClusters()
+  const navigate = useNavigate()
 
-  const [clusterId, setClusterId] = useState<number | null>(null)
+  // The cluster being explored is the one named in the address. That is what
+  // makes the rail's cluster list the way to switch: a click there is a
+  // navigation, so the sidebar highlight, the page and the reads cannot disagree
+  // — and a link to what someone is looking at carries the cluster with it.
+  const clusterId = readClusterParam(useParams().clusterId)
+
   const [namespaces, setNamespaces] = useState<Namespace[]>([])
   const [namespace, setNamespace] = useState('')
   const [scoped, setScoped] = useState(false)
@@ -238,10 +252,14 @@ export function Explore() {
 
   // Only agent clusters have a tunnel to read through; a direct-mode cluster has
   // no live state to show.
-  const reachable = clusters.filter(
-    (cluster) => cluster.connection_mode === 'agent' && cluster.agent_attached,
+  const reachable = useMemo(
+    () => clusters.filter((entry) => entry.connection_mode === 'agent' && entry.agent_attached),
+    [clusters],
   )
   const cluster = reachable.find((entry) => entry.id === clusterId) ?? null
+  // A cluster that is registered but cannot be read: the address is honoured and
+  // explained rather than quietly swapped for a different cluster's resources.
+  const unreadable = cluster ? null : (clusters.find((entry) => entry.id === clusterId) ?? null)
 
   const discovered = useMemo(() => discoverCategories(crds ?? []), [crds])
   const categories = useMemo(() => exploreCategories(discovered), [discovered])
@@ -254,11 +272,14 @@ export function Explore() {
   const item = resolved ?? DEFAULT_ITEM
   const namespaced = item.scope === 'namespaced'
 
+  // `/explore` with no cluster named settles on the first readable one and says
+  // so in the address, so the sidebar has something to highlight. An id that
+  // names a cluster is left alone even when it cannot be read — that case gets an
+  // explanation below, not a redirect to someone else's resources.
   useEffect(() => {
-    if (clusterId === null && reachable.length > 0) {
-      setClusterId(reachable[0].id)
-    }
-  }, [clusterId, reachable])
+    if (clusterId !== null || reachable.length === 0) return
+    navigate(`/explore/${reachable[0].id}`, { replace: true })
+  }, [clusterId, navigate, reachable])
 
   // Namespaces reload whenever the cluster changes; the current namespace is
   // dropped so it cannot leak across clusters.
@@ -393,6 +414,40 @@ export function Explore() {
     )
   }
 
+  // The address names a cluster whose resources cannot be read. Both shapes are
+  // the same answer — nothing to explore here — and both point at the cluster's
+  // own page, which is where its connection is managed.
+  if (!clustersLoading && clusterId !== null && !cluster) {
+    return (
+      <AppShell title="Explore">
+        <div className="card">
+          <EmptyState
+            icon={<Boxes aria-hidden="true" className="size-5" />}
+            title={
+              unreadable
+                ? `${unreadable.name} has no live connection`
+                : 'That cluster is not registered'
+            }
+          >
+            {unreadable ? (
+              <>
+                {unreadable.connection_mode === 'agent'
+                  ? 'Its agent has not dialled in, so there is no tunnel to read through. '
+                  : 'It is registered in direct mode, which has no agent tunnel for live reads. '}
+                <Link to={`/clusters/${unreadable.id}`} className="text-accent hover:underline">
+                  Open the cluster
+                </Link>{' '}
+                to check its connection, or pick another cluster from the fleet list.
+              </>
+            ) : (
+              <>Pick a cluster from the fleet list to read its resources.</>
+            )}
+          </EmptyState>
+        </div>
+      </AppShell>
+    )
+  }
+
   const unavailable = (loaded?.kind === 'routes' || loaded?.kind === 'custom') && !loaded.available
   const count = loaded?.rows.length ?? 0
   const allNamespaces = namespaced && namespace === ALL_NAMESPACES
@@ -401,7 +456,12 @@ export function Explore() {
     <AppShell
       title="Explore"
       sidebar={
-        <ExploreSidebar categories={categories} selected={resource} onSelect={setResource} />
+        <ExploreSidebar
+          categories={categories}
+          cluster={cluster ?? undefined}
+          selected={resource}
+          onSelect={setResource}
+        />
       }
       actions={
         <Button onClick={() => void load()} disabled={loading || (namespaced && !namespace)}>
@@ -414,22 +474,20 @@ export function Explore() {
         {error ? <Notice tone="error">{error}</Notice> : null}
 
         <div className="card flex flex-wrap items-center gap-3 px-4 py-3">
-          <div className="w-44">
-            <Select
-              aria-label="Cluster"
-              size="sm"
-              value={clusterId ?? ''}
-              onChange={(event) => setClusterId(Number(event.target.value))}
-            >
-              {reachable.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          {cluster ? <EnvironmentTag environment={cluster.environment} /> : null}
+          {/* Which cluster is open is stated here, not chosen here: it is picked
+              in the fleet list and carried in the address. The name links to the
+              cluster's own page, where its connection and access are managed. */}
+          {cluster ? (
+            <>
+              <Link
+                to={`/clusters/${cluster.id}`}
+                className="font-mono text-[13px] text-fg transition-colors hover:text-accent"
+              >
+                {cluster.name}
+              </Link>
+              <EnvironmentTag environment={cluster.environment} />
+            </>
+          ) : null}
 
           {/* The namespace only applies to a namespaced list; for nodes, PVs,
               storage classes and CRDs there is nothing for it to narrow. */}
