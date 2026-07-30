@@ -11,6 +11,8 @@ import {
   Shapes,
   Waypoints,
 } from 'lucide-react'
+import type { Cluster } from '../api/types'
+import { EnvironmentDot } from './primitives'
 import type { CategoryId, ResourceCategory, ResourceKey } from '../lib/resources'
 import { RESOURCE_CATEGORIES, matchesResource } from '../lib/resources'
 
@@ -56,10 +58,18 @@ const CATEGORY_ICON: Record<CategoryId, typeof Boxes> = {
  */
 export function ExploreSidebar({
   categories: inventory = RESOURCE_CATEGORIES,
+  cluster,
   selected,
   onSelect,
 }: {
   categories?: ResourceCategory[]
+  /**
+   * Whose resources these are. It is named here because this column is the one
+   * place that is certainly on screen while Explore is open: the section panel
+   * defaults to icon width on a page with a third level, and there a cluster in
+   * the fleet list is a dot with its name on hover.
+   */
+  cluster?: Cluster
   selected: ResourceKey
   onSelect: (resource: ResourceKey) => void
 }) {
@@ -86,8 +96,20 @@ export function ExploreSidebar({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-14 shrink-0 items-center px-4">
-        <p className="label text-rail-faint">Resources</p>
+      <div className="flex h-14 shrink-0 items-center gap-2 px-4">
+        {cluster ? (
+          <>
+            <EnvironmentDot environment={cluster.environment} />
+            <span
+              title={cluster.name}
+              className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-rail-fg"
+            >
+              {cluster.name}
+            </span>
+          </>
+        ) : (
+          <p className="label text-rail-faint">Resources</p>
+        )}
       </div>
 
       <div className="shrink-0 px-3 pb-3">

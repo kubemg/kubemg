@@ -10,6 +10,7 @@ import { GroupManagement } from './pages/GroupManagement'
 import { Login } from './pages/Login'
 import { Overview } from './pages/Overview'
 import { PermissionsMatrix } from './pages/PermissionsMatrix'
+import { SessionRecordings } from './pages/SessionRecordings'
 import { Settings } from './pages/Settings'
 import { UserManagement } from './pages/UserManagement'
 import { AuthProvider } from './state/AuthProvider'
@@ -96,8 +97,19 @@ export default function App() {
               </RequireAuth>
             }
           />
+          {/* Which cluster is being explored is part of the address, not page
+              state: the rail's cluster list is how an operator switches, and a
+              link to what someone is looking at has to carry the cluster. */}
           <Route
             path="/explore"
+            element={
+              <RequireAuth>
+                <Explore />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/explore/:clusterId"
             element={
               <RequireAuth>
                 <Explore />
@@ -109,6 +121,16 @@ export default function App() {
             element={
               <RequireAuth>
                 <AuditTrail />
+              </RequireAuth>
+            }
+          />
+          {/* Everyone reaches their own recordings; an admin reaches the fleet's.
+              The narrowing is the server's, exactly as it is for the trail. */}
+          <Route
+            path="/recordings"
+            element={
+              <RequireAuth>
+                <SessionRecordings />
               </RequireAuth>
             }
           />

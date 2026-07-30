@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { AlertTriangle, ChevronRight, KeyRound, RefreshCw } from 'lucide-react'
+import { Link, useParams } from 'react-router-dom'
+import { AlertTriangle, ChevronRight, KeyRound, Layers, RefreshCw } from 'lucide-react'
 import { checkCluster, errorMessage, fetchCluster, fetchNodeMetrics } from '../api/client'
 import type { Cluster, NodeMetrics } from '../api/types'
 import { AppShell } from '../components/AppShell'
@@ -76,6 +76,16 @@ export function ClusterDetail() {
       actions={
         cluster ? (
           <>
+            {/* The way back out of management and into the cluster itself. It is
+                only offered where there is a tunnel to read through. */}
+            {cluster.connection_mode === 'agent' && cluster.agent_attached ? (
+              <Link to={`/explore/${cluster.id}`}>
+                <Button>
+                  <Layers aria-hidden="true" className="size-4" />
+                  Explore
+                </Button>
+              </Link>
+            ) : null}
             {user?.role === 'admin' ? (
               <Button onClick={check} disabled={checking}>
                 <RefreshCw

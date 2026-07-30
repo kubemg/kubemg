@@ -7,6 +7,7 @@ import {
   Layers,
   LogOut,
   Menu,
+  MonitorPlay,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -23,6 +24,7 @@ import { Link, NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
 import { useTheme } from '../lib/theme'
+import { clusterHref, isClusterPath } from '../lib/navigation'
 import { strandState } from '../lib/status'
 import { CommandPalette } from './CommandPalette'
 import type { CommandTarget } from './CommandPalette'
@@ -58,6 +60,9 @@ const SECTIONS = [
       { to: '/permissions', label: 'Permissions', icon: KeyRound, adminOnly: true },
       // Everyone can reach the audit trail; a non-admin only sees their own actions.
       { to: '/audit', label: 'Audit trail', icon: ScrollText, adminOnly: false },
+      // The trail says a shell was opened; a recording is what was done in it.
+      // Same narrowing, so the same audience.
+      { to: '/recordings', label: 'Recordings', icon: MonitorPlay, adminOnly: false },
     ],
   },
   {
@@ -68,7 +73,7 @@ const SECTIONS = [
   },
 ] as const
 
-const ACCESS_ROUTES = ['/users', '/groups', '/permissions', '/audit']
+const ACCESS_ROUTES = ['/users', '/groups', '/permissions', '/audit', '/recordings']
 
 /* The palette answers to both chords; the hint shows the one this keyboard has. */
 const PALETTE_HINT = /mac/i.test(navigator.platform) ? '⌘K' : 'Ctrl K'
@@ -546,11 +551,14 @@ function FleetList({
       ) : (
         <ul className="flex flex-col gap-0.5">
           {clusters.map((cluster) => {
-            const active = pathname === `/clusters/${cluster.id}`
+            // A cluster is the current one whether it is being explored or being
+            // managed: both are that cluster, and the highlight has to say so or
+            // the list stops answering "which one am I in".
+            const active = isClusterPath(pathname, cluster.id)
             return (
               <li key={cluster.id}>
                 <Link
-                  to={`/clusters/${cluster.id}`}
+                  to={clusterHref(cluster)}
                   aria-current={active ? 'page' : undefined}
                   title={mode === 'full' ? undefined : cluster.name}
                   className={`flex items-center gap-2 rounded-control py-1.5 transition-colors ${
