@@ -37,7 +37,14 @@ type auditEventResponse struct {
 	// SessionID is set on an interactive session, and is what a recording of
 	// that session is filed under — the join between this row and its replay.
 	SessionID string `json:"session_id,omitempty"`
-	Error     string `json:"error,omitempty"`
+	// GuardrailPolicy names the safety policy this call matched and
+	// GuardrailAction says what the match did. They are what makes the trail
+	// answer "what has this rule caught?" — which is the question asked of a rule
+	// running in warn, before anyone dares arm it. Without them the only trace is
+	// a sentence inside the error string, which nothing can filter on.
+	GuardrailPolicy string `json:"guardrail_policy,omitempty"`
+	GuardrailAction string `json:"guardrail_action,omitempty"`
+	Error           string `json:"error,omitempty"`
 }
 
 func toAuditResponse(event db.AuditEvent) auditEventResponse {
@@ -66,6 +73,8 @@ func toAuditResponse(event db.AuditEvent) auditEventResponse {
 		BytesOut:           event.BytesOut,
 		BytesIn:            event.BytesIn,
 		SessionID:          event.SessionID,
+		GuardrailPolicy:    event.GuardrailPolicy,
+		GuardrailAction:    event.GuardrailAction,
 		Error:              event.Error,
 	}
 }

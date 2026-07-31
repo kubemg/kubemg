@@ -20,6 +20,7 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/db"
+	"github.com/kubemg/kubemg/backend/pkg/guardrails"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
 )
 
@@ -62,6 +63,9 @@ type fakeStore struct {
 	pruneErr error
 	// alarms holds the channel and rule tables; see alarms_fake_test.go.
 	alarms *alarmTables
+	// guardrails stands in for the guardrail_policies table; see
+	// guardrails_fake_test.go.
+	guardrails map[uint]*db.GuardrailPolicy
 }
 
 func newFakeStore() *fakeStore {
@@ -831,6 +835,9 @@ type testEnv struct {
 	health   *fakeChecker
 	gateway  *bastion.Server
 	registry *bastion.Registry
+	// guard is the engine both the router and the gateway share, so a test can
+	// assert on what is actually enforced rather than only on what was stored.
+	guard *guardrails.Engine
 }
 
 // recordingAuditor captures the audit records the API writes about itself, which
@@ -873,7 +880,15 @@ func newTestEnvWith(t *testing.T, adjust func(*Options)) *testEnv {
 	}
 	checker := &fakeChecker{report: k8s.HealthReport{Reachable: true, Version: "v1.31.4"}}
 	gateway := bastion.NewServer(bastion.ServerOptions{Store: store})
-	proxy := bastion.NewProxy(bastion.ProxyOptions{Store: store, Registry: gateway.Registry()})
+	// The guardrail engine is wired into both halves by default, exactly as the
+	// server wires it: the router publishes the rules and the gateway enforces
+	// them, and a test that seeds a rule needs both ends to agree.
+	guard := guardrails.New()
+	proxy := bastion.NewProxy(bastion.ProxyOptions{
+		Store:    store,
+		Registry: gateway.Registry(),
+		Guard:    guard,
+	})
 
 	opts := Options{
 		Store:          store,
@@ -886,6 +901,7 @@ func newTestEnvWith(t *testing.T, adjust func(*Options)) *testEnv {
 		PublicURL:      "https://kubemg.example.com",
 		AgentImage:     "ghcr.io/kubemg/kubemg-agent:test",
 		AgentNamespace: "kubemg-system",
+		Guardrails:     guard,
 	}
 	if adjust != nil {
 		adjust(&opts)
@@ -899,6 +915,7 @@ func newTestEnvWith(t *testing.T, adjust func(*Options)) *testEnv {
 		health:   checker,
 		gateway:  gateway,
 		registry: gateway.Registry(),
+		guard:    guard,
 	}
 }
 

@@ -7,6 +7,7 @@ import { AppShell } from '../components/AppShell'
 import { Button, Field, Notice, Panel, TextInput } from '../components/primitives'
 import { AlarmSettingsPanel } from '../components/settings/AlarmSettingsPanel'
 import { AuditSettingsPanel } from '../components/settings/AuditSettingsPanel'
+import { GuardrailSettingsPanel } from '../components/settings/GuardrailSettingsPanel'
 import { SsoSettingsPanel } from '../components/SsoSettingsPanel'
 import { useClusters } from '../state/clusters-context'
 
@@ -276,6 +277,13 @@ export function Settings() {
                   : 'Retention must be a whole number of days, up to 3650.'
               }
             />
+
+            {/* What the platform refuses to pass on, whatever the cluster's
+                RBAC allows. It sits next to the audit panels because it is the
+                same subject read the other way round: the trail says what
+                happened, a guardrail is what does not get to. Like them it owns
+                its own saving — a rule is edited in a sheet. */}
+            <GuardrailSettingsPanel clusters={clusters} />
 
             {/* Where a cluster event or a refused action goes. Like the SSO
                 panel it owns its own saving — a channel is edited in a sheet and

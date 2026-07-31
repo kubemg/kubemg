@@ -47,6 +47,7 @@ func Migrate(gdb *gorm.DB) error {
 		&SSOGroupMapping{},
 		&AlarmChannel{},
 		&AlarmRule{},
+		&GuardrailPolicy{},
 	); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
 	}
@@ -101,6 +102,11 @@ func Migrate(gdb *gorm.DB) error {
 	}
 
 	if err := backfillRecordingAccess(gdb); err != nil {
+		return err
+	}
+	// The preset guardrails, stored disabled. See SeedGuardrailPolicies: a rule
+	// that refuses what RBAC permits must never arrive armed by way of an upgrade.
+	if err := SeedGuardrailPolicies(gdb); err != nil {
 		return err
 	}
 	return nil

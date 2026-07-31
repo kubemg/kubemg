@@ -35,15 +35,28 @@ export type ResourceKey =
   | 'nodes'
   | 'namespaces'
 
+/**
+ * A section KubeMG did not know about until it read a cluster's CRDs: one API
+ * group family's kinds, keyed by that family. It cannot be part of the fixed
+ * union for the same reason a `crd:` key cannot — which operators a cluster runs
+ * is a property of the cluster, so the id has to carry the answer.
+ */
+export type OperatorCategoryId = `operator:${string}`
+
 export type CategoryId =
+  | OperatorCategoryId
   | 'workloads'
   | 'helm'
   | 'networking'
   | 'storage'
   | 'custom'
   | 'cluster'
-  | 'istio'
   | 'other'
+
+/** Whether a section was discovered from a cluster rather than declared here. */
+export function isOperatorCategory(id: CategoryId): id is OperatorCategoryId {
+  return id.startsWith('operator:')
+}
 
 /**
  * The namespace selection that means "everything I may see". A namespace cannot
@@ -240,11 +253,43 @@ export function resourceItem(
 
 /* ------------------------------------------------- discovered from a cluster --- */
 
-/** ISTIO_GROUP_SUFFIX matches every Istio API group: networking, security, telemetry. */
-const ISTIO_GROUP_SUFFIX = '.istio.io'
-
 /** The Gateway API is a CRD too, and belongs with the networking it does. */
 const GATEWAY_API_GROUP = 'gateway.networking.k8s.io'
+
+/**
+ * How many kinds an API group family needs before it earns a section of its own.
+ * An operator that installs one CRD is a row, not an area of work, and a column
+ * of single-row sections is harder to read than one Other list — so a singleton
+ * family stays in Other, where the filter still finds it.
+ */
+const MIN_OPERATOR_KINDS = 2
+
+/**
+ * Domain roots that belong to no single vendor: everyone's CRDs end up under
+ * them, so the *root* is not an identity and the label before it is. Grouping by
+ * `k8s.io` would put the Gateway API, Cluster API and half the ecosystem in one
+ * section called after a registrar.
+ */
+const SHARED_GROUP_ROOTS = new Set([
+  'k8s.io',
+  'x-k8s.io',
+  'kubernetes.io',
+  'openshift.io',
+  'coreos.com',
+])
+
+/**
+ * Casing and spelling the derivation cannot know — nothing more. This is not a
+ * registry of supported operators: a family with no entry here still gets its
+ * own section, named from its own domain. Only add a line where the derived name
+ * is *wrong*, not where it is merely plain.
+ */
+const FAMILY_LABELS: Record<string, string> = {
+  'istio.io': 'Istio',
+  'cert-manager.io': 'cert-manager',
+  'argoproj.io': 'Argo',
+  'cncf.io': 'CNCF',
+}
 
 /** customResourceKey names a CRD-served resource by the API it is served under. */
 export function customResourceKey(ref: CustomResourceRef): CustomResourceKey {
@@ -317,57 +362,123 @@ function versionRank(version: string): number {
 
 /**
  * discoverCategories builds the sidebar sections that only exist because of what
- * a particular cluster has installed. Three destinations, by API group:
+ * a particular cluster has installed. Which operators those are is **not** known
+ * here — a cluster may run Istio, or Strimzi, or Debezium, or something written
+ * in-house — so the sections are derived from the CRDs themselves rather than
+ * from a table of the vendors KubeMG has heard of:
  *
- *   - Istio (`*.istio.io`) gets a section of its own, because on a mesh cluster
- *     those are a whole area of the operator's work rather than a footnote.
  *   - The Gateway API joins Networking, where the thing it does already lives.
- *   - Everything else lands in **Other**, at the bottom. A cluster can define a
- *     hundred kinds and most of them belong to one operator's internals; they
- *     are worth reaching, not worth putting above Workloads.
+ *     That is the one group named in this file, because it is the one whose kinds
+ *     KubeMG reads first-class as networking rather than as somebody's operator.
+ *   - Every other CRD is bucketed by its **API group family** (`groupFamily`),
+ *     and a family with at least MIN_OPERATOR_KINDS kinds becomes its own
+ *     section named after that family — so a Strimzi cluster gets Strimzi and a
+ *     Debezium one gets Debezium, on the same rule that used to only produce
+ *     Istio.
+ *   - Whatever is left — a family with a single kind — lands in **Other**. A
+ *     cluster can define a hundred kinds and most belong to one operator's
+ *     internals; they are worth reaching, not worth a heading each.
  *
  * Nothing here shadows a fixed entry, because the kinds that would have — the
- * Gateway API's and Istio's — are no longer declared as fixed entries at all.
- * They live in RICH_CRD_ITEMS and are placed by this function, so they appear
- * exactly when the cluster serves them and still get their proper table.
+ * Gateway API's and Istio's — are not declared as fixed entries at all. They live
+ * in RICH_CRD_ITEMS and are placed by this function, so they appear exactly when
+ * the cluster serves them and still get their proper table.
  */
 export function discoverCategories(crds: DiscoveredCRD[]): ResourceCategory[] {
-  const sections: Record<string, ResourceItem[]> = { istio: [], networking: [], other: [] }
+  const networking: ResourceItem[] = []
+  const families = new Map<string, ResourceItem[]>()
 
   for (const crd of crds) {
     const rich = RICH_CRD_ITEMS[`${crd.plural}.${crd.group}`]
     const item = rich ?? customResourceItem(crd)
-    if (item) sections[categoryFor(crd.group)].push(item)
+    if (!item) continue
+    if (crd.group === GATEWAY_API_GROUP) {
+      networking.push(item)
+      continue
+    }
+    const family = groupFamily(crd.group)
+    const bucket = families.get(family)
+    if (bucket) bucket.push(item)
+    else families.set(family, [item])
   }
 
-  const byLabel = (a: ResourceItem, b: ResourceItem) => a.label.localeCompare(b.label)
+  const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label)
+
+  // Labels are claimed as they are handed out, so a derived name can never
+  // collide with a fixed section's ("Cluster") or with another family's — two
+  // sections with one name is worse than one section named after its domain.
+  const taken = new Set(RESOURCE_CATEGORIES.map((category) => category.label.toLowerCase()))
+  const operators: ResourceCategory[] = []
+  const other: ResourceItem[] = []
+
+  for (const [family, items] of families) {
+    if (items.length < MIN_OPERATOR_KINDS) {
+      other.push(...items)
+      continue
+    }
+    const label = familyLabel(family, taken)
+    taken.add(label.toLowerCase())
+    operators.push({ id: `operator:${family}`, label, items: items.sort(byLabel) })
+  }
+  operators.sort(byLabel)
+
   const out: ResourceCategory[] = []
-  if (sections.networking.length > 0) {
-    out.push({ id: 'networking', label: 'Networking', items: sections.networking.sort(byLabel) })
+  if (networking.length > 0) {
+    out.push({ id: 'networking', label: 'Networking', items: networking.sort(byLabel) })
   }
-  if (sections.istio.length > 0) {
-    out.push({ id: 'istio', label: 'Istio', items: sections.istio.sort(byLabel) })
-  }
-  if (sections.other.length > 0) {
-    out.push({ id: 'other', label: 'Other', items: sections.other.sort(byLabel) })
+  out.push(...operators)
+  if (other.length > 0) {
+    out.push({ id: 'other', label: 'Other', items: other.sort(byLabel) })
   }
   return out
 }
 
-/** categoryFor decides which section a CRD's API group belongs in. */
-function categoryFor(group: string): 'istio' | 'networking' | 'other' {
-  if (group.endsWith(ISTIO_GROUP_SUFFIX)) return 'istio'
-  if (group === GATEWAY_API_GROUP) return 'networking'
-  return 'other'
+/**
+ * groupFamily reduces an API group to the thing that installed it. An operator
+ * serves several groups under one domain — `kafka.strimzi.io` and
+ * `core.strimzi.io`, `networking.istio.io` and `security.istio.io` — so the
+ * domain root is what says "these are one area of work", and it is derivable
+ * rather than enumerable.
+ *
+ * The exception is a root that belongs to nobody (SHARED_GROUP_ROOTS): under
+ * `k8s.io` the identity is the label in front of it, so one more label is kept.
+ */
+function groupFamily(group: string): string {
+  const labels = group.split('.')
+  if (labels.length <= 2) return group
+  const root = labels.slice(-2).join('.')
+  if (!SHARED_GROUP_ROOTS.has(root)) return root
+  return labels.slice(-3).join('.')
+}
+
+/**
+ * familyLabel names a section after its family: `strimzi.io` → Strimzi,
+ * `debezium.io` → Debezium, `kafka.eventing.knative.dev` → Knative. A hyphenated
+ * name keeps its hyphen — `cert-manager` is how it is written everywhere else —
+ * and a name already in use falls back to the family itself, which is unique by
+ * construction.
+ */
+function familyLabel(family: string, taken: Set<string>): string {
+  const override = FAMILY_LABELS[family]
+  const derived = override ?? titleCase(family.split('.')[0] ?? family)
+  return taken.has(derived.toLowerCase()) ? family : derived
+}
+
+function titleCase(name: string): string {
+  return name.replace(/(^|-)([a-z])/g, (match) => match.toUpperCase())
 }
 
 /**
  * exploreCategories merges the fixed inventory with what a cluster turned out to
  * have. A discovered section carrying a fixed section's id extends it, so the
- * Gateway API's routes sit under Networking with Services and Ingresses. The two
- * sections with no fixed counterpart are placed by what they mean: Istio next to
- * the networking it extends, and Other last, since it is a residue rather than a
- * named area.
+ * Gateway API's routes sit under Networking with Services and Ingresses.
+ *
+ * Sections with no fixed counterpart go **below the whole fixed inventory**, the
+ * operator sections in the order discovery put them and Other last. However
+ * central a mesh or a Kafka operator is to a cluster, it is still a layer over
+ * the Pods, Services and Nodes everything else is browsed through — a dozen mesh
+ * kinds between Networking and Storage push the core inventory down the column
+ * for a section most visits never open.
  */
 export function exploreCategories(discovered: ResourceCategory[]): ResourceCategory[] {
   const extra = new Map(discovered.map((category) => [category.id, category]))
@@ -379,12 +490,11 @@ export function exploreCategories(discovered: ResourceCategory[]): ResourceCateg
     return { ...category, items: [...category.items, ...addition.items] }
   })
 
-  const istio = extra.get('istio')
-  if (istio) {
-    const at = merged.findIndex((category) => category.id === 'networking')
-    merged.splice(at < 0 ? merged.length : at + 1, 0, istio)
+  // What survives, in discovery's order — minus anything a fixed section above
+  // already absorbed, and with Other kept last however many operators there are.
+  for (const category of discovered) {
+    if (extra.has(category.id) && category.id !== 'other') merged.push(category)
   }
-
   const other = extra.get('other')
   if (other) merged.push(other)
   return merged

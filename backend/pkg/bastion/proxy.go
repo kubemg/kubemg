@@ -16,6 +16,7 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
 	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/db"
+	"github.com/kubemg/kubemg/backend/pkg/guardrails"
 )
 
 // GroupPrefix namespaces the Kubernetes groups KubeMG impersonates, so a
@@ -86,6 +87,9 @@ type Proxy struct {
 	// turn recording off — a process with no recorder has nowhere to write, and no
 	// database row changes that.
 	policy *auditpolicy.Policy
+	// guard refuses calls and commands a safety policy names. Nil refuses
+	// nothing, which is what a gateway wired without one does — see pkg/guardrails.
+	guard *guardrails.Engine
 }
 
 // ProxyOptions wires the proxy handler.
@@ -101,6 +105,10 @@ type ProxyOptions struct {
 	// Policy is the runtime audit configuration. Nil records everything, which is
 	// what the tests and a server wired without settings do.
 	Policy *auditpolicy.Policy
+	// Guard holds the command guardrails. Nil refuses nothing: a gateway without
+	// one behaves exactly as it did before guardrails existed, which is the right
+	// failure mode for a control that stops calls RBAC permits.
+	Guard *guardrails.Engine
 }
 
 // NewProxy builds the kubectl proxy handler.
@@ -119,6 +127,7 @@ func NewProxy(opts ProxyOptions) *Proxy {
 		auditor:  auditor,
 		recorder: opts.Recorder,
 		policy:   opts.Policy,
+		guard:    opts.Guard,
 	}
 }
 
@@ -164,6 +173,33 @@ func (p *Proxy) Handle(c *gin.Context) {
 		p.fail(c, &event, http.StatusForbidden, reason)
 		return
 	}
+
+	// The safety policies. They sit here — after the grant is resolved, before a
+	// tunnel is looked up — for two reasons: a refusal must not depend on whether
+	// an agent happens to be attached, and the record of it must carry the
+	// identity the rest of the trail is keyed by.
+	decision := p.guardAPIRequest(cluster.ID, c.Request.Method, path)
+	if decision.Blocked() {
+		p.failGuardrail(c, &event, decision)
+		return
+	}
+	// A non-interactive exec carries its command in the query string and runs it
+	// without ever typing anything, so the keystroke guard downstream would never
+	// see it. This is the shape a script uses, and the easy way around a rule that
+	// only watched a terminal.
+	if parsed.Subresource == "exec" {
+		if command := execCommand(path); command != "" {
+			if verdict := p.guardCommand(cluster.ID, command); verdict.Blocked() {
+				p.failGuardrail(c, &event, verdict)
+				return
+			} else if verdict != nil && decision == nil {
+				decision = verdict
+			}
+		}
+	}
+	// A warn-only match still has to reach the trail: reading what a rule would
+	// have caught is the whole reason to run one in warn before arming it.
+	noteGuardrail(&event, decision)
 
 	// port-forward is carried in its WebSocket form only. A SPDY client is
 	// refused here rather than left to hang on an upgrade nobody will answer.
@@ -274,6 +310,18 @@ func (p *Proxy) Call(
 		err := errors.New(reason)
 		record(http.StatusForbidden, err)
 		return nil, &CallError{Status: http.StatusForbidden, Message: reason}
+	}
+
+	// The same policies apply to a read the console makes on a user's behalf. A
+	// guardrail that only covered kubectl would be a control the UI walks around,
+	// and every write in the resource API — scale, restart, apply — comes through
+	// here rather than through Handle.
+	decision := p.guardAPIRequest(cluster.ID, method, path)
+	noteGuardrail(&event, decision)
+	if decision.Blocked() {
+		message := decision.Message()
+		record(http.StatusForbidden, errors.New(message))
+		return nil, &CallError{Status: http.StatusForbidden, Message: message}
 	}
 
 	tunnel, ok := p.registry.Get(cluster.ID)

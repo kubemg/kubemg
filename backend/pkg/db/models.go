@@ -284,6 +284,13 @@ type AuditEvent struct {
 	// existed.
 	SessionID string `gorm:"size:64;index" json:"session_id,omitempty"`
 
+	// GuardrailPolicy names the safety policy this call matched and
+	// GuardrailAction says what the match did. They are indexed together with
+	// nothing else because the question they answer is one query — "what has this
+	// rule caught?" — asked of a rule running in warn before it is armed.
+	GuardrailPolicy string `gorm:"size:120;index" json:"guardrail_policy,omitempty"`
+	GuardrailAction string `gorm:"size:16" json:"guardrail_action,omitempty"`
+
 	Error string `gorm:"type:text" json:"error,omitempty"`
 }
 

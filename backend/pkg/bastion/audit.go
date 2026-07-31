@@ -52,6 +52,16 @@ type Event struct {
 	// records. It is also what a terminal recording is filed under, so it is the
 	// join between a line in the trail and the replay of it.
 	SessionID string
+
+	// GuardrailPolicy names the safety policy this call matched, and
+	// GuardrailAction is what the match did — "block" or "warn". Both are empty
+	// on the overwhelming majority of records.
+	//
+	// A warn-only match is recorded exactly like a block, minus the refusal. That
+	// is the entire point of the mode: a rule is rolled out in warn, the trail is
+	// read to find out what it would have caught, and only then is it armed.
+	GuardrailPolicy string
+	GuardrailAction string
 }
 
 // Audit phases for a streaming call. A non-streaming call carries neither.
@@ -113,6 +123,12 @@ func (a *SlogAuditor) Record(ctx context.Context, event Event) {
 	}
 	if event.SessionID != "" {
 		attrs = append(attrs, slog.String("session_id", event.SessionID))
+	}
+	if event.GuardrailPolicy != "" {
+		attrs = append(attrs,
+			slog.String("guardrail_policy", event.GuardrailPolicy),
+			slog.String("guardrail_action", event.GuardrailAction),
+		)
 	}
 	if event.BytesOut != 0 || event.BytesIn != 0 {
 		attrs = append(attrs,

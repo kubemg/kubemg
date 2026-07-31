@@ -192,8 +192,18 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 		defer func() { sink.Close(stream.Err()) }()
 	}
 
+	// What the operator types is checked line by line. This is the half of the
+	// guardrails no cluster-side control can reach: everything done inside an
+	// interactive session happens behind one API call that was already allowed.
+	guard := newCommandGuard(p.guard, event.ClusterID, parsed, event.Path)
+
 	var fromClient, fromCluster int64
 	done := make(chan struct{})
+	// A refusal has to be written to the client socket, and only one goroutine
+	// may ever write to it — gorilla makes concurrent writes a panic, not a race
+	// to be hoped away. So the notice is handed to the loop below, which is the
+	// one writer, rather than sent from the reader that discovered it.
+	notices := make(chan []byte, 4)
 
 	// Client to cluster. Runs in its own goroutine because both directions of
 	// an interactive session are live at once.
@@ -206,6 +216,32 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 			}
 			fromClient += int64(len(payload))
 			recordFromClient(sink, payload)
+
+			decision, forward := guard.inspect(payload)
+			if decision != nil {
+				// Recorded as its own line in the trail. A blocked command inside
+				// a session would otherwise leave no trace at all: the session's
+				// own two records describe the shell, not what was typed into it.
+				p.recordGuardedCommand(c, event, decision)
+			}
+			if !forward {
+				// The command never reaches the cluster — and the line it was
+				// typed on is cleared, or the next Enter runs it anyway.
+				if guard.hasTTY() {
+					if err := stream.Send(StreamData{Data: clearLineFrame(), Binary: true}); err != nil {
+						return
+					}
+				}
+				// Dropped rather than blocked if the queue is full: the refusal
+				// has already taken effect, and a reader goroutine waiting on a
+				// client that is not draining would stop reading its keystrokes.
+				select {
+				case notices <- guardNoticeFrame(decision):
+				default:
+				}
+				continue
+			}
+
 			if err := stream.Send(StreamData{
 				Data:   payload,
 				Binary: kind == websocket.BinaryMessage,
@@ -236,6 +272,18 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 			}
 			fromCluster += int64(len(chunk.Data))
 			recordFromCluster(sink, chunk.Data)
+
+		case notice := <-notices:
+			// A guardrail refusal, written on the same socket and by the same
+			// goroutine as everything else the operator sees.
+			if err := conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+				p.recordStreamClose(c, event, fromCluster, fromClient, err)
+				return
+			}
+			if err := conn.WriteMessage(websocket.BinaryMessage, notice); err != nil {
+				p.recordStreamClose(c, event, fromCluster, fromClient, nil)
+				return
+			}
 
 		case <-done:
 			p.recordStreamClose(c, event, fromCluster, fromClient, nil)

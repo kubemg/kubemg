@@ -16,6 +16,7 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/cache"
 	"github.com/kubemg/kubemg/backend/pkg/db"
+	"github.com/kubemg/kubemg/backend/pkg/guardrails"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
 	"github.com/kubemg/kubemg/backend/pkg/observability"
 )
@@ -76,6 +77,14 @@ type Store interface {
 	CreateAlarmRule(ctx context.Context, rule *db.AlarmRule) error
 	UpdateAlarmRule(ctx context.Context, rule *db.AlarmRule) error
 	DeleteAlarmRule(ctx context.Context, id uint) error
+
+	// Command guardrails. The gateway reads them from a compiled snapshot, never
+	// from here — this is the write side and the boot-time read that fills it.
+	ListGuardrailPolicies(ctx context.Context) ([]db.GuardrailPolicy, error)
+	GuardrailPolicyByID(ctx context.Context, id uint) (*db.GuardrailPolicy, error)
+	CreateGuardrailPolicy(ctx context.Context, policy *db.GuardrailPolicy) error
+	UpdateGuardrailPolicy(ctx context.Context, policy *db.GuardrailPolicy) error
+	DeleteGuardrailPolicy(ctx context.Context, id uint) error
 
 	ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]db.AuditEvent, int64, error)
 	AuditSummary(ctx context.Context, since time.Time) (db.AuditStats, error)
@@ -178,6 +187,12 @@ type Options struct {
 	// publishes it; the gateway reads it. Nil means the gateway records everything,
 	// which is what a server wired without it does.
 	AuditPolicy *auditpolicy.Policy
+	// Guardrails is the shared snapshot of which calls and commands the gateway
+	// refuses. This router resolves it from the database and publishes it; the
+	// gateway reads it lock-free. Nil leaves the routes unregistered and nothing
+	// enforced — a server without one refuses nothing, which is how every install
+	// behaved before guardrails existed.
+	Guardrails *guardrails.Engine
 	// Alarms delivers cluster events and refused actions to their configured
 	// destinations. Nil leaves the alarm routes unregistered and nothing polling —
 	// the console then says the dispatcher is not running rather than offering rules
@@ -223,6 +238,9 @@ type server struct {
 	auditRetentionDays int
 	// auditPolicy is published from the settings; see Options.AuditPolicy.
 	auditPolicy *auditpolicy.Policy
+	// guardrails is the compiled rule set the gateway enforces; see
+	// Options.Guardrails. Nil means this server does not manage them.
+	guardrails *guardrails.Engine
 	// alarms is the dispatcher, or nil when this server runs without one.
 	alarms *observability.Dispatcher
 	logger             *slog.Logger
@@ -281,6 +299,7 @@ func NewRouter(opts Options) *gin.Engine {
 		auditor:            opts.Auditor,
 		auditRetentionDays: retention,
 		auditPolicy:        opts.AuditPolicy,
+		guardrails:         opts.Guardrails,
 		alarms:             opts.Alarms,
 		logger:             opts.Logger,
 		allowedOrigins:     opts.AllowedOrigins,
@@ -304,6 +323,12 @@ func NewRouter(opts Options) *gin.Engine {
 		// memory on every call — so it has to be resolved here and republished.
 		if s.auditPolicy != nil {
 			go s.startAuditPolicyRefresher(opts.Background)
+		}
+		// The same handoff for the safety policies. It publishes once before
+		// ticking, so a restarted server enforces its rules from the first
+		// request rather than from the first tick.
+		if s.guardrails != nil {
+			go s.startGuardrailRefresher(opts.Background)
 		}
 		// Cluster events only reach an alarm if something goes and reads them.
 		// Nothing is read until a cluster-event rule exists; see alarms_watch.go.
@@ -590,6 +615,22 @@ func NewRouter(opts Options) *gin.Engine {
 		alarms.POST("/rules", s.createAlarmRule)
 		alarms.PUT("/rules/:id", s.updateAlarmRule)
 		alarms.DELETE("/rules/:id", s.deleteAlarmRule)
+
+		// Command guardrails: the calls and commands this platform refuses to
+		// pass on, whatever the cluster's RBAC would have allowed. Administrative
+		// throughout — writing one takes a capability away from a whole fleet,
+		// and the set read at once is a map of which spellings are watched for.
+		if s.guardrails != nil {
+			guard := v1.Group("/guardrails", requireAuth, requireAdmin)
+			guard.GET("", s.listGuardrailPolicies)
+			// The presets. A guardrail is a regular expression matched against a
+			// subject most operators have never had to write down, so a blank box
+			// is a feature nobody turns on.
+			guard.GET("/templates", s.guardrailTemplates)
+			guard.POST("", s.createGuardrailPolicy)
+			guard.PUT("/:id", s.updateGuardrailPolicy)
+			guard.DELETE("/:id", s.deleteGuardrailPolicy)
+		}
 
 		// Server-wide settings. The public URL lands inside manifests applied on
 		// other people's clusters, so this is an administrative surface.
