@@ -13,32 +13,44 @@ import {
 } from 'lucide-react'
 import type { Cluster } from '../api/types'
 import { EnvironmentDot } from './primitives'
-import type { CategoryId, ResourceCategory, ResourceKey } from '../lib/resources'
-import { RESOURCE_CATEGORIES, matchesResource } from '../lib/resources'
+import type {
+  CategoryId,
+  OperatorCategoryId,
+  ResourceCategory,
+  ResourceKey,
+} from '../lib/resources'
+import { RESOURCE_CATEGORIES, isOperatorCategory, matchesResource } from '../lib/resources'
 
 /**
- * The sections that start closed. Both are built from the cluster's own CRDs and
- * both can run long — a mesh installs a dozen kinds and Other is however many
- * every operator on the cluster brought with it. Open by default they push the
- * fixed inventory off the screen, which costs the resources people actually
- * browse to show ones they rarely do. The filter still searches inside a closed
- * section, so nothing is hidden, only folded.
+ * Which sections start closed: everything built from the cluster's own CRDs. An
+ * operator section can run a dozen kinds and Other is however many every
+ * operator on the cluster brought with it, so open by default they push the fixed
+ * inventory off the screen — the resources people actually browse pay for ones
+ * they rarely do. The filter still searches inside a closed section, so nothing
+ * is hidden, only folded.
  */
-const START_COLLAPSED: Partial<Record<CategoryId, boolean>> = {
-  istio: true,
-  other: true,
+function startsCollapsed(id: CategoryId): boolean {
+  return id === 'other' || isOperatorCategory(id)
 }
 
-/* One glyph per category, so a category is recognisable before it is read. */
-const CATEGORY_ICON: Record<CategoryId, typeof Boxes> = {
+/* One glyph per fixed category, so a category is recognisable before it is read. */
+const CATEGORY_ICON: Record<Exclude<CategoryId, OperatorCategoryId>, typeof Boxes> = {
   workloads: Boxes,
   helm: Package,
   networking: Network,
   storage: Database,
   custom: Puzzle,
   cluster: Server,
-  istio: Waypoints,
   other: Shapes,
+}
+
+/**
+ * A discovered operator's kinds all share one glyph: which operator it is is
+ * already the heading, and inventing a per-vendor icon table would put back the
+ * hard-coded list of known operators that discovery exists to avoid.
+ */
+function categoryIcon(id: CategoryId): typeof Boxes {
+  return isOperatorCategory(id) ? Waypoints : CATEGORY_ICON[id]
 }
 
 /**
@@ -131,14 +143,14 @@ export function ExploreSidebar({
 
       <nav aria-label="Cluster resources" className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-4">
         {categories.map((category) => {
-          const Icon = CATEGORY_ICON[category.id]
+          const Icon = categoryIcon(category.id)
           // A section holding the current selection starts open — otherwise
-          // picking an Istio resource from the filter and then clearing it
+          // picking a Strimzi resource from the filter and then clearing it
           // would fold away the very thing being shown. An explicit toggle
           // still wins over both defaults.
           const holdsSelection = category.items.some((item) => item.key === selected)
           const shut =
-            collapsed[category.id] ?? (START_COLLAPSED[category.id] && !holdsSelection) ?? false
+            collapsed[category.id] ?? (startsCollapsed(category.id) && !holdsSelection)
           // A filter opens everything: a search that skipped a closed section
           // would be lying about what the cluster has.
           const open = needle !== '' || !shut

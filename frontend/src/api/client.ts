@@ -10,6 +10,10 @@ import type {
   AlarmRule,
   AlarmRuleInput,
   AlarmRuleList,
+  GuardrailPolicy,
+  GuardrailPolicyInput,
+  GuardrailPolicyList,
+  GuardrailTemplate,
   AuditPage,
   AuditQuery,
   AuditSummary,
@@ -954,6 +958,45 @@ export async function updateAlarmRule(id: number, input: AlarmRuleInput): Promis
 
 export async function deleteAlarmRule(id: number): Promise<void> {
   await http.delete(`/alarms/rules/${id}`)
+}
+
+/* -------------------------------------------------- command guardrails --- */
+
+export async function fetchGuardrailPolicies(clusterID?: number): Promise<GuardrailPolicyList> {
+  // 0 is a real scope — the fleet-wide rules — so the parameter is sent whenever
+  // one was named, and omitted only when nothing was.
+  const params = clusterID === undefined ? undefined : { cluster_id: clusterID }
+  const { data } = await http.get<GuardrailPolicyList>('/guardrails', { params })
+  return {
+    policies: data.policies ?? [],
+    targets: data.targets ?? [],
+    actions: data.actions ?? [],
+    enforcing: data.enforcing ?? 0,
+  }
+}
+
+export async function fetchGuardrailTemplates(): Promise<GuardrailTemplate[]> {
+  const { data } = await http.get<{ templates: GuardrailTemplate[] }>('/guardrails/templates')
+  return data.templates ?? []
+}
+
+export async function createGuardrailPolicy(
+  input: GuardrailPolicyInput,
+): Promise<GuardrailPolicy> {
+  const { data } = await http.post<GuardrailPolicy>('/guardrails', input)
+  return data
+}
+
+export async function updateGuardrailPolicy(
+  id: number,
+  input: GuardrailPolicyInput,
+): Promise<GuardrailPolicy> {
+  const { data } = await http.put<GuardrailPolicy>(`/guardrails/${id}`, input)
+  return data
+}
+
+export async function deleteGuardrailPolicy(id: number): Promise<void> {
+  await http.delete(`/guardrails/${id}`)
 }
 
 /* ------------------------------------------------------- observability --- */

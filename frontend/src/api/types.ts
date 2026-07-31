@@ -1191,3 +1191,61 @@ export interface SSOGroupMappingInput {
   namespaces?: string[]
   target_system_role?: 'user' | 'admin' | ''
 }
+
+/* ---------------------------------------------------- command guardrails --- */
+
+/** Which subject a rule is matched against. `api_request` is "METHOD /path" on a
+    proxied call; `terminal_exec` is a line typed into a container, or the argv of
+    a non-interactive exec. */
+export type GuardrailTarget = 'api_request' | 'terminal_exec' | 'both'
+
+/** `warn` lets the call through and records the match, which is how a rule is
+    rolled out before it is armed. */
+export type GuardrailAction = 'block' | 'warn'
+
+export interface GuardrailPolicy {
+  id: number
+  name: string
+  description?: string
+  /** 0 is fleet-wide, and covers clusters registered after the rule was written. */
+  cluster_id: number
+  /** Filled in for a cluster-scoped rule so a row can draw its badge without a
+      second lookup. */
+  cluster_name?: string
+  pattern: string
+  target: GuardrailTarget
+  action: GuardrailAction
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface GuardrailPolicyInput {
+  name: string
+  description?: string
+  cluster_id: number
+  pattern: string
+  target: GuardrailTarget
+  action: GuardrailAction
+  enabled?: boolean
+}
+
+export interface GuardrailTemplate {
+  key: string
+  name: string
+  description: string
+  pattern: string
+  target: GuardrailTarget
+  action: GuardrailAction
+}
+
+export interface GuardrailPolicyList {
+  policies: GuardrailPolicy[]
+  targets: GuardrailTarget[]
+  actions: GuardrailAction[]
+  /** How many rules the gateway is actually enforcing. It can differ from the
+      number of enabled rows — a pattern that stopped compiling is skipped — and
+      an operator reading a list of armed rules deserves to know the count the
+      gateway agrees with. */
+  enforcing: number
+}

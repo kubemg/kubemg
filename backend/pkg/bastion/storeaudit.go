@@ -182,6 +182,8 @@ func toAuditRow(event Event) db.AuditEvent {
 		BytesOut:           event.BytesOut,
 		BytesIn:            event.BytesIn,
 		SessionID:          event.SessionID,
+		GuardrailPolicy:    event.GuardrailPolicy,
+		GuardrailAction:    event.GuardrailAction,
 		Error:              event.Error,
 	}
 }

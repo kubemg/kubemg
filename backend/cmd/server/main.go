@@ -17,6 +17,7 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/certs"
 	"github.com/kubemg/kubemg/backend/pkg/config"
 	"github.com/kubemg/kubemg/backend/pkg/db"
+	"github.com/kubemg/kubemg/backend/pkg/guardrails"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
 	"github.com/kubemg/kubemg/backend/pkg/observability"
 	"github.com/kubemg/kubemg/backend/pkg/terminal"
@@ -52,6 +53,13 @@ func main() {
 	// here, the gateway reads it lock-free. It starts out recording everything, so
 	// a server that has not read its settings yet keeps a complete trail.
 	policy := auditpolicy.New()
+
+	// The command guardrails follow the same handoff, and for the same reason:
+	// the rules live in the database and the decision is taken on the gateway's
+	// hot path. It starts out empty, so a server that has not read its rules yet
+	// refuses nothing — a guardrail failing open is a policy that did not apply,
+	// while one failing closed would be a fleet nobody can reach.
+	guard := guardrails.New()
 
 	// The trail goes two places on purpose: structured logs are what a SIEM
 	// already tails, and the table is what the audit page queries. Persisting
@@ -99,6 +107,7 @@ func main() {
 		Auditor:  auditor,
 		Recorder: recorder,
 		Policy:   policy,
+		Guard:    guard,
 	})
 
 	// TLS is resolved before the router is built: an agent's install package
@@ -131,6 +140,7 @@ func main() {
 		RecordingInput:     recording.input,
 		Auditor:            auditor,
 		AuditPolicy:        policy,
+		Guardrails:         guard,
 		Alarms:             alarms,
 		Background:         auditCtx,
 		Logger:             logger,
