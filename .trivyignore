@@ -1,0 +1,21 @@
+# Auto-detected by trivy with no flag needed (default --ignorefile is
+# .trivyignore) -- deliberately global rather than path-scoped, because
+# trivy-action's own path-scoped `.trivyignore.yaml` + trivyignores input
+# does not correctly re-apply the severity threshold before deciding the
+# job's exit code when format is sarif (observed: findings well below
+# CRITICAL/HIGH still failed the job). Only two IDs, each with a narrow,
+# documented reason -- see deploy/kustomize/base/rbac.yaml and
+# backend/Dockerfile.dev / frontend/Dockerfile.dev for the rationale in
+# context.
+
+# resources: ["*"] on kubemg-custom-resource-{view,edit} only ever reaches
+# the enumerated, non-core API groups those ClusterRoles list (Gateway API +
+# Istio) -- never the core group, where Secrets live.
+AVD-KSV-0046
+
+# backend/Dockerfile.dev and frontend/Dockerfile.dev are dev-only images
+# built solely by `make up` / docker-compose.yml against a bind-mounted
+# source tree and a shared dependency-cache volume; running as the image's
+# default root keeps those volumes writable without matching host UIDs.
+# Neither Dockerfile is built or shipped anywhere else.
+AVD-DS-0002

@@ -107,10 +107,12 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           # Accepted, documented trade-offs (dev-only Dockerfiles running as
-          # root, the enumerated-but-not-wildcarded custom-resource RBAC) live
-          # in .trivyignore.yaml rather than being silently rescanned every
-          # run — see that file for why each entry is there.
-          trivyignores: .trivyignore.yaml
+          # root, the enumerated-but-not-wildcarded custom-resource RBAC) are
+          # listed in .trivyignore, which Trivy reads automatically -- no
+          # flag needed. (The action's own `trivyignores` input was tried
+          # first, but it doesn't correctly re-apply the severity threshold
+          # before deciding the job's exit code under `format: sarif`, so a
+          # LOW/MEDIUM finding elsewhere in the repo still failed the job.)
           format: sarif
           output: trivy-repo-results.sarif
           exit-code: 1
