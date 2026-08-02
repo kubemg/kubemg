@@ -16,6 +16,41 @@ export interface CommandTarget {
 }
 
 /**
+ * A cluster's own views, addressed directly rather than through its default
+ * landing: someone who wants that cluster's audit trail should not have to
+ * jump to its summary first and click again. Explore is offered only where
+ * there is a tunnel to read through — the panel applies the same rule.
+ */
+function clusterViewTargets(cluster: Cluster): CommandTarget[] {
+  const views: CommandTarget[] = [
+    {
+      id: `cluster-${cluster.id}-summary`,
+      label: `${cluster.name} — Summary`,
+      hint: 'Cluster · Summary',
+      to: `/clusters/${cluster.id}/summary`,
+      cluster,
+    },
+  ]
+  if (cluster.connection_mode === 'agent' && cluster.agent_attached) {
+    views.push({
+      id: `cluster-${cluster.id}-explore`,
+      label: `${cluster.name} — Explore`,
+      hint: 'Cluster · Explore',
+      to: `/clusters/${cluster.id}/explore`,
+      cluster,
+    })
+  }
+  views.push({
+    id: `cluster-${cluster.id}-audit`,
+    label: `${cluster.name} — Audit trail`,
+    hint: 'Cluster · Audit trail',
+    to: `/clusters/${cluster.id}/audit`,
+    cluster,
+  })
+  return views
+}
+
+/**
  * CommandPalette is how an operator moves around a fleet: type part of a cluster
  * name or a page and go. It is the only navigation that scales past a screenful
  * of clusters, so it is reachable from anywhere with ⌘K.
@@ -43,10 +78,13 @@ export function CommandPalette({
         label: cluster.name,
         hint: cluster.connection_mode === 'agent' ? 'Cluster · agent' : 'Cluster · direct',
         // The same rule as the fleet list: a cluster with a tunnel opens on its
-        // resources, one without opens on its own page.
+        // resources, one without opens on its own summary.
         to: clusterHref(cluster),
         cluster,
       })),
+      // A cluster's own views, so ⌘K reaches Summary, Explore and Audit trail
+      // directly rather than only the cluster's default landing above.
+      ...clusters.flatMap((cluster) => clusterViewTargets(cluster)),
       ...pages,
     ],
     [clusters, pages],
