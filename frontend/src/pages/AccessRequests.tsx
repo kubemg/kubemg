@@ -1,4 +1,4 @@
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router'
 import { AppShell } from '../components/AppShell'
 import { JitApprovalsPanel } from '../components/jit/JitApprovalsPanel'
 import { useClusters } from '../state/clusters-context'

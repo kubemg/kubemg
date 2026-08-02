@@ -106,6 +106,11 @@ jobs:
           scanners: vuln,misconfig,secret
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          # Accepted, documented trade-offs (dev-only Dockerfiles running as
+          # root, the enumerated-but-not-wildcarded custom-resource RBAC) live
+          # in .trivyignore.yaml rather than being silently rescanned every
+          # run — see that file for why each entry is there.
+          trivyignores: .trivyignore.yaml
           format: sarif
           output: trivy-repo-results.sarif
           exit-code: 1
