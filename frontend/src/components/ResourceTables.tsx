@@ -218,12 +218,8 @@ function Name({
    */
   onOpen?: () => void
 }) {
-  const label = (
-    <>
-      {namespace ? <span className="text-faint">{namespace}/</span> : null}
-      {children}
-    </>
-  )
+  const label = <QualifiedName namespace={namespace}>{children}</QualifiedName>
+  const full = namespace && title ? `${namespace}/${title}` : title
 
   return (
     <span className="flex items-center gap-2.5">
@@ -234,16 +230,47 @@ function Name({
         <button
           type="button"
           onClick={onOpen}
-          className="min-w-0 truncate font-mono text-fg transition-colors hover:text-accent"
-          title={title}
+          className={`${NAME_BUTTON} font-mono text-fg transition-colors hover:text-accent`}
+          title={full}
         >
           {label}
         </button>
       ) : (
-        <span className="min-w-0 truncate font-mono text-fg" title={title}>
+        <span className="block min-w-0 font-mono text-fg" title={full}>
           {label}
         </span>
       )}
+    </span>
+  )
+}
+
+/** A name button is a block so its two lines stack; the text still reads left. */
+const NAME_BUTTON = 'block min-w-0 text-left'
+
+/**
+ * QualifiedName draws `namespace/name` without letting the qualifier eat the
+ * name. The prefix is the answer to "which one of these is it", but the name is
+ * what the row is *about* — and a single truncated line spends its width left to
+ * right, so on a narrow column the namespace is drawn in full and the name is
+ * the part that disappears. That is backwards, so the two are separated:
+ *
+ * - Below `sm` they stack. The namespace gets its own faint line above and the
+ *   name gets a full-width one of its own, so neither is cut by the other. The
+ *   row costs a second line only in the list that actually spans namespaces.
+ * - At `sm` and up they stay on one line — the kubectl reading, and what keeps
+ *   the table scannable — but the namespace is capped at 40% of the cell and
+ *   truncates itself first, so the name always keeps the remaining 60%.
+ */
+function QualifiedName({ namespace, children }: { namespace?: string; children: ReactNode }) {
+  if (!namespace) return <span className="block truncate">{children}</span>
+
+  return (
+    <span className="flex min-w-0 flex-col leading-tight sm:flex-row sm:items-baseline">
+      <span className="min-w-0 truncate text-[11.5px] text-faint sm:max-w-[40%] sm:text-[length:inherit]">
+        {namespace}
+        <span className="hidden sm:inline">/</span>
+      </span>
+      <span className="min-w-0 truncate">{children}</span>
     </span>
   )
 }
@@ -700,11 +727,12 @@ function PodTable({
                 <button
                   type="button"
                   onClick={() => onSelect(pod)}
-                  className="min-w-0 truncate font-mono text-fg transition-colors hover:text-accent"
+                  className={`${NAME_BUTTON} font-mono text-fg transition-colors hover:text-accent`}
                   title={`${pod.namespace}/${pod.name}`}
                 >
-                  {showNamespace ? <span className="text-faint">{pod.namespace}/</span> : null}
-                  {pod.name}
+                  <QualifiedName namespace={showNamespace ? pod.namespace : undefined}>
+                    {pod.name}
+                  </QualifiedName>
                 </button>
               </span>
             </Td>
