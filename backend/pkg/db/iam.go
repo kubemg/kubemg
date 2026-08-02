@@ -103,6 +103,12 @@ func (s *Store) DeleteUser(ctx context.Context, id uint) error {
 		if err := tx.Where("user_id = ?", id).Delete(&UserGroup{}).Error; err != nil {
 			return fmt.Errorf("delete user group memberships: %w", err)
 		}
+		// Their access requests go too, for the same reason the grants do: what is
+		// left otherwise is a queue holding decisions to make about an account that
+		// no longer exists.
+		if err := tx.Where("requester_id = ?", id).Delete(&JitRequest{}).Error; err != nil {
+			return fmt.Errorf("delete jit requests: %w", err)
+		}
 		return nil
 	})
 }
@@ -245,17 +251,24 @@ func (s *Store) ListGroupAccess(ctx context.Context) ([]GroupClusterAccess, erro
 }
 
 // AssignUserAccess grants a user access to a cluster, replacing any existing
-// grant for that pair.
+// grant of the same provenance for that pair.
 // A grant written through this path is an administrator's decision, so it is
 // stamped local — which is what takes it out of the federation sync's reach,
 // including a row that sync had previously derived.
+//
+// It replaces the *local* row and not the others: a standing decision must not
+// silently absorb a directory-derived grant (which the sync would then reconcile
+// away) and must not extend or erase a live JIT elevation, which has an approver
+// and a clock behind it.
 func (s *Store) AssignUserAccess(ctx context.Context, grant *UserClusterAccess) error {
 	if grant.Source == "" {
 		grant.Source = GrantSourceLocal
 	}
 	err := s.gdb.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "user_id"}, {Name: "cluster_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"k8s_role", "namespaces", "source"}),
+		Columns: []clause.Column{{Name: "user_id"}, {Name: "cluster_id"}, {Name: "source"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"k8s_role", "namespaces", "expires_at",
+		}),
 	}).Create(grant).Error
 	if err != nil {
 		return fmt.Errorf("assign user access: %w", err)

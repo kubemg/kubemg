@@ -30,7 +30,13 @@ const (
 	// rather than beside them.
 	ChannelAlertmanager = "alertmanager"
 	ChannelSlack        = "slack"
-	ChannelPagerDuty    = "pagerduty"
+	// ChannelTeams posts an Adaptive Card to a Microsoft Teams webhook. It is its
+	// own kind rather than a Slack-compatible one because Teams accepts neither
+	// Slack's attachments nor its blocks: the body is a card inside an attachment
+	// envelope, and sending Slack's shape to it fails at the far end with a 400
+	// that says nothing useful.
+	ChannelTeams     = "teams"
+	ChannelPagerDuty = "pagerduty"
 	// ChannelServiceNow opens an incident through the Table API, which is also
 	// close enough to what most ITSM tools accept to be the generic ITSM shape.
 	ChannelServiceNow = "servicenow"
@@ -43,6 +49,7 @@ const (
 var AlarmChannelKinds = []string{
 	ChannelAlertmanager,
 	ChannelSlack,
+	ChannelTeams,
 	ChannelPagerDuty,
 	ChannelServiceNow,
 	ChannelWebhook,

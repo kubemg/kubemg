@@ -18,6 +18,7 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/config"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/guardrails"
+	"github.com/kubemg/kubemg/backend/pkg/jit"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
 	"github.com/kubemg/kubemg/backend/pkg/observability"
 	"github.com/kubemg/kubemg/backend/pkg/terminal"
@@ -101,6 +102,21 @@ func main() {
 		api.NewAlarmAuditor(alarms),
 	)
 
+	// Just-in-time elevated access. It shares the audit writer with the proxy, so
+	// "who was given production and why" lands in the same trail as the calls they
+	// then made; its approval notices go out through the alarm dispatcher, which is
+	// where the Slack and Teams destinations already are; and the tokens in those
+	// notices are signed with the server's own signing key, since a second secret
+	// to configure would be a second secret to leave unset.
+	access := jit.New(jit.Options{
+		Store:          store,
+		Auditor:        auditor,
+		Notify:         alarms,
+		CallbackSecret: []byte(cfg.JWTSecret),
+		ConsoleURL:     cfg.PublicURL,
+		Logger:         logger,
+	})
+
 	proxy := bastion.NewProxy(bastion.ProxyOptions{
 		Store:    store,
 		Registry: gateway.Registry(),
@@ -142,6 +158,8 @@ func main() {
 		AuditPolicy:        policy,
 		Guardrails:         guard,
 		Alarms:             alarms,
+		JIT:                access,
+		JITCallbackSecret:  []byte(cfg.JWTSecret),
 		Background:         auditCtx,
 		Logger:             logger,
 	})

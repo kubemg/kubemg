@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -26,6 +27,14 @@ type permissionResponse struct {
 	ClusterName string   `json:"cluster_name"`
 	K8sRole     string   `json:"k8s_role"`
 	Namespaces  []string `json:"namespaces"`
+	// Source and ExpiresAt say where a grant came from and whether it ends. They
+	// are on the matrix because the alternative is a matrix that lies: a user
+	// holding cluster-admin on production for the next forty minutes through an
+	// approved request is a row an administrator reviewing access has to see, and
+	// seeing it as though somebody had granted it permanently would be worse than
+	// not seeing it at all.
+	Source    string     `json:"source,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 type assignPermissionRequest struct {
@@ -96,6 +105,8 @@ func (s *server) listPermissions(c *gin.Context) {
 			ClusterName: clusterNames[g.ClusterID],
 			K8sRole:     g.K8sRole,
 			Namespaces:  g.NamespaceList(),
+			Source:      g.Source,
+			ExpiresAt:   g.ExpiresAt,
 		})
 	}
 

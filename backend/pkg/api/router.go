@@ -17,6 +17,7 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/cache"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/guardrails"
+	"github.com/kubemg/kubemg/backend/pkg/jit"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
 	"github.com/kubemg/kubemg/backend/pkg/observability"
 )
@@ -77,6 +78,23 @@ type Store interface {
 	CreateAlarmRule(ctx context.Context, rule *db.AlarmRule) error
 	UpdateAlarmRule(ctx context.Context, rule *db.AlarmRule) error
 	DeleteAlarmRule(ctx context.Context, id uint) error
+
+	// Just-in-time access requests. The workflow itself lives in pkg/jit and
+	// reaches these through its own narrower interface; what the HTTP layer needs
+	// on top is the approver lookup, which is UserByUsername above.
+	CreateJitRequest(ctx context.Context, request *db.JitRequest) error
+	JitRequestByID(ctx context.Context, id string) (*db.JitRequest, error)
+	ListJitRequests(ctx context.Context, filter db.JitRequestFilter) ([]db.JitRequest, error)
+	PendingJitRequestFor(ctx context.Context, userID, clusterID uint) (*db.JitRequest, error)
+	ActivateJitRequest(
+		ctx context.Context, id string, decision db.JitDecision, grant db.UserClusterAccess,
+	) (*db.JitRequest, error)
+	FinishJitRequest(
+		ctx context.Context, id string, from []string, status string, decision db.JitDecision,
+	) (*db.JitRequest, error)
+	ExpireJitRequests(ctx context.Context, now time.Time) ([]db.JitRequest, error)
+	OrphanedJitRequests(ctx context.Context) ([]db.JitRequest, error)
+	PruneJitRequests(ctx context.Context, before time.Time) (int64, error)
 
 	// Command guardrails. The gateway reads them from a compiled snapshot, never
 	// from here — this is the write side and the boot-time read that fills it.
@@ -193,6 +211,16 @@ type Options struct {
 	// enforced — a server without one refuses nothing, which is how every install
 	// behaved before guardrails existed.
 	Guardrails *guardrails.Engine
+	// JIT is the just-in-time elevated access workflow. Nil leaves its routes
+	// unregistered and nothing sweeping — a fleet that has not opted into approval
+	// workflows then behaves exactly as it did before they existed, with standing
+	// grants and nothing else.
+	JIT *jit.Engine
+	// JITCallbackSecret verifies the signed approval tokens a chat integration
+	// posts back. It is the same secret the engine signs with; empty means the
+	// callback refuses everything, which is the correct answer for a server that
+	// cannot have minted a token.
+	JITCallbackSecret []byte
 	// Alarms delivers cluster events and refused actions to their configured
 	// destinations. Nil leaves the alarm routes unregistered and nothing polling —
 	// the console then says the dispatcher is not running rather than offering rules
@@ -243,6 +271,11 @@ type server struct {
 	guardrails *guardrails.Engine
 	// alarms is the dispatcher, or nil when this server runs without one.
 	alarms *observability.Dispatcher
+	// jit is the elevated-access workflow, or nil when this server runs without
+	// it; see Options.JIT. jitCallbackSecret verifies a decision that arrived from
+	// chat rather than from a session.
+	jit               *jit.Engine
+	jitCallbackSecret []byte
 	logger             *slog.Logger
 	// reads holds recently-answered live reads, keyed by caller and question.
 	// Nil turns caching off entirely; see cachedRead.
@@ -301,6 +334,8 @@ func NewRouter(opts Options) *gin.Engine {
 		auditPolicy:        opts.AuditPolicy,
 		guardrails:         opts.Guardrails,
 		alarms:             opts.Alarms,
+		jit:                opts.JIT,
+		jitCallbackSecret:  opts.JITCallbackSecret,
 		logger:             opts.Logger,
 		allowedOrigins:     opts.AllowedOrigins,
 		ssoFlows:           newFlowStore(),
@@ -334,6 +369,12 @@ func NewRouter(opts Options) *gin.Engine {
 		// Nothing is read until a cluster-event rule exists; see alarms_watch.go.
 		if s.alarms != nil && opts.Proxy != nil {
 			go s.startAlarmWatcher(opts.Background)
+		}
+		// An elevation ends by itself, and the resolver already refuses it the
+		// moment its window passes. This is what closes the rows out and stops the
+		// console counting down something that has finished.
+		if s.jit != nil {
+			go s.jit.RunExpirer(opts.Background)
 		}
 	}
 	requireAuth := auth.RequireAuth(s.jwt)
@@ -552,6 +593,33 @@ func NewRouter(opts Options) *gin.Engine {
 		permissions.GET("", s.listPermissions)
 		permissions.POST("/assign", s.assignPermission)
 		permissions.POST("/revoke", s.revokePermission)
+
+		// Just-in-time elevated access: asking for a stronger role on a cluster
+		// for a bounded window, and somebody else agreeing to it.
+		//
+		// Unlike the permissions matrix this is *not* an admin-only surface, and
+		// deliberately so — the people who need it are the people who do not have
+		// standing access. Reading follows the audit trail's rule (a non-admin sees
+		// their own requests, narrowed by the handler), while approving is
+		// administrative and can never be one's own request, which is enforced in
+		// the workflow so the console and the webhook cannot disagree.
+		if s.jit != nil {
+			jitGroup := v1.Group("/jit", requireAuth)
+			jitGroup.POST("/requests", s.createJitRequest)
+			jitGroup.GET("/requests", s.listJitRequests)
+			jitGroup.POST("/requests/:id/approve", requireAdmin, s.approveJitRequest)
+			// Reject and revoke are not requireAdmin: cancelling your own request
+			// and handing your own elevation back are things nobody should need
+			// permission for. The workflow refuses somebody else's.
+			jitGroup.POST("/requests/:id/reject", s.rejectJitRequest)
+			jitGroup.POST("/requests/:id/revoke", s.revokeJitRequest)
+
+			// The chat callback. It sits outside the JWT middleware because a Slack
+			// app carries no KubeMG session, and authenticates on a signed action
+			// token *plus* an identity that resolves to a KubeMG administrator —
+			// see jitWebhookCallback for why neither half is enough alone.
+			v1.POST(jitCallbackRoute, s.jitWebhookCallback)
+		}
 
 		// The audit trail is readable by everyone, but a non-admin only ever
 		// sees their own actions — the handler narrows the filter itself.

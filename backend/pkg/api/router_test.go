@@ -66,6 +66,17 @@ type fakeStore struct {
 	// guardrails stands in for the guardrail_policies table; see
 	// guardrails_fake_test.go.
 	guardrails map[uint]*db.GuardrailPolicy
+	// jit stands in for the jit_requests table, and jitGrants for the temporary
+	// rows of user_cluster_access an approval writes — a second dimension because
+	// `access` above cannot hold two provenances for one (user, cluster), which is
+	// exactly the shape the real table gained. See jit_fake_test.go.
+	jit       map[string]*db.JitRequest
+	jitGrants map[uint]map[uint]db.UserClusterAccess
+	// now is the clock the fake resolves expiring grants against. A test that
+	// moves an elevation past its window sets it, so the fake and the workflow
+	// engine agree about what time it is — two clocks would make the expiry
+	// assertions depend on how long the test took to run.
+	now func() time.Time
 }
 
 func newFakeStore() *fakeStore {
@@ -211,6 +222,20 @@ func (f *fakeStore) ClustersForUser(_ context.Context, user *db.User) ([]db.Clus
 func (f *fakeStore) AccessForUser(_ context.Context, userID uint) (map[uint]db.UserClusterAccess, error) {
 	out := map[uint]db.UserClusterAccess{}
 	for clusterID, grant := range f.access[userID] {
+		out[clusterID] = grant
+	}
+	// Live temporary elevations, merged on top exactly as the store does it: an
+	// expired one is dropped here rather than waiting for a sweeper, because that
+	// is the behaviour the proxy depends on.
+	now := f.clock()
+	for clusterID, grant := range f.jitGrants[userID] {
+		if grant.ExpiresAt != nil && !grant.ExpiresAt.After(now) {
+			continue
+		}
+		if existing, ok := out[clusterID]; ok {
+			out[clusterID] = db.MergeAccess(existing, grant)
+			continue
+		}
 		out[clusterID] = grant
 	}
 	for groupID, users := range f.members {

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { AlertTriangle, ChevronRight, KeyRound, Layers, RefreshCw } from 'lucide-react'
+import { AlertTriangle, ChevronRight, KeyRound, Layers, RefreshCw, Timer } from 'lucide-react'
 import { checkCluster, errorMessage, fetchCluster, fetchNodeMetrics } from '../api/client'
 import type { Cluster, NodeMetrics } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { DatasourcePanel } from '../components/DatasourcePanel'
 import { MetricsChart } from '../components/MetricsChart'
+import { JitRequestModal } from '../components/jit/JitRequestModal'
 import { KubeconfigDrawer } from '../components/KubeconfigDrawer'
 import { LinkStrand, StrandNode } from '../components/LinkStrand'
 import {
@@ -34,6 +35,10 @@ export function ClusterDetail() {
   const [checkError, setCheckError] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // Asking for more access belongs on the cluster it is about: this page is where
+  // somebody has just read what their grant is and found it is not enough.
+  const [requesting, setRequesting] = useState(false)
+  const [requested, setRequested] = useState(false)
 
   const clusterId = Number(id)
   const valid = Number.isFinite(clusterId)
@@ -86,6 +91,10 @@ export function ClusterDetail() {
                 </Button>
               </Link>
             ) : null}
+            <Button onClick={() => setRequesting(true)}>
+              <Timer aria-hidden="true" className="size-4" />
+              Request access
+            </Button>
             {user?.role === 'admin' ? (
               <Button onClick={check} disabled={checking}>
                 <RefreshCw
@@ -105,6 +114,17 @@ export function ClusterDetail() {
     >
       <div className="flex flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
+        {/* Where the request went, and where the answer will appear. Without this
+            the form closes and nothing visibly happened. */}
+        {requested ? (
+          <Notice tone="ok">
+            Request submitted. It is waiting for an approver — follow it on{' '}
+            <Link to="/access-requests" className="text-accent hover:underline">
+              access requests
+            </Link>
+            , where an approved elevation shows its countdown.
+          </Notice>
+        ) : null}
         {/* The card that is coming, at the size it will be: this page opens with
             a header, a strand and a four-row detail list, and drawing that shape
             keeps the whole page from shifting when the cluster arrives. */}
@@ -250,6 +270,17 @@ export function ClusterDetail() {
 
       {drawerOpen && cluster ? (
         <KubeconfigDrawer cluster={cluster} onClose={() => setDrawerOpen(false)} />
+      ) : null}
+
+      {requesting && cluster ? (
+        <JitRequestModal
+          cluster={cluster}
+          onClose={() => setRequesting(false)}
+          onCreated={() => {
+            setRequesting(false)
+            setRequested(true)
+          }}
+        />
       ) : null}
     </AppShell>
   )

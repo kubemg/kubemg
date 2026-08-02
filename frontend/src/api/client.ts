@@ -32,6 +32,10 @@ import type {
   HelmRelease,
   HelmValues,
   Ingress,
+  JitRequest,
+  JitRequestInput,
+  JitRequestList,
+  JitStatus,
   Job,
   Kubeconfig,
   LogQueryResponse,
@@ -1167,4 +1171,45 @@ export function queryError(err: unknown, fallback: string): string {
     }
   }
   return errorMessage(err, fallback)
+}
+
+/* ------------------------------------------- just-in-time elevated access --- */
+
+/**
+ * The requests this caller may see. A non-admin is narrowed to their own by the
+ * server — the `user` filter here cannot widen that, exactly as it cannot on the
+ * audit trail — so the response says which of the two happened (`scoped_to_me`)
+ * rather than leaving the page to guess from the role.
+ */
+export async function fetchJitRequests(query?: {
+  status?: JitStatus[]
+  clusterID?: number
+  userID?: number
+}): Promise<JitRequestList> {
+  const params: Record<string, string> = {}
+  if (query?.status?.length) params.status = query.status.join(',')
+  if (query?.clusterID) params.cluster_id = String(query.clusterID)
+  if (query?.userID) params.user_id = String(query.userID)
+  const { data } = await http.get<JitRequestList>('/jit/requests', { params })
+  return data
+}
+
+export async function createJitRequest(input: JitRequestInput): Promise<JitRequest> {
+  const { data } = await http.post<JitRequest>('/jit/requests', input)
+  return data
+}
+
+export async function approveJitRequest(id: string, comment?: string): Promise<JitRequest> {
+  const { data } = await http.post<JitRequest>(`/jit/requests/${id}/approve`, { comment })
+  return data
+}
+
+export async function rejectJitRequest(id: string, comment?: string): Promise<JitRequest> {
+  const { data } = await http.post<JitRequest>(`/jit/requests/${id}/reject`, { comment })
+  return data
+}
+
+export async function revokeJitRequest(id: string, comment?: string): Promise<JitRequest> {
+  const { data } = await http.post<JitRequest>(`/jit/requests/${id}/revoke`, { comment })
+  return data
 }

@@ -73,9 +73,13 @@ func (s *Store) CountUsers(ctx context.Context) (int64, error) {
 func (s *Store) ClustersForUser(ctx context.Context, user *User) ([]Cluster, error) {
 	q := s.gdb.WithContext(ctx).Model(&Cluster{}).Order("name asc")
 	if !user.IsAdmin() {
+		// An expired grant is not access, so it must not keep a cluster in the
+		// fleet list either: a cluster still listed after its elevation ran out
+		// would open onto refusals from the resource reads.
 		direct := s.gdb.Model(&UserClusterAccess{}).
 			Select("cluster_id").
-			Where("user_id = ?", user.ID)
+			Where("user_id = ?", user.ID).
+			Where(liveGrantCond, time.Now().UTC())
 		inherited := s.gdb.Model(&GroupClusterAccess{}).
 			Select("cluster_id").
 			Where("group_id IN (?)", s.gdb.Model(&UserGroup{}).
@@ -91,18 +95,42 @@ func (s *Store) ClustersForUser(ctx context.Context, user *User) ([]Cluster, err
 	return clusters, nil
 }
 
+// liveGrantCond separates a grant from the memory of one: no expiry, or an expiry
+// still ahead. It takes the instant as a parameter rather than reading the
+// database's own NOW() on purpose — the expiry was computed by this process when
+// the approval was recorded, so one clock decides both ends of the window. A
+// second clock would mean a few seconds of access nobody approved, or a few
+// seconds refused before the window closed.
+const liveGrantCond = "expires_at IS NULL OR expires_at > ?"
+
 // AccessForUser returns the user's effective cluster grants keyed by cluster
 // ID: direct grants merged with everything inherited from their groups. The
 // more permissive grant wins, so adding someone to a group can never take
 // access away.
+//
+// Two things are resolved here rather than by any caller, and both are the whole
+// authorization decision for a proxied call:
+//
+//   - An **expired** grant is dropped. A JIT elevation stops counting the second
+//     its window ends, whether or not the sweeper has got round to deleting the
+//     row, because this is the read every proxied request goes through.
+//   - A user may hold several direct rows for one cluster — a standing grant, a
+//     federated one, a live elevation — so they are *merged* rather than one
+//     overwriting another. Overwriting would make the answer depend on row order,
+//     which is how an elevation would silently take away the access it was
+//     supposed to add.
 func (s *Store) AccessForUser(ctx context.Context, userID uint) (map[uint]UserClusterAccess, error) {
 	direct := []UserClusterAccess{}
-	if err := s.gdb.WithContext(ctx).Where("user_id = ?", userID).Find(&direct).Error; err != nil {
+	err := s.gdb.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Where(liveGrantCond, time.Now().UTC()).
+		Find(&direct).Error
+	if err != nil {
 		return nil, fmt.Errorf("access for user: %w", err)
 	}
 
 	inherited := []GroupClusterAccess{}
-	err := s.gdb.WithContext(ctx).
+	err = s.gdb.WithContext(ctx).
 		Where("group_id IN (?)", s.gdb.Model(&UserGroup{}).
 			Select("group_id").
 			Where("user_id = ?", userID)).
@@ -113,6 +141,10 @@ func (s *Store) AccessForUser(ctx context.Context, userID uint) (map[uint]UserCl
 
 	out := make(map[uint]UserClusterAccess, len(direct)+len(inherited))
 	for _, g := range direct {
+		if existing, ok := out[g.ClusterID]; ok {
+			out[g.ClusterID] = MergeAccess(existing, g)
+			continue
+		}
 		out[g.ClusterID] = g
 	}
 	for _, g := range inherited {
@@ -268,6 +300,12 @@ func (s *Store) DeleteCluster(ctx context.Context, id uint) error {
 		// behind would strand a stored credential with no owner.
 		if err := tx.Where("cluster_id = ?", id).Delete(&ObservabilitySource{}).Error; err != nil {
 			return fmt.Errorf("delete observability sources: %w", err)
+		}
+		// Access requests go with the cluster they are about. The audit trail keeps
+		// the record of who approved what; what must not survive is a row still
+		// counting down an elevation on a cluster nobody can reach.
+		if err := tx.Where("cluster_id = ?", id).Delete(&JitRequest{}).Error; err != nil {
+			return fmt.Errorf("delete jit requests: %w", err)
 		}
 		return nil
 	})

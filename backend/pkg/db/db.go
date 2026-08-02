@@ -48,8 +48,13 @@ func Migrate(gdb *gorm.DB) error {
 		&AlarmChannel{},
 		&AlarmRule{},
 		&GuardrailPolicy{},
+		&JitRequest{},
 	); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
+	}
+
+	if err := widenUserAccessUniqueness(gdb); err != nil {
+		return err
 	}
 
 	// Every account predating federation is a local one, and every grant and
@@ -108,6 +113,35 @@ func Migrate(gdb *gorm.DB) error {
 	// that refuses what RBAC permits must never arrive armed by way of an upgrade.
 	if err := SeedGuardrailPolicies(gdb); err != nil {
 		return err
+	}
+	return nil
+}
+
+// legacyUserAccessIndex is the unique index that used to hold one grant per
+// (user, cluster). AutoMigrate creates the wider one beside it but never removes
+// this, and while it exists a time-bound elevation cannot be inserted next to the
+// standing grant it elevates — the insert collides and the approval fails.
+const legacyUserAccessIndex = "idx_user_cluster"
+
+// widenUserAccessUniqueness drops that index once the wider one exists.
+//
+// It runs after AutoMigrate on purpose: the window in which neither index exists
+// has to be zero, because the constraint is what stops two rows of the same
+// provenance from being two answers to one question. Dropping an index that is
+// already gone is not an error, so this is safe on every boot after the first.
+func widenUserAccessUniqueness(gdb *gorm.DB) error {
+	migrator := gdb.Migrator()
+	if !migrator.HasIndex(&UserClusterAccess{}, legacyUserAccessIndex) {
+		return nil
+	}
+	if !migrator.HasIndex(&UserClusterAccess{}, "idx_user_cluster_source") {
+		// The replacement is missing, so dropping this would leave the table with
+		// no uniqueness at all. Refusing is right: it means AutoMigrate did not do
+		// what this function assumes, and guessing would be worse than stopping.
+		return fmt.Errorf("cannot drop %s: the replacement index is missing", legacyUserAccessIndex)
+	}
+	if err := migrator.DropIndex(&UserClusterAccess{}, legacyUserAccessIndex); err != nil {
+		return fmt.Errorf("drop legacy user access index: %w", err)
 	}
 	return nil
 }

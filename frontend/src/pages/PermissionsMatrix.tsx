@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { KeyRound } from 'lucide-react'
+import { KeyRound, Timer } from 'lucide-react'
 import {
   assignPermission,
   errorMessage,
@@ -94,10 +94,27 @@ export function PermissionsMatrix() {
           detail: `${group.member_ids.length} ${group.member_ids.length === 1 ? 'member' : 'members'}`,
         }))
 
+  /*
+   * A subject can now hold more than one grant per cluster — the standing one an
+   * administrator wrote, and a time-bound elevation an approved request activated.
+   * The two are kept apart rather than one overwriting the other: this page edits
+   * standing access, so a cell must show and edit *that*, while an elevation is a
+   * separate fact the cell reports and the access requests page governs.
+   *
+   * Collapsing them would be the worst of both — the cell would sometimes edit a
+   * temporary grant, and an elevation would read as though somebody had granted it
+   * permanently.
+   */
   const granted = new Map<string, Permission>()
+  const elevated = new Map<string, Permission>()
   for (const permission of permissions) {
     if (permission.subject_type !== tab) continue
-    granted.set(cellKey(permission.subject_id, permission.cluster_id), permission)
+    const key = cellKey(permission.subject_id, permission.cluster_id)
+    if (permission.source === 'jit') {
+      elevated.set(key, permission)
+      continue
+    }
+    granted.set(key, permission)
   }
 
   const agentClusters = clusters.filter((cluster) => cluster.connection_mode === 'agent').length
@@ -195,7 +212,9 @@ export function PermissionsMatrix() {
                         </span>
                       </th>
                       {clusters.map((cluster) => {
-                        const permission = granted.get(cellKey(subject.id, cluster.id))
+                        const key = cellKey(subject.id, cluster.id)
+                        const permission = granted.get(key)
+                        const temporary = elevated.get(key)
                         return (
                           <td key={cluster.id} className="border-l border-line-soft p-1.5">
                             <button
@@ -222,6 +241,23 @@ export function PermissionsMatrix() {
                               ) : (
                                 <span className="text-[13px] text-faint">—</span>
                               )}
+                              {/* An elevation in force, marked rather than merged:
+                                  it ends by itself and is not this page's to edit. */}
+                              {temporary ? (
+                                <span
+                                  className="mt-1 flex items-center gap-1 text-[11px] text-warn"
+                                  title={`Temporary ${temporary.k8s_role} until ${
+                                    temporary.expires_at
+                                      ? new Date(temporary.expires_at).toLocaleString()
+                                      : 'its window ends'
+                                  } — granted by an approved access request.`}
+                                >
+                                  <Timer aria-hidden="true" className="size-3 shrink-0" />
+                                  <span className="truncate font-mono">
+                                    +{temporary.k8s_role}
+                                  </span>
+                                </span>
+                              ) : null}
                             </button>
                           </td>
                         )
