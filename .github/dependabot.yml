@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # Keeps pr-checks.yml's pinned action versions (trivy-action,
+  # gitleaks-action, checkout, ...) current via PRs of their own, rather than
+  # the pipeline quietly drifting behind upstream fixes.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
