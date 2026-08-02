@@ -46,7 +46,10 @@ services:
       - KUBEMG_ADMIN_USERNAME=admin
       - KUBEMG_ADMIN_PASSWORD=admin
       - KUBEMG_SA_NAMESPACE=kubemg-system
-      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://100.112.67.6:5173
+      # Every origin the console is opened from. Reaching the dev stack from
+      # another machine means adding that address here — put it in an untracked
+      # `.env` next to this file rather than editing the default in git.
+      - CORS_ALLOWED_ORIGINS=${KUBEMG_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       # TLS is not optional for kubectl: client-go refuses to send a bearer
       # token over plain http, so a plaintext bastion cannot serve a generated
       # kubeconfig or an exec session at all. The certificate is minted on
@@ -57,7 +60,7 @@ services:
       - KUBEMG_TLS_SELF_SIGNED=true
       # Extra SANs. The public URL's host and loopback are always covered; add
       # every other address the console, kubectl and your agents dial.
-      - KUBEMG_TLS_HOSTS=kubemg-backend,backend,100.112.67.6
+      - KUBEMG_TLS_HOSTS=${KUBEMG_TLS_HOSTS:-kubemg-backend,backend}
       # Production: the chain agents must trust, when it is not one the public
       # CAs vouch for. An internal corporate PKI is the case this exists for —
       # it is not self-signed, so nothing here could infer that agents need it,
@@ -66,8 +69,9 @@ services:
       # even when TLS is terminated by an ingress rather than by this process.
       # - KUBEMG_AGENT_CA_BUNDLE=/etc/kubemg/tls/agent-ca.pem
       # Baked into every generated agent install command, so it has to be the
-      # address the target cluster can reach — not the container's own.
-      - KUBEMG_PUBLIC_URL=https://100.112.67.6:8443
+      # address the target cluster can reach — not the container's own, and not
+      # loopback once a real cluster is attaching. Override it in `.env`.
+      - KUBEMG_PUBLIC_URL=${KUBEMG_PUBLIC_URL:-https://localhost:8443}
       - KUBEMG_AGENT_IMAGE=docker.io/ozkanpoyrazoglu/kubemg-agent:0.2.0
       - KUBEMG_AGENT_NAMESPACE=kubemg-system
       # Every exec and attach is recorded for replay from the audit trail. Turn
@@ -76,12 +80,14 @@ services:
       - KUBEMG_SESSION_RECORDING_ENABLED=true
       - KUBEMG_SESSION_RECORDING_DIR=/var/lib/kubemg/recordings
       # Recordings hold production shell output and keystrokes, so they are
-      # encrypted at rest. This key is a *development* constant — generate a real
-      # one per install with `openssl rand -base64 32` and keep it out of the
-      # image, out of git, and out of the backup that holds the recordings volume.
-      # Losing it means losing the recordings; that is the trade every at-rest
+      # encrypted at rest. No key is committed here on purpose: a key in git is
+      # not a key. Generate one per install with `openssl rand -base64 32` and
+      # put it in an untracked `.env` beside this file — out of the image, out of
+      # git, and out of the backup that holds the recordings volume. Unset, the
+      # server warns at boot and writes plaintext casts; losing a key that was
+      # set means losing the recordings, which is the trade every at-rest
       # encryption makes.
-      - KUBEMG_SESSION_RECORDING_KEY=uR+xjEmHZ9QqgCKU6EwDWM8FJOPkuK3GSdjdyNIs4ts=
+      - KUBEMG_SESSION_RECORDING_KEY=${KUBEMG_SESSION_RECORDING_KEY:-}
       # Keystrokes are recorded as well as output. Set this to false where
       # operators type credentials into interactive tools: what is lost is exactly
       # what a prompt does not echo.
