@@ -41,6 +41,8 @@ func (d *Dispatcher) render(
 		payload = d.alertmanagerPayload(rule, signal, severity)
 	case db.ChannelSlack:
 		payload = d.slackPayload(rule, signal, severity)
+	case db.ChannelTeams:
+		payload = d.teamsPayload(rule, signal, severity)
 	case db.ChannelPagerDuty:
 		payload = d.pagerDutyPayload(channel, rule, signal, severity)
 	case db.ChannelServiceNow:
@@ -297,6 +299,72 @@ func slackColor(severity string) string {
 		return "warning"
 	default:
 		return "#4a90d9"
+	}
+}
+
+/* ---------------------------------------------------------------- teams --- */
+
+// teamsPayload renders an Adaptive Card for a Teams webhook.
+//
+// The card shapes are shared with the approval cards in alarm_approvals.go, which
+// is the one place in this file that reuses anything: they are the same product
+// speaking to the same surface, and two sets of card structs would drift.
+//
+// There is no colour bar. Teams has no per-message accent an incoming webhook can
+// set on an Adaptive Card, so severity is carried where it can be read instead —
+// in the headline, which is also what a notification preview shows.
+func (d *Dispatcher) teamsPayload(
+	rule db.AlarmRule, signal Signal, severity string,
+) teamsMessage {
+	facts := []teamsCardField{}
+	add := func(title, value string) {
+		if strings.TrimSpace(value) != "" {
+			facts = append(facts, teamsCardField{Title: title, Value: value})
+		}
+	}
+	add("Cluster", signal.Cluster)
+	add("Namespace", signal.Namespace)
+	add("Object", signal.Object)
+	add("Reason", signal.Reason)
+	add("User", signal.Username)
+	if signal.Status != 0 {
+		add("Status", strconv.Itoa(signal.Status))
+	}
+	if signal.Count > 1 {
+		add("Occurrences", strconv.FormatInt(int64(signal.Count), 10))
+	}
+	add("Rule", rule.Name)
+	add("Detected", signal.At.UTC().Format(time.RFC3339))
+
+	body := []teamsCardElement{
+		{Type: "TextBlock", Text: summary(signal, severity), Weight: "Bolder", Size: "Medium", Wrap: true},
+	}
+	if strings.TrimSpace(signal.Message) != "" {
+		body = append(body, teamsCardElement{Type: "TextBlock", Wrap: true, Text: signal.Message})
+	}
+	body = append(body, teamsCardElement{Type: "FactSet", Facts: facts})
+	if signal.Path != "" {
+		body = append(body, teamsCardElement{Type: "TextBlock", Wrap: true, Text: signal.Path})
+	}
+
+	actions := []teamsCardAction{}
+	if link := d.generatorURL(signal); link != "" {
+		actions = append(actions,
+			teamsCardAction{Type: "Action.OpenUrl", Title: "Open in KubeMG", URL: link})
+	}
+
+	return teamsMessage{
+		Type: "message",
+		Attachments: []teamsAttachment{{
+			ContentType: "application/vnd.microsoft.card.adaptive",
+			Content: teamsAdaptiveCard{
+				Schema:  "http://adaptivecards.io/schemas/adaptive-card.json",
+				Type:    "AdaptiveCard",
+				Version: "1.4",
+				Body:    body,
+				Actions: actions,
+			},
+		}},
 	}
 }
 

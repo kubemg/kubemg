@@ -50,6 +50,11 @@ const (
 const (
 	GrantSourceLocal = "local"
 	GrantSourceSSO   = "sso"
+	// GrantSourceJIT is a time-bound elevation an approval activated. It is its
+	// own provenance for two reasons: it must not be mistaken for a decision
+	// somebody made permanently, and the federation sync must leave it alone —
+	// a temporary grant is not a directory's business either way.
+	GrantSourceJIT = "jit"
 )
 
 // IsFederatedSource reports whether an auth source names an external directory.

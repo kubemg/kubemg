@@ -16,6 +16,7 @@ import {
   Shield,
   SlidersHorizontal,
   Sun,
+  Timer,
   Users,
   UsersRound,
   X,
@@ -58,6 +59,10 @@ const SECTIONS = [
       { to: '/users', label: 'Users', icon: Users, adminOnly: true },
       { to: '/groups', label: 'Groups', icon: UsersRound, adminOnly: true },
       { to: '/permissions', label: 'Permissions', icon: KeyRound, adminOnly: true },
+      // Standing access is the matrix above; this is access that exists right now
+      // and who is waiting for some. Everyone reaches it — a non-admin sees their
+      // own requests, which is the only way to hand an elevation back early.
+      { to: '/access-requests', label: 'Access requests', icon: Timer, adminOnly: false },
       // Everyone can reach the audit trail; a non-admin only sees their own actions.
       { to: '/audit', label: 'Audit trail', icon: ScrollText, adminOnly: false },
       // The trail says a shell was opened; a recording is what was done in it.
@@ -73,7 +78,14 @@ const SECTIONS = [
   },
 ] as const
 
-const ACCESS_ROUTES = ['/users', '/groups', '/permissions', '/audit', '/recordings']
+const ACCESS_ROUTES = [
+  '/users',
+  '/groups',
+  '/permissions',
+  '/access-requests',
+  '/audit',
+  '/recordings',
+]
 
 /* The palette answers to both chords; the hint shows the one this keyboard has. */
 const PALETTE_HINT = /mac/i.test(navigator.platform) ? '⌘K' : 'Ctrl K'

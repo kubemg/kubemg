@@ -302,17 +302,38 @@ func (e AuditEvent) ImpersonatedGroupList() []string { return splitNamespaces(e.
 
 // UserClusterAccess maps a KubeMG user onto a cluster with a Kubernetes role
 // and an optional namespace scope.
+//
+// A user may hold more than one row per cluster, one per provenance: the standing
+// grant an administrator wrote, the one a directory group derives, and a
+// time-bound elevation a JIT approval activated. AccessForUser merges them into
+// the most permissive live grant, which is what lets an elevation expire without
+// anybody having to put the previous role back — the row it outranked never
+// changed.
 type UserClusterAccess struct {
-	ID         uint   `gorm:"primaryKey" json:"id"`
-	UserID     uint   `gorm:"uniqueIndex:idx_user_cluster;not null" json:"user_id"`
-	ClusterID  uint   `gorm:"uniqueIndex:idx_user_cluster;not null" json:"cluster_id"`
+	ID uint `gorm:"primaryKey" json:"id"`
+	// The uniqueness is per (user, cluster, source) rather than per (user,
+	// cluster). Two rows of the *same* provenance would be two answers to one
+	// question, which is what the constraint is for; rows of different provenance
+	// are three different facts about the same person.
+	UserID     uint   `gorm:"uniqueIndex:idx_user_cluster_source,priority:1;not null" json:"user_id"`
+	ClusterID  uint   `gorm:"uniqueIndex:idx_user_cluster_source,priority:2;not null" json:"cluster_id"`
 	K8sRole    string `gorm:"column:k8s_role;size:60;not null;default:view" json:"k8s_role"`
 	Namespaces string `gorm:"type:text" json:"-"`
 	// Source records who wrote this grant, and is what makes federated access
 	// revocable: a grant derived from an IdP group is withdrawn on the next
 	// login that no longer carries it, while one an administrator wrote by hand
 	// survives untouched. Empty predates federation and means local.
-	Source string `gorm:"size:20;not null;default:local" json:"source,omitempty"`
+	Source string `gorm:"size:20;not null;default:local;uniqueIndex:idx_user_cluster_source,priority:3" json:"source,omitempty"`
+	// ExpiresAt is when this grant stops counting. Nil is a standing grant, which
+	// is every row an administrator or a directory writes; a time is what a JIT
+	// elevation carries.
+	//
+	// It is enforced by the *resolver* rather than by the sweeper that eventually
+	// deletes the row — AccessForUser ignores an expired row — so a window that
+	// has run out is closed the moment it runs out, whether or not any background
+	// pass has run since. A sweeper that fell behind must never mean access that
+	// outlived its approval.
+	ExpiresAt *time.Time `gorm:"index" json:"expires_at,omitempty"`
 }
 
 // TableName pins the join table name; GORM would otherwise pluralize it to
@@ -366,10 +387,22 @@ func k8sRoleRank(role string) int {
 // MergeAccess combines two grants for the same cluster into the more permissive
 // one: the stronger Kubernetes role wins, and namespace scopes are unioned
 // (an unscoped grant means "all namespaces" and therefore absorbs the other).
+//
+// The merged expiry is the *weakest* of the two, because that is what the merged
+// capability is: a standing `view` merged with an elevation to `cluster-admin`
+// until 15:00 is access that does not stop at 15:00, it is access that stops
+// being cluster-admin then. Only callers holding both rows can say when each part
+// ends, which is why the JIT surface reads the requests rather than this.
 func MergeAccess(a, b UserClusterAccess) UserClusterAccess {
 	out := a
 	if k8sRoleRank(b.K8sRole) > k8sRoleRank(a.K8sRole) {
 		out.K8sRole = b.K8sRole
+	}
+	switch {
+	case a.ExpiresAt == nil || b.ExpiresAt == nil:
+		out.ExpiresAt = nil
+	case b.ExpiresAt.After(*a.ExpiresAt):
+		out.ExpiresAt = b.ExpiresAt
 	}
 	if a.Namespaces == "" || b.Namespaces == "" {
 		out.Namespaces = ""

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { AccessRequests } from './pages/AccessRequests'
 import { AuditTrail } from './pages/AuditTrail'
 import { AuthCallback } from './pages/AuthCallback'
 import { ClusterDetail } from './pages/ClusterDetail'
@@ -131,6 +132,17 @@ export default function App() {
             element={
               <RequireAuth>
                 <SessionRecordings />
+              </RequireAuth>
+            }
+          />
+          {/* Not adminOnly: the people who need to ask for access are the ones
+              without it, and the server narrows a non-admin to their own
+              requests exactly as it does on the audit trail. */}
+          <Route
+            path="/access-requests"
+            element={
+              <RequireAuth>
+                <AccessRequests />
               </RequireAuth>
             }
           />

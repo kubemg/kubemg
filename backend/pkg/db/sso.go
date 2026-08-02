@@ -500,16 +500,24 @@ func reconcileGrants(tx *gorm.DB, userID uint, rules []SSOGroupMapping) (int, er
 		}
 	}
 
-	// A cluster an administrator granted by hand is left exactly as it is: the
-	// unique index is on (user, cluster), so writing a derived grant there would
-	// silently replace a decision someone made deliberately.
+	// A cluster an administrator granted by hand is left exactly as it is: a
+	// derived grant written over it would replace a decision someone made
+	// deliberately, and the sync would then reconcile that decision away on some
+	// later login.
+	//
+	// A *temporary* elevation is deliberately not treated that way. It has its own
+	// row and its own clock, so a directory can go on asserting the standing grant
+	// beside it — and reading a JIT row as "hand-written" would be worse than
+	// harmless: this cluster would be skipped, the federated grant below would be
+	// pruned as no longer asserted, and the user would come out of their own login
+	// with less access than they had, until the elevation expired.
 	existing := []UserClusterAccess{}
 	if err := tx.Where("user_id = ?", userID).Find(&existing).Error; err != nil {
 		return 0, fmt.Errorf("load existing grants: %w", err)
 	}
 	local := map[uint]bool{}
 	for _, grant := range existing {
-		if grant.Source != GrantSourceSSO {
+		if grant.Source != GrantSourceSSO && grant.Source != GrantSourceJIT {
 			local[grant.ClusterID] = true
 		}
 	}
@@ -534,8 +542,10 @@ func reconcileGrants(tx *gorm.DB, userID uint, rules []SSOGroupMapping) (int, er
 	for _, clusterID := range keep {
 		grant := desired[clusterID]
 		err := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "user_id"}, {Name: "cluster_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"k8s_role", "namespaces", "source"}),
+			// (user, cluster, source): the derived row is the only one this sync
+			// owns, and the only one it may overwrite.
+			Columns:   []clause.Column{{Name: "user_id"}, {Name: "cluster_id"}, {Name: "source"}},
+			DoUpdates: clause.AssignmentColumns([]string{"k8s_role", "namespaces"}),
 		}).Create(&grant).Error
 		if err != nil {
 			return 0, fmt.Errorf("apply federated grant: %w", err)

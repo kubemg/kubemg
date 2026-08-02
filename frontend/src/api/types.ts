@@ -73,6 +73,13 @@ export interface Permission {
   cluster_name: string
   k8s_role: string
   namespaces: string[]
+  /** Where the grant came from: `local` an administrator wrote it, `sso` a
+      directory derives it, `jit` an approved request activated it. */
+  source?: 'local' | 'sso' | 'jit'
+  /** Set only on a temporary grant. The matrix has to show it, because a row that
+      ends in forty minutes reviewed as though it were permanent is worse than not
+      seeing it. */
+  expires_at?: string
 }
 
 export interface PermissionMatrix {
@@ -730,6 +737,9 @@ export type SettingsPatch = Partial<RuntimeSettings>
 export type AlarmChannelKind =
   | 'alertmanager'
   | 'slack'
+  /** Teams takes an Adaptive Card inside an attachment envelope, which is neither
+      Slack's blocks nor its attachments — hence a kind of its own. */
+  | 'teams'
   | 'pagerduty'
   | 'servicenow'
   | 'webhook'
@@ -1248,4 +1258,62 @@ export interface GuardrailPolicyList {
       an operator reading a list of armed rules deserves to know the count the
       gateway agrees with. */
   enforcing: number
+}
+
+/* ------------------------------------------- just-in-time elevated access --- */
+
+/**
+ * A request for a stronger Kubernetes role on one cluster, for a bounded window.
+ *
+ * `active` and `remaining_seconds` are resolved by the server rather than by the
+ * browser: the countdown has to agree with the server that will refuse the call,
+ * and a row whose status still reads `active` past its expiry is reported here as
+ * inactive with nothing left — which is what the access resolver already believes.
+ */
+export interface JitRequest {
+  id: string
+  requester_id: number
+  requester_username: string
+  cluster_id: number
+  cluster_name: string
+  requested_role: K8sRole
+  namespaces: string[]
+  duration_minutes: number
+  reason: string
+  status: JitStatus
+  approver_id?: number
+  approver_username?: string
+  approver_comment?: string
+  approved_at?: string
+  expires_at?: string
+  active: boolean
+  remaining_seconds: number
+  created_at: string
+  updated_at: string
+}
+
+/** `approved` and `active` are the same event in this build — an approval writes
+    the grant in the same transaction — and both mean a live elevation. */
+export type JitStatus = 'pending' | 'approved' | 'active' | 'rejected' | 'expired' | 'revoked'
+
+export interface JitRequestInput {
+  cluster_id: number
+  requested_role: K8sRole
+  namespaces: string[]
+  duration_minutes: number
+  reason: string
+}
+
+export interface JitRequestList {
+  requests: JitRequest[]
+  pending: number
+  /** The windows the server offers, in minutes. Read from the API rather than
+      hard-coded so a form can never offer one the API would refuse. */
+  durations: number[]
+  statuses: JitStatus[]
+  roles: K8sRole[]
+  /** Whether this caller may decide anything, answered by the server. */
+  can_approve: boolean
+  /** True when the list was narrowed to the caller's own requests. */
+  scoped_to_me: boolean
 }

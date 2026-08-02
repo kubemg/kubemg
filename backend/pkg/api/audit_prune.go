@@ -90,6 +90,14 @@ func (s *server) pruneAudit(ctx context.Context) {
 	s.pruneRecordings(ctx, now.AddDate(0, 0, -recordingDays))
 
 	before := now.AddDate(0, 0, -days)
+
+	// Decided access requests share the audit window rather than having one of
+	// their own: a request is the record of who was given production and why, which
+	// is precisely the class of thing that setting is about. Anything still live is
+	// left alone whatever its age — a window nobody has closed is not history — and
+	// a failure here must not stop the audit pass below.
+	s.pruneJitRequests(ctx, before)
+
 	removed, err := s.store.PruneAuditEvents(ctx, before)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -104,6 +112,27 @@ func (s *server) pruneAudit(ctx context.Context) {
 		s.log().Info("pruned audit events past their retention window",
 			slog.Int64("removed", removed),
 			slog.Int("retention_days", days),
+			slog.Time("before", before))
+	}
+}
+
+// pruneJitRequests drops decided access requests past the audit window. The audit
+// records of the decisions outlive them by exactly as long as the trail does; what
+// goes is the workflow row, which nothing reads back once it is closed.
+func (s *server) pruneJitRequests(ctx context.Context, before time.Time) {
+	if s.jit == nil {
+		return
+	}
+	removed, err := s.store.PruneJitRequests(ctx, before)
+	if err != nil {
+		if ctx.Err() == nil {
+			s.log().Warn("access request retention pass failed", slog.String("error", err.Error()))
+		}
+		return
+	}
+	if removed > 0 {
+		s.log().Info("pruned decided access requests past their retention window",
+			slog.Int64("removed", removed),
 			slog.Time("before", before))
 	}
 }

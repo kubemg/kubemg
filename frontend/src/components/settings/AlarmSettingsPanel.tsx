@@ -54,6 +54,7 @@ import {
 const KIND_LABEL: Record<AlarmChannelKind, string> = {
   alertmanager: 'Alertmanager',
   slack: 'Slack',
+  teams: 'Microsoft Teams',
   pagerduty: 'PagerDuty',
   servicenow: 'ServiceNow / ITSM',
   webhook: 'Webhook / SIEM',
@@ -65,6 +66,8 @@ const KIND_HINT: Record<AlarmChannelKind, string> = {
   alertmanager:
     'The v2 alerts endpoint, usually https://alertmanager.example.com/api/v2/alerts. Alarms then route through your existing silences and on-call rotation rather than beside them.',
   slack: 'An incoming webhook URL. The URL is the credential, so it needs no token.',
+  teams:
+    'A Teams incoming webhook URL. Like Slack’s, the URL is the credential. Alarms arrive as an Adaptive Card — and so do access approval requests, if you use the just-in-time workflow.',
   pagerduty:
     'https://events.pagerduty.com/v2/enqueue, with the integration’s Events API v2 routing key.',
   servicenow:
