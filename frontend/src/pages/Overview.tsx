@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { Plug, Plus, RefreshCw, Server } from 'lucide-react'
 import { checkCluster, errorMessage, fetchNodeMetrics } from '../api/client'
 import type { Cluster, Environment, UsageSummary } from '../api/types'

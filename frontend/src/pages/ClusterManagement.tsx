@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { Plug, Plus, RefreshCw, Server, Trash2 } from 'lucide-react'
 import { checkCluster, deleteCluster, errorMessage } from '../api/client'
 import type { Cluster } from '../api/types'

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { errorMessage } from '../api/client'
 import { Notice, Spinner } from '../components/primitives'
 import { Mark } from '../components/Mark'

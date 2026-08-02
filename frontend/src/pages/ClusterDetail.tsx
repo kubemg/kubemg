@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router'
 import { AlertTriangle, ChevronRight, KeyRound, Layers, RefreshCw, Timer } from 'lucide-react'
 import { checkCluster, errorMessage, fetchCluster, fetchNodeMetrics } from '../api/client'
 import type { Cluster, NodeMetrics } from '../api/types'
