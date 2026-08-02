@@ -12,7 +12,12 @@ import { Login } from './pages/Login'
 import { Overview } from './pages/Overview'
 import { PermissionsMatrix } from './pages/PermissionsMatrix'
 import { SessionRecordings } from './pages/SessionRecordings'
-import { Settings } from './pages/Settings'
+import { AgentSettings } from './pages/settings/AgentSettings'
+import { AlertingSettings } from './pages/settings/AlertingSettings'
+import { AuditSettings } from './pages/settings/AuditSettings'
+import { GeneralSettings } from './pages/settings/GeneralSettings'
+import { GuardrailsSettings } from './pages/settings/GuardrailsSettings'
+import { SsoSettings } from './pages/settings/SsoSettings'
 import { UserManagement } from './pages/UserManagement'
 import { AuthProvider } from './state/AuthProvider'
 import { ClustersProvider } from './state/ClustersProvider'
@@ -170,11 +175,52 @@ export default function App() {
               </RequireAuth>
             }
           />
+          <Route path="/settings" element={<Navigate to="/settings/general" replace />} />
           <Route
-            path="/settings"
+            path="/settings/general"
             element={
               <RequireAuth adminOnly>
-                <Settings />
+                <GeneralSettings />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/settings/agent"
+            element={
+              <RequireAuth adminOnly>
+                <AgentSettings />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/settings/audit"
+            element={
+              <RequireAuth adminOnly>
+                <AuditSettings />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/settings/guardrails"
+            element={
+              <RequireAuth adminOnly>
+                <GuardrailsSettings />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/settings/alerting"
+            element={
+              <RequireAuth adminOnly>
+                <AlertingSettings />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/settings/sso"
+            element={
+              <RequireAuth adminOnly>
+                <SsoSettings />
               </RequireAuth>
             }
           />

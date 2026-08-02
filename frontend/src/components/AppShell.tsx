@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
+  Bell,
   ChevronRight,
   Gauge,
   KeyRound,
@@ -74,7 +75,14 @@ const SECTIONS = [
     id: 'system',
     label: 'System',
     icon: SlidersHorizontal,
-    items: [{ to: '/settings', label: 'Settings', icon: SlidersHorizontal, adminOnly: true }],
+    items: [
+      { to: '/settings/general', label: 'General Settings', icon: SlidersHorizontal, adminOnly: true },
+      { to: '/settings/agent', label: 'Agent Settings', icon: Server, adminOnly: true },
+      { to: '/settings/audit', label: 'Audit Settings', icon: ScrollText, adminOnly: true },
+      { to: '/settings/guardrails', label: 'Guardrails', icon: Shield, adminOnly: true },
+      { to: '/settings/alerting', label: 'Alerting', icon: Bell, adminOnly: true },
+      { to: '/settings/sso', label: 'SSO', icon: KeyRound, adminOnly: true },
+    ],
   },
 ] as const
 
