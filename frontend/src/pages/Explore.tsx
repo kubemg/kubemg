@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Boxes, RefreshCw } from 'lucide-react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useParams } from 'react-router'
 import {
   errorMessage,
   fetchCRDs,
@@ -204,7 +204,12 @@ function writePreferredNamespace(namespace: string) {
   }
 }
 
-/** The cluster id in `/explore/:clusterId`, or null when the path carries none. */
+/**
+ * The cluster id in `/clusters/:id/explore`, or null when Explore is mounted
+ * without one — which only happens at the bare `/explore` landing, when the
+ * whole fleet has nothing reachable to redirect to (see `ExploreLanding` in
+ * `App.tsx`, which owns the redirect itself).
+ */
 function readClusterParam(raw: string | undefined): number | null {
   if (!raw) return null
   const id = Number(raw)
@@ -213,13 +218,12 @@ function readClusterParam(raw: string | undefined): number | null {
 
 export function Explore() {
   const { clusters, loading: clustersLoading } = useClusters()
-  const navigate = useNavigate()
 
   // The cluster being explored is the one named in the address. That is what
   // makes the rail's cluster list the way to switch: a click there is a
   // navigation, so the sidebar highlight, the page and the reads cannot disagree
   // — and a link to what someone is looking at carries the cluster with it.
-  const clusterId = readClusterParam(useParams().clusterId)
+  const clusterId = readClusterParam(useParams().id)
 
   const [namespaces, setNamespaces] = useState<Namespace[]>([])
   const [namespace, setNamespace] = useState('')
@@ -271,15 +275,6 @@ export function Explore() {
   const resolved = resourceItem(resource, discovered)
   const item = resolved ?? DEFAULT_ITEM
   const namespaced = item.scope === 'namespaced'
-
-  // `/explore` with no cluster named settles on the first readable one and says
-  // so in the address, so the sidebar has something to highlight. An id that
-  // names a cluster is left alone even when it cannot be read — that case gets an
-  // explanation below, not a redirect to someone else's resources.
-  useEffect(() => {
-    if (clusterId !== null || reachable.length === 0) return
-    navigate(`/explore/${reachable[0].id}`, { replace: true })
-  }, [clusterId, navigate, reachable])
 
   // Namespaces reload whenever the cluster changes; the current namespace is
   // dropped so it cannot leak across clusters.
@@ -434,7 +429,10 @@ export function Explore() {
                 {unreadable.connection_mode === 'agent'
                   ? 'Its agent has not dialled in, so there is no tunnel to read through. '
                   : 'It is registered in direct mode, which has no agent tunnel for live reads. '}
-                <Link to={`/clusters/${unreadable.id}`} className="text-accent hover:underline">
+                <Link
+                  to={`/clusters/${unreadable.id}/summary`}
+                  className="text-accent hover:underline"
+                >
                   Open the cluster
                 </Link>{' '}
                 to check its connection, or pick another cluster from the fleet list.
@@ -480,7 +478,7 @@ export function Explore() {
           {cluster ? (
             <>
               <Link
-                to={`/clusters/${cluster.id}`}
+                to={`/clusters/${cluster.id}/summary`}
                 className="font-mono text-[13px] text-fg transition-colors hover:text-accent"
               >
                 {cluster.name}

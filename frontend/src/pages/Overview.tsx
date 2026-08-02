@@ -14,6 +14,7 @@ import {
   Notice,
   SectionHeading,
 } from '../components/primitives'
+import { clusterHref } from '../lib/navigation'
 import { strandState } from '../lib/status'
 import { relativeAge } from '../lib/time'
 import { formatCPU, formatMemory, ratio } from '../lib/units'
@@ -327,7 +328,7 @@ function ClusterCard({ cluster, usage }: { cluster: Cluster; usage?: UsageSummar
 
   return (
     <Link
-      to={`/clusters/${cluster.id}`}
+      to={clusterHref(cluster)}
       className="group card block p-4 transition-[border-color,box-shadow] hover:border-accent-line hover:lift"
     >
       <div className="flex items-center gap-2.5">
