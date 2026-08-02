@@ -1,0 +1,60 @@
+KubeMG
+Copyright (c) 2026 Özkan Poyrazoğlu
+
+This product is licensed under two licences, split by directory.
+
+  Everything except the directories named below
+      GNU Affero General Public License, version 3
+      See LICENSE at the root of this repository.
+
+  agent/            the in-cluster Dumb Agent
+  deploy/kustomize/ the agent's install manifests
+      Apache License, Version 2.0
+      See agent/LICENSE and deploy/LICENSE.
+
+The agent is deliberately the permissive half. It is the only component that
+runs inside a customer's cluster, so a SecOps team has to be able to read it,
+audit it, build it themselves and vendor it into their own tooling without the
+copyleft obligation reaching their infrastructure. The server and console —
+where the product is — are AGPL: running a modified KubeMG as a network service
+means offering that modified source to its users.
+
+A COMMERCIAL LICENCE IS AVAILABLE.
+
+The copyright in this work is held in full by the author, so the AGPL is not the
+only terms on which it can be had. If the AGPL's source-offering obligation does
+not fit — an embedded deployment, a closed derivative, an OEM arrangement —
+contact the maintainer for proprietary terms. The AGPL grant here is not
+withdrawn by that; it stands for everyone else.
+
+--------------------------------------------------------------------------------
+
+Third-party components are distributed under their own licences. The direct
+dependencies are, in full:
+
+  Go, server (backend/go.mod)
+    github.com/gin-gonic/gin, github.com/gin-contrib/cors        MIT
+    gorm.io/gorm, gorm.io/driver/postgres                        MIT
+    github.com/golang-jwt/jwt/v5                                 MIT
+    github.com/gorilla/websocket                                 BSD-2-Clause
+    github.com/go-ldap/ldap/v3                                   MIT
+    github.com/coreos/go-oidc/v3                                 Apache-2.0
+    github.com/russellhaering/gosaml2, goxmldsig                 Apache-2.0
+    golang.org/x/crypto, golang.org/x/oauth2                     BSD-3-Clause
+    k8s.io/api, k8s.io/apimachinery, k8s.io/client-go            Apache-2.0
+    sigs.k8s.io/yaml                                             MIT / BSD-3-Clause
+
+  Go, agent (agent/go.mod)
+    github.com/gorilla/websocket                                 BSD-2-Clause
+
+  Browser (frontend/package.json)
+    react, react-dom, react-router-dom                           MIT
+    @xterm/xterm, @xterm/addon-fit                               MIT
+    axios                                                        MIT
+    lucide-react                                                 ISC
+    tailwindcss, vite, typescript, oxlint                        MIT
+
+  Bundled assets (frontend/public/fonts, self-hosted woff2)
+    Inter                                                        SIL Open Font License 1.1
+    JetBrains Mono                                               SIL Open Font License 1.1
+    Both licence texts sit beside the font files, as the OFL requires.

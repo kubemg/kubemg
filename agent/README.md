@@ -64,6 +64,10 @@ One WebSocket carries JSON frames, multiplexed by correlation ID:
 | `welcome` | bastion → agent | which cluster the tunnel bound to |
 | `request` | bastion → agent | one HTTP call to replay against the API server |
 | `response` | agent → bastion | the API server's answer, or why there isn't one |
+| `stream_open` | bastion → agent | open a long-lived call: `exec`, `attach`, `port-forward`, `watch`, `logs -f` |
+| `stream_start` | agent → bastion | the response head, or the reason the stream could not open |
+| `stream_data` | both ways | one chunk, verbatim — for `exec` and `port-forward` these are the channel-prefixed bytes Kubernetes multiplexes stdin/stdout/stderr with |
+| `stream_close` | both ways | the stream ended, and why |
 
 The agent authenticates with its registration token as a bearer token on the
 upgrade request; the cluster identity is derived from that token, so an agent
@@ -74,9 +78,19 @@ separate files because the agent is a separate, open-source module — they agre
 on JSON field names and on `ProtocolVersion`, which the bastion checks during the
 handshake.
 
-### Not yet carried
+Only the *handshake* of a stream is bounded; a stream itself may run for hours.
+A stream whose consumer cannot keep up is killed on its own rather than being
+allowed to block the socket every other stream shares.
 
-`exec`, `attach`, `port-forward`, `watch` and `logs -f` need a bidirectional or
-long-lived stream that this framing does not provide. The bastion refuses them
-with `501 Not Implemented` rather than letting them hang. They land with the
-streaming protocol in Phase 3.
+`port-forward` is carried over Kubernetes' WebSocket shape
+(`v2.portforward.k8s.io`), which is channel-prefixed bytes this framing already
+passes through unchanged. A SPDY-only client is refused with a `501` naming the
+fix — `KUBECTL_PORT_FORWARD_WEBSOCKETS=true`, the default from kubectl 1.31 —
+rather than being left hanging on an upgrade nobody answers.
+
+## Licence
+
+Apache-2.0 — see [`LICENSE`](LICENSE). The agent is the permissive half of this
+repository on purpose: it is the only component that runs inside your cluster, so
+you must be able to read it, build it yourself and vendor it without the server's
+AGPL reaching your infrastructure.

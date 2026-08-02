@@ -49,3 +49,9 @@ The bastion embeds its own copy of `base/` at `backend/pkg/agentpkg/base/` so
 the manifests ship inside the server binary. `make manifest-check` diffs the two
 directories and fails the build if they drift, so any edit here has to be made
 in both places.
+
+## Licence
+
+Apache-2.0 — see [`../LICENSE`](../LICENSE). These manifests and the agent they
+install are the permissive half of this repository; the server and console are
+AGPL-3.0.
