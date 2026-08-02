@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
+import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router'
 import { AccessRequests } from './pages/AccessRequests'
 import { AuditTrail } from './pages/AuditTrail'
 import { AuthCallback } from './pages/AuthCallback'
-import { ClusterDetail } from './pages/ClusterDetail'
 import { ClusterManagement } from './pages/ClusterManagement'
+import { ClusterSummary } from './pages/ClusterSummary'
 import { ClusterWizard } from './pages/ClusterWizard'
 import { Explore } from './pages/Explore'
 import { GroupManagement } from './pages/GroupManagement'
@@ -22,6 +22,7 @@ import { UserManagement } from './pages/UserManagement'
 import { AuthProvider } from './state/AuthProvider'
 import { ClustersProvider } from './state/ClustersProvider'
 import { useAuth } from './state/auth-context'
+import { useClusters } from './state/clusters-context'
 
 function RestoringSession() {
   return (
@@ -60,6 +61,35 @@ function CallbackRoute() {
   return user ? <Navigate to="/" replace /> : <AuthCallback />
 }
 
+/**
+ * A pasted `/explore/:clusterId` link — the address people already have in
+ * tickets and bookmarks. The id still names the same cluster; only the space
+ * it lives under moved.
+ */
+function ExploreClusterRedirect() {
+  const { clusterId } = useParams<{ clusterId: string }>()
+  return <Navigate to={`/clusters/${clusterId}/explore`} replace />
+}
+
+/**
+ * `/explore` with no cluster named settles on the first readable one, exactly
+ * as it did when the id lived in this same path — only now that decision is
+ * made once, at the route, rather than by an effect inside a page that always
+ * addresses one cluster through `:id`. When nothing in the fleet is reachable
+ * there is nowhere to send the redirect, and `Explore` still owns that
+ * explanation (it is reached here with no id, the same shape it renders for).
+ */
+function ExploreLanding() {
+  const { clusters, loading } = useClusters()
+  const reachable = clusters.find(
+    (cluster) => cluster.connection_mode === 'agent' && cluster.agent_attached,
+  )
+  if (!loading && reachable) {
+    return <Navigate to={`/clusters/${reachable.id}/explore`} replace />
+  }
+  return <Explore />
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -95,30 +125,61 @@ export default function App() {
               </RequireAuth>
             }
           />
+          {/* A cluster now has an address space of its own — /clusters/:id is
+              nothing on its own, just where its default view lives. The
+              redirect is relative so it preserves whatever id matched. */}
           <Route
             path="/clusters/:id"
             element={
               <RequireAuth>
-                <ClusterDetail />
+                <Navigate to="summary" replace />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/clusters/:id/summary"
+            element={
+              <RequireAuth>
+                <ClusterSummary />
               </RequireAuth>
             }
           />
           {/* Which cluster is being explored is part of the address, not page
-              state: the rail's cluster list is how an operator switches, and a
-              link to what someone is looking at has to carry the cluster. */}
+              state: the entity switcher, the fleet list and the palette are how
+              an operator moves between clusters, and a link to what someone is
+              looking at has to carry the cluster. */}
           <Route
-            path="/explore"
+            path="/clusters/:id/explore"
             element={
               <RequireAuth>
                 <Explore />
               </RequireAuth>
             }
           />
+          {/* Not adminOnly: the server narrows a non-admin to their own rows on
+              a cluster's trail exactly as it does on the fleet-wide one. */}
+          <Route
+            path="/clusters/:id/audit"
+            element={
+              <RequireAuth>
+                <AuditTrail />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/explore"
+            element={
+              <RequireAuth>
+                <ExploreLanding />
+              </RequireAuth>
+            }
+          />
+          {/* A link people have pasted into tickets under the old address. */}
           <Route
             path="/explore/:clusterId"
             element={
               <RequireAuth>
-                <Explore />
+                <ExploreClusterRedirect />
               </RequireAuth>
             }
           />

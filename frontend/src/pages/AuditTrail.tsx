@@ -8,6 +8,7 @@ import {
   RefreshCw,
   ScrollText,
 } from 'lucide-react'
+import { useParams } from 'react-router'
 import { errorMessage, fetchAudit, fetchAuditSummary, fetchUsers } from '../api/client'
 import type { AuditEvent, AuditQuery, AuditRange, AuditSummary, User } from '../api/types'
 import { AppShell } from '../components/AppShell'
@@ -110,6 +111,10 @@ function statusTone(event: AuditEvent): Tone {
 export function AuditTrail() {
   const { user } = useAuth()
   const { clusters } = useClusters()
+  // Present only at `/clusters/:id/audit`. The trail there is pre-selected and
+  // locked to that cluster — the address already answers "which cluster", and
+  // an editable picker would let the page disagree with its own URL.
+  const routeClusterId = useParams<{ id?: string }>().id
 
   const [events, setEvents] = useState<AuditEvent[]>([])
   const [total, setTotal] = useState(0)
@@ -119,7 +124,7 @@ export function AuditTrail() {
   const [error, setError] = useState<string | null>(null)
   const [users, setUsers] = useState<User[]>([])
 
-  const [clusterId, setClusterId] = useState('')
+  const [clusterId, setClusterId] = useState(routeClusterId ?? '')
   const [userId, setUserId] = useState('')
   // A set rather than one value: an auditor narrowing to "the writes" is picking
   // four verbs, not making four consecutive single-verb queries.
@@ -178,6 +183,16 @@ export function AuditTrail() {
   useEffect(() => {
     void load()
   }, [load])
+
+  // A cluster named in the address always wins: switching from one cluster's
+  // trail to another's through the entity switcher remounts the same route
+  // rather than the same component instance in most navigations, but this
+  // keeps the filter honest on the ones that do not.
+  useEffect(() => {
+    if (!routeClusterId) return
+    setClusterId(routeClusterId)
+    setOffset(0)
+  }, [routeClusterId])
 
   useEffect(() => {
     fetchAuditSummary()
@@ -239,21 +254,28 @@ export function AuditTrail() {
               className="w-full sm:w-56"
             />
 
-            <div className="w-40">
-              <Select
-                aria-label="Filter by cluster"
-                size="sm"
-                value={clusterId}
-                onChange={(event) => narrow(() => setClusterId(event.target.value))}
-              >
-                <option value="">All clusters</option>
-                {clusters.map((cluster) => (
-                  <option key={cluster.id} value={cluster.id}>
-                    {cluster.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
+            {routeClusterId ? (
+              <span className="flex h-8 items-center rounded-control border border-line-soft bg-raised px-3 font-mono text-[12.5px] text-fg">
+                {clusters.find((cluster) => cluster.id === Number(routeClusterId))?.name ??
+                  `cluster ${routeClusterId}`}
+              </span>
+            ) : (
+              <div className="w-40">
+                <Select
+                  aria-label="Filter by cluster"
+                  size="sm"
+                  value={clusterId}
+                  onChange={(event) => narrow(() => setClusterId(event.target.value))}
+                >
+                  <option value="">All clusters</option>
+                  {clusters.map((cluster) => (
+                    <option key={cluster.id} value={cluster.id}>
+                      {cluster.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
 
             {user?.role === 'admin' ? (
               <div className="w-36">

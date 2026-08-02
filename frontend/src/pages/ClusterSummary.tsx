@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { AlertTriangle, ChevronRight, KeyRound, Layers, RefreshCw, Timer } from 'lucide-react'
+import { AlertTriangle, ChevronRight, KeyRound, RefreshCw, Timer } from 'lucide-react'
 import { checkCluster, errorMessage, fetchCluster, fetchNodeMetrics } from '../api/client'
 import type { Cluster, NodeMetrics } from '../api/types'
 import { AppShell } from '../components/AppShell'
@@ -25,7 +25,7 @@ import { relativeAge } from '../lib/time'
 import { formatCPU, formatMemory } from '../lib/units'
 import { useAuth } from '../state/auth-context'
 
-export function ClusterDetail() {
+export function ClusterSummary() {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuth()
   // A health check answers with the cluster as it now is, and that answer is
@@ -75,22 +75,13 @@ export function ClusterDetail() {
   const viaAgent = cluster?.connection_mode === 'agent'
 
   return (
+    // The cluster's name is the switcher beside this, so the heading names the
+    // view instead — the way every other cluster page's does.
     <AppShell
-      title={cluster?.name ?? 'Cluster'}
-      parent={{ label: 'Fleet', to: '/' }}
+      title="Summary"
       actions={
         cluster ? (
           <>
-            {/* The way back out of management and into the cluster itself. It is
-                only offered where there is a tunnel to read through. */}
-            {cluster.connection_mode === 'agent' && cluster.agent_attached ? (
-              <Link to={`/explore/${cluster.id}`}>
-                <Button>
-                  <Layers aria-hidden="true" className="size-4" />
-                  Explore
-                </Button>
-              </Link>
-            ) : null}
             <Button onClick={() => setRequesting(true)}>
               <Timer aria-hidden="true" className="size-4" />
               Request access
