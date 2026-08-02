@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CornerDownLeft, Search } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import type { Cluster } from '../api/types'
 import { EnvironmentDot, KeyHint } from './primitives'
 import { LinkStrand } from './LinkStrand'

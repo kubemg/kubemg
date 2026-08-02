@@ -1,0 +1,187 @@
+name: PR checks
+
+# Runs on every pull request into master (and again on push to master as a
+# post-merge safety net) so a fast-moving PR flow still gets three things
+# checked automatically: the PR is actually mergeable, no credential slipped
+# into the diff, and nothing newly added carries a known-vulnerable
+# dependency or a risky container/K8s misconfiguration.
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# A new push to the same PR supersedes the previous run rather than queuing
+# behind it.
+concurrency:
+  group: pr-checks-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # GitHub computes mergeability asynchronously, so a single read right after
+  # the event can still show `mergeable: null`; poll a few times before
+  # reporting. This job only makes the conflict visible as a failed check —
+  # GitHub's own merge button already refuses a conflicting PR either way.
+  conflict-check:
+    name: Merge conflict check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check PR mergeability against the base branch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo
+            const number = context.payload.pull_request.number
+
+            let mergeable = null
+            for (let attempt = 0; attempt < 6; attempt++) {
+              const { data } = await github.rest.pulls.get({ owner, repo, pull_number: number })
+              mergeable = data.mergeable
+              if (mergeable !== null) break
+              await new Promise((resolve) => setTimeout(resolve, 5000))
+            }
+
+            if (mergeable === false) {
+              core.setFailed(
+                `PR #${number} has merge conflicts with the base branch. ` +
+                'Rebase or merge master into this branch to resolve them before it can be merged.'
+              )
+            } else if (mergeable === null) {
+              core.warning(
+                'GitHub had not finished computing mergeability after several retries. ' +
+                'Re-run this check if it keeps happening.'
+              )
+            } else {
+              core.info('No merge conflicts detected against the base branch.')
+            }
+
+  # Catches a committed credential (API key, private key, cluster token,
+  # database password, ...) before it reaches master. Runs against full
+  # history on the PR's own commits so a secret added and then "fixed" in a
+  # later commit is still caught.
+  secret-scan:
+    name: Secret & credential scan (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Set org-wide if gitleaks-action ever requires one for this repo;
+          # unset is fine for a public repo on the free tier.
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  # Filesystem-wide sweep: known-vulnerable Go/npm dependencies (go.sum,
+  # package-lock.json), risky Dockerfile/Kustomize misconfigurations, and a
+  # second, independent secret pass. Findings land in the repo's Security >
+  # Code scanning tab as well as failing the job outright on CRITICAL/HIGH.
+  trivy-repo-scan:
+    name: Trivy filesystem, config & secret scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # trivy-action's exit-code check does not re-apply the severity filter
+      # under `format: sarif` — it fails on *any* finding of *any* severity
+      # once ignorefile filtering is done, not just CRITICAL/HIGH (confirmed
+      # live: a LOW/MEDIUM-only result still failed the job). So the gate and
+      # the code-scanning upload are two separate Trivy runs: this one is the
+      # actual pass/fail gate, scoped to CRITICAL/HIGH.
+      - name: Run Trivy (gate on CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          # Accepted, documented trade-offs (dev-only Dockerfiles running as
+          # root, the enumerated-but-not-wildcarded custom-resource RBAC) are
+          # listed in .trivyignore, which Trivy reads automatically — no
+          # flag needed.
+          format: table
+          exit-code: 1
+
+      # Unconditional second pass purely for visibility in Security > Code
+      # scanning: every severity, never fails the job on its own — the step
+      # above already decided pass/fail.
+      - name: Run Trivy (SARIF for code scanning)
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig,secret
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-repo-results.sarif
+          exit-code: 0
+
+      - name: Upload results to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-repo-results.sarif
+          category: trivy-repo
+
+  # The agent is the one artefact this project ships to clusters it does not
+  # control, so its built image is scanned on its own rather than trusted
+  # because the base image "was fine last time".
+  trivy-agent-image:
+    name: Trivy agent image scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build agent image
+        run: docker build -t kubemg-agent:ci ./agent
+
+      # Same split as trivy-repo-scan: the gate is scoped to CRITICAL/HIGH,
+      # the SARIF pass is unconditional and only for code-scanning visibility.
+      - name: Run Trivy (gate on CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: kubemg-agent:ci
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: table
+          exit-code: 1
+
+      - name: Run Trivy (SARIF for code scanning)
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: kubemg-agent:ci
+          scanners: vuln,secret
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-agent-image-results.sarif
+          exit-code: 0
+
+      - name: Upload results to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-agent-image-results.sarif
+          category: trivy-agent-image

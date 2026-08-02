@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Boxes, RefreshCw } from 'lucide-react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router'
 import {
   errorMessage,
   fetchCRDs,

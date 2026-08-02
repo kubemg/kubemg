@@ -22,7 +22,7 @@ import {
   UsersRound,
   X,
 } from 'lucide-react'
-import { Link, NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router'
 import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
 import { useTheme } from '../lib/theme'
