@@ -561,6 +561,7 @@ export function Explore() {
   return (
     <AppShell
       title="Explore"
+      fullWidth
       timeRange
       scope={
         // Namespace is a scope control of the same class as the cluster and
