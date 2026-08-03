@@ -65,11 +65,11 @@ function CallbackRoute() {
 /**
  * A pasted `/explore/:clusterId` link — the address people already have in
  * tickets and bookmarks. The id still names the same cluster; only the space
- * it lives under moved.
+ * it lives under moved, onto its default resource.
  */
 function ExploreClusterRedirect() {
   const { clusterId } = useParams<{ clusterId: string }>()
-  return <Navigate to={`/clusters/${clusterId}/explore`} replace />
+  return <Navigate to={`/clusters/${clusterId}/explore/pods`} replace />
 }
 
 /**
@@ -86,7 +86,7 @@ function ExploreLanding() {
     (cluster) => cluster.connection_mode === 'agent' && cluster.agent_attached,
   )
   if (!loading && reachable) {
-    return <Navigate to={`/clusters/${reachable.id}/explore`} replace />
+    return <Navigate to={`/clusters/${reachable.id}/explore/pods`} replace />
   }
   return <Explore />
 }
@@ -149,12 +149,23 @@ export default function App() {
                 </RequireAuth>
               }
             />
-            {/* Which cluster is being explored is part of the address, not page
-                state: the entity switcher, the fleet list and the palette are how
-                an operator moves between clusters, and a link to what someone is
-                looking at has to carry the cluster. */}
+            {/* Which cluster is being explored — and which resource, and which
+                namespace — is part of the address, not page state: the entity
+                switcher, the fleet list and the palette are how an operator moves
+                between clusters, and a link to what someone is looking at has to
+                carry all three. The resource key is a splat rather than a plain
+                `:kind` because a discovered CRD's key (`crd:group/version/plural`)
+                contains slashes of its own. */}
             <Route
               path="/clusters/:id/explore"
+              element={
+                <RequireAuth>
+                  <Navigate to="pods" replace />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/clusters/:id/explore/*"
               element={
                 <RequireAuth>
                   <Explore />
