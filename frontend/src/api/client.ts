@@ -49,6 +49,7 @@ import type {
   NodeMetrics,
   OptionalList,
   MetricKind,
+  MetricCompareResponse,
   MetricQueryResponse,
   Permission,
   PermissionGrant,
@@ -1100,6 +1101,40 @@ export async function queryMetrics(
         range: options.range || undefined,
         start: options.start?.toISOString(),
         end: options.end?.toISOString(),
+      },
+    },
+  )
+  return data
+}
+
+/**
+ * CompareOptions narrows a comparison table. `topk` is how many rows to rank;
+ * the server defaults it to five and caps it, because past that it stops being a
+ * comparison and becomes a listing.
+ */
+export interface CompareOptions {
+  namespace?: string
+  pod?: string
+  container?: string
+  topk?: number
+  range?: TimeRangeId
+}
+
+export async function compareMetrics(
+  clusterId: number,
+  metric: MetricKind,
+  options: CompareOptions = {},
+): Promise<MetricCompareResponse> {
+  const { data } = await http.get<MetricCompareResponse>(
+    `/clusters/${clusterId}/observability/metrics/compare`,
+    {
+      params: {
+        metric,
+        namespace: options.namespace || undefined,
+        pod: options.pod || undefined,
+        container: options.container || undefined,
+        topk: options.topk || undefined,
+        range: options.range || undefined,
       },
     },
   )

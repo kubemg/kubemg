@@ -3,7 +3,10 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -381,4 +384,244 @@ func TestAnExplicitStartBeatsTheRangePreset(t *testing.T) {
 	if !start.Equal(wantStart) || !end.Equal(wantEnd) {
 		t.Fatalf("expected the explicit window %s→%s, got %s→%s", wantStart, wantEnd, start, end)
 	}
+}
+
+/*
+ * The comparison table. It is two queries rather than one, which makes it the
+ * one place a scope could be enforced on the reading and lost on the reading it
+ * is compared against — so what these check is that both queries are the same
+ * question asked at two instants, and that the ranking is on the current window
+ * only.
+ */
+
+// rankingServer answers the two instant queries a comparison makes, recording
+// what it was asked. The `time` parameter is what separates them: the same
+// expression evaluated an hour earlier is the previous window.
+func rankingServer(t *testing.T, asked *[]url.Values) *httptest.Server {
+	t.Helper()
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/status/buildinfo" {
+			_, _ = w.Write([]byte(`{"status":"success","data":{"version":"v2.53.0"}}`))
+			return
+		}
+		query := r.URL.Query()
+		mu.Lock()
+		*asked = append(*asked, query)
+		latest := len(*asked)
+		mu.Unlock()
+
+		// The first query is the ranking; the second is the window before it.
+		// `shop` grew, `search` shrank, and `fresh` did not exist an hour ago.
+		if latest == 1 {
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[
+				{"metric":{"namespace":"shop"},"value":[1700000000,"120"]},
+				{"metric":{"namespace":"search"},"value":[1700000000,"50"]},
+				{"metric":{"namespace":"fresh"},"value":[1700000000,"10"]}
+			]}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[
+			{"metric":{"namespace":"shop"},"value":[1699996400,"100"]},
+			{"metric":{"namespace":"search"},"value":[1699996400,"80"]},
+			{"metric":{"namespace":"archive"},"value":[1699996400,"7"]}
+		]}}`))
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func TestTheComparisonRanksTheCurrentWindowAndLooksUpTheOneBefore(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addCluster("prod-eu", db.EnvProd)
+	token := env.tokenFor(t, admin)
+
+	var asked []url.Values
+	backend := rankingServer(t, &asked)
+	path := "/api/v1/clusters/" + itoa(cluster.ID) + "/observability/sources/metrics"
+	if rec := env.do(t, http.MethodPut, path, token, directSourcePayload(backend.URL)); rec.Code != http.StatusOK {
+		t.Fatalf("register the source: %d (%s)", rec.Code, rec.Body.String())
+	}
+	asked = nil // the registration probe is not one of the two queries under test
+
+	rec := env.do(t, http.MethodGet,
+		"/api/v1/clusters/"+itoa(cluster.ID)+
+			"/observability/metrics/compare?metric=cluster_cpu_by_namespace&range=1h&topk=3",
+		token, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	result := decode[struct {
+		Result observability.CompareResult `json:"result"`
+	}](t, rec).Result
+
+	if len(asked) != 2 {
+		t.Fatalf("expected exactly two queries, got %d", len(asked))
+	}
+	// The current window is ranked; the previous one is not, because a window
+	// with a top-five of its own would report anything outside it as new.
+	if !strings.HasPrefix(asked[0].Get("query"), "topk(3, ") {
+		t.Errorf("the ranking query is not ranked: %s", asked[0].Get("query"))
+	}
+	if strings.Contains(asked[1].Get("query"), "topk(") {
+		t.Errorf("the comparison query is ranked: %s", asked[1].Get("query"))
+	}
+	// Same expression, two instants, one window apart.
+	if asked[1].Get("query") != result.CompareQuery {
+		t.Errorf("the comparison query is not the one reported: %s", asked[1].Get("query"))
+	}
+	first, second := asked[0].Get("time"), asked[1].Get("time")
+	if first == "" || second == "" {
+		t.Fatalf("both queries have to name the instant they are asked at: %q %q", first, second)
+	}
+	if delta := atoiOrFail(t, first) - atoiOrFail(t, second); delta != 3600 {
+		t.Errorf("the windows are %d seconds apart, want one hour", delta)
+	}
+	// The span reaches the query rather than the chart's fixed five minutes.
+	if !strings.Contains(asked[0].Get("query"), "[3600s]") {
+		t.Errorf("the ranking does not cover the window: %s", asked[0].Get("query"))
+	}
+
+	rows := map[string]observability.CompareRow{}
+	for _, row := range result.Rows {
+		rows[row.Name] = row
+	}
+	if len(result.Rows) != 3 || result.Rows[0].Name != "shop" {
+		t.Fatalf("rows are not the current window's ranking: %+v", result.Rows)
+	}
+	if got := rows["shop"]; got.Delta == nil || *got.Delta != 20 {
+		t.Errorf("shop delta = %v, want +20", got.Delta)
+	}
+	if got := rows["search"]; got.Delta == nil || *got.Delta != -30 {
+		t.Errorf("search delta = %v, want -30", got.Delta)
+	}
+	if got := rows["fresh"]; got.Previous != nil {
+		t.Errorf("a namespace absent an hour ago is new, not compared: %+v", got)
+	}
+	// Something that only existed in the previous window is not carried into a
+	// table answering "what is worst now".
+	if _, present := rows["archive"]; present {
+		t.Error("the previous window's own entities leaked into the table")
+	}
+	if result.Rise != observability.TrendNeutral {
+		t.Errorf("rise = %q, want a usage reading to be neutral", result.Rise)
+	}
+}
+
+// A rise in restarts means something went wrong, and the catalogue is what knows
+// that — the browser only decides whether to spend colour on the arrow.
+func TestAFailureReadingReportsThatARiseIsWorse(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addCluster("prod-eu", db.EnvProd)
+	token := env.tokenFor(t, admin)
+
+	var asked []url.Values
+	backend := rankingServer(t, &asked)
+	path := "/api/v1/clusters/" + itoa(cluster.ID) + "/observability/sources/metrics"
+	env.do(t, http.MethodPut, path, token, directSourcePayload(backend.URL))
+
+	rec := env.do(t, http.MethodGet,
+		"/api/v1/clusters/"+itoa(cluster.ID)+
+			"/observability/metrics/compare?metric=pod_restarts&range=6h",
+		token, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	result := decode[struct {
+		Result observability.CompareResult `json:"result"`
+	}](t, rec).Result
+
+	if result.Rise != observability.TrendWorse {
+		t.Fatalf("rise = %q, want restarts to be worse when they climb", result.Rise)
+	}
+	if result.TopK != 5 {
+		t.Fatalf("topk = %d, want the default five", result.TopK)
+	}
+	if result.Unit != observability.UnitCount {
+		t.Fatalf("unit = %q, want a tally", result.Unit)
+	}
+}
+
+// The scope rides on the query here as everywhere else: a scoped caller is
+// refused the cluster-wide entries outright and answered from their own grant on
+// the ones that break down by namespace.
+func TestTheComparisonHonoursTheCallersScope(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	scoped := env.store.addUser("dev", "pw", db.RoleUser)
+	cluster := env.store.addCluster("prod-eu", db.EnvProd)
+	env.store.grant(scoped.ID, cluster.ID, db.K8sRoleView, []string{"shop"})
+
+	var asked []url.Values
+	backend := rankingServer(t, &asked)
+	path := "/api/v1/clusters/" + itoa(cluster.ID) + "/observability/sources/metrics"
+	env.do(t, http.MethodPut, path, env.tokenFor(t, admin), directSourcePayload(backend.URL))
+
+	base := "/api/v1/clusters/" + itoa(cluster.ID) + "/observability/metrics/compare?range=1h&metric="
+	token := env.tokenFor(t, scoped)
+
+	if rec := env.do(t, http.MethodGet, base+"cluster_cpu", token, nil); rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected a cluster-wide comparison to be refused, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	asked = nil
+	if rec := env.do(t, http.MethodGet, base+"cluster_cpu_by_namespace", token, nil); rec.Code != http.StatusOK {
+		t.Fatalf("expected the per-namespace comparison to be allowed, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if len(asked) != 2 {
+		t.Fatalf("expected two queries, got %d", len(asked))
+	}
+	// Both of them — the ranking and the window it is compared against.
+	for i, query := range asked {
+		if !strings.Contains(query.Get("query"), `namespace="shop"`) {
+			t.Errorf("query %d reaches past the grant: %s", i, query.Get("query"))
+		}
+	}
+}
+
+func TestTheComparisonRefusesWhatItCannotRank(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addCluster("prod-eu", db.EnvProd)
+	token := env.tokenFor(t, admin)
+
+	var asked []url.Values
+	backend := rankingServer(t, &asked)
+	path := "/api/v1/clusters/" + itoa(cluster.ID) + "/observability/sources/metrics"
+	env.do(t, http.MethodPut, path, token, directSourcePayload(backend.URL))
+
+	base := "/api/v1/clusters/" + itoa(cluster.ID) + "/observability/metrics/compare?range=1h"
+	for _, tc := range []struct{ query, why string }{
+		{"&metric=not_a_metric", "an unknown catalogue entry"},
+		{"&metric=cluster_cpu&topk=0", "a table of no rows"},
+		{"&metric=cluster_cpu&topk=abc", "a topk that is not a number"},
+	} {
+		if rec := env.do(t, http.MethodGet, base+tc.query, token, nil); rec.Code != http.StatusBadRequest {
+			t.Errorf("expected %s to be refused, got %d (%s)", tc.why, rec.Code, rec.Body.String())
+		}
+	}
+
+	// Asking for more rows than the table allows is capped rather than refused —
+	// it is a legible request for something slightly too large.
+	rec := env.do(t, http.MethodGet, base+"&metric=cluster_cpu_by_namespace&topk=500", token, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected an oversized topk to be capped, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	result := decode[struct {
+		Result observability.CompareResult `json:"result"`
+	}](t, rec).Result
+	if result.TopK != 20 {
+		t.Fatalf("topk = %d, want it capped at 20", result.TopK)
+	}
+}
+
+func atoiOrFail(t *testing.T, raw string) int {
+	t.Helper()
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		t.Fatalf("%q is not a number: %v", raw, err)
+	}
+	return value
 }

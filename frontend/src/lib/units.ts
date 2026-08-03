@@ -5,7 +5,7 @@
  * at a glance.
  */
 
-import type { PodContainer, PodUsage } from '../api/types'
+import type { MetricUnit, PodContainer, PodUsage } from '../api/types'
 
 /** formatCPU renders millicores the way `kubectl top` does: milli, then cores. */
 export function formatCPU(millicores: number): string {
@@ -34,6 +34,49 @@ export function formatMemory(bytes: number): string {
   }
   const digits = value < 10 && unit > 0 ? 1 : 0
   return `${value.toFixed(digits)} ${MEMORY_UNITS[unit]}`
+}
+
+/**
+ * formatCount renders a tally — restarts, containers. It keeps one decimal
+ * below ten because these come from `increase()` over a window, which is
+ * genuinely fractional: rounding 0.4 restarts to zero would report a crash loop
+ * as nothing at all.
+ */
+export function formatCount(value: number): string {
+  if (!Number.isFinite(value)) return '—'
+  const magnitude = Math.abs(value)
+  if (magnitude >= 10 || Number.isInteger(value)) return Math.round(value).toString()
+  return value.toFixed(1)
+}
+
+/**
+ * formatRatio renders a fraction of one as a percentage. The extra decimal
+ * below ten percent is not politeness: a container throttled two percent of its
+ * periods and one throttled nothing are different states, and both read as "0%"
+ * without it.
+ */
+export function formatRatio(value: number): string {
+  if (!Number.isFinite(value)) return '—'
+  const percent = value * 100
+  return `${Math.abs(percent) < 10 ? percent.toFixed(1) : Math.round(percent)}%`
+}
+
+/**
+ * formatMetric renders whatever unit the server said this reading is in. The
+ * unit travels with the answer precisely so nothing here has to infer it from a
+ * metric's name.
+ */
+export function formatMetric(unit: MetricUnit, value: number): string {
+  switch (unit) {
+    case 'millicores':
+      return formatCPU(value)
+    case 'bytes':
+      return formatMemory(value)
+    case 'ratio':
+      return formatRatio(value)
+    default:
+      return formatCount(value)
+  }
 }
 
 /** ratio is a used/total percentage clamped to something a bar can draw. */
