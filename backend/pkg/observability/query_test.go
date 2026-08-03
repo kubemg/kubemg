@@ -163,6 +163,20 @@ func TestEveryChartFallsBackToPodLevelSeries(t *testing.T) {
 	for kind, spec := range metricCatalogue {
 		query := spec.query(selector{namespaces: []string{"shop"}})
 
+		// Every selector in every entry carries the scope. Counting braces
+		// against namespace matchers is what catches a branch added later that
+		// quietly reads the whole cluster — including the two halves of a ratio.
+		if got, want := strings.Count(query, `namespace="shop"`), strings.Count(query, "{"); got != want {
+			t.Errorf("%s scopes %d of its %d selectors: %s", kind, got, want, query)
+		}
+
+		// The fallback is a property of cadvisor's usage series, whose labels
+		// depend on somebody's scrape config. kube-state-metrics labels its own
+		// series, so those entries have nothing to fall back to and a fallback
+		// there would only be a second copy of the same query.
+		if !strings.Contains(query, "container_cpu") && !strings.Contains(query, "container_memory") {
+			continue
+		}
 		if !strings.Contains(query, " or ") {
 			t.Errorf("%s has no pod-level fallback: %s", kind, query)
 		}
@@ -177,10 +191,6 @@ func TestEveryChartFallsBackToPodLevelSeries(t *testing.T) {
 		// and would otherwise be added to every total.
 		if !strings.Contains(query, `pod!=""`) {
 			t.Errorf("%s fallback does not exclude the node-level series: %s", kind, query)
-		}
-		// Both branches stay inside the scope.
-		if strings.Count(query, `namespace="shop"`) != 2 {
-			t.Errorf("%s does not scope both branches: %s", kind, query)
 		}
 	}
 }

@@ -582,6 +582,62 @@ func (s *server) queryMetrics(c *gin.Context) {
 	})
 }
 
+// compareMetrics ranks a catalogue entry over the console's window and against
+// the window before it.
+//
+// It is a route of its own rather than a mode of the chart because it is a
+// different question and a different cost: two instant queries instead of one
+// range query, answering "what is worst now, and is it worse than it was" rather
+// than "what shape is this". Everything else is the chart path's, deliberately —
+// the same source lookup, the same window, the same scope resolved from the same
+// grant, so there is no second place for the scope rules to drift.
+func (s *server) compareMetrics(c *gin.Context) {
+	user, cluster, grant, _, ok := s.loadAuthorizedCluster(c)
+	if !ok {
+		return
+	}
+	source, ok := s.querySource(c, cluster, db.SourceMetrics)
+	if !ok {
+		return
+	}
+	window, ok := queryWindow(c)
+	if !ok {
+		return
+	}
+
+	topK := 0
+	if raw := strings.TrimSpace(c.Query("topk")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "topk has to be a positive number"})
+			return
+		}
+		topK = parsed
+	}
+
+	result, err := observability.QueryCompare(c.Request.Context(),
+		observability.TargetOf(*source), s.tunnelCall(user, cluster),
+		queryScope(user, grant),
+		observability.CompareRequest{
+			Kind:      observability.MetricKind(strings.TrimSpace(c.Query("metric"))),
+			Namespace: strings.TrimSpace(c.Query("namespace")),
+			Pod:       strings.TrimSpace(c.Query("pod")),
+			Container: strings.TrimSpace(c.Query("container")),
+			TopK:      topK,
+			Window:    window,
+		})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"result":   result,
+		"provider": source.Provider,
+		"endpoint": observability.TargetOf(*source).Endpoint(),
+	})
+}
+
 // queryLogs searches the cluster's log aggregator.
 func (s *server) queryLogs(c *gin.Context) {
 	user, cluster, grant, _, ok := s.loadAuthorizedCluster(c)

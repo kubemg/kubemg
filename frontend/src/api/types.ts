@@ -897,9 +897,27 @@ export type MetricKind =
   | 'namespace_memory'
   | 'cluster_cpu'
   | 'cluster_memory'
+  /* Broken down per namespace rather than per pod: the useful shape for a
+     cluster's comparison table, where the top five pods out of thousands is a
+     list of five strangers. */
+  | 'cluster_cpu_by_namespace'
+  | 'cluster_memory_by_namespace'
+  /* The three readings that say something went wrong rather than what something
+     costs. They are the reason the delta column exists. */
+  | 'pod_restarts'
+  | 'containers_not_ready'
+  | 'cpu_throttling'
 
-/** The two units the server normalises to, the same pair the meters use. */
-export type MetricUnit = 'millicores' | 'bytes'
+/** The units the server normalises to. `ratio` is a fraction of one, rendered
+    here as a percentage — the backend sends the fraction because rounding it
+    twice loses the small values that matter most. */
+export type MetricUnit = 'millicores' | 'bytes' | 'count' | 'ratio'
+
+/** Whether a rise in a reading means something got worse. It comes from the
+    catalogue rather than being decided here: a namespace burning more CPU is a
+    fact, a pod restarting more is a problem — and that is what decides whether
+    a delta is allowed to spend colour. */
+export type MetricTrend = 'neutral' | 'worse'
 
 export interface MetricPoint {
   at: string
@@ -932,6 +950,47 @@ export interface MetricResult {
 
 export interface MetricQueryResponse {
   result: MetricResult
+  provider: MetricsProvider
+  endpoint: string
+}
+
+/** One ranked entity across two windows. `previous` is absent when the entity
+    had no reading in the window before this one at all — which is "new", a
+    different fact from "was zero", and never rendered as an increase. */
+export interface CompareRow {
+  name: string
+  labels?: Record<string, string>
+  current: number
+  previous?: number
+  delta?: number
+  /** Absent when the previous reading was zero: everything is an infinite
+      increase over nothing. */
+  delta_ratio?: number
+}
+
+export interface CompareResult {
+  kind: MetricKind
+  unit: MetricUnit
+  rise: MetricTrend
+  /** What a row *is* — pod, namespace, container — so the first column can be
+      headed with it rather than with "name". */
+  legend?: string
+  rows: CompareRow[]
+  topk: number
+  start: string
+  end: string
+  compare_start: string
+  compare_end: string
+  query: string
+  compare_query: string
+  /** Set when the second query failed. The current window is still the answer;
+      what is lost is the deltas, and saying so beats showing every row as new. */
+  compare_unavailable?: string
+  description?: string
+}
+
+export interface MetricCompareResponse {
+  result: CompareResult
   provider: MetricsProvider
   endpoint: string
 }

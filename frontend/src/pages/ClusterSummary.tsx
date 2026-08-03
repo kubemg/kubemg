@@ -5,6 +5,8 @@ import { checkCluster, errorMessage, fetchCluster, fetchNodeMetrics } from '../a
 import type { Cluster, NodeMetrics } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { DatasourcePanel } from '../components/DatasourcePanel'
+import { MetricComparison } from '../components/MetricComparison'
+import type { ComparisonKind } from '../components/MetricComparison'
 import { MetricsChart } from '../components/MetricsChart'
 import { JitRequestModal } from '../components/jit/JitRequestModal'
 import { KubeconfigDrawer } from '../components/KubeconfigDrawer'
@@ -24,6 +26,26 @@ import { strandState } from '../lib/status'
 import { relativeAge } from '../lib/time'
 import { formatCPU, formatMemory } from '../lib/units'
 import { useAuth } from '../state/auth-context'
+
+/*
+ * What a cluster page ranks. Two readings of what it costs, three of what is
+ * going wrong — and nothing else, because the pattern this is drawn from also
+ * carries response time, throughput and error rate, which come from APM agent
+ * instrumentation KubeMG does not collect. A column that would always read "no
+ * data" is worse than one that is not there.
+ *
+ * CPU and memory break down per namespace rather than per pod: the top five pods
+ * out of several thousand is a list of five strangers, while the top five
+ * namespaces is the vocabulary the fleet is already organised by. The failure
+ * readings stay per pod, because a pod is the thing that restarts.
+ */
+const CLUSTER_READINGS: ComparisonKind[] = [
+  { kind: 'cluster_cpu_by_namespace', label: 'CPU' },
+  { kind: 'cluster_memory_by_namespace', label: 'Memory' },
+  { kind: 'pod_restarts', label: 'Restarts' },
+  { kind: 'containers_not_ready', label: 'Not ready' },
+  { kind: 'cpu_throttling', label: 'Throttled' },
+]
 
 export function ClusterSummary() {
   const { id } = useParams<{ id: string }>()
@@ -236,6 +258,12 @@ export function ClusterSummary() {
                   title="Cluster memory"
                   metric="cluster_memory"
                 />
+                {/* The charts say what shape the cluster is in. This says what
+                    is worst inside it and whether that is new, which is the
+                    question somebody opening a cluster page arrived with — and
+                    it is a table because reading a rank off a chart with forty
+                    lines is not reading. */}
+                <MetricComparison cluster={cluster} kinds={CLUSTER_READINGS} />
               </section>
             ) : null}
 
