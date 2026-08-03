@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router'
-import { AlertTriangle, ChevronRight, KeyRound, RefreshCw, Timer } from 'lucide-react'
+import { Link, useNavigate, useParams } from 'react-router'
+import { AlertTriangle, ChevronRight, KeyRound, Layers, RefreshCw, Timer } from 'lucide-react'
 import { checkCluster, errorMessage, fetchCluster, fetchNodeMetrics } from '../api/client'
 import type { Cluster, NodeMetrics } from '../api/types'
 import { AppShell } from '../components/AppShell'
@@ -28,6 +28,7 @@ import { useAuth } from '../state/auth-context'
 export function ClusterSummary() {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuth()
+  const navigate = useNavigate()
   // A health check answers with the cluster as it now is, and that answer is
   // newer than anything cached — so it wins until the page moves to another
   // cluster.
@@ -83,6 +84,15 @@ export function ClusterSummary() {
       actions={
         cluster ? (
           <>
+            {viaAgent && cluster.agent_attached ? (
+              <Button
+                variant="primary"
+                onClick={() => navigate(`/clusters/${cluster.id}/explore`)}
+              >
+                <Layers aria-hidden="true" className="size-4" />
+                Explore
+              </Button>
+            ) : null}
             <Button onClick={() => setRequesting(true)}>
               <Timer aria-hidden="true" className="size-4" />
               Request access
@@ -96,7 +106,10 @@ export function ClusterSummary() {
                 {checking ? 'Checking…' : 'Run check'}
               </Button>
             ) : null}
-            <Button variant="primary" onClick={() => setDrawerOpen(true)}>
+            <Button
+              variant={viaAgent && cluster.agent_attached ? undefined : 'primary'}
+              onClick={() => setDrawerOpen(true)}
+            >
               <KeyRound aria-hidden="true" className="size-4" />
               Generate kubeconfig
             </Button>

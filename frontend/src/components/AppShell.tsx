@@ -251,6 +251,7 @@ export function AppShell({
   timeRange = false,
   scope,
   panel,
+  fullWidth = false,
   children,
 }: {
   title: string
@@ -284,6 +285,13 @@ export function AppShell({
    * since it is built for that width and a collapsed rail has no room for it.
    */
   panel?: ReactNode
+  /**
+   * Drops the 1440px reading-width cap on the content column. Prose and forms
+   * read worse stretched to a wide monitor's full span, but a resource table
+   * has the opposite shape — its columns are what is starved of room, so a
+   * page built around one (Explore) asks to use whatever the window has.
+   */
+  fullWidth?: boolean
   children: ReactNode
 }) {
   const { user, signOut } = useAuth()
@@ -632,7 +640,7 @@ export function AppShell({
         </header>
 
         <main className="min-w-0 flex-1 p-4 xl:p-6">
-          <div className="mx-auto min-w-0 max-w-[1440px]">{children}</div>
+          <div className={`mx-auto min-w-0 ${fullWidth ? '' : 'max-w-[1440px]'}`}>{children}</div>
         </main>
       </div>
 
