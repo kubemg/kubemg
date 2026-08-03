@@ -1,6 +1,7 @@
 import axios from 'axios'
 import type { CustomResourceRef, ResourceKey } from '../lib/resources'
 import { ALL_NAMESPACES } from '../lib/resources'
+import type { TimeRangeId } from '../lib/timerange'
 import type {
   AgentInstall,
   AlarmChannel,
@@ -1067,11 +1068,18 @@ export async function discoverDatasources(clusterId: number): Promise<Datasource
  * anything it was asked.
  */
 
-/** MetricQueryOptions narrows a chart. An absent range is the server's default. */
+/**
+ * MetricQueryOptions narrows a chart. An absent range is the server's default.
+ *
+ * `range` is a preset the *server* resolves; `start`/`end` are explicit
+ * boundaries and beat it. The browser deliberately does not turn a preset into
+ * a pair of instants — see `lib/timerange.ts`.
+ */
 export interface MetricQueryOptions {
   namespace?: string
   pod?: string
   container?: string
+  range?: TimeRangeId
   start?: Date
   end?: Date
 }
@@ -1089,6 +1097,7 @@ export async function queryMetrics(
         namespace: options.namespace || undefined,
         pod: options.pod || undefined,
         container: options.container || undefined,
+        range: options.range || undefined,
         start: options.start?.toISOString(),
         end: options.end?.toISOString(),
       },
@@ -1108,6 +1117,8 @@ export interface LogQueryOptions {
    * type a quote or a brace.
    */
   filter?: string
+  /** A preset the server resolves. `start`/`end` beat it. */
+  range?: TimeRangeId
   start?: Date
   end?: Date
   limit?: number
@@ -1125,6 +1136,7 @@ export async function queryLogs(
         pod: options.pod || undefined,
         container: options.container || undefined,
         filter: options.filter || undefined,
+        range: options.range || undefined,
         start: options.start?.toISOString(),
         end: options.end?.toISOString(),
         limit: options.limit || undefined,

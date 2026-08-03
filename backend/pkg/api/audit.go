@@ -290,32 +290,10 @@ func firstTime(
 	return nil, true
 }
 
-// auditRanges are the presets the audit page leads with. They are a fixed table
-// rather than a parsed duration so the set the UI offers and the set the API
-// accepts cannot drift apart, and so no caller can ask for a window wide enough
-// to be a table scan dressed as a filter.
-var auditRanges = map[string]time.Duration{
-	"15m": 15 * time.Minute,
-	"1h":  time.Hour,
-	"6h":  6 * time.Hour,
-	"24h": 24 * time.Hour,
-	"7d":  7 * 24 * time.Hour,
-	"30d": 30 * 24 * time.Hour,
-}
-
-// rangeWindow resolves the `range` parameter. Zero with ok means "no preset",
-// which includes the explicit "all" the UI sends when a preset is cleared.
+// rangeWindow resolves the `range` parameter against the console's shared
+// preset table (see timerange.go). Zero with ok means "no preset", which for the
+// trail is also what the explicit `all` means — a trail with no lower bound is
+// a legitimate thing to ask for, unlike a chart with none.
 func rangeWindow(c *gin.Context) (time.Duration, bool) {
-	raw := strings.ToLower(strings.TrimSpace(c.Query("range")))
-	if raw == "" || raw == "all" {
-		return 0, true
-	}
-	window, known := auditRanges[raw]
-	if !known {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "range must be one of 15m, 1h, 6h, 24h, 7d, 30d or all",
-		})
-		return 0, false
-	}
-	return window, true
+	return rangeSpan(c, 0)
 }

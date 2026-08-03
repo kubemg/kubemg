@@ -453,6 +453,7 @@ export function Explore() {
   return (
     <AppShell
       title="Explore"
+      timeRange
       sidebar={
         <ExploreSidebar
           categories={categories}
