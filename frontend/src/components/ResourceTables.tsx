@@ -22,7 +22,7 @@ import type {
 import { FileCode2, PanelRightOpen, Pencil, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { IconButton, Pill, Row, SortTh, Table, Td, Th } from './primitives'
 import type { DetailTab } from './ResourceDetailDrawer'
-import type { WorkloadActionName } from './WorkloadActionDialog'
+import type { WorkloadActionName } from './WorkloadActionPanel'
 import { workloadCapability, workloadKeyFor } from '../lib/workloads'
 import type { Tone } from '../lib/status'
 import { TONE_FILL, podTone, workloadTone } from '../lib/status'
