@@ -17,6 +17,21 @@
  *
  * Dark is the default deck; light is a full peer, not an afterthought. Every
  * colour below is a token pair — never hard-code a hex in a component.
+ *
+ * **Every tone that is ever text clears 4.5:1 on every surface it can land on,
+ * on both decks.** That is measured rather than believed: `npm run contrast`
+ * reads these tokens and every pairing the components build, and fails on a
+ * violation. It exists because the light deck shipped a whole phase with its
+ * quiet text at 2.78:1 — the dark deck is the default, so nobody saw it, and the
+ * numbers lived in a comment. A comment is not a measurement.
+ *
+ * The three-level text ramp is therefore flatter than a purely aesthetic one
+ * would be: `faint` has to be readable, which pulls it toward `muted`, which
+ * pulls `muted` toward `text`. Both decks now step about 2.2× and 1.5× rather
+ * than 2.9× and 2.0×. That is the real cost of the floor, and it is the right
+ * trade — a hierarchy nobody can read is not a hierarchy. Hairlines are the
+ * exception and stay hairlines: 1.4.11 is about the boundary that identifies a
+ * control and its state, and it exempts decoration.
  */
 
 @font-face {
@@ -72,16 +87,18 @@
   --deck-border: #dfe3eb;
   --deck-border-soft: #ebeef3;
   --deck-text: #0f131a;
-  --deck-muted: #56606f;
-  --deck-faint: #8892a2;
+  --deck-muted: #444d5b;
+  --deck-faint: #5f697a;
 
-  /* The rail and the section panel: one step deeper than the work surface. */
+  /* The rail and the section panel: one step deeper than the work surface. The
+     rail is dark on both decks, so its own tokens are held to the same floor
+     against the rail rather than against the work surface. */
   --deck-rail: #12161f;
   --deck-rail-raised: #1c2230;
   --deck-rail-border: #262d3c;
   --deck-rail-text: #e9edf5;
   --deck-rail-muted: #98a3b6;
-  --deck-rail-faint: #66718a;
+  --deck-rail-faint: #808ba1;
 
   --deck-accent: #5a47e0;
   --deck-accent-hover: #4b39d1;
@@ -89,11 +106,11 @@
   --deck-accent-line: #cdc6f8;
   --deck-on-accent: #ffffff;
 
-  --deck-ok: #10996b;
+  --deck-ok: #0c7753;
   --deck-ok-soft: #e2f5ed;
-  --deck-warn: #96620a;
+  --deck-warn: #905e0a;
   --deck-warn-soft: #fbf0dc;
-  --deck-danger: #cf4238;
+  --deck-danger: #bf382e;
   --deck-danger-soft: #fceae8;
 
   --deck-shadow: 0 1px 2px rgb(15 19 26 / 0.05), 0 8px 24px -16px rgb(15 19 26 / 0.28);
@@ -139,14 +156,14 @@
   --deck-border-soft: #1a202b;
   --deck-text: #e7ebf3;
   --deck-muted: #9aa4b5;
-  --deck-faint: #69738a;
+  --deck-faint: #7c869b;
 
   --deck-rail: #0d1017;
   --deck-rail-raised: #191f2a;
   --deck-rail-border: #212836;
   --deck-rail-text: #e7ebf3;
   --deck-rail-muted: #9aa4b5;
-  --deck-rail-faint: #69738a;
+  --deck-rail-faint: #7e889d;
 
   --deck-accent: #8878fb;
   --deck-accent-hover: #9a8dfc;
