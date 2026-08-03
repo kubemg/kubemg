@@ -12,7 +12,7 @@ DOCKER_NODE  = docker run --rm -v $(PWD)/frontend:/app -v kubemg-npm:/root/.npm 
 .PHONY: help build test verify manifest-check \
         backend-build backend-test backend-vet backend-tidy \
         agent-build agent-test agent-vet agent-tidy agent-image agent-push \
-        frontend-install frontend-build frontend-lint \
+        frontend-install frontend-build frontend-lint frontend-contrast \
         up down logs ps
 
 help:
@@ -21,7 +21,7 @@ help:
 ## ---- aggregate ----
 build: backend-build agent-build frontend-build ## Build backend + agent + frontend in containers
 test: backend-test agent-test ## Run all container-based tests
-verify: manifest-check backend-vet backend-test backend-build agent-vet agent-test agent-build frontend-lint frontend-build ## Full containerized verification
+verify: manifest-check backend-vet backend-test backend-build agent-vet agent-test agent-build frontend-lint frontend-contrast frontend-build ## Full containerized verification
 
 # The bastion embeds its own copy of the agent manifests so they ship inside the
 # server binary. Two copies can drift; this makes drift a build failure.
@@ -74,6 +74,14 @@ frontend-build: ## Type-check and build the frontend
 
 frontend-lint: ## Lint the frontend
 	$(DOCKER_NODE) sh -c "npm ci && npm run lint"
+
+# The deck's quiet text sat below the WCAG AA floor on the light deck for a whole
+# phase, because the dark deck is the default and the numbers lived in a comment.
+# This measures them instead, and it is part of verify so the next token edited
+# to look better cannot quietly drop below the floor. It needs no dependencies,
+# so it does not pay for an npm ci.
+frontend-contrast: ## Measure the deck's colour pairings against WCAG
+	docker run --rm -v $(PWD)/frontend:/app -w /app $(NODE_IMAGE) node scripts/contrast.mjs
 
 ## ---- dev environment ----
 up: ## Start the dev stack (backend :8080, frontend :5173)

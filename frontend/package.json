@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "contrast": "node scripts/contrast.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
