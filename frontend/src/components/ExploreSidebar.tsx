@@ -11,8 +11,6 @@ import {
   Shapes,
   Waypoints,
 } from 'lucide-react'
-import type { Cluster } from '../api/types'
-import { EnvironmentDot } from './primitives'
 import type {
   CategoryId,
   OperatorCategoryId,
@@ -54,13 +52,11 @@ function categoryIcon(id: CategoryId): typeof Boxes {
 }
 
 /**
- * ExploreSidebar is the third level of navigation: which kind of object in the
- * cluster you are looking at. Level one picks the part of KubeMG, level two the
- * cluster, and this the resource — the same three moves Rancher and Lens make,
- * because a fleet console is browsed that way.
- *
- * It carries the rail palette rather than the work surface: it is chrome, and it
- * sits flush against the level-two panel so the three levels read as one deck.
+ * ExploreSidebar is which kind of object in the cluster you are looking at —
+ * the section panel's own content once a cluster is open on Explore, rather
+ * than a third level sitting beside it. The panel's head above it already
+ * names the cluster, so this is filter and tree only, in the same scrolling
+ * column as the cluster's quick-nav.
  *
  * `categories` is passed in rather than read from the fixed inventory because
  * part of it is not fixed: a cluster running Istio gets an Istio section, and a
@@ -70,18 +66,10 @@ function categoryIcon(id: CategoryId): typeof Boxes {
  */
 export function ExploreSidebar({
   categories: inventory = RESOURCE_CATEGORIES,
-  cluster,
   selected,
   onSelect,
 }: {
   categories?: ResourceCategory[]
-  /**
-   * Whose resources these are. It is named here because this column is the one
-   * place that is certainly on screen while Explore is open: the section panel
-   * defaults to icon width on a page with a third level, and there a cluster in
-   * the fleet list is a dot with its name on hover.
-   */
-  cluster?: Cluster
   selected: ResourceKey
   onSelect: (resource: ResourceKey) => void
 }) {
@@ -107,41 +95,23 @@ export function ExploreSidebar({
   )
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-14 shrink-0 items-center gap-2 px-4">
-        {cluster ? (
-          <>
-            <EnvironmentDot environment={cluster.environment} />
-            <span
-              title={cluster.name}
-              className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-rail-fg"
-            >
-              {cluster.name}
-            </span>
-          </>
-        ) : (
-          <p className="label text-rail-faint">Resources</p>
-        )}
+    <div className="flex min-h-0 flex-col">
+      <div className="relative mb-3">
+        <Search
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-rail-faint"
+        />
+        <input
+          type="search"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          placeholder="Filter resources"
+          aria-label="Filter resources"
+          className="h-8 w-full rounded-control border border-rail-line bg-rail-raised pr-2 pl-8 text-[13px] text-rail-fg transition-colors placeholder:text-rail-faint hover:border-rail-muted/40 focus:border-accent focus:outline-none"
+        />
       </div>
 
-      <div className="shrink-0 px-3 pb-3">
-        <div className="relative">
-          <Search
-            aria-hidden="true"
-            className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-rail-faint"
-          />
-          <input
-            type="search"
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-            placeholder="Filter resources"
-            aria-label="Filter resources"
-            className="h-8 w-full rounded-control border border-rail-line bg-rail-raised pr-2 pl-8 text-[13px] text-rail-fg transition-colors placeholder:text-rail-faint hover:border-rail-muted/40 focus:border-accent focus:outline-none"
-          />
-        </div>
-      </div>
-
-      <nav aria-label="Cluster resources" className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-4">
+      <nav aria-label="Cluster resources" className="min-h-0">
         {categories.map((category) => {
           const Icon = categoryIcon(category.id)
           // A section holding the current selection starts open — otherwise
