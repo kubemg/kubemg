@@ -2,16 +2,22 @@ import { useCallback, useEffect, useState } from 'react'
 import { Check, Copy, Pencil, RefreshCw, Undo2 } from 'lucide-react'
 import { errorMessage, fetchHelmValues, updateHelmValues } from '../api/client'
 import type { Cluster, HelmRelease, HelmValues } from '../api/types'
-import { Button, Notice, Pill, Sheet, Spinner } from './primitives'
+import { Button, Notice, Pill, Spinner } from './primitives'
 import { YamlView } from './YamlView'
 
 /**
  * A Helm release's values, read and written where Helm keeps them.
  *
- * This is deliberately not the YamlDrawer. That drawer edits an object: it reads
- * one manifest and writes the same one back, and the cluster reconciles what
- * changed. A release is not an object — it is a Secret holding a compressed blob
- * — and what is worth editing inside it is only the values.
+ * This is a tab rather than a surface of its own, and it is the *only* tab a
+ * release has. A release is not an API object — it is a Secret holding a
+ * compressed blob — so there is no manifest for the YAML tab to address and no
+ * describe to read: the values are the whole of what KubeMG can show. It sits
+ * beside the object tabs anyway, because reaching a release and reaching a
+ * Deployment should not be two different motions.
+ *
+ * Its own writes stay in the panel rather than moving to the drawer's footer.
+ * Edit / Revert / Save are a mode this panel is in, and a footer shared with
+ * every other tab would have to grow and shrink as tabs changed under it.
  *
  * The limit of the write is the important part and is stated on the surface
  * rather than buried: saving appends a Helm revision recording the values Helm
@@ -20,17 +26,18 @@ import { YamlView } from './YamlView'
  * sends that warning with every response so a client that ignores this component
  * is still told; this shows it before the first keystroke, not after the save.
  */
-export function HelmValuesDrawer({
+export function HelmValuesPanel({
   cluster,
   release,
   editing: startEditing = false,
-  onClose,
+  onDirtyChange,
   onApplied,
 }: {
   cluster: Cluster
   release: HelmRelease
   editing?: boolean
-  onClose: () => void
+  /** Lets the drawer guard a close on a half-typed edit, as the YAML tab does. */
+  onDirtyChange?: (dirty: boolean) => void
   onApplied?: () => Promise<void> | void
 }) {
   const [values, setValues] = useState<HelmValues | null>(null)
@@ -66,10 +73,13 @@ export function HelmValuesDrawer({
 
   const dirty = values !== null && draft !== values.yaml
 
-  const close = useCallback(() => {
-    if (dirty && !window.confirm('Discard your unsaved changes to these values?')) return
-    onClose()
-  }, [dirty, onClose])
+  useEffect(() => {
+    onDirtyChange?.(dirty)
+  }, [dirty, onDirtyChange])
+
+  // A tab that unmounts with a half-typed edit has nothing left to discard, so
+  // it must not leave the drawer guarding a close against an edit that is gone.
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange])
 
   async function save() {
     if (!values) return
@@ -105,54 +115,7 @@ export function HelmValuesDrawer({
   const current = values?.release ?? release
 
   return (
-    <Sheet
-      width="lg"
-      eyebrow={`${cluster.name} · ${release.namespace} · Helm release`}
-      title={<span className="font-mono">{release.name}</span>}
-      onClose={close}
-      footer={
-        <>
-          <Button type="button" variant="ghost" onClick={close}>
-            Close
-          </Button>
-          {editing ? (
-            <>
-              <Button
-                type="button"
-                onClick={() => setDraft(values?.yaml ?? '')}
-                disabled={!dirty || saving}
-              >
-                <Undo2 aria-hidden="true" className="size-4" />
-                Revert
-              </Button>
-              <Button
-                type="button"
-                variant="primary"
-                onClick={() => void save()}
-                disabled={!dirty || saving}
-              >
-                {saving ? (
-                  <Spinner className="size-4" />
-                ) : (
-                  <Check aria-hidden="true" className="size-4" />
-                )}
-                Save as revision {current.revision + 1}
-              </Button>
-            </>
-          ) : (
-            <Button
-              type="button"
-              variant="primary"
-              onClick={() => setEditing(true)}
-              disabled={!values || loading}
-            >
-              <Pencil aria-hidden="true" className="size-4" />
-              Edit values
-            </Button>
-          )}
-        </>
-      }
-    >
+    <>
       <div className="flex flex-wrap items-center gap-2">
         <Pill tone="idle" dot={false}>
           {current.chart_name || 'chart'}
@@ -191,6 +154,45 @@ export function HelmValuesDrawer({
             <RefreshCw aria-hidden="true" className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
             Reload
           </Button>
+
+          {editing ? (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setDraft(values?.yaml ?? '')}
+                disabled={!dirty || saving}
+              >
+                <Undo2 aria-hidden="true" className="size-3.5" />
+                Revert
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="primary"
+                onClick={() => void save()}
+                disabled={!dirty || saving}
+              >
+                {saving ? (
+                  <Spinner className="size-3.5" />
+                ) : (
+                  <Check aria-hidden="true" className="size-3.5" />
+                )}
+                Save as revision {current.revision + 1}
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="primary"
+              onClick={() => setEditing(true)}
+              disabled={!values || loading}
+            >
+              <Pencil aria-hidden="true" className="size-3.5" />
+              Edit values
+            </Button>
+          )}
         </div>
       </div>
 
@@ -219,6 +221,6 @@ export function HelmValuesDrawer({
           ? 'Saving appends a Helm revision through the agent tunnel under your own identity, exactly as an upgrade would. The cluster’s RBAC decides whether you may, and the change is in the audit trail.'
           : 'These are the values supplied at install or upgrade — what helm get values shows — not the chart’s defaults merged into them.'}
       </p>
-    </Sheet>
+    </>
   )
 }

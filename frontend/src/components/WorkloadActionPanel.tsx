@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { RotateCcw, SlidersHorizontal, X } from 'lucide-react'
 import { errorMessage, restartWorkload, scaleWorkload } from '../api/client'
 import type { Cluster } from '../api/types'
 import type { ResourceKey } from '../lib/resources'
-import { Button, Field, Notice, Sheet, TextInput } from './primitives'
+import { Button, Field, Notice, TextInput } from './primitives'
 
 /*
  * Scale and rollout restart, as the two small surfaces they deserve to be.
@@ -13,10 +13,17 @@ import { Button, Field, Notice, Sheet, TextInput } from './primitives'
  * common thing anyone does to a workload, and asking for a rollout by typing a
  * timestamp into an annotation is not something anyone should have to remember.
  *
- * Neither is a privilege the console did not already have. The write goes down
- * the same impersonated tunnel as every other call, so a `view` grant is refused
- * by the cluster's own RBAC and every action is in the audit trail — which is why
- * a failure here is shown in the cluster's own words rather than translated.
+ * This is a panel inside the detail drawer rather than a dialog over it. A
+ * dialog stacked on the surface showing the object hid the very thing being
+ * acted on — the conditions and events that are the reason anyone reaches for
+ * Restart — behind the confirmation for acting on it, and it was the only thing
+ * in the console that ever put one overlay on top of another.
+ *
+ * Neither action is a privilege the console did not already have. The write goes
+ * down the same impersonated tunnel as every other call, so a `view` grant is
+ * refused by the cluster's own RBAC and every action is in the audit trail —
+ * which is why a failure here is shown in the cluster's own words rather than
+ * translated.
  */
 
 export type WorkloadActionName = 'scale' | 'restart'
@@ -25,7 +32,7 @@ export type WorkloadActionName = 'scale' | 'restart'
 export interface WorkloadActionTarget {
   action: WorkloadActionName
   kind: ResourceKey
-  /** The singular Kind, for the dialog's own words: "Scale this Deployment". */
+  /** The singular Kind, for the panel's own words: "Scale this Deployment". */
   label: string
   name: string
   namespace?: string
@@ -36,7 +43,7 @@ export interface WorkloadActionTarget {
 /** The ceiling the backend enforces; repeated here so the field says so first. */
 const MAX_REPLICAS = 1000
 
-export function WorkloadActionDialog({
+export function WorkloadActionPanel({
   cluster,
   target,
   onClose,
@@ -68,8 +75,8 @@ export function WorkloadActionDialog({
         ? await scaleWorkload(cluster.id, target.kind, target.name, target.namespace, count)
         : await restartWorkload(cluster.id, target.kind, target.name, target.namespace)
       setDone(result.message)
-      // The list behind this dialog is now wrong; refreshing it is the whole
-      // point of having acted from it.
+      // The drawer behind this panel, and the list behind that, are now both
+      // wrong; refreshing them is the whole point of having acted here.
       await onDone?.()
     } catch (err) {
       setError(
@@ -86,50 +93,26 @@ export function WorkloadActionDialog({
   }
 
   return (
-    <Sheet
-      width="md"
-      eyebrow={`${cluster.name}${target.namespace ? ` · ${target.namespace}` : ''} · ${target.label}`}
-      title={scaling ? 'Scale workload' : 'Rollout restart'}
-      onClose={onClose}
-      onSubmit={
-        done
-          ? undefined
-          : (event) => {
-              event.preventDefault()
-              void run()
-            }
-      }
-      footer={
-        done ? (
-          <Button type="button" onClick={onClose}>
-            Close
-          </Button>
-        ) : (
-          <>
-            <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={busy || (scaling && !valid)}>
-              {scaling ? (
-                <SlidersHorizontal aria-hidden="true" className="size-4" />
-              ) : (
-                <RotateCcw aria-hidden="true" className="size-4" />
-              )}
-              {busy ? 'Working…' : scaling ? 'Scale' : 'Restart'}
-            </Button>
-          </>
-        )
-      }
+    <form
+      className="flex flex-col gap-3 rounded-card border border-accent/40 bg-accent-soft/40 p-3"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (!done) void run()
+      }}
     >
-      <p className="text-[13px] text-muted">
-        <span className="font-mono text-fg">{target.name}</span>
-        {target.namespace ? (
-          <>
-            {' in '}
-            <span className="font-mono text-fg">{target.namespace}</span>
-          </>
-        ) : null}
-      </p>
+      <div className="flex items-start gap-2">
+        <h3 className="min-w-0 flex-1 text-[13.5px] font-semibold text-fg">
+          {scaling ? 'Scale workload' : 'Rollout restart'}
+        </h3>
+        <button
+          type="button"
+          onClick={onClose}
+          className="grid size-6 shrink-0 place-items-center rounded-control text-muted transition-colors hover:bg-raised hover:text-fg"
+        >
+          <X aria-hidden="true" className="size-3.5" />
+          <span className="sr-only">Cancel</span>
+        </button>
+      </div>
 
       {error ? <Notice tone="error">{error}</Notice> : null}
       {done ? <Notice tone="ok">{done}</Notice> : null}
@@ -182,6 +165,28 @@ export function WorkloadActionDialog({
           </Notice>
         </>
       ) : null}
-    </Sheet>
+
+      <div className="flex items-center justify-end gap-2">
+        {done ? (
+          <Button type="button" onClick={onClose}>
+            Done
+          </Button>
+        ) : (
+          <>
+            <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={busy || (scaling && !valid)}>
+              {scaling ? (
+                <SlidersHorizontal aria-hidden="true" className="size-4" />
+              ) : (
+                <RotateCcw aria-hidden="true" className="size-4" />
+              )}
+              {busy ? 'Working…' : scaling ? 'Scale' : 'Restart'}
+            </Button>
+          </>
+        )}
+      </div>
+    </form>
   )
 }
