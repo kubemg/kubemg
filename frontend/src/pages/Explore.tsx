@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Boxes, RefreshCw } from 'lucide-react'
-import { Link, useParams } from 'react-router'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import {
   errorMessage,
   fetchCRDs,
@@ -39,9 +39,9 @@ import type { WorkloadActionTarget } from '../components/WorkloadActionDialog'
 import {
   Button,
   EmptyState,
-  EnvironmentTag,
   Notice,
   Pill,
+  SearchInput,
   Select,
 } from '../components/primitives'
 import type { ResourceItem, ResourceKey } from '../lib/resources'
@@ -175,6 +175,53 @@ function skeletonColumns(item: ResourceItem, showNamespace: boolean): number {
 }
 
 /**
+ * The object filter narrows a loaded list to rows whose name matches — the
+ * gap the sidebar's own filter cannot close, since that one searches resource
+ * *kinds* rather than the hundreds of objects inside one. Written as an
+ * exhaustive switch rather than a generic cast: every `LoadedResource` variant
+ * carries a `name` on its rows, but the union is what keeps the tag and the
+ * filtered rows from drifting apart under a cast.
+ */
+function filterLoaded(loaded: LoadedResource, needle: string): LoadedResource {
+  if (!needle) return loaded
+  const match = (name: string) => name.toLowerCase().includes(needle)
+  switch (loaded.kind) {
+    case 'pods':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'helmreleases':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'workloads':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'jobs':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'cronjobs':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'services':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'ingresses':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'routes':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'persistentvolumes':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'persistentvolumeclaims':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'storageclasses':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'config':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'crds':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'custom':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'nodes':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'namespaces':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+  }
+}
+
+/**
  * The namespace an operator last chose, kept across sessions. Someone working in
  * one namespace goes back to it every time they open Explore, and re-picking it
  * on every visit is the kind of friction a console should absorb. It is stored
@@ -183,6 +230,11 @@ function skeletonColumns(item: ResourceItem, showNamespace: boolean): number {
  * cluster without that namespace simply opens on its first one.
  */
 const NAMESPACE_KEY = 'kubemg_preferred_namespace'
+
+/** The namespace query parameter — what puts "the Services in `payments`" into
+    a link, distinct from the remembered habit in `NAMESPACE_KEY`, which is
+    what a bare `/explore` falls back to. */
+const NS_PARAM = 'ns'
 
 /** What Explore opens on, and what it falls back to when a selection goes away. */
 const DEFAULT_ITEM = resourceItem('pods')!
@@ -205,10 +257,10 @@ function writePreferredNamespace(namespace: string) {
 }
 
 /**
- * The cluster id in `/clusters/:id/explore`, or null when Explore is mounted
- * without one — which only happens at the bare `/explore` landing, when the
- * whole fleet has nothing reachable to redirect to (see `ExploreLanding` in
- * `App.tsx`, which owns the redirect itself).
+ * The cluster id in `/clusters/:id/explore/*`, or null when Explore is
+ * mounted without one — which only happens at the bare `/explore` landing,
+ * when the whole fleet has nothing reachable to redirect to (see
+ * `ExploreLanding` in `App.tsx`, which owns the redirect itself).
  */
 function readClusterParam(raw: string | undefined): number | null {
   if (!raw) return null
@@ -216,19 +268,40 @@ function readClusterParam(raw: string | undefined): number | null {
   return Number.isInteger(id) && id > 0 ? id : null
 }
 
+/**
+ * The resource key is the splat tail of `/clusters/:id/explore/*` — a splat
+ * rather than a plain `:kind` segment because a discovered CRD's key
+ * (`crd:group/version/plural`) carries slashes of its own that a single path
+ * segment cannot hold. An empty tail (`/explore` before the redirect lands)
+ * reads the same as no selection at all.
+ */
+function readResourceParam(raw: string | undefined): ResourceKey | null {
+  return raw ? (raw as ResourceKey) : null
+}
+
 export function Explore() {
   const { clusters, loading: clustersLoading } = useClusters()
+  const navigate = useNavigate()
 
-  // The cluster being explored is the one named in the address. That is what
-  // makes the rail's cluster list the way to switch: a click there is a
-  // navigation, so the sidebar highlight, the page and the reads cannot disagree
-  // — and a link to what someone is looking at carries the cluster with it.
-  const clusterId = readClusterParam(useParams().id)
+  // The cluster, the resource and the namespace being explored are all named
+  // in the address — "the Services in `payments` on `prod-eu-west-1`" is a
+  // link, not a sequence of clicks to reproduce. The cluster and the resource
+  // live in the path (the fleet list and the sidebar navigate rather than set
+  // state), the namespace in the query string beside it.
+  const params = useParams<{ id: string; '*': string }>()
+  const clusterId = readClusterParam(params.id)
+  const resourceParam = readResourceParam(params['*'])
+  const resource: ResourceKey = resourceParam ?? 'pods'
+
+  const [searchParams, setSearchParams] = useSearchParams()
+  const namespace = searchParams.get(NS_PARAM) ?? ''
 
   const [namespaces, setNamespaces] = useState<Namespace[]>([])
-  const [namespace, setNamespace] = useState('')
   const [scoped, setScoped] = useState(false)
-  const [resource, setResource] = useState<ResourceKey>('pods')
+  // Narrows the loaded list to matching names — the sidebar's own filter
+  // searches resource *kinds*, and this is the gap it leaves: nothing in it
+  // can find one pod among two hundred.
+  const [objectFilter, setObjectFilter] = useState('')
 
   // One drawer for every kind, opened on whichever tab the row's action asked
   // for. A pod carries its row along, because the list already holds everything
@@ -276,13 +349,38 @@ export function Explore() {
   const item = resolved ?? DEFAULT_ITEM
   const namespaced = item.scope === 'namespaced'
 
+  /** Navigates to a different resource on the same cluster, carrying the
+      current query string (the namespace) along — a click in the tree is a
+      navigation, not a `setState`. Memoised so the effect below, which falls
+      an unresolved selection back to Pods, has a stable function to depend on
+      rather than re-running on every render. */
+  const selectResource = useCallback(
+    (key: ResourceKey, replace = false) => {
+      if (!cluster) return
+      const qs = searchParams.toString()
+      navigate(`/clusters/${cluster.id}/explore/${key}${qs ? `?${qs}` : ''}`, { replace })
+    },
+    [cluster, searchParams, navigate],
+  )
+
+  function selectNamespace(next: string) {
+    setSearchParams(
+      (previous) => {
+        const params = new URLSearchParams(previous)
+        params.set(NS_PARAM, next)
+        return params
+      },
+      { replace: true },
+    )
+    writePreferredNamespace(next)
+  }
+
   // Namespaces reload whenever the cluster changes; the current namespace is
-  // dropped so it cannot leak across clusters.
+  // resolved fresh so it cannot leak across clusters.
   useEffect(() => {
     if (!cluster) return
 
     let cancelled = false
-    setNamespace('')
     setNamespaces([])
     setNamespaceError(null)
 
@@ -293,14 +391,28 @@ export function Explore() {
         setScoped(result.scoped)
         if (result.namespaces.length === 0) return
 
-        // The remembered choice only applies where it means something here:
-        // "all" always does, a named namespace only if this cluster has it and
-        // the grant returned it.
-        const preferred = readPreferredNamespace()
-        const valid =
-          preferred === ALL_NAMESPACES ||
-          result.namespaces.some((entry) => entry.name === preferred)
-        setNamespace(valid ? preferred : result.namespaces[0].name)
+        // The address wins where it names a namespace this cluster actually
+        // has; otherwise the remembered habit applies where it still means
+        // something here ("all" always does, a named namespace only if this
+        // cluster has it and the grant returned it), and failing that, the
+        // first one. Read through `setSearchParams`'s functional form rather
+        // than the outer `searchParams`, so this effect depends on nothing
+        // that changes on every namespace pick — only the cluster.
+        setSearchParams(
+          (previous) => {
+            const requested = previous.get(NS_PARAM) ?? ''
+            const preferred = requested || readPreferredNamespace()
+            const valid =
+              preferred === ALL_NAMESPACES ||
+              result.namespaces.some((entry) => entry.name === preferred)
+            const next = valid ? preferred : result.namespaces[0].name
+            if (next === requested) return previous
+            const params = new URLSearchParams(previous)
+            params.set(NS_PARAM, next)
+            return params
+          },
+          { replace: true },
+        )
       })
       .catch((err) => {
         if (!cancelled) setNamespaceError(errorMessage(err, 'Could not list namespaces.'))
@@ -309,7 +421,7 @@ export function Explore() {
     return () => {
       cancelled = true
     }
-  }, [cluster])
+  }, [cluster, setSearchParams])
 
   // Which CRDs the cluster has is read once per cluster, not per list: it is
   // what the sidebar is built from, and it changes only when someone installs an
@@ -339,8 +451,8 @@ export function Explore() {
   // a cluster that is no longer open. Dropping it back to Pods keeps the sidebar
   // highlight, the heading and the list describing the same thing.
   useEffect(() => {
-    if (crds !== null && !resolved) setResource('pods')
-  }, [crds, resolved])
+    if (crds !== null && !resolved) selectResource('pods', true)
+  }, [crds, resolved, selectResource])
 
   /*
    * The list is read through the query cache, which is what makes the sidebar
@@ -386,11 +498,14 @@ export function Explore() {
   const load = list.refresh
 
   // A drawer belongs to the list it was opened from; switching resources closes
-  // it rather than leaving it open over a list it does not come from.
+  // it rather than leaving it open over a list it does not come from. The
+  // object filter is scoped to one list the same way — a name that matched in
+  // Pods says nothing about Services.
   useEffect(() => {
     setDetail(null)
     setHelm(null)
     setAction(null)
+    setObjectFilter('')
   }, [resource, namespace, clusterId])
 
   if (!clustersLoading && reachable.length === 0) {
@@ -447,20 +562,49 @@ export function Explore() {
   }
 
   const unavailable = (loaded?.kind === 'routes' || loaded?.kind === 'custom') && !loaded.available
-  const count = loaded?.rows.length ?? 0
+  const needle = objectFilter.trim().toLowerCase()
+  const filtered = loaded ? filterLoaded(loaded, needle) : loaded
+  const totalCount = loaded?.rows.length ?? 0
+  const count = filtered?.rows.length ?? 0
   const allNamespaces = namespaced && namespace === ALL_NAMESPACES
 
   return (
     <AppShell
       title="Explore"
       timeRange
-      sidebar={
-        <ExploreSidebar
-          categories={categories}
-          cluster={cluster ?? undefined}
-          selected={resource}
-          onSelect={setResource}
-        />
+      scope={
+        // Namespace is a scope control of the same class as the cluster and
+        // the time range, so it sits beside them in the header rather than in
+        // the page body; it goes quiet on a cluster-scoped kind, since there
+        // is nothing for it to narrow.
+        cluster && namespaced ? (
+          <div className="w-44">
+            <Select
+              aria-label="Namespace"
+              size="sm"
+              value={namespace}
+              disabled={namespaces.length === 0}
+              onChange={(event) => selectNamespace(event.target.value)}
+            >
+              {namespaces.length === 0 ? <option value="">No namespaces</option> : null}
+              {/* A scoped grant's "all" is its own namespaces, and it says so
+                  rather than implying it covers the cluster. */}
+              {namespaces.length > 0 ? (
+                <option value={ALL_NAMESPACES}>
+                  {scoped ? 'All granted namespaces' : 'All namespaces'}
+                </option>
+              ) : null}
+              {namespaces.map((entry) => (
+                <option key={entry.name} value={entry.name}>
+                  {entry.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+        ) : undefined
+      }
+      panel={
+        <ExploreSidebar categories={categories} selected={resource} onSelect={selectResource} />
       }
       actions={
         <Button onClick={() => void load()} disabled={loading || (namespaced && !namespace)}>
@@ -472,90 +616,34 @@ export function Explore() {
       <div className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
 
-        <div className="card flex flex-wrap items-center gap-3 px-4 py-3">
-          {/* Which cluster is open is stated here, not chosen here: it is picked
-              in the fleet list and carried in the address. The name links to the
-              cluster's own page, where its connection and access are managed. */}
-          {cluster ? (
-            <>
-              <Link
-                to={`/clusters/${cluster.id}/summary`}
-                className="font-mono text-[13px] text-fg transition-colors hover:text-accent"
-              >
-                {cluster.name}
-              </Link>
-              <EnvironmentTag environment={cluster.environment} />
-            </>
-          ) : null}
-
-          {/* The namespace only applies to a namespaced list; for nodes, PVs,
-              storage classes and CRDs there is nothing for it to narrow. */}
-          {namespaced ? (
-            <div className="w-48">
-              <Select
-                aria-label="Namespace"
-                size="sm"
-                value={namespace}
-                disabled={namespaces.length === 0}
-                onChange={(event) => {
-                  setNamespace(event.target.value)
-                  writePreferredNamespace(event.target.value)
-                }}
-              >
-                {namespaces.length === 0 ? <option value="">No namespaces</option> : null}
-                {/* A scoped grant's "all" is its own namespaces, and it says so
-                    rather than implying it covers the cluster. */}
-                {namespaces.length > 0 ? (
-                  <option value={ALL_NAMESPACES}>
-                    {scoped ? 'All granted namespaces' : 'All namespaces'}
-                  </option>
-                ) : null}
-                {namespaces.map((entry) => (
-                  <option key={entry.name} value={entry.name}>
-                    {entry.name}
+        {/* The tree survives down to `lg` as the section panel's own content;
+            below that all chrome collapses into the mobile sheet, so the
+            resource is picked here instead. */}
+        <div className="lg:hidden">
+          <Select
+            aria-label="Resource"
+            size="sm"
+            value={resource}
+            onChange={(event) => selectResource(event.target.value as ResourceKey)}
+          >
+            {categories.map((category) => (
+              <optgroup key={category.id} label={category.label}>
+                {category.items.map((entry) => (
+                  <option key={entry.key} value={entry.key}>
+                    {entry.label}
                   </option>
                 ))}
-              </Select>
-            </div>
-          ) : (
-            <Pill tone="idle" dot={false}>
-              cluster-scoped
-            </Pill>
-          )}
-
-          {scoped && namespaced ? (
-            <Pill tone="accent" dot={false}>
-              scoped to your grant
-            </Pill>
-          ) : null}
-
-          {/* The resource tree survives down to `lg` by collapsing the section
-              panel; below that all chrome is in the mobile sheet, so the
-              resource is picked here instead. */}
-          <div className="w-52 lg:hidden">
-            <Select
-              aria-label="Resource"
-              size="sm"
-              value={resource}
-              onChange={(event) => setResource(event.target.value as ResourceKey)}
-            >
-              {categories.map((category) => (
-                <optgroup key={category.id} label={category.label}>
-                  {category.items.map((entry) => (
-                    <option key={entry.key} value={entry.key}>
-                      {entry.label}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </Select>
-          </div>
+              </optgroup>
+            ))}
+          </Select>
         </div>
 
         <div className="card min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
             <h2 className="text-[14px] font-semibold text-fg">{item.label}</h2>
-            <span className="font-mono text-[12.5px] text-faint">{count}</span>
+            <span className="font-mono text-[12.5px] text-faint">
+              {needle && count !== totalCount ? `${count} of ${totalCount}` : count}
+            </span>
             {namespaced && namespace ? (
               <span className="text-[12.5px] text-muted">
                 {allNamespaces ? (
@@ -571,8 +659,25 @@ export function Explore() {
                 )}
               </span>
             ) : null}
-            {loading ? (
-              <span className="ml-auto text-[12px] text-muted">Reading the cluster…</span>
+            {!namespaced ? (
+              <Pill tone="idle" dot={false}>
+                cluster-scoped
+              </Pill>
+            ) : null}
+            {scoped && namespaced ? (
+              <Pill tone="accent" dot={false}>
+                scoped to your grant
+              </Pill>
+            ) : null}
+            {loading ? <span className="text-[12px] text-muted">Reading the cluster…</span> : null}
+            {totalCount > 0 ? (
+              <SearchInput
+                value={objectFilter}
+                onChange={setObjectFilter}
+                placeholder={`Filter ${item.label.toLowerCase()}`}
+                label={`Filter ${item.label.toLowerCase()}`}
+                className="ml-auto w-full sm:w-56"
+              />
             ) : null}
           </div>
 
@@ -593,9 +698,9 @@ export function Explore() {
             </p>
           ) : null}
 
-          {loaded && !unavailable ? (
+          {filtered && !unavailable ? (
             <ResourceView
-              loaded={loaded}
+              loaded={filtered}
               showNamespace={allNamespaces}
               // A pod opens the same drawer as everything else, but carrying its
               // row: the list already holds the containers and limits its usage
@@ -635,7 +740,7 @@ export function Explore() {
                   name,
                   namespace: namespaced ? (rowNamespace ?? namespace) : undefined,
                   pod:
-                    loaded.kind === 'pods'
+                    loaded?.kind === 'pods'
                       ? loaded.rows.find((row) => row.name === name)
                       : undefined,
                   tab,
@@ -651,7 +756,13 @@ export function Explore() {
             </p>
           ) : null}
 
-          {!loading && !unavailable && loaded && count === 0 ? (
+          {!loading && !unavailable && loaded && count === 0 && needle ? (
+            <p className="px-4 py-10 text-center text-[13px] text-muted">
+              Nothing matches “{objectFilter}”.
+            </p>
+          ) : null}
+
+          {!loading && !unavailable && loaded && count === 0 && !needle ? (
             <p className="px-4 py-10 text-center text-[13px] text-muted">
               No {item.label.toLowerCase()}
               {allNamespaces || !namespaced ? (
