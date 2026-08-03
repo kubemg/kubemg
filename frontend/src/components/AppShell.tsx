@@ -34,6 +34,7 @@ import { CommandPalette } from './CommandPalette'
 import type { CommandTarget } from './CommandPalette'
 import { LinkStrand } from './LinkStrand'
 import { Mark } from './Mark'
+import { TimeRangeControl } from './TimeRangeControl'
 import { EnvironmentDot, EnvironmentTag, IconButton, KeyHint } from './primitives'
 
 /**
@@ -265,6 +266,7 @@ export function AppShell({
   title,
   parent,
   actions,
+  timeRange = false,
   sidebar,
   children,
 }: {
@@ -272,6 +274,16 @@ export function AppShell({
   /** Rendered ahead of the title as a breadcrumb, for pages nested under a section. */
   parent?: { label: string; to: string }
   actions?: ReactNode
+  /**
+   * Whether this page reads a time range, which puts the console's one window
+   * control in the header ahead of the page's own actions.
+   *
+   * It is a prop rather than something the shell infers because the alternative
+   * — consumers registering themselves so the control appears when one mounts —
+   * makes it flicker in and out as a drawer opens over a list. A page either is
+   * scoped by a window or it is not, and it is the page that knows.
+   */
+  timeRange?: boolean
   /**
    * A third level of navigation, flush against the section panel — what inside
    * this page you are looking at. Explore uses it for the resource tree.
@@ -639,6 +651,7 @@ export function AppShell({
                 Jump to…
                 <KeyHint>{PALETTE_HINT}</KeyHint>
               </button>
+              {timeRange ? <TimeRangeControl /> : null}
               {actions}
             </div>
           </div>

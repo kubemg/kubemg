@@ -55,10 +55,14 @@ type Window struct {
 	Step time.Duration
 }
 
+// MaxWindow is the longest range a single query may cover. Thirty days is well
+// past what a chart in a drawer is for, and short enough that a mistyped range
+// cannot ask a backend for its whole retention. It is exported because it is
+// also what "all time" has to resolve to on this path: a datasource has
+// retention, so the widest honest answer is the widest window allowed here.
+const MaxWindow = maxWindow
+
 const (
-	// maxWindow is the longest range a single query may cover. Thirty days is
-	// well past what a chart in a drawer is for, and short enough that a
-	// mistyped range cannot ask a backend for its whole retention.
 	maxWindow = 30 * 24 * time.Hour
 	// defaultWindow is what a caller naming no range gets: long enough to show a
 	// deployment's effect, short enough to load instantly.

@@ -467,9 +467,16 @@ func queryScope(user *db.User, grant db.UserClusterAccess) observability.Scope {
 	return observability.Scope{Namespaces: grant.NamespaceList()}
 }
 
-// queryWindow reads the range parameters. Both are optional: a caller naming
-// neither gets the engine's default window, which is what the first load of a
-// chart wants.
+// queryWindow reads the range parameters. All of them are optional: a caller
+// naming none gets the engine's default window, which is what the first load of
+// a chart wants.
+//
+// A `range` preset is resolved here rather than in the browser, for the reason
+// the audit trail resolves its own here: the console has one time range, and two
+// charts side by side computing "an hour ago" from their own clocks can honestly
+// disagree about what now covers. Explicit boundaries win over a preset — they
+// are the more specific statement, and they are how an incident's actual window
+// is expressed.
 func queryWindow(c *gin.Context) (observability.Window, bool) {
 	var window observability.Window
 
@@ -489,6 +496,21 @@ func queryWindow(c *gin.Context) (observability.Window, bool) {
 			return window, false
 		}
 		*field.into = parsed.UTC()
+	}
+
+	if window.Start.IsZero() {
+		span, ok := rangeSpan(c, observability.MaxWindow)
+		if !ok {
+			return window, false
+		}
+		if span > 0 {
+			end := window.End
+			if end.IsZero() {
+				end = time.Now().UTC()
+			}
+			window.Start = end.Add(-span)
+			window.End = end
+		}
 	}
 	return window, true
 }

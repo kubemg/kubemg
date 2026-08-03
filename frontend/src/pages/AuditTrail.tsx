@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CalendarClock,
   ChevronLeft,
@@ -10,8 +10,10 @@ import {
 } from 'lucide-react'
 import { useParams } from 'react-router'
 import { errorMessage, fetchAudit, fetchAuditSummary, fetchUsers } from '../api/client'
-import type { AuditEvent, AuditQuery, AuditRange, AuditSummary, User } from '../api/types'
+import type { AuditEvent, AuditQuery, AuditSummary, User } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { timeRangeLabel } from '../lib/timerange'
+import { useTimeRange } from '../state/timerange-context'
 import {
   Button,
   Chip,
@@ -22,7 +24,6 @@ import {
   Pill,
   Row,
   SearchInput,
-  Segmented,
   Select,
   Sheet,
   Table,
@@ -65,18 +66,6 @@ const VERBS = [
 ]
 
 const MUTATING = new Set(['create', 'update', 'patch', 'delete'])
-
-/* The quick ranges. They are resolved on the server, so a preset means the same
-   window to the record count, the page and a link somebody pastes into a ticket
-   — none of which would agree if the browser computed the boundary itself. */
-const RANGES: Array<{ value: AuditRange; label: string }> = [
-  { value: '15m', label: '15m' },
-  { value: '1h', label: '1h' },
-  { value: '24h', label: '24h' },
-  { value: '7d', label: '7d' },
-  { value: '30d', label: '30d' },
-  { value: 'all', label: 'All' },
-]
 
 /* An auditor asks for a status by name far more often than by class: "show me
    the 403s" is the question, and "anything that failed" is the other one, which
@@ -133,10 +122,13 @@ export function AuditTrail() {
   const [search, setSearch] = useState('')
   const [failedOnly, setFailedOnly] = useState(false)
   const [streamsOnly, setStreamsOnly] = useState(false)
-  // The window. A preset is the common case; the two boxes are for the case a
-  // preset cannot express, which is most of the ones that matter — an incident
-  // has a start and an end, not a duration ending now.
-  const [range, setRange] = useState<AuditRange>('24h')
+  // The window. The preset is the console's, set in the header and carried in
+  // the address, because "the last hour" has to mean one span in the trail and
+  // in the charts beside it. The two boxes below are for the case a preset
+  // cannot express, which is most of the ones that matter — an incident has a
+  // start and an end, not a duration ending now — and they beat the preset on
+  // the server as well as here.
+  const { range } = useTimeRange()
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [showWindow, setShowWindow] = useState(false)
@@ -208,6 +200,22 @@ export function AuditTrail() {
       .catch(() => setUsers([]))
   }, [user?.role])
 
+  // The console's window is a filter like any other, so it invalidates the page
+  // offset too — and it clears a hand-typed boundary, because a preset and an
+  // exact window are two answers to one question and the header control cannot
+  // show that a boundary it does not own is overriding it. The first run is
+  // skipped: a page opening with a preset has nothing to clear.
+  const settled = useRef(false)
+  useEffect(() => {
+    if (!settled.current) {
+      settled.current = true
+      return
+    }
+    setOffset(0)
+    setFrom('')
+    setTo('')
+  }, [range])
+
   // Any filter change invalidates the current page offset.
   function narrow(apply: () => void) {
     apply()
@@ -220,6 +228,7 @@ export function AuditTrail() {
   return (
     <AppShell
       title="Audit trail"
+      timeRange
       actions={
         <Button onClick={() => void load()} disabled={loading}>
           <RefreshCw aria-hidden="true" className={`size-4 ${loading ? 'animate-spin' : ''}`} />
@@ -329,25 +338,14 @@ export function AuditTrail() {
             </span>
           </div>
 
-          {/* The window, on a row of its own. It is the first thing an auditor
-              sets and the last thing they change, so it does not belong crowded
-              in among the narrowing filters above. */}
+          {/* The window, on a row of its own. The preset itself is the
+              console's, up in the header — what stays here is the boundary a
+              preset cannot express, and the reading of whichever is in force,
+              because a page of records has to say what window it counted. */}
           <div className="flex flex-wrap items-center gap-2.5 border-b border-line-soft px-4 py-2.5">
-            <Segmented
-              ariaLabel="Time range"
-              value={range}
-              onChange={(next) =>
-                narrow(() => {
-                  setRange(next)
-                  // A preset and a hand-typed boundary are two answers to one
-                  // question; picking a preset clears the boundary rather than
-                  // leaving a filter in force that the control no longer shows.
-                  setFrom('')
-                  setTo('')
-                })
-              }
-              options={RANGES}
-            />
+            {!from && !to ? (
+              <span className="text-[13px] text-muted">{timeRangeLabel(range)}</span>
+            ) : null}
 
             <Chip active={showWindow} onClick={() => setShowWindow((current) => !current)}>
               <CalendarClock aria-hidden="true" className="size-3.5" />

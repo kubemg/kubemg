@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ScrollText, Search } from 'lucide-react'
 import { queryError, queryLogs, unconfigured } from '../api/client'
 import type { Cluster, LogEntry, LogQueryResult } from '../api/types'
-import { Button, EmptyState, Notice, Select, TextInput } from './primitives'
+import { queryRangeLabel } from '../lib/timerange'
+import { useTimeRange } from '../state/timerange-context'
+import { Button, EmptyState, Notice, TextInput } from './primitives'
 
 /*
  * Searching a cluster's aggregated logs.
@@ -22,15 +24,12 @@ import { Button, EmptyState, Notice, Select, TextInput } from './primitives'
  * they were granted.
  */
 
-const RANGES = [
-  { id: '15m', label: 'Last 15 minutes', minutes: 15 },
-  { id: '1h', label: 'Last hour', minutes: 60 },
-  { id: '6h', label: 'Last 6 hours', minutes: 360 },
-  { id: '24h', label: 'Last 24 hours', minutes: 1440 },
-  { id: '7d', label: 'Last 7 days', minutes: 10080 },
-] as const
-
-type RangeId = (typeof RANGES)[number]['id']
+/*
+ * The window comes from the console's one range control rather than from a
+ * picker of its own: a search is read against the same span as the chart above
+ * it, and the server resolves the preset so both mean the same instant. What is
+ * still this surface's own is the *text* being looked for.
+ */
 
 export function LogExplorer({
   cluster,
@@ -46,7 +45,7 @@ export function LogExplorer({
   container?: string
   onConfigure?: () => void
 }) {
-  const [range, setRange] = useState<RangeId>('1h')
+  const { range } = useTimeRange()
   const [filter, setFilter] = useState('')
   // The text actually searched for. It is separate from the box so that typing
   // does not fire a query per keystroke against someone's log backend.
@@ -58,20 +57,15 @@ export function LogExplorer({
   const [error, setError] = useState<string | null>(null)
   const [missing, setMissing] = useState(false)
 
-  const minutes = RANGES.find((entry) => entry.id === range)?.minutes ?? 60
-
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const end = new Date()
-      const start = new Date(end.getTime() - minutes * 60_000)
       const response = await queryLogs(cluster.id, {
         namespace,
         pod,
         container,
         filter: applied,
-        start,
-        end,
+        range,
       })
       setResult(response.result)
       setError(null)
@@ -83,7 +77,7 @@ export function LogExplorer({
     } finally {
       setLoading(false)
     }
-  }, [cluster.id, namespace, pod, container, applied, minutes])
+  }, [cluster.id, namespace, pod, container, applied, range])
 
   useEffect(() => {
     void load()
@@ -136,21 +130,6 @@ export function LogExplorer({
           />
         </div>
 
-        <div className="w-40">
-          <Select
-            aria-label="Time range"
-            size="sm"
-            value={range}
-            onChange={(event) => setRange(event.target.value as RangeId)}
-          >
-            {RANGES.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.label}
-              </option>
-            ))}
-          </Select>
-        </div>
-
         <Button type="submit" variant="primary" size="sm" disabled={loading}>
           Search
         </Button>
@@ -162,6 +141,9 @@ export function LogExplorer({
       <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted">
         <span className="font-mono">{entries.length}</span>
         <span>lines</span>
+        {/* The window is set in the header now, so the results say which one
+            they are — a count with no span is a number without a question. */}
+        <span>over {queryRangeLabel(range).toLowerCase()}</span>
         {namespace ? (
           <span>
             in <span className="font-mono text-fg">{namespace}</span>
