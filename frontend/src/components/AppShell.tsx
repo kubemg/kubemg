@@ -102,70 +102,59 @@ const ACCESS_ROUTES = [
 const PALETTE_HINT = /mac/i.test(navigator.platform) ? '⌘K' : 'Ctrl K'
 
 /**
- * How much room the section panel is taking.
- *
- * `full` is the 240px panel. `responsive` is the panel on a page that also has a
- * third level: it reads as icons until `xl`, where all three columns fit.
- * `icon` is the operator's own choice to keep it at the rail's width at every
- * size — on Explore three full columns leave the work itself with less room than
- * the navigation to it, so that is where the choice matters and where it is the
- * default.
+ * How much room the section panel is taking. `full` is the 240px panel; `icon`
+ * is the operator's own choice to keep it at the rail's width instead, on any
+ * page. There used to be a third mode for pages carrying a separate third
+ * level of navigation — Explore was the only one — but the panel now *becomes*
+ * that navigation on those pages rather than sitting beside it, so there is
+ * nothing left needing a third width.
  *
  * Tailwind scans the source for literal class names, so these are lookups
  * rather than interpolations.
  */
-type PanelMode = 'full' | 'responsive' | 'icon'
+type PanelMode = 'full' | 'icon'
 
 const PANEL_WIDTH: Record<PanelMode, string> = {
   full: 'w-60',
-  responsive: 'w-15 xl:w-60',
   icon: 'w-15',
 }
 
 const PANEL_HEADER: Record<PanelMode, string> = {
   full: 'px-4',
-  responsive: 'justify-center xl:justify-start xl:px-4',
   icon: 'justify-center',
 }
 
 const PANEL_BODY: Record<PanelMode, string> = {
   full: 'px-2.5',
-  responsive: 'px-2 xl:px-2.5',
   icon: 'px-2',
 }
 
 const PANEL_FOOTER: Record<PanelMode, string> = {
   full: 'px-3',
-  responsive: 'flex-col px-2 xl:flex-row xl:px-3',
   icon: 'flex-col px-2',
 }
 
 /** The section heading, and any other line that only exists to be read. */
 const PANEL_HEADING: Record<PanelMode, string> = {
   full: 'px-2',
-  responsive: 'hidden xl:block xl:px-2',
   icon: 'hidden',
 }
 
 /** A label beside a glyph: `inline` for text, `block` for a truncating cell. */
 const PANEL_LABEL: Record<PanelMode, { inline: string; block: string }> = {
   full: { inline: '', block: '' },
-  responsive: { inline: 'hidden xl:inline', block: 'hidden xl:block' },
   icon: { inline: 'hidden', block: 'hidden' },
 }
 
 const PANEL_ROW: Record<PanelMode, string> = {
   full: 'px-2',
-  responsive: 'justify-center px-0 xl:justify-start xl:px-2',
   icon: 'justify-center px-0',
 }
 
-/** Where the main column starts: the rail, the panel, and a third level if any. */
-const MAIN_OFFSET: Record<string, string> = {
+/** Where the main column starts: the rail and the panel. */
+const MAIN_OFFSET: Record<PanelMode, string> = {
   full: 'lg:ml-75',
-  responsive: 'lg:ml-86 xl:ml-131',
   icon: 'lg:ml-30',
-  'icon+sidebar': 'lg:ml-86',
 }
 
 /** The compact strand shown in place of the entity block once there is no
@@ -173,31 +162,23 @@ const MAIN_OFFSET: Record<string, string> = {
     the same reason every other one here is: Tailwind wants the literal class. */
 const PANEL_HEAD_COMPACT: Record<PanelMode, string> = {
   full: 'hidden',
-  responsive: 'xl:hidden',
   icon: '',
 }
 
-/** The collapse toggle inside the entity head. Identical to the generic
-    header's own rule: nothing to give up between `lg` and `xl` on a page that
-    already has a third level, so it stays out of the way there. */
 const PANEL_HEAD_TOGGLE: Record<PanelMode, string> = {
   full: '',
-  responsive: 'hidden xl:grid',
   icon: '',
 }
 
 /** How the entity head's children stack. At full width they are a row: dot,
     detail block, compact strand, toggle — `items-start gap-2.5` is the shape
-    that has always drawn there. At rail width (`icon`, and `responsive` below
-    `xl`, which is at rail width too) the detail block is gone but the dot,
-    the compact strand and the toggle are all still `shrink-0` with no padding
-    to spend — laid out as a row they measure wider than the 60px column they
-    are in and spill onto the work surface, so there they stack as a centred
-    column instead. A lookup, not an interpolation, for the same reason every
-    other table in this file is. */
+    that has always drawn there. At rail width the detail block is gone but the
+    dot, the compact strand and the toggle are all still `shrink-0` with no
+    padding to spend — laid out as a row they measure wider than the 60px
+    column they are in and spill onto the work surface, so there they stack as
+    a centred column instead. */
 const PANEL_HEAD_LAYOUT: Record<PanelMode, string> = {
   full: 'items-start gap-2.5',
-  responsive: 'flex-col items-center gap-1.5 xl:flex-row xl:items-start xl:gap-2.5',
   icon: 'flex-col items-center gap-1.5',
 }
 
@@ -234,10 +215,11 @@ type ClusterPanelGroup = { id: string; label: string; items: ClusterPanelItem[] 
 
 /**
  * The panel's own inventory once a cluster is open, replacing the fleet-wide
- * one: three groups because three cluster-scoped pages exist today (Phase 6.4
- * is what grows Inspect into Workloads, Nodes and the rest). Explore is
- * offered only with a live tunnel — a direct-mode cluster has no live state to
- * read, and an item that always refuses is worse than no item.
+ * one. Explore is offered only with a live tunnel — a direct-mode cluster has
+ * no live state to read, and an item that always refuses is worse than no
+ * item. This nav is what stays reachable from inside Explore, above its
+ * resource tree, since the panel becomes that tree rather than sitting beside
+ * it — a way back to the cluster's other views without leaving the panel.
  */
 function clusterPanelGroups(cluster: Cluster): ClusterPanelGroup[] {
   const groups: ClusterPanelGroup[] = [
@@ -267,7 +249,8 @@ export function AppShell({
   parent,
   actions,
   timeRange = false,
-  sidebar,
+  scope,
+  panel,
   children,
 }: {
   title: string
@@ -285,17 +268,22 @@ export function AppShell({
    */
   timeRange?: boolean
   /**
-   * A third level of navigation, flush against the section panel — what inside
-   * this page you are looking at. Explore uses it for the resource tree.
-   *
-   * Three full-width columns only fit on a wide screen, so between `lg` and
-   * `xl` the *section panel* collapses to the icon rail's width rather than the
-   * third level disappearing: the page you are on keeps its own navigation, and
-   * what you give up is the label next to a section icon, not a tree. Below
-   * `lg` all chrome collapses into the mobile sheet, so a page offering a
-   * sidebar must still work without one.
+   * A scope control beside the time range — a *what*, not a *when*, over the
+   * same read. Explore uses it for the namespace picker: a scope of exactly
+   * the same class as the cluster and the window, which is why it belongs in
+   * the header rather than inside the page's own body.
    */
-  sidebar?: ReactNode
+  scope?: ReactNode
+  /**
+   * Extra content appended below the cluster's own quick-nav in the section
+   * panel, once a cluster is open — what inside this cluster you are looking
+   * at, drawn *in* the panel rather than in a third level beside it. Explore
+   * is the one page that uses it, for its resource tree: seeing every
+   * resource means the tree needs the panel's whole width, not a narrower
+   * column squeezed in beside it. Rendered only at the panel's full width,
+   * since it is built for that width and a collapsed rail has no room for it.
+   */
+  panel?: ReactNode
   children: ReactNode
 }) {
   const { user, signOut } = useAuth()
@@ -357,11 +345,8 @@ export function AppShell({
 
   const initials = (user?.username ?? '').slice(0, 2).toUpperCase()
 
-  // A page with a third level is where the panel's 240px costs the most, so it
-  // starts collapsed there; an explicit toggle wins over that default, in both
-  // directions, and is remembered.
-  const collapsed = panelPref ?? Boolean(sidebar)
-  const mode: PanelMode = collapsed ? 'icon' : sidebar ? 'responsive' : 'full'
+  const collapsed = panelPref ?? false
+  const mode: PanelMode = collapsed ? 'icon' : 'full'
   const label = PANEL_LABEL[mode]
 
   function togglePanel() {
@@ -457,22 +442,15 @@ export function AppShell({
               <span className="text-rail-fg">Kube</span>
               <span className="text-accent">MG</span>
             </span>
-            {mode === 'responsive' ? (
-              <span aria-hidden="true" className="font-mono text-[13px] text-accent xl:hidden">
-                MG
-              </span>
-            ) : null}
             {/* Collapsed there is no wordmark to sit beside, so the toggle takes
-                the slot; expanded it sits at the end of the header. Between `lg`
-                and `xl` the panel is already at rail width, so there is nothing
-                for it to give up and it stays out of the way. */}
+                the slot; expanded it sits at the end of the header. */}
             <button
               type="button"
               onClick={togglePanel}
               aria-expanded={!collapsed}
               title={collapsed ? 'Expand the section panel' : 'Collapse the section panel'}
               className={`grid size-8 shrink-0 place-items-center rounded-control text-rail-muted transition-colors hover:bg-rail-raised hover:text-rail-fg ${
-                mode === 'responsive' ? 'ml-auto hidden xl:grid' : mode === 'full' ? 'ml-auto' : ''
+                mode === 'full' ? 'ml-auto' : ''
               }`}
             >
               {collapsed ? (
@@ -510,7 +488,17 @@ export function AppShell({
                 </ul>
               </div>
             ))
-          ) : (
+          ) : null}
+
+          {/* What inside this cluster's page you are looking at, appended below
+              the quick-nav rather than beside it in a third level. Only meant
+              for the panel's full width — a collapsed rail has no room to draw
+              a resource tree in. */}
+          {openCluster && panel && mode === 'full' ? (
+            <div className="mt-5 border-t border-rail-line pt-4">{panel}</div>
+          ) : null}
+
+          {!openCluster ? (
             <>
               <p className={`label pt-1 pb-2 text-rail-faint ${PANEL_HEADING[mode]}`}>
                 {activeSection?.label}
@@ -535,7 +523,7 @@ export function AppShell({
                 <FleetList clusters={clusters} pathname={pathname} mode={mode} />
               ) : null}
             </>
-          )}
+          ) : null}
         </div>
 
         <div
@@ -577,22 +565,7 @@ export function AppShell({
         />
       ) : null}
 
-      {/* Level three, when a page has one. */}
-      {sidebar ? (
-        <div
-          className={`fixed inset-y-0 left-30 z-10 hidden w-56 border-r border-rail-line bg-rail lg:block ${
-            mode === 'responsive' ? 'xl:left-75' : ''
-          }`}
-        >
-          {sidebar}
-        </div>
-      ) : null}
-
-      <div
-        className={`flex min-w-0 flex-col ${
-          MAIN_OFFSET[mode === 'icon' && sidebar ? 'icon+sidebar' : mode]
-        }`}
-      >
+      <div className={`flex min-w-0 flex-col ${MAIN_OFFSET[mode]}`}>
         <header className="sticky top-0 z-10 border-b border-line bg-bg/85 backdrop-blur">
           <div className="flex h-14 items-center gap-3 px-4 xl:px-6">
             <IconButton
@@ -651,6 +624,7 @@ export function AppShell({
                 Jump to…
                 <KeyHint>{PALETTE_HINT}</KeyHint>
               </button>
+              {scope}
               {timeRange ? <TimeRangeControl /> : null}
               {actions}
             </div>
@@ -783,11 +757,7 @@ function FleetList({
     <div className="mt-5">
       <p
         className={`label flex items-center justify-between pb-2 text-rail-faint ${
-          mode === 'full'
-            ? 'px-2'
-            : mode === 'responsive'
-              ? 'justify-center px-0 xl:justify-between xl:px-2'
-              : 'justify-center px-0'
+          mode === 'full' ? 'px-2' : 'justify-center px-0'
         }`}
       >
         <span className={label.inline}>Clusters</span>
