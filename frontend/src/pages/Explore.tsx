@@ -25,17 +25,14 @@ import {
   fetchStorageClasses,
   fetchVirtualServices,
 } from '../api/client'
-import type { CustomResourceDefinition, HelmRelease, Namespace } from '../api/types'
+import type { CustomResourceDefinition, Namespace } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { ExploreSidebar } from '../components/ExploreSidebar'
-import { HelmValuesDrawer } from '../components/HelmValuesDrawer'
 import { ResourceDetailDrawer } from '../components/ResourceDetailDrawer'
 import type { DetailTarget } from '../components/ResourceDetailDrawer'
 import { ResourceView } from '../components/ResourceTables'
 import { TableSkeleton } from '../components/SkeletonLoader'
 import type { LoadedResource } from '../components/ResourceTables'
-import { WorkloadActionDialog } from '../components/WorkloadActionDialog'
-import type { WorkloadActionTarget } from '../components/WorkloadActionDialog'
 import {
   Button,
   EmptyState,
@@ -303,17 +300,12 @@ export function Explore() {
   // can find one pod among two hundred.
   const [objectFilter, setObjectFilter] = useState('')
 
-  // One drawer for every kind, opened on whichever tab the row's action asked
-  // for. A pod carries its row along, because the list already holds everything
-  // its usage and container panels need without a second read.
+  // One drawer for every kind and every action, opened on whichever tab or
+  // panel the row asked for. A pod and a Helm release each carry their row
+  // along, because the list already holds what their panels need without a
+  // second read; a workload carries the write it was asked for, which opens as
+  // a panel inside the drawer rather than as a second surface over it.
   const [detail, setDetail] = useState<DetailTarget | null>(null)
-  // A Helm release is the exception, and has to be: it has no manifest and no
-  // describe, because it is not an API object at all — it is a Secret holding a
-  // compressed blob, and what is worth reading in it is the values.
-  const [helm, setHelm] = useState<{ release: HelmRelease; editing: boolean } | null>(null)
-  // Scale and rollout restart, asked for from a row. They are writes, so they
-  // are a dialog of their own rather than something a click in a list does.
-  const [action, setAction] = useState<WorkloadActionTarget | null>(null)
 
   // Listing namespaces is its own read with its own failure — a grant can browse
   // a cluster it cannot enumerate — so it keeps its own error rather than
@@ -503,8 +495,6 @@ export function Explore() {
   // Pods says nothing about Services.
   useEffect(() => {
     setDetail(null)
-    setHelm(null)
-    setAction(null)
     setObjectFilter('')
   }, [resource, namespace, clusterId])
 
@@ -714,23 +704,35 @@ export function Explore() {
                   pod,
                 })
               }
-              // The page is the only place that knows which resource it asked
-              // for: several kinds share a table, and an object has to be
-              // addressed by what it actually is.
-              onValues={(release, editing) => setHelm({ release, editing })}
+              // A release opens the same drawer too, carrying its row: it has
+              // no manifest and no describe, so its values are the only tab it
+              // gets, but reaching it is the same motion as reaching anything
+              // else.
+              onValues={(release, editing) =>
+                setDetail({
+                  kind: 'helmreleases',
+                  label: 'Helm release',
+                  name: release.name,
+                  namespace: release.namespace,
+                  release,
+                  tab: 'values',
+                  editing,
+                })
+              }
               // A workload row carries its own Kind and its own desired count,
-              // which is everything the dialog needs — no second read to open
-              // it, and no guess about what "currently" is.
+              // which is everything the action panel needs — no second read to
+              // open it, and no guess about what "currently" is. It opens the
+              // object as well as the write: acting on something without seeing
+              // it is what the old stacked dialog got wrong.
               onAction={(name, workload) => {
                 const kind = workloadKeyFor(workload.kind)
                 if (!kind) return
-                setAction({
-                  action: name,
+                setDetail({
                   kind,
                   label: workload.kind,
                   name: workload.name,
                   namespace: workload.namespace,
-                  replicas: workload.desired,
+                  action: name,
                 })
               }}
               onManifest={(name, rowNamespace, tab, editing) =>
@@ -803,25 +805,6 @@ export function Explore() {
           target={detail}
           onClose={() => setDetail(null)}
           onRefresh={load}
-        />
-      ) : null}
-
-      {action && cluster ? (
-        <WorkloadActionDialog
-          cluster={cluster}
-          target={action}
-          onClose={() => setAction(null)}
-          onDone={load}
-        />
-      ) : null}
-
-      {helm && cluster ? (
-        <HelmValuesDrawer
-          cluster={cluster}
-          release={helm.release}
-          editing={helm.editing}
-          onClose={() => setHelm(null)}
-          onApplied={load}
         />
       ) : null}
     </AppShell>

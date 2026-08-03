@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -635,15 +635,6 @@ export function Td({
  */
 export type SheetWidth = 'md' | 'lg' | 'xl' | '2xl' | 'wide'
 
-/**
- * The sheets currently on screen, innermost last. A sheet can open over another
- * one — a workload action from the detail drawer is one surface acting on the
- * object another surface is showing — and with a listener each on `window` an
- * Escape would otherwise close the whole stack at once, throwing away the
- * drawer somebody was reading because they cancelled a dialog.
- */
-const openSheets: symbol[] = []
-
 const SHEET_WIDTH: Record<SheetWidth, string> = {
   md: 'max-w-[520px]',
   lg: 'max-w-[680px]',
@@ -671,23 +662,17 @@ export function Sheet({
   width?: SheetWidth
 }) {
   const titleId = useId()
-  const id = useRef(Symbol('sheet'))
 
+  // Exactly one sheet is ever open: a workload action and a Helm release's
+  // values are both panels inside the detail drawer rather than surfaces over
+  // it, so Escape has only one listener to reach and needs no rule about which
+  // instance answers it.
   useEffect(() => {
-    const self = id.current
-    openSheets.push(self)
-
     function onKey(event: KeyboardEvent) {
-      // Only the topmost sheet answers Escape; the ones underneath stay open.
-      if (event.key === 'Escape' && openSheets.at(-1) === self) onClose()
+      if (event.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', onKey)
-
-    return () => {
-      window.removeEventListener('keydown', onKey)
-      const at = openSheets.lastIndexOf(self)
-      if (at >= 0) openSheets.splice(at, 1)
-    }
+    return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
   const body = (

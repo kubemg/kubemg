@@ -3,6 +3,7 @@ import { RefreshCw, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { errorMessage, fetchResourceDescribe } from '../api/client'
 import type {
   Cluster,
+  HelmRelease,
   K8sEvent,
   Pod,
   ResourceCondition,
@@ -12,10 +13,11 @@ import type {
 import type { ResourceKey } from '../lib/resources'
 import type { Tone } from '../lib/status'
 import { relativeAge } from '../lib/time'
+import { HelmValuesPanel } from './HelmValuesPanel'
 import { LogExplorer } from './LogExplorer'
 import { PodLogView, PodOverview } from './PodPanels'
-import { WorkloadActionDialog } from './WorkloadActionDialog'
-import type { WorkloadActionName, WorkloadActionTarget } from './WorkloadActionDialog'
+import { WorkloadActionPanel } from './WorkloadActionPanel'
+import type { WorkloadActionName, WorkloadActionTarget } from './WorkloadActionPanel'
 import { supportsWorkloadLogs, workloadCapability } from '../lib/workloads'
 import { WorkloadLogView } from './WorkloadLogView'
 import { YamlPanel } from './YamlPanel'
@@ -41,8 +43,12 @@ const PodTerminal = lazy(() =>
   import('./PodTerminal').then((module) => ({ default: module.PodTerminal })),
 )
 
-/** Which face of the object the drawer opens on. */
-export type DetailTab = 'overview' | 'describe' | 'yaml' | 'logs'
+/**
+ * Which face of the object the drawer opens on. `values` is the Helm one and
+ * appears only for a release, which has no manifest for `yaml` to address and
+ * no API object for `describe` to read.
+ */
+export type DetailTab = 'overview' | 'describe' | 'yaml' | 'logs' | 'values'
 
 /** Which stream the logs tab is showing. */
 type StreamView = 'logs' | 'history' | 'terminal'
@@ -61,19 +67,41 @@ export interface DetailTarget {
    * second read.
    */
   pod?: Pod
+  /**
+   * The row, when the row was a Helm release. A release is not an API object —
+   * it is a Secret holding a compressed blob — so it has neither a manifest nor
+   * a describe, and its values are the whole of what there is to show. It opens
+   * here anyway rather than in a drawer of its own: reaching a release and
+   * reaching a Deployment should not be two different motions.
+   */
+  release?: HelmRelease
   tab?: DetailTab
-  /** Opens the YAML tab ready to type, for the row's *Edit config* action. */
+  /** Opens the YAML or values tab ready to type, for the row's *Edit* action. */
   editing?: boolean
+  /**
+   * A workload write to open on, for the row's Scale and Restart actions. The
+   * object is shown either way — the action is a panel inside this drawer, not
+   * a surface instead of it.
+   */
+  action?: WorkloadActionName
 }
 
 /**
- * One object, in every form KubeMG can show it.
+ * One object, in every form KubeMG can show it, and the writes that act on it.
  *
  * Before this there were three drawers — a pod's, a manifest's, and nothing at
  * all for the rest — and moving between them meant closing one and finding the
  * row again. They are tabs now, over one object, because that is what an
  * operator is actually doing: seeing that something is not ready, asking why,
  * and then changing it. The three questions are one investigation.
+ *
+ * The same argument then absorbed the last two overlays. A Helm release's
+ * values are a tab here rather than a drawer of their own, and a workload's
+ * Scale and Restart are a panel inside this one rather than a dialog stacked
+ * over it — an overlay on top of the surface showing the object hid the
+ * conditions and events that are the reason anyone reached for the action.
+ * Nothing in the console opens over anything else any more, which is why
+ * `Sheet` no longer needs a rule about which instance answers Escape.
  *
  * It opens `wide` rather than `lg` for the same reason: the content here is
  * tables and manifests, where the constraint is the line rather than the form,
@@ -94,9 +122,12 @@ export function ResourceDetailDrawer({
   onClose: () => void
   onRefresh?: () => Promise<void> | void
 }) {
-  const [tab, setTab] = useState<DetailTab>(target.tab ?? 'overview')
+  const release = target.release
+  // A release has exactly one face, so there is nothing for the tab strip to
+  // offer and nothing for `target.tab` to pick between.
+  const [tab, setTab] = useState<DetailTab>(release ? 'values' : (target.tab ?? 'overview'))
   const [describe, setDescribe] = useState<ResourceDescribeResult | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!release)
   const [error, setError] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
 
@@ -107,10 +138,9 @@ export function ResourceDetailDrawer({
   // of the three that still answers after the pod is gone.
   const [shell, setShell] = useState<StreamView>('logs')
 
-  // The two workload writes, offered where the object is being read. They open
-  // a dialog over this one, which is why Sheet lets only its topmost instance
-  // answer Escape.
-  const [action, setAction] = useState<WorkloadActionName | null>(null)
+  // The two workload writes, offered where the object is being read — as a
+  // panel at the top of this drawer's body rather than a surface over it.
+  const [action, setAction] = useState<WorkloadActionName | null>(target.action ?? null)
   const capability = workloadCapability(target.kind)
 
   /*
@@ -123,6 +153,9 @@ export function ResourceDetailDrawer({
   const workloadLogs = !pod && !!target.namespace && supportsWorkloadLogs(target.kind)
 
   const load = useCallback(async () => {
+    // There is no object to describe for a Helm release, and asking would be a
+    // read of a kind the cluster does not serve.
+    if (release) return
     setLoading(true)
     try {
       setDescribe(await fetchResourceDescribe(cluster.id, target.kind, target.name, target.namespace))
@@ -133,7 +166,7 @@ export function ResourceDetailDrawer({
     } finally {
       setLoading(false)
     }
-  }, [cluster.id, target.kind, target.name, target.namespace])
+  }, [cluster.id, target.kind, target.name, target.namespace, release])
 
   // The describe read backs both the overview and the events tab, so it happens
   // once when the drawer opens rather than on every tab switch. The YAML tab
@@ -142,27 +175,30 @@ export function ResourceDetailDrawer({
     void load()
   }, [load])
 
-  // Closing on a half-typed manifest throws the edit away, so it asks first.
-  // Escape reaches the same guard, because the Sheet closes through it too.
+  // Closing on a half-typed manifest or set of values throws the edit away, so
+  // it asks first. Escape reaches the same guard, because the Sheet closes
+  // through it too.
   const close = useCallback(() => {
-    if (dirty && !window.confirm('Discard your unsaved changes to this manifest?')) return
+    if (dirty && !window.confirm('Discard your unsaved changes?')) return
     onClose()
   }, [dirty, onClose])
 
-  const tabs: Array<{ value: DetailTab; label: string; count?: number }> = [
-    { value: 'overview', label: 'Overview' },
-    {
-      value: 'describe',
-      label: 'Describe & Events',
-      count: describe?.events_available ? describe.events.length : undefined,
-    },
-    { value: 'yaml', label: 'YAML' },
-  ]
-  if (pod) tabs.push({ value: 'logs', label: 'Logs & Terminal' })
+  const tabs: Array<{ value: DetailTab; label: string; count?: number }> = release
+    ? [{ value: 'values', label: 'Values' }]
+    : [
+        { value: 'overview', label: 'Overview' },
+        {
+          value: 'describe',
+          label: 'Describe & Events',
+          count: describe?.events_available ? describe.events.length : undefined,
+        },
+        { value: 'yaml', label: 'YAML' },
+      ]
+  if (!release && pod) tabs.push({ value: 'logs', label: 'Logs & Terminal' })
   // A workload has no terminal and no history of its own — there is no one pod to
   // attach to, and the history view searches by pod — so the tab is named for
   // what it holds.
-  else if (workloadLogs) tabs.push({ value: 'logs', label: 'Logs' })
+  else if (!release && workloadLogs) tabs.push({ value: 'logs', label: 'Logs' })
 
   // What the object says it is running, for the scale dialog's prefill. It comes
   // from the describe already on screen rather than from a read of its own.
@@ -180,148 +216,97 @@ export function ResourceDetailDrawer({
     : null
 
   return (
-    <>
-      <Sheet
-        width="wide"
-        eyebrow={`${cluster.name}${target.namespace ? ` · ${target.namespace}` : ''} · ${target.label}`}
-        title={<span className="font-mono">{target.name}</span>}
-        onClose={close}
-        footer={
-          <>
-            {/* A workload's two writes sit with the object rather than only in the
-                list it came from: seeing that something is not ready and rolling
-                it is one investigation. */}
-            {capability?.scale ? (
-              <Button type="button" onClick={() => setAction('scale')}>
-                <SlidersHorizontal aria-hidden="true" className="size-4" />
-                Scale
-              </Button>
-            ) : null}
-            {capability?.restart ? (
-              <Button type="button" onClick={() => setAction('restart')}>
-                <RotateCcw aria-hidden="true" className="size-4" />
-                Restart
-              </Button>
-            ) : null}
-
-            <Button type="button" variant="ghost" onClick={close}>
-              Close
+    <Sheet
+      width="wide"
+      eyebrow={`${cluster.name}${target.namespace ? ` · ${target.namespace}` : ''} · ${target.label}`}
+      title={<span className="font-mono">{target.name}</span>}
+      onClose={close}
+      footer={
+        <>
+          {/* A workload's two writes sit with the object rather than only in the
+              list it came from: seeing that something is not ready and rolling
+              it is one investigation. They open a panel in the body above,
+              which is why they read as pressed while one is open. */}
+          {capability?.scale ? (
+            <Button
+              type="button"
+              variant={action === 'scale' ? 'primary' : 'secondary'}
+              onClick={() => setAction(action === 'scale' ? null : 'scale')}
+            >
+              <SlidersHorizontal aria-hidden="true" className="size-4" />
+              Scale
             </Button>
+          ) : null}
+          {capability?.restart ? (
+            <Button
+              type="button"
+              variant={action === 'restart' ? 'primary' : 'secondary'}
+              onClick={() => setAction(action === 'restart' ? null : 'restart')}
+            >
+              <RotateCcw aria-hidden="true" className="size-4" />
+              Restart
+            </Button>
+          ) : null}
+
+          <Button type="button" variant="ghost" onClick={close}>
+            Close
+          </Button>
+          {/* A release refreshes from its own panel, which is the only thing
+              there is to re-read for one. */}
+          {release ? null : (
             <Button type="button" onClick={() => void load()} disabled={loading}>
               <RefreshCw aria-hidden="true" className={`size-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
-          </>
-        }
-      >
-        <div className="flex flex-wrap items-center gap-3">
+          )}
+        </>
+      }
+    >
+      <div className="flex flex-wrap items-center gap-3">
+        {tabs.length > 1 ? (
           <Segmented<DetailTab> ariaLabel="Resource view" value={tab} onChange={setTab} options={tabs} />
-
-          {describe?.kind ? (
-            <Pill tone="idle" dot={false}>
-              {describe.kind}
-            </Pill>
-          ) : null}
-          {/* A failing condition is the headline: it is the object saying, in its
-              own words, that it is not what it was asked to be. */}
-          {failing(describe?.conditions).map((condition) => (
-            <Pill key={condition.type} tone="bad">
-              {condition.type}: {condition.status}
-            </Pill>
-          ))}
-
-          {/* The container picker only applies to the streams, and only where
-              there is more than one container to pick between. */}
-          {pod && pod.containers.length > 1 && tab === 'logs' ? (
-            <div className="ml-auto w-44">
-              <Select
-                aria-label="Container"
-                size="sm"
-                value={container}
-                onChange={(event) => setContainer(event.target.value)}
-              >
-                {pod.containers.map((entry) => (
-                  <option key={entry.name} value={entry.name}>
-                    {entry.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          ) : null}
-        </div>
-
-        {error ? <Notice tone="error">{error}</Notice> : null}
-
-        {tab === 'overview' ? (
-          <OverviewTab cluster={cluster} pod={pod} describe={describe} loading={loading} />
         ) : null}
 
-        {tab === 'describe' ? <DescribeTab describe={describe} loading={loading} /> : null}
-
-        {tab === 'yaml' ? (
-          <YamlPanel
-            cluster={cluster}
-            kind={target.kind}
-            name={target.name}
-            namespace={target.namespace}
-            editing={target.editing}
-            onDirtyChange={setDirty}
-            onApplied={async () => {
-              await load()
-              await onRefresh?.()
-            }}
-          />
+        {describe?.kind ? (
+          <Pill tone="idle" dot={false}>
+            {describe.kind}
+          </Pill>
         ) : null}
+        {/* A failing condition is the headline: it is the object saying, in its
+            own words, that it is not what it was asked to be. */}
+        {failing(describe?.conditions).map((condition) => (
+          <Pill key={condition.type} tone="bad">
+            {condition.type}: {condition.status}
+          </Pill>
+        ))}
 
-        {tab === 'logs' && pod ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-3">
-            <Segmented<StreamView>
-              ariaLabel="Stream"
-              value={shell}
-              onChange={setShell}
-              options={[
-                { value: 'logs', label: 'Live' },
-                { value: 'history', label: 'History' },
-                { value: 'terminal', label: 'Terminal' },
-              ]}
-            />
-            {shell === 'logs' ? (
-              <PodLogView cluster={cluster} pod={pod} container={container} />
-            ) : null}
-            {shell === 'history' ? (
-              <LogExplorer
-                cluster={cluster}
-                namespace={pod.namespace}
-                pod={pod.name}
-                container={container}
-              />
-            ) : null}
-            {shell === 'terminal' ? (
-              <Suspense fallback={<p className="text-[13px] text-muted">Loading the terminal…</p>}>
-                <PodTerminal
-                  clusterId={cluster.id}
-                  namespace={pod.namespace}
-                  pod={pod.name}
-                  container={container}
-                />
-              </Suspense>
-            ) : null}
+        {/* The container picker only applies to the streams, and only where
+            there is more than one container to pick between. */}
+        {pod && pod.containers.length > 1 && tab === 'logs' ? (
+          <div className="ml-auto w-44">
+            <Select
+              aria-label="Container"
+              size="sm"
+              value={container}
+              onChange={(event) => setContainer(event.target.value)}
+            >
+              {pod.containers.map((entry) => (
+                <option key={entry.name} value={entry.name}>
+                  {entry.name}
+                </option>
+              ))}
+            </Select>
           </div>
         ) : null}
+      </div>
 
-        {tab === 'logs' && !pod && workloadLogs && target.namespace ? (
-          <WorkloadLogView
-            cluster={cluster}
-            kind={target.kind}
-            name={target.name}
-            namespace={target.namespace}
-            label={describe?.kind || target.label}
-          />
-        ) : null}
-      </Sheet>
+      {error ? <Notice tone="error">{error}</Notice> : null}
 
+      {/* The pending write, above whichever tab is open rather than over it:
+          the events and conditions that are the reason for acting stay on
+          screen while the action is confirmed. */}
       {actionTarget ? (
-        <WorkloadActionDialog
+        <WorkloadActionPanel
           cluster={cluster}
           target={actionTarget}
           onClose={() => setAction(null)}
@@ -333,7 +318,84 @@ export function ResourceDetailDrawer({
           }}
         />
       ) : null}
-    </>
+
+      {tab === 'values' && release ? (
+        <HelmValuesPanel
+          cluster={cluster}
+          release={release}
+          editing={target.editing}
+          onDirtyChange={setDirty}
+          onApplied={onRefresh}
+        />
+      ) : null}
+
+      {tab === 'overview' ? (
+        <OverviewTab cluster={cluster} pod={pod} describe={describe} loading={loading} />
+      ) : null}
+
+      {tab === 'describe' ? <DescribeTab describe={describe} loading={loading} /> : null}
+
+      {tab === 'yaml' ? (
+        <YamlPanel
+          cluster={cluster}
+          kind={target.kind}
+          name={target.name}
+          namespace={target.namespace}
+          editing={target.editing}
+          onDirtyChange={setDirty}
+          onApplied={async () => {
+            await load()
+            await onRefresh?.()
+          }}
+        />
+      ) : null}
+
+      {tab === 'logs' && pod ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
+          <Segmented<StreamView>
+            ariaLabel="Stream"
+            value={shell}
+            onChange={setShell}
+            options={[
+              { value: 'logs', label: 'Live' },
+              { value: 'history', label: 'History' },
+              { value: 'terminal', label: 'Terminal' },
+            ]}
+          />
+          {shell === 'logs' ? (
+            <PodLogView cluster={cluster} pod={pod} container={container} />
+          ) : null}
+          {shell === 'history' ? (
+            <LogExplorer
+              cluster={cluster}
+              namespace={pod.namespace}
+              pod={pod.name}
+              container={container}
+            />
+          ) : null}
+          {shell === 'terminal' ? (
+            <Suspense fallback={<p className="text-[13px] text-muted">Loading the terminal…</p>}>
+              <PodTerminal
+                clusterId={cluster.id}
+                namespace={pod.namespace}
+                pod={pod.name}
+                container={container}
+              />
+            </Suspense>
+          ) : null}
+        </div>
+      ) : null}
+
+      {tab === 'logs' && !pod && workloadLogs && target.namespace ? (
+        <WorkloadLogView
+          cluster={cluster}
+          kind={target.kind}
+          name={target.name}
+          namespace={target.namespace}
+          label={describe?.kind || target.label}
+        />
+      ) : null}
+    </Sheet>
   )
 }
 
