@@ -21,6 +21,7 @@ import { SsoSettings } from './pages/settings/SsoSettings'
 import { UserManagement } from './pages/UserManagement'
 import { AuthProvider } from './state/AuthProvider'
 import { ClustersProvider } from './state/ClustersProvider'
+import { TimeRangeProvider } from './state/TimeRangeProvider'
 import { useAuth } from './state/auth-context'
 import { useClusters } from './state/clusters-context'
 
@@ -94,199 +95,204 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<LoginRoute />} />
-          {/* Where an interactive SSO sign-in comes back to. It is outside
-              RequireAuth because it is what creates the session; once it has,
-              the redirect below sends the browser on. */}
-          <Route path="/auth/callback" element={<CallbackRoute />} />
-          <Route
-            path="/"
-            element={
-              <RequireAuth>
-                <Overview />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/clusters"
-            element={
-              <RequireAuth adminOnly>
-                <ClusterManagement />
-              </RequireAuth>
-            }
-          />
-          {/* Registered before /clusters/:id so "new" is never read as an id. */}
-          <Route
-            path="/clusters/new"
-            element={
-              <RequireAuth adminOnly>
-                <ClusterWizard />
-              </RequireAuth>
-            }
-          />
-          {/* A cluster now has an address space of its own — /clusters/:id is
-              nothing on its own, just where its default view lives. The
-              redirect is relative so it preserves whatever id matched. */}
-          <Route
-            path="/clusters/:id"
-            element={
-              <RequireAuth>
-                <Navigate to="summary" replace />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/clusters/:id/summary"
-            element={
-              <RequireAuth>
-                <ClusterSummary />
-              </RequireAuth>
-            }
-          />
-          {/* Which cluster is being explored is part of the address, not page
-              state: the entity switcher, the fleet list and the palette are how
-              an operator moves between clusters, and a link to what someone is
-              looking at has to carry the cluster. */}
-          <Route
-            path="/clusters/:id/explore"
-            element={
-              <RequireAuth>
-                <Explore />
-              </RequireAuth>
-            }
-          />
-          {/* Not adminOnly: the server narrows a non-admin to their own rows on
-              a cluster's trail exactly as it does on the fleet-wide one. */}
-          <Route
-            path="/clusters/:id/audit"
-            element={
-              <RequireAuth>
-                <AuditTrail />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/explore"
-            element={
-              <RequireAuth>
-                <ExploreLanding />
-              </RequireAuth>
-            }
-          />
-          {/* A link people have pasted into tickets under the old address. */}
-          <Route
-            path="/explore/:clusterId"
-            element={
-              <RequireAuth>
-                <ExploreClusterRedirect />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/audit"
-            element={
-              <RequireAuth>
-                <AuditTrail />
-              </RequireAuth>
-            }
-          />
-          {/* Everyone reaches their own recordings; an admin reaches the fleet's.
-              The narrowing is the server's, exactly as it is for the trail. */}
-          <Route
-            path="/recordings"
-            element={
-              <RequireAuth>
-                <SessionRecordings />
-              </RequireAuth>
-            }
-          />
-          {/* Not adminOnly: the people who need to ask for access are the ones
-              without it, and the server narrows a non-admin to their own
-              requests exactly as it does on the audit trail. */}
-          <Route
-            path="/access-requests"
-            element={
-              <RequireAuth>
-                <AccessRequests />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/users"
-            element={
-              <RequireAuth adminOnly>
-                <UserManagement />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/groups"
-            element={
-              <RequireAuth adminOnly>
-                <GroupManagement />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/permissions"
-            element={
-              <RequireAuth adminOnly>
-                <PermissionsMatrix />
-              </RequireAuth>
-            }
-          />
-          <Route path="/settings" element={<Navigate to="/settings/general" replace />} />
-          <Route
-            path="/settings/general"
-            element={
-              <RequireAuth adminOnly>
-                <GeneralSettings />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/settings/agent"
-            element={
-              <RequireAuth adminOnly>
-                <AgentSettings />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/settings/audit"
-            element={
-              <RequireAuth adminOnly>
-                <AuditSettings />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/settings/guardrails"
-            element={
-              <RequireAuth adminOnly>
-                <GuardrailsSettings />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/settings/alerting"
-            element={
-              <RequireAuth adminOnly>
-                <AlertingSettings />
-              </RequireAuth>
-            }
-          />
-          <Route
-            path="/settings/sso"
-            element={
-              <RequireAuth adminOnly>
-                <SsoSettings />
-              </RequireAuth>
-            }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        {/* The console's time range. It is inside the router because it lives
+            in the address, and outside the routes because it is one window for
+            the whole console rather than a property of any page. */}
+        <TimeRangeProvider>
+          <Routes>
+            <Route path="/login" element={<LoginRoute />} />
+            {/* Where an interactive SSO sign-in comes back to. It is outside
+                RequireAuth because it is what creates the session; once it has,
+                the redirect below sends the browser on. */}
+            <Route path="/auth/callback" element={<CallbackRoute />} />
+            <Route
+              path="/"
+              element={
+                <RequireAuth>
+                  <Overview />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/clusters"
+              element={
+                <RequireAuth adminOnly>
+                  <ClusterManagement />
+                </RequireAuth>
+              }
+            />
+            {/* Registered before /clusters/:id so "new" is never read as an id. */}
+            <Route
+              path="/clusters/new"
+              element={
+                <RequireAuth adminOnly>
+                  <ClusterWizard />
+                </RequireAuth>
+              }
+            />
+            {/* A cluster now has an address space of its own — /clusters/:id is
+                nothing on its own, just where its default view lives. The
+                redirect is relative so it preserves whatever id matched. */}
+            <Route
+              path="/clusters/:id"
+              element={
+                <RequireAuth>
+                  <Navigate to="summary" replace />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/clusters/:id/summary"
+              element={
+                <RequireAuth>
+                  <ClusterSummary />
+                </RequireAuth>
+              }
+            />
+            {/* Which cluster is being explored is part of the address, not page
+                state: the entity switcher, the fleet list and the palette are how
+                an operator moves between clusters, and a link to what someone is
+                looking at has to carry the cluster. */}
+            <Route
+              path="/clusters/:id/explore"
+              element={
+                <RequireAuth>
+                  <Explore />
+                </RequireAuth>
+              }
+            />
+            {/* Not adminOnly: the server narrows a non-admin to their own rows on
+                a cluster's trail exactly as it does on the fleet-wide one. */}
+            <Route
+              path="/clusters/:id/audit"
+              element={
+                <RequireAuth>
+                  <AuditTrail />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/explore"
+              element={
+                <RequireAuth>
+                  <ExploreLanding />
+                </RequireAuth>
+              }
+            />
+            {/* A link people have pasted into tickets under the old address. */}
+            <Route
+              path="/explore/:clusterId"
+              element={
+                <RequireAuth>
+                  <ExploreClusterRedirect />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/audit"
+              element={
+                <RequireAuth>
+                  <AuditTrail />
+                </RequireAuth>
+              }
+            />
+            {/* Everyone reaches their own recordings; an admin reaches the fleet's.
+                The narrowing is the server's, exactly as it is for the trail. */}
+            <Route
+              path="/recordings"
+              element={
+                <RequireAuth>
+                  <SessionRecordings />
+                </RequireAuth>
+              }
+            />
+            {/* Not adminOnly: the people who need to ask for access are the ones
+                without it, and the server narrows a non-admin to their own
+                requests exactly as it does on the audit trail. */}
+            <Route
+              path="/access-requests"
+              element={
+                <RequireAuth>
+                  <AccessRequests />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/users"
+              element={
+                <RequireAuth adminOnly>
+                  <UserManagement />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/groups"
+              element={
+                <RequireAuth adminOnly>
+                  <GroupManagement />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/permissions"
+              element={
+                <RequireAuth adminOnly>
+                  <PermissionsMatrix />
+                </RequireAuth>
+              }
+            />
+            <Route path="/settings" element={<Navigate to="/settings/general" replace />} />
+            <Route
+              path="/settings/general"
+              element={
+                <RequireAuth adminOnly>
+                  <GeneralSettings />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/settings/agent"
+              element={
+                <RequireAuth adminOnly>
+                  <AgentSettings />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/settings/audit"
+              element={
+                <RequireAuth adminOnly>
+                  <AuditSettings />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/settings/guardrails"
+              element={
+                <RequireAuth adminOnly>
+                  <GuardrailsSettings />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/settings/alerting"
+              element={
+                <RequireAuth adminOnly>
+                  <AlertingSettings />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/settings/sso"
+              element={
+                <RequireAuth adminOnly>
+                  <SsoSettings />
+                </RequireAuth>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </TimeRangeProvider>
       </AuthProvider>
     </BrowserRouter>
   )

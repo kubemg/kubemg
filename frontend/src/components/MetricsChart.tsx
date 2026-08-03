@@ -3,7 +3,9 @@ import { LineChart, RefreshCw } from 'lucide-react'
 import { queryError, queryMetrics, unconfigured } from '../api/client'
 import type { Cluster, MetricKind, MetricResult, MetricSeries } from '../api/types'
 import { formatCPU, formatMemory } from '../lib/units'
-import { Button, EmptyState, Notice, Select } from './primitives'
+import { queryRangeLabel } from '../lib/timerange'
+import { useTimeRange } from '../state/timerange-context'
+import { Button, EmptyState, Notice } from './primitives'
 
 /*
  * A time-series chart, drawn as SVG against the deck's own tokens.
@@ -23,15 +25,14 @@ import { Button, EmptyState, Notice, Select } from './primitives'
  * legend beside its key.
  */
 
-/** The window presets. A range is the filter every reader reaches for first. */
-const RANGES = [
-  { id: '1h', label: 'Last hour', minutes: 60 },
-  { id: '6h', label: 'Last 6 hours', minutes: 360 },
-  { id: '24h', label: 'Last 24 hours', minutes: 1440 },
-  { id: '7d', label: 'Last 7 days', minutes: 10080 },
-] as const
-
-type RangeId = (typeof RANGES)[number]['id']
+/*
+ * The window is not this chart's to choose. It comes from the console's one
+ * range control in the header (`state/timerange-context.ts`) and travels to the
+ * server as a preset id, so two charts side by side cannot disagree about what
+ * "now" covers and neither of them computes a boundary the trail would compute
+ * differently. What stays local is the refresh button: re-reading *this* chart
+ * is about this chart.
+ */
 
 /**
  * The eight chart slots, as the class names Tailwind will actually emit. They
@@ -68,21 +69,17 @@ export function MetricsChart({
   pod?: string
   onConfigure?: () => void
 }) {
-  const [range, setRange] = useState<RangeId>('1h')
+  const { range } = useTimeRange()
   const [result, setResult] = useState<MetricResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [missing, setMissing] = useState(false)
   const [showTable, setShowTable] = useState(false)
 
-  const minutes = RANGES.find((entry) => entry.id === range)?.minutes ?? 60
-
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const end = new Date()
-      const start = new Date(end.getTime() - minutes * 60_000)
-      const response = await queryMetrics(cluster.id, metric, { namespace, pod, start, end })
+      const response = await queryMetrics(cluster.id, metric, { namespace, pod, range })
       setResult(response.result)
       setError(null)
       setMissing(false)
@@ -95,7 +92,7 @@ export function MetricsChart({
     } finally {
       setLoading(false)
     }
-  }, [cluster.id, metric, namespace, pod, minutes])
+  }, [cluster.id, metric, namespace, pod, range])
 
   useEffect(() => {
     void load()
@@ -131,20 +128,7 @@ export function MetricsChart({
         <h3 className="text-[13px] font-semibold text-fg">{title}</h3>
 
         <div className="ml-auto flex items-center gap-2">
-          <div className="w-36">
-            <Select
-              aria-label="Time range"
-              size="sm"
-              value={range}
-              onChange={(event) => setRange(event.target.value as RangeId)}
-            >
-              {RANGES.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.label}
-                </option>
-              ))}
-            </Select>
-          </div>
+          <span className="text-[12px] text-muted">{queryRangeLabel(range)}</span>
           <Button type="button" size="sm" onClick={() => void load()} disabled={loading}>
             <RefreshCw aria-hidden="true" className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span className="sr-only">Refresh</span>
