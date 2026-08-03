@@ -79,6 +79,7 @@ export function ClusterSummary() {
     // view instead — the way every other cluster page's does.
     <AppShell
       title="Summary"
+      timeRange
       actions={
         cluster ? (
           <>

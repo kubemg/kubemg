@@ -1,3 +1,5 @@
+import type { TimeRangeId } from '../lib/timerange'
+
 export type Role = 'admin' | 'user'
 
 /** The administrative tier shown in the IAM screens. */
@@ -259,10 +261,12 @@ export interface AuditSummary {
   window_hours: number
 }
 
-/** The quick ranges the audit page offers. Resolved server-side so the preset
-    means the same window to the count, the page and anything that is not the
-    console. `all` clears it. */
-export type AuditRange = '15m' | '1h' | '6h' | '24h' | '7d' | '30d' | 'all'
+/** The trail's window. It is the console's shared vocabulary rather than a set
+    of its own — the whole point of resolving a preset server-side is that "the
+    last hour" means one span in the trail, in a chart and in a pasted link, and
+    two tables that agree by coincidence is how that stops being true. `all`
+    clears the lower bound here. */
+export type AuditRange = TimeRangeId
 
 export interface AuditQuery {
   cluster_id?: number

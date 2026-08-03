@@ -5,8 +5,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kubemg/kubemg/backend/pkg/db"
+	"github.com/kubemg/kubemg/backend/pkg/observability"
 )
 
 // promServer stands in for a reachable Prometheus-compatible datasource.
@@ -288,5 +290,95 @@ func TestDeletingASourceRemovesIt(t *testing.T) {
 	}
 	if rec := env.do(t, http.MethodDelete, path, token, nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("expected status %d on the second delete, got %d", http.StatusNotFound, rec.Code)
+	}
+}
+
+/*
+ * The console's time range, resolved here rather than in the browser.
+ *
+ * The point of the shared table is that "the last 6 hours" is the same span in a
+ * chart, in the audit trail and in a pasted link — so what these check is that
+ * the preset reaches the window the query is built from, that the vocabulary is
+ * closed, and that an explicit boundary still beats a preset.
+ */
+
+// metricWindow runs a chart query and reports the window the server resolved.
+func metricWindow(t *testing.T, env *testEnv, token string, cluster uint, query string) (time.Time, time.Time) {
+	t.Helper()
+	path := "/api/v1/clusters/" + itoa(cluster) + "/observability/metrics/query?metric=cluster_cpu" + query
+	rec := env.do(t, http.MethodGet, path, token, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%s: expected status %d, got %d (%s)", query, http.StatusOK, rec.Code, rec.Body.String())
+	}
+	body := decode[struct {
+		Result observability.MetricResult `json:"result"`
+	}](t, rec)
+	return body.Result.Start, body.Result.End
+}
+
+func TestAChartRangePresetIsResolvedServerSide(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addCluster("prod-eu", db.EnvProd)
+	token := env.tokenFor(t, admin)
+	backend := promServer(t)
+
+	path := "/api/v1/clusters/" + itoa(cluster.ID) + "/observability/sources/metrics"
+	if rec := env.do(t, http.MethodPut, path, token, directSourcePayload(backend.URL)); rec.Code != http.StatusOK {
+		t.Fatalf("register the source: %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	for _, tc := range []struct {
+		query string
+		span  time.Duration
+	}{
+		{"&range=15m", 15 * time.Minute},
+		{"&range=6h", 6 * time.Hour},
+		{"&range=30d", 30 * 24 * time.Hour},
+		// "All time" against a datasource is as far back as this path allows: a
+		// metrics backend has retention, and the cap is the widest honest answer.
+		{"&range=all", observability.MaxWindow},
+		// No preset at all is the engine's own default, unchanged.
+		{"", time.Hour},
+	} {
+		start, end := metricWindow(t, env, token, cluster.ID, tc.query)
+		if got := end.Sub(start); got != tc.span {
+			t.Errorf("%q: expected a window of %s, got %s", tc.query, tc.span, got)
+		}
+		if time.Since(end) > time.Minute {
+			t.Errorf("%q: expected the window to end about now, it ends at %s", tc.query, end)
+		}
+	}
+
+	// The vocabulary is closed, so a preset this build does not know is refused
+	// rather than quietly widened to something else.
+	rec := env.do(t, http.MethodGet,
+		"/api/v1/clusters/"+itoa(cluster.ID)+"/observability/metrics/query?metric=cluster_cpu&range=3y",
+		token, nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected an unknown preset to be refused, got %d (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+// An incident has a start and an end, not a duration ending now — so a hand-set
+// boundary is the more specific statement and wins over the console's preset.
+func TestAnExplicitStartBeatsTheRangePreset(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addCluster("prod-eu", db.EnvProd)
+	token := env.tokenFor(t, admin)
+	backend := promServer(t)
+
+	path := "/api/v1/clusters/" + itoa(cluster.ID) + "/observability/sources/metrics"
+	if rec := env.do(t, http.MethodPut, path, token, directSourcePayload(backend.URL)); rec.Code != http.StatusOK {
+		t.Fatalf("register the source: %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	wantEnd := time.Now().UTC().Add(-24 * time.Hour).Truncate(time.Second)
+	wantStart := wantEnd.Add(-2 * time.Hour)
+	start, end := metricWindow(t, env, token, cluster.ID,
+		"&range=15m&start="+wantStart.Format(time.RFC3339)+"&end="+wantEnd.Format(time.RFC3339))
+	if !start.Equal(wantStart) || !end.Equal(wantEnd) {
+		t.Fatalf("expected the explicit window %s→%s, got %s→%s", wantStart, wantEnd, start, end)
 	}
 }
