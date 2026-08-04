@@ -72,7 +72,10 @@ services:
       # address the target cluster can reach — not the container's own, and not
       # loopback once a real cluster is attaching. Override it in `.env`.
       - KUBEMG_PUBLIC_URL=${KUBEMG_PUBLIC_URL:-https://localhost:8443}
-      - KUBEMG_AGENT_IMAGE=docker.io/ozkanpoyrazoglu/kubemg-agent:0.2.0
+      # Published as a multi-arch index (linux/amd64 + linux/arm64) by
+      # `make agent-push`, because the clusters this is applied to include
+      # Graviton and Ampere nodes that an amd64-only tag fails on.
+      - KUBEMG_AGENT_IMAGE=docker.io/ozkanpoyrazoglu/kubemg-agent:0.3.0
       - KUBEMG_AGENT_NAMESPACE=kubemg-system
       # Every exec and attach is recorded for replay from the audit trail. Turn
       # it off with KUBEMG_SESSION_RECORDING_ENABLED=false; the directory is the

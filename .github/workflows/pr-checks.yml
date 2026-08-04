@@ -153,8 +153,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The agent is published as a manifest index covering every architecture
+      # the clusters it is applied to might run, and the only thing that keeps
+      # a platform working is something building it. This resolves the whole
+      # matrix and discards the output; it is cheap because the Dockerfile
+      # cross-compiles from the builder's architecture rather than emulating
+      # the target. Keep the platform list in step with AGENT_PLATFORMS in the
+      # Makefile.
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cross-build the agent image for every published platform
+        run: docker buildx build --platform linux/amd64,linux/arm64 ./agent
+
+      # Scanning needs an image in the local daemon, which a multi-platform
+      # build cannot produce — so the scanned image is the runner's own
+      # architecture. The layers are identical bar the binary's target, so this
+      # scans the base image and the dependency set for both.
       - name: Build agent image
-        run: docker build -t kubemg-agent:ci ./agent
+        run: docker buildx build --load -t kubemg-agent:ci ./agent
 
       # Same split as trivy-repo-scan: the gate is scoped to CRITICAL/HIGH,
       # the SARIF pass is unconditional and only for code-scanning visibility.
