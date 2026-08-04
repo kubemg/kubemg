@@ -5,8 +5,10 @@
  *
  * KubeMG watches clusters that cannot be reached from the outside: each one
  * dials out and holds a tunnel open. The interface is built around that fact.
- * Chrome is a graphite deck (rail → section panel → work surface) so the eye
- * always knows where it is in a fleet; violet is the only interactive accent,
+ * Chrome is a deck of three planes (rail → section panel → work surface) so the
+ * eye always knows where it is in a fleet — graphite on the dark deck, a cool
+ * grey on the light one, in both cases a step behind the page rather than in
+ * front of it; violet is the only interactive accent,
  * and green/amber/red are state that is actually changing. Identifiers —
  * cluster names, endpoints, versions, counts, paths — are set in mono with
  * tabular figures, because they are data and get compared column to column.
@@ -90,15 +92,22 @@
   --deck-muted: #444d5b;
   --deck-faint: #5f697a;
 
-  /* The rail and the section panel: one step deeper than the work surface. The
-     rail is dark on both decks, so its own tokens are held to the same floor
-     against the rail rather than against the work surface. */
-  --deck-rail: #12161f;
-  --deck-rail-raised: #1c2230;
-  --deck-rail-border: #262d3c;
-  --deck-rail-text: #e9edf5;
-  --deck-rail-muted: #98a3b6;
-  --deck-rail-faint: #808ba1;
+  /* The rail and the section panel: chrome, one step *deeper* than the work
+     surface — which on this deck means a cool grey below the page, not a
+     graphite slab borrowed from the dark deck. It used to be the dark deck's
+     rail on both decks, and that was wrong twice over: a near-black column
+     beside a white page is the loudest thing on screen when the chrome should
+     be the quietest, and everything the panel draws from the *work* palette
+     (the link strand's `muted`/`faint`, an environment tag's soft fill) was
+     dark-on-dark there. Its tokens stay separate rather than reusing
+     `bg`/`raised` because the rail's own hover and selected states have to be
+     legible against the rail, not against the page. */
+  --deck-rail: #e7ebf1;
+  --deck-rail-raised: #d9e0e9;
+  --deck-rail-border: #c9d1de;
+  --deck-rail-text: #0f131a;
+  --deck-rail-muted: #414a58;
+  --deck-rail-faint: #525c6b;
 
   --deck-accent: #5a47e0;
   --deck-accent-hover: #4b39d1;

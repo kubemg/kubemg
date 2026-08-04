@@ -42,6 +42,8 @@ import { dirname, join } from 'node:path'
 const CSS = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.css')
 
 const TEXT_FLOOR = 4.5
+/** 1.4.11: a glyph that carries meaning is a graphical object, not text. */
+const GLYPH_FLOOR = 3
 const CHART_FLOOR = 3
 /** The eight chart slots are a validated set. A ninth is not a colour, it is a
     reordering of the whole set's colour-blindness safety. */
@@ -165,12 +167,23 @@ function check(deck, tokens) {
   for (const tone of SOFT_TONES) {
     measure(tone, `${tone}-soft`, TEXT_FLOOR, `${tone} on ${tone}-soft`)
   }
-  // The rail is chrome: dark in either deck, with tokens of its own.
+  // The rail is chrome with tokens of its own — graphite on the dark deck, a
+  // cool grey on the light one — so its tones are held to the floor against the
+  // rail rather than against the work surface.
   for (const tone of ['rail-text', 'rail-muted', 'rail-faint']) {
     for (const surface of ['rail', 'rail-raised']) {
       measure(tone, surface, TEXT_FLOOR, `${tone} on ${surface}`)
     }
   }
+  // The accent is text on the rail — the `MG` half of the wordmark — so it is
+  // held to the text floor there. It lands on `rail-raised` only as the mark's
+  // hover glyph, which is where the two below sit as well: a glyph is a
+  // graphical object, so 1.4.11's 3:1 is the floor rather than 4.5:1. They are
+  // measured because the light deck's rail is now near the top of the ramp,
+  // where a dark-deck assumption about "plenty of room" stops holding.
+  measure('accent', 'rail', TEXT_FLOOR, 'accent on rail')
+  measure('accent', 'rail-raised', GLYPH_FLOOR, 'accent glyph on rail-raised')
+  measure('danger', 'rail-raised', GLYPH_FLOOR, 'danger glyph on rail-raised')
   measure('on-accent', 'accent', TEXT_FLOOR, 'on-accent on accent')
 
   return { failures, report }
