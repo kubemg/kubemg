@@ -113,7 +113,15 @@ services:
       - "5173:5173"
     volumes:
       - ./frontend:/app
-      - /app/node_modules
+      # The image's own `npm ci` output, kept out of the way of the bind mount
+      # above. It is a *named* volume rather than an anonymous one because its
+      # contents are architecture-specific: native bindings installed on one
+      # machine are wrong on another, and an anonymous volume survives
+      # `docker compose down`, shadows the image's fresh copy forever and fails
+      # with "Cannot find native binding" that points at the lockfile rather
+      # than at the volume holding the stale install. Named, it is visible in
+      # `docker volume ls` and `make reset` can drop it.
+      - frontend-node-modules:/app/node_modules
     environment:
       # No VITE_API_BASE_URL: the SPA calls its own origin and vite proxies /api
       # to the backend, so opening the console from another machine works.
@@ -126,6 +134,7 @@ services:
 
 volumes:
   postgres-data:
+  frontend-node-modules:
   tls-certs:
   session-recordings:
   go-mod-cache:

@@ -13,7 +13,7 @@ DOCKER_NODE  = docker run --rm -v $(PWD)/frontend:/app -v kubemg-npm:/root/.npm 
         backend-build backend-test backend-vet backend-tidy \
         agent-build agent-test agent-vet agent-tidy agent-image agent-push \
         frontend-install frontend-build frontend-lint frontend-contrast \
-        up down logs ps
+        up down reset logs ps
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -89,6 +89,13 @@ up: ## Start the dev stack (backend :8080, frontend :5173)
 
 down: ## Stop the dev stack
 	docker compose down
+
+# `down` deliberately keeps the volumes: the Postgres data, the self-signed
+# certificate agents have pinned and the session recordings all have to survive
+# a restart. This is the escape hatch for when one of them is the problem —
+# most often frontend-node-modules after the host's architecture changed.
+reset: ## Stop the dev stack and delete its volumes (data, certs, recordings)
+	docker compose down -v
 
 logs: ## Tail dev stack logs
 	docker compose logs -f
