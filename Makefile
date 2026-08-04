@@ -1,9 +1,15 @@
 GO_IMAGE   ?= golang:1.26-alpine
 NODE_IMAGE ?= node:22-alpine
 
-AGENT_VERSION ?= 0.2.0
+AGENT_VERSION ?= 0.3.0
 AGENT_REPO    ?= docker.io/ozkanpoyrazoglu/kubemg-agent
 AGENT_IMAGE   ?= $(AGENT_REPO):$(AGENT_VERSION)
+
+# The agent runs on nodes we do not choose. arm64 is no longer an edge case —
+# Graviton, Ampere and Apple Silicon dev clusters are all a `kubectl apply`
+# away — and an amd64-only image fails there as ImagePullBackOff, which reads
+# like a registry problem rather than a missing platform.
+AGENT_PLATFORMS ?= linux/amd64,linux/arm64
 
 DOCKER_GO    = docker run --rm -v $(PWD)/backend:/app -v kubemg-go-mod:/go/pkg/mod -v kubemg-go-build:/root/.cache/go-build -w /app $(GO_IMAGE)
 DOCKER_AGENT = docker run --rm -v $(PWD)/agent:/app -v kubemg-go-mod:/go/pkg/mod -v kubemg-go-build:/root/.cache/go-build -w /app $(GO_IMAGE)
@@ -11,7 +17,7 @@ DOCKER_NODE  = docker run --rm -v $(PWD)/frontend:/app -v kubemg-npm:/root/.npm 
 
 .PHONY: help build test verify manifest-check \
         backend-build backend-test backend-vet backend-tidy \
-        agent-build agent-test agent-vet agent-tidy agent-image agent-push \
+        agent-build agent-test agent-vet agent-tidy agent-image agent-image-check agent-push \
         frontend-install frontend-build frontend-lint frontend-contrast \
         up down reset logs ps
 
@@ -56,14 +62,35 @@ agent-vet: ## Run go vet on the agent
 agent-tidy: ## Run go mod tidy on the agent
 	$(DOCKER_AGENT) go mod tidy
 
-agent-image: ## Build the agent container image
-	docker build -t $(AGENT_IMAGE) -t $(AGENT_REPO):latest --build-arg VERSION=$(AGENT_VERSION) ./agent
+# Single-platform and loaded into the local daemon, which is what a local e2e
+# pass needs (`minikube image load`, `docker run`). A multi-platform build
+# cannot be `--load`ed at all — the daemon's image store holds one manifest,
+# not an index — so publishing is a separate target rather than this one with a
+# flag. Override AGENT_PLATFORM to build the other architecture under emulation.
+AGENT_PLATFORM ?=
+agent-image: ## Build the agent image for the local platform and load it
+	docker buildx build --load $(if $(AGENT_PLATFORM),--platform $(AGENT_PLATFORM),) \
+		-t $(AGENT_IMAGE) -t $(AGENT_REPO):latest \
+		--build-arg VERSION=$(AGENT_VERSION) ./agent
 
 # The agent is the open-source half and is pulled by clusters we do not control,
-# so both the pinned tag and :latest have to exist in the registry.
-agent-push: agent-image ## Push the agent image (requires docker login)
-	docker push $(AGENT_IMAGE)
-	docker push $(AGENT_REPO):latest
+# so both the pinned tag and :latest have to exist in the registry — and both
+# have to be a manifest index covering every architecture those clusters run on.
+# buildx builds and pushes in one step on purpose: an index cannot be assembled
+# from images sitting in the local daemon, so there is nothing here to build
+# first and push afterwards. Verify a published tag with
+# `docker buildx imagetools inspect $(AGENT_IMAGE)`.
+agent-push: ## Build and push the multi-arch agent image (requires docker login)
+	docker buildx build --push --platform $(AGENT_PLATFORMS) \
+		-t $(AGENT_IMAGE) -t $(AGENT_REPO):latest \
+		--build-arg VERSION=$(AGENT_VERSION) ./agent
+
+# Proves the cross-build for every published platform without needing a
+# registry: buildx resolves the whole matrix and discards the result. This is
+# what keeps arm64 support from rotting silently between releases.
+agent-image-check: ## Build the agent image for every published platform (no output)
+	docker buildx build --platform $(AGENT_PLATFORMS) \
+		--build-arg VERSION=$(AGENT_VERSION) ./agent
 
 ## ---- frontend ----
 frontend-install: ## Install npm dependencies

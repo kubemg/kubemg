@@ -26,7 +26,13 @@ var baseFS embed.FS
 // Defaults applied when the server is not configured otherwise.
 const (
 	DefaultNamespace = "kubemg-system"
-	DefaultImage     = "docker.io/ozkanpoyrazoglu/kubemg-agent:0.1.0"
+	// The fallback when neither the Settings override nor KUBEMG_AGENT_IMAGE
+	// names one, so it is what an install command carries on a server nobody
+	// has configured. It has to be a tag published as a multi-arch index:
+	// the default landing on an arm64 node as ImagePullBackOff would read as a
+	// registry fault rather than as a missing platform. Keep it in step with
+	// AGENT_VERSION in the Makefile.
+	DefaultImage = "docker.io/ozkanpoyrazoglu/kubemg-agent:0.3.0"
 	// PackageDir is the directory name inside the rendered archive. It is also
 	// what the operator types after `kubectl apply -k`.
 	PackageDir = "kubemg-agent"
