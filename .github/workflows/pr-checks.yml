@@ -74,7 +74,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Run gitleaks
@@ -96,7 +96,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # trivy-action's exit-code check does not re-apply the severity filter
       # under `format: sarif` — it fails on *any* finding of *any* severity
@@ -151,7 +151,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The agent is published as a manifest index covering every architecture
       # the clusters it is applied to might run, and the only thing that keeps
