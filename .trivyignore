@@ -3,19 +3,19 @@
 # trivy-action's own path-scoped `.trivyignore.yaml` + trivyignores input
 # does not correctly re-apply the severity threshold before deciding the
 # job's exit code when format is sarif (observed: findings well below
-# CRITICAL/HIGH still failed the job). Only two IDs, each with a narrow,
-# documented reason -- see deploy/kustomize/base/rbac.yaml and
-# backend/Dockerfile.dev / frontend/Dockerfile.dev for the rationale in
-# context.
+# CRITICAL/HIGH still failed the job). Only one ID, with a narrow,
+# documented reason -- see deploy/kustomize/base/rbac.yaml for the
+# rationale in context.
+#
+# AVD-DS-0002 (backend/Dockerfile.dev, frontend/Dockerfile.dev running as
+# root) used to be ignored here on the theory that root kept the
+# bind-mounted source tree and shared dependency-cache volumes writable
+# without matching host UIDs. Both Dockerfiles now run as a uid-1000
+# non-root user instead (chowning the mounted paths so a fresh volume
+# still comes up writable), so the finding is fixed rather than accepted
+# -- do not re-add it without re-litigating that decision.
 
 # resources: ["*"] on kubemg-custom-resource-{view,edit} only ever reaches
 # the enumerated, non-core API groups those ClusterRoles list (Gateway API +
 # Istio) -- never the core group, where Secrets live.
 AVD-KSV-0046
-
-# backend/Dockerfile.dev and frontend/Dockerfile.dev are dev-only images
-# built solely by `make up` / docker-compose.yml against a bind-mounted
-# source tree and a shared dependency-cache volume; running as the image's
-# default root keeps those volumes writable without matching host UIDs.
-# Neither Dockerfile is built or shipped anywhere else.
-AVD-DS-0002
