@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
+  ArrowLeft,
   Bell,
+  ChevronDown,
   ChevronRight,
   Gauge,
   KeyRound,
@@ -183,17 +185,26 @@ const PANEL_HEAD_LAYOUT: Record<PanelMode, string> = {
 }
 
 const PANEL_COLLAPSED_KEY = 'kubemg_panel_collapsed'
+const PANEL_FLEET_KEY = 'kubemg_panel_fleet_open'
 
 /** `null` when the operator has never said, which is what lets a page default. */
-function storedPanelCollapsed(): boolean | null {
+function storedFlag(key: string): boolean | null {
   try {
-    const raw = localStorage.getItem(PANEL_COLLAPSED_KEY)
+    const raw = localStorage.getItem(key)
     if (raw === '1') return true
     if (raw === '0') return false
   } catch {
     // Storage can be denied outright; the default is still a working deck.
   }
   return null
+}
+
+function storedPanelCollapsed(): boolean | null {
+  return storedFlag(PANEL_COLLAPSED_KEY)
+}
+
+function storedFleetOpen(): boolean | null {
+  return storedFlag(PANEL_FLEET_KEY)
 }
 
 function sectionForPath(pathname: string): string {
@@ -302,6 +313,7 @@ export function AppShell({
   const [navOpen, setNavOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [panelPref, setPanelPref] = useState<boolean | null>(storedPanelCollapsed)
+  const [fleetPref, setFleetPref] = useState<boolean | null>(storedFleetOpen)
 
   const isAdmin = user?.role === 'admin'
   const sections = SECTIONS.map((section) => ({
@@ -357,11 +369,25 @@ export function AppShell({
   const mode: PanelMode = collapsed ? 'icon' : 'full'
   const label = PANEL_LABEL[mode]
 
+  // Open unless this page brought a panel of its own to fill — Explore's
+  // resource tree — and an explicit choice wins over that.
+  const fleetOpen = fleetPref ?? panel == null
+
   function togglePanel() {
     const next = !collapsed
     setPanelPref(next)
     try {
       localStorage.setItem(PANEL_COLLAPSED_KEY, next ? '1' : '0')
+    } catch {
+      // The choice still holds for this session.
+    }
+  }
+
+  function toggleFleet() {
+    const next = !fleetOpen
+    setFleetPref(next)
+    try {
+      localStorage.setItem(PANEL_FLEET_KEY, next ? '1' : '0')
     } catch {
       // The choice still holds for this session.
     }
@@ -475,27 +501,54 @@ export function AppShell({
 
         <div className={`min-h-0 flex-1 overflow-y-auto pb-3 ${PANEL_BODY[mode]}`}>
           {openCluster ? (
-            clusterPanelGroups(openCluster).map((group, index) => (
-              <div key={group.id} className={index === 0 ? '' : 'mt-5'}>
-                <p className={`label pt-1 pb-2 text-rail-faint ${PANEL_HEADING[mode]}`}>
-                  {group.label}
-                </p>
-                <ul className="flex flex-col gap-0.5">
-                  {group.items.map((item) => (
-                    <li key={item.to}>
-                      <NavLink
-                        to={item.to}
-                        title={mode === 'full' ? undefined : item.label}
-                        className={railLink(mode)}
-                      >
-                        <item.icon aria-hidden="true" className="size-4 shrink-0" />
-                        <span className={label.inline}>{item.label}</span>
-                      </NavLink>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))
+            <>
+              {/* The way out of a cluster, in the panel rather than only inside
+                  the header's switcher menu: leaving one cluster for the fleet
+                  is as ordinary as moving between its own views, and a page
+                  whose only exit is a dropdown reads as a place you fell into. */}
+              <NavLink
+                to="/"
+                end
+                title={mode === 'full' ? undefined : 'Fleet overview'}
+                className={railLink(mode)}
+              >
+                <ArrowLeft aria-hidden="true" className="size-4 shrink-0" />
+                <span className={label.inline}>Fleet overview</span>
+              </NavLink>
+
+              {clusterPanelGroups(openCluster).map((group) => (
+                <div key={group.id} className="mt-5">
+                  <p className={`label pt-1 pb-2 text-rail-faint ${PANEL_HEADING[mode]}`}>
+                    {group.label}
+                  </p>
+                  <ul className="flex flex-col gap-0.5">
+                    {group.items.map((item) => (
+                      <li key={item.to}>
+                        <NavLink
+                          to={item.to}
+                          title={mode === 'full' ? undefined : item.label}
+                          className={railLink(mode)}
+                        >
+                          <item.icon aria-hidden="true" className="size-4 shrink-0" />
+                          <span className={label.inline}>{item.label}</span>
+                        </NavLink>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+
+              {/* The fleet this cluster belongs to, above whatever the page put
+                  in the panel: a resource tree runs long, and a switcher below
+                  one is a switcher nobody scrolls to. */}
+              <PanelFleetSection
+                clusters={clusters}
+                pathname={pathname}
+                mode={mode}
+                open={fleetOpen}
+                onToggle={toggleFleet}
+              />
+            </>
           ) : null}
 
           {/* What inside this cluster's page you are looking at, appended below
@@ -772,40 +825,125 @@ function FleetList({
         <span className="font-mono">{clusters.length}</span>
       </p>
 
-      {clusters.length === 0 ? (
-        <p className={`text-[12px] text-rail-faint ${PANEL_HEADING[mode]}`}>None registered yet.</p>
-      ) : (
-        <ul className="flex flex-col gap-0.5">
-          {clusters.map((cluster) => {
-            // A cluster is the current one whether it is being explored or being
-            // managed: both are that cluster, and the highlight has to say so or
-            // the list stops answering "which one am I in".
-            const active = isClusterPath(pathname, cluster.id)
-            return (
-              <li key={cluster.id}>
-                <Link
-                  to={clusterHref(cluster)}
-                  aria-current={active ? 'page' : undefined}
-                  title={mode === 'full' ? undefined : cluster.name}
-                  className={`flex items-center gap-2 rounded-control py-1.5 transition-colors ${
-                    PANEL_ROW[mode]
-                  } ${active ? 'bg-rail-raised' : 'hover:bg-rail-raised/60'}`}
-                >
-                  <EnvironmentDot environment={cluster.environment} />
-                  <span
-                    className={`min-w-0 flex-1 truncate font-mono text-[12.5px] ${
-                      active ? 'text-rail-fg' : 'text-rail-muted'
-                    } ${label.block}`}
-                  >
-                    {cluster.name}
-                  </span>
-                  <LinkStrand state={strandState(cluster)} className={`w-8 shrink-0 ${label.block}`} />
-                </Link>
-              </li>
-            )
-          })}
-        </ul>
-      )}
+      <FleetRows clusters={clusters} pathname={pathname} mode={mode} />
+    </div>
+  )
+}
+
+/**
+ * The rows themselves, without the heading — the fleet is drawn in two places
+ * now: as its own section of the fleet-wide panel, and inside a cluster's panel
+ * where it is what keeps the other clusters one click away.
+ */
+function FleetRows({
+  clusters,
+  pathname,
+  mode,
+}: {
+  clusters: ReturnType<typeof useClusters>['clusters']
+  pathname: string
+  mode: PanelMode
+}) {
+  const label = PANEL_LABEL[mode]
+
+  if (clusters.length === 0) {
+    return <p className={`text-[12px] text-rail-faint ${PANEL_HEADING[mode]}`}>None registered yet.</p>
+  }
+
+  return (
+    <ul className="flex flex-col gap-0.5">
+      {clusters.map((cluster) => {
+        // A cluster is the current one whether it is being explored or being
+        // managed: both are that cluster, and the highlight has to say so or
+        // the list stops answering "which one am I in".
+        const active = isClusterPath(pathname, cluster.id)
+        return (
+          <li key={cluster.id}>
+            <Link
+              to={clusterHref(cluster)}
+              aria-current={active ? 'page' : undefined}
+              title={mode === 'full' ? undefined : cluster.name}
+              className={`flex items-center gap-2 rounded-control py-1.5 transition-colors ${
+                PANEL_ROW[mode]
+              } ${active ? 'bg-rail-raised' : 'hover:bg-rail-raised/60'}`}
+            >
+              <EnvironmentDot environment={cluster.environment} />
+              <span
+                className={`min-w-0 flex-1 truncate font-mono text-[12.5px] ${
+                  active ? 'text-rail-fg' : 'text-rail-muted'
+                } ${label.block}`}
+              >
+                {cluster.name}
+              </span>
+              <LinkStrand state={strandState(cluster)} className={`w-8 shrink-0 ${label.block}`} />
+            </Link>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+/**
+ * The fleet inside a cluster's own panel, as a disclosure.
+ *
+ * Opening a cluster used to replace the fleet list outright, which left the
+ * panel answering only "what inside this cluster" and nothing about the fleet
+ * it belongs to: switching clusters or checking whether another one was still
+ * live meant finding the header's switcher or going back to the Overview
+ * first. A cluster is a place in a fleet, so the fleet stays in the panel with
+ * it — every cluster, its environment and its link state, which is the same
+ * row `FleetList` draws and the same one-click switch.
+ *
+ * It is a disclosure rather than a fixed list because one page needs the room:
+ * Explore puts its resource tree in this panel, and a fleet list above a tree
+ * pushes the tree off screen. So the default is open, *except* where the page
+ * supplied a panel of its own — and an explicit choice wins over both, since an
+ * operator who wants the fleet always visible should not re-open it per page.
+ */
+function PanelFleetSection({
+  clusters,
+  pathname,
+  mode,
+  open,
+  onToggle,
+}: {
+  clusters: ReturnType<typeof useClusters>['clusters']
+  pathname: string
+  mode: PanelMode
+  open: boolean
+  onToggle: () => void
+}) {
+  const label = PANEL_LABEL[mode]
+  return (
+    <div className="mt-5 border-t border-rail-line pt-4">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        title={mode === 'full' ? undefined : `Clusters (${clusters.length})`}
+        className={`flex w-full items-center gap-2 rounded-control py-1.5 transition-colors hover:bg-rail-raised/60 ${PANEL_ROW[mode]}`}
+      >
+        <Server aria-hidden="true" className="size-3.5 shrink-0 text-rail-muted" />
+        <span className={`label min-w-0 flex-1 text-left text-rail-muted ${label.inline}`}>
+          Clusters
+        </span>
+        <span className={`font-mono text-[11px] text-rail-faint ${label.inline}`}>
+          {clusters.length}
+        </span>
+        <ChevronDown
+          aria-hidden="true"
+          className={`size-3.5 shrink-0 text-rail-faint transition-transform ${
+            open ? '' : '-rotate-90'
+          } ${label.inline}`}
+        />
+      </button>
+
+      {open ? (
+        <div className="mt-1">
+          <FleetRows clusters={clusters} pathname={pathname} mode={mode} />
+        </div>
+      ) : null}
     </div>
   )
 }
