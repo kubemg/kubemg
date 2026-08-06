@@ -206,19 +206,16 @@ const MAIN_OFFSET: Record<PanelMode, string> = {
 }
 
 /**
- * The environment edge, drawn by `EnvironmentEdge` below.
- *
- * `tone` is the colour the whole edge inherits — the same red the `PROD` tag
- * and the cluster card already carry, so it reads as one fact rather than a new
- * colour to learn. `line` and `wash` are how loudly it says it: production and
- * staging are lit, development is a thread with nothing behind it, because "a
- * cluster is open and it is not one where a mistake costs anything" is worth
- * saying quietly and not worth lighting.
+ * How strongly the panel's boundary hairline takes the environment's tint. The
+ * colour is the same one the `PROD` tag and the cluster card already carry, so
+ * it reads as one fact rather than a new mark to learn; only the strength
+ * differs, and it stays under half on every deck because this is peripheral
+ * vision's job, not the reader's.
  */
-const ENVIRONMENT_EDGE: Record<Environment, { tone: string; line: string; wash: string }> = {
-  prod: { tone: 'text-danger', line: 'w-[1.5px] opacity-95', wash: 'from-current/14' },
-  staging: { tone: 'text-warn', line: 'w-[1.5px] opacity-85', wash: 'from-current/11' },
-  dev: { tone: 'text-faint', line: 'w-px opacity-50', wash: '' },
+const ENVIRONMENT_EDGE: Record<Environment, string> = {
+  prod: 'text-danger opacity-70',
+  staging: 'text-warn opacity-60',
+  dev: 'text-faint opacity-30',
 }
 
 const PANEL_COLLAPSED_KEY = 'kubemg_panel_collapsed'
@@ -469,12 +466,12 @@ export function AppShell({
         </button>
       </nav>
 
+      {contextCluster ? <EnvironmentEdge environment={contextCluster.environment} /> : null}
+
       {/* Level two: what inside it. */}
       <aside
         className={`fixed inset-y-0 left-15 z-20 hidden flex-col border-r border-rail-line bg-rail lg:flex ${PANEL_WIDTH[mode]}`}
       >
-        {contextCluster ? <EnvironmentEdge environment={contextCluster.environment} /> : null}
-
         {inOperate ? (
           <PanelContext cluster={contextCluster} clusters={clusters} mode={mode} />
         ) : (
@@ -713,37 +710,33 @@ function railLink(mode: PanelMode) {
  * it moved to the edge, where it survives the panel collapsing, which is the
  * width an operator spends most of the day in.
  *
- * It is drawn as light rather than as paint, in three parts, because a 3px
- * slab of solid red beside the chrome is the loudest thing on the deck and the
- * chrome is meant to be the quietest. A **hairline** carries the colour; it
- * fades out at both ends through a mask, so it reads as an edge lit from
- * somewhere rather than a stripe that stops abruptly at the header and the
- * footer. A **glow** sits on the hairline — `box-shadow` in `currentColor`,
- * the same device the link strand uses, so the two signature marks on the deck
- * glow the same way. And a short **wash** bleeds inward from the edge and dies
- * within 24px, which is what makes the colour legible at a glance without ever
- * competing with a row of nav underneath it.
+ * It adds **nothing to the layout**: it is the hairline that already divides
+ * the rail from the panel, taking a tint. It sits *on* the rail's own
+ * `border-r` (`left-15 -ml-px`) rather than beside it — a second line one pixel
+ * over is what made the earlier versions read as a stripe — and the mask fades
+ * it out over the top and bottom fifth so it has no endpoints to notice,
+ * meeting the header and footer rules without crossing them.
  *
- * Every part inherits one `currentColor` from `tone`, so there is one token per
- * environment and no second place to keep them in step.
+ * It is a sibling of the panel rather than a child of it because the rail is
+ * `z-30` and the panel `z-20`: drawn inside the panel, the one pixel that
+ * overlaps the rail's border is painted over by the rail and the tint vanishes.
+ * `hidden lg:block` for the same reason both levels of chrome are — below that
+ * breakpoint there is no rail to draw an edge on.
+ *
+ * Two earlier attempts are worth naming so they are not tried again. A 3px slab
+ * of solid colour is the loudest thing on the deck, and the chrome is meant to
+ * be the quietest. Lighting it — a glow plus a wash bleeding inward, borrowing
+ * the link strand's device — was quieter but still an *object*: the deck has
+ * one signature and a second thing glowing beside it competes with it. What is
+ * wanted here is peripheral vision only. You should not see this line when you
+ * look at the panel; you should know the colour of the room.
  */
 function EnvironmentEdge({ environment }: { environment: Environment }) {
-  const edge = ENVIRONMENT_EDGE[environment]
   return (
     <span
       aria-hidden="true"
-      className={`pointer-events-none absolute inset-y-0 left-0 w-6 ${edge.tone}`}
-    >
-      {edge.wash ? (
-        <span
-          className={`absolute inset-0 bg-linear-to-r to-transparent ${edge.wash}`}
-        />
-      ) : null}
-      <span
-        style={{ boxShadow: '0 0 6px currentColor' }}
-        className={`absolute inset-y-0 left-0 bg-current ${edge.line} [mask-image:linear-gradient(to_bottom,transparent,black_10%,black_90%,transparent)]`}
-      />
-    </span>
+      className={`pointer-events-none fixed inset-y-0 left-15 z-40 -ml-px hidden w-px bg-current [mask-image:linear-gradient(to_bottom,transparent,black_20%,black_80%,transparent)] lg:block ${ENVIRONMENT_EDGE[environment]}`}
+    />
   )
 }
 
