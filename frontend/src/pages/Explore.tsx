@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Boxes, RefreshCw } from 'lucide-react'
+import { Boxes, RefreshCw, X } from 'lucide-react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import {
   errorMessage,
@@ -30,11 +30,13 @@ import { AppShell } from '../components/AppShell'
 import { ExploreSidebar } from '../components/ExploreSidebar'
 import { ResourceDetailDrawer } from '../components/ResourceDetailDrawer'
 import type { DetailTarget } from '../components/ResourceDetailDrawer'
+import { ResourceInsights } from '../components/ResourceInsights'
 import { ResourceView } from '../components/ResourceTables'
 import { TableSkeleton } from '../components/SkeletonLoader'
 import type { LoadedResource } from '../components/ResourceTables'
 import {
   Button,
+  Chip,
   EmptyState,
   Notice,
   Pill,
@@ -49,6 +51,13 @@ import {
   resourceItem,
   resourceSingular,
 } from '../lib/resources'
+import type { InsightBucket, ResourceInsight } from '../lib/insights'
+import {
+  matchesPodBucket,
+  matchesWorkloadBucket,
+  podInsights,
+  workloadInsights,
+} from '../lib/insights'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { podUsageIndex } from '../lib/units'
 import { workloadKeyFor } from '../lib/workloads'
@@ -219,6 +228,40 @@ function filterLoaded(loaded: LoadedResource, needle: string): LoadedResource {
 }
 
 /**
+ * The lists that earn a pilot header. Pods and the three workload kinds are the
+ * ones whose rows carry a state worth summarising — a phase, a readiness, a
+ * desired replica count. Everything else in the inventory is an inventory:
+ * ConfigMaps and StorageClasses have no health, and a band of counts over them
+ * would be a band saying nothing.
+ */
+function insightsFor(
+  loaded: LoadedResource | null | undefined,
+  label: string,
+): ResourceInsight | null {
+  if (!loaded) return null
+  if (loaded.kind === 'pods') return podInsights(loaded.rows, loaded.usage)
+  if (loaded.kind === 'workloads') return workloadInsights(loaded.rows, label)
+  return null
+}
+
+/**
+ * Narrows a loaded list to one of the header's buckets — clicking a reading is
+ * a request for the rows behind it, and the alternative would be reading the
+ * count and then hunting for them by hand. Applied after the name filter, so
+ * the two compose: "the failing pods whose name contains api".
+ */
+function narrowToBucket(loaded: LoadedResource, bucket: InsightBucket | null): LoadedResource {
+  if (!bucket) return loaded
+  if (loaded.kind === 'pods') {
+    return { ...loaded, rows: loaded.rows.filter((row) => matchesPodBucket(row, bucket)) }
+  }
+  if (loaded.kind === 'workloads') {
+    return { ...loaded, rows: loaded.rows.filter((row) => matchesWorkloadBucket(row, bucket)) }
+  }
+  return loaded
+}
+
+/**
  * The namespace an operator last chose, kept across sessions. Someone working in
  * one namespace goes back to it every time they open Explore, and re-picking it
  * on every visit is the kind of friction a console should absorb. It is stored
@@ -299,6 +342,11 @@ export function Explore() {
   // searches resource *kinds*, and this is the gap it leaves: nothing in it
   // can find one pod among two hundred.
   const [objectFilter, setObjectFilter] = useState('')
+  // Which of the pilot header's readings the list is narrowed to, if any. It is
+  // page state rather than an address parameter: a name filter and a bucket are
+  // both a way of reading one list, and neither is worth a link the way the
+  // cluster, the resource and the namespace are.
+  const [bucket, setBucket] = useState<InsightBucket | null>(null)
 
   // One drawer for every kind and every action, opened on whichever tab or
   // panel the row asked for. A pod and a Helm release each carry their row
@@ -496,6 +544,7 @@ export function Explore() {
   useEffect(() => {
     setDetail(null)
     setObjectFilter('')
+    setBucket(null)
   }, [resource, namespace, clusterId])
 
   if (!clustersLoading && reachable.length === 0) {
@@ -553,10 +602,21 @@ export function Explore() {
 
   const unavailable = (loaded?.kind === 'routes' || loaded?.kind === 'custom') && !loaded.available
   const needle = objectFilter.trim().toLowerCase()
-  const filtered = loaded ? filterLoaded(loaded, needle) : loaded
+  const filtered = loaded ? narrowToBucket(filterLoaded(loaded, needle), bucket) : loaded
   const totalCount = loaded?.rows.length ?? 0
   const count = filtered?.rows.length ?? 0
   const allNamespaces = namespaced && namespace === ALL_NAMESPACES
+
+  // The header summarises the whole list, not the narrowed one: it is what the
+  // narrowing is chosen *from*, so recomputing it against its own selection
+  // would collapse every reading but the selected one to zero.
+  const insight = insightsFor(loaded, item.label)
+  // The active narrowing named in the list header, so a reading clicked at the
+  // top of the page is still explained after scrolling down to the rows — and
+  // so there is somewhere to undo it that is not back up there.
+  const bucketLabel = bucket
+    ? (insight?.stats.find((stat) => stat.id === bucket)?.label ?? null)
+    : null
 
   return (
     <AppShell
@@ -629,11 +689,38 @@ export function Explore() {
           </Select>
         </div>
 
+        {/* The pilot header. It sits above the list rather than inside it
+            because it describes the whole list, including the rows a filter or
+            a bucket is currently hiding. */}
+        {insight && !unavailable ? (
+          <ResourceInsights
+            insight={insight}
+            bucket={bucket}
+            onBucket={setBucket}
+            onOpen={(name, rowNamespace) =>
+              setDetail({
+                kind: resource,
+                label: resourceSingular(item),
+                name,
+                namespace: rowNamespace,
+                // A pod's own row carries everything its panels need, so an
+                // alert opens the drawer without a second read.
+                pod:
+                  loaded?.kind === 'pods'
+                    ? loaded.rows.find(
+                        (row) => row.name === name && row.namespace === rowNamespace,
+                      )
+                    : undefined,
+              })
+            }
+          />
+        ) : null}
+
         <div className="card min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
             <h2 className="text-[14px] font-semibold text-fg">{item.label}</h2>
             <span className="font-mono text-[12.5px] text-faint">
-              {needle && count !== totalCount ? `${count} of ${totalCount}` : count}
+              {count !== totalCount ? `${count} of ${totalCount}` : count}
             </span>
             {namespaced && namespace ? (
               <span className="text-[12.5px] text-muted">
@@ -659,6 +746,13 @@ export function Explore() {
               <Pill tone="accent" dot={false}>
                 scoped to your grant
               </Pill>
+            ) : null}
+            {bucketLabel ? (
+              <Chip active onClick={() => setBucket(null)}>
+                {bucketLabel}
+                <X aria-hidden="true" className="size-3.5" />
+                <span className="sr-only">Show every {item.label.toLowerCase()}</span>
+              </Chip>
             ) : null}
             {loading ? <span className="text-[12px] text-muted">Reading the cluster…</span> : null}
             {totalCount > 0 ? (
@@ -761,11 +855,18 @@ export function Explore() {
 
           {!loading && !unavailable && loaded && count === 0 && needle ? (
             <p className="px-4 py-10 text-center text-[13px] text-muted">
-              Nothing matches “{objectFilter}”.
+              Nothing matches “{objectFilter}”
+              {bucketLabel ? <> under {bucketLabel.toLowerCase()}</> : null}.
             </p>
           ) : null}
 
-          {!loading && !unavailable && loaded && count === 0 && !needle ? (
+          {!loading && !unavailable && loaded && count === 0 && !needle && bucketLabel ? (
+            <p className="px-4 py-10 text-center text-[13px] text-muted">
+              No {item.label.toLowerCase()} under {bucketLabel.toLowerCase()}.
+            </p>
+          ) : null}
+
+          {!loading && !unavailable && loaded && count === 0 && !needle && !bucketLabel ? (
             <p className="px-4 py-10 text-center text-[13px] text-muted">
               No {item.label.toLowerCase()}
               {allNamespaces || !namespaced ? (
