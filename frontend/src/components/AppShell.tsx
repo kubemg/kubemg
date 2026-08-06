@@ -206,22 +206,19 @@ const MAIN_OFFSET: Record<PanelMode, string> = {
 }
 
 /**
- * The environment band: a hairline down the panel's own edge, tinted by the
- * environment of the cluster that is open.
+ * The environment edge, drawn by `EnvironmentEdge` below.
  *
- * The environment used to be a 1.5px dot and, at rail width, *only* that dot —
- * which made the single most consequential fact on screen (that this shell is
- * about to open in production) the smallest mark on it. The band survives the
- * panel collapsing, which is the width an operator spends most of the day in,
- * and it is the same red the `PROD` tag and the cluster card already carry, so
- * it reads as one fact rather than a new colour to learn. Development gets a
- * neutral thread rather than nothing: "a cluster is open, and it is not one
- * where a mistake costs anything" is still worth saying.
+ * `tone` is the colour the whole edge inherits — the same red the `PROD` tag
+ * and the cluster card already carry, so it reads as one fact rather than a new
+ * colour to learn. `line` and `wash` are how loudly it says it: production and
+ * staging are lit, development is a thread with nothing behind it, because "a
+ * cluster is open and it is not one where a mistake costs anything" is worth
+ * saying quietly and not worth lighting.
  */
-const ENVIRONMENT_BAND: Record<Environment, string> = {
-  prod: 'bg-danger',
-  staging: 'bg-warn',
-  dev: 'bg-faint/35',
+const ENVIRONMENT_EDGE: Record<Environment, { tone: string; line: string; wash: string }> = {
+  prod: { tone: 'text-danger', line: 'w-[1.5px] opacity-95', wash: 'from-current/14' },
+  staging: { tone: 'text-warn', line: 'w-[1.5px] opacity-85', wash: 'from-current/11' },
+  dev: { tone: 'text-faint', line: 'w-px opacity-50', wash: '' },
 }
 
 const PANEL_COLLAPSED_KEY = 'kubemg_panel_collapsed'
@@ -476,14 +473,7 @@ export function AppShell({
       <aside
         className={`fixed inset-y-0 left-15 z-20 hidden flex-col border-r border-rail-line bg-rail lg:flex ${PANEL_WIDTH[mode]}`}
       >
-        {/* The environment of the cluster that is open, as an edge the eye
-            catches without looking for it. */}
-        {contextCluster ? (
-          <span
-            aria-hidden="true"
-            className={`absolute inset-y-0 left-0 w-[3px] ${ENVIRONMENT_BAND[contextCluster.environment]}`}
-          />
-        ) : null}
+        {contextCluster ? <EnvironmentEdge environment={contextCluster.environment} /> : null}
 
         {inOperate ? (
           <PanelContext cluster={contextCluster} clusters={clusters} mode={mode} />
@@ -711,6 +701,50 @@ function railLink(mode: PanelMode) {
       ? `${base} bg-rail-raised font-medium text-rail-fg`
       : `${base} text-rail-muted hover:bg-rail-raised/60 hover:text-rail-fg`
   }
+}
+
+/**
+ * EnvironmentEdge is the environment of the open cluster, drawn down the
+ * panel's own edge.
+ *
+ * The environment used to be a 1.5px dot in the panel and, at rail width,
+ * *only* that dot — which made the single most consequential fact on screen
+ * (that this shell is about to open in production) the smallest mark on it. So
+ * it moved to the edge, where it survives the panel collapsing, which is the
+ * width an operator spends most of the day in.
+ *
+ * It is drawn as light rather than as paint, in three parts, because a 3px
+ * slab of solid red beside the chrome is the loudest thing on the deck and the
+ * chrome is meant to be the quietest. A **hairline** carries the colour; it
+ * fades out at both ends through a mask, so it reads as an edge lit from
+ * somewhere rather than a stripe that stops abruptly at the header and the
+ * footer. A **glow** sits on the hairline — `box-shadow` in `currentColor`,
+ * the same device the link strand uses, so the two signature marks on the deck
+ * glow the same way. And a short **wash** bleeds inward from the edge and dies
+ * within 24px, which is what makes the colour legible at a glance without ever
+ * competing with a row of nav underneath it.
+ *
+ * Every part inherits one `currentColor` from `tone`, so there is one token per
+ * environment and no second place to keep them in step.
+ */
+function EnvironmentEdge({ environment }: { environment: Environment }) {
+  const edge = ENVIRONMENT_EDGE[environment]
+  return (
+    <span
+      aria-hidden="true"
+      className={`pointer-events-none absolute inset-y-0 left-0 w-6 ${edge.tone}`}
+    >
+      {edge.wash ? (
+        <span
+          className={`absolute inset-0 bg-linear-to-r to-transparent ${edge.wash}`}
+        />
+      ) : null}
+      <span
+        style={{ boxShadow: '0 0 6px currentColor' }}
+        className={`absolute inset-y-0 left-0 bg-current ${edge.line} [mask-image:linear-gradient(to_bottom,transparent,black_10%,black_90%,transparent)]`}
+      />
+    </span>
+  )
 }
 
 /**
