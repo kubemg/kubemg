@@ -437,7 +437,7 @@ token, never by adding an exception in a component.
 
 `docker-compose.ci.yml` exposes the same jobs as services for CI runners.
 
-## Status
+## Roadmap
 
 ```mermaid
 timeline
@@ -453,20 +453,124 @@ timeline
         Phase 7 : FinOps : Capacity heatmap : Topology graph : AI RCA : GitOps drift
 ```
 
-**Phases 1–6 are in place.** Phase 6 was scheduled ahead of Phase 7 deliberately: a capacity
+**Phases 1–6 are shipped.** Phase 6 was scheduled ahead of Phase 7 deliberately: a capacity
 heatmap, a topology graph and an RCA panel are all *per-cluster* views, and building them into a
 global shell would have meant building each one twice — once where it fits today and once where it
 belongs. So the shell went first.
 
-| Phase 7 · not started | What it is |
+### Shipped
+
+<details>
+<summary><b>Phase 1 · MVP — multi-cluster management &amp; short-lived kubeconfigs</b></summary>
+
+- [x] Core project structure, backend stack (Go + Gin + GORM) and frontend stack (Vite + React + TS)
+- [x] Docker Compose development environment, backend and frontend as services
+- [x] Containerized build/test/lint pipeline — `Makefile` + `docker-compose.ci.yml`, no host toolchain
+- [x] Local user database and authentication for DevOps users
+- [x] Multi-cluster schema and API — cluster registration and per-user permissions
+- [x] K8s TokenRequest integration for cluster-specific short-lived kubeconfigs
+- [x] UI for the cluster selector, cluster management and kubeconfig download
+- [x] User &amp; group management engine — CRUD, local groups, active/disabled status, memberships
+- [x] UI for user/group administration and the cluster access permission matrix
+
+</details>
+
+<details>
+<summary><b>Phase 2 · Bastion architecture &amp; the dumb agent</b></summary>
+
+- [x] Cluster registration as a step-by-step wizard (`/clusters/new`)
+- [x] Kustomize manifest generator and endpoint for one-step agent deployment (`kubectl apply -k …`)
+- [x] Central bastion/proxy server — WebSocket reverse-tunnel listener
+- [x] The lightweight open-source agent (`agent/`) — its own Go module, no client-go, ~7 MB
+- [x] `kubectl` proxying with `Impersonate-User`/`Impersonate-Group` and audit logging
+- [x] `exec`, `attach`, `watch` and `logs -f` streamed over the tunnel (protocol v2)
+- [x] Audit records persisted to a queryable store and surfaced in the UI
+
+</details>
+
+<details>
+<summary><b>Phase 3 · Single pane of glass &amp; observability</b></summary>
+
+- [x] RBAC-aware multi-cluster namespace and resource visibility
+- [x] On-demand state fetching through the agent — no privileged shortcut for the UI
+- [x] Settings page: public URL, agent image and agent namespace configurable at runtime
+- [x] The Signal Deck design system — rail, live fleet list, ⌘K palette, dark/light decks, self-hosted Inter + JetBrains Mono
+- [x] Third-level resource sidebar in Explore — workloads, networking, storage &amp; config, custom resources, cluster
+- [x] Live utilisation from the cluster's own Metrics API, as capacity meters on the fleet, the cluster and the pod drawer
+- [x] Log viewer controls on the streamed container log — filter, wrap, tail
+- [x] Resource YAML viewer and live editor through the same impersonated tunnel
+- [x] Shell selector (`bash` / `sh`) on the pod terminal
+- [x] Kubeconfig generation for agent-mode clusters — pointing at KubeMG's proxy, with the bastion CA pinned
+- [x] Workload lifecycle controls — scale and rollout restart as conditional read-modify-writes
+- [x] Pooled workload logs — every pod a workload owns, tailed at once and interleaved by timestamp
+- [x] `table-fixed` Explore tables, so row actions stop overlapping the column beside them
+- [x] Per-cluster observability datasource registration — a metrics source and a logs source, probed on save
+- [x] Dynamic CRD discovery and conditional sidebar categories, derived per cluster from its own CRD list
+- [x] User-scoped persistent namespace selection across Explore sessions
+- [x] Helm release visibility and values management — list, view, and write a new revision the way an upgrade does
+- [x] Universal resource detail drawer and describe engine — Overview, Describe &amp; Events, YAML, Logs &amp; Terminal
+- [x] VictoriaMetrics query path — server-written PromQL, scope resolved from the caller's grant
+- [x] VictoriaLogs/Loki query path — server-written LogsQL/LogQL, the filter quoted as a literal
+- [x] Loading UX and scoped caching — skeleton loaders, a client hook, and an RBAC-scoped backend TTL cache
+- [x] `port-forward` over the tunnel, carried in its WebSocket transport (`v2.portforward.k8s.io`)
+- [x] TLS in front of the bastion, self-signed on first boot and pinned into every agent package
+- [x] Audit retention policy — a background pass, re-reading its window every time
+
+</details>
+
+<details>
+<summary><b>Phase 4 · Enterprise SSO &amp; identity federation</b></summary>
+
+- [x] SAML / OIDC / LDAP behind one outcome — an engine turns what the directory said into an identity; what that identity is *worth* is decided elsewhere
+- [x] IdP group federation mapping — applied in one transaction per federated sign-in, because a half-applied federation is worse than a refused one
+
+</details>
+
+<details>
+<summary><b>Phase 5 · Zero-trust security &amp; enterprise features</b></summary>
+
+- [x] Interactive session recording &amp; replay — asciinema v2, encrypted at rest, optional keystroke capture, replay itself audited, a capability separate from the admin role, and disclosure before the first keystroke
+- [x] Selective audit verb selection &amp; automated retention — with a floor nothing suppresses: refusals, streaming calls, and KubeMG's own replay and delete
+- [x] Audit filtering by date, time and verb *set*, exact status, and saved ranges — the question is almost always a set
+- [x] Cluster event alarms, SIEM and Alertmanager/ITSM dispatcher — five payload shapes, deduplicated, never blocking a caller
+- [x] Just-in-time elevated access &amp; two-party approval — a grant of its own, expiring on read, never approvable by its own requester
+- [x] Command guardrails &amp; safety policies — enforced at the proxied call, at a non-interactive `exec`'s argv, and line-by-line inside an interactive shell
+- [x] Modular settings sub-pages — general, agent, audit, guardrails, alerting, SSO
+
+</details>
+
+<details>
+<summary><b>Phase 6 · Cluster-scoped console information architecture</b></summary>
+
+- [x] Cluster-scoped section panel and the route split — the second level becomes a property of the open cluster
+- [x] One global time range for the console, so two charts side by side cannot show two different windows
+- [x] Top-N series and a comparison window in the metrics query builder
+- [x] Explore reorganized around one navigation column — the tree in the panel, namespace in the header, the selection in the address, and an object filter over the list
+- [x] Three object overlays collapsed into one detail surface — seeing, asking why and changing it is one investigation
+- [x] Light-deck contrast debt closed, and `make frontend-contrast` added as a gate on `make verify`
+- [x] The rail splits on the job being done — Operate / Activity / Admin, with the environment on the panel's own edge
+- [x] A pilot header over the lists that have a state worth summarising — pods and workloads
+
+</details>
+
+### Next — Phase 7, not started
+
+| | What it is |
 |---|---|
-| **FinOps & waste triage** | Workload-level cost estimation, over-provisioning and abandoned-volume detection, right-sizing YAML in the drawer |
+| **FinOps &amp; waste triage** | Workload-level cost estimation, over-provisioning and abandoned-volume detection, right-sizing YAML in the drawer |
 | **Node capacity heatmap** | Requested vs guaranteed vs live consumption per node — over-commitment and noisy-neighbour risk |
 | **Topology graph** | `Ingress → Service → Workload → Pod → Volume/Config`, traceable and filterable by health |
 | **AI root-cause analysis** | `CrashLoopBackOff`, `OOMKilled`, node pressure and log anomalies synthesised into a cause and a remediation |
 | **GitOps drift detection** | Live cluster state against the Git manifests that were supposed to produce it |
 
 The auto-provisioned VictoriaMetrics/VictoriaLogs stack is still not built; bring your own for now.
+
+### Known gaps, deliberately
+
+- **Direct mode provisions no RoleBinding.** A kubeconfig generated there authenticates without authorizing, and the permission matrix governs KubeMG's own authorization rather than the cluster's. Agent mode is where the RBAC story closes — and the UI says which of the two applies, on the cluster page, the permissions page and the wizard's last step.
+- **Existing agent installs must re-apply their manifests** to pick up the CRD-discovery and custom-resource ClusterRoles. Until they do, discovery 403s and the Explore sidebar shows no custom resources.
+- **Browsing a new operator's CRDs means adding its API group** to that ClusterRole and re-applying. The groups are enumerated rather than wildcarded on purpose: `apiGroups: ["*"]` includes the core group, and the core group is where Secrets live.
+- **No frontend test framework yet.** The backend has tests; `make verify` runs `oxlint`, the contrast gate and `tsc` on the frontend and nothing else.
 
 ## Licensing
 
