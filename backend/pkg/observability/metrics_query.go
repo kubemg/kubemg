@@ -70,6 +70,47 @@ const (
 	// They are refused to a scoped caller, like every other cluster-wide read.
 	MetricClusterCPU    MetricKind = "cluster_cpu"
 	MetricClusterMemory MetricKind = "cluster_memory"
+
+	// MetricClusterCPUByNamespace and MetricClusterMemoryByNamespace split the
+	// same reading per namespace. They are the useful shape for a cluster's
+	// comparison table: the top five *pods* out of several thousand is a list of
+	// five strangers, while the top five namespaces is the fleet's own
+	// vocabulary. Unlike the two above they are namespaced — a scoped caller is
+	// answered across their own namespaces rather than refused, because a
+	// breakdown of what you were granted reaches past nothing.
+	//
+	// The names are deliberately long. `namespaces_cpu` beside `namespace_cpu`
+	// would be two different questions one letter apart, in code and in a URL.
+	MetricClusterCPUByNamespace    MetricKind = "cluster_cpu_by_namespace"
+	MetricClusterMemoryByNamespace MetricKind = "cluster_memory_by_namespace"
+
+	// The three readings below are the ones the fleet already reports and the
+	// console could not draw. They are not more resource usage: each says
+	// something went wrong, which is what makes them worth a delta at all.
+	//
+	// Restarts and readiness come from kube-state-metrics rather than cadvisor —
+	// a different exporter, which may simply not be installed. That is not an
+	// error here: the query returns no series, the chart says so, and the PromQL
+	// it asked with is on screen, which is the same way a mislabelled cadvisor
+	// scrape has always been diagnosed.
+	MetricPodRestarts        MetricKind = "pod_restarts"
+	MetricContainersNotReady MetricKind = "containers_not_ready"
+	MetricCPUThrottling      MetricKind = "cpu_throttling"
+)
+
+// Trend says whether a rise in this reading means something got worse.
+//
+// It travels with the answer because the *catalogue* is what knows: a namespace
+// burning more CPU is a fact, and a pod restarting more is a problem. The delta
+// column always carries its direction as an arrow and a figure so it survives
+// greyscale and a squint; this is what decides whether colour is spent on it too.
+type Trend string
+
+const (
+	// TrendNeutral is a reading that is neither good nor bad for going up.
+	TrendNeutral Trend = "neutral"
+	// TrendWorse is a reading where up is the wrong way.
+	TrendWorse Trend = "worse"
 )
 
 // Unit is what a series is measured in. It travels with the answer so the
@@ -81,6 +122,12 @@ const (
 	// endpoints normalise to, so a chart and a meter agree.
 	UnitMillicores Unit = "millicores"
 	UnitBytes      Unit = "bytes"
+	// UnitCount is a plain tally — restarts, containers. UnitRatio is a fraction
+	// of one, which the browser renders as a percentage; it is not sent as a
+	// percentage because a ratio is what the backend computed and rounding it
+	// twice loses the small values that matter most.
+	UnitCount Unit = "count"
+	UnitRatio Unit = "ratio"
 )
 
 // metricSpec is one catalogue entry: what it charts, in what units, and the
@@ -90,7 +137,20 @@ type metricSpec struct {
 	// function rather than a format string because the selector differs per
 	// entry, and a template with the wrong number of holes is a runtime surprise.
 	query func(sel selector) string
-	unit  Unit
+	// summary is the same reading collapsed to one number per series over a
+	// span — what one cell of a comparison table holds. It is a second hand
+	// written template rather than the chart's query wrapped in
+	// `avg_over_time(...[span:])`, because the honest aggregation differs per
+	// entry (a rate over the whole window *is* its average; restarts want
+	// `increase`; readiness wants the worst it got) and because a subquery over
+	// thirty days costs a great deal more than a range selector does.
+	//
+	// A nil summary means the entry has no comparison, which is a legitimate
+	// state rather than an omission to fill in later.
+	summary func(sel selector, span string) string
+	unit    Unit
+	// rise says whether more of this is worse. See Trend.
+	rise Trend
 	// legend is the label whose value names each series in the chart.
 	legend string
 	// namespaced is false for the cluster-wide entries, which a scoped grant is
@@ -127,6 +187,7 @@ type metricSpec struct {
 var metricCatalogue = map[MetricKind]metricSpec{
 	MetricPodCPU: {
 		unit:        UnitMillicores,
+		rise:        TrendNeutral,
 		legend:      "container",
 		namespaced:  true,
 		description: "CPU used per container, against the container's own limit.",
@@ -135,19 +196,31 @@ var metricCatalogue = map[MetricKind]metricSpec{
 				`sum by (container) (rate(container_cpu_usage_seconds_total{%s}[5m])) * 1000`,
 				sel)
 		},
+		summary: func(sel selector, span string) string {
+			return withFallback(
+				`sum by (container) (rate(container_cpu_usage_seconds_total{%s}[`+span+`])) * 1000`,
+				sel)
+		},
 	},
 	MetricPodMemory: {
 		unit:        UnitBytes,
+		rise:        TrendNeutral,
 		legend:      "container",
 		namespaced:  true,
 		description: "Working set per container — what the kernel cannot reclaim.",
 		query: func(sel selector) string {
 			return withFallback(`sum by (container) (container_memory_working_set_bytes{%s})`, sel)
 		},
+		summary: func(sel selector, span string) string {
+			return withFallback(
+				`sum by (container) (avg_over_time(container_memory_working_set_bytes{%s}[`+span+`]))`,
+				sel)
+		},
 	},
 
 	MetricNamespaceCPU: {
 		unit:        UnitMillicores,
+		rise:        TrendNeutral,
 		legend:      "pod",
 		namespaced:  true,
 		description: "CPU used per pod in this namespace.",
@@ -155,33 +228,165 @@ var metricCatalogue = map[MetricKind]metricSpec{
 			return withFallback(
 				`sum by (pod) (rate(container_cpu_usage_seconds_total{%s}[5m])) * 1000`, sel)
 		},
+		summary: func(sel selector, span string) string {
+			return withFallback(
+				`sum by (pod) (rate(container_cpu_usage_seconds_total{%s}[`+span+`])) * 1000`, sel)
+		},
 	},
 	MetricNamespaceMemory: {
 		unit:        UnitBytes,
+		rise:        TrendNeutral,
 		legend:      "pod",
 		namespaced:  true,
 		description: "Working set per pod in this namespace.",
 		query: func(sel selector) string {
 			return withFallback(`sum by (pod) (container_memory_working_set_bytes{%s})`, sel)
 		},
+		summary: func(sel selector, span string) string {
+			return withFallback(
+				`sum by (pod) (avg_over_time(container_memory_working_set_bytes{%s}[`+span+`]))`, sel)
+		},
 	},
 
 	MetricClusterCPU: {
 		unit:        UnitMillicores,
+		rise:        TrendNeutral,
 		legend:      "",
 		description: "CPU used across every namespace.",
 		query: func(sel selector) string {
 			return withFallback(`sum(rate(container_cpu_usage_seconds_total{%s}[5m])) * 1000`, sel)
 		},
+		summary: func(sel selector, span string) string {
+			return withFallback(
+				`sum(rate(container_cpu_usage_seconds_total{%s}[`+span+`])) * 1000`, sel)
+		},
 	},
 	MetricClusterMemory: {
 		unit:        UnitBytes,
+		rise:        TrendNeutral,
 		legend:      "",
 		description: "Working set across every namespace.",
 		query: func(sel selector) string {
 			return withFallback(`sum(container_memory_working_set_bytes{%s})`, sel)
 		},
+		summary: func(sel selector, span string) string {
+			return withFallback(
+				`sum(avg_over_time(container_memory_working_set_bytes{%s}[`+span+`]))`, sel)
+		},
 	},
+
+	MetricClusterCPUByNamespace: {
+		unit:        UnitMillicores,
+		rise:        TrendNeutral,
+		legend:      "namespace",
+		namespaced:  true,
+		description: "CPU used per namespace.",
+		query: func(sel selector) string {
+			return withFallback(
+				`sum by (namespace) (rate(container_cpu_usage_seconds_total{%s}[5m])) * 1000`, sel)
+		},
+		summary: func(sel selector, span string) string {
+			return withFallback(
+				`sum by (namespace) (rate(container_cpu_usage_seconds_total{%s}[`+span+`])) * 1000`,
+				sel)
+		},
+	},
+	MetricClusterMemoryByNamespace: {
+		unit:        UnitBytes,
+		rise:        TrendNeutral,
+		legend:      "namespace",
+		namespaced:  true,
+		description: "Working set per namespace.",
+		query: func(sel selector) string {
+			return withFallback(`sum by (namespace) (container_memory_working_set_bytes{%s})`, sel)
+		},
+		summary: func(sel selector, span string) string {
+			return withFallback(
+				`sum by (namespace) (avg_over_time(container_memory_working_set_bytes{%s}[`+span+`]))`,
+				sel)
+		},
+	},
+
+	/*
+	 * The three below read kube-state-metrics and cadvisor's CFS counters rather
+	 * than its usage gauges, and they are the entries where `rise` is not
+	 * decorative: a delta on one of these is the reason somebody opened the page.
+	 *
+	 * They use the pod-level matcher rather than the container/pod `or` pair.
+	 * kube-state-metrics labels every series with `namespace` and `pod` itself —
+	 * the labels are not a property of anybody's scrape config the way cadvisor's
+	 * are — so there is nothing to fall back to and a fallback would only be a
+	 * second copy of the same query.
+	 */
+	MetricPodRestarts: {
+		unit:        UnitCount,
+		rise:        TrendWorse,
+		legend:      "pod",
+		namespaced:  true,
+		description: "Container restarts, from kube-state-metrics.",
+		query: func(sel selector) string {
+			return fmt.Sprintf(
+				`sum by (pod) (increase(kube_pod_container_status_restarts_total{%s}[5m]))`,
+				sel.pods())
+		},
+		summary: func(sel selector, span string) string {
+			return fmt.Sprintf(
+				`sum by (pod) (increase(kube_pod_container_status_restarts_total{%s}[`+span+`]))`,
+				sel.pods())
+		},
+	},
+	MetricContainersNotReady: {
+		unit:        UnitCount,
+		rise:        TrendWorse,
+		legend:      "pod",
+		namespaced:  true,
+		description: "Containers reporting not ready, from kube-state-metrics.",
+		query: func(sel selector) string {
+			return fmt.Sprintf(
+				`count by (pod) (kube_pod_container_status_ready{%s} == 0)`, sel.pods())
+		},
+		// The summary is the worst it got, not the state at one instant: a
+		// container that was down for ten minutes of the hour and is up now is
+		// exactly what a comparison is being asked about, and a reading taken at
+		// the window's edge would miss it entirely. `min_over_time(...) == 0` is
+		// that question without a subquery — the series is already a gauge, so a
+		// range selector over it is enough.
+		summary: func(sel selector, span string) string {
+			return fmt.Sprintf(
+				`count by (pod) (min_over_time(kube_pod_container_status_ready{%s}[`+span+`]) == 0)`,
+				sel.pods())
+		},
+	},
+	MetricCPUThrottling: {
+		unit:        UnitRatio,
+		rise:        TrendWorse,
+		legend:      "pod",
+		namespaced:  true,
+		description: "Share of CFS periods in which a container was throttled.",
+		query: func(sel selector) string {
+			return throttleRatio(sel, "5m")
+		},
+		summary: func(sel selector, span string) string {
+			return throttleRatio(sel, span)
+		},
+	},
+}
+
+// throttleRatio renders throttled periods over total periods. The two halves
+// each carry the container/pod fallback of their own rather than the ratio
+// carrying one: `a/b or a2/b2` would fall back only when the *whole* left-hand
+// ratio is absent, and a cluster labelling one of the two counters and not the
+// other is not a case worth being clever about — matching the fallback per
+// counter is what keeps numerator and denominator talking about the same series.
+func throttleRatio(sel selector, span string) string {
+	numerator := withFallback(
+		`sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{%s}[`+span+`]))`, sel)
+	denominator := withFallback(
+		`sum by (pod) (rate(container_cpu_cfs_periods_total{%s}[`+span+`]))`, sel)
+	// A pod with no CFS quota reports zero periods, which divides to NaN — and a
+	// NaN is dropped on the way out rather than drawn as zero, because "not
+	// throttled" and "not limited at all" are different facts.
+	return "(" + numerator + ") / (" + denominator + ")"
 }
 
 // withFallback renders one aggregation twice — over the container-level series

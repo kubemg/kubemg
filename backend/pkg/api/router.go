@@ -466,6 +466,10 @@ func NewRouter(opts Options) *gin.Engine {
 		// cached on the same terms — a chart genuinely asking for a different
 		// window still misses, because the window is part of the key.
 		sources.GET("/metrics/query", s.cachedRead(), s.queryMetrics)
+		// The comparison table, cached on the same terms and for the same
+		// reason — it costs two queries rather than one, and a page carrying a
+		// chart row and a table asks for both on every render.
+		sources.GET("/metrics/compare", s.cachedRead(), s.compareMetrics)
 		sources.GET("/logs/query", s.queryLogs)
 
 		if opts.Proxy != nil {
