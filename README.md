@@ -9,7 +9,7 @@ A lighter alternative to Rancher, Lens or the Kubernetes Dashboard, built around
 
 [![Backend](https://img.shields.io/badge/backend-Go%201.26-00ADD8?logo=go&logoColor=white)](backend/)
 [![Frontend](https://img.shields.io/badge/frontend-React%20%2B%20Vite%20%2B%20TS-61DAFB?logo=react&logoColor=black)](frontend/)
-[![Agent](https://img.shields.io/badge/agent-~7%20MB%20·%20Apache--2.0-2ea44f)](agent/)
+[![Agent](https://img.shields.io/badge/agent-~7%20MB%20·%20amd64%20%2B%20arm64%20·%20Apache--2.0-2ea44f)](agent/)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-d0342c)](LICENSE)
 [![Database](https://img.shields.io/badge/store-PostgreSQL%2016-4169E1?logo=postgresql&logoColor=white)](backend/pkg/db/)
 [![Toolchain](https://img.shields.io/badge/build-100%25%20containerized-2496ED?logo=docker&logoColor=white)](Makefile)
@@ -40,7 +40,7 @@ flowchart TB
     end
 
     subgraph cluster["Target cluster · no inbound port"]
-        A["kubemg-agent<br/><i>~7 MB · open source · no CRDs</i>"]
+        A["kubemg-agent<br/><i>~7 MB · amd64 + arm64<br/>open source · no CRDs</i>"]
         K["kube-apiserver"]
     end
 
@@ -71,6 +71,8 @@ dials in.
 | **Handing out access is an operational wound.** Long-lived kubeconfigs get copied, shared, never revoked. | Short-lived scoped kubeconfigs that point at KubeMG, so revoking access actually revokes it. |
 | **"Who ran that in prod?"** has no answer. | Every call audited, refusals included; every shell recorded and replayable. |
 | **Standing admin access** because someone needs it twice a quarter. | Just-in-time elevation: a role, a cluster, a mandatory reason and a clock. |
+| **Nothing stops `kubectl delete ns prod`** typed at 03:00 by exactly the person allowed to run it. | Guardrails that refuse on KubeMG's own authority — including line-by-line inside an interactive shell, which the cluster's own audit cannot see at all. |
+| **A pod list is a list.** Whether anything is wrong in it is read out of a hundred rows by eye. | Explore's pilot header: state, failures and the cluster's own reason, above the table and derived from rows already loaded. |
 
 ## How a request flows
 
@@ -87,8 +89,8 @@ sequenceDiagram
     participant K as kube-apiserver
 
     D->>B: kubectl get pods -n payments
-    B->>G: who is this, what may they reach?
-    G-->>B: view · namespaces[payments]
+    B->>G: who is this, what may they reach,<br/>and does a guardrail refuse it?
+    G-->>B: view · namespaces[payments] · allowed
     Note over B: strips client Authorization<br/>and Impersonate-* headers
     B->>B: audit record (open)
     B->>A: over the existing outbound tunnel
@@ -112,6 +114,8 @@ The parts worth reading before trusting it with production.
 <td>The proxy calls the API server with <code>Impersonate-User</code>/<code>Impersonate-Group</code> derived from the caller's grant. A <code>view</code> grant is read-only because the cluster says so, not because KubeMG remembered to check. Client-supplied impersonation and <code>Authorization</code> headers are stripped.</td></tr>
 <tr><td><b>Namespace scope enforced in the proxy</b></td>
 <td>A KubeMG concept impersonation groups cannot express, so it is enforced locally: a scoped grant is refused on anything reaching past it, cluster-wide lists included.</td></tr>
+<tr><td><b>Command guardrails — the one refusal KubeMG makes on its own authority</b></td>
+<td>Every other check resolves <i>who</i> the caller is; the substantive "may they" is the cluster's. A guardrail is deliberately not that — it stops calls the caller is fully entitled to make, because <code>kubectl delete ns prod</code> succeeds <i>precisely</i> for the person privileged to run it, and RBAC cannot express "an admin may do this, but not by typing it into a terminal at 03:00". Rules are global or per-cluster, <code>block</code> or <code>warn</code>, and enforcement sits in <b>three</b> places because a destructive act arrives in three shapes: the proxied call, the argv of a non-interactive <code>exec</code>, and a <b>line editor over the stdin of an interactive shell</b> — the half nothing cluster-side can see, since a shell is one already-allowed API call and everything typed inside it is invisible to the cluster's own audit.</td></tr>
 <tr><td><b>Everything audited, refusals included</b></td>
 <td>A long-lived call (<code>exec</code>, <code>attach</code>, <code>watch</code>, <code>logs -f</code>, <code>port-forward</code>) is recorded twice — at open and at close — so an hour-long session is visible while it is still running. Verbs are named after the subresource: a shell in a production pod reads as <code>exec</code>, never as a <code>get</code>.</td></tr>
 <tr><td><b>Sessions recorded and replayable</b></td>
@@ -154,40 +158,32 @@ rather than the cluster's. Agent mode is where the RBAC story closes.
 
 ## What it does
 
+The console splits on **the job being done, not on how KubeMG is built** — the cluster you are in
+and the fleet it belongs to; what has been happening; and everything administrative. Operate and
+Activity are open to everyone and every row in them resolves for everyone, so a developer's rail is
+two icons with no dead ends.
+
 ```mermaid
 mindmap
   root(("KubeMG"))
-    Fleet
-      Environment-banded cluster cards
-      Admin inventory
-      5-step registration wizard
-      Live agent-attach wait
-    Explore
-      Workloads · pods · services
-      Storage · config · nodes
-      CRDs discovered per cluster
-      Detail drawer per object
     Operate
-      In-browser terminal
-      Pooled workload logs
-      Scale · restart · YAML edit
-      port-forward over the tunnel
-      Helm release values
-    Observability
-      Live Metrics API utilisation
-      History from your datasource
-      Server-written PromQL / LogsQL
-      Charts · crosshair · table view
-    Access
-      Users · groups · matrix
-      OIDC · SAML · LDAP
-      Just-in-time elevation
-      Two-party approval
-    Audit
-      Queryable trail
-      Session replay
-      Recordings index
-      Alarm rules & channels
+      Fleet overview · environment bands
+      Registration wizard · live attach wait
+      Explore · live cluster state
+      Pilot header · is anything wrong in here
+      Terminal · pooled logs · port-forward
+      Scale · restart · YAML · Helm values
+      Metrics & logs from your datasource
+    Activity
+      Access requests · JIT approvals
+      Queryable audit trail
+      Session recordings index
+      Replay from a call or from a session
+    Admin
+      Cluster inventory & registration
+      Users · groups · permission matrix
+      OIDC · SAML · LDAP federation
+      Guardrails · alarms · audit policy
 ```
 
 **Fleet** — environment-banded cluster cards leading with the connection state, an admin inventory,
@@ -198,6 +194,26 @@ ingresses, storage, config, nodes, plus the custom resources a particular cluste
 (the sidebar is built from its own CRD list, with first-class tables for Gateway API and Istio).
 One detail drawer per object carries Overview, Describe & Events, YAML and Logs & Terminal, because
 finding out something is broken, asking why, and changing it is one investigation.
+
+Pod and workload lists open on a **pilot header** — what the list *is*, above what it contains:
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│   34         29          3            2                        In use      │
+│   PODS       RUNNING     NOT READY    FAILED           1.4 cores · 6 GiB   │
+├────────────────────────────────────────────────────────────────────────────┤
+│   5 pods not running normally                                              │
+│   [ payments-api-7f9 · CrashLoopBackOff ]  [ ledger-worker-2 · OOMKilled ] │
+│   and 3 more                                                               │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+It is derived from rows already in the browser, so it costs no read and cannot disagree with the
+table under it. Running is not treated as working — a pod whose readiness probe is failing stays
+`Running` indefinitely, which is exactly what a phase-only count calls healthy — and an alert
+carries the cluster's own word (`CrashLoopBackOff`, `ImagePullBackOff`, `OOMKilled`) rather than a
+generic "not ready". Empty buckets are not drawn at all, so a healthy namespace is two readings and
+one line. Every reading is also a **narrowing**: clicking *Failed* filters the list to those rows.
 
 **Operate** — in-browser terminal and logs (pooled across a workload's pods), scale and restart as
 conditional read-modify-writes, a YAML editor, `port-forward` over the tunnel, and Helm release
@@ -234,10 +250,30 @@ stateDiagram-v2
 An elevation is a **grant of its own, never an edit of the standing one** — so expiry needs no
 restore step and nobody loses access they permanently hold.
 
-**Audit** — a queryable trail with session replay, and a recordings index beside it for the sessions
-themselves. Both are readable by everyone, and both narrow a non-admin to their own activity.
-Alarm rules route cluster events and KubeMG's own audit records to Alertmanager, Slack, Teams,
-PagerDuty, ServiceNow or a raw SIEM webhook.
+**Audit** — a queryable trail (verb sets, exact status, saved ranges) with session replay, and a
+recordings index beside it for the sessions themselves. Both are readable by everyone, and both
+narrow a non-admin to their own activity. On a busy fleet the trail is overwhelmingly `list` and
+`get`, so the table can be **narrowed to the verbs worth keeping** — with a floor nothing
+suppresses: refusals, streaming calls, and KubeMG's own replay and delete.
+
+**Alarms** — rules route Kubernetes events read down the tunnel *and* KubeMG's own audit records to
+Alertmanager, Slack, Teams, PagerDuty, ServiceNow or a raw SIEM webhook. The second stream is the
+one no cluster-side alerting can ever see: a refused `kubectl` never reached the API server, so
+there is no event for it anywhere but here.
+
+**Settings** — six pages rather than one: general, agent, audit, guardrails, alerting and SSO. The
+agent image, the public URL, the retention window, the guardrail rules and the audit policy are all
+editable at runtime, without a restart.
+
+### The console itself
+
+One 60px icon rail for *which part of KubeMG*, one 240px panel for *what inside it*, and
+deliberately no third level — a page whose navigation goes deeper puts it in the panel rather than
+in a column beside it. Which cluster you are reading is **in the address, not in page state**, so a
+link carries it and the highlight, the heading and the reads cannot disagree. `⌘K` opens a jump
+list, which is the only navigation that scales past a screenful of clusters. Light and dark are
+peers, and every tone that is ever text clears 4.5:1 on both — **measured in CI**, not asserted in a
+comment, because the light deck once shipped a whole phase with its quiet text at 2.78:1.
 
 ## Quick start
 
@@ -246,7 +282,7 @@ are the only requirements.
 
 ```mermaid
 flowchart LR
-    S1["1 · make up"] --> S2["2 · sign in<br/>localhost:5173"] --> S3["3 · Clusters → Register"] --> S4["4 · kubectl apply -k …<br/>on the target cluster"] --> S5["5 · tunnel attaches<br/>wizard turns green"]
+    S1["1 · make up"] --> S2["2 · sign in<br/>localhost:5173"] --> S3["3 · Admin → Register a cluster"] --> S4["4 · kubectl apply -k …<br/>on the target cluster"] --> S5["5 · tunnel attaches<br/>wizard turns green"]
 ```
 
 ### 1. Bring the stack up
@@ -284,7 +320,7 @@ Then `make down && make up`. It is also editable at runtime from **Settings** wi
 
 ### 3. Attach your first cluster
 
-**Clusters → Register**, pick *Agent-based*, and run the one-line command the wizard renders against
+**Admin → Register a cluster**, pick *Agent-based*, and run the one-line command the wizard renders against
 your cluster:
 
 ```bash
@@ -310,9 +346,13 @@ Uninstall is `kubectl delete -k …`. Nothing else is left behind.
 
 ### 4. Give someone access
 
-**Access → Permissions**, pick a user or group, a cluster and a role (`view` / `edit` /
+**Admin → Permissions**, pick a user or group, a cluster and a role (`view` / `edit` /
 `cluster-admin`), optionally scoped to namespaces. Then **Kubeconfig** on the cluster page issues a
 scoped, short-lived file that points at KubeMG rather than at the cluster.
+
+For access somebody needs twice a quarter rather than daily, skip the standing grant entirely:
+they request it from **Activity → Access requests**, and an approval — from anyone but themselves —
+inserts a bounded grant that expires on its own.
 
 ## Configuration
 
@@ -364,6 +404,8 @@ backend/            Go server: Gin + GORM + PostgreSQL 16
   pkg/api/            HTTP surface: clusters, IAM, resources, observability, audit
   pkg/terminal/       session recording (asciinema v2, encrypted)
   pkg/jit/            just-in-time elevation engine
+  pkg/guardrails/     command guardrails — the one refusal KubeMG makes itself
+  pkg/auditpolicy/    which verbs reach the table, and the floor nothing suppresses
   pkg/db/             models and query layer
   pkg/auth/ k8s/ certs/ observability/ cache/ agentpkg/
 frontend/           Vite + React + TypeScript + Tailwind v4
@@ -380,36 +422,51 @@ embedded copy the server renders from — and `make manifest-check` fails if the
 All tooling runs in containers:
 
 ```bash
-make verify        # manifest-check + vet + tests + builds + frontend lint/build
-make test          # backend + agent tests
-make backend-test  # go test ./...
+make verify            # manifest-check + vet + tests + builds + lint + contrast + frontend build
+make test              # backend + agent tests
+make backend-test      # go test ./...
 make frontend-lint
+make frontend-contrast # measure every deck colour pairing against WCAG — gates verify
+make agent-image-check # prove the amd64 + arm64 matrix still builds
 make up / down / logs / ps
 ```
+
+`make frontend-contrast` is a gate rather than a report: it reads the tokens out of `index.css` and
+every pairing the components build, and **fails on a violation**. A violation is fixed by moving the
+token, never by adding an exception in a component.
 
 `docker-compose.ci.yml` exposes the same jobs as services for CI runners.
 
 ## Status
 
 ```mermaid
-gantt
-    title Roadmap
-    dateFormat X
-    axisFormat %s
+timeline
+    title From an MVP to a console
     section Shipped
-    Phase 1 · Multi-cluster IAM & kubeconfig      :done, p1, 0, 1
-    Phase 2 · Bastion, agent, impersonation, audit :done, p2, 1, 2
-    Phase 3 · Single pane of glass & observability :done, p3, 2, 3
-    Phase 4 · SSO federation (OIDC/SAML/LDAP)      :done, p4, 3, 4
-    section In progress
-    Phase 5 · Zero-trust · recording · JIT · guardrails :active, p5, 4, 5
+        Phase 1 : Multi-cluster IAM : Short-lived kubeconfigs
+        Phase 2 : Bastion + outbound agent tunnel : Impersonation : Audit trail
+        Phase 3 : Single pane of glass : Explore : Observability
+        Phase 4 : SSO federation : OIDC · SAML · LDAP
+        Phase 5 : Session recording : JIT elevation : Guardrails : Alarms
+        Phase 6 : Cluster-scoped console IA : Operate · Activity · Admin
     section Next
-    Phase 6 · FinOps · topology · AI RCA · GitOps drift :p6, 5, 6
+        Phase 7 : FinOps : Capacity heatmap : Topology graph : AI RCA : GitOps drift
 ```
 
-Phases 1–4 are in place. Phase 5 is under way — session recording and replay, JIT elevated access
-and command guardrails have landed. The auto-provisioned VictoriaMetrics/VictoriaLogs stack is not
-built yet; bring your own for now.
+**Phases 1–6 are in place.** Phase 6 was scheduled ahead of Phase 7 deliberately: a capacity
+heatmap, a topology graph and an RCA panel are all *per-cluster* views, and building them into a
+global shell would have meant building each one twice — once where it fits today and once where it
+belongs. So the shell went first.
+
+| Phase 7 · not started | What it is |
+|---|---|
+| **FinOps & waste triage** | Workload-level cost estimation, over-provisioning and abandoned-volume detection, right-sizing YAML in the drawer |
+| **Node capacity heatmap** | Requested vs guaranteed vs live consumption per node — over-commitment and noisy-neighbour risk |
+| **Topology graph** | `Ingress → Service → Workload → Pod → Volume/Config`, traceable and filterable by health |
+| **AI root-cause analysis** | `CrashLoopBackOff`, `OOMKilled`, node pressure and log anomalies synthesised into a cause and a remediation |
+| **GitOps drift detection** | Live cluster state against the Git manifests that were supposed to produce it |
+
+The auto-provisioned VictoriaMetrics/VictoriaLogs stack is still not built; bring your own for now.
 
 ## Licensing
 
