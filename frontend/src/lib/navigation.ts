@@ -22,3 +22,31 @@ export function clusterHref(cluster: Cluster): string {
 export function isClusterPath(pathname: string, id: number): boolean {
   return pathname === `/clusters/${id}` || pathname.startsWith(`/clusters/${id}/`)
 }
+
+/** The views a cluster's own address space holds. */
+export type ClusterView = 'summary' | 'explore' | 'audit'
+
+/** Which of a cluster's own views the address currently names, Summary when it
+    does not — the same view `clusterHref` opens by default. */
+export function currentClusterView(pathname: string, clusterId: number): ClusterView {
+  const match = pathname.match(new RegExp(`^/clusters/${clusterId}/(summary|explore|audit)(?:/|$)`))
+  return (match?.[1] as ClusterView | undefined) ?? 'summary'
+}
+
+/** Every cluster has a summary and a trail; only a live tunnel has resources
+    to explore, so that is the one view a target can lack. */
+export function hasClusterView(cluster: Cluster, view: ClusterView): boolean {
+  if (view !== 'explore') return true
+  return cluster.connection_mode === 'agent' && cluster.agent_attached
+}
+
+/**
+ * Where switching to `target` goes while `view` is open. Switching clusters
+ * keeps whichever view you were reading — Summary stays Summary, Explore stays
+ * Explore — and falls back to Summary on a target that cannot serve it. Both
+ * switchers (the header's and the panel's) go through this, so a click in one
+ * cannot land somewhere a click in the other would not.
+ */
+export function clusterViewHref(target: Cluster, view: ClusterView): string {
+  return `/clusters/${target.id}/${hasClusterView(target, view) ? view : 'summary'}`
+}
