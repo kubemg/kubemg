@@ -129,7 +129,25 @@ export function PodTerminal({
     fit.fit()
 
     const encoder = new TextEncoder()
-    const decoder = new TextDecoder()
+
+    // A character is not a byte, and a frame boundary does not respect one. "ş"
+    // is two bytes and "€" is three, and the pty on the far side makes no promise
+    // that they arrive in the same write — so a decoder that treats every frame
+    // as a complete string turns the halves into replacement characters, which is
+    // what an operator sees as "I cannot type Turkish". Each channel keeps its own
+    // streaming decoder instead, carrying an incomplete sequence forward to the
+    // frame that finishes it. Per channel rather than one shared decoder, because
+    // stdout and stderr are two byte streams interleaved on one socket: a
+    // remainder from one must never be completed by the other's first byte.
+    const decoders = new Map<number, TextDecoder>()
+    function decodeChannel(channel: number, bytes: Uint8Array): string {
+      let decoder = decoders.get(channel)
+      if (!decoder) {
+        decoder = new TextDecoder()
+        decoders.set(channel, decoder)
+      }
+      return decoder.decode(bytes, { stream: true })
+    }
 
     // The token cannot go in a header on a browser WebSocket, so it rides in
     // the query string. The proxy accepts either.
@@ -181,15 +199,18 @@ export function PodTerminal({
       if (frame.length === 0) return
 
       const channel = frame[0]
-      const payload = decoder.decode(frame.subarray(1))
+      const body = frame.subarray(1)
       switch (channel) {
         case CHANNEL_STDOUT:
         case CHANNEL_STDERR:
-          term.write(payload)
+          term.write(decodeChannel(channel, body))
           break
-        case CHANNEL_ERROR:
+        case CHANNEL_ERROR: {
           // The API server reports a failed exec on this channel as a JSON
-          // Status object; show its message rather than raw JSON.
+          // Status object; show its message rather than raw JSON. It arrives
+          // whole, so it is decoded on its own rather than through a streaming
+          // decoder that would hold a trailing byte back waiting for more.
+          const payload = new TextDecoder().decode(body)
           try {
             const parsed = JSON.parse(payload) as { status?: string; message?: string }
             if (parsed.status !== 'Success' && parsed.message) {
@@ -206,6 +227,7 @@ export function PodTerminal({
             if (payload.trim()) term.write(`\r\n${payload}\r\n`)
           }
           break
+        }
         default:
           break
       }
