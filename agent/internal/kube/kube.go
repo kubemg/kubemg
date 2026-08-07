@@ -95,8 +95,13 @@ func New(opts Options) (*Client, error) {
 	}
 
 	transport := &http.Transport{
-		TLSClientConfig:     tlsConfig,
-		MaxIdleConnsPerHost: 16,
+		TLSClientConfig: tlsConfig,
+		// The API server is the only host this client ever dials, so the
+		// per-host ceiling *is* the pool. At 16 it was below what a dozen people
+		// browsing at once produce, and past the ceiling nothing is reused:
+		// every request pays a fresh TLS handshake to the API server, which
+		// shows up as latency nobody can attribute to a pool size.
+		MaxIdleConnsPerHost: 64,
 		IdleConnTimeout:     90 * time.Second,
 		DialContext: (&net.Dialer{
 			Timeout:   10 * time.Second,
