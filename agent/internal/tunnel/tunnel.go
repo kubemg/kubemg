@@ -263,7 +263,8 @@ func (c *Client) pump(ctx context.Context, conn *websocket.Conn) error {
 		return conn.WriteControl(websocket.PongMessage, []byte(payload), time.Now().Add(writeTimeout))
 	})
 
-	out := &writer{conn: conn, logger: c.logger}
+	out := newWriter(conn, c.logger)
+	defer out.stop()
 	var wg sync.WaitGroup
 
 	// Streams outlive individual frames, so they are torn down before the
