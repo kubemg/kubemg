@@ -50,10 +50,10 @@ import {
   Panel,
   Pill,
   Select,
-  Slab,
   TextArea,
   TextInput,
 } from '../components/primitives'
+import { YamlView } from '../components/YamlView'
 import { useClusters } from '../state/clusters-context'
 
 const ENVIRONMENTS: Environment[] = ['prod', 'staging', 'dev']
@@ -646,7 +646,11 @@ function AgentInstaller({ install }: { install: AgentInstall }) {
         >
           {showManifest ? 'Hide' : 'Review'} the manifest before applying
         </button>
-        {showManifest ? <Slab className="mt-2.5 max-h-80">{install.manifest}</Slab> : null}
+        {/* Reviewing a manifest before applying it to a cluster is reading, so it
+            gets the same painted surface the object editor does. */}
+        {showManifest ? (
+          <YamlView value={install.manifest} className="mt-2.5 h-80" />
+        ) : null}
       </div>
     </Panel>
   )
