@@ -13,6 +13,7 @@ import type {
 import type { ResourceKey } from '../lib/resources'
 import type { Tone } from '../lib/status'
 import { relativeAge } from '../lib/time'
+import { HelmHistoryPanel } from './HelmHistoryPanel'
 import { HelmValuesPanel } from './HelmValuesPanel'
 import { LogExplorer } from './LogExplorer'
 import { PodLogView, PodOverview } from './PodPanels'
@@ -44,11 +45,11 @@ const PodTerminal = lazy(() =>
 )
 
 /**
- * Which face of the object the drawer opens on. `values` is the Helm one and
- * appears only for a release, which has no manifest for `yaml` to address and
- * no API object for `describe` to read.
+ * Which face of the object the drawer opens on. `values` and `history` are the
+ * Helm ones and appear only for a release, which has no manifest for `yaml` to
+ * address and no API object for `describe` to read.
  */
-export type DetailTab = 'overview' | 'describe' | 'yaml' | 'logs' | 'values'
+export type DetailTab = 'overview' | 'describe' | 'yaml' | 'logs' | 'values' | 'history'
 
 /** Which stream the logs tab is showing. */
 type StreamView = 'logs' | 'history' | 'terminal'
@@ -123,9 +124,16 @@ export function ResourceDetailDrawer({
   onRefresh?: () => Promise<void> | void
 }) {
   const release = target.release
-  // A release has exactly one face, so there is nothing for the tab strip to
-  // offer and nothing for `target.tab` to pick between.
-  const [tab, setTab] = useState<DetailTab>(release ? 'values' : (target.tab ?? 'overview'))
+  // A release's two faces are not the object tabs, so an inherited `overview`
+  // would land on a tab it does not have; anything else the row asked for is
+  // honoured, which is how a History row action opens on the history.
+  const [tab, setTab] = useState<DetailTab>(
+    release
+      ? target.tab === 'history'
+        ? 'history'
+        : 'values'
+      : (target.tab ?? 'overview'),
+  )
   const [describe, setDescribe] = useState<ResourceDescribeResult | null>(null)
   const [loading, setLoading] = useState(!release)
   const [error, setError] = useState<string | null>(null)
@@ -184,7 +192,13 @@ export function ResourceDetailDrawer({
   }, [dirty, onClose])
 
   const tabs: Array<{ value: DetailTab; label: string; count?: number }> = release
-    ? [{ value: 'values', label: 'Values' }]
+    ? // A release has two faces: what it is set to, and what it has been. The
+      // second is the only place a rollback can be offered from, since choosing
+      // one means reading the revisions to choose between.
+      [
+        { value: 'values', label: 'Values' },
+        { value: 'history', label: 'History' },
+      ]
     : [
         { value: 'overview', label: 'Overview' },
         {
@@ -317,6 +331,10 @@ export function ResourceDetailDrawer({
             await onRefresh?.()
           }}
         />
+      ) : null}
+
+      {tab === 'history' && release ? (
+        <HelmHistoryPanel cluster={cluster} release={release} onApplied={onRefresh} />
       ) : null}
 
       {tab === 'values' && release ? (

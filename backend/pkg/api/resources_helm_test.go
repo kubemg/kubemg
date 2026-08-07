@@ -5,9 +5,15 @@ import (
 	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/kubemg/kubemg/backend/pkg/auth"
+	"github.com/kubemg/kubemg/backend/pkg/bastion"
+	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
 // A Helm release is not an API object KubeMG can ask the cluster to validate —
@@ -151,7 +157,7 @@ func TestNextHelmSecretAppendsARevision(t *testing.T) {
 	}
 
 	next, err := nextHelmSecret(secret, release, map[string]any{"replicaCount": float64(5)},
-		"shop", "checkout", 3)
+		"shop", "checkout", 3, helmUpdateDescription)
 	if err != nil {
 		t.Fatalf("building the next revision: %v", err)
 	}
@@ -307,6 +313,209 @@ func TestHelmReleasesRefuseNamespaceOutsideGrant(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected status %d, got %d (%s)",
 			http.StatusForbidden, rec.Code, rec.Body.String())
+	}
+}
+
+/* -------------------------------------------------- history and rollback --- */
+
+// The two new routes sit under the same `/:name` group as the values calls, and
+// gin panics at registration on a route conflict — so building the router is the
+// check that `history` and `rollback` have not collided with `values`.
+func TestRouterRegistersHelmHistoryAndRollback(t *testing.T) {
+	router := NewRouter(Options{
+		Store: &db.Store{},
+		JWT:   auth.NewManager("secret", time.Hour),
+		Proxy: bastion.NewProxy(bastion.ProxyOptions{}),
+	})
+
+	found := make(map[string]bool)
+	for _, route := range router.Routes() {
+		found[route.Method+" "+route.Path] = true
+	}
+
+	for _, want := range []string{
+		"GET /api/v1/clusters/:id/resources/helm/releases/:name/history",
+		"POST /api/v1/clusters/:id/resources/helm/releases/:name/rollback",
+	} {
+		if !found[want] {
+			t.Fatalf("route %s is not registered", want)
+		}
+	}
+}
+
+// helmStoredSecret renders one stored revision the way the cluster returns it.
+func helmStoredSecret(t *testing.T, name string, revision int, values map[string]any) map[string]any {
+	t.Helper()
+	release := map[string]any{
+		"name":      name,
+		"namespace": "shop",
+		"version":   float64(revision),
+		"info":      map[string]any{"status": "superseded"},
+		"chart":     map[string]any{"metadata": map[string]any{"name": name, "version": "1.2.3"}},
+		"config":    values,
+		"manifest":  "apiVersion: v1\nkind: Service\n",
+	}
+	return map[string]any{
+		"metadata": map[string]any{
+			"name":      helmSecretPrefix + name + ".v" + itoa(uint(revision)),
+			"namespace": "shop",
+			"labels":    map[string]any{"owner": "helm", "name": name},
+		},
+		"data": map[string]any{"release": helmSecretData(t, release)},
+	}
+}
+
+// Helm keeps a Secret per revision and the API server returns them in whatever
+// order it likes, so the ordering is this decoder's job: newest first, which is
+// what makes the first entry the current revision everywhere else in this file.
+// An unreadable row is skipped rather than failing the read — a Secret carrying
+// Helm's labels that holds no release is somebody else's.
+func TestHelmStoredRevisionsAreNewestFirst(t *testing.T) {
+	items := []map[string]any{
+		helmStoredSecret(t, "checkout", 2, map[string]any{"replicaCount": float64(2)}),
+		helmStoredSecret(t, "checkout", 5, map[string]any{"replicaCount": float64(5)}),
+		{"metadata": map[string]any{"name": "not-a-release"}},
+		helmStoredSecret(t, "checkout", 3, map[string]any{"replicaCount": float64(3)}),
+	}
+
+	revisions := helmStoredRevisionsOf(items)
+	if len(revisions) != 3 {
+		t.Fatalf("read %d revisions, want the 3 readable ones", len(revisions))
+	}
+	for i, want := range []int{5, 3, 2} {
+		if revisions[i].revision != want {
+			t.Fatalf("revision at %d = %d, want %d", i, revisions[i].revision, want)
+		}
+	}
+}
+
+// A rollback is the values write with its values read out of an older revision,
+// and this is the whole of what it restores. The chart and the rendered manifest
+// come from the *current* revision on purpose: they are what the cluster is
+// actually running, and recording the target's instead would leave the next
+// `helm upgrade` merging against a state that was never there.
+func TestRollbackRestoresValuesAndNothingElse(t *testing.T) {
+	target := map[string]any{
+		"version":  float64(2),
+		"config":   map[string]any{"replicaCount": float64(2), "image": "checkout:1.0"},
+		"chart":    map[string]any{"metadata": map[string]any{"name": "checkout", "version": "1.0.0"}},
+		"manifest": "the manifest revision 2 rendered",
+	}
+	current := map[string]any{
+		"name":     "checkout",
+		"version":  float64(4),
+		"info":     map[string]any{"status": "deployed"},
+		"chart":    map[string]any{"metadata": map[string]any{"name": "checkout", "version": "2.0.0"}},
+		"config":   map[string]any{"replicaCount": float64(9)},
+		"manifest": "the manifest revision 4 rendered",
+	}
+	secret := map[string]any{"metadata": map[string]any{
+		"name":   "sh.helm.release.v1.checkout.v4",
+		"labels": map[string]any{"owner": "helm", "name": "checkout"},
+	}}
+
+	values, _ := target["config"].(map[string]any)
+	next, err := nextHelmSecret(secret, current, values, "shop", "checkout", 4,
+		fmt.Sprintf(helmRollbackDescription, 2))
+	if err != nil {
+		t.Fatalf("building the rollback revision: %v", err)
+	}
+
+	document, err := decodeHelmPayload(next["data"].(map[string]any)["release"].(string))
+	if err != nil {
+		t.Fatalf("decoding the rollback revision: %v", err)
+	}
+	var written map[string]any
+	if err := json.Unmarshal(document, &written); err != nil {
+		t.Fatalf("the rollback revision is not JSON: %v", err)
+	}
+
+	if got := helmRevision(written); got != 5 {
+		t.Fatalf("revision = %d, want the next one (5)", got)
+	}
+	if got := written["config"].(map[string]any)["image"]; got != "checkout:1.0" {
+		t.Fatalf("image = %v, want revision 2's value restored", got)
+	}
+	// The two things a rollback here deliberately does not restore.
+	if got, want := written["manifest"], current["manifest"]; got != want {
+		t.Fatalf("manifest = %v, want the running one carried forward", got)
+	}
+	chart := written["chart"].(map[string]any)["metadata"].(map[string]any)
+	if got := chart["version"]; got != "2.0.0" {
+		t.Fatalf("chart version = %v, want the current chart kept", got)
+	}
+	// `helm history` has to say where the row came from and what it restored.
+	if got := written["info"].(map[string]any)["description"]; got != "Rolled back to revision 2 through KubeMG" {
+		t.Fatalf("description = %v, want the rollback to name its target", got)
+	}
+}
+
+// A revision is the one value a caller supplies that could otherwise address a
+// Secret, so it is resolved against the history rather than turned into a name —
+// and the shape of it is refused before anything reaches the cluster.
+func TestRollbackRefusesARevisionThatIsNotOne(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "secret123", "admin")
+	cluster := env.store.addAgentCluster("edge", "dev", "agent-token")
+	token := env.tokenFor(t, admin)
+
+	path := "/api/v1/clusters/" + itoa(cluster.ID) +
+		"/resources/helm/releases/checkout/rollback?namespace=shop"
+
+	for name, body := range map[string]any{
+		"zero":     map[string]any{"revision": 0},
+		"negative": map[string]any{"revision": -3},
+		"missing":  map[string]any{},
+	} {
+		rec := env.do(t, http.MethodPost, path, token, mustJSON(t, body))
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s: expected status %d, got %d (%s)",
+				name, http.StatusBadRequest, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// Both new routes take the same release-name validation as the values calls.
+func TestHelmHistoryRefusesBadReleaseName(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "secret123", "admin")
+	cluster := env.store.addAgentCluster("edge", "dev", "agent-token")
+	token := env.tokenFor(t, admin)
+
+	rec := env.do(t, http.MethodGet,
+		"/api/v1/clusters/"+itoa(cluster.ID)+
+			"/resources/helm/releases/Not%20A%20Name/history?namespace=shop",
+		token, nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d (%s)",
+			http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+}
+
+// Namespace enforcement is the same on both, and it happens before the tunnel.
+func TestHelmHistoryRefusesNamespaceOutsideGrant(t *testing.T) {
+	env := newTestEnv(t)
+	user := env.store.addUser("scoped", "secret123", "user")
+	cluster := env.store.addAgentCluster("edge", "dev", "agent-token")
+	env.store.grant(user.ID, cluster.ID, "edit", []string{"team-a"})
+	token := env.tokenFor(t, user)
+
+	for name, call := range map[string]struct {
+		method string
+		path   string
+		body   []byte
+	}{
+		"history": {http.MethodGet, "/history?namespace=team-b", nil},
+		"rollback": {http.MethodPost, "/rollback?namespace=team-b",
+			mustJSON(t, map[string]any{"revision": 2})},
+	} {
+		rec := env.do(t, call.method,
+			"/api/v1/clusters/"+itoa(cluster.ID)+"/resources/helm/releases/checkout"+call.path,
+			token, call.body)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("%s: expected status %d, got %d (%s)",
+				name, http.StatusForbidden, rec.Code, rec.Body.String())
+		}
 	}
 }
 
