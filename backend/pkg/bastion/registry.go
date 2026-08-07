@@ -23,6 +23,25 @@ const (
 	maxFrame = 16 << 20
 )
 
+// outboundQueue is how many frames may wait to go out on a tunnel before the
+// goroutine handing one over is made to wait for room.
+//
+// The queue exists because a cluster's tunnel is one socket shared by every
+// session against that cluster, and the write side used to be a mutex every
+// sender took in turn. A single write that blocked on a full TCP send buffer —
+// a `kubectl cp` upload, a port-forward pushing data, a fast `logs -f` down a
+// slow link — therefore held every other session's frames behind it, and if the
+// keepalive ping was the write that timed out, the tunnel was torn down and
+// every session on that cluster died at once. With a queue the slow write blocks
+// one goroutine, the writer's, and everyone else keeps handing frames over.
+const outboundQueue = 512
+
+// ErrTunnelBacklog is returned when the outbound queue stays full. It is
+// deliberately not a tunnel-level failure: one sender that cannot get a frame
+// out is one broken call, and killing the socket over it is the shared fate the
+// queue exists to remove.
+var ErrTunnelBacklog = errors.New("the tunnel's outbound queue is full")
+
 // ErrNoTunnel is returned when a cluster has no agent attached.
 var ErrNoTunnel = errors.New("no agent tunnel is attached to this cluster")
 
@@ -42,8 +61,13 @@ type Tunnel struct {
 	ConnectedAt       time.Time
 
 	conn *websocket.Conn
-	// writeMu serialises frames; gorilla permits only one concurrent writer.
-	writeMu sync.Mutex
+	// out carries frames to the one goroutine that writes them. gorilla permits
+	// a single concurrent writer, and this is it — see outboundQueue for why it
+	// is a queue rather than the mutex it replaced.
+	out chan []byte
+	// queueWait is how long a sender waits for room in that queue before giving
+	// up on its own frame. It is a field only so a test can shorten it.
+	queueWait time.Duration
 
 	// mu guards the two correlation tables and the ID counter. Streams and
 	// request/response pairs share it because they share the ID space.
@@ -58,17 +82,24 @@ type Tunnel struct {
 }
 
 func newTunnel(conn *websocket.Conn, clusterID uint, clusterName string, hello Hello) *Tunnel {
-	return &Tunnel{
+	t := &Tunnel{
 		ClusterID:         clusterID,
 		ClusterName:       clusterName,
 		AgentVersion:      hello.AgentVersion,
 		KubernetesVersion: hello.KubernetesVersion,
 		ConnectedAt:       time.Now().UTC(),
 		conn:              conn,
+		out:               make(chan []byte, outboundQueue),
+		queueWait:         writeTimeout,
 		pending:           map[string]chan *Response{},
 		streams:           map[string]*Stream{},
 		closed:            make(chan struct{}),
 	}
+	// The writer starts with the tunnel rather than with serve(), because the
+	// welcome frame is sent before serve() is ever called and a queue with
+	// nobody draining it is just a slower mutex.
+	go t.writeLoop()
+	return t
 }
 
 // Do sends a request down the tunnel and waits for the matching response. It
@@ -108,22 +139,70 @@ func (t *Tunnel) Do(ctx context.Context, req *Request) (*Response, error) {
 	}
 }
 
+// send hands a frame to the tunnel's writer. It returns once the frame is
+// queued, not once it is on the wire: a write that fails afterwards closes the
+// tunnel, and every caller is already waiting on t.closed for exactly that.
 func (t *Tunnel) send(msg Message) error {
 	payload, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("encode %s frame: %w", msg.Type, err)
 	}
 
-	t.writeMu.Lock()
-	defer t.writeMu.Unlock()
-
-	if err := t.conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
-		return fmt.Errorf("set write deadline: %w", err)
-	}
-	if err := t.conn.WriteMessage(websocket.TextMessage, payload); err != nil {
-		return fmt.Errorf("write %s frame: %w", msg.Type, err)
+	if err := t.enqueue(payload); err != nil {
+		return fmt.Errorf("queue %s frame: %w", msg.Type, err)
 	}
 	return nil
+}
+
+// enqueue puts a frame in front of the writer, waiting for room if the queue is
+// full. It is separate from send so the queueing rules can be exercised without
+// a socket: what matters about them is that a full queue slows one sender and
+// never closes the tunnel, and that is a property, not a wire format.
+func (t *Tunnel) enqueue(payload []byte) error {
+	// The common case: room in the queue, no timer, no allocation.
+	select {
+	case <-t.closed:
+		return ErrTunnelClosed
+	case t.out <- payload:
+		return nil
+	default:
+	}
+
+	// The queue is full, which means the far side is not keeping up. Waiting
+	// here *is* the backpressure — it slows the one call that found the queue
+	// full rather than every session sharing the socket.
+	timer := time.NewTimer(t.queueWait)
+	defer timer.Stop()
+
+	select {
+	case <-t.closed:
+		return ErrTunnelClosed
+	case t.out <- payload:
+		return nil
+	case <-timer.C:
+		return ErrTunnelBacklog
+	}
+}
+
+// writeLoop is the tunnel's only writer. A slow write blocks this goroutine and
+// nothing else; the queue in front of it is what keeps one session's bulk
+// transfer from delaying another session's keystroke.
+func (t *Tunnel) writeLoop() {
+	for {
+		select {
+		case <-t.closed:
+			return
+		case payload := <-t.out:
+			if err := t.conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+				t.closeWith(fmt.Errorf("set write deadline: %w", err))
+				return
+			}
+			if err := t.conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+				t.closeWith(fmt.Errorf("write frame: %w", err))
+				return
+			}
+		}
+	}
 }
 
 // serve pumps frames until the socket dies, then releases every waiter. It
@@ -208,6 +287,14 @@ func (t *Tunnel) serve() error {
 
 // keepalive pings the agent so the socket stays warm through idle proxies and
 // so a dead peer trips the read deadline instead of lingering.
+//
+// The ping goes out through WriteControl, which gorilla documents as safe to
+// call concurrently with everything else — so it neither queues behind a data
+// frame nor waits for the writer. That matters more than it looks: the ping is
+// the one write whose failure tears the tunnel down, and while it shared a lock
+// with the data frames, a busy transfer could time it out and take every
+// session on the cluster with it. Now a failing ping means the socket really is
+// gone.
 func (t *Tunnel) keepalive() {
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
@@ -217,12 +304,9 @@ func (t *Tunnel) keepalive() {
 		case <-t.closed:
 			return
 		case <-ticker.C:
-			t.writeMu.Lock()
-			err := t.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-			if err == nil {
-				err = t.conn.WriteMessage(websocket.PingMessage, nil)
-			}
-			t.writeMu.Unlock()
+			err := t.conn.WriteControl(
+				websocket.PingMessage, nil, time.Now().Add(writeTimeout),
+			)
 			if err != nil {
 				t.closeWith(err)
 				return

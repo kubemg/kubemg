@@ -54,18 +54,24 @@ spec:
           ports:
             - name: health
               containerPort: 8081
-          # The agent holds one socket and forwards bounded request/response
-          # pairs; it has no cache and no queue. The memory limit is sized for
-          # a single in-flight API object rather than for the 32Mi a truly idle
-          # process would need, so a `kubectl get pods -A` on a large cluster
-          # does not get the agent OOMKilled mid-request.
+          # The agent holds one socket and relays what every session on this
+          # cluster sends through it. Idle it costs nothing, which is what the
+          # request is sized for; the limit is sized for throughput, because
+          # relaying is CPU — each 32 KB chunk in either direction is a full
+          # JSON encode with base64 plus WebSocket masking. At the old 200m a
+          # dozen concurrent port-forwards or followed logs hit the cap, and
+          # CFS throttling at the cap is not felt by the busy session alone: it
+          # is latency across every shell on the cluster. Memory is sized for a
+          # single in-flight API object plus the per-session input queues, so a
+          # `kubectl get pods -A` on a large cluster does not get the agent
+          # OOMKilled mid-request.
           resources:
             requests:
-              cpu: 25m
-              memory: 32Mi
+              cpu: 50m
+              memory: 48Mi
             limits:
-              cpu: 200m
-              memory: 128Mi
+              cpu: 1000m
+              memory: 256Mi
           livenessProbe:
             httpGet:
               path: /healthz
