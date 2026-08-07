@@ -30,6 +30,7 @@ import type {
   DatasourceInput,
   DatasourceKind,
   Group,
+  HelmHistory,
   HelmRelease,
   HelmValues,
   Ingress,
@@ -677,6 +678,47 @@ export async function updateHelmValues(
   const { data } = await http.put<HelmValues>(
     helmValuesURL(clusterId, name),
     { yaml },
+    { params: { namespace } },
+  )
+  return data
+}
+
+/** helmReleaseURL addresses one release, for the calls below its name. */
+function helmReleaseURL(clusterId: number, name: string): string {
+  return `${resourceURL(clusterId, 'helm/releases')}/${encodeURIComponent(name)}`
+}
+
+/** fetchHelmHistory reads every revision Helm has stored for one release. */
+export async function fetchHelmHistory(
+  clusterId: number,
+  name: string,
+  namespace: string,
+): Promise<HelmHistory> {
+  const { data } = await http.get<HelmHistory>(`${helmReleaseURL(clusterId, name)}/history`, {
+    params: { namespace },
+  })
+  return data
+}
+
+/**
+ * rollbackHelmRelease restores an earlier revision's values as a new revision.
+ *
+ * It is deliberately less than `helm rollback`, and the difference is the thing
+ * to know before calling it: the values come back, and the chart, the rendered
+ * manifest and everything running do not — KubeMG has no chart to render and
+ * applying a stored manifest would mean reimplementing Helm's three-way merge.
+ * The next `helm upgrade` renders from these values and converges. The response
+ * carries that caveat, and so does the history read that offers the action.
+ */
+export async function rollbackHelmRelease(
+  clusterId: number,
+  name: string,
+  namespace: string,
+  revision: number,
+): Promise<HelmValues> {
+  const { data } = await http.post<HelmValues>(
+    `${helmReleaseURL(clusterId, name)}/rollback`,
+    { revision },
     { params: { namespace } },
   )
   return data

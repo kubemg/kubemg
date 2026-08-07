@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -46,6 +47,22 @@ import (
  * else. It does not re-render the chart and it does not touch a single running
  * object — the next `helm upgrade` starts from the new values, and until then
  * the cluster runs what the previous revision rendered. Every write says so.
+ *
+ * Rollback is that same write with its values read out of an older revision, and
+ * it is deliberately *less* than `helm rollback`. Helm's own rollback restores a
+ * revision's values, its chart and its rendered manifest, and then applies that
+ * manifest to the cluster; the applying is the whole point of it and is also the
+ * one thing this cannot do, because KubeMG has no chart to render and applying a
+ * stored manifest means a three-way merge and a deletion pass — Helm's hardest
+ * code, reimplemented against objects it does not own. So what is restored here
+ * is the target revision's **values, and only its values**: the chart metadata
+ * and the manifest are carried forward from the current revision, because that
+ * is what is actually running, and a recorded revision that disagrees with the
+ * cluster would make the *next* `helm upgrade` diff against a state that was
+ * never there. What this buys is real and worth having — the next upgrade
+ * renders from the restored values and converges on the rolled-back state — and
+ * what it does not buy is said on the response and on the surface before the
+ * click, not discovered afterwards.
  */
 
 const (
@@ -277,6 +294,65 @@ func (s *server) helmReleaseTarget(c *gin.Context, grant db.UserClusterAccess) (
 	return namespace, name, true
 }
 
+// helmStoredRevision is one revision as Helm stores it: the Secret exactly as
+// the cluster returned it — its resourceVersion is what makes a later write
+// conditional — and the release decoded out of it.
+type helmStoredRevision struct {
+	secret   map[string]any
+	release  map[string]any
+	revision int
+}
+
+// helmRevisions reads every stored revision of one release, newest first.
+//
+// One list is the whole history: Helm keeps a Secret per revision under the same
+// `name` label, so nothing here computes a Secret name from a number. That
+// matters beyond tidiness — a revision is the one value a caller supplies that
+// could otherwise address a Secret, and resolving it against what came back
+// means a caller can only ever name a revision that exists.
+func (s *server) helmRevisions(c *gin.Context, user *db.User, cluster *db.Cluster,
+	grant db.UserClusterAccess, namespace, name string,
+) ([]helmStoredRevision, bool) {
+	var list struct {
+		Items []map[string]any `json:"items"`
+	}
+	if !s.fetch(c, user, cluster, grant, helmSecretsPath(namespace, name), &list) {
+		return nil, false
+	}
+
+	revisions := helmStoredRevisionsOf(list.Items)
+	if len(revisions) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": fmt.Sprintf("no Helm release named %q in namespace %s", name, namespace),
+		})
+		return nil, false
+	}
+	return revisions, true
+}
+
+// helmStoredRevisionsOf decodes a release-Secret list into its revisions, newest
+// first — which is both what a history reads as and what makes the first entry
+// the current revision for everything else here.
+func helmStoredRevisionsOf(items []map[string]any) []helmStoredRevision {
+	revisions := make([]helmStoredRevision, 0, len(items))
+	for _, item := range items {
+		decoded, err := helmReleaseOf(item)
+		if err != nil {
+			// A Secret carrying Helm's labels that holds no readable release is
+			// somebody else's; one bad row is not a broken history.
+			continue
+		}
+		revisions = append(revisions, helmStoredRevision{
+			secret:   item,
+			release:  decoded,
+			revision: helmRevision(decoded),
+		})
+	}
+
+	slices.SortFunc(revisions, func(a, b helmStoredRevision) int { return b.revision - a.revision })
+	return revisions
+}
+
 // latestHelmSecret finds the current revision of one release: the highest
 // revision Helm has stored for that name. Asking for the highest rather than
 // computing a Secret name means a release whose history has been pruned, or
@@ -284,31 +360,11 @@ func (s *server) helmReleaseTarget(c *gin.Context, grant db.UserClusterAccess) (
 func (s *server) latestHelmSecret(c *gin.Context, user *db.User, cluster *db.Cluster,
 	grant db.UserClusterAccess, namespace, name string,
 ) (secret, release map[string]any, ok bool) {
-	var list struct {
-		Items []map[string]any `json:"items"`
-	}
-	if !s.fetch(c, user, cluster, grant, helmSecretsPath(namespace, name), &list) {
+	revisions, ok := s.helmRevisions(c, user, cluster, grant, namespace, name)
+	if !ok {
 		return nil, nil, false
 	}
-
-	best := -1
-	for _, item := range list.Items {
-		decoded, err := helmReleaseOf(item)
-		if err != nil {
-			continue
-		}
-		if revision := helmRevision(decoded); revision > best {
-			best, secret, release = revision, item, decoded
-		}
-	}
-
-	if secret == nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": fmt.Sprintf("no Helm release named %q in namespace %s", name, namespace),
-		})
-		return nil, nil, false
-	}
-	return secret, release, true
+	return revisions[0].secret, revisions[0].release, true
 }
 
 // listHelmReleases returns the current revision of every release in scope. Helm
@@ -403,6 +459,53 @@ func (s *server) showHelmReleaseValues(c *gin.Context) {
 	})
 }
 
+// showHelmReleaseHistory returns every revision Helm has stored for one release,
+// newest first — `helm history`.
+//
+// The list route deliberately shows one row per release, deduplicated down to
+// the highest revision, because that is what answers "what is installed". This
+// is the other half of the same data and a different question: what this release
+// has been, when it changed, and what an operator would be going back to.
+//
+// It is a read of the same labelled Secrets under the same impersonation, so a
+// `view` grant is refused here in the cluster's own words exactly as it is on
+// the values read.
+func (s *server) showHelmReleaseHistory(c *gin.Context) {
+	user, cluster, grant, ok := s.resourceCluster(c)
+	if !ok {
+		return
+	}
+	namespace, name, ok := s.helmReleaseTarget(c, grant)
+	if !ok {
+		return
+	}
+
+	revisions, ok := s.helmRevisions(c, user, cluster, grant, namespace, name)
+	if !ok {
+		return
+	}
+
+	history := make([]helmReleaseView, 0, len(revisions))
+	for _, stored := range revisions {
+		view := helmView(stored.release)
+		// A release names its own namespace; the Secret holding it is the
+		// fallback for a payload old enough not to.
+		if view.Namespace == "" {
+			view.Namespace = secretNamespace(stored.secret)
+		}
+		if view.Name == "" {
+			view.Name = name
+		}
+		history = append(history, view)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"release": history[0],
+		"history": history,
+		"warning": helmRollbackWarning,
+	})
+}
+
 // helmValuesYAML renders a release's `config` — the supplied values — as YAML. A
 // release installed with no values at all renders as an empty document rather
 // than as `null`, so the editor opens on something an operator can type into.
@@ -451,9 +554,83 @@ func (s *server) updateHelmReleaseValues(c *gin.Context) {
 	if !ok {
 		return
 	}
-	revision := helmRevision(release)
 
-	next, err := nextHelmSecret(secret, release, values, namespace, name, revision)
+	s.appendHelmRevision(c, user, cluster, grant, namespace, name,
+		helmStoredRevision{secret: secret, release: release, revision: helmRevision(release)},
+		values, helmUpdateDescription, helmValuesWarning)
+}
+
+// rollbackHelmRelease restores an earlier revision's values as a new revision.
+//
+// It is `updateHelmReleaseValues` with its values read out of the history rather
+// than off the wire, which is exactly what it should be: the same append, the
+// same impersonated write, the same audit record. The revision the caller names
+// is resolved against the revisions the cluster returned rather than turned into
+// a Secret name, so the only revisions reachable are the ones that exist.
+//
+// What is restored is the target's `config` and nothing else. See the package
+// comment: carrying its chart and manifest forward as well would record a
+// revision that disagrees with what is running, and the next `helm upgrade`
+// would then merge against a state the cluster was never in.
+func (s *server) rollbackHelmRelease(c *gin.Context) {
+	user, cluster, grant, ok := s.resourceCluster(c)
+	if !ok {
+		return
+	}
+	namespace, name, ok := s.helmReleaseTarget(c, grant)
+	if !ok {
+		return
+	}
+
+	wanted, ok := helmRollbackTargetFrom(c)
+	if !ok {
+		return
+	}
+
+	revisions, ok := s.helmRevisions(c, user, cluster, grant, namespace, name)
+	if !ok {
+		return
+	}
+	current := revisions[0]
+
+	index := slices.IndexFunc(revisions, func(stored helmStoredRevision) bool {
+		return stored.revision == wanted
+	})
+	if index < 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": fmt.Sprintf("%s has no revision %d — Helm may have pruned it", name, wanted),
+		})
+		return
+	}
+	if wanted == current.revision {
+		// Not an error the cluster would raise, but appending a copy of the
+		// current revision is a write that changes nothing and hides what it did.
+		c.JSON(http.StatusConflict, gin.H{
+			"error": fmt.Sprintf("revision %d is already the current one", wanted),
+		})
+		return
+	}
+
+	values, _ := revisions[index].release["config"].(map[string]any)
+	if values == nil {
+		// A revision installed with no values at all is a real state, and
+		// restoring it means restoring emptiness rather than refusing.
+		values = map[string]any{}
+	}
+
+	s.appendHelmRevision(c, user, cluster, grant, namespace, name, current, values,
+		fmt.Sprintf(helmRollbackDescription, wanted), fmt.Sprintf(helmRollbackWarningFor, wanted))
+}
+
+// appendHelmRevision writes the next revision and supersedes the one it
+// replaces. Both writes go down the impersonated tunnel, so a caller the cluster
+// will not let create a Secret in that namespace is refused by the cluster.
+func (s *server) appendHelmRevision(c *gin.Context, user *db.User, cluster *db.Cluster,
+	grant db.UserClusterAccess, namespace, name string, current helmStoredRevision,
+	values map[string]any, description, warning string,
+) {
+	next, err := nextHelmSecret(current.secret, current.release, values,
+		namespace, name, current.revision, description)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -464,8 +641,6 @@ func (s *server) updateHelmReleaseValues(c *gin.Context) {
 		return
 	}
 
-	// The write is impersonated like every other call, so a caller the cluster
-	// will not let create a Secret in that namespace is refused by the cluster.
 	path := fmt.Sprintf("/api/v1/namespaces/%s/secrets", url.PathEscape(namespace))
 	resp, callOK := s.callResourceWith(c, user, cluster, grant,
 		http.MethodPost, path, document, "could not write the new revision to the cluster")
@@ -477,18 +652,18 @@ func (s *server) updateHelmReleaseValues(c *gin.Context) {
 		return
 	}
 
-	warning := helmValuesWarning
 	// The previous revision is superseded only once the new one exists. If this
 	// fails the release is still correct — Helm reads the highest revision — but
 	// `helm history` would show two deployed rows, which is worth saying.
-	if err := s.supersedeHelmSecret(c, user, cluster, grant, namespace, secret, release); err != nil {
+	if err := s.supersedeHelmSecret(c, user, cluster, grant,
+		namespace, current.secret, current.release); err != nil {
 		warning += " The previous revision could not be marked superseded: " + err.Error()
 	}
 
-	view := helmView(release)
-	view.Revision = revision + 1
+	view := helmView(current.release)
+	view.Revision = current.revision + 1
 	view.Status = "deployed"
-	view.Description = helmUpdateDescription
+	view.Description = description
 	view.UpdatedAt = time.Now().UTC()
 
 	c.JSON(http.StatusOK, gin.H{
@@ -498,10 +673,50 @@ func (s *server) updateHelmReleaseValues(c *gin.Context) {
 	})
 }
 
+// helmRollbackTargetFrom reads the revision a rollback names. It has to be a
+// positive integer — Helm numbers revisions from one — and everything else about
+// whether it is reachable is decided by resolving it against the stored history.
+func helmRollbackTargetFrom(c *gin.Context) (int, bool) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxHelmValues)
+
+	var payload struct {
+		Revision int `json:"revision"`
+	}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "the revision could not be read"})
+		return 0, false
+	}
+	if payload.Revision < 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name the revision to roll back to"})
+		return 0, false
+	}
+	return payload.Revision, true
+}
+
 // helmUpdateDescription is what `helm history` will show for a revision written
 // from here. It names KubeMG on purpose: a revision nobody can account for is
 // worse than one that says where it came from.
 const helmUpdateDescription = "Values updated through KubeMG"
+
+// helmRollbackDescription names the revision that was restored, in the same
+// place `helm rollback` writes "Rollback to 3" — so `helm history` reads the way
+// an operator expects even though KubeMG wrote the row.
+const helmRollbackDescription = "Rolled back to revision %d through KubeMG"
+
+// helmRollbackWarningFor is the limit of a rollback here, and it is deliberately
+// blunt: "roll back" is the most load-bearing word in this file, and an operator
+// who reads it as "undo the deployment" has been misled by the name rather than
+// by the product. It travels with the history read as well as with the write, so
+// it is on screen before the click rather than in the receipt.
+const helmRollbackWarningFor = "Restores revision %d's values as a new Helm revision. Unlike helm " +
+	"rollback it re-applies nothing: the chart, the rendered manifest and everything running are " +
+	"unchanged until the next helm upgrade, which will then render from these values."
+
+// helmRollbackWarning is the same statement with no revision to name, for the
+// history read — the surface offering the action has to carry the caveat.
+const helmRollbackWarning = "Rolling back here restores a revision's values as a new Helm revision. " +
+	"Unlike helm rollback it re-applies nothing: the chart, the rendered manifest and everything " +
+	"running are unchanged until the next helm upgrade, which will then render from those values."
 
 // helmValuesFrom reads the submitted values document. Values are a mapping or
 // they are nothing — a bare scalar or a list is not something Helm can merge
@@ -560,8 +775,13 @@ func helmValuesDocument(values map[string]any) string {
 // the previous one with its values, revision and status replaced — everything
 // else, the chart and the rendered manifest above all, is carried across
 // untouched, because it is still what is deployed.
+//
+// `description` is what `helm history` will show for the row, and it is a
+// parameter because a rollback and a values edit are the same append with
+// different provenance, and a revision nobody can account for is worse than one
+// that says where it came from.
 func nextHelmSecret(secret, release map[string]any, values map[string]any,
-	namespace, name string, revision int,
+	namespace, name string, revision int, description string,
 ) (map[string]any, error) {
 	next := revision + 1
 
@@ -579,7 +799,7 @@ func nextHelmSecret(secret, release map[string]any, values map[string]any,
 		}
 	}
 	info["status"] = "deployed"
-	info["description"] = helmUpdateDescription
+	info["description"] = description
 	info["last_deployed"] = time.Now().UTC().Format(time.RFC3339Nano)
 	updated["info"] = info
 

@@ -19,7 +19,7 @@ import type {
   StorageClass,
   Workload,
 } from '../api/types'
-import { FileCode2, PanelRightOpen, Pencil, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { FileCode2, History, PanelRightOpen, Pencil, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { IconButton, Pill, Row, SortTh, Table, Td, Th } from './primitives'
 import type { DetailTab } from './ResourceDetailDrawer'
 import type { WorkloadActionName } from './WorkloadActionPanel'
@@ -76,11 +76,16 @@ export type OpenManifest = (
 ) => void
 
 /**
- * OpenValues opens one Helm release's values. It is separate from OpenManifest
- * because a release has no manifest of its own: it is a Secret holding a blob,
- * and the thing worth reading and editing is the values inside it.
+ * OpenValues opens one Helm release. It is separate from OpenManifest because a
+ * release has no manifest of its own: it is a Secret holding a blob, and what is
+ * worth reading is either the values inside it or the revisions it has been
+ * through — which is why it carries a tab rather than only an editing flag.
  */
-export type OpenValues = (release: HelmRelease, editing: boolean) => void
+export type OpenValues = (
+  release: HelmRelease,
+  tab: 'values' | 'history',
+  editing?: boolean,
+) => void
 
 /**
  * OpenWorkloadAction asks for one of the two workload writes on a row. It is
@@ -336,10 +341,11 @@ const ROW_ACTIONS_WIDTH = 'w-[64px] md:w-[100px] lg:w-[132px]'
 const WORKLOAD_ACTIONS_WIDTH = 'w-[64px] md:w-[166px] lg:w-[200px]'
 
 /**
- * A Helm release has two actions at every width and no third: a release has no
- * manifest, so viewing and editing both mean its values.
+ * A Helm release has three actions: its values, editing them, and the revisions
+ * it has been through. History folds away below `md` like every other third
+ * shortcut — the drawer the first button opens carries it as a tab.
  */
-const VALUES_ACTIONS_WIDTH = 'w-[98px]'
+const VALUES_ACTIONS_WIDTH = 'w-[98px] md:w-[132px]'
 
 /**
  * The manifest column. It is the last column of every list and carries no
@@ -551,16 +557,24 @@ function HelmReleaseTable({
                   <IconButton
                     type="button"
                     label={`View the values of ${release.name}`}
-                    onClick={() => onValues(release, false)}
+                    onClick={() => onValues(release, 'values')}
                   >
                     <SlidersHorizontal aria-hidden="true" className="size-3.5" />
                   </IconButton>
                   <IconButton
                     type="button"
                     label={`Edit the values of ${release.name}`}
-                    onClick={() => onValues(release, true)}
+                    onClick={() => onValues(release, 'values', true)}
                   >
                     <Pencil aria-hidden="true" className="size-3.5" />
+                  </IconButton>
+                  <IconButton
+                    type="button"
+                    className="hidden md:inline-grid"
+                    label={`Revision history of ${release.name}`}
+                    onClick={() => onValues(release, 'history')}
+                  >
+                    <History aria-hidden="true" className="size-3.5" />
                   </IconButton>
                 </span>
               </Td>

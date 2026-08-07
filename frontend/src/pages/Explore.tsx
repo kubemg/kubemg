@@ -800,17 +800,17 @@ export function Explore() {
                 })
               }
               // A release opens the same drawer too, carrying its row: it has
-              // no manifest and no describe, so its values are the only tab it
-              // gets, but reaching it is the same motion as reaching anything
-              // else.
-              onValues={(release, editing) =>
+              // no manifest and no describe, so its two tabs are its values and
+              // the revisions behind them, but reaching it is the same motion as
+              // reaching anything else.
+              onValues={(release, tab, editing) =>
                 setDetail({
                   kind: 'helmreleases',
                   label: 'Helm release',
                   name: release.name,
                   namespace: release.namespace,
                   release,
-                  tab: 'values',
+                  tab,
                   editing,
                 })
               }

@@ -586,6 +586,22 @@ export interface HelmValues {
   warning: string
 }
 
+/**
+ * Every revision Helm has stored for one release, newest first — `helm history`.
+ * The list route shows one row per release because that answers "what is
+ * installed"; this is the other half of the same Secrets and a different
+ * question: what this release has been, and what a rollback would go back to.
+ *
+ * `warning` is the standing caveat on rolling back, and it arrives with the
+ * *read* rather than only with the write so the surface offering the action can
+ * state its limit before the click.
+ */
+export interface HelmHistory {
+  release: HelmRelease
+  history: HelmRelease[]
+  warning: string
+}
+
 export interface ClusterNode {
   name: string
   created_at: string

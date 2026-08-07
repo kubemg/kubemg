@@ -545,6 +545,12 @@ func NewRouter(opts Options) *gin.Engine {
 			helm.GET("", s.listHelmReleases)
 			helm.GET("/:name/values", s.showHelmReleaseValues)
 			helm.PUT("/:name/values", s.updateHelmReleaseValues)
+			// History is the other half of the list: the list dedupes to the
+			// current revision because that is what is installed, and this is
+			// what the release has been. Rollback is the values write with its
+			// values read out of that history rather than off the wire.
+			helm.GET("/:name/history", s.showHelmReleaseHistory)
+			helm.POST("/:name/rollback", s.rollbackHelmRelease)
 
 			// One object in full, as the YAML an operator already reads. The
 			// PUT is the only write path in the resource API; it goes down the
