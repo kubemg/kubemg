@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ScrollText, Search } from 'lucide-react'
+import { ExternalLink, ScrollText, Search } from 'lucide-react'
 import { queryError, queryLogs, unconfigured } from '../api/client'
 import type { Cluster, LogEntry, LogQueryResult } from '../api/types'
 import { queryRangeLabel } from '../lib/timerange'
@@ -56,6 +56,9 @@ export function LogExplorer({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [missing, setMissing] = useState(false)
+  /* The same search in the cluster's Grafana, built by the server out of the
+     LogsQL it just ran — see MetricsChart for why it is not built here. */
+  const [explore, setExplore] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -68,12 +71,14 @@ export function LogExplorer({
         range,
       })
       setResult(response.result)
+      setExplore(response.grafana_explore ?? null)
       setError(null)
       setMissing(false)
     } catch (err) {
       setMissing(unconfigured(err))
       setError(queryError(err, 'Could not search the logs for this window.'))
       setResult(null)
+      setExplore(null)
     } finally {
       setLoading(false)
     }
@@ -155,6 +160,18 @@ export function LogExplorer({
           <span>
             matching <span className="font-mono text-fg">{applied}</span>
           </span>
+        ) : null}
+        {explore ? (
+          <a
+            href={explore}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex items-center gap-1.5 transition-colors hover:text-fg"
+            title="Open this search in the cluster's Grafana"
+          >
+            <ExternalLink aria-hidden="true" className="size-3.5" />
+            Grafana
+          </a>
         ) : null}
         {loading ? <span className="ml-auto">Searching…</span> : null}
       </div>

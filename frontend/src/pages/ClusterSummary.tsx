@@ -4,6 +4,7 @@ import { AlertTriangle, ChevronRight, KeyRound, Layers, RefreshCw, Timer } from 
 import { checkCluster, errorMessage, fetchCluster, fetchNodeMetrics } from '../api/client'
 import type { Cluster, NodeMetrics } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { ConsolesPanel } from '../components/ConsolesPanel'
 import { DatasourcePanel } from '../components/DatasourcePanel'
 import { MetricComparison } from '../components/MetricComparison'
 import type { ComparisonKind } from '../components/MetricComparison'
@@ -241,6 +242,12 @@ export function ClusterSummary() {
             {/* Capacity above is a live sample and nothing more; this is where
                 the history behind it comes from, wired per cluster. */}
             <DatasourcePanel cluster={cluster} />
+
+            {/* And where the questions this console does not answer are
+                answered. It sits under the datasource because that is what most
+                of it is derived from — and it is a link rather than an embed on
+                purpose: KubeMG stores no session for another tool. */}
+            <ConsolesPanel cluster={cluster} />
 
             {/* And this is that history, once there is somewhere to read it
                 from. It sits directly under the datasource that answers it, so

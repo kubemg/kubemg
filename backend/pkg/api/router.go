@@ -142,6 +142,10 @@ type Store interface {
 	PutObservabilitySource(ctx context.Context, source *db.ObservabilitySource) error
 	UpdateSourceHealth(ctx context.Context, id uint, health db.SourceHealth) error
 	DeleteObservabilitySource(ctx context.Context, clusterID uint, kind string) error
+
+	ClusterConsoles(ctx context.Context, clusterID uint) ([]db.ClusterConsole, error)
+	PutClusterConsole(ctx context.Context, console *db.ClusterConsole) error
+	DeleteClusterConsole(ctx context.Context, clusterID uint, kind string) error
 }
 
 // Options wires the router's dependencies.
@@ -452,6 +456,16 @@ func NewRouter(opts Options) *gin.Engine {
 		// records the verdict.
 		sources.POST("/sources/:kind/test", requireAdmin, s.testObservabilitySource)
 		sources.POST("/sources/:kind/check", requireAdmin, s.checkObservabilitySource)
+
+		// Where the *other* consoles for this cluster are — the Grafana that
+		// answers a question the fixed catalogue cannot, the Argo CD that owns
+		// half the workloads in Explore. Same rule as the datasources: readable
+		// by anyone the cluster is granted to, registered by an admin. KubeMG
+		// stores an address and no session, and never proxies either tool.
+		consoles := clusters.Group("/:id/consoles")
+		consoles.GET("", s.listClusterConsoles)
+		consoles.PUT("/:kind", requireAdmin, s.putClusterConsole)
+		consoles.DELETE("/:kind", requireAdmin, s.deleteClusterConsole)
 
 		// The query path: reading history out of the backend the rows above
 		// name. Open to anyone the cluster is granted to, because the scope is

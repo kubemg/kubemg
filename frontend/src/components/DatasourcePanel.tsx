@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import {
   Activity,
   Check,
+  ExternalLink,
   Pencil,
   Plug,
   RefreshCw,
@@ -41,6 +42,7 @@ import {
   sourceStateLabel,
   sourceTone,
 } from '../lib/datasources'
+import { datasourceUILabel } from '../lib/consoles'
 import { relativeAge } from '../lib/time'
 import {
   Button,
@@ -273,6 +275,19 @@ function SourceRow({
           )}
         </div>
 
+        {source?.ui_url ? (
+          <a
+            href={source.ui_url}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="mt-1 inline-flex items-center gap-1.5 text-[12px] text-muted transition-colors hover:text-fg"
+            title={source.ui_url}
+          >
+            <ExternalLink aria-hidden="true" className="size-3.5" />
+            Open {datasourceUILabel(source.provider)}
+          </a>
+        ) : null}
+
         {source ? (
           <p className="mt-1 truncate font-mono text-[12px] text-faint" title={source.endpoint}>
             {source.endpoint}
@@ -401,6 +416,7 @@ interface Draft {
   credential: string
   insecure_skip_verify: boolean
   enabled: boolean
+  grafana_datasource: string
 }
 
 function blankDraft(kind: DatasourceKind, canUseTunnel: boolean): Draft {
@@ -419,6 +435,7 @@ function blankDraft(kind: DatasourceKind, canUseTunnel: boolean): Draft {
     credential: '',
     insecure_skip_verify: false,
     enabled: true,
+    grafana_datasource: '',
   }
 }
 
@@ -437,6 +454,7 @@ function draftFrom(source: ObservabilitySource): Draft {
     credential: '',
     insecure_skip_verify: source.insecure_skip_verify,
     enabled: source.enabled,
+    grafana_datasource: source.grafana_datasource ?? '',
   }
 }
 
@@ -453,6 +471,7 @@ function toInput(draft: Draft, hasStoredCredential: boolean): DatasourceInput {
     auth_mode: draft.auth_mode,
     username: draft.auth_mode === 'basic' ? draft.username.trim() : '',
     enabled: draft.enabled,
+    grafana_datasource: draft.grafana_datasource.trim(),
   }
 
   const credential =
@@ -770,6 +789,24 @@ export function DatasourceSheet({
           placeholder={info.defaultPrefix || '/'}
           value={draft.path_prefix}
           onChange={(event) => update('path_prefix', event.target.value)}
+        />
+      </Field>
+
+      {/* The one thing an Explore deep link cannot be built without. It sits on
+          the datasource rather than on the Grafana row because it identifies
+          *this* backend: one Grafana holds the metrics datasource and the logs
+          one, and they are two different uids. */}
+      <Field
+        label="Grafana datasource uid"
+        htmlFor="grafana_datasource"
+        hint="Optional. From this backend's datasource page in the cluster's Grafana (Settings → Data sources → the uid in its URL). With it, a chart here opens the same query in Grafana."
+      >
+        <TextInput
+          id="grafana_datasource"
+          className="font-mono text-[12.5px]"
+          placeholder="P1809F7CD0C75ACF3"
+          value={draft.grafana_datasource}
+          onChange={(event) => update('grafana_datasource', event.target.value)}
         />
       </Field>
 

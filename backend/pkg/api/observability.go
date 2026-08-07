@@ -50,6 +50,13 @@ type sourceResponse struct {
 
 	Enabled bool `json:"enabled"`
 
+	// GrafanaDatasource is this backend's uid in the cluster's Grafana, and
+	// UIURL the address of the backend's *own* query UI where it has one that a
+	// browser can reach. Neither is a credential and both are readable by anyone
+	// the cluster is granted to: a link is not access.
+	GrafanaDatasource string `json:"grafana_datasource,omitempty"`
+	UIURL             string `json:"ui_url,omitempty"`
+
 	// Endpoint is the address this resolves to, rendered for display.
 	Endpoint        string     `json:"endpoint"`
 	LastStatus      string     `json:"last_status"`
@@ -76,6 +83,8 @@ func toSourceResponse(source db.ObservabilitySource) sourceResponse {
 		HasCredential:      source.HasCredential(),
 		InsecureSkipVerify: source.InsecureSkipVerify,
 		Enabled:            source.Enabled,
+		GrafanaDatasource:  source.GrafanaDatasource,
+		UIURL:              observability.DatasourceUI(source),
 		Endpoint:           observability.TargetOf(source).Endpoint(),
 		LastStatus:         source.LastStatus,
 		LastMessage:        source.LastMessage,
@@ -108,6 +117,10 @@ type sourceRequest struct {
 	Credential *string `json:"credential"`
 
 	InsecureSkipVerify bool `json:"insecure_skip_verify"`
+	// GrafanaDatasource is the uid this backend has in the cluster's Grafana.
+	// Without it an Explore link would open on whatever datasource that Grafana
+	// defaults to, which for a PromQL expression is an error message.
+	GrafanaDatasource string `json:"grafana_datasource"`
 	// Enabled defaults to true: a source someone just filled in is one they want
 	// used.
 	Enabled *bool `json:"enabled"`
@@ -237,6 +250,12 @@ func (s *server) putObservabilitySource(c *gin.Context) {
 		enabled = *req.Enabled
 	}
 
+	grafanaRef, err := observability.NormalizeConsoleRef(req.GrafanaDatasource)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	source := db.ObservabilitySource{
 		ClusterID:          cluster.ID,
 		Kind:               kind,
@@ -253,6 +272,7 @@ func (s *server) putObservabilitySource(c *gin.Context) {
 		Credential:         target.Credential,
 		InsecureSkipVerify: target.InsecureSkipVerify,
 		Enabled:            enabled,
+		GrafanaDatasource:  grafanaRef,
 	}
 	if stored != nil {
 		source.ID = stored.ID
@@ -579,6 +599,11 @@ func (s *server) queryMetrics(c *gin.Context) {
 		"result":   result,
 		"provider": source.Provider,
 		"endpoint": observability.TargetOf(*source).Endpoint(),
+		// The same query, in the cluster's own Grafana, over the same window —
+		// where there is a Grafana registered and this datasource has a uid in
+		// it. Empty otherwise, which is how the chart knows not to offer it.
+		"grafana_explore": s.grafanaExploreFor(c.Request.Context(), cluster.ID,
+			*source, result.Query, result.Start, result.End),
 	})
 }
 
@@ -679,6 +704,8 @@ func (s *server) queryLogs(c *gin.Context) {
 		"result":   result,
 		"provider": source.Provider,
 		"endpoint": observability.TargetOf(*source).Endpoint(),
+		"grafana_explore": s.grafanaExploreFor(c.Request.Context(), cluster.ID,
+			*source, result.Query, window.Start, window.End),
 	})
 }
 

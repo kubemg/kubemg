@@ -25,6 +25,10 @@ import type {
   CronJob,
   CustomResource,
   CustomResourceDefinition,
+  ClusterConsole,
+  ClusterConsolesResponse,
+  ConsoleInput,
+  ConsoleKind,
   DatasourceCandidate,
   DatasourceCheck,
   DatasourceInput,
@@ -1101,6 +1105,33 @@ export async function discoverDatasources(clusterId: number): Promise<Datasource
     `/clusters/${clusterId}/observability/discover`,
   )
   return data.candidates ?? []
+}
+
+/*
+ * The other consoles a cluster is operated from. Reading them follows the
+ * datasource rule — anyone the cluster is granted to can see where its Grafana
+ * is, since you cannot be sent to look at a dashboard in a place you are not
+ * allowed to know exists — and registering one is administrative.
+ */
+export async function fetchClusterConsoles(clusterId: number): Promise<ClusterConsolesResponse> {
+  const { data } = await http.get<ClusterConsolesResponse>(`/clusters/${clusterId}/consoles`)
+  return data
+}
+
+export async function saveClusterConsole(
+  clusterId: number,
+  kind: ConsoleKind,
+  input: ConsoleInput,
+): Promise<ClusterConsole> {
+  const { data } = await http.put<{ console: ClusterConsole }>(
+    `/clusters/${clusterId}/consoles/${kind}`,
+    input,
+  )
+  return data.console
+}
+
+export async function deleteClusterConsole(clusterId: number, kind: ConsoleKind): Promise<void> {
+  await http.delete(`/clusters/${clusterId}/consoles/${kind}`)
 }
 
 /*
