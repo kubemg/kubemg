@@ -1,6 +1,8 @@
 package bastion
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -224,5 +226,63 @@ func TestExecCommandReadsTheArgvFromTheQuery(t *testing.T) {
 	}
 	if got := execCommand("/api/v1/namespaces/default/pods/web/exec?stdin=true"); got != "" {
 		t.Fatalf("an attach carries no command, got %q", got)
+	}
+}
+
+// A Turkish "ş" is two bytes, an emoji is four, and a terminal splits neither on
+// a character boundary it does not know about. Nothing between the operator's
+// keyboard and the container may look at a byte and decide it is a character:
+// the guard accumulates bytes, the wire carries bytes, and only the terminal at
+// each end reassembles them. These two tests pin that down, because the failure
+// mode is silent — a dropped or replaced byte reaches the shell as a different
+// command than the one that was typed.
+func TestMultiByteInputIsForwardedVerbatim(t *testing.T) {
+	guard := interactiveGuard(t, guardEngineFor(t, `rm -rf /`))
+
+	const typed = "echo şğüöçİ € 🚀\n"
+	var seen []byte
+	for _, b := range []byte(typed) {
+		frame := []byte{channelStdin, b}
+		if _, forward := guard.inspect(frame); !forward {
+			t.Fatalf("a benign line must be forwarded, stopped at %#x", b)
+		}
+		seen = append(seen, frame[1:]...)
+	}
+
+	if string(seen) != typed {
+		t.Fatalf("input was altered on the way through:\n got %q\nwant %q", seen, typed)
+	}
+}
+
+func TestMultiByteInputSurvivesTheWire(t *testing.T) {
+	// Every byte value, so a frame carrying a half-formed UTF-8 sequence — which
+	// is exactly what one keystroke of a two-byte character is — is covered too.
+	payload := make([]byte, 256)
+	for i := range payload {
+		payload[i] = byte(i)
+	}
+
+	encoded, err := json.Marshal(Message{
+		Type:       MessageStreamData,
+		ID:         "s1-1",
+		StreamData: &StreamData{Data: payload, Binary: true},
+	})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	var decoded Message
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if decoded.StreamData == nil {
+		t.Fatal("the chunk did not survive the envelope")
+	}
+	if !bytes.Equal(decoded.StreamData.Data, payload) {
+		t.Fatalf("the wire altered the payload:\n got %#v\nwant %#v",
+			decoded.StreamData.Data, payload)
+	}
+	if !decoded.StreamData.Binary {
+		t.Fatal("a binary chunk replayed as text would be re-encoded by the far end")
 	}
 }
