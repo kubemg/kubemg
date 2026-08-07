@@ -10,10 +10,10 @@ import {
   Field,
   Notice,
   Segmented,
-  Slab,
   Sheet,
   TextInput,
 } from './primitives'
+import { YamlView } from './YamlView'
 
 const TTL_CHOICES = [
   { value: '3600', label: '1 hour' },
@@ -223,7 +223,10 @@ function IssuedCredential({ issued }: { issued: Kubeconfig }) {
 
       {copyError ? <Notice tone="error">{copyError}</Notice> : null}
 
-      <Slab className="max-h-64">{issued.kubeconfig}</Slab>
+      {/* A kubeconfig is read to check one field — which server, which user —
+          before it is saved, so it gets the manifest surface rather than a plain
+          slab. Unnumbered: nothing here ever answers with a line number. */}
+      <YamlView value={issued.kubeconfig} numbered={false} className="h-64 shrink-0" />
     </div>
   )
 }

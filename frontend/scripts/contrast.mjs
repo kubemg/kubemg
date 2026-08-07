@@ -147,7 +147,9 @@ function tokensFor(css, selector) {
  * the chrome, whose tokens are dark in both decks because the rail is.
  */
 const SURFACES = ['surface', 'bg', 'raised', 'sunken']
-const TEXT_TONES = ['text', 'muted', 'faint', 'ok', 'warn', 'danger', 'accent']
+/* `syntax-scalar` is here rather than with the charts because it is read as
+   text — a port number in a manifest — not glanced at as a series identity. */
+const TEXT_TONES = ['text', 'muted', 'faint', 'ok', 'warn', 'danger', 'accent', 'syntax-scalar']
 const SOFT_TONES = ['ok', 'warn', 'danger', 'accent']
 
 function check(deck, tokens) {

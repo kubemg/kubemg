@@ -151,6 +151,17 @@
   --deck-chart-6: #008300;
   --deck-chart-7: #4a3aa7;
   --deck-chart-8: #e34948;
+
+  /*
+   * The one syntax hue. A manifest's keys take the accent and its strings the
+   * foreground, but a scalar that is *not* a string — a replica count, a port, a
+   * `true` — is what an operator scans a YAML for, and it cannot be told from a
+   * string by the deck's four text tiers alone. Green/amber/red are state here,
+   * so the only colour left that means nothing else is a blue. It is held to the
+   * text floor on every surface like any other text tone: this is a scalar
+   * anyone reads, not a decoration.
+   */
+  --deck-syntax-scalar: #175fbf;
 }
 
 /* Dark deck — the default. */
@@ -200,6 +211,9 @@
   --deck-chart-6: #008300;
   --deck-chart-7: #9085e9;
   --deck-chart-8: #e66767;
+
+  /* Stepped for the dark surface rather than flipped — see the light deck. */
+  --deck-syntax-scalar: #7fb4f5;
 }
 
 @theme inline {
@@ -241,6 +255,8 @@
   --color-chart-6: var(--deck-chart-6);
   --color-chart-7: var(--deck-chart-7);
   --color-chart-8: var(--deck-chart-8);
+
+  --color-syntax-scalar: var(--deck-syntax-scalar);
 
   --radius-card: 12px;
   --radius-control: 8px;
