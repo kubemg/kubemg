@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
 import { queryError, queryMetrics, unconfigured } from '../api/client'
-import type { Cluster, MetricKind, MetricResult } from '../api/types'
+import type { Cluster, MetricKind, MetricQueryResponse } from '../api/types'
+import { queryKey, useCachedQuery } from './query'
 import { useTimeRange } from '../state/timerange-context'
 
 /*
@@ -41,7 +41,27 @@ export const PLOT_FULL: PlotGeometry = { height: 180, left: 62, right: 12, top: 
  */
 export const PLOT_COMPACT: PlotGeometry = { height: 104, left: 46, right: 8, top: 8, bottom: 16 }
 
-/** One reading of the catalogue, as state. See the note at the top of the file. */
+/**
+ * One reading of the catalogue, as state. See the note at the top of the file.
+ *
+ * It goes through the console's read cache, and for this read that matters more
+ * than for most. A chart in the Explore pilot header is re-asked by ordinary
+ * navigation — a click to Deployments and back, a CPU/MEM toggle and back, a
+ * drawer opened over the list — and on an **in-cluster** datasource each of those
+ * is not just a query against a metrics backend: it is a call through the agent
+ * tunnel to the target cluster's API server, which proxies it to the Service. So
+ * a repeat within the window has to cost nothing, and returning to an axis
+ * already looked at has to be instant.
+ *
+ * The key is the whole question: cluster, chart, namespace, pod and the window.
+ * The window belongs in it because the same chart over a different range is a
+ * different answer — leaving it out is how a cache starts lying about time.
+ *
+ * Failures are deliberately not cached (`useCachedQuery` only stores what
+ * succeeded), which is what keeps "no datasource" from sticking: an operator who
+ * registers one is answered by the next read rather than having to wait out an
+ * entry.
+ */
 export function useMetricsQuery({
   cluster,
   metric,
@@ -54,38 +74,26 @@ export function useMetricsQuery({
   pod?: string
 }) {
   const { range } = useTimeRange()
-  const [result, setResult] = useState<MetricResult | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [missing, setMissing] = useState(false)
-  /* The same query in the cluster's own Grafana. It arrives *with* the result
-     because the server built it out of the query it just ran — a browser
-     assembling its own Explore link would be a browser writing a query. */
-  const [explore, setExplore] = useState<string | null>(null)
+  const key = queryKey('metrics', cluster.id, metric, namespace ?? '-', pod ?? '-', range)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const response = await queryMetrics(cluster.id, metric, { namespace, pod, range })
-      setResult(response.result)
-      setExplore(response.grafana_explore ?? null)
-      setError(null)
-      setMissing(false)
-    } catch (err) {
-      // "No datasource yet" is not a failure, it is a setup step — and it reads
-      // completely differently on screen.
-      setMissing(unconfigured(err))
-      setError(queryError(err, 'Could not read metrics for this window.'))
-      setResult(null)
-      setExplore(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [cluster.id, metric, namespace, pod, range])
+  const query = useCachedQuery<MetricQueryResponse>(key, () =>
+    queryMetrics(cluster.id, metric, { namespace, pod, range }),
+  )
 
-  useEffect(() => {
-    void load()
-  }, [load])
-
-  return { result, loading, error, missing, explore, range, reload: load }
+  return {
+    result: query.data?.result ?? null,
+    /* The same query in the cluster's own Grafana. It arrives *with* the result
+       because the server built it out of the query it just ran — a browser
+       assembling its own Explore link would be a browser writing a query. */
+    explore: query.data?.grafana_explore ?? null,
+    // Anything in flight reads as loading: a caller uses this to dim a chart it
+    // is still showing as well as to say it has nothing yet.
+    loading: query.loading || query.revalidating,
+    // "No datasource yet" is not a failure, it is a setup step — and it reads
+    // completely differently on screen.
+    missing: unconfigured(query.error),
+    error: query.error ? queryError(query.error, 'Could not read metrics for this window.') : null,
+    range,
+    reload: query.refresh,
+  }
 }
