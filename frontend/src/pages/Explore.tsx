@@ -53,9 +53,24 @@ import {
 } from '../lib/resources'
 import type { InsightBucket, ResourceInsight } from '../lib/insights'
 import {
+  bucketLabel as labelForBucket,
+  claimInsights,
+  configInsights,
+  crdInsights,
+  cronJobInsights,
+  customInsights,
+  helmInsights,
+  ingressInsights,
+  jobInsights,
   matchesPodBucket,
   matchesWorkloadBucket,
+  namespaceInsights,
+  nodeInsights,
   podInsights,
+  routeInsights,
+  serviceInsights,
+  storageClassInsights,
+  volumeInsights,
   workloadInsights,
 } from '../lib/insights'
 import { queryKey, useCachedQuery } from '../lib/query'
@@ -228,20 +243,53 @@ function filterLoaded(loaded: LoadedResource, needle: string): LoadedResource {
 }
 
 /**
- * The lists that earn a pilot header. Pods and the three workload kinds are the
- * ones whose rows carry a state worth summarising — a phase, a readiness, a
- * desired replica count. Everything else in the inventory is an inventory:
- * ConfigMaps and StorageClasses have no health, and a band of counts over them
- * would be a band saying nothing.
+ * The pilot header for whichever list is loaded. Every kind earns one now — a
+ * band that appeared over two lists and vanished over the other fourteen made
+ * the page change shape with every click in the tree, so the eye had no fixed
+ * place to look. What differs per kind is not whether there is a header but what
+ * is honest to put in it: pods and workloads have a state to report, a
+ * ConfigMap list has a composition and a count, and `lib/insights.ts` is where
+ * that distinction is drawn rather than here.
  */
 function insightsFor(
   loaded: LoadedResource | null | undefined,
   label: string,
 ): ResourceInsight | null {
   if (!loaded) return null
-  if (loaded.kind === 'pods') return podInsights(loaded.rows, loaded.usage)
-  if (loaded.kind === 'workloads') return workloadInsights(loaded.rows, label)
-  return null
+  switch (loaded.kind) {
+    case 'pods':
+      return podInsights(loaded.rows, loaded.usage, label)
+    case 'workloads':
+      return workloadInsights(loaded.rows, label)
+    case 'jobs':
+      return jobInsights(loaded.rows, label)
+    case 'cronjobs':
+      return cronJobInsights(loaded.rows, label)
+    case 'services':
+      return serviceInsights(loaded.rows, label)
+    case 'ingresses':
+      return ingressInsights(loaded.rows, label)
+    case 'routes':
+      return routeInsights(loaded.rows, label)
+    case 'helmreleases':
+      return helmInsights(loaded.rows, label)
+    case 'persistentvolumes':
+      return volumeInsights(loaded.rows, label)
+    case 'persistentvolumeclaims':
+      return claimInsights(loaded.rows, label)
+    case 'storageclasses':
+      return storageClassInsights(loaded.rows, label)
+    case 'config':
+      return configInsights(loaded.rows, label, loaded.secrets)
+    case 'crds':
+      return crdInsights(loaded.rows, label)
+    case 'custom':
+      return customInsights(loaded.rows, label)
+    case 'nodes':
+      return nodeInsights(loaded.rows, label)
+    case 'namespaces':
+      return namespaceInsights(loaded.rows, label)
+  }
 }
 
 /**
@@ -614,9 +662,7 @@ export function Explore() {
   // The active narrowing named in the list header, so a reading clicked at the
   // top of the page is still explained after scrolling down to the rows — and
   // so there is somewhere to undo it that is not back up there.
-  const bucketLabel = bucket
-    ? (insight?.stats.find((stat) => stat.id === bucket)?.label ?? null)
-    : null
+  const bucketLabel = labelForBucket(insight, bucket)
 
   return (
     <AppShell
@@ -691,8 +737,10 @@ export function Explore() {
 
         {/* The pilot header. It sits above the list rather than inside it
             because it describes the whole list, including the rows a filter or
-            a bucket is currently hiding. */}
-        {insight && !unavailable ? (
+            a bucket is currently hiding — and it is drawn only where there is a
+            list to describe: over an empty one it would restate the empty state
+            below it in bigger type. */}
+        {insight && !unavailable && totalCount > 0 ? (
           <ResourceInsights
             insight={insight}
             bucket={bucket}
@@ -702,7 +750,10 @@ export function Explore() {
                 kind: resource,
                 label: resourceSingular(item),
                 name,
-                namespace: rowNamespace,
+                // A cluster-scoped kind's alerts carry no namespace, and the
+                // drawer must not be handed an empty one — it addresses an
+                // object by the same rule the tables do.
+                namespace: namespaced ? rowNamespace : undefined,
                 // A pod's own row carries everything its panels need, so an
                 // alert opens the drawer without a second read.
                 pod:
