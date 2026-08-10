@@ -1,7 +1,9 @@
-import { useEffect, useId, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
+  PointerEvent as ReactPointerEvent,
   ReactNode,
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
@@ -15,6 +17,7 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  MoreVertical,
   Search,
   X,
 } from 'lucide-react'
@@ -173,6 +176,112 @@ export function IconButton({
     >
       {children}
       <span className="sr-only">{label}</span>
+    </button>
+  )
+}
+
+/**
+ * RowMenu folds a row's actions behind one trigger, for a table dense enough
+ * that spelling every action out as its own icon button crowds the column the
+ * row actually exists to show — a pod's name, on a narrow deck. It carries no
+ * state of its own past open/closed: the caller's `RowMenuItem`s do the work.
+ *
+ * The menu itself is portalled and `fixed`-positioned off the trigger's own
+ * rect rather than `absolute` inside the row: every table sits in a
+ * `min-w-0 overflow-x-auto` wrapper (`Table` in this file), and once one axis
+ * of `overflow` is constrained the browser forces the other to `auto` too —
+ * an `absolute` menu would be clipped by that implicit vertical scrollbar
+ * instead of floating over the page.
+ */
+export function RowMenu({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const [rect, setRect] = useState<{ top: number; right: number } | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onPointerDown(event: MouseEvent) {
+      const target = event.target as Node
+      if (triggerRef.current?.contains(target)) return
+      if (!menuRef.current?.contains(target)) setOpen(false)
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    function onReposition() {
+      const box = triggerRef.current?.getBoundingClientRect()
+      if (box) setRect({ top: box.bottom + 4, right: window.innerWidth - box.right })
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    window.addEventListener('scroll', onReposition, true)
+    window.addEventListener('resize', onReposition)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('scroll', onReposition, true)
+      window.removeEventListener('resize', onReposition)
+    }
+  }, [open])
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        title={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => {
+          const box = triggerRef.current?.getBoundingClientRect()
+          if (box) setRect({ top: box.bottom + 4, right: window.innerWidth - box.right })
+          setOpen((current) => !current)
+        }}
+        className="inline-grid size-8 shrink-0 place-items-center rounded-control text-muted transition-colors hover:bg-raised hover:text-fg"
+      >
+        <MoreVertical aria-hidden="true" className="size-3.5" />
+        <span className="sr-only">{label}</span>
+      </button>
+      {open && rect
+        ? createPortal(
+            <div
+              ref={menuRef}
+              role="menu"
+              aria-label={label}
+              onClick={() => setOpen(false)}
+              style={{ top: rect.top, right: rect.right }}
+              className="pop-in card fixed z-40 flex w-44 flex-col gap-0.5 p-1 lift"
+            >
+              {children}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  )
+}
+
+/** One row of a `RowMenu`. */
+export function RowMenuItem({
+  onClick,
+  danger,
+  children,
+}: {
+  onClick: () => void
+  danger?: boolean
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className={`flex items-center gap-2 rounded-control px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${
+        danger ? 'text-danger hover:bg-danger-soft' : 'text-fg hover:bg-raised'
+      }`}
+    >
+      {children}
     </button>
   )
 }
@@ -484,33 +593,167 @@ export function EmptyState({
 
 /* ----------------------------------------------------------------- tables --- */
 
-export function Table({ children, className }: { children: ReactNode; className?: string }) {
+const MIN_COLUMN_WIDTH = 56
+
+type ColumnWidths = Record<string, number>
+
+/**
+ * ColumnResizeContext is what `Th`/`SortTh` read to know whether they carry a
+ * drag handle at all — a table with no `resizeKey` renders exactly as before,
+ * so the feature costs nothing where nobody asked for it.
+ */
+const ColumnResizeContext = createContext<{
+  widths: ColumnWidths
+  setWidth: (key: string, px: number) => void
+} | null>(null)
+
+function loadColumnWidths(storageKey: string): ColumnWidths {
+  try {
+    const raw = window.localStorage.getItem(storageKey)
+    if (!raw) return {}
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return {}
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        (entry): entry is [string, number] => typeof entry[1] === 'number',
+      ),
+    )
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * Table wraps its rows in a resize context when `resizeKey` is given, so every
+ * `columnKey`-carrying `Th`/`SortTh` inside grows a drag handle on its right
+ * edge — an operator's own column widths, AWS-console style, rather than the
+ * fixed layout everyone is stuck with. `resizeKey` is also the localStorage
+ * key: a resize made once is a preference for that table kind, not a
+ * one-render adjustment, so it survives a reload.
+ */
+export function Table({
+  children,
+  className,
+  resizeKey,
+}: {
+  children: ReactNode
+  className?: string
+  /** A key unique to this table's column set. Omit to skip resizing entirely. */
+  resizeKey?: string
+}) {
+  const [widths, setWidths] = useState<ColumnWidths>(() =>
+    resizeKey ? loadColumnWidths(resizeKey) : {},
+  )
+
+  const setWidth = useCallback(
+    (key: string, px: number) => {
+      setWidths((current) => {
+        if (current[key] === px) return current
+        const next = { ...current, [key]: px }
+        if (resizeKey) {
+          try {
+            window.localStorage.setItem(resizeKey, JSON.stringify(next))
+          } catch {
+            // A full or disabled store still leaves the resize working for this session.
+          }
+        }
+        return next
+      })
+    },
+    [resizeKey],
+  )
+
+  const table = (
+    <table className={`w-full table-fixed border-collapse text-[13.5px] ${className ?? ''}`}>
+      {children}
+    </table>
+  )
+
   return (
     <div className="min-w-0 overflow-x-auto">
-      <table className={`w-full table-fixed border-collapse text-[13.5px] ${className ?? ''}`}>
-        {children}
-      </table>
+      {resizeKey ? (
+        <ColumnResizeContext.Provider value={{ widths, setWidth }}>
+          {table}
+        </ColumnResizeContext.Provider>
+      ) : (
+        table
+      )}
     </div>
   )
+}
+
+/**
+ * ResizeHandle is the draggable divider at a column's right edge. It reads the
+ * starting width off the live `<th>` rather than off state, so a column that
+ * has never been dragged — still sized by its Tailwind class — resizes from
+ * whatever it is actually rendering at, not from an unset value.
+ */
+function ResizeHandle({ columnKey }: { columnKey: string }) {
+  const ctx = useContext(ColumnResizeContext)
+  if (!ctx) return null
+
+  function onPointerDown(event: ReactPointerEvent<HTMLSpanElement>) {
+    event.preventDefault()
+    event.stopPropagation()
+    const cell = event.currentTarget.closest('th')
+    const startWidth = cell?.getBoundingClientRect().width ?? MIN_COLUMN_WIDTH
+    const startX = event.clientX
+
+    function onMove(moveEvent: PointerEvent) {
+      ctx?.setWidth(columnKey, Math.max(MIN_COLUMN_WIDTH, startWidth + (moveEvent.clientX - startX)))
+    }
+    function onUp() {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
+  return (
+    <span
+      role="separator"
+      aria-orientation="vertical"
+      onPointerDown={onPointerDown}
+      onClick={(event) => event.stopPropagation()}
+      className="absolute inset-y-0 -right-0.5 z-10 w-1.5 cursor-col-resize touch-none select-none rounded-full hover:bg-accent/50 active:bg-accent/70"
+    />
+  )
+}
+
+/** The inline width a resized column carries, and the handle beside it. */
+function useColumnResize(columnKey?: string) {
+  const ctx = useContext(ColumnResizeContext)
+  const width = columnKey ? ctx?.widths[columnKey] : undefined
+  return {
+    style: width ? { width: `${width}px` } : undefined,
+    handle: ctx && columnKey ? <ResizeHandle columnKey={columnKey} /> : null,
+  }
 }
 
 export function Th({
   children,
   className,
   align = 'left',
+  columnKey,
 }: {
   children?: ReactNode
   className?: string
   align?: 'left' | 'right'
+  /** Set to grow a drag handle, in a table whose `Table` carries a `resizeKey`. */
+  columnKey?: string
 }) {
+  const { style, handle } = useColumnResize(columnKey)
   return (
     <th
       scope="col"
+      style={style}
       className={`label sticky top-0 z-1 bg-surface px-4 py-2.5 ${
-        align === 'right' ? 'text-right' : 'text-left'
-      } ${className ?? ''}`}
+        handle ? 'relative' : ''
+      } ${align === 'right' ? 'text-right' : 'text-left'} ${className ?? ''}`}
     >
       {children}
+      {handle}
     </th>
   )
 }
@@ -534,13 +777,17 @@ export function SortTh({
   align = 'left',
   direction,
   onSort,
+  columnKey,
 }: {
   children?: ReactNode
   className?: string
   align?: 'left' | 'right'
   direction: SortDirection
   onSort: () => void
+  /** Set to grow a drag handle, in a table whose `Table` carries a `resizeKey`. */
+  columnKey?: string
 }) {
+  const { style, handle } = useColumnResize(columnKey)
   const arrow =
     direction === 'asc' ? (
       <ChevronUp aria-hidden="true" className="size-3 text-accent" />
@@ -557,7 +804,8 @@ export function SortTh({
     <th
       scope="col"
       aria-sort={direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'}
-      className={`label sticky top-0 z-1 bg-surface px-4 py-2.5 ${
+      style={style}
+      className={`label sticky top-0 z-1 bg-surface px-4 py-2.5 ${handle ? 'relative' : ''} ${
         align === 'right' ? 'text-right' : 'text-left'
       } ${className ?? ''}`}
     >
@@ -571,6 +819,7 @@ export function SortTh({
         <span className="min-w-0 truncate">{children}</span>
         {arrow}
       </button>
+      {handle}
     </th>
   )
 }
