@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
 	"github.com/kubemg/kubemg/backend/pkg/auth"
@@ -120,6 +121,11 @@ type Store interface {
 
 	Settings(ctx context.Context) (map[string]string, error)
 	PutSettings(ctx context.Context, values map[string]string, updatedBy uint) error
+
+	// AcquireLease is how a background job that reads a cluster decides whether
+	// *this* replica is the one doing it. See pkg/db/lease.go: a false return
+	// means somebody else holds it, an error means do not run.
+	AcquireLease(ctx context.Context, name, holder string, ttl time.Duration) (bool, error)
 
 	// Identity federation: the providers, the rules that say what an external
 	// group is worth, and the sync that applies them on every federated sign-in.
@@ -250,6 +256,10 @@ type tunnels interface {
 
 type server struct {
 	store              Store
+	// instanceID identifies this process for the duration of its life. It is what
+	// a background job holds a lease as, so a restart is a new holder rather than
+	// something that renews a claim its previous incarnation took.
+	instanceID         string
 	jwt                *auth.Manager
 	tokens             k8s.Issuer
 	health             k8s.Checker
@@ -321,6 +331,7 @@ func NewRouter(opts Options) *gin.Engine {
 
 	s := &server{
 		store:              opts.Store,
+		instanceID:         uuid.NewString(),
 		jwt:                opts.JWT,
 		tokens:             opts.Tokens,
 		health:             opts.Health,

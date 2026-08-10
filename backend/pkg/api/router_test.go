@@ -58,6 +58,12 @@ type fakeStore struct {
 	// session that came back.
 	syncedIdentities []db.SSOIdentity
 	nextID           uint
+	// leases stands in for the leases table: name -> holder. A background job's
+	// fake acquisition is decided from here, so a test can put a *different*
+	// holder in and assert the job stays put.
+	leases      map[string]string
+	leaseErr    error
+	leaseCalls  int
 	createErr   error
 	// pruned records the cutoff of every retention pass, so a test can assert
 	// on the window the pruner chose rather than only on what survived.
@@ -95,6 +101,7 @@ func newFakeStore() *fakeStore {
 		providers:   map[uint]*db.SSOProviderConfig{},
 		mappings:    map[uint]*db.SSOGroupMapping{},
 		syncResults: map[string]*db.SSOSyncResult{},
+		leases:      map[string]string{},
 		nextID:      1,
 	}
 }

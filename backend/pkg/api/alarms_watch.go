@@ -23,7 +23,7 @@ import (
  * belong to a request somebody made. So this polls: one bounded list per cluster
  * per interval, through the same impersonated tunnel as every other read.
  *
- * Three things keep the cost honest:
+ * Four things keep the cost honest:
  *
  *   - Nothing polls unless a cluster-event rule exists. A fleet with no alarms
  *     configured makes no calls at all.
@@ -31,6 +31,12 @@ import (
  *   - The first pass on a cluster establishes a watermark and delivers nothing.
  *     Otherwise switching a rule on would page for a week of history, which is
  *     both useless and the fastest way to have the integration muted.
+ *   - **Exactly one replica polls.** This is the only work in the product whose
+ *     cost is multiplied by how many copies of KubeMG are running, and it lands
+ *     on somebody's production API server rather than here — so running three
+ *     replicas for availability would have meant three cluster-wide event lists
+ *     a minute per covered cluster. A lease decides which process does it; see
+ *     pkg/db/lease.go.
  */
 
 // Cluster event polling.
@@ -49,6 +55,13 @@ const (
 	// guard beside the watermark: a cluster whose clock is behind, or an event
 	// list that arrives out of order, must not resurrect yesterday.
 	alarmEventMaxAge = 15 * time.Minute
+	// alarmLeaseTTL is how long a claim on the polling job stays live without
+	// being renewed. It is a multiple of the interval rather than equal to it: the
+	// holder renews on every tick, so a TTL of exactly one interval would expire
+	// in the gap between two ticks and hand the job back and forth. Three gives a
+	// pass room to be slow, and bounds how long the fleet goes unwatched after a
+	// replica dies to the same three minutes.
+	alarmLeaseTTL = 3 * alarmPollInterval
 )
 
 // alarmWatcherUser is the identity the poller impersonates.
@@ -73,9 +86,41 @@ func (s *server) startAlarmWatcher(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.pollClusterEvents(ctx, watermarks)
+			s.alarmTick(ctx, watermarks)
 		}
 	}
+}
+
+// alarmTick is one pass: take the lease, and poll only if this replica got it.
+//
+// Every replica keeps ticking rather than one of them deciding at startup that it
+// is not the leader — that is what makes the handover automatic when the holder
+// is killed, with no election protocol and nothing to configure.
+//
+// The watermarks are deliberately *not* cleared when a pass is skipped. A replica
+// that takes over holds none yet, so it establishes them and delivers nothing on
+// its first pass, exactly as a restart does. A replica that briefly lost the lease
+// and regained it keeps what it had, which can re-offer events the previous holder
+// already sent — bounded to alarmEventMaxAge, and collapsed by the dispatcher's
+// own per-rule deduplication. Repeating an alarm is the recoverable failure here;
+// silently dropping one is not.
+func (s *server) alarmTick(ctx context.Context, watermarks *watermarkTable) {
+	held, err := s.store.AcquireLease(ctx, db.LeaseAlarmWatcher, s.instanceID, alarmLeaseTTL)
+	if err != nil {
+		// Failing closed is the point. If the database cannot answer, every
+		// replica gets this error, and treating it as permission to poll would put
+		// all of them on the cluster at once — which is the duplication the lease
+		// exists to stop, arriving precisely when something is already wrong.
+		if ctx.Err() == nil {
+			s.log().Warn("alarm watcher could not take its lease",
+				slog.String("error", err.Error()))
+		}
+		return
+	}
+	if !held {
+		return
+	}
+	s.pollClusterEvents(ctx, watermarks)
 }
 
 // watermarkTable remembers how far through each cluster's event stream the
