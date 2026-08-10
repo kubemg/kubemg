@@ -28,6 +28,7 @@ import {
 import type { CustomResourceDefinition, Namespace } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { ExploreSidebar } from '../components/ExploreSidebar'
+import { InsightTrend } from '../components/InsightTrend'
 import { ResourceDetailDrawer } from '../components/ResourceDetailDrawer'
 import type { DetailTarget } from '../components/ResourceDetailDrawer'
 import { ResourceInsights } from '../components/ResourceInsights'
@@ -659,6 +660,34 @@ export function Explore() {
   // narrowing is chosen *from*, so recomputing it against its own selection
   // would collapse every reading but the selected one to zero.
   const insight = insightsFor(loaded, item.label)
+
+  /*
+   * Whether the band earns a trend region. Three conditions, and each is a
+   * different kind of "no":
+   *
+   *   - the list has to be one whose objects consume something. Pods and the
+   *     workloads that own them do; a ConfigMap list charting namespace CPU
+   *     would be a chart about somebody else's objects.
+   *   - exactly one namespace has to be selected. The catalogue's namespaced
+   *     entries are per-namespace, and there is no honest all-namespaces
+   *     equivalent — a cluster-wide curve is refused outright to a scoped grant,
+   *     and summing every namespace answers a question this list did not ask. So
+   *     "All namespaces" keeps the simple band.
+   *   - and there has to be a cluster to read through.
+   *
+   * A cluster with no datasource is deliberately *not* on that list: the region
+   * appears and says so, because a band that changes shape depending on which
+   * cluster is open is the thing this header was rebuilt to stop.
+   */
+  const charts = loaded?.kind === 'pods' || loaded?.kind === 'workloads'
+  const trend =
+    cluster && charts && namespaced && namespace && !allNamespaces ? (
+      <InsightTrend
+        cluster={cluster}
+        namespace={namespace}
+        onConfigure={() => navigate(`/clusters/${cluster.id}/summary`)}
+      />
+    ) : undefined
   // The active narrowing named in the list header, so a reading clicked at the
   // top of the page is still explained after scrolling down to the rows — and
   // so there is somewhere to undo it that is not back up there.
@@ -745,6 +774,7 @@ export function Explore() {
             insight={insight}
             bucket={bucket}
             onBucket={setBucket}
+            trend={trend}
             onOpen={(name, rowNamespace) =>
               setDetail({
                 kind: resource,

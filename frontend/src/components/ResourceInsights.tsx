@@ -31,6 +31,7 @@
  */
 
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { AlertTriangle, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 import type {
   InsightBucket,
@@ -97,11 +98,20 @@ const REGION_COLUMNS: Record<number, string> = {
   3: 'lg:grid-cols-3',
 }
 
+/**
+ * With a trend in the band the columns stop being equal: a curve needs width to
+ * be a curve rather than a scribble, and the two reading columns beside it are
+ * numbers that do not. Its own literal template rather than a `col-span`, so the
+ * ratio is one thing to read rather than two that have to agree.
+ */
+const TREND_COLUMNS = 'lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.6fr)]'
+
 export function ResourceInsights({
   insight,
   bucket,
   onBucket,
   onOpen,
+  trend,
 }: {
   insight: ResourceInsight
   /** The bucket the list is currently narrowed to, or null for the whole list. */
@@ -109,6 +119,14 @@ export function ResourceInsights({
   onBucket: (next: InsightBucket | null) => void
   /** Opens one alerting object, which is where a header full of names should lead. */
   onOpen?: (name: string, namespace: string) => void
+  /**
+   * The trend region, where the open list and the open namespace earn one. It
+   * arrives as a node rather than as a cluster and a metric because deciding
+   * *whether* there is history worth charting is the page's business — it knows
+   * the cluster, the namespace and whether the list is one whose objects consume
+   * anything — and drawing the band is this component's.
+   */
+  trend?: ReactNode
 }) {
   const [folded, setFolded] = useState(readFolded)
 
@@ -188,14 +206,26 @@ export function ResourceInsights({
         ))}
       </div>
     ) : null,
-    distribution ? <Distribution key="distribution" distribution={distribution} /> : null,
+    // A trend and a composition never both appear: the trend is drawn for one
+    // namespace, and a one-namespace list has nothing to spread over — which is
+    // why they share the third column rather than competing for a fourth.
+    trend ? (
+      <div key="trend" className="min-w-0">
+        {trend}
+      </div>
+    ) : distribution ? (
+      <Distribution key="distribution" distribution={distribution} />
+    ) : null,
   ].filter((region) => region !== null)
+
+  // The unequal template only describes three columns, so a list with nothing to
+  // break down falls back to two equal ones rather than leaving a blank third.
+  const columns =
+    trend && regions.length === 3 ? TREND_COLUMNS : (REGION_COLUMNS[regions.length] ?? '')
 
   return (
     <section className="card overflow-hidden">
-      <div
-        className={`grid divide-y divide-line-soft lg:divide-x lg:divide-y-0 ${REGION_COLUMNS[regions.length] ?? ''}`}
-      >
+      <div className={`grid divide-y divide-line-soft lg:divide-x lg:divide-y-0 ${columns}`}>
         {regions}
       </div>
 

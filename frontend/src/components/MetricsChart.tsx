@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ExternalLink, LineChart, RefreshCw } from 'lucide-react'
-import { queryError, queryMetrics, unconfigured } from '../api/client'
 import type { Cluster, MetricKind, MetricResult, MetricSeries } from '../api/types'
 import { formatCPU, formatMemory } from '../lib/units'
+import { PLOT_FULL, useMetricsQuery } from '../lib/metrics'
+import type { PlotGeometry } from '../lib/metrics'
 import { queryRangeLabel } from '../lib/timerange'
-import { useTimeRange } from '../state/timerange-context'
 import { Button, EmptyState, Notice } from './primitives'
 
 /*
@@ -69,40 +69,13 @@ export function MetricsChart({
   pod?: string
   onConfigure?: () => void
 }) {
-  const { range } = useTimeRange()
-  const [result, setResult] = useState<MetricResult | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [missing, setMissing] = useState(false)
+  const { result, loading, error, missing, explore, range, reload: load } = useMetricsQuery({
+    cluster,
+    metric,
+    namespace,
+    pod,
+  })
   const [showTable, setShowTable] = useState(false)
-  /* The same query in the cluster's own Grafana. It arrives *with* the result
-     because the server built it out of the query it just ran — a browser
-     assembling its own Explore link would be a browser writing a query. */
-  const [explore, setExplore] = useState<string | null>(null)
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const response = await queryMetrics(cluster.id, metric, { namespace, pod, range })
-      setResult(response.result)
-      setExplore(response.grafana_explore ?? null)
-      setError(null)
-      setMissing(false)
-    } catch (err) {
-      // "No datasource yet" is not a failure, it is a setup step — and it reads
-      // completely differently on screen.
-      setMissing(unconfigured(err))
-      setError(queryError(err, 'Could not read metrics for this window.'))
-      setResult(null)
-      setExplore(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [cluster.id, metric, namespace, pod, range])
-
-  useEffect(() => {
-    void load()
-  }, [load])
 
   if (missing) {
     return (
@@ -221,15 +194,6 @@ export function MetricsChart({
 
 /* ------------------------------------------------------------------ plot --- */
 
-/**
- * The plot's fixed dimensions. `left` is the axis gutter and has to fit the
- * widest tick label: at 9px JetBrains Mono a character is ~5.4px, and "1.50
- * cores" is ten of them — so a 52px gutter would clip it off the left edge.
- * The tick formatter keeps labels short and this leaves room for the longest
- * one it can still produce.
- */
-const PLOT = { height: 180, left: 62, right: 12, top: 10, bottom: 22 }
-
 interface Cursor {
   index: number
   x: number
@@ -266,7 +230,16 @@ function useMeasuredWidth(fallback: number) {
   return { ref, width }
 }
 
-function Plot({ result }: { result: MetricResult }) {
+export function Plot({
+  result,
+  geometry = PLOT_FULL,
+  /** Dropped in the compact band, where the card around it carries the range. */
+  axisLabels = true,
+}: {
+  result: MetricResult
+  geometry?: PlotGeometry
+  axisLabels?: boolean
+}) {
   const titleId = useId()
   const [cursor, setCursor] = useState<Cursor | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
@@ -298,11 +271,11 @@ function Plot({ result }: { result: MetricResult }) {
   const ceiling = max > 0 ? max * 1.1 : 1
   const spanX = times[times.length - 1] - times[0] || 1
 
-  const plotWidth = width - PLOT.left - PLOT.right
-  const plotHeight = PLOT.height - PLOT.top - PLOT.bottom
+  const plotWidth = width - geometry.left - geometry.right
+  const plotHeight = geometry.height - geometry.top - geometry.bottom
 
-  const xFor = (at: number) => PLOT.left + ((at - times[0]) / spanX) * plotWidth
-  const yFor = (value: number) => PLOT.top + plotHeight - (value / ceiling) * plotHeight
+  const xFor = (at: number) => geometry.left + ((at - times[0]) / spanX) * plotWidth
+  const yFor = (value: number) => geometry.top + plotHeight - (value / ceiling) * plotHeight
 
   // Four ticks is enough to read a magnitude and few enough to stay recessive.
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((fraction) => fraction * ceiling)
@@ -316,7 +289,7 @@ function Plot({ result }: { result: MetricResult }) {
     // The viewBox maps 1:1 to CSS pixels, so a client offset is already a
     // viewBox offset — no ratio to back out of.
     const local = clientX - box.left
-    const at = times[0] + ((local - PLOT.left) / plotWidth) * spanX
+    const at = times[0] + ((local - geometry.left) / plotWidth) * spanX
 
     // Snap to the nearest sample: a reader aims at a time, never at a 2px line.
     let nearest = 0
@@ -342,9 +315,9 @@ function Plot({ result }: { result: MetricResult }) {
         role="img"
         aria-labelledby={titleId}
         tabIndex={0}
-        viewBox={`0 0 ${width} ${PLOT.height}`}
+        viewBox={`0 0 ${width} ${geometry.height}`}
         width={width}
-        height={PLOT.height}
+        height={geometry.height}
         className="block touch-none rounded-control focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
         onPointerMove={locate}
         onPointerLeave={() => setCursor(null)}
@@ -361,8 +334,8 @@ function Plot({ result }: { result: MetricResult }) {
         {ticks.map((value) => (
           <line
             key={value}
-            x1={PLOT.left}
-            x2={width - PLOT.right}
+            x1={geometry.left}
+            x2={width - geometry.right}
             y1={yFor(value)}
             y2={yFor(value)}
             className="stroke-line-soft"
@@ -374,7 +347,7 @@ function Plot({ result }: { result: MetricResult }) {
         {ticks.map((value) => (
           <text
             key={`label-${value}`}
-            x={PLOT.left - 6}
+            x={geometry.left - 6}
             y={yFor(value) + 3}
             textAnchor="end"
             className="fill-faint font-mono text-[9px]"
@@ -400,8 +373,8 @@ function Plot({ result }: { result: MetricResult }) {
           <line
             x1={cursor.x}
             x2={cursor.x}
-            y1={PLOT.top}
-            y2={PLOT.top + plotHeight}
+            y1={geometry.top}
+            y2={geometry.top + plotHeight}
             className="stroke-faint"
             strokeWidth={1}
             vectorEffect="non-scaling-stroke"
@@ -430,21 +403,25 @@ function Plot({ result }: { result: MetricResult }) {
             })
           : null}
 
-        <text
-          x={PLOT.left}
-          y={PLOT.height - 6}
-          className="fill-faint font-mono text-[9px]"
-        >
-          {new Date(times[0]).toLocaleTimeString()}
-        </text>
-        <text
-          x={width - PLOT.right}
-          y={PLOT.height - 6}
-          textAnchor="end"
-          className="fill-faint font-mono text-[9px]"
-        >
-          {new Date(times[times.length - 1]).toLocaleTimeString()}
-        </text>
+        {axisLabels ? (
+          <>
+            <text
+              x={geometry.left}
+              y={geometry.height - 6}
+              className="fill-faint font-mono text-[9px]"
+            >
+              {new Date(times[0]).toLocaleTimeString()}
+            </text>
+            <text
+              x={width - geometry.right}
+              y={geometry.height - 6}
+              textAnchor="end"
+              className="fill-faint font-mono text-[9px]"
+            >
+              {new Date(times[times.length - 1]).toLocaleTimeString()}
+            </text>
+          </>
+        ) : null}
       </svg>
 
       {cursor ? (
