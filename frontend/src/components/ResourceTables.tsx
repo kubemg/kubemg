@@ -20,7 +20,7 @@ import type {
   Workload,
 } from '../api/types'
 import { FileCode2, History, PanelRightOpen, Pencil, RotateCcw, SlidersHorizontal } from 'lucide-react'
-import { IconButton, Pill, Row, SortTh, Table, Td, Th } from './primitives'
+import { IconButton, Pill, Row, RowMenu, RowMenuItem, SortTh, Table, Td, Th } from './primitives'
 import type { DetailTab } from './ResourceDetailDrawer'
 import type { WorkloadActionName } from './WorkloadActionPanel'
 import { workloadCapability, workloadKeyFor } from '../lib/workloads'
@@ -311,8 +311,10 @@ const AGE = 'text-[12.5px] text-muted'
  * The width the row actions actually need. A `table-fixed` table hands a column
  * exactly what it asked for, so a column asking for 1% gets 1% and its buttons
  * are drawn on top of whatever is to their left — which is why this is a real
- * measurement rather than a nominal one: 32px per button, 2px of gap between
- * them and 32px of cell padding, at the number of buttons that breakpoint shows.
+ * measurement rather than a nominal one: 32px of button, 8px of cell padding.
+ * View, YAML and edit fold behind one `RowMenu` trigger rather than three
+ * separate icons — a narrow table was giving those three shortcuts a fixed
+ * price in width paid by the one column that cannot afford it: the name.
  *
  * It is the default rather than something each table opts into, because a table
  * that forgets it does not look wrong until there are buttons in it — and by then
@@ -330,15 +332,15 @@ const AGE = 'text-[12.5px] text-muted'
  * The percentage is what a narrow table needs and the ceiling is what the
  * content can actually use, so past that width the extra room is the name's.
  */
-const ROW_ACTIONS_WIDTH = 'w-[64px] md:w-[100px] lg:w-[132px]'
+const ROW_ACTIONS_WIDTH = 'w-10'
 
 /**
  * A workload row carries two more: it can be scaled and it can be rolled. Below
- * `md` they fold away with the manifest shortcuts, for the same reason those do —
- * the drawer the first button opens offers both in its footer, so what is given up
- * on a narrow screen is a shortcut and not a destination.
+ * `md` they fold away, for the same reason the values-and-history buttons on a
+ * Helm row do — the drawer the menu opens offers both in its footer, so what is
+ * given up on a narrow screen is a shortcut and not a destination.
  */
-const WORKLOAD_ACTIONS_WIDTH = 'w-[64px] md:w-[166px] lg:w-[200px]'
+const WORKLOAD_ACTIONS_WIDTH = 'w-10 md:w-[104px]'
 
 /**
  * A Helm release has three actions: its values, editing them, and the revisions
@@ -374,9 +376,9 @@ function ManifestHead({
 /**
  * ManifestCell offers the three things you can do with a row, each opening the
  * same detail drawer on a different tab: look at the object, read its manifest,
- * or start changing it. Editing is offered separately from viewing rather than
- * hidden inside it, because opening a manifest to read is the common case and
- * should not look like the start of a change.
+ * or start changing it. All three sit behind one `RowMenu` trigger rather than
+ * three icons — the row's own width belongs to what it is naming, not to the
+ * ways of reaching a drawer that offers the same three tabs regardless.
  */
 function ManifestCell({
   onManifest,
@@ -390,7 +392,7 @@ function ManifestCell({
   namespace?: string
   editable?: boolean
   /**
-   * Actions belonging to this kind alone, shown ahead of the three every row
+   * Actions belonging to this kind alone, shown ahead of the menu every row
    * has. Kind-specific because they are: only a workload can be scaled.
    */
   actions?: ReactNode
@@ -401,38 +403,22 @@ function ManifestCell({
     <Td className="whitespace-nowrap">
       <span className="flex items-center justify-end gap-0.5">
         {actions}
-        <IconButton
-          type="button"
-          label={`View details for ${name}`}
-          onClick={() => onManifest(name, namespace, 'overview')}
-        >
-          <PanelRightOpen aria-hidden="true" className="size-3.5" />
-        </IconButton>
-        {/* Three buttons need 132px, which a narrow table does not have to give
-            without taking it from the name. The drawer the first button opens
-            reaches the manifest and its editor on its own tabs, so what is given
-            up below those widths is a shortcut and not a destination. `contents`
-            keeps the button a direct flex child at the widths it does show. */}
-        <span className="hidden md:contents">
-          <IconButton
-            type="button"
-            label={`View ${name} as YAML`}
-            onClick={() => onManifest(name, namespace, 'yaml')}
-          >
+        <RowMenu label={`Actions for ${name}`}>
+          <RowMenuItem onClick={() => onManifest(name, namespace, 'overview')}>
+            <PanelRightOpen aria-hidden="true" className="size-3.5" />
+            View details
+          </RowMenuItem>
+          <RowMenuItem onClick={() => onManifest(name, namespace, 'yaml')}>
             <FileCode2 aria-hidden="true" className="size-3.5" />
-          </IconButton>
-        </span>
-        {editable ? (
-          <span className="hidden lg:contents">
-            <IconButton
-              type="button"
-              label={`Edit ${name}`}
-              onClick={() => onManifest(name, namespace, 'yaml', true)}
-            >
+            View as YAML
+          </RowMenuItem>
+          {editable ? (
+            <RowMenuItem onClick={() => onManifest(name, namespace, 'yaml', true)}>
               <Pencil aria-hidden="true" className="size-3.5" />
-            </IconButton>
-          </span>
-        ) : null}
+              Edit
+            </RowMenuItem>
+          ) : null}
+        </RowMenu>
       </span>
     </Td>
   )
@@ -514,16 +500,28 @@ function HelmReleaseTable({
   onValues?: OpenValues
 }) {
   return (
-    <Table>
+    <Table resizeKey="kubemg_cols_helmreleases">
       <thead>
         <tr>
-          <Th>Release</Th>
-          <Th className="hidden md:table-cell md:w-[min(18%,14rem)]">Chart</Th>
-          <Th className="hidden lg:table-cell lg:w-[min(10%,7rem)]">Version</Th>
-          <Th className="hidden lg:table-cell lg:w-[min(10%,7rem)]">App</Th>
-          <Th className="w-[12%] md:w-[min(7%,5rem)]">Rev</Th>
-          <Th className="w-[28%] md:w-[min(14%,9rem)]">Status</Th>
-          <Th className="w-[22%] md:w-[min(10%,7rem)]">Updated</Th>
+          <Th columnKey="name">Release</Th>
+          <Th className="hidden md:table-cell md:w-[min(18%,14rem)]" columnKey="chart">
+            Chart
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(10%,7rem)]" columnKey="version">
+            Version
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(10%,7rem)]" columnKey="app">
+            App
+          </Th>
+          <Th className="w-[12%] md:w-[min(7%,5rem)]" columnKey="rev">
+            Rev
+          </Th>
+          <Th className="w-[28%] md:w-[min(14%,9rem)]" columnKey="status">
+            Status
+          </Th>
+          <Th className="w-[22%] md:w-[min(10%,7rem)]" columnKey="updated">
+            Updated
+          </Th>
           {onValues ? (
             <Th className={VALUES_ACTIONS_WIDTH}>
               <span className="sr-only">Values</span>
@@ -593,7 +591,7 @@ function HelmReleaseTable({
  * different read that the Kubernetes API cannot order a pod list by at all.
  */
 
-type PodSortKey = 'name' | 'phase' | 'ready' | 'cpu' | 'memory' | 'restarts' | 'node' | 'age'
+type PodSortKey = 'name' | 'phase' | 'cpu' | 'memory' | 'restarts' | 'node' | 'age'
 
 type PodSort = { key: PodSortKey; direction: 'asc' | 'desc' }
 
@@ -606,7 +604,6 @@ type PodSort = { key: PodSortKey; direction: 'asc' | 'desc' }
 const POD_SORT_FIRST: Record<PodSortKey, 'asc' | 'desc'> = {
   name: 'asc',
   phase: 'asc',
-  ready: 'asc',
   cpu: 'desc',
   memory: 'desc',
   restarts: 'desc',
@@ -626,10 +623,6 @@ function podSortValue(pod: Pod, usage: PodUsageIndex | null, key: PodSortKey): s
       return `${pod.namespace}/${pod.name}`
     case 'phase':
       return pod.phase
-    case 'ready':
-      // The fraction, not the count: 1/1 is ready and 1/3 is not, and a list is
-      // asked which pods are short rather than which have the fewest containers.
-      return pod.total > 0 ? pod.ready / pod.total : 0
     case 'cpu':
       return sample ? sample.cpu_millicores : -1
     case 'memory':
@@ -695,10 +688,11 @@ function PodTable({
           ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
           : { key, direction: POD_SORT_FIRST[key] },
       ),
+    columnKey: key,
   })
 
   return (
-    <Table>
+    <Table resizeKey="kubemg_cols_pods">
       <thead>
         <tr>
           {/* The name column asks for no width: `table-fixed` gives an
@@ -706,23 +700,23 @@ function PodTable({
               a name should have — the readings, the counts and the buttons all
               need a known amount of room and a pod name will take any. */}
           <SortTh {...column('name')}>Pod</SortTh>
-          <SortTh className="w-[22%] sm:w-[16%] md:w-[min(12%,8rem)]" {...column('phase')}>
+          {/* Ready rides beside the phase pill rather than a column of its own —
+              1/1 only means something once you already know a pod is Running,
+              so the two are one reading, not two. */}
+          <SortTh className="w-[28%] sm:w-[20%] md:w-[min(15%,10rem)]" {...column('phase')}>
             Phase
-          </SortTh>
-          <SortTh className="w-[16%] sm:w-[10%] md:w-[min(8%,6rem)]" {...column('ready')}>
-            Ready
           </SortTh>
           {/* CPU and memory are the two numbers `kubectl top` answers with, in
               the same order, so they read as the same thing. They are the first
               columns to go on a narrow screen: a phase and a restart count say
               whether a pod is in trouble, a reading says how much. */}
-          <SortTh className="hidden sm:table-cell sm:w-[14%] md:w-[min(11%,7rem)]" {...column('cpu')}>
+          <SortTh className="hidden sm:table-cell sm:w-[11%] md:w-[min(8%,5.5rem)]" {...column('cpu')}>
             CPU
           </SortTh>
-          <SortTh className="hidden sm:table-cell sm:w-[14%] md:w-[min(12%,7.5rem)]" {...column('memory')}>
+          <SortTh className="hidden sm:table-cell sm:w-[11%] md:w-[min(9%,6rem)]" {...column('memory')}>
             Memory
           </SortTh>
-          <SortTh className="hidden md:table-cell md:w-[min(8%,6.5rem)]" {...column('restarts')}>
+          <SortTh className="hidden md:table-cell md:w-[min(5%,3.5rem)]" {...column('restarts')}>
             Restarts
           </SortTh>
           {/* A node name is long and this table is the one with the most columns,
@@ -731,7 +725,7 @@ function PodTable({
           <SortTh className="hidden xl:table-cell xl:w-[min(14%,14rem)]" {...column('node')}>
             Node
           </SortTh>
-          <SortTh className="w-[20%] sm:w-[14%] md:w-[min(9%,6rem)]" {...column('age')}>
+          <SortTh className="w-[14%] sm:w-[10%] md:w-[min(6%,4.5rem)]" {...column('age')}>
             Age
           </SortTh>
           <ManifestHead onManifest={onManifest} />
@@ -758,11 +752,13 @@ function PodTable({
                 </button>
               </span>
             </Td>
-            <Td>
-              <Pill tone={podTone(pod)}>{pod.phase}</Pill>
-            </Td>
-            <Td className="font-mono text-[12.5px] text-muted">
-              {pod.ready}/{pod.total}
+            <Td className="whitespace-nowrap">
+              <span className="flex items-center gap-1.5">
+                <Pill tone={podTone(pod)}>{pod.phase}</Pill>
+                <span className="font-mono text-[12.5px] text-muted">
+                  {pod.ready}/{pod.total}
+                </span>
+              </span>
             </Td>
             <UsageCell
               usage={usage}
@@ -915,16 +911,24 @@ function WorkloadTable({
   onAction?: OpenWorkloadAction
 }) {
   return (
-    <Table>
+    <Table resizeKey="kubemg_cols_workloads">
       <thead>
         <tr>
           {/* No width, on purpose: the sized columns and the five buttons take
               their measurements and the name takes what is left. */}
-          <Th>Name</Th>
-          <Th className="w-[22%] md:w-[min(13%,9rem)]">Kind</Th>
-          <Th className="w-[16%] md:w-[min(9%,6rem)]">Ready</Th>
-          <Th className="hidden lg:table-cell lg:w-[min(26%,20rem)]">Image</Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]">Age</Th>
+          <Th columnKey="name">Name</Th>
+          <Th className="w-[22%] md:w-[min(13%,9rem)]" columnKey="kind">
+            Kind
+          </Th>
+          <Th className="w-[16%] md:w-[min(9%,6rem)]" columnKey="ready">
+            Ready
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(26%,20rem)]" columnKey="image">
+            Image
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
           <ManifestHead onManifest={onManifest} width={WORKLOAD_ACTIONS_WIDTH} />
         </tr>
       </thead>
@@ -976,15 +980,25 @@ function JobTable({
   onManifest?: OpenManifest
 }) {
   return (
-    <Table>
+    <Table resizeKey="kubemg_cols_jobs">
       <thead>
         <tr>
-          <Th>Job</Th>
-          <Th className="w-[22%] md:w-[min(14%,9rem)]">State</Th>
-          <Th className="w-[18%] md:w-[min(10%,7rem)]">Completed</Th>
-          <Th className="hidden md:table-cell md:w-[min(8%,6rem)]">Failed</Th>
-          <Th className="hidden lg:table-cell lg:w-[min(28%,20rem)]">Image</Th>
-          <Th className="w-[18%] md:w-[min(10%,6rem)]">Age</Th>
+          <Th columnKey="name">Job</Th>
+          <Th className="w-[22%] md:w-[min(14%,9rem)]" columnKey="state">
+            State
+          </Th>
+          <Th className="w-[18%] md:w-[min(10%,7rem)]" columnKey="completed">
+            Completed
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(8%,6rem)]" columnKey="failed">
+            Failed
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(28%,20rem)]" columnKey="image">
+            Image
+          </Th>
+          <Th className="w-[18%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
           <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
@@ -1036,15 +1050,25 @@ function CronJobTable({
   onManifest?: OpenManifest
 }) {
   return (
-    <Table>
+    <Table resizeKey="kubemg_cols_cronjobs">
       <thead>
         <tr>
-          <Th>CronJob</Th>
-          <Th className="w-[28%] md:w-[min(16%,11rem)]">Schedule</Th>
-          <Th className="w-[16%] md:w-[min(12%,8rem)]">State</Th>
-          <Th className="hidden md:table-cell md:w-[min(8%,6rem)]">Active</Th>
-          <Th className="hidden md:table-cell md:w-[min(16%,10rem)]">Last run</Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]">Age</Th>
+          <Th columnKey="name">CronJob</Th>
+          <Th className="w-[28%] md:w-[min(16%,11rem)]" columnKey="schedule">
+            Schedule
+          </Th>
+          <Th className="w-[16%] md:w-[min(12%,8rem)]" columnKey="state">
+            State
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(8%,6rem)]" columnKey="active">
+            Active
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(16%,10rem)]" columnKey="lastrun">
+            Last run
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
           <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
@@ -1096,15 +1120,25 @@ function ServiceTable({
   onManifest?: OpenManifest
 }) {
   return (
-    <Table>
+    <Table resizeKey="kubemg_cols_services">
       <thead>
         <tr>
-          <Th>Service</Th>
-          <Th className="w-[24%] md:w-[min(13%,9rem)]">Type</Th>
-          <Th className="hidden md:table-cell md:w-[min(15%,10rem)]">Cluster IP</Th>
-          <Th className="hidden lg:table-cell lg:w-[min(18%,12rem)]">External</Th>
-          <Th className="w-[20%] md:w-[min(18%,12rem)]">Ports</Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]">Age</Th>
+          <Th columnKey="name">Service</Th>
+          <Th className="w-[24%] md:w-[min(13%,9rem)]" columnKey="type">
+            Type
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(15%,10rem)]" columnKey="clusterip">
+            Cluster IP
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(18%,12rem)]" columnKey="external">
+            External
+          </Th>
+          <Th className="w-[20%] md:w-[min(18%,12rem)]" columnKey="ports">
+            Ports
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
           <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
@@ -1151,15 +1185,25 @@ function IngressTable({
   onManifest?: OpenManifest
 }) {
   return (
-    <Table>
+    <Table resizeKey="kubemg_cols_ingresses">
       <thead>
         <tr>
-          <Th>Ingress</Th>
-          <Th className="w-[24%] md:w-[min(14%,10rem)]">Class</Th>
-          <Th className="w-[24%] md:w-[min(26%,18rem)]">Hosts</Th>
-          <Th className="hidden lg:table-cell lg:w-[min(18%,12rem)]">Address</Th>
-          <Th className="hidden md:table-cell md:w-[min(8%,6rem)]">Rules</Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]">Age</Th>
+          <Th columnKey="name">Ingress</Th>
+          <Th className="w-[24%] md:w-[min(14%,10rem)]" columnKey="class">
+            Class
+          </Th>
+          <Th className="w-[24%] md:w-[min(26%,18rem)]" columnKey="hosts">
+            Hosts
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(18%,12rem)]" columnKey="address">
+            Address
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(8%,6rem)]" columnKey="rules">
+            Rules
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
           <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
@@ -1208,14 +1252,22 @@ function RouteTable({
   onManifest?: OpenManifest
 }) {
   return (
-    <Table>
+    <Table resizeKey="kubemg_cols_routes">
       <thead>
         <tr>
-          <Th>Route</Th>
-          <Th className="w-[32%] md:w-[min(30%,20rem)]">Hostnames</Th>
-          <Th className="hidden md:table-cell md:w-[min(24%,16rem)]">Attached to</Th>
-          <Th className="hidden md:table-cell md:w-[min(8%,6rem)]">Rules</Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]">Age</Th>
+          <Th columnKey="name">Route</Th>
+          <Th className="w-[32%] md:w-[min(30%,20rem)]" columnKey="hostnames">
+            Hostnames
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(24%,16rem)]" columnKey="attached">
+            Attached to
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(8%,6rem)]" columnKey="rules">
+            Rules
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
           <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
@@ -1253,16 +1305,28 @@ function PersistentVolumeTable({
   onManifest?: OpenManifest
 }) {
   return (
-    <Table>
+    <Table resizeKey="kubemg_cols_persistentvolumes">
       <thead>
         <tr>
-          <Th>Volume</Th>
-          <Th className="w-[20%] md:w-[min(12%,8rem)]">Status</Th>
-          <Th className="w-[16%] md:w-[min(10%,7rem)]">Capacity</Th>
-          <Th className="hidden md:table-cell md:w-[min(12%,9rem)]">Access</Th>
-          <Th className="hidden lg:table-cell lg:w-[min(20%,14rem)]">Claim</Th>
-          <Th className="hidden lg:table-cell lg:w-[min(12%,10rem)]">Class</Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]">Age</Th>
+          <Th columnKey="name">Volume</Th>
+          <Th className="w-[20%] md:w-[min(12%,8rem)]" columnKey="status">
+            Status
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,7rem)]" columnKey="capacity">
+            Capacity
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(12%,9rem)]" columnKey="access">
+            Access
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(20%,14rem)]" columnKey="claim">
+            Claim
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(12%,10rem)]" columnKey="class">
+            Class
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
           <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
@@ -1302,16 +1366,28 @@ function ClaimTable({
   onManifest?: OpenManifest
 }) {
   return (
-    <Table>
+    <Table resizeKey="kubemg_cols_persistentvolumeclaims">
       <thead>
         <tr>
-          <Th>Claim</Th>
-          <Th className="w-[20%] md:w-[min(12%,8rem)]">Status</Th>
-          <Th className="w-[16%] md:w-[min(10%,7rem)]">Capacity</Th>
-          <Th className="hidden md:table-cell md:w-[min(12%,9rem)]">Access</Th>
-          <Th className="hidden lg:table-cell lg:w-[min(14%,10rem)]">Class</Th>
-          <Th className="hidden lg:table-cell lg:w-[min(16%,14rem)]">Volume</Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]">Age</Th>
+          <Th columnKey="name">Claim</Th>
+          <Th className="w-[20%] md:w-[min(12%,8rem)]" columnKey="status">
+            Status
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,7rem)]" columnKey="capacity">
+            Capacity
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(12%,9rem)]" columnKey="access">
+            Access
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(14%,10rem)]" columnKey="class">
+            Class
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(16%,14rem)]" columnKey="volume">
+            Volume
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
           <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
@@ -1354,14 +1430,22 @@ function StorageClassTable({
   onManifest?: OpenManifest
 }) {
   return (
-    <Table>
+    <Table resizeKey="kubemg_cols_storageclasses">
       <thead>
         <tr>
-          <Th>Class</Th>
-          <Th className="w-[34%] md:w-[min(26%,18rem)]">Provisioner</Th>
-          <Th className="hidden md:table-cell md:w-[min(14%,9rem)]">Reclaim</Th>
-          <Th className="hidden lg:table-cell lg:w-[min(14%,11rem)]">Binding</Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]">Age</Th>
+          <Th columnKey="name">Class</Th>
+          <Th className="w-[34%] md:w-[min(26%,18rem)]" columnKey="provisioner">
+            Provisioner
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(14%,9rem)]" columnKey="reclaim">
+            Reclaim
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(14%,11rem)]" columnKey="binding">
+            Binding
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
           <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
@@ -1402,16 +1486,27 @@ function ConfigTable({
   onManifest?: OpenManifest
 }) {
   return (
-    <Table>
+    <Table resizeKey={secrets ? 'kubemg_cols_secrets' : 'kubemg_cols_configmaps'}>
       <thead>
         <tr>
-          <Th>{secrets ? 'Secret' : 'ConfigMap'}</Th>
-          {secrets ? <Th className="hidden md:table-cell md:w-[min(20%,14rem)]">Type</Th> : null}
-          <Th className="w-[14%] md:w-[min(8%,5rem)]">Keys</Th>
-          <Th className={`hidden lg:table-cell ${secrets ? 'lg:w-[min(26%,20rem)]' : 'lg:w-[min(46%,28rem)]'}`}>
+          <Th columnKey="name">{secrets ? 'Secret' : 'ConfigMap'}</Th>
+          {secrets ? (
+            <Th className="hidden md:table-cell md:w-[min(20%,14rem)]" columnKey="type">
+              Type
+            </Th>
+          ) : null}
+          <Th className="w-[14%] md:w-[min(8%,5rem)]" columnKey="keys">
+            Keys
+          </Th>
+          <Th
+            className={`hidden lg:table-cell ${secrets ? 'lg:w-[min(26%,20rem)]' : 'lg:w-[min(46%,28rem)]'}`}
+            columnKey="keynames"
+          >
             Key names
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]">Age</Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
           <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
@@ -1461,14 +1556,22 @@ function CRDTable({
   onManifest?: OpenManifest
 }) {
   return (
-    <Table>
+    <Table resizeKey="kubemg_cols_crds">
       <thead>
         <tr>
-          <Th>Definition</Th>
-          <Th className="w-[24%] md:w-[min(18%,12rem)]">Kind</Th>
-          <Th className="hidden md:table-cell md:w-[min(20%,14rem)]">Group</Th>
-          <Th className="hidden lg:table-cell lg:w-[min(10%,7rem)]">Scope</Th>
-          <Th className="w-[18%] md:w-[min(12%,8rem)]">Versions</Th>
+          <Th columnKey="name">Definition</Th>
+          <Th className="w-[24%] md:w-[min(18%,12rem)]" columnKey="kind">
+            Kind
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(20%,14rem)]" columnKey="group">
+            Group
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(10%,7rem)]" columnKey="scope">
+            Scope
+          </Th>
+          <Th className="w-[18%] md:w-[min(12%,8rem)]" columnKey="versions">
+            Versions
+          </Th>
           <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
@@ -1509,13 +1612,19 @@ function CustomResourceTable({
   onManifest?: OpenManifest
 }) {
   return (
-    <Table>
+    <Table resizeKey="kubemg_cols_customresources">
       <thead>
         <tr>
-          <Th>Name</Th>
-          <Th className="hidden md:table-cell md:w-[min(22%,14rem)]">Kind</Th>
-          <Th className="hidden lg:table-cell lg:w-[min(20%,14rem)]">API version</Th>
-          <Th className="w-[20%] md:w-[min(14%,6rem)]">Age</Th>
+          <Th columnKey="name">Name</Th>
+          <Th className="hidden md:table-cell md:w-[min(22%,14rem)]" columnKey="kind">
+            Kind
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(20%,14rem)]" columnKey="apiversion">
+            API version
+          </Th>
+          <Th className="w-[20%] md:w-[min(14%,6rem)]" columnKey="age">
+            Age
+          </Th>
           <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
@@ -1542,16 +1651,28 @@ function CustomResourceTable({
 
 function NodeTable({ nodes, onManifest }: { nodes: ClusterNode[]; onManifest?: OpenManifest }) {
   return (
-    <Table>
+    <Table resizeKey="kubemg_cols_nodes">
       <thead>
         <tr>
-          <Th>Node</Th>
-          <Th className="w-[26%] md:w-[min(16%,10rem)]">Status</Th>
-          <Th className="hidden md:table-cell md:w-[min(16%,11rem)]">Roles</Th>
-          <Th className="w-[22%] md:w-[min(12%,8rem)]">Version</Th>
-          <Th className="hidden lg:table-cell lg:w-[min(14%,10rem)]">Internal IP</Th>
-          <Th className="hidden lg:table-cell lg:w-[min(8%,6rem)]">CPU</Th>
-          <Th className="w-[18%] md:w-[min(10%,6rem)]">Age</Th>
+          <Th columnKey="name">Node</Th>
+          <Th className="w-[26%] md:w-[min(16%,10rem)]" columnKey="status">
+            Status
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(16%,11rem)]" columnKey="roles">
+            Roles
+          </Th>
+          <Th className="w-[22%] md:w-[min(12%,8rem)]" columnKey="version">
+            Version
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(14%,10rem)]" columnKey="internalip">
+            Internal IP
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(8%,6rem)]" columnKey="cpu">
+            CPU
+          </Th>
+          <Th className="w-[18%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
           <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
@@ -1591,13 +1712,19 @@ function NamespaceTable({
   onManifest?: OpenManifest
 }) {
   return (
-    <Table>
+    <Table resizeKey="kubemg_cols_namespaces">
       <thead>
         <tr>
-          <Th>Namespace</Th>
-          <Th className="w-[26%] md:w-[min(20%,12rem)]">Status</Th>
-          <Th className="hidden md:table-cell md:w-[min(20%,14rem)]">Your access</Th>
-          <Th className="w-[24%] md:w-[min(20%,6rem)]">Age</Th>
+          <Th columnKey="name">Namespace</Th>
+          <Th className="w-[26%] md:w-[min(20%,12rem)]" columnKey="status">
+            Status
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(20%,14rem)]" columnKey="access">
+            Your access
+          </Th>
+          <Th className="w-[24%] md:w-[min(20%,6rem)]" columnKey="age">
+            Age
+          </Th>
           <ManifestHead onManifest={onManifest} />
         </tr>
       </thead>
