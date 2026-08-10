@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
-import { RefreshCw, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { ExternalLink, RefreshCw, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { errorMessage, fetchResourceDescribe } from '../api/client'
 import type {
   Cluster,
@@ -10,6 +10,7 @@ import type {
   ResourceDescribeResult,
   ResourceField,
 } from '../api/types'
+import { ARGO_INSTANCE_LABEL, argoApplicationHref, useClusterConsole } from '../lib/consoles'
 import type { ResourceKey } from '../lib/resources'
 import type { Tone } from '../lib/status'
 import { relativeAge } from '../lib/time'
@@ -218,6 +219,11 @@ export function ResourceDetailDrawer({
   // from the describe already on screen rather than from a read of its own.
   const replicas = numericField(describe?.spec_summary, 'replicas')
 
+  const argocd = useClusterConsole(cluster.id, 'argocd')
+  const argoApp = argocd
+    ? argoApplicationHref(argocd.url, describe?.labels?.[ARGO_INSTANCE_LABEL] ?? '')
+    : ''
+
   const actionTarget: WorkloadActionTarget | null = action
     ? {
         action,
@@ -286,6 +292,24 @@ export function ResourceDetailDrawer({
             {describe.kind}
           </Pill>
         ) : null}
+        {/* What deployed this. A workload that keeps reverting was reverted by
+            something, and the label Argo writes on everything it owns is the one
+            thing needed to open the application that owns it. A path, so it is
+            built here — unlike Grafana's Explore link, which carries a query and
+            is therefore always the server's to write. */}
+        {argoApp ? (
+          <a
+            href={argoApp}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex items-center gap-1.5 text-[12px] text-muted transition-colors hover:text-fg"
+            title="Open the Argo CD application that owns this object"
+          >
+            <ExternalLink aria-hidden="true" className="size-3.5" />
+            Argo CD
+          </a>
+        ) : null}
+
         {/* A failing condition is the headline: it is the object saying, in its
             own words, that it is not what it was asked to be. */}
         {failing(describe?.conditions).map((condition) => (

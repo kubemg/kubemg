@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { LineChart, RefreshCw } from 'lucide-react'
+import { ExternalLink, LineChart, RefreshCw } from 'lucide-react'
 import { queryError, queryMetrics, unconfigured } from '../api/client'
 import type { Cluster, MetricKind, MetricResult, MetricSeries } from '../api/types'
 import { formatCPU, formatMemory } from '../lib/units'
@@ -75,12 +75,17 @@ export function MetricsChart({
   const [error, setError] = useState<string | null>(null)
   const [missing, setMissing] = useState(false)
   const [showTable, setShowTable] = useState(false)
+  /* The same query in the cluster's own Grafana. It arrives *with* the result
+     because the server built it out of the query it just ran — a browser
+     assembling its own Explore link would be a browser writing a query. */
+  const [explore, setExplore] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const response = await queryMetrics(cluster.id, metric, { namespace, pod, range })
       setResult(response.result)
+      setExplore(response.grafana_explore ?? null)
       setError(null)
       setMissing(false)
     } catch (err) {
@@ -89,6 +94,7 @@ export function MetricsChart({
       setMissing(unconfigured(err))
       setError(queryError(err, 'Could not read metrics for this window.'))
       setResult(null)
+      setExplore(null)
     } finally {
       setLoading(false)
     }
@@ -129,6 +135,21 @@ export function MetricsChart({
 
         <div className="ml-auto flex items-center gap-2">
           <span className="text-[12px] text-muted">{queryRangeLabel(range)}</span>
+          {/* Where the question outgrows the catalogue. It carries this query
+              and this window, so the next question starts where this one
+              stopped rather than on Grafana's front page. */}
+          {explore ? (
+            <a
+              href={explore}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="inline-flex items-center gap-1.5 text-[12px] text-muted transition-colors hover:text-fg"
+              title="Open this query in the cluster's Grafana"
+            >
+              <ExternalLink aria-hidden="true" className="size-3.5" />
+              Grafana
+            </a>
+          ) : null}
           <Button type="button" size="sm" onClick={() => void load()} disabled={loading}>
             <RefreshCw aria-hidden="true" className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span className="sr-only">Refresh</span>

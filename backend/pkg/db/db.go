@@ -43,6 +43,7 @@ func Migrate(gdb *gorm.DB) error {
 		&TerminalSession{},
 		&Setting{},
 		&ObservabilitySource{},
+		&ClusterConsole{},
 		&SSOProviderConfig{},
 		&SSOGroupMapping{},
 		&AlarmChannel{},

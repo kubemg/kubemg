@@ -968,6 +968,13 @@ export interface MetricQueryResponse {
   result: MetricResult
   provider: MetricsProvider
   endpoint: string
+  /**
+   * The same query, in the cluster's registered Grafana, over the same window.
+   * It is built by the server for the same reason the query is: a browser
+   * assembling its own Explore link would be a browser writing a query. Absent
+   * when there is no Grafana registered or the datasource has no uid in it.
+   */
+  grafana_explore?: string
 }
 
 /** One ranked entity across two windows. `previous` is absent when the entity
@@ -1033,6 +1040,8 @@ export interface LogQueryResponse {
   result: LogQueryResult
   provider: LogsProvider
   endpoint: string
+  /** The same search in the cluster's Grafana — see MetricQueryResponse. */
+  grafana_explore?: string
 }
 
 /* ------------------------------------------------------- observability --- */
@@ -1070,6 +1079,13 @@ export interface ObservabilitySource {
   has_credential: boolean
   insecure_skip_verify: boolean
   enabled: boolean
+  /** This backend's uid in the cluster's Grafana; what an Explore deep link
+      cannot be built without. */
+  grafana_datasource?: string
+  /** The backend's *own* query UI, where it has one a browser can reach. An
+      in-cluster source has none by construction — it is reached by asking the
+      API server to proxy to a Service, not by opening a URL. */
+  ui_url?: string
   /** The address this resolves to, rendered for display. */
   endpoint: string
   last_status: ClusterStatus
@@ -1097,6 +1113,7 @@ export interface DatasourceInput {
   credential?: string
   insecure_skip_verify?: boolean
   enabled?: boolean
+  grafana_datasource?: string
 }
 
 /** The verdict of one datasource check, written for the person who typed it. */
@@ -1112,6 +1129,45 @@ export interface ObservabilityResponse {
   sources: ObservabilitySource[]
   agent_attached: boolean
   connection_mode: ConnectionMode
+  editable: boolean
+}
+
+/*
+ * The other consoles a cluster is operated from.
+ *
+ * Deliberately a link and not an embed: an iframe would inherit this console's
+ * origin and its session, and proxying a whole Grafana through the agent tunnel
+ * would mean carrying another application's routing and websockets inside a
+ * transport built for the Kubernetes API. KubeMG stores an address, holds no
+ * session for either tool, and the operator signs in to them as themselves.
+ */
+export type ConsoleKind = 'grafana' | 'argocd'
+
+export interface ClusterConsole {
+  kind: ConsoleKind
+  url: string
+  /** The one identifier that opens the target on the right thing rather than on
+      its front page. Optional — a console without one still gets a bare link. */
+  ref?: string
+  updated_at: string
+}
+
+export interface ConsoleInput {
+  url: string
+  ref?: string
+}
+
+/** A datasource's own query UI, derived from the address the cluster already
+    declared rather than stored a second time. */
+export interface DatasourceUI {
+  kind: DatasourceKind
+  provider: DatasourceProvider
+  url: string
+}
+
+export interface ClusterConsolesResponse {
+  consoles: ClusterConsole[]
+  datasource_uis: DatasourceUI[]
   editable: boolean
 }
 

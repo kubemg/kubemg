@@ -45,6 +45,8 @@ type fakeStore struct {
 	// sources holds the observability datasources, keyed the way the table is:
 	// one per cluster per kind.
 	sources map[uint]map[string]db.ObservabilitySource
+	// consoles holds the external console links, keyed the same way.
+	consoles map[uint]map[string]db.ClusterConsole
 	// Federation: the providers and the rules that say what an external group is
 	// worth. Keyed by id like the tables they stand in for.
 	providers   map[uint]*db.SSOProviderConfig
@@ -89,6 +91,7 @@ func newFakeStore() *fakeStore {
 		groupAccess: map[uint]map[uint]db.GroupClusterAccess{},
 		settings:    map[string]string{},
 		sources:     map[uint]map[string]db.ObservabilitySource{},
+		consoles:    map[uint]map[string]db.ClusterConsole{},
 		providers:   map[uint]*db.SSOProviderConfig{},
 		mappings:    map[uint]*db.SSOGroupMapping{},
 		syncResults: map[string]*db.SSOSyncResult{},
@@ -818,6 +821,37 @@ func (f *fakeStore) DeleteObservabilitySource(_ context.Context, clusterID uint,
 		return db.ErrNotFound
 	}
 	delete(f.sources[clusterID], kind)
+	return nil
+}
+
+func (f *fakeStore) ClusterConsoles(_ context.Context, clusterID uint) ([]db.ClusterConsole, error) {
+	out := []db.ClusterConsole{}
+	for _, kind := range db.ConsoleKinds {
+		if console, ok := f.consoles[clusterID][kind]; ok {
+			out = append(out, console)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) PutClusterConsole(_ context.Context, console *db.ClusterConsole) error {
+	if f.consoles[console.ClusterID] == nil {
+		f.consoles[console.ClusterID] = map[string]db.ClusterConsole{}
+	}
+	if console.ID == 0 {
+		console.ID = f.nextID
+		f.nextID++
+	}
+	console.UpdatedAt = time.Now()
+	f.consoles[console.ClusterID][console.Kind] = *console
+	return nil
+}
+
+func (f *fakeStore) DeleteClusterConsole(_ context.Context, clusterID uint, kind string) error {
+	if _, ok := f.consoles[clusterID][kind]; !ok {
+		return db.ErrNotFound
+	}
+	delete(f.consoles[clusterID], kind)
 	return nil
 }
 

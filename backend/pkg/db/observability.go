@@ -152,6 +152,13 @@ type ObservabilitySource struct {
 	// Enabled lets an operator park a source without deleting its credential.
 	Enabled bool `gorm:"not null;default:true" json:"enabled"`
 
+	// GrafanaDatasource is this backend's uid in the cluster's registered
+	// Grafana, which is the one thing an Explore deep link cannot be built
+	// without. It is stored here rather than on the Grafana console row because
+	// it identifies *this* source: one Grafana holds the metrics datasource and
+	// the logs one, and they are two different uids.
+	GrafanaDatasource string `gorm:"size:190" json:"grafana_datasource,omitempty"`
+
 	LastCheckedAt *time.Time `json:"last_checked_at,omitempty"`
 	LastStatus    string     `gorm:"size:20;not null;default:pending" json:"last_status"`
 	LastMessage   string     `gorm:"type:text" json:"last_message,omitempty"`
@@ -225,7 +232,7 @@ func (s *Store) PutObservabilitySource(ctx context.Context, source *Observabilit
 			"provider", "access_mode", "url",
 			"service_namespace", "service_name", "service_port", "service_scheme",
 			"path_prefix", "auth_mode", "username", "credential",
-			"insecure_skip_verify", "enabled",
+			"insecure_skip_verify", "enabled", "grafana_datasource",
 			"last_checked_at", "last_status", "last_message", "detected_version",
 			"updated_at",
 		}),
