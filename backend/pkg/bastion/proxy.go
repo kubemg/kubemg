@@ -360,6 +360,111 @@ func (p *Proxy) Call(
 	return resp, nil
 }
 
+/*
+ * Watch is Call's long-lived sibling: one streaming GET, held open for as long
+ * as the caller wants it, under the same impersonated identity.
+ *
+ * It exists for the one read whose cost is wrong as a request. Everything else
+ * in the resource API is a question somebody asked once — a list, a manifest, a
+ * describe — and paying a round trip for it is the right price. A cluster's
+ * Events are the opposite: the question ("what is happening") is continuous, the
+ * answer changes constantly, and asking it as a list means either a repeated
+ * cluster-wide read on every page view or a background poll that runs whether
+ * anybody is looking. A watch is one call that keeps answering, which is the
+ * shape the API server is built for and the shape every controller uses.
+ *
+ * Everything Call establishes still holds and for the same reasons: the
+ * namespace scope is checked before the tunnel is looked up, guardrails apply
+ * (a watch is an API call like any other), and the audit trail gets a record.
+ * The record is written at **open** rather than at close: a stream that runs for
+ * six hours must appear in the trail when it starts, not when it ends, or the
+ * one call worth noticing is the one the trail is missing.
+ */
+func (p *Proxy) Watch(
+	ctx context.Context,
+	user *db.User,
+	cluster *db.Cluster,
+	grant db.UserClusterAccess,
+	path string,
+) (*Stream, error) {
+	started := time.Now()
+	parsed := ParsePath(path)
+
+	event := Event{
+		At:        started.UTC(),
+		UserID:    user.ID,
+		Username:  user.Username,
+		ClusterID: cluster.ID,
+		Cluster:   cluster.Name,
+		// A watch is its own verb in Kubernetes' vocabulary and in the audit
+		// policy's, so it is recorded as one rather than folded into a list.
+		Verb:               VerbFor(http.MethodGet, path),
+		Method:             http.MethodGet,
+		Path:               path,
+		Namespace:          parsed.Namespace,
+		Resource:           parsed.Resource,
+		ImpersonatedUser:   user.Username,
+		ImpersonatedGroups: ImpersonationGroups(grant.K8sRole),
+	}
+
+	record := func(status int, err error) {
+		event.Status = status
+		event.Duration = time.Since(started)
+		if err != nil {
+			event.Error = err.Error()
+		}
+		p.auditor.Record(ctx, event)
+	}
+
+	if allowed, reason := allowedNamespace(grant, parsed, path); !allowed {
+		err := errors.New(reason)
+		record(http.StatusForbidden, err)
+		return nil, &CallError{Status: http.StatusForbidden, Message: reason}
+	}
+
+	decision := p.guardAPIRequest(cluster.ID, http.MethodGet, path)
+	noteGuardrail(&event, decision)
+	if decision.Blocked() {
+		message := decision.Message()
+		record(http.StatusForbidden, errors.New(message))
+		return nil, &CallError{Status: http.StatusForbidden, Message: message}
+	}
+
+	tunnel, ok := p.registry.Get(cluster.ID)
+	if !ok {
+		record(http.StatusServiceUnavailable, ErrNoTunnel)
+		return nil, &CallError{Status: http.StatusServiceUnavailable, Message: ErrNoTunnel.Error()}
+	}
+
+	// Only the open is bounded — that is the whole point of the call. The stream
+	// then lives as long as `ctx` does, which is the caller's business.
+	stream, head, err := tunnel.OpenStream(ctx, &StreamOpen{
+		Method: http.MethodGet,
+		Path:   path,
+		Header: map[string][]string{
+			"Accept":            {"application/json"},
+			"Impersonate-User":  {user.Username},
+			"Impersonate-Group": ImpersonationGroups(grant.K8sRole),
+		},
+	})
+	if err != nil {
+		status, message := tunnelFailure(err)
+		record(status, err)
+		return nil, &CallError{Status: status, Message: message}
+	}
+	if head.Status < 200 || head.Status >= 300 {
+		// The API server refused it — a grant that may not watch events, most
+		// likely. The stream is closed here so the caller only ever holds an open
+		// one, and the refusal travels as the status it was.
+		stream.Close(nil)
+		record(head.Status, errors.New("the cluster refused the watch"))
+		return nil, &CallError{Status: head.Status, Message: "the cluster refused the watch"}
+	}
+
+	record(head.Status, nil)
+	return stream, nil
+}
+
 // CallError is a proxied call that failed, carrying the status the HTTP layer
 // should hand back.
 type CallError struct {

@@ -103,13 +103,34 @@ func (c *Cache[V]) Get(key string) (V, bool) {
 // Put files a value under a key and a scope. The scope is what a write
 // invalidates; an empty one is legal and simply belongs to no group.
 func (c *Cache[V]) Put(scope, key string, value V) {
+	c.PutFor(scope, key, value, c.ttl)
+}
+
+// PutFor is Put with a lifetime of its own, for the reads whose facts move at a
+// different speed from the default.
+//
+// The default is chosen against a resource list, where five seconds is the gap
+// between "the console feels like one surface" and "a scale I just performed is
+// invisible". Not every read is that: a cluster's Events are append-only,
+// discarded by the cluster after an hour, and read by a page that a whole team
+// opens at once during an incident — there, a longer window turns thirty people
+// asking the same question into one call to the API server, and costs nothing
+// but seeing a new event slightly later.
+//
+// A shorter lifetime than the default is equally legal; a non-positive one falls
+// back to the default rather than filing something already expired.
+func (c *Cache[V]) PutFor(scope, key string, value V, ttl time.Duration) {
+	if ttl <= 0 {
+		ttl = c.ttl
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if len(c.entries) >= c.max {
 		c.evictLocked()
 	}
-	c.entries[key] = entry[V]{scope: scope, value: value, expires: time.Now().Add(c.ttl)}
+	c.entries[key] = entry[V]{scope: scope, value: value, expires: time.Now().Add(ttl)}
 }
 
 // InvalidateScope drops every entry in a scope. This is the call a write makes:

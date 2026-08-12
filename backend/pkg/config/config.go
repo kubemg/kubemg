@@ -59,6 +59,21 @@ type Config struct {
 	// far fewer tunnel round trips, impersonated API calls and audit records on
 	// the reads a console repeats. A negative value turns the cache off.
 	ReadCacheTTL time.Duration
+	// EventCacheTTL is the same window for the cluster events timeline, which
+	// earns its own because Events are the cluster's own append-only account:
+	// nothing an operator does through KubeMG writes one, so there is no write
+	// for a stale entry to hide. It is deliberately longer, because this is the
+	// page a whole team opens at the same moment during an incident and each
+	// opening is otherwise a cluster-wide list on an API server already under
+	// strain. `KUBEMG_EVENT_CACHE_TTL`.
+	EventCacheTTL time.Duration
+	// EventScanLimit is how many events a single timeline read will walk before
+	// it reports the answer as partial. This is the knob that decides what one
+	// page view costs on a cluster holding tens of thousands of them: the API
+	// server pages a list in key order, so reading "the newest" genuinely means
+	// walking, and the only honest choices are to bound the walk and say so or to
+	// read the whole collection. `KUBEMG_EVENT_SCAN_LIMIT`.
+	EventScanLimit int
 	// SessionRecording captures interactive container sessions for replay.
 	SessionRecording SessionRecording
 	// TLS is how the bastion terminates HTTPS. It is not decoration: client-go
@@ -145,6 +160,8 @@ func Load() Config {
 		AgentNamespace:     env("KUBEMG_AGENT_NAMESPACE", agentpkg.DefaultNamespace),
 		AuditRetentionDays: envInt("KUBEMG_AUDIT_RETENTION_DAYS", 30),
 		ReadCacheTTL:       envDuration("KUBEMG_RESOURCE_CACHE_TTL", cache.DefaultTTL),
+		EventCacheTTL:      envDuration("KUBEMG_EVENT_CACHE_TTL", 30*time.Second),
+		EventScanLimit:     envInt("KUBEMG_EVENT_SCAN_LIMIT", 4000),
 		SessionRecording: SessionRecording{
 			Enabled:  envBool("KUBEMG_SESSION_RECORDING_ENABLED", true),
 			Dir:      env("KUBEMG_SESSION_RECORDING_DIR", "/var/lib/kubemg/recordings"),

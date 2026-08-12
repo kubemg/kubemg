@@ -273,6 +273,26 @@ export function EventsTimeline() {
           </Notice>
         ) : null}
 
+        {/*
+         * The honesty notice, and the one thing on this page that must not be
+         * softened. The API server pages an event list in key order, so a
+         * truncated read is an *alphabetical slice by object* that has then been
+         * sorted by time — the newest of the sample, not the newest of the
+         * cluster. Left unsaid, an operator reads the top row as "the most
+         * recent thing that happened here" and it simply is not.
+         */}
+        {loaded?.truncated ? (
+          <Notice tone="warn">
+            This is <strong className="font-semibold">part of the cluster, not all of it</strong> —{' '}
+            {loaded.scanned.toLocaleString()}
+            {loaded.available ? ` of about ${loaded.available.toLocaleString()}` : ''} events were
+            read. Kubernetes pages an event list in storage order rather than by time, so what is
+            below is the newest of what was read and not necessarily the newest in the cluster.
+            Narrow to one namespace, to warnings, or to a shorter window for an answer that is
+            complete.
+          </Notice>
+        ) : null}
+
         <div className="card min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
             <h2 className="text-[14px] font-semibold text-fg">
@@ -363,17 +383,20 @@ export function EventsTimeline() {
             difference between an empty page reading as "nothing happened" and
             reading as "the cluster no longer has it". */}
         <p className="text-[12px] text-muted">
-          Read live through the agent tunnel under your own identity, and grouped by the object each
-          event was about. Kubernetes discards events after about an hour by default, so a window
-          wider than that shows what the cluster still holds rather than more history.
-          {loaded?.truncated ? (
+          {loaded?.buffered ? (
             <>
-              {' '}
-              This cluster produced more than could be read at once
-              {loaded.total_groups > groups.length ? ` (${loaded.total_groups} objects)` : ''} — narrow
-              by namespace or to warnings to see the rest.
+              Kept current by a single watch on this cluster, so opening this page costs it nothing
+              and the ordering below is the cluster&rsquo;s rather than a sample&rsquo;s. What you can
+              see is still narrowed to your own granted namespaces.
             </>
-          ) : null}
+          ) : (
+            <>
+              Read live through the agent tunnel under your own identity, and grouped by the object
+              each event was about.
+            </>
+          )}{' '}
+          Kubernetes discards events after about an hour by default, so a window wider than that
+          shows what the cluster still holds rather than more history.
         </p>
       </div>
     </AppShell>

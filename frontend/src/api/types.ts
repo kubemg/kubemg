@@ -706,8 +706,34 @@ export interface EventTimeline {
    * presented as the whole one.
    */
   unreadable_namespaces?: string[]
-  /** The cluster had more to say than was read. */
+  /**
+   * The cluster had more to say than was read.
+   *
+   * This carries more weight than it looks. The API server pages a list in **key
+   * order** — and an Event's name is `<object>.<hex>`, so a page is an
+   * alphabetical slice by involved object, not the newest anything. Sorting that
+   * slice by time gives the newest *of the sample*. So on a truncated answer,
+   * "newest first" is a claim about what was read rather than about the cluster,
+   * and the page has to say so instead of presenting a slice as the whole.
+   */
   truncated?: boolean
+  /** How many events were actually read and folded. */
+  scanned: number
+  /**
+   * The API server's own count of how many there were, or 0 where it did not
+   * offer one — it omits the count for a filtered list, so a narrowed timeline
+   * has no honest denominator to show.
+   */
+  available?: number
+  /**
+   * The answer came from the cluster's own watch-fed buffer rather than from a
+   * list. It is surfaced rather than kept as an implementation detail because it
+   * is the difference between "newest first" being a fact about the cluster and
+   * a claim about a sample — and because an operator comparing two clusters
+   * deserves to know why one page is complete and the other says it is partial.
+   */
+  buffered?: boolean
+  buffered_at?: string
   total_groups: number
 }
 

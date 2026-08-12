@@ -486,35 +486,41 @@ func (s *server) objectEvents(c *gin.Context, user *db.User, cluster *db.Cluster
 
 	query := url.Values{}
 	query.Set("fieldSelector", selector)
-	query.Set("limit", strconv.Itoa(maxEvents))
+	query.Set("limit", strconv.Itoa(eventPageSize))
 
 	// A cluster-scoped object's events are written into whichever namespace the
 	// reporting controller chose — `default`, usually — so they are found by a
 	// cluster-wide list rather than by guessing. A namespace-scoped grant never
 	// reaches here for such a kind: requireClusterScope refused it already.
-	path := "/api/v1/events?" + query.Encode()
+	path := "/api/v1/events"
 	if kind.namespaced {
-		path = fmt.Sprintf("/api/v1/namespaces/%s/events?%s", url.PathEscape(namespace), query.Encode())
+		path = fmt.Sprintf("/api/v1/namespaces/%s/events", url.PathEscape(namespace))
 	}
 
-	resp, ok := s.callResource(c, user, cluster, grant, path)
+	/*
+	 * Paged rather than read once, and the reason is the whole point of this
+	 * call: a `fieldSelector` is applied *after* a page is taken from etcd, so
+	 * the API server is explicit that a page can come back empty while matches
+	 * remain — "up to zero items ... clients should only use the presence of the
+	 * continue field to determine whether more results are available."
+	 *
+	 * Reading one page therefore answers "no events" for a crash-looping pod on
+	 * any cluster busy enough that the first page is somebody else's events. That
+	 * is the worst answer this tab can give: the events are the one thing here
+	 * that says *why*, and a confident empty table ends the investigation.
+	 */
+	out := []eventView{}
+	budget := &eventBudget{}
+	reason, ok := s.readEventPages(c, user, cluster, grant, path, query, budget, func(item eventObject) {
+		if len(out) < maxEvents {
+			out = append(out, item.view())
+		}
+	})
 	if !ok {
 		return nil, false, ""
 	}
-	if resp.Status < 200 || resp.Status >= 300 {
-		return []eventView{}, false, kubeErrorMessage(resp.Body, resp.Status)
-	}
-
-	var list struct {
-		Items []eventObject `json:"items"`
-	}
-	if err := json.Unmarshal(resp.Body, &list); err != nil {
-		return []eventView{}, false, "the cluster returned an unreadable event list"
-	}
-
-	out := make([]eventView, 0, len(list.Items))
-	for _, item := range list.Items {
-		out = append(out, item.view())
+	if reason != "" {
+		return []eventView{}, false, reason
 	}
 
 	// Newest first: in a drawer the question is what just happened, not what

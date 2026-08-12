@@ -112,3 +112,131 @@ func TestAlarmTickDoesNotPollWhenTheLeaseCannotBeRead(t *testing.T) {
 		t.Fatal("a failed lease read must not be recorded as a held lease")
 	}
 }
+
+/*
+ * Which events a pass delivers.
+ *
+ * This is the whole behaviour of the feature, and both halves of it fail
+ * silently rather than loudly: an event that should have paged somebody and did
+ * not looks exactly like a quiet cluster, and one delivered twice looks like the
+ * cluster being noisy. Neither shows up in a log.
+ */
+
+// alarmEvent builds one Event as a cluster would report it.
+func alarmEvent(name string, at time.Time) eventObject {
+	item := eventObject{Type: "Warning", Reason: "BackOff", Message: "back-off", Count: 1}
+	item.Metadata.Name = name
+	item.Metadata.Namespace = "shop"
+	item.InvolvedObject.Kind = "Pod"
+	item.InvolvedObject.Name = name
+	item.InvolvedObject.Namespace = "shop"
+	moment := at
+	item.LastTimestamp = &moment
+	item.FirstTimestamp = &moment
+	return item
+}
+
+func candidateNames(entries []alarmCandidate) []string {
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, entry.item.InvolvedObject.Name)
+	}
+	return out
+}
+
+/*
+ * The bug this ordering fixes, pinned so it cannot come back.
+ *
+ * `watermarks.advance` both tests an event and raises the mark to it, so
+ * whichever event is offered first sets the floor for the rest of the pass. The
+ * API server returns an event list in **key order**, which has nothing to do
+ * with time — so a newer event reaching the loop first used to raise the mark
+ * past an older one that was still new since the last pass, and that second
+ * event was dropped and never mentioned again.
+ */
+func TestSelectAlarmEventsDeliversOutOfOrderArrivals(t *testing.T) {
+	now := time.Now().UTC()
+	watermarks := &watermarkTable{seen: map[uint]time.Time{1: now.Add(-5 * time.Minute)}}
+
+	// Deliberately newest-first, which is what a key-ordered list can hand over.
+	items := []eventObject{
+		alarmEvent("late", now.Add(-1*time.Minute)),
+		alarmEvent("early", now.Add(-3*time.Minute)),
+	}
+
+	got := candidateNames(selectAlarmEvents(1, items, watermarks, now))
+	if len(got) != 2 {
+		t.Fatalf("delivered %v, want both events — the older one must not be eaten by the newer", got)
+	}
+	// And oldest first, so the sequence a pager shows matches the sequence that
+	// happened.
+	if got[0] != "early" || got[1] != "late" {
+		t.Fatalf("delivered %v, want oldest first", got)
+	}
+}
+
+// Anything at or before the mark has already been delivered by a previous pass.
+func TestSelectAlarmEventsSkipsWhatTheMarkCovers(t *testing.T) {
+	now := time.Now().UTC()
+	mark := now.Add(-2 * time.Minute)
+	watermarks := &watermarkTable{seen: map[uint]time.Time{1: mark}}
+
+	items := []eventObject{
+		alarmEvent("old", mark.Add(-time.Minute)),
+		alarmEvent("at-the-mark", mark),
+		alarmEvent("new", now.Add(-time.Second)),
+	}
+
+	got := candidateNames(selectAlarmEvents(1, items, watermarks, now))
+	if len(got) != 1 || got[0] != "new" {
+		t.Fatalf("delivered %v, want only the event past the mark", got)
+	}
+}
+
+// The window is a second guard beside the mark: a cluster whose clock is behind,
+// or a list that arrives out of order, must not resurrect yesterday.
+func TestSelectAlarmEventsDropsAnythingOlderThanTheWindow(t *testing.T) {
+	now := time.Now().UTC()
+	watermarks := &watermarkTable{seen: map[uint]time.Time{1: now.Add(-24 * time.Hour)}}
+
+	items := []eventObject{
+		alarmEvent("yesterday", now.Add(-20*time.Hour)),
+		alarmEvent("recent", now.Add(-time.Minute)),
+	}
+
+	got := candidateNames(selectAlarmEvents(1, items, watermarks, now))
+	if len(got) != 1 || got[0] != "recent" {
+		t.Fatalf("delivered %v, want only what is inside the window", got)
+	}
+}
+
+// An event with no usable timestamp cannot be placed against the mark at all, so
+// delivering it would mean paging on something that might be an hour old.
+func TestSelectAlarmEventsSkipsUndatedEvents(t *testing.T) {
+	now := time.Now().UTC()
+	watermarks := &watermarkTable{seen: map[uint]time.Time{1: now.Add(-time.Hour)}}
+
+	undated := eventObject{Type: "Warning", Reason: "BackOff"}
+	undated.InvolvedObject.Name = "nowhen"
+
+	if got := selectAlarmEvents(1, []eventObject{undated}, watermarks, now); len(got) != 0 {
+		t.Fatalf("delivered %v, want nothing for an event with no time", candidateNames(got))
+	}
+}
+
+// A second pass over the same events delivers nothing: the mark moved.
+func TestSelectAlarmEventsIsIdempotentAcrossPasses(t *testing.T) {
+	now := time.Now().UTC()
+	watermarks := &watermarkTable{seen: map[uint]time.Time{1: now.Add(-10 * time.Minute)}}
+	items := []eventObject{
+		alarmEvent("a", now.Add(-3*time.Minute)),
+		alarmEvent("b", now.Add(-2*time.Minute)),
+	}
+
+	if got := selectAlarmEvents(1, items, watermarks, now); len(got) != 2 {
+		t.Fatalf("first pass delivered %v, want both", candidateNames(got))
+	}
+	if got := selectAlarmEvents(1, items, watermarks, now); len(got) != 0 {
+		t.Fatalf("second pass delivered %v, want nothing — the mark has moved", candidateNames(got))
+	}
+}
