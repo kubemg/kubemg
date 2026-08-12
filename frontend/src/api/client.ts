@@ -73,6 +73,9 @@ import type {
   Pod,
   PodListMetrics,
   PodMetrics,
+  PostureAcknowledgement,
+  PostureRule,
+  PostureScan,
   ResourceDescribeResult,
   ResourceManifest,
   RoleBindingEntry,
@@ -635,6 +638,56 @@ export async function fetchNetworkPolicyCoverage(
     { params: { namespace } },
   )
   return data
+}
+
+/**
+ * Workload security posture — the seven fixed rules over fields Explore's own
+ * lists already fetch. Scoped exactly like every other resource list: one
+ * namespace, or every namespace the caller's grant covers.
+ */
+export async function fetchClusterPosture(
+  clusterId: number,
+  namespace: string,
+): Promise<PostureScan> {
+  const { data } = await http.get<PostureScan>(resourceURL(clusterId, 'posture'), {
+    params: scopeParams(namespace),
+  })
+  return data
+}
+
+/**
+ * Marking a finding as reviewed and accepted. It stays in the next scan,
+ * marked — see PostureFinding.acknowledged — rather than disappearing, and a
+ * reason is required by the server for the same audit-ability reason.
+ */
+export async function acknowledgePostureFinding(
+  clusterId: number,
+  finding: { kind: string; namespace?: string; name: string; rule: PostureRule },
+  reason: string,
+): Promise<PostureAcknowledgement> {
+  const { data } = await http.post<PostureAcknowledgement>(resourceURL(clusterId, 'posture/ack'), {
+    kind: finding.kind,
+    namespace: finding.namespace ?? '',
+    name: finding.name,
+    rule: finding.rule,
+    reason,
+  })
+  return data
+}
+
+/** Reversing an acknowledgement, so the finding reads as unreviewed again. */
+export async function unacknowledgePostureFinding(
+  clusterId: number,
+  finding: { kind: string; namespace?: string; name: string; rule: PostureRule },
+): Promise<void> {
+  await http.delete(resourceURL(clusterId, 'posture/ack'), {
+    params: {
+      kind: finding.kind,
+      namespace: finding.namespace ?? '',
+      name: finding.name,
+      rule: finding.rule,
+    },
+  })
 }
 
 export function fetchHTTPRoutes(

@@ -55,7 +55,7 @@ func consoleKind(c *gin.Context) (string, bool) {
 	kind := c.Param("kind")
 	if !db.ValidConsoleKind(kind) {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "a console is either grafana or argocd",
+			"error": "a console is grafana, argocd or registry",
 		})
 		return "", false
 	}

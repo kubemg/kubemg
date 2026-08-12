@@ -42,9 +42,21 @@ export const CONSOLES: Record<ConsoleKind, ConsoleInfo> = {
     refLabel: 'Project',
     refHint: 'Optional. Only used to label the link — the application view is found by name.',
   },
+  // KubeMG does not scan images and holds no CVE feed — the security posture
+  // view is explicit about that. An image's known vulnerabilities belong to
+  // whatever already scans the registry this cluster pulls from, so this is a
+  // link to it rather than a guess: when it is registered, a container image
+  // shown on a posture finding links here instead of nowhere.
+  registry: {
+    label: 'Registry scanner',
+    purpose:
+      'Where this cluster’s images are actually scanned for known vulnerabilities. KubeMG reads manifests, not image contents — this is a link to whatever already does that.',
+    placeholder: 'https://scanner.example.com',
+    refLabel: null,
+  },
 }
 
-export const CONSOLE_KINDS: ConsoleKind[] = ['grafana', 'argocd']
+export const CONSOLE_KINDS: ConsoleKind[] = ['grafana', 'argocd', 'registry']
 
 /**
  * The label Argo CD writes on everything it owns. A workload carrying it was

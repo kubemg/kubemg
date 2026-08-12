@@ -518,6 +518,83 @@ export interface NetworkPolicyCoverage {
   disclaimer: string
 }
 
+/**
+ * One of the seven workload security posture rules. There is no eighth —
+ * see the backend's postureRules for what each one means and why it ranks
+ * where it does.
+ */
+export type PostureRule =
+  | 'privileged_container'
+  | 'host_namespace'
+  | 'hostpath_volume'
+  | 'namespace_no_network_policy'
+  | 'automount_default_service_account'
+  | 'no_nonroot_declaration'
+  | 'no_resource_limits'
+
+/**
+ * One rule firing on one object (or, for the namespace rule, on the namespace
+ * itself). `field` names the manifest path that produced it; `permits` is the
+ * server's own ranking of what the finding permits, which is the order the
+ * list sorts on rather than a count of how many fired.
+ */
+export interface PostureFinding {
+  rule: PostureRule
+  title: string
+  permits: number
+
+  kind: string
+  name: string
+  namespace?: string
+  container?: string
+
+  field: string
+  message: string
+
+  acknowledged: boolean
+  ack_reason?: string
+  ack_by?: string
+  ack_at?: string
+}
+
+export interface PostureReadGap {
+  resource: string
+  reason: string
+}
+
+/** The whole answer for one cluster or one namespace, ordered by permits. */
+export interface PostureScan {
+  namespace: string
+  all_namespaces: boolean
+
+  findings: PostureFinding[]
+
+  scanned_workloads: number
+  scanned_pods: number
+  truncated: boolean
+  findings_capped?: boolean
+
+  unavailable?: PostureReadGap[]
+
+  disclaimer: string
+  non_goal_notice: string
+}
+
+/** The stored record of one acknowledged finding, as the server returns it. */
+export interface PostureAcknowledgement {
+  id: number
+  cluster_id: number
+  kind: string
+  namespace?: string
+  name: string
+  rule: PostureRule
+  reason: string
+  acked_by_id: number
+  acked_by: string
+  created_at: string
+  updated_at: string
+}
+
 export interface PersistentVolume {
   name: string
   created_at: string
@@ -1501,7 +1578,7 @@ export interface ObservabilityResponse {
  * transport built for the Kubernetes API. KubeMG stores an address, holds no
  * session for either tool, and the operator signs in to them as themselves.
  */
-export type ConsoleKind = 'grafana' | 'argocd'
+export type ConsoleKind = 'grafana' | 'argocd' | 'registry'
 
 export interface ClusterConsole {
   kind: ConsoleKind

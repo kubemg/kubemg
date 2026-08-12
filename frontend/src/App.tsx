@@ -12,6 +12,7 @@ import { GroupManagement } from './pages/GroupManagement'
 import { Login } from './pages/Login'
 import { Overview } from './pages/Overview'
 import { PermissionsMatrix } from './pages/PermissionsMatrix'
+import { SecurityPosture } from './pages/SecurityPosture'
 import { SessionRecordings } from './pages/SessionRecordings'
 import { AgentSettings } from './pages/settings/AgentSettings'
 import { AlertingSettings } from './pages/settings/AlertingSettings'
@@ -183,6 +184,19 @@ export default function App() {
               element={
                 <RequireAuth>
                   <EventsTimeline />
+                </RequireAuth>
+              }
+            />
+            {/* Workload security posture: seven fixed rules over fields Explore
+                already reads, per cluster or per namespace. Reached the same
+                way Events is — a live tunnel, and a row in the cluster's own
+                quick-nav — because it answers a question about the cluster as
+                a whole rather than about one object somebody already opened. */}
+            <Route
+              path="/clusters/:id/security"
+              element={
+                <RequireAuth>
+                  <SecurityPosture />
                 </RequireAuth>
               }
             />

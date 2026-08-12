@@ -152,6 +152,12 @@ type Store interface {
 	ClusterConsoles(ctx context.Context, clusterID uint) ([]db.ClusterConsole, error)
 	PutClusterConsole(ctx context.Context, console *db.ClusterConsole) error
 	DeleteClusterConsole(ctx context.Context, clusterID uint, kind string) error
+
+	// Workload security posture acknowledgements — see pkg/api/resources_posture.go.
+	// The scan itself is stateless; this is the one thing it cannot recompute.
+	ListPostureAcknowledgements(ctx context.Context, clusterID uint) ([]db.PostureAcknowledgement, error)
+	AcknowledgePostureFinding(ctx context.Context, ack *db.PostureAcknowledgement) error
+	UnacknowledgePostureFinding(ctx context.Context, clusterID uint, kind, namespace, name, rule string) error
 }
 
 // Options wires the router's dependencies.
@@ -697,6 +703,24 @@ func NewRouter(opts Options) *gin.Engine {
 			// through an object you already suspected. Grouped by involved
 			// object, so a failing Deployment is one entry rather than forty.
 			resources.GET("/events", s.listClusterEvents)
+
+			// Workload security posture: seven fixed rules over fields these
+			// same lists already fetch (privileged containers, hostPath,
+			// hostNetwork/hostPID, an undeclared non-root user, missing
+			// resource limits, an automounted default ServiceAccount token,
+			// and a namespace with no NetworkPolicy). A read like every other
+			// one above — impersonated, scoped, cached — that adds no
+			// permission and no dependency; see resources_posture.go.
+			resources.GET("/posture", s.postureScan)
+			// Acknowledging a finding is a write against KubeMG's own database
+			// rather than the cluster, but it mutes a security control until
+			// someone reverses it — the same reasoning that keeps
+			// access-review and the object diff outside the cached group
+			// applies here too, and doubly so: caching a write's own response
+			// makes no sense, and this one needs no cache invalidation on the
+			// cluster's resources at all since nothing on the cluster changed.
+			clusters.POST("/:id/resources/posture/ack", s.acknowledgePostureFinding)
+			clusters.DELETE("/:id/resources/posture/ack", s.unacknowledgePostureFinding)
 
 			// Live utilisation from the cluster's own Metrics API. It rides the
 			// same tunnel, grant and audit trail as the lists above; a cluster
