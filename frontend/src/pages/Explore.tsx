@@ -377,6 +377,47 @@ const NS_PARAM = 'ns'
 /** What Explore opens on, and what it falls back to when a selection goes away. */
 const DEFAULT_ITEM = resourceItem('pods')!
 
+/**
+ * The Kubernetes Kind behind a list, for narrowing the events timeline to one
+ * object. `singular` is what the inventory already carries for exactly this
+ * purpose — a list's label is a plural, and an event's `involvedObject.kind` is
+ * not.
+ *
+ * It returns an empty string wherever the Kind is not certain rather than
+ * guessing: the timeline accepts a name with no kind (two kinds rarely share a
+ * name), and narrowing to the wrong Kind would show an empty timeline for an
+ * object that has events, which is worse than a slightly wider one.
+ */
+function alertKind(item: ResourceItem): string {
+  // A Helm release is the one entry whose singular is not a Kubernetes Kind:
+  // there is no `Release` object, only the Secret holding it, so narrowing by it
+  // would produce an empty timeline for a release that has events under the
+  // names of everything it installed.
+  if (item.key === 'helmreleases') return ''
+  // A discovered CRD's singular *is* its Kind — the inventory reads it off the
+  // CRD — so those narrow correctly without a special case.
+  const singular = item.singular ?? (item.label.endsWith('s') ? item.label.slice(0, -1) : '')
+  // Only a Kind-shaped word: the timeline validates this server-side and would
+  // refuse anything else, but sending a refusable link is a broken link.
+  return /^[A-Za-z][A-Za-z0-9]*$/.test(singular) ? singular : ''
+}
+
+/** A link into one cluster's events timeline, narrowed to one object. */
+function eventsHref(
+  clusterId: number,
+  namespace: string,
+  kind: string,
+  name: string,
+): string {
+  const params = new URLSearchParams()
+  params.set('ns', namespace || ALL_NAMESPACES)
+  // A kind is only sent with a name, which is the pairing the server accepts:
+  // narrowing to a kind alone is what the namespace scope already does.
+  if (kind && name) params.set('kind', kind)
+  if (name) params.set('name', name)
+  return `/clusters/${clusterId}/events?${params.toString()}`
+}
+
 function readPreferredNamespace(): string {
   try {
     return localStorage.getItem(NAMESPACE_KEY) ?? ''
@@ -840,6 +881,16 @@ export function Explore() {
             bucket={bucket}
             onBucket={setBucket}
             trend={trend}
+            // The next question after the header names something: what has the
+            // cluster actually been saying about it. The header can raise
+            // `CrashLoopBackOff` because a container status says so, but only the
+            // events say why — and they were reachable until now only by opening
+            // the object and finding the right tab.
+            alertHref={
+              cluster
+                ? (alert) => eventsHref(cluster.id, alert.namespace, alertKind(item), alert.name)
+                : undefined
+            }
             onOpen={(name, rowNamespace) =>
               setDetail({
                 kind: resource,

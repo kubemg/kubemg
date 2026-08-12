@@ -39,6 +39,17 @@ function clusterViewTargets(cluster: Cluster): CommandTarget[] {
       to: `/clusters/${cluster.id}/explore`,
       cluster,
     })
+    // Reached the same way and gated the same way: events are read through the
+    // tunnel too. It is worth its own entry because it is the page somebody is
+    // looking for when they open the palette at all — "what broke" is a question
+    // people arrive with, not one they navigate to.
+    views.push({
+      id: `cluster-${cluster.id}-events`,
+      label: `${cluster.name} — Events`,
+      hint: 'Cluster · Events',
+      to: `/clusters/${cluster.id}/events`,
+      cluster,
+    })
   }
   views.push({
     id: `cluster-${cluster.id}-audit`,

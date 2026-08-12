@@ -639,6 +639,78 @@ export interface K8sEvent {
   last_seen?: string
 }
 
+/*
+ * The cluster-wide events timeline.
+ *
+ * The same events the describe tab reads, without an object to ask about. What
+ * makes it a timeline rather than a second table is the grouping, which has two
+ * levels: one **group** per involved object, and one **entry** per reason inside
+ * it. A failing Deployment emits events from the deployment controller, the
+ * replica set and every pod it owns — as rows that is forty lines describing one
+ * problem, and as a group it is one problem to open.
+ */
+
+/** One reason that fired against an object, with every firing folded together. */
+export interface EventEntry {
+  type: string
+  reason: string
+  /** The newest message for this reason — the one describing the state now. */
+  message: string
+  /** Every firing folded together, not the number of Event objects. */
+  count: number
+  source?: string
+  first_seen?: string
+  last_seen?: string
+}
+
+/** What an event was about. */
+export interface EventObjectRef {
+  kind: string
+  name: string
+  namespace?: string
+}
+
+/** One row of the timeline: everything the cluster has said about one object. */
+export interface EventGroup {
+  /** Stable across refreshes, so an expanded row stays expanded on a re-read. */
+  key: string
+  object: EventObjectRef
+  /** The worst type in the group: one Warning among ten Normals is a warning. */
+  type: string
+  /** The newest entry's, which is what the collapsed row shows. */
+  reason: string
+  message: string
+  /** Totals rather than row counts: 41 means the cluster said it 41 times. */
+  count: number
+  warnings: number
+  first_seen?: string
+  last_seen?: string
+  entries: EventEntry[]
+  entries_truncated?: boolean
+}
+
+export interface EventTimeline {
+  groups: EventGroup[]
+  namespace?: string
+  all_namespaces: boolean
+  /**
+   * Events are their own resource with their own RBAC, so a refusal narrows the
+   * answer rather than failing it. False means nothing could be read at all.
+   */
+  events_available: boolean
+  reason?: string
+  /**
+   * The other half of that, and why the flag above is not enough: an
+   * all-namespaces read is many reads, and some of them refusing is neither
+   * available nor unavailable. Naming them stops a partial cluster being
+   * presented as the whole one.
+   */
+  unreadable_namespaces?: string[]
+  /** The cluster had more to say than was read. */
+  truncated?: boolean
+  total_groups: number
+}
+
 /** One entry of an object's `status.conditions`. */
 export interface ResourceCondition {
   type: string

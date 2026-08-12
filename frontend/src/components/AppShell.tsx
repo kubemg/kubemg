@@ -18,6 +18,7 @@ import {
   ScrollText,
   Server,
   Shield,
+  Siren,
   SlidersHorizontal,
   Sun,
   Timer,
@@ -267,6 +268,12 @@ function clusterPanelItems(cluster: Cluster): NavItem[] {
   ]
   if (cluster.connection_mode === 'agent' && cluster.agent_attached) {
     items.push({ to: `/clusters/${cluster.id}/explore`, label: 'Explore', icon: Layers })
+    // Events sit next to Explore and need the same tunnel. They are a separate
+    // row rather than a tab inside Explore because they are not a resource you
+    // browse: Explore answers "what is here", and this answers "what just
+    // happened", which is the question somebody arrives with rather than one
+    // they navigate to.
+    items.push({ to: `/clusters/${cluster.id}/events`, label: 'Events', icon: Siren })
   }
   items.push({ to: `/clusters/${cluster.id}/audit`, label: 'Audit trail', icon: ScrollText })
   return items

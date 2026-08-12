@@ -36,6 +36,7 @@ import type {
   DatasourceInput,
   DatasourceKind,
   ClusterRoleEntry,
+  EventTimeline,
   GrantIdentity,
   Group,
   HelmHistory,
@@ -687,6 +688,47 @@ export async function fetchGrantIdentity(clusterId: number): Promise<GrantIdenti
     resourceURL(clusterId, 'access-review/identity'),
   )
   return data
+}
+
+/**
+ * The cluster-wide events timeline. Narrowing to one object is what the pilot
+ * header's alerts link into — the two components are validated server-side
+ * rather than escaped, since they end up in a `fieldSelector`.
+ *
+ * A refusal comes back as `events_available: false` with the cluster's own
+ * reason rather than as a thrown error: events are their own resource with
+ * their own RBAC, and the page says so instead of failing.
+ */
+export async function fetchClusterEvents(
+  clusterId: number,
+  namespace: string,
+  options: {
+    type?: 'Warning' | 'Normal'
+    kind?: string
+    name?: string
+    /**
+     * The preset id, resolved against the *server's* clock like every other
+     * ranged surface — the browser never computes the boundary, so "the last
+     * fifteen minutes" names the same instant here as in the audit trail.
+     */
+    range?: TimeRangeId
+  } = {},
+): Promise<EventTimeline> {
+  const { data } = await http.get<EventTimeline>(resourceURL(clusterId, 'events'), {
+    params: {
+      ...scopeParams(namespace),
+      ...(options.type ? { type: options.type } : {}),
+      ...(options.kind ? { kind: options.kind } : {}),
+      ...(options.name ? { name: options.name } : {}),
+      ...(options.range ? { range: options.range } : {}),
+    },
+  })
+  return {
+    ...data,
+    groups: data.groups ?? [],
+    events_available: data.events_available !== false,
+    total_groups: data.total_groups ?? 0,
+  }
 }
 
 /**

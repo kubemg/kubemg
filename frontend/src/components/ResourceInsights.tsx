@@ -32,8 +32,10 @@
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { AlertTriangle, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
+import { AlertTriangle, ChevronsDownUp, ChevronsUpDown, Siren } from 'lucide-react'
+import { Link } from 'react-router'
 import type {
+  InsightAlert,
   InsightBucket,
   InsightDistribution,
   InsightStat,
@@ -111,6 +113,7 @@ export function ResourceInsights({
   bucket,
   onBucket,
   onOpen,
+  alertHref,
   trend,
 }: {
   insight: ResourceInsight
@@ -119,6 +122,16 @@ export function ResourceInsights({
   onBucket: (next: InsightBucket | null) => void
   /** Opens one alerting object, which is where a header full of names should lead. */
   onOpen?: (name: string, namespace: string) => void
+  /**
+   * Where an alert's *events* live — the cluster's own account of what has been
+   * happening to that object, filtered to it.
+   *
+   * It is a href builder rather than a callback because it produces a link, and
+   * a link is the thing that can be middle-clicked, copied and pasted into a
+   * ticket. The page supplies it because only the page knows which cluster is
+   * open; the header only knows which objects it named.
+   */
+  alertHref?: (alert: InsightAlert) => string
   /**
    * The trend region, where the open list and the open namespace earn one. It
    * arrives as a node rather than as a cluster and a metric because deciding
@@ -247,23 +260,61 @@ export function ResourceInsights({
               const tint =
                 alert.tone === 'bad' ? 'bg-danger-soft text-danger' : 'bg-warn-soft text-warn'
 
-              return onOpen ? (
-                <button
-                  key={alert.key}
-                  type="button"
-                  onClick={() => onOpen(alert.name, alert.namespace)}
-                  title={title}
-                  className={`max-w-full rounded-chip px-2 py-0.5 text-[12px] transition-colors hover:opacity-80 ${tint}`}
-                >
-                  {body}
-                </button>
-              ) : (
+              /*
+               * An alert raises a question with two honest next steps, and they
+               * are different questions: "show me this object" (the drawer) and
+               * "what has the cluster been saying about it" (the timeline). The
+               * chip carries both rather than choosing — the name opens the
+               * object, and the trailing glyph opens its events, filtered to the
+               * object the header just named.
+               *
+               * They sit inside one chip rather than as two, because the alert is
+               * one thing: two chips per alert would double a strip that already
+               * folds when it runs out of room.
+               */
+              const events = alertHref?.(alert)
+
+              if (!onOpen && !events) {
+                return (
+                  <span
+                    key={alert.key}
+                    title={title}
+                    className={`rounded-chip px-2 py-0.5 text-[12px] ${tint}`}
+                  >
+                    {body}
+                  </span>
+                )
+              }
+
+              return (
                 <span
                   key={alert.key}
-                  title={title}
-                  className={`rounded-chip px-2 py-0.5 text-[12px] ${tint}`}
+                  className={`flex max-w-full items-center rounded-chip text-[12px] ${tint}`}
                 >
-                  {body}
+                  {onOpen ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpen(alert.name, alert.namespace)}
+                      title={title}
+                      className="min-w-0 truncate px-2 py-0.5 transition-opacity hover:opacity-80"
+                    >
+                      {body}
+                    </button>
+                  ) : (
+                    <span title={title} className="min-w-0 truncate px-2 py-0.5">
+                      {body}
+                    </span>
+                  )}
+                  {events ? (
+                    <Link
+                      to={events}
+                      title={`What the cluster recorded about ${alert.name}`}
+                      className="flex shrink-0 items-center py-0.5 pr-2 pl-1 transition-opacity hover:opacity-80"
+                    >
+                      <Siren aria-hidden="true" className="size-3.5" />
+                      <span className="sr-only">Events for {alert.name}</span>
+                    </Link>
+                  ) : null}
                 </span>
               )
             })}
