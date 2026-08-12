@@ -6,6 +6,7 @@ import { AuthCallback } from './pages/AuthCallback'
 import { ClusterManagement } from './pages/ClusterManagement'
 import { ClusterSummary } from './pages/ClusterSummary'
 import { ClusterWizard } from './pages/ClusterWizard'
+import { EventsTimeline } from './pages/EventsTimeline'
 import { Explore } from './pages/Explore'
 import { GroupManagement } from './pages/GroupManagement'
 import { Login } from './pages/Login'
@@ -169,6 +170,19 @@ export default function App() {
               element={
                 <RequireAuth>
                   <Explore />
+                </RequireAuth>
+              }
+            />
+            {/* What the cluster itself recorded, as opposed to what KubeMG did:
+                the trail below is every call KubeMG made, and this is every
+                event Kubernetes wrote. Cluster-scoped because events are, and
+                narrowable to one object — which is what the pilot header's
+                alerts link into. */}
+            <Route
+              path="/clusters/:id/events"
+              element={
+                <RequireAuth>
+                  <EventsTimeline />
                 </RequireAuth>
               }
             />

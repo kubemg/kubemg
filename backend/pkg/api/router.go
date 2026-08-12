@@ -623,6 +623,14 @@ func NewRouter(opts Options) *gin.Engine {
 			// asked for, and only an event says why it did not happen.
 			resources.GET("/describe", s.describeResource)
 
+			// The same events, without an object to ask about. Describe answers
+			// "why is *this* not ready"; this answers "what broke in the last
+			// fifteen minutes", which is the question somebody opens the console
+			// with — and it was unanswerable while events could only be reached
+			// through an object you already suspected. Grouped by involved
+			// object, so a failing Deployment is one entry rather than forty.
+			resources.GET("/events", s.listClusterEvents)
+
 			// Live utilisation from the cluster's own Metrics API. It rides the
 			// same tunnel, grant and audit trail as the lists above; a cluster
 			// with no metrics-server answers "unavailable" rather than failing.

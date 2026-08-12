@@ -24,19 +24,26 @@ export function isClusterPath(pathname: string, id: number): boolean {
 }
 
 /** The views a cluster's own address space holds. */
-export type ClusterView = 'summary' | 'explore' | 'audit'
+export type ClusterView = 'summary' | 'explore' | 'audit' | 'events'
 
 /** Which of a cluster's own views the address currently names, Summary when it
     does not — the same view `clusterHref` opens by default. */
 export function currentClusterView(pathname: string, clusterId: number): ClusterView {
-  const match = pathname.match(new RegExp(`^/clusters/${clusterId}/(summary|explore|audit)(?:/|$)`))
+  const match = pathname.match(
+    new RegExp(`^/clusters/${clusterId}/(summary|explore|audit|events)(?:/|$)`),
+  )
   return (match?.[1] as ClusterView | undefined) ?? 'summary'
 }
 
-/** Every cluster has a summary and a trail; only a live tunnel has resources
-    to explore, so that is the one view a target can lack. */
+/**
+ * Every cluster has a summary and a trail. The two that need a live tunnel are
+ * the ones read *from the cluster*: its resources, and the events it has
+ * recorded — both are agent-only for the same reason, so switching from a
+ * cluster's timeline to one with no tunnel lands on that cluster's summary
+ * rather than on a page that can only refuse.
+ */
 export function hasClusterView(cluster: Cluster, view: ClusterView): boolean {
-  if (view !== 'explore') return true
+  if (view !== 'explore' && view !== 'events') return true
   return cluster.connection_mode === 'agent' && cluster.agent_attached
 }
 
