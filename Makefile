@@ -5,6 +5,16 @@ AGENT_VERSION ?= 0.3.0
 AGENT_REPO    ?= docker.io/ozkanpoyrazoglu/kubemg-agent
 AGENT_IMAGE   ?= $(AGENT_REPO):$(AGENT_VERSION)
 
+# The management plane ships as one image — console embedded in the server
+# binary. See the root Dockerfile for why one rather than two.
+KUBEMG_VERSION ?= 0.3.0
+KUBEMG_REPO    ?= docker.io/ozkanpoyrazoglu/kubemg
+KUBEMG_IMAGE   ?= $(KUBEMG_REPO):$(KUBEMG_VERSION)
+
+# The bastion is deployed on hardware the operator chooses, which increasingly
+# includes Graviton and Ampere. Same matrix as the agent, same reason.
+KUBEMG_PLATFORMS ?= linux/amd64,linux/arm64
+
 # The agent runs on nodes we do not choose. arm64 is no longer an edge case —
 # Graviton, Ampere and Apple Silicon dev clusters are all a `kubectl apply`
 # away — and an amd64-only image fails there as ImagePullBackOff, which reads
@@ -19,6 +29,7 @@ DOCKER_NODE  = docker run --rm -v $(PWD)/frontend:/app -v kubemg-npm:/root/.npm 
         backend-build backend-test backend-vet backend-tidy \
         agent-build agent-test agent-vet agent-tidy agent-image agent-image-check agent-push \
         frontend-install frontend-build frontend-lint frontend-contrast \
+        image image-check image-push \
         up down reset logs ps
 
 help:
@@ -91,6 +102,28 @@ agent-push: ## Build and push the multi-arch agent image (requires docker login)
 agent-image-check: ## Build the agent image for every published platform (no output)
 	docker buildx build --platform $(AGENT_PLATFORMS) \
 		--build-arg VERSION=$(AGENT_VERSION) ./agent
+
+## ---- management plane image ----
+# The build context is the repository root because this one image spans both
+# modules: the console is built and embedded into the server binary. `.dockerignore`
+# is what keeps that context from meaning "upload node_modules and .git".
+
+image: ## Build the management plane image for the local platform and load it
+	docker buildx build --load $(if $(KUBEMG_PLATFORM),--platform $(KUBEMG_PLATFORM),) \
+		-t $(KUBEMG_IMAGE) -t $(KUBEMG_REPO):latest \
+		--build-arg VERSION=$(KUBEMG_VERSION) .
+
+# Same reasoning as agent-push: a manifest index cannot be assembled from images
+# sitting in the local daemon, so buildx builds and pushes in one step. Verify a
+# published tag with `docker buildx imagetools inspect $(KUBEMG_IMAGE)`.
+image-push: ## Build and push the multi-arch management plane image (requires docker login)
+	docker buildx build --push --platform $(KUBEMG_PLATFORMS) \
+		-t $(KUBEMG_IMAGE) -t $(KUBEMG_REPO):latest \
+		--build-arg VERSION=$(KUBEMG_VERSION) .
+
+image-check: ## Build the management plane image for every published platform (no output)
+	docker buildx build --platform $(KUBEMG_PLATFORMS) \
+		--build-arg VERSION=$(KUBEMG_VERSION) .
 
 ## ---- frontend ----
 frontend-install: ## Install npm dependencies

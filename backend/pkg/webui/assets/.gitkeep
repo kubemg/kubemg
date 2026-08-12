@@ -1,0 +1,2 @@
+# Holds the built console during an image build. Empty in a source checkout —
+# see backend/pkg/webui/webui.go and backend/Dockerfile.

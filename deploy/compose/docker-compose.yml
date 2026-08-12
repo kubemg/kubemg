@@ -1,0 +1,102 @@
+# KubeMG on a single machine, from published images.
+#
+# This is not the dev stack. The compose files at the repository root build from
+# source and bind-mount it; this one only ever pulls, which is what makes it work
+# on a host that has no toolchain, no source checkout and — the case it was
+# written for — no route to the internet beyond a mirrored registry.
+#
+#   cp .env.example .env      # then edit it; it will not start with the defaults
+#   docker compose up -d
+#
+# Everything the install needs is three images: this one, postgres, and the
+# agent that clusters pull (KUBEMG_AGENT_IMAGE below). Point all three at an
+# internal registry and nothing else is fetched at runtime — the console's fonts
+# are served from the binary, not from a CDN.
+
+services:
+  postgres:
+    image: ${KUBEMG_POSTGRES_IMAGE:-postgres:16-alpine}
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${DB_NAME:-kubemg}
+      - POSTGRES_USER=${DB_USER:-kubemg}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?set DB_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # No published port. The database is reachable on the compose network and
+    # nowhere else; the dev stack exposes 5432 for a psql session, and a
+    # deployment has no reason to.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-kubemg} -d ${DB_NAME:-kubemg}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  kubemg:
+    image: ${KUBEMG_IMAGE:-docker.io/ozkanpoyrazoglu/kubemg:0.3.0}
+    restart: unless-stopped
+    ports:
+      - "${KUBEMG_PORT:-8443}:8443"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # The certificate is minted on first boot and pinned into every agent
+      # install package. If this volume is lost, a fresh one is minted and every
+      # already-installed agent refuses the new certificate — so this is the
+      # volume to back up, not just to keep.
+      - tls-certs:/etc/kubemg/tls
+      # Recordings are audit evidence. A replay that vanishes on the next deploy
+      # is not evidence, so this outlives the container.
+      - session-recordings:/var/lib/kubemg/recordings
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-kubemg}
+      - DB_PASSWORD=${DB_PASSWORD:?set DB_PASSWORD in .env}
+      - DB_NAME=${DB_NAME:-kubemg}
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
+
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
+      - KUBEMG_ADMIN_USERNAME=${KUBEMG_ADMIN_USERNAME:-admin}
+      - KUBEMG_ADMIN_PASSWORD=${KUBEMG_ADMIN_PASSWORD:?set KUBEMG_ADMIN_PASSWORD in .env}
+
+      # The address clusters and operators reach this host on. It is baked into
+      # every rendered agent manifest, so "localhost" produces an agent that
+      # dials itself and never connects.
+      - KUBEMG_PUBLIC_URL=${KUBEMG_PUBLIC_URL:?set KUBEMG_PUBLIC_URL in .env}
+
+      # No CORS_ALLOWED_ORIGINS: the console is served by this container from
+      # the same origin as the API it calls, so there is no cross-origin request
+      # to permit. The dev stack needs it because Vite serves the console on a
+      # different port.
+
+      # TLS is not optional for kubectl — client-go refuses to send a bearer
+      # token over http, so a plaintext bastion cannot serve a generated
+      # kubeconfig or an exec session at all. The image defaults to a
+      # self-signed certificate; mount a real one over /etc/kubemg/tls and set
+      # KUBEMG_TLS_SELF_SIGNED=false, and the pinning stops.
+      - KUBEMG_TLS_ENABLED=${KUBEMG_TLS_ENABLED:-true}
+      - KUBEMG_TLS_SELF_SIGNED=${KUBEMG_TLS_SELF_SIGNED:-true}
+      # Every hostname and IP the certificate must be valid for. A cluster
+      # dialling a name that is not in here fails the handshake.
+      - KUBEMG_TLS_HOSTS=${KUBEMG_TLS_HOSTS:-}
+
+      # Where clusters pull the agent from. Point this at an internal mirror for
+      # an air-gapped install; it is written into the manifests operators apply.
+      - KUBEMG_AGENT_IMAGE=${KUBEMG_AGENT_IMAGE:-docker.io/ozkanpoyrazoglu/kubemg-agent:0.3.0}
+      - KUBEMG_AGENT_NAMESPACE=${KUBEMG_AGENT_NAMESPACE:-kubemg-system}
+
+      # Recordings are encrypted at rest. Without a key they are written in the
+      # clear — set one, and keep it somewhere other than this host, since a key
+      # stored beside the ciphertext protects nobody.
+      - KUBEMG_SESSION_RECORDING_ENABLED=${KUBEMG_SESSION_RECORDING_ENABLED:-true}
+      - KUBEMG_SESSION_RECORDING_KEY=${KUBEMG_SESSION_RECORDING_KEY:-}
+
+      - GIN_MODE=release
+
+volumes:
+  postgres-data:
+  tls-certs:
+  session-recordings:

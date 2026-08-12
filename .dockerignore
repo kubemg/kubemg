@@ -1,0 +1,26 @@
+# The root Dockerfile's context is the whole repository, so this file is what
+# keeps that from meaning "upload node_modules and the git history to the
+# daemon". Everything the build actually needs is listed as an exception below.
+
+*
+
+!backend/
+!frontend/
+
+# Build inputs only. node_modules is reinstalled from the lockfile inside the
+# image, and a host copy would be the wrong architecture anyway; dist is
+# rebuilt; the dev Dockerfiles are not part of this build.
+backend/server
+backend/Dockerfile.dev
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/Dockerfile.dev
+
+# The console is embedded from the frontend build stage, never from a host
+# checkout — copying a stale one in would silently ship the wrong console.
+backend/pkg/webui/assets/*
+!backend/pkg/webui/assets/.gitkeep
+
+**/.DS_Store
+**/*.local

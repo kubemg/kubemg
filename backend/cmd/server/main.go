@@ -22,7 +22,14 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
 	"github.com/kubemg/kubemg/backend/pkg/observability"
 	"github.com/kubemg/kubemg/backend/pkg/terminal"
+	"github.com/kubemg/kubemg/backend/pkg/webui"
 )
+
+// version is stamped at build time (`-ldflags "-X main.version=..."`) and is
+// "dev" in every build that was not cut by the release pipeline. It is logged
+// at boot because the first question about a bastion nobody can reach is which
+// build is running, and an image tag is what somebody *meant* to deploy.
+var version = "dev"
 
 func main() {
 	cfg := config.Load()
@@ -166,8 +173,17 @@ func main() {
 		Logger:             logger,
 	})
 
+	// The console is served from the same origin as the API it calls, which is
+	// what makes a production install need no CORS configuration at all. It is
+	// mounted after every API route because it answers on NoRoute: it can only
+	// ever be reached by a path the API did not claim. A binary built without a
+	// frontend build — the dev stack, where Vite serves the console — has none
+	// embedded, and this is a no-op that says so.
+	webui.Mount(router, logger)
+
 	if cfg.TLS.Enabled {
 		logger.Info("serving https",
+			slog.String("version", version),
 			slog.String("addr", cfg.ListenAddr),
 			slog.String("certificate", cfg.TLS.CertFile),
 		)
@@ -182,6 +198,7 @@ func main() {
 	// refuses to send a bearer token over http, so say so once at boot rather
 	// than letting every generated kubeconfig fail unexplained.
 	logger.Warn("serving http without TLS; generated kubeconfigs and kubectl exec will not work",
+		slog.String("version", version),
 		slog.String("addr", cfg.ListenAddr),
 		slog.String("fix", "set KUBEMG_TLS_ENABLED=true"),
 	)

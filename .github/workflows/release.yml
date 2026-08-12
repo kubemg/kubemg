@@ -1,0 +1,155 @@
+name: Release
+
+# Publishes the two images a deployment pulls: the management plane and the
+# agent. It runs on a tag rather than on every push to master, because a
+# published tag is what somebody's cluster will pull for months and cutting one
+# should be a deliberate act.
+#
+# Both images are built as manifest indexes covering amd64 and arm64. Keep the
+# platform lists in step with KUBEMG_PLATFORMS / AGENT_PLATFORMS in the Makefile
+# — the local `make image-push` and this workflow have to publish the same thing.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (without the leading v), e.g. 0.3.0'
+        required: true
+        type: string
+      dry_run:
+        description: 'Build and scan without pushing'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build, scan and publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    strategy:
+      # One image failing its scan must not cancel the other's — a half-published
+      # release is worse to reason about than one that failed outright, and
+      # knowing whether both are affected is the first thing to check.
+      fail-fast: false
+      matrix:
+        include:
+          - name: management plane
+            image: kubemg
+            context: .
+            platforms: linux/amd64,linux/arm64
+          - name: agent
+            image: kubemg-agent
+            context: ./agent
+            platforms: linux/amd64,linux/arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The tag is the source of truth for a tag-triggered run; the manual input
+      # is for republishing without moving a tag. Refusing anything that is not
+      # a plain semver keeps a typo from being published as a real version.
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version='${{ inputs.version }}'
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::'$version' is not a semver version; refusing to publish it"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing ${{ matrix.image }}:$version"
+
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Scanning needs an image in the local daemon, which a multi-platform build
+      # cannot produce — so the gate runs against the runner's architecture. The
+      # layers are identical bar the binary's target, so this still scans the
+      # base image and the whole dependency set.
+      - name: Build for scanning
+        run: |
+          docker buildx build --load \
+            -t scan-target:ci \
+            --build-arg VERSION=${{ steps.version.outputs.version }} \
+            ${{ matrix.context }}
+
+      # Same split as pr-checks.yml: this step is the pass/fail gate, scoped to
+      # CRITICAL/HIGH, and it runs *before* the push. Nothing reaches the
+      # registry that failed it.
+      - name: Run Trivy (gate on CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: scan-target:ci
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: table
+          exit-code: 1
+
+      - name: Run Trivy (SARIF for code scanning)
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: scan-target:ci
+          scanners: vuln,secret
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-${{ matrix.image }}.sarif
+          exit-code: 0
+
+      - name: Upload results to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.image }}.sarif
+          category: trivy-release-${{ matrix.image }}
+
+      - name: Log in to Docker Hub
+        if: ${{ !inputs.dry_run }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # buildx builds and pushes in one step because a manifest index cannot be
+      # assembled from images sitting in the local daemon. Both the pinned tag
+      # and :latest are published: an air-gapped site mirrors the pinned one,
+      # and a first-time install follows :latest.
+      - name: Build and push
+        if: ${{ !inputs.dry_run }}
+        run: |
+          docker buildx build --push \
+            --platform ${{ matrix.platforms }} \
+            -t ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}:${{ steps.version.outputs.version }} \
+            -t ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}:latest \
+            --build-arg VERSION=${{ steps.version.outputs.version }} \
+            ${{ matrix.context }}
+
+      - name: Confirm the published manifest covers every platform
+        if: ${{ !inputs.dry_run }}
+        run: |
+          docker buildx imagetools inspect \
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}:${{ steps.version.outputs.version }}
+
+      - name: Cross-build every platform (dry run)
+        if: ${{ inputs.dry_run }}
+        run: |
+          docker buildx build --platform ${{ matrix.platforms }} \
+            --build-arg VERSION=${{ steps.version.outputs.version }} \
+            ${{ matrix.context }}
