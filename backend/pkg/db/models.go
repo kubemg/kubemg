@@ -292,6 +292,22 @@ type AuditEvent struct {
 	GuardrailAction string `gorm:"size:16" json:"guardrail_action,omitempty"`
 
 	Error string `gorm:"type:text" json:"error,omitempty"`
+
+	// Diff is the field-level structural diff of a manifest write (an `update`
+	// row's before/after, from pkg/objdiff), stored as its own JSON encoding —
+	// this table has no JSON column type of its own to reach for without a new
+	// dependency, so it is a string like Path and ImpersonatedGroups already
+	// are. It is empty on every row that is not a successful manifest write
+	// with the "record manifest diffs" setting on: gating that is entirely the
+	// write path's job (pkg/api/resources_object.go and
+	// bastion.Proxy.Call), not this table's, so that the one rule — never
+	// stored for a refused write, never stored for a redacted kind, only
+	// stored when the setting is on — lives in exactly one place. Because it
+	// rides on this row rather than a table of its own, PruneAuditEvents'
+	// existing `DELETE ... WHERE at < ?` prunes it for free; a diff outliving
+	// the write it describes would be the retention window lying about what it
+	// retains.
+	Diff string `gorm:"type:text" json:"-"`
 }
 
 // TableName pins the audit table name.

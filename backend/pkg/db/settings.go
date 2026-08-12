@@ -32,6 +32,13 @@ const (
 	// runtime, within what the process was started able to do — a server with no
 	// recording directory cannot be talked into recording by a database row.
 	SettingRecordExecSessions = "record_exec_sessions"
+	// SettingRecordManifestDiffs turns on storing the field-level diff of a
+	// manifest write on its audit row. It defaults OFF, unlike the trail's
+	// other switches: a manifest body can carry values as sensitive as a
+	// Secret's without being a Secret — an inlined token in a ConfigMap or a
+	// Deployment's env — so this is a new class of retained data that an
+	// operator opts into rather than one that quietly starts happening.
+	SettingRecordManifestDiffs = "record_manifest_diffs"
 )
 
 // SettingKeys enumerates the runtime-configurable settings.
@@ -43,6 +50,7 @@ var SettingKeys = []string{
 	SettingSessionRecordingRetentionDays,
 	SettingAuditVerbs,
 	SettingRecordExecSessions,
+	SettingRecordManifestDiffs,
 }
 
 // Setting is one operator-configurable value. An empty Value means "unset" and

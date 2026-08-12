@@ -44,6 +44,8 @@ export function AuditSettingsPanel({
   onVerbsChange,
   recordSessions,
   onRecordSessionsChange,
+  recordManifestDiffs,
+  onRecordManifestDiffsChange,
   retentionDays,
   onRetentionChange,
   recordingRetentionDays,
@@ -57,6 +59,9 @@ export function AuditSettingsPanel({
   onVerbsChange: (next: string[] | null) => void
   recordSessions: boolean
   onRecordSessionsChange: (next: boolean) => void
+  /** Whether an `update` row keeps the manifest diff it wrote. Off by default. */
+  recordManifestDiffs: boolean
+  onRecordManifestDiffsChange: (next: boolean) => void
   retentionDays: string
   onRetentionChange: (next: string) => void
   recordingRetentionDays: string
@@ -193,6 +198,34 @@ export function AuditSettingsPanel({
         <Effective
           label="In use"
           value={`${effective.session_recording_retention_days} days`}
+        />
+
+        {/* This lives beside retention rather than beside the exec-session
+            switch below: it is governed by the same window, deleted the same
+            way, and the choice to make here is exactly "how long is this
+            evidence worth keeping", not "should this feature run". */}
+        <label className="flex items-start gap-2.5 border-t border-line-soft pt-4">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-4 accent-[var(--color-accent)]"
+            checked={recordManifestDiffs}
+            onChange={(event) => onRecordManifestDiffsChange(event.target.checked)}
+          />
+          <span className="min-w-0">
+            <span className="text-[13px] text-fg">Keep the field-level diff of manifest writes</span>
+            <span className="mt-0.5 block text-[12px] leading-snug text-muted">
+              An <code>update</code> row already says a manifest was applied; this makes it say
+              what changed. Off by default, because a manifest body can hold values as sensitive as
+              a Secret's without the object being one — an inlined token in a ConfigMap, a
+              certificate in a Deployment's env — so this is a decision to retain more, not a
+              cosmetic toggle. A Secret's own diff is never stored, whatever this is set to, and the
+              stored diff is pruned by the retention window above like every other row.
+            </span>
+          </span>
+        </label>
+        <Effective
+          label="Right now"
+          value={effective.record_manifest_diffs ? 'kept' : 'not kept'}
         />
       </Panel>
 

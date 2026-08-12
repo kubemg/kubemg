@@ -266,26 +266,26 @@ type tunnels interface {
 }
 
 type server struct {
-	store              Store
+	store Store
 	// instanceID identifies this process for the duration of its life. It is what
 	// a background job holds a lease as, so a restart is a new holder rather than
 	// something that renews a claim its previous incarnation took.
-	instanceID         string
-	jwt                *auth.Manager
-	tokens             k8s.Issuer
-	health             k8s.Checker
-	tunnels            tunnels
-	proxy              *bastion.Proxy
-	saNamespace        string
-	publicURL          string
-	agentImage         string
-	agentNamespace     string
-	bastionCA          string
+	instanceID     string
+	jwt            *auth.Manager
+	tokens         k8s.Issuer
+	health         k8s.Checker
+	tunnels        tunnels
+	proxy          *bastion.Proxy
+	saNamespace    string
+	publicURL      string
+	agentImage     string
+	agentNamespace string
+	bastionCA      string
 	// recordings is the directory terminal recordings are read back from. Empty
 	// means this server is not recording sessions.
-	recordings         string
-	recordingKey       []byte
-	recordingInput     bool
+	recordings     string
+	recordingKey   []byte
+	recordingInput bool
 	// auditor records this server's own sensitive reads. See Options.Auditor.
 	auditor            bastion.Auditor
 	auditRetentionDays int
@@ -301,7 +301,7 @@ type server struct {
 	// chat rather than from a session.
 	jit               *jit.Engine
 	jitCallbackSecret []byte
-	logger             *slog.Logger
+	logger            *slog.Logger
 	// reads holds recently-answered live reads, keyed by caller and question.
 	// Nil turns caching off entirely; see cachedRead.
 	reads *cache.Cache[cachedResponse]
@@ -658,6 +658,14 @@ func NewRouter(opts Options) *gin.Engine {
 			// the caller may actually change anything.
 			resources.GET("/object", s.showResourceObject)
 			resources.PUT("/object", s.updateResourceObject)
+			// The confirmation step's diff, computed fresh against whatever the
+			// cluster holds right now rather than against the object the editor
+			// opened on. It is a POST because a manifest of arbitrary size travels
+			// in the body, but it writes nothing — deliberately outside the cached
+			// resources group all the same, since a diff has to be computed on the
+			// live object every time it is asked for, the same reasoning as
+			// access-review below.
+			clusters.POST("/:id/resources/object/diff", s.previewResourceObjectDiff)
 
 			// The two workload writes that are not worth hand-editing a
 			// manifest for. Both are read-modify-writes down the same

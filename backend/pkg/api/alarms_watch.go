@@ -295,7 +295,7 @@ func (s *server) listAlarmEvents(ctx context.Context, cluster db.Cluster) ([]eve
 	// Events are read cluster-wide because a rule may name any namespace, or
 	// none.
 	path := fmt.Sprintf("/api/v1/events?limit=%d", alarmEventLimit)
-	resp, err := s.proxy.Call(ctx, user, &cluster, grant, "GET", path, nil)
+	resp, err := s.proxy.Call(ctx, user, &cluster, grant, "GET", path, nil, nil)
 	if err != nil {
 		if ctx.Err() == nil {
 			// Logged at debug: a cluster whose agent dropped between the check above

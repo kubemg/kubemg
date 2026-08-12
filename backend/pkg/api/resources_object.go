@@ -14,6 +14,7 @@ import (
 
 	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/db"
+	"github.com/kubemg/kubemg/backend/pkg/objdiff"
 )
 
 /*
@@ -40,6 +41,12 @@ const maxManifestBody = 1 << 20
 // is stripped: an editor that opens on two copies of the same thing is unusable.
 const lastAppliedAnnotation = "kubectl.kubernetes.io/last-applied-configuration"
 
+// guardrailBlockedField mirrors bastion's own (unexported) constant of the same
+// value. It cannot be imported — the streaming path's flag is package-private —
+// so the value is duplicated rather than the coupling invented; both call sites
+// exist to give a client the same one flag for "KubeMG's own policy said no".
+const guardrailBlockedField = "guardrail_blocked"
+
 // redactedValue replaces a Secret's data. It is not valid base64 on purpose —
 // a placeholder that could be mistaken for the real value would be worse than
 // no placeholder at all.
@@ -58,6 +65,19 @@ type objectKind struct {
 	writable bool
 	// readOnlyReason explains that refusal to the operator.
 	readOnlyReason string
+	// redacted marks a kind whose values never leave the cluster as read —
+	// today only Secrets. It used to be inferred at the call site by
+	// comparing the key against the literal "secrets", which happened to be
+	// correct only because secrets is also the sole non-writable kind; the
+	// two facts are unrelated (a future read-only kind would not necessarily
+	// be redacted) so this is its own field. It governs two things: whether
+	// renderObject blanks values before the editor ever sees them, and
+	// whether a stored audit diff is allowed to exist at all for a write to
+	// this kind — a diff over redacted values would either store the
+	// placeholder either side of a real change, which is useless, or, if
+	// computed before redaction, store the very values redaction exists to
+	// keep out of a database row.
+	redacted bool
 }
 
 // objectKinds is the addressable inventory: the same keys the Explore sidebar
@@ -117,7 +137,7 @@ var objectKinds = map[string]objectKind{
 	"rolebindings":        {versions: []resourceListPath{{rbacGroup, "rolebindings"}}, namespaced: true, writable: true},
 	"clusterroles":        {versions: []resourceListPath{{rbacGroup, "clusterroles"}}, writable: true},
 	"clusterrolebindings": {versions: []resourceListPath{{rbacGroup, "clusterrolebindings"}}, writable: true},
-	"namespaces":        {versions: []resourceListPath{{"/api/v1", "namespaces"}}, writable: true},
+	"namespaces":          {versions: []resourceListPath{{"/api/v1", "namespaces"}}, writable: true},
 	"crds": {
 		versions: []resourceListPath{{"/apis/apiextensions.k8s.io/v1", "customresourcedefinitions"}},
 		writable: true,
@@ -130,6 +150,7 @@ var objectKinds = map[string]objectKind{
 		versions:       []resourceListPath{{"/api/v1", "secrets"}},
 		namespaced:     true,
 		readOnlyReason: "A Secret's values are redacted before they leave the cluster, so this manifest is not the whole object and KubeMG will not write it back. Change a Secret with kubectl.",
+		redacted:       true,
 	},
 }
 
@@ -241,7 +262,7 @@ func (s *server) showResourceObject(c *gin.Context) {
 		return
 	}
 
-	view, err := renderObject(body, c.Query("kind"), kind)
+	view, err := renderObject(body, kind)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
@@ -309,8 +330,27 @@ func (s *server) updateResourceObject(c *gin.Context) {
 		return
 	}
 
+	// The stored audit diff is opt-in, off by default, and never computed for
+	// a redacted kind — this is the one place all three rules are enforced
+	// together, since the setting is only worth reading if the kind does not
+	// already rule the whole feature out. Fetching the pre-image is
+	// deliberately best-effort: a diff is a nice-to-have layered on top of a
+	// write that must still happen when the extra read fails (the object is
+	// being created for the first time, or a concurrent delete raced this
+	// request), so beforeObjectForDiff never writes to the response on its
+	// own account.
+	var auditDiff []byte
+	if runtime := s.settings(c.Request.Context()); runtime.RecordManifestDiffs && !kind.redacted {
+		if before, ok := s.beforeObjectForDiff(c, user, cluster, grant, kind, namespace, name); ok {
+			stripManagedFields(before)
+			if encoded, err := json.Marshal(objdiff.Diff(before, object)); err == nil {
+				auditDiff = encoded
+			}
+		}
+	}
+
 	resp, callOK := s.callResourceWith(c, user, cluster, grant,
-		http.MethodPut, path, document, "could not write to the cluster")
+		http.MethodPut, path, document, "could not write to the cluster", auditDiff)
 	if !callOK {
 		return
 	}
@@ -319,7 +359,7 @@ func (s *server) updateResourceObject(c *gin.Context) {
 		return
 	}
 
-	view, err := renderObject(resp.Body, c.Query("kind"), kind)
+	view, err := renderObject(resp.Body, kind)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
@@ -389,15 +429,17 @@ func groupPath(apiVersion string) string {
 }
 
 // renderObject turns an object from the cluster into the manifest the editor
-// shows: stripped of bookkeeping, with a Secret's values redacted.
-func renderObject(body []byte, key string, kind objectKind) (objectView, error) {
+// shows: stripped of bookkeeping, with a Secret's values redacted. Which kind
+// this is comes entirely off kind.redacted now — the caller no longer has to
+// hand in the key string just so this function can compare it to "secrets".
+func renderObject(body []byte, kind objectKind) (objectView, error) {
 	var object map[string]any
 	if err := json.Unmarshal(body, &object); err != nil || object == nil {
 		return objectView{}, fmt.Errorf("the cluster returned an unreadable object")
 	}
 
 	stripManagedFields(object)
-	if key == "secrets" {
+	if kind.redacted {
 		redactValues(object)
 	}
 
@@ -458,18 +500,150 @@ func redactValues(object map[string]any) {
 // callResourceWith performs a proxied call with a method and a body. The
 // cluster's own response is handed back untouched; only a failure to reach it,
 // or a refusal from the bastion itself, is answered here.
+//
+// auditDiff is optional and forwarded to Proxy.Call unchanged; every caller
+// but the manifest write omits it. Making it variadic rather than a required
+// parameter keeps the five other call sites — scale, restart, helm values,
+// the RBAC access review — exactly as they were, since a diff only exists to
+// be computed where there is a manifest to diff.
 func (s *server) callResourceWith(c *gin.Context, user *db.User, cluster *db.Cluster,
 	grant db.UserClusterAccess, method, path string, body []byte, fallback string,
+	auditDiff ...[]byte,
 ) (*bastion.Response, bool) {
-	resp, err := s.proxy.Call(c.Request.Context(), user, cluster, grant, method, path, body)
+	var diff []byte
+	if len(auditDiff) > 0 {
+		diff = auditDiff[0]
+	}
+	resp, err := s.proxy.Call(c.Request.Context(), user, cluster, grant, method, path, body, diff)
 	if err != nil {
 		var callErr *bastion.CallError
 		if errors.As(err, &callErr) {
-			c.JSON(callErr.Status, gin.H{"error": callErr.Message})
+			// A guardrail refusal carries the policy that fired, which the
+			// streaming path has always surfaced (bastion.failGuardrail) and this
+			// path did not — a client meeting a bare 403 here could not tell "the
+			// cluster's RBAC said no" from "KubeMG's own guardrail said no", and the
+			// manifest editor's confirmation step needs the second one to explain
+			// itself next to the field that triggered it. The plain "error" field is
+			// left untouched so nothing that already reads it breaks.
+			body := gin.H{"error": callErr.Message}
+			if callErr.Policy != "" {
+				body[guardrailBlockedField] = true
+				body["policy"] = callErr.Policy
+				body["scope"] = callErr.Scope
+			}
+			c.JSON(callErr.Status, body)
 			return nil, false
 		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": fallback})
 		return nil, false
 	}
 	return resp, true
+}
+
+// beforeObjectForDiff reads the object as it stood immediately before a
+// write, purely so the stored audit diff has a pre-image to compare against.
+// It is readObject's twin with one difference that matters: readObject
+// writes the cluster's own refusal to the response, which is correct for a
+// call whose entire purpose is that read, but wrong here, where the read is a
+// side channel feeding an optional column and the write it sits beside must
+// still go ahead even when this fails. So a refusal at any candidate version
+// is swallowed and the next is tried; if none answer, the caller gets ok=false
+// and proceeds without a diff rather than without a write.
+func (s *server) beforeObjectForDiff(c *gin.Context, user *db.User, cluster *db.Cluster,
+	grant db.UserClusterAccess, kind objectKind, namespace, name string,
+) (map[string]any, bool) {
+	for _, path := range kind.objectPaths(namespace, name) {
+		resp, err := s.proxy.Call(c.Request.Context(), user, cluster, grant, http.MethodGet, path, nil, nil)
+		if err != nil || resp.Status < 200 || resp.Status >= 300 {
+			continue
+		}
+		var object map[string]any
+		if json.Unmarshal(resp.Body, &object) == nil && object != nil {
+			return object, true
+		}
+	}
+	return nil, false
+}
+
+// prepareForDiff makes a decoded object fit to compare: the same
+// managedFields/last-applied strip renderObject already applies, and the same
+// redaction for a redacted kind, so a diff never surfaces a value the rest of
+// the object's own read path already keeps out of the response.
+func prepareForDiff(object map[string]any, kind objectKind) {
+	stripManagedFields(object)
+	if kind.redacted {
+		redactValues(object)
+	}
+}
+
+// previewResourceObjectDiff answers, before anything is written, what a
+// submitted manifest would actually change against the object currently on
+// the cluster. It is the confirmation step's one dependency: rather than the
+// editor computing its own diff in TypeScript — which would let the diff an
+// operator approves quietly disagree with whatever gets stored on the audit
+// row afterwards — both go through objdiff.Diff over the same two decoded
+// objects, on this one endpoint and inside updateResourceObject.
+//
+// It performs a fresh read rather than reusing whatever the editor opened on:
+// time passes between opening the editor and clicking Apply, and a diff
+// against a stale pre-image would be answering a question about a cluster
+// state that no longer exists. Nothing is written here — the object handed
+// in is only ever compared, never marshalled onto a path — so a grant that
+// may not write can still preview one, right up until the PUT itself is
+// refused by the cluster's own RBAC.
+func (s *server) previewResourceObjectDiff(c *gin.Context) {
+	user, cluster, grant, ok := s.resourceCluster(c)
+	if !ok {
+		return
+	}
+	kind, name, namespace, ok := s.resourceObjectTarget(c, grant)
+	if !ok {
+		return
+	}
+	if !kind.writable {
+		c.JSON(http.StatusConflict, gin.H{"error": kind.readOnlyReason})
+		return
+	}
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxManifestBody)
+	var payload struct {
+		YAML string `json:"yaml"`
+	}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "the manifest could not be read"})
+		return
+	}
+	if strings.TrimSpace(payload.YAML) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "the manifest is empty"})
+		return
+	}
+
+	document, err := yaml.YAMLToJSON([]byte(payload.YAML))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "this is not valid YAML: " + err.Error()})
+		return
+	}
+	var after map[string]any
+	if err := json.Unmarshal(document, &after); err != nil || after == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a manifest has to be a single YAML object"})
+		return
+	}
+	if _, reason := kind.writePath(after, namespace, name); reason != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": reason})
+		return
+	}
+
+	body, ok := s.readObject(c, user, cluster, grant, kind, namespace, name)
+	if !ok {
+		return
+	}
+	var before map[string]any
+	if err := json.Unmarshal(body, &before); err != nil || before == nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "the cluster returned an unreadable object"})
+		return
+	}
+
+	prepareForDiff(before, kind)
+	prepareForDiff(after, kind)
+	c.JSON(http.StatusOK, objdiff.Diff(before, after))
 }

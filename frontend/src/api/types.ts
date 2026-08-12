@@ -169,6 +169,15 @@ export interface AuditEvent {
   /** Set on an interactive session; a recorded one is replayable by this id. */
   session_id?: string
   error?: string
+  /**
+   * The field-level diff of a manifest write (see ManifestDiff), present only
+   * on an `update` row written while "record manifest diffs" was on for a
+   * non-redacted kind. Its absence is not itself informative: it also means
+   * the write was refused, the kind is redacted, or the setting was off —
+   * see db.AuditEvent.Diff on the backend for the one place all of that is
+   * decided.
+   */
+  diff?: ManifestDiff
 }
 
 /**
@@ -971,6 +980,13 @@ export interface RuntimeSettings {
   /** Whether this server *can* record at all. Without a recording directory the
       switch above can only ever be off. */
   recording_available: boolean
+  /** Whether an `update` audit row carries the manifest diff it wrote. Off by
+      default, unlike every other switch on this page: a manifest body can
+      hold values as sensitive as a Secret's without the object being one, so
+      this is a new class of retained data an operator opts into rather than
+      one that starts happening quietly. There is no environment default for
+      it — `defaults.record_manifest_diffs` is always false. */
+  record_manifest_diffs: boolean
 }
 
 export interface SettingsResponse {
@@ -1110,6 +1126,34 @@ export interface ResourceManifest {
   resource_version?: string
   editable: boolean
   reason?: string
+}
+
+/**
+ * One field-level difference between two decoded objects, mirroring the
+ * backend's pkg/objdiff.Change. `old`/`new` are the decoded value on each
+ * side — absent rather than null on the side that does not apply, so an
+ * "added" change carries no `old` at all instead of an explicit null that
+ * would read as though the field used to hold one.
+ */
+export interface ManifestDiffChange {
+  path: string
+  kind: 'added' | 'removed' | 'changed'
+  old?: unknown
+  new?: unknown
+  /** Set when a giant value was clipped to fit the diff's own size cap. */
+  truncated?: boolean
+}
+
+/**
+ * A complete structural diff — the confirmation step's payload before a write,
+ * and what an `update` audit row carries when the setting to store one is on.
+ * One shape, one renderer, for both.
+ */
+export interface ManifestDiff {
+  changes: ManifestDiffChange[]
+  /** The object carried more differences than the diff's own cap; what is
+      here is a prefix of the real diff, not a sample of it. */
+  truncated: boolean
 }
 
 /**

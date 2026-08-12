@@ -385,7 +385,7 @@ func (s *server) podLogs(c *gin.Context) {
 	path := fmt.Sprintf("/api/v1/namespaces/%s/pods/%s/log?%s",
 		url.PathEscape(namespace), url.PathEscape(name), query.Encode())
 
-	resp, err := s.proxy.Call(c.Request.Context(), user, cluster, grant, http.MethodGet, path, nil)
+	resp, err := s.proxy.Call(c.Request.Context(), user, cluster, grant, http.MethodGet, path, nil, nil)
 	if err != nil {
 		var callErr *bastion.CallError
 		if errors.As(err, &callErr) {

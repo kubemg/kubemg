@@ -51,6 +51,7 @@ import type {
   Kubeconfig,
   LogQueryResponse,
   LoginResponse,
+  ManifestDiff,
   Namespace,
   NewCluster,
   ObservabilityResponse,
@@ -188,6 +189,30 @@ export function errorMessage(error: unknown, fallback: string): string {
     if (error.code === 'ERR_NETWORK') return 'Cannot reach the KubeMG server.'
   }
   return fallback
+}
+
+/**
+ * What a KubeMG guardrail said, as opposed to the cluster's own RBAC. The two
+ * read identically as a bare 403 — both `guardAPIRequest` in the gateway and
+ * the manifest write path stamp the same three fields on a refusal that came
+ * from a policy rather than from the tunnel — so this is the one place that
+ * tells them apart. `null` covers both "this was not a 403" and "it was a
+ * 403 the cluster itself sent back", which the confirmation step treats the
+ * same way: as the cluster's own answer, not KubeMG's.
+ */
+export interface GuardrailRefusal {
+  message: string
+  policy: string
+  scope: string
+}
+
+export function guardrailRefusal(error: unknown): GuardrailRefusal | null {
+  if (!axios.isAxiosError(error)) return null
+  const data = error.response?.data as
+    | { guardrail_blocked?: boolean; error?: string; policy?: string; scope?: string }
+    | undefined
+  if (!data?.guardrail_blocked) return null
+  return { message: data.error ?? 'Blocked by a guardrail policy.', policy: data.policy ?? '', scope: data.scope ?? '' }
 }
 
 export async function login(username: string, password: string): Promise<LoginResponse> {
@@ -890,6 +915,28 @@ export async function updateResourceYaml(
 ): Promise<ResourceManifest> {
   const { data } = await http.put<ResourceManifest>(
     resourceURL(clusterId, 'object'),
+    { yaml },
+    { params: { kind, name, namespace: namespace || undefined } },
+  )
+  return data
+}
+
+/**
+ * previewResourceObjectDiff answers what a manifest would change against the
+ * cluster's current object, without writing anything. It is a fresh read
+ * every time — not the object the editor opened on — because the confirmation
+ * step it powers is asking about the cluster as it stands right now, not as
+ * it stood when the tab was opened.
+ */
+export async function previewResourceObjectDiff(
+  clusterId: number,
+  kind: ResourceKey,
+  name: string,
+  namespace: string | undefined,
+  yaml: string,
+): Promise<ManifestDiff> {
+  const { data } = await http.post<ManifestDiff>(
+    `${resourceURL(clusterId, 'object')}/diff`,
     { yaml },
     { params: { kind, name, namespace: namespace || undefined } },
   )

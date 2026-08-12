@@ -457,7 +457,7 @@ func (s *server) syncEventRing(ctx context.Context, user *db.User, cluster *db.C
 
 		budget.requests++
 		resp, err := s.proxy.Call(ctx, user, cluster, grant,
-			"GET", "/api/v1/events?"+page.Encode(), nil)
+			"GET", "/api/v1/events?"+page.Encode(), nil, nil)
 		if err != nil {
 			return "", err
 		}

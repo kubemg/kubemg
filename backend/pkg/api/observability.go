@@ -723,7 +723,7 @@ func (s *server) tunnelCall(user *db.User, cluster *db.Cluster) observability.Tu
 		K8sRole:   db.K8sRoleClusterAdmin,
 	}
 	return func(ctx context.Context, method, path string, body []byte) (int, []byte, error) {
-		resp, err := s.proxy.Call(ctx, user, cluster, grant, method, path, body)
+		resp, err := s.proxy.Call(ctx, user, cluster, grant, method, path, body, nil)
 		if err != nil {
 			return 0, nil, err
 		}

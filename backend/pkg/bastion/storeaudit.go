@@ -45,9 +45,9 @@ type StoreAuditor struct {
 
 	queue chan db.AuditEvent
 
-	dropped   atomic.Int64
+	dropped    atomic.Int64
 	suppressed atomic.Int64
-	done      chan struct{}
+	done       chan struct{}
 }
 
 // NewStoreAuditor builds the persistent auditor. Run must be started for it to
@@ -185,6 +185,7 @@ func toAuditRow(event Event) db.AuditEvent {
 		GuardrailPolicy:    event.GuardrailPolicy,
 		GuardrailAction:    event.GuardrailAction,
 		Error:              event.Error,
+		Diff:               string(event.Diff),
 	}
 }
 
