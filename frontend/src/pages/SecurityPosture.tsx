@@ -408,10 +408,20 @@ function AcknowledgeSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+    <div className="fixed inset-0 z-40 flex items-end justify-center p-4 sm:items-center">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="scrim-in absolute inset-0 bg-black/55 backdrop-blur-[2px]"
+      />
+
       <form
+        role="dialog"
+        aria-modal="true"
+        aria-label="Acknowledge this finding"
         onSubmit={submit}
-        className="w-full max-w-lg rounded-panel border border-line bg-panel p-4 shadow-xl"
+        className="pop-in card relative w-full max-w-lg p-4 lift"
       >
         <div className="mb-3 flex items-center gap-2">
           <ShieldCheck aria-hidden="true" className="size-4 text-accent" />
