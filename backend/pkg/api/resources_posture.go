@@ -66,6 +66,36 @@ import (
  * `metadata.ownerReferences`) has no template to read instead, so it is
  * evaluated directly; an owned pod is skipped here because its owning
  * Deployment/StatefulSet/DaemonSet was already evaluated.
+ *
+ * Four of the seven rules are Kubernetes Pod Security Standards controls, not
+ * a KubeMG invention, and postureRuleInfo.PSS says so on every rule and every
+ * finding rather than leaving it to a reader to remember which is which:
+ *
+ *   - rulePrivileged          → baseline, "Privileged Containers"
+ *   - ruleHostNamespace       → baseline, "Host Namespaces" (hostNetwork,
+ *                                hostPID *and* hostIPC — see podSpecFields)
+ *   - ruleHostPath            → baseline, "HostPath Volumes"
+ *   - ruleRunAsRootUndeclared → restricted, "Running as Non-root"
+ *
+ * checked against pssDocURL below. The other three are not PSS controls at
+ * all, and are marked that way rather than left blank: PSS classifies a pod's
+ * own security context, and namespace reachability, ServiceAccount token
+ * identity, and node resource accounting are simply outside what it governs —
+ * ruleNoNetworkPolicy, ruleAutomountDefaultSA and ruleNoResourceLimits each
+ * carry a one-line NotPSSReason saying which of those three this is, so a
+ * caller reads an explicit "not covered, because X" rather than an empty
+ * field it has to guess the meaning of.
+ *
+ * Citing PSS for four rules while implementing three of baseline's roughly
+ * eleven controls and one of restricted's controls beyond baseline would be
+ * misleading on its own — a clean scan could be misread as "baseline
+ * compliant", which it is not. postureUncheckedPSSControls names, and the
+ * wire response and the UI both surface, exactly which baseline and
+ * restricted controls this scan does **not** evaluate, so that gap is stated
+ * rather than left for a reader to discover the hard way. The catalogue stays
+ * at seven rules — closing that gap by adding rules for the missing controls
+ * is a scope decision for whoever owns the roadmap, not something this pass
+ * makes unilaterally.
  */
 
 /* -------------------------------------------------------------- rule engine --- */
@@ -84,42 +114,150 @@ const (
 	ruleNoResourceLimits    postureRuleID = "no_resource_limits"
 )
 
+// pssDocURL is the page this file's Pod Security Standards mapping was
+// checked against — the profile names, the exact control names, and which
+// controls belong to baseline versus restricted. If that page's table ever
+// renames or reclassifies a control, this mapping is what falls out of date,
+// not the other way round.
+const pssDocURL = "https://kubernetes.io/docs/concepts/security/pod-security-standards/"
+
+// pssProfile is one of the two enforceable Pod Security Standards profiles.
+// There is a third, "privileged", but it forbids nothing, so no rule here
+// could ever cite it.
+type pssProfile string
+
+const (
+	pssProfileBaseline   pssProfile = "baseline"
+	pssProfileRestricted pssProfile = "restricted"
+)
+
+// pssMapping is a rule's tie to one named PSS control. A rule that has one is
+// implementing exactly that control's field-level check, not a superset or a
+// KubeMG variant of it — see pssDocURL for where Control's exact wording comes
+// from.
+type pssMapping struct {
+	Profile pssProfile
+	Control string
+}
+
 // postureRuleInfo is what a rule always says about itself, independent of any
 // particular finding.
 type postureRuleInfo struct {
 	Title string
 	// Permits ranks the rule by what a firing *permits* a workload to do,
 	// highest first — the ordering the roadmap asks for instead of a count.
-	// The scale is deliberately coarse and asserted here, once, in prose:
+	// PSS profile (below) is a different axis entirely — which profile
+	// forbids the thing, not how bad it is — so the two are asserted
+	// independently and must never be conflated into one sort.
+	//
+	// The three baseline-cited rules outrank the one restricted-cited rule
+	// for a reason PSS itself gives: baseline exists to prevent well-known
+	// privilege escalations, and restricted is additional hardening on top of
+	// an already-baseline-compliant pod (see pssDocURL) — a baseline gap is
+	// simply the more foundational problem, which is exactly why privileged,
+	// host-namespace and hostPath rank above the non-root-declaration rule
+	// here rather than it being a KubeMG judgement call.
+	//
+	// The remaining three ranks — no NetworkPolicy, automounted default SA,
+	// no resource limits — are not backed by any standard; PSS does not
+	// address any of the three at all (see the file header and each rule's
+	// NotPSSReason). Their relative order is a judgement call this comment
+	// owns as one, not a citation:
 	//
 	//   100  privileged           — owns the node: every capability root on the
 	//                                host has, including reconfiguring the kernel.
-	//    90  host namespace       — shares the node's network or process space:
-	//                                sees and can touch every other pod there.
+	//                                PSS baseline: "Privileged Containers".
+	//    90  host namespace       — shares the node's network, process or IPC
+	//                                space: sees and can touch every other pod
+	//                                there. PSS baseline: "Host Namespaces".
 	//    80  hostPath             — arbitrary node filesystem access, bounded
 	//                                only by the mount and the container's own
-	//                                privilege rather than by policy.
+	//                                privilege rather than by policy. PSS
+	//                                baseline: "HostPath Volumes".
 	//    55  no NetworkPolicy     — every pod in the namespace is reachable from
 	//                                wherever the cluster's network allows,
-	//                                since nothing here narrows it.
+	//                                since nothing here narrows it. Not a PSS
+	//                                control — judgement call, not a citation.
 	//    45  automounted default  — any process in the container can present
 	//        SA token               this identity to the API server, whatever it
-	//                                turns out to be bound to.
+	//                                turns out to be bound to. Not a PSS
+	//                                control — judgement call, not a citation.
 	//    30  no non-root decl.    — genuinely uncertain: the image may already
 	//                                run non-root, this just does not say so.
+	//                                PSS restricted: "Running as Non-root".
 	//    10  no resource limits   — a noisy neighbour, not an escape: it can
-	//                                starve the node, not leave the pod.
+	//                                starve the node, not leave the pod. Not a
+	//                                PSS control — judgement call, not a citation.
 	Permits int
+
+	// PSS is this rule's Pod Security Standards control, or nil when the rule
+	// is not one — see NotPSSReason for the required alternative. A caller
+	// must branch on PSS being non-nil, never on Control being non-empty, so
+	// there is exactly one place "is this a PSS control" can be answered
+	// wrong.
+	PSS *pssMapping
+	// NotPSSReason is set, and PSS is nil, for exactly the rules PSS does not
+	// cover: it is the one-line "why not" a reader needs so that "not a PSS
+	// control" reads as a stated fact rather than an empty field. Every rule
+	// has exactly one of PSS or NotPSSReason — TestPostureRulesPSSMappingIsExhaustive
+	// pins that.
+	NotPSSReason string
 }
 
 var postureRules = map[postureRuleID]postureRuleInfo{
-	rulePrivileged:          {Title: "Privileged container", Permits: 100},
-	ruleHostNamespace:       {Title: "Shares a host namespace", Permits: 90},
-	ruleHostPath:            {Title: "hostPath volume", Permits: 80},
-	ruleNoNetworkPolicy:     {Title: "No NetworkPolicy in this namespace", Permits: 55},
-	ruleAutomountDefaultSA:  {Title: "Default ServiceAccount token automounted", Permits: 45},
-	ruleRunAsRootUndeclared: {Title: "No non-root user declared", Permits: 30},
-	ruleNoResourceLimits:    {Title: "No resource limits", Permits: 10},
+	rulePrivileged: {
+		Title: "Privileged container", Permits: 100,
+		PSS: &pssMapping{Profile: pssProfileBaseline, Control: "Privileged Containers"},
+	},
+	ruleHostNamespace: {
+		Title: "Shares a host namespace", Permits: 90,
+		PSS: &pssMapping{Profile: pssProfileBaseline, Control: "Host Namespaces"},
+	},
+	ruleHostPath: {
+		Title: "hostPath volume", Permits: 80,
+		PSS: &pssMapping{Profile: pssProfileBaseline, Control: "HostPath Volumes"},
+	},
+	ruleNoNetworkPolicy: {
+		Title: "No NetworkPolicy in this namespace", Permits: 55,
+		NotPSSReason: "Pod Security Standards classify a pod's own security context; a namespace's " +
+			"network reachability is outside what any PSS profile governs.",
+	},
+	ruleAutomountDefaultSA: {
+		Title: "Default ServiceAccount token automounted", Permits: 45,
+		NotPSSReason: "Pod Security Standards classify a pod's own security context; which identity a " +
+			"ServiceAccount token mounts is outside what any PSS profile governs.",
+	},
+	ruleRunAsRootUndeclared: {
+		Title: "No non-root user declared", Permits: 30,
+		PSS: &pssMapping{Profile: pssProfileRestricted, Control: "Running as Non-root"},
+	},
+	ruleNoResourceLimits: {
+		Title: "No resource limits", Permits: 10,
+		NotPSSReason: "Pod Security Standards classify a pod's own security context; resource accounting " +
+			"is outside what any PSS profile governs.",
+	},
+}
+
+// postureUncheckedPSSControls names every baseline and restricted control
+// this scan does not evaluate, verified against pssDocURL on 2026-08-12. It
+// exists so citing PSS for four rules can never be mistaken for implementing
+// the standard: a clean scan here is not "baseline compliant" or "restricted
+// compliant", it is "clean on the four controls this happens to check", and
+// this is the list of what else those two profiles actually require.
+var postureUncheckedPSSControls = []string{
+	"Baseline — HostProcess Containers",
+	"Baseline — Capabilities (must not add beyond the default set)",
+	"Baseline — Host Ports",
+	"Baseline — Host Probes / Lifecycle Hooks (Kubernetes 1.34+)",
+	"Baseline — AppArmor",
+	"Baseline — SELinux",
+	"Baseline — /proc Mount Type",
+	"Baseline — Seccomp (must not be explicitly Unconfined)",
+	"Baseline — Sysctls",
+	"Restricted — Volume Types",
+	"Restricted — Privilege Escalation",
+	"Restricted — Seccomp (must be explicitly RuntimeDefault or Localhost)",
+	"Restricted — Capabilities (must drop ALL)",
 }
 
 // postureFinding is one rule firing on one object (or, for the namespace rule,
@@ -142,6 +280,17 @@ type postureFinding struct {
 	Field   string `json:"field"`
 	Message string `json:"message"`
 
+	// PSSCovered says, unambiguously, whether this finding is a Pod Security
+	// Standards control — never by the absence of PSSProfile/PSSControl,
+	// which a caller could otherwise mistake for "not populated yet" rather
+	// than "deliberately not a PSS control". When false, PSSNote carries the
+	// one-line reason (see postureRuleInfo.NotPSSReason); when true,
+	// PSSProfile and PSSControl carry the citation. See pssDocURL.
+	PSSCovered bool   `json:"pss_covered"`
+	PSSProfile string `json:"pss_profile,omitempty"`
+	PSSControl string `json:"pss_control,omitempty"`
+	PSSNote    string `json:"pss_note,omitempty"`
+
 	Acknowledged bool       `json:"acknowledged"`
 	AckReason    string     `json:"ack_reason,omitempty"`
 	AckBy        string     `json:"ack_by,omitempty"`
@@ -150,11 +299,19 @@ type postureFinding struct {
 
 func newPostureFinding(rule postureRuleID, kind, name, namespace, container, field, message string) postureFinding {
 	info := postureRules[rule]
-	return postureFinding{
+	f := postureFinding{
 		Rule: string(rule), Title: info.Title, Permits: info.Permits,
 		Kind: kind, Name: name, Namespace: namespace, Container: container,
 		Field: field, Message: message,
 	}
+	if info.PSS != nil {
+		f.PSSCovered = true
+		f.PSSProfile = string(info.PSS.Profile)
+		f.PSSControl = info.PSS.Control
+	} else {
+		f.PSSNote = info.NotPSSReason
+	}
+	return f
 }
 
 // sortPostureFindings orders by what a finding permits, highest first — the
@@ -212,6 +369,7 @@ type postureContainer struct {
 type podSpecFields struct {
 	HostNetwork                  bool                    `json:"hostNetwork"`
 	HostPID                      bool                    `json:"hostPID"`
+	HostIPC                      bool                    `json:"hostIPC"`
 	ServiceAccountName           string                  `json:"serviceAccountName"`
 	AutomountServiceAccountToken *bool                   `json:"automountServiceAccountToken"`
 	SecurityContext              *postureSecurityContext `json:"securityContext"`
@@ -350,6 +508,11 @@ func podSpecPostureFindings(kind, name, namespace string, spec podSpecFields, sa
 			"Shares the node's process namespace: any container here can see and signal every process on "+
 				"the node, including inside other pods' containers."))
 	}
+	if spec.HostIPC {
+		out = append(out, newPostureFinding(ruleHostNamespace, kind, name, namespace, "", "spec.hostIPC",
+			"Shares the node's IPC namespace: any container here can reach every other process's shared "+
+				"memory segments and semaphores on the node, including ones belonging to other pods."))
+	}
 
 	for _, volume := range spec.Volumes {
 		if volume.HostPath == nil {
@@ -479,6 +642,15 @@ type postureView struct {
 	// whoever reads the Go source.
 	Disclaimer    string `json:"disclaimer"`
 	NonGoalNotice string `json:"non_goal_notice"`
+
+	// PSSNotice and PSSUnchecked travel on the wire for the same reason: a
+	// reader who only sees four findings citing Pod Security Standards must
+	// also see, in the same response, that this is four (soon five, with
+	// hostIPC) controls out of baseline's and restricted's much larger list —
+	// never left to infer "checked" from "cited" or "clean" from "not
+	// flagged". See the file header and postureUncheckedPSSControls.
+	PSSNotice    string   `json:"pss_notice"`
+	PSSUnchecked []string `json:"pss_unchecked"`
 }
 
 const postureDisclaimer = "Every finding here names the manifest field that produced it and is derived only from " +
@@ -488,6 +660,19 @@ const postureNonGoalNotice = "This is not a vulnerability scanner: KubeMG holds 
 	"no CVE feed, and nothing here inspects an image's contents, only manifest fields the API server already " +
 	"served. An image's known vulnerabilities belong to whatever already scans your registry — see this " +
 	"cluster's registry console link, if one is registered, rather than a guess KubeMG would have to make."
+
+// postureNotice states, in the same register as postureNonGoalNotice, what
+// citing Pod Security Standards here does and does not mean: four of the
+// seven rules are named PSS controls (see pssDocURL), and this scan checks
+// only those four — a clean result is not a baseline- or restricted-compliant
+// result, only a clean result on the controls actually implemented. See
+// PSSUnchecked, sent alongside this on every response, for exactly what is
+// missing.
+const postureNotice = "Four of the seven rules below are Kubernetes Pod Security Standards controls (see " +
+	pssDocURL + "); the other three are marked as not covered by any PSS profile, with why. Where a finding " +
+	"cites a PSS control, this checks only that one control — a clean scan is not a claim that this workload " +
+	"is baseline- or restricted-compliant. See pss_unchecked for the baseline and restricted controls this " +
+	"scan does not evaluate at all."
 
 // postureAckKey identifies one acknowledgement's natural key, shared between
 // the scan (to annotate findings) and the write handlers (to upsert/delete
@@ -552,6 +737,7 @@ func (s *server) postureScan(c *gin.Context) {
 		Namespace: scope.Namespace, AllNamespaces: scope.All,
 		Findings: []postureFinding{}, Unavailable: []postureReadGap{},
 		Disclaimer: postureDisclaimer, NonGoalNotice: postureNonGoalNotice,
+		PSSNotice: postureNotice, PSSUnchecked: postureUncheckedPSSControls,
 	}
 
 	// ServiceAccounts and NetworkPolicies are read first: several rules
