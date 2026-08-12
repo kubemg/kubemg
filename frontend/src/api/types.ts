@@ -537,6 +537,12 @@ export type PostureRule =
  * itself). `field` names the manifest path that produced it; `permits` is the
  * server's own ranking of what the finding permits, which is the order the
  * list sorts on rather than a count of how many fired.
+ *
+ * `pss_covered` says, unambiguously, whether this finding is a named
+ * Kubernetes Pod Security Standards control: when true, `pss_profile` and
+ * `pss_control` carry the citation; when false, `pss_note` carries the
+ * one-line reason PSS does not govern this rule at all. Never infer either
+ * state from a field being present or absent — read `pss_covered` itself.
  */
 export interface PostureFinding {
   rule: PostureRule
@@ -550,6 +556,11 @@ export interface PostureFinding {
 
   field: string
   message: string
+
+  pss_covered: boolean
+  pss_profile?: 'baseline' | 'restricted'
+  pss_control?: string
+  pss_note?: string
 
   acknowledged: boolean
   ack_reason?: string
@@ -578,6 +589,14 @@ export interface PostureScan {
 
   disclaimer: string
   non_goal_notice: string
+
+  // pss_notice and pss_unchecked state, in the same register as
+  // non_goal_notice, that citing Pod Security Standards on four of the seven
+  // rules is not a claim of baseline or restricted compliance — pss_unchecked
+  // is the list of baseline/restricted controls this scan does not evaluate
+  // at all. See the backend's postureUncheckedPSSControls.
+  pss_notice: string
+  pss_unchecked: string[]
 }
 
 /** The stored record of one acknowledged finding, as the server returns it. */

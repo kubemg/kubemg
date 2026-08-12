@@ -28,10 +28,10 @@ func int64Ptr(v int64) *int64 { return &v }
 /* ---------------------------------------------------------- host namespace --- */
 
 func TestPodSpecPostureFindingsHostNetworkAndHostPID(t *testing.T) {
-	spec := podSpecFields{HostNetwork: true, HostPID: true}
+	spec := podSpecFields{HostNetwork: true, HostPID: true, HostIPC: true}
 	findings := podSpecPostureFindings("Pod", "agent", "kube-system", spec, nil)
 
-	var network, pid bool
+	var network, pid, ipc bool
 	for _, f := range findings {
 		if f.Rule != string(ruleHostNamespace) {
 			continue
@@ -42,9 +42,12 @@ func TestPodSpecPostureFindingsHostNetworkAndHostPID(t *testing.T) {
 		if f.Field == "spec.hostPID" {
 			pid = true
 		}
+		if f.Field == "spec.hostIPC" {
+			ipc = true
+		}
 	}
-	if !network || !pid {
-		t.Fatalf("hostNetwork and hostPID must each produce their own named finding, got %+v", findings)
+	if !network || !pid || !ipc {
+		t.Fatalf("hostNetwork, hostPID and hostIPC must each produce their own named finding, got %+v", findings)
 	}
 }
 
@@ -52,8 +55,21 @@ func TestPodSpecPostureFindingsNeitherHostNamespace(t *testing.T) {
 	findings := podSpecPostureFindings("Pod", "web", "payments", podSpecFields{}, nil)
 	for _, f := range findings {
 		if f.Rule == string(ruleHostNamespace) {
-			t.Fatalf("a pod declaring neither hostNetwork nor hostPID must not fire host_namespace, got %+v", f)
+			t.Fatalf(
+				"a pod declaring none of hostNetwork, hostPID or hostIPC must not fire host_namespace, got %+v", f)
 		}
+	}
+}
+
+// PSS's "Host Namespaces" baseline control covers hostNetwork, hostPID *and*
+// hostIPC (see pssDocURL) — this pins that hostIPC alone, with the other two
+// left false, still fires its own named finding rather than only firing when
+// paired with one of the others.
+func TestPodSpecPostureFindingsHostIPCAlone(t *testing.T) {
+	findings := podSpecPostureFindings("Pod", "agent", "kube-system", podSpecFields{HostIPC: true}, nil)
+	f, ok := findingFor(findings, ruleHostNamespace, "")
+	if !ok || f.Field != "spec.hostIPC" {
+		t.Fatalf("hostIPC alone must fire host_namespace on spec.hostIPC, got %+v", findings)
 	}
 }
 
@@ -323,6 +339,105 @@ func TestPostureRulesPermitsAreStrictlyOrderedAsDocumented(t *testing.T) {
 			t.Fatalf("%s (permits %d) must outrank %s (permits %d)",
 				order[i-1], postureRules[order[i-1]].Permits, order[i], postureRules[order[i]].Permits)
 		}
+	}
+}
+
+/* --------------------------------------------------------------------- PSS --- */
+
+// TestPostureRulesPSSMappingIsExhaustive pins the classification itself: every
+// rule declares exactly one of PSS or NotPSSReason, never both and never
+// neither — the property that keeps "not a PSS control" readable rather than
+// an empty field a caller has to guess the meaning of.
+func TestPostureRulesPSSMappingIsExhaustive(t *testing.T) {
+	for id, info := range postureRules {
+		hasPSS := info.PSS != nil
+		hasReason := info.NotPSSReason != ""
+		if hasPSS == hasReason {
+			t.Fatalf("%s must declare exactly one of PSS or NotPSSReason, got PSS=%v NotPSSReason=%q",
+				id, info.PSS, info.NotPSSReason)
+		}
+	}
+}
+
+// TestPostureRulesPSSMapping pins the mapping itself, verified against
+// pssDocURL: which four rules are PSS controls, which profile and control
+// name each cites, and that the other three are marked absent rather than
+// silently blank.
+func TestPostureRulesPSSMapping(t *testing.T) {
+	cases := []struct {
+		rule    postureRuleID
+		profile pssProfile
+		control string
+	}{
+		{rulePrivileged, pssProfileBaseline, "Privileged Containers"},
+		{ruleHostNamespace, pssProfileBaseline, "Host Namespaces"},
+		{ruleHostPath, pssProfileBaseline, "HostPath Volumes"},
+		{ruleRunAsRootUndeclared, pssProfileRestricted, "Running as Non-root"},
+	}
+	for _, test := range cases {
+		info := postureRules[test.rule]
+		if info.PSS == nil {
+			t.Fatalf("%s must cite a PSS control, got none", test.rule)
+		}
+		if info.PSS.Profile != test.profile || info.PSS.Control != test.control {
+			t.Fatalf("%s = {%s, %q}, want {%s, %q}",
+				test.rule, info.PSS.Profile, info.PSS.Control, test.profile, test.control)
+		}
+	}
+
+	for _, rule := range []postureRuleID{ruleNoNetworkPolicy, ruleAutomountDefaultSA, ruleNoResourceLimits} {
+		info := postureRules[rule]
+		if info.PSS != nil {
+			t.Fatalf("%s must not cite a PSS control, got %+v", rule, info.PSS)
+		}
+		if info.NotPSSReason == "" {
+			t.Fatalf("%s must carry a non-empty NotPSSReason", rule)
+		}
+	}
+}
+
+// A finding must carry the same PSS-covered-or-not statement as its rule, on
+// the wire — never an empty PSSProfile/PSSControl a caller could mistake for
+// "not populated" rather than "deliberately not a PSS control".
+func TestNewPostureFindingCarriesPSSMapping(t *testing.T) {
+	covered := newPostureFinding(rulePrivileged, "Pod", "web", "payments", "app", "f", "m")
+	if !covered.PSSCovered || covered.PSSProfile != "baseline" || covered.PSSControl != "Privileged Containers" {
+		t.Fatalf("a PSS-covered rule's finding must carry PSSCovered/PSSProfile/PSSControl, got %+v", covered)
+	}
+	if covered.PSSNote != "" {
+		t.Fatalf("a PSS-covered finding must not also carry a PSSNote, got %q", covered.PSSNote)
+	}
+
+	notCovered := newPostureFinding(ruleNoResourceLimits, "Pod", "web", "payments", "app", "f", "m")
+	if notCovered.PSSCovered {
+		t.Fatalf("a non-PSS rule's finding must have PSSCovered = false, got %+v", notCovered)
+	}
+	if notCovered.PSSProfile != "" || notCovered.PSSControl != "" {
+		t.Fatalf("a non-PSS finding must not carry a profile or control, got %+v", notCovered)
+	}
+	if notCovered.PSSNote == "" {
+		t.Fatal("a non-PSS finding must carry a non-empty PSSNote explaining why")
+	}
+}
+
+// The PSS profile must never become a second sort key: two rules with the
+// same Permits but different PSS coverage must stay in identity order, and a
+// higher-Permits non-PSS rule must still outrank a lower-Permits PSS one —
+// the ranking axis and the citation axis are asserted independently.
+func TestSortPostureFindingsDoesNotSortByPSSProfile(t *testing.T) {
+	findings := []postureFinding{
+		// no_resource_limits (not a PSS control, Permits 10)
+		newPostureFinding(ruleNoResourceLimits, "Pod", "a", "ns", "app", "f", "m"),
+		// no_nonroot_declaration (PSS restricted, Permits 30) — outranks the
+		// finding above purely on Permits, even though one cites PSS and
+		// ranks lower here on the list and the other does not cite PSS at all.
+	}
+	higher := newPostureFinding(ruleRunAsRootUndeclared, "Pod", "b", "ns", "app", "f", "m")
+	findings = append(findings, higher)
+	sortPostureFindings(findings)
+
+	if findings[0].Rule != string(ruleRunAsRootUndeclared) {
+		t.Fatalf("the higher-Permits finding must sort first regardless of PSS coverage, got %+v", findings[0])
 	}
 }
 

@@ -40,6 +40,16 @@ import { useClusters } from '../state/clusters-context'
  * with the resource kind selected. It does not scroll to the specific field —
  * Explore's drawer has no such anchor — so the finding names the field in its
  * own text instead of implying a highlight that is not there.
+ *
+ * Four of the seven rules are named Kubernetes Pod Security Standards
+ * controls; three are not, and PSS does not address what they check at all.
+ * `PSSBadge` renders that distinction on every finding rather than only on
+ * the ones that cite something, on the same principle `non_goal_notice`
+ * already establishes for the whole page: a reader must be told what is
+ * *not* being claimed, not just what is. `pss_notice` and `pss_unchecked`
+ * carry the coarser version of the same statement — this checks four
+ * controls, not the two profiles — in a Notice next to the existing
+ * non-goal one, never folded into it, since the two are separate claims.
  */
 
 const NS_PARAM = 'ns'
@@ -165,6 +175,20 @@ export function SecurityPosture() {
             mistaken for a scanner it is not. */}
         {loaded ? <Notice tone="info">{loaded.non_goal_notice}</Notice> : null}
 
+        {/* The PSS coverage gap, stated with the same weight as the non-goal
+            notice above: citing Pod Security Standards for four rules must
+            never read as "this checks baseline/restricted compliance". */}
+        {loaded ? (
+          <Notice tone="info">
+            {loaded.pss_notice}
+            {loaded.pss_unchecked.length > 0 ? (
+              <>
+                {' '}Not checked: {loaded.pss_unchecked.join('; ')}.
+              </>
+            ) : null}
+          </Notice>
+        ) : null}
+
         {loaded?.unavailable?.length ? (
           <Notice tone="warn">
             Some of what this scan reads from could not be read:{' '}
@@ -239,6 +263,31 @@ export function SecurityPosture() {
   )
 }
 
+/**
+ * PSSBadge renders a finding's Pod Security Standards classification —
+ * `pss_covered` decides which of the two mutually exclusive shapes to show,
+ * never the presence of `pss_profile`/`pss_note` themselves, so this can
+ * never render a covered finding as uncovered or the reverse. A covered
+ * finding names its profile and control; an uncovered one says so plainly,
+ * with the reason in its title tooltip rather than inline, on the same
+ * pattern ClusterState already uses for a status message that is secondary
+ * to the pill's own label.
+ */
+function PSSBadge({ finding }: { finding: PostureFinding }) {
+  if (finding.pss_covered) {
+    return (
+      <Pill tone={finding.pss_profile === 'restricted' ? 'accent' : 'idle'} title={finding.pss_control}>
+        PSS {finding.pss_profile} · {finding.pss_control}
+      </Pill>
+    )
+  }
+  return (
+    <Pill tone="idle" dot={false} title={finding.pss_note}>
+      Not a PSS control
+    </Pill>
+  )
+}
+
 /** One finding: what it permits, what field produced it, and where it is. */
 function FindingRow({
   clusterId,
@@ -272,6 +321,7 @@ function FindingRow({
           {finding.container ? (
             <span className="font-mono text-[11.5px] text-faint">{finding.container}</span>
           ) : null}
+          <PSSBadge finding={finding} />
           {finding.acknowledged ? <Pill tone="idle">Acknowledged</Pill> : null}
         </div>
 
