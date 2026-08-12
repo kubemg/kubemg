@@ -164,6 +164,39 @@ func TestPortForwardRefusesSPDYAndAcceptsWebSocket(t *testing.T) {
 	}
 }
 
+// A stored audit diff must never describe a write that did not actually
+// happen: a guardrail block or a tunnel failure never reaches Call's tail at
+// all, so the only case worth pinning here is a status the cluster itself
+// sent back on a completed round trip.
+func TestDiffForAuditRowOnlyRidesOnSuccess(t *testing.T) {
+	diff := []byte(`{"changes":[]}`)
+
+	cases := []struct {
+		name   string
+		diff   []byte
+		status int
+		want   bool
+	}{
+		{"200 keeps the diff", diff, http.StatusOK, true},
+		{"201 keeps the diff", diff, http.StatusCreated, true},
+		{"403 from the cluster's own RBAC drops it", diff, http.StatusForbidden, false},
+		{"409 stale resourceVersion drops it", diff, http.StatusConflict, false},
+		{"500 drops it", diff, http.StatusInternalServerError, false},
+		{"no diff to begin with stays nil", nil, http.StatusOK, false},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			got := diffForAuditRow(test.diff, test.status)
+			if test.want && got == nil {
+				t.Fatalf("expected the diff to survive status %d", test.status)
+			}
+			if !test.want && got != nil {
+				t.Fatalf("expected the diff to be dropped for status %d, got %s", test.status, got)
+			}
+		})
+	}
+}
+
 func TestTunnelFailureMapsToUsefulStatuses(t *testing.T) {
 	status, _ := tunnelFailure(ErrNoTunnel)
 	if status != http.StatusServiceUnavailable {

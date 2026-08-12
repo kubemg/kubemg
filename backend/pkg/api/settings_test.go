@@ -29,6 +29,41 @@ func TestSettingsReadBackEnvironmentDefaults(t *testing.T) {
 	}
 }
 
+// The stored audit diff is a new class of retained data — a manifest body can
+// carry values as sensitive as a Secret's without the object being one — so
+// unlike the other switches on this page it must default off rather than on,
+// and stay off until an admin opts in.
+func TestRecordManifestDiffsDefaultsOff(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+
+	body := decode[settingsResponse](t,
+		env.do(t, http.MethodGet, "/api/v1/settings", token, nil))
+	if body.Effective.RecordManifestDiffs {
+		t.Fatal("recording manifest diffs must default off")
+	}
+	if body.Defaults.RecordManifestDiffs {
+		t.Fatal("there is no environment default that could turn this on")
+	}
+
+	rec := env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]any{
+		"record_manifest_diffs": true,
+	})
+	body = decode[settingsResponse](t, rec)
+	if !body.Effective.RecordManifestDiffs {
+		t.Fatal("expected the switch to turn the setting on")
+	}
+
+	rec = env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]any{
+		"record_manifest_diffs": false,
+	})
+	body = decode[settingsResponse](t, rec)
+	if body.Effective.RecordManifestDiffs {
+		t.Fatal("expected the switch to turn the setting back off")
+	}
+}
+
 func TestSettingsAreAdminOnly(t *testing.T) {
 	env := newTestEnv(t)
 	user := env.store.addUser("dev", "pw", db.RoleUser)

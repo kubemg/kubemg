@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
 // The manifest surface is the first write path in the resource API, so what is
@@ -251,7 +253,7 @@ func TestRenderObjectStripsBookkeeping(t *testing.T) {
 		}
 	}`)
 
-	view, err := renderObject(body, "deployments", objectKinds["deployments"])
+	view, err := renderObject(body, objectKinds["deployments"])
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -284,7 +286,7 @@ func TestRenderObjectRedactsSecretValues(t *testing.T) {
 		"stringData":{"token":"plaintext"}
 	}`)
 
-	view, err := renderObject(body, "secrets", objectKinds["secrets"])
+	view, err := renderObject(body, objectKinds["secrets"])
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -315,5 +317,139 @@ func TestGroupPath(t *testing.T) {
 	}
 	if got := groupPath("apps/v1"); got != "/apis/apps/v1" {
 		t.Fatalf("expected /apis/apps/v1, got %q", got)
+	}
+}
+
+// A guardrail refusal on the manifest write must carry the same
+// guardrail_blocked/policy/scope fields the streaming path has always
+// surfaced, so the editor's confirmation step can explain a refusal against
+// the rule that caused it rather than showing an indistinguishable 403. This
+// is the write path's half of that fix; TestGlobalGuardrailBlocksAProxiedDelete
+// in guardrails_test.go is the streaming path's, already in place before this
+// change.
+func TestResourceObjectWriteRefusedByGuardrailSurfacesPolicy(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "secret123", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+	cluster := env.store.addAgentCluster("edge", "dev", "agent-token")
+
+	createPolicy(t, env, token, map[string]any{
+		"name":    "no configmap writes",
+		"pattern": `^PUT /api/v1/namespaces/default/configmaps/`,
+		"target":  db.GuardrailTargetAPIRequest,
+	})
+
+	rec := env.do(t, http.MethodPut,
+		"/api/v1/clusters/"+itoa(cluster.ID)+"/resources/object?kind=configmaps&name=app&namespace=default",
+		token, map[string]string{
+			"yaml": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\n  namespace: default\n",
+		})
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusForbidden, rec.Code, rec.Body.String())
+	}
+
+	body := decode[struct {
+		Error  string `json:"error"`
+		Guard  bool   `json:"guardrail_blocked"`
+		Policy string `json:"policy"`
+		Scope  string `json:"scope"`
+	}](t, rec)
+	if !body.Guard {
+		t.Fatalf("the refusal must be marked as a guardrail: %s", rec.Body.String())
+	}
+	if body.Policy != "no configmap writes" {
+		t.Fatalf("the refusal must name the rule, got %q", body.Policy)
+	}
+	if body.Scope != "global" {
+		t.Fatalf("expected the global scope, got %q", body.Scope)
+	}
+}
+
+// A refusal that never reaches the guardrail engine at all — a cluster with no
+// agent attached — must not carry the guardrail fields; a client should only
+// see guardrail_blocked when a policy is actually what stopped it.
+func TestResourceObjectWriteWithoutGuardrailHasNoGuardrailFields(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "secret123", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+	cluster := env.store.addAgentCluster("edge", "dev", "agent-token")
+
+	rec := env.do(t, http.MethodPut,
+		"/api/v1/clusters/"+itoa(cluster.ID)+"/resources/object?kind=configmaps&name=app&namespace=default",
+		token, map[string]string{
+			"yaml": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\n  namespace: default\n",
+		})
+	// No agent is attached, so this reaches the tunnel lookup and stops there.
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusServiceUnavailable, rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "guardrail_blocked") {
+		t.Fatalf("a plain tunnel failure must not claim to be a guardrail: %s", rec.Body.String())
+	}
+}
+
+// previewResourceObjectDiff shares the manifest write's own request validation
+// — unknown kind, redacted kind, unparsable YAML — since it is the same
+// question asked one step earlier: what would this manifest do, rather than
+// having it actually done.
+func TestPreviewResourceObjectDiffValidatesInput(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "secret123", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+	cluster := env.store.addAgentCluster("edge", "dev", "agent-token")
+
+	// A Secret is redacted and non-writable, so there is nothing to preview:
+	// the same 409 the write path gives, for the same reason.
+	rec := env.do(t, http.MethodPost,
+		"/api/v1/clusters/"+itoa(cluster.ID)+"/resources/object/diff?kind=secrets&name=creds&namespace=default",
+		token, map[string]string{"yaml": "apiVersion: v1\nkind: Secret\nmetadata:\n  name: creds\n"})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d previewing a Secret, got %d (%s)",
+			http.StatusConflict, rec.Code, rec.Body.String())
+	}
+
+	// Unparsable YAML is refused before any read of the cluster happens.
+	rec = env.do(t, http.MethodPost,
+		"/api/v1/clusters/"+itoa(cluster.ID)+"/resources/object/diff?kind=configmaps&name=app&namespace=default",
+		token, map[string]string{"yaml": "\tapiVersion: :\n  - ["})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for invalid YAML, got %d (%s)",
+			http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+
+	// A manifest naming a different object is refused for the same reason the
+	// write is: previewing a rename answers a question about an object that
+	// would not actually be the one replaced.
+	rec = env.do(t, http.MethodPost,
+		"/api/v1/clusters/"+itoa(cluster.ID)+"/resources/object/diff?kind=configmaps&name=app&namespace=default",
+		token, map[string]string{
+			"yaml": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: other\n  namespace: default\n",
+		})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for a renamed object, got %d (%s)",
+			http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+	if body := decode[map[string]string](t, rec); !strings.Contains(body["error"], "renaming") {
+		t.Fatalf("expected the refusal to mention renaming, got %q", body["error"])
+	}
+}
+
+// A valid preview request reaches the pre-image read, which — with no agent
+// attached — stops at the tunnel lookup exactly like the write does. That is
+// the proof this endpoint goes through the same impersonated path as
+// everything else rather than answering from something cached or invented.
+func TestPreviewResourceObjectDiffReachesTheTunnel(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "secret123", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+	cluster := env.store.addAgentCluster("edge", "dev", "agent-token")
+
+	rec := env.do(t, http.MethodPost,
+		"/api/v1/clusters/"+itoa(cluster.ID)+"/resources/object/diff?kind=configmaps&name=app&namespace=default",
+		token, map[string]string{
+			"yaml": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\n  namespace: default\n",
+		})
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusServiceUnavailable, rec.Code, rec.Body.String())
 	}
 }

@@ -34,10 +34,19 @@ import (
 const (
 	ConsoleGrafana = "grafana"
 	ConsoleArgoCD  = "argocd"
+	// ConsoleRegistry is where an image's CVEs actually live: whatever already
+	// scans the registry this cluster pulls from. The workload security posture
+	// feature (pkg/api/resources_posture.go) is explicit that KubeMG does not
+	// become a second vulnerability scanner — no registry credential, no CVE
+	// feed — and "link out to it rather than guess" is exactly this mechanism:
+	// an address a cluster already declares, the same link-only, no-credential
+	// shape as Grafana and Argo CD, rather than a bespoke config field invented
+	// for one feature.
+	ConsoleRegistry = "registry"
 )
 
 // ConsoleKinds enumerates the console kinds a cluster can carry.
-var ConsoleKinds = []string{ConsoleGrafana, ConsoleArgoCD}
+var ConsoleKinds = []string{ConsoleGrafana, ConsoleArgoCD, ConsoleRegistry}
 
 // ValidConsoleKind reports whether a console kind is one KubeMG stores.
 func ValidConsoleKind(kind string) bool { return slices.Contains(ConsoleKinds, kind) }

@@ -11,6 +11,7 @@ import type {
   Ingress,
   Job,
   Namespace,
+  NetworkPolicy,
   PersistentVolume,
   PersistentVolumeClaim,
   Pod,
@@ -55,6 +56,7 @@ export type LoadedResource =
   | { kind: 'cronjobs'; rows: CronJob[] }
   | { kind: 'services'; rows: Service[] }
   | { kind: 'ingresses'; rows: Ingress[] }
+  | { kind: 'networkpolicies'; rows: NetworkPolicy[] }
   | { kind: 'routes'; rows: Route[]; available: boolean; reason?: string }
   | { kind: 'persistentvolumes'; rows: PersistentVolume[] }
   | { kind: 'persistentvolumeclaims'; rows: PersistentVolumeClaim[] }
@@ -174,6 +176,14 @@ export function ResourceView({
     case 'ingresses':
       return (
         <IngressTable ingresses={loaded.rows} showNamespace={showNamespace} onManifest={open} />
+      )
+    case 'networkpolicies':
+      return (
+        <NetworkPolicyTable
+          policies={loaded.rows}
+          showNamespace={showNamespace}
+          onManifest={open}
+        />
       )
     case 'routes':
       return <RouteTable routes={loaded.rows} showNamespace={showNamespace} onManifest={open} />
@@ -1272,6 +1282,78 @@ function IngressTable({
               onManifest={onManifest}
               name={ingress.name}
               namespace={ingress.namespace}
+            />
+          </Row>
+        ))}
+      </tbody>
+    </Table>
+  )
+}
+
+/**
+ * NetworkPolicies. The list shows what the object *is* — its selector, its
+ * directions, how many rules — and stops there; whether it actually governs a
+ * given workload, and what its rules resolve to, is the reachability tab on
+ * that workload's own drawer. A row here has no manifest of a peer to print.
+ */
+function NetworkPolicyTable({
+  policies,
+  showNamespace,
+  onManifest,
+}: {
+  policies: NetworkPolicy[]
+  showNamespace: boolean
+  onManifest?: OpenManifest
+}) {
+  return (
+    <Table resizeKey="kubemg_cols_networkpolicies">
+      <thead>
+        <tr>
+          <Th columnKey="name">NetworkPolicy</Th>
+          <Th className="hidden md:table-cell md:w-[min(28%,20rem)]" columnKey="selector">
+            Pod selector
+          </Th>
+          <Th className="w-[24%] md:w-[min(16%,11rem)]" columnKey="types">
+            Governs
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(14%,9rem)]" columnKey="rules">
+            Rules
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
+          <ManifestHead onManifest={onManifest} />
+        </tr>
+      </thead>
+      <tbody>
+        {policies.map((policy) => (
+          <Row key={`${policy.namespace}/${policy.name}`}>
+            <Td className="truncate">
+              <Name
+                title={policy.name}
+                namespace={showNamespace ? policy.namespace : undefined}
+                onOpen={opener(onManifest, policy)}
+              >
+                {policy.name}
+              </Name>
+            </Td>
+            <Td className={`hidden md:table-cell ${MONO}`}>
+              {/* An empty selector is a real answer — every pod in the
+                  namespace — and it is worth saying so rather than leaving
+                  the cell looking like the read came back with nothing. */}
+              {policy.pod_selector || 'all pods'}
+            </Td>
+            <Td className="text-[12.5px] text-muted">
+              <List values={policy.policy_types} />
+            </Td>
+            <Td className="hidden font-mono text-[12.5px] text-muted lg:table-cell">
+              {policy.ingress_rules} in / {policy.egress_rules} out
+            </Td>
+            <Td className={AGE}>{relativeAge(policy.created_at)}</Td>
+            <ManifestCell
+              onManifest={onManifest}
+              name={policy.name}
+              namespace={policy.namespace}
             />
           </Row>
         ))}

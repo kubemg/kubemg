@@ -50,6 +50,13 @@ function clusterViewTargets(cluster: Cluster): CommandTarget[] {
       to: `/clusters/${cluster.id}/events`,
       cluster,
     })
+    views.push({
+      id: `cluster-${cluster.id}-security`,
+      label: `${cluster.name} — Security posture`,
+      hint: 'Cluster · Security posture',
+      to: `/clusters/${cluster.id}/security`,
+      cluster,
+    })
   }
   views.push({
     id: `cluster-${cluster.id}-audit`,

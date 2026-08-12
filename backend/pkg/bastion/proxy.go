@@ -271,6 +271,11 @@ func (p *Proxy) Handle(c *gin.Context) {
 // state on demand — same impersonation, same namespace enforcement and same
 // audit trail as a kubectl call, because a read from the UI is not a special
 // case that deserves less scrutiny.
+//
+// auditDiff is carried on the resulting audit row's Event.Diff, but only if
+// the call actually succeeds — see the comment on Event.Diff for why that
+// check lives here rather than in whoever calls Call. Every caller but the
+// manifest write passes nil.
 func (p *Proxy) Call(
 	ctx context.Context,
 	user *db.User,
@@ -278,6 +283,7 @@ func (p *Proxy) Call(
 	grant db.UserClusterAccess,
 	method, path string,
 	body []byte,
+	auditDiff []byte,
 ) (*Response, error) {
 	started := time.Now()
 	parsed := ParsePath(path)
@@ -321,7 +327,7 @@ func (p *Proxy) Call(
 	if decision.Blocked() {
 		message := decision.Message()
 		record(http.StatusForbidden, errors.New(message))
-		return nil, &CallError{Status: http.StatusForbidden, Message: message}
+		return nil, &CallError{Status: http.StatusForbidden, Message: message, Policy: decision.Policy, Scope: decision.Scope}
 	}
 
 	tunnel, ok := p.registry.Get(cluster.ID)
@@ -356,6 +362,9 @@ func (p *Proxy) Call(
 		}
 	}
 
+	// The diff is attached only once the round trip is known to have
+	// succeeded — see diffForAuditRow.
+	event.Diff = diffForAuditRow(auditDiff, resp.Status)
 	record(resp.Status, nil)
 	return resp, nil
 }
@@ -465,11 +474,35 @@ func (p *Proxy) Watch(
 	return stream, nil
 }
 
+// diffForAuditRow decides whether a manifest write's diff should ride along on
+// this call's audit row. It exists as its own function, rather than an inline
+// condition, so the one rule the roadmap calls load-bearing — a stored diff
+// is "never stored for a refused write" — is something a test can pin without
+// standing up a live tunnel: a guardrail block or a tunnel failure never
+// reaches the call site at all, and a refusal the cluster itself sends back —
+// a 403 from its own RBAC, a 409 on a stale resourceVersion — is exactly the
+// case a bare 2xx check below has to catch.
+func diffForAuditRow(auditDiff []byte, status int) []byte {
+	if len(auditDiff) == 0 || status < 200 || status >= 300 {
+		return nil
+	}
+	return auditDiff
+}
+
 // CallError is a proxied call that failed, carrying the status the HTTP layer
 // should hand back.
+//
+// Policy and Scope are set only when the refusal came from a guardrail rather
+// than from the cluster's own RBAC or the tunnel itself — the same distinction
+// failGuardrail draws for the streaming path. Without them, callResourceWith
+// could only hand the manifest editor a bare "forbidden" string, and the
+// editor's confirmation step (roadmap "a diff before the write") has nothing
+// to explain against the offending field without knowing which policy fired.
 type CallError struct {
 	Status  int
 	Message string
+	Policy  string
+	Scope   string
 }
 
 func (e *CallError) Error() string { return e.Message }

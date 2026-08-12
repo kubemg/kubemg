@@ -301,6 +301,17 @@ export function ClusterSummary() {
                   to see the Roles and bindings behind that, and to ask the cluster directly whether
                   an identity may do something.
                 </p>
+                {/* Privileged containers, hostPath mounts and the rest are
+                    fields these same reads already carry — this is where
+                    they are turned into a ranked list rather than left for
+                    someone to notice by eye. */}
+                <p className="mt-3 max-w-3xl text-[13px] leading-relaxed text-muted">
+                  <Link to={`/clusters/${cluster.id}/security`} className="text-accent hover:underline">
+                    Check this cluster&rsquo;s workload security posture
+                  </Link>{' '}
+                  for privileged containers, hostPath mounts, missing NetworkPolicies and the rest —
+                  read from these same manifests, not a scan of your images.
+                </p>
               </Panel>
             ) : (
               <Panel

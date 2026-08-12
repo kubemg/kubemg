@@ -51,6 +51,7 @@ func Migrate(gdb *gorm.DB) error {
 		&GuardrailPolicy{},
 		&JitRequest{},
 		&Lease{},
+		&PostureAcknowledgement{},
 	); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
 	}

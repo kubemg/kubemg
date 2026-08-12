@@ -24,6 +24,7 @@ export type ResourceKey =
   | 'cronjobs'
   | 'services'
   | 'ingresses'
+  | 'networkpolicies'
   | 'httproutes'
   | 'virtualservices'
   | 'persistentvolumes'
@@ -159,6 +160,22 @@ export const RESOURCE_CATEGORIES: ResourceCategory[] = [
         singular: 'Ingress',
         scope: 'namespaced',
         aliases: ['ing'],
+      },
+      /*
+       * NetworkPolicies decide whether a workload is reachable at all, which is
+       * a networking question in exactly the sense Services and Ingresses are —
+       * "how does traffic get here" — rather than an access-control question in
+       * the sense the RBAC section is. It is not a KubeMG permission and it is
+       * not the cluster's authorizer; it is the object that governs pod-to-pod
+       * traffic, so it sits beside the other two things that route traffic
+       * rather than beside Roles and Bindings.
+       */
+      {
+        key: 'networkpolicies',
+        label: 'NetworkPolicies',
+        singular: 'NetworkPolicy',
+        scope: 'namespaced',
+        aliases: ['netpol', 'np'],
       },
     ],
   },

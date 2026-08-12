@@ -80,6 +80,9 @@ type fakeStore struct {
 	// exactly the shape the real table gained. See jit_fake_test.go.
 	jit       map[string]*db.JitRequest
 	jitGrants map[uint]map[uint]db.UserClusterAccess
+	// postureAcks stands in for the posture_acknowledgements table, keyed by its
+	// natural key; see posture_fake_test.go.
+	postureAcks map[string]*db.PostureAcknowledgement
 	// now is the clock the fake resolves expiring grants against. A test that
 	// moves an elevation past its window sets it, so the fake and the workflow
 	// engine agree about what time it is — two clocks would make the expiry

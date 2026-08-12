@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -45,12 +46,24 @@ type auditEventResponse struct {
 	GuardrailPolicy string `json:"guardrail_policy,omitempty"`
 	GuardrailAction string `json:"guardrail_action,omitempty"`
 	Error           string `json:"error,omitempty"`
+	// Diff is the stored field-level diff of a manifest write (pkg/objdiff's
+	// Result, JSON-encoded on the way in), present only on an `update` row
+	// written while the "record manifest diffs" setting was on for a
+	// non-redacted kind — see db.AuditEvent.Diff. It rides in as
+	// json.RawMessage rather than a Go struct so this package does not have
+	// to import objdiff just to describe its own wire shape a second time;
+	// the row already holds valid JSON or nothing at all.
+	Diff json.RawMessage `json:"diff,omitempty"`
 }
 
 func toAuditResponse(event db.AuditEvent) auditEventResponse {
 	groups := event.ImpersonatedGroupList()
 	if groups == nil {
 		groups = []string{}
+	}
+	var diff json.RawMessage
+	if event.Diff != "" {
+		diff = json.RawMessage(event.Diff)
 	}
 	return auditEventResponse{
 		ID:                 event.ID,
@@ -76,6 +89,7 @@ func toAuditResponse(event db.AuditEvent) auditEventResponse {
 		GuardrailPolicy:    event.GuardrailPolicy,
 		GuardrailAction:    event.GuardrailAction,
 		Error:              event.Error,
+		Diff:               diff,
 	}
 }
 

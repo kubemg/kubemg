@@ -169,6 +169,15 @@ export interface AuditEvent {
   /** Set on an interactive session; a recorded one is replayable by this id. */
   session_id?: string
   error?: string
+  /**
+   * The field-level diff of a manifest write (see ManifestDiff), present only
+   * on an `update` row written while "record manifest diffs" was on for a
+   * non-redacted kind. Its absence is not itself informative: it also means
+   * the write was refused, the kind is redacted, or the setting was off —
+   * see db.AuditEvent.Diff on the backend for the one place all of that is
+   * decided.
+   */
+  diff?: ManifestDiff
 }
 
 /**
@@ -421,6 +430,169 @@ export interface OptionalList<T> {
   items: T[]
   available: boolean
   reason?: string
+}
+
+/**
+ * A NetworkPolicy, reduced to what a list row can show. There is no single axis
+ * like a Role's verbs-and-resources union — a peer list has no such summary —
+ * so the rule counts are what the row states and the reachability view is
+ * where a rule is actually worth reading.
+ */
+export interface NetworkPolicy {
+  name: string
+  namespace: string
+  created_at: string
+  pod_selector: string
+  policy_types: string[]
+  ingress_rules: number
+  egress_rules: number
+}
+
+/**
+ * One source (ingress) or destination (egress) a NetworkPolicy rule names.
+ * `pod_selector`/`namespace_selector` are the selector text, and an *empty*
+ * string is a real answer — an empty LabelSelector matches every pod or every
+ * namespace — never a missing one.
+ */
+export interface NetworkPolicyPeer {
+  kind: 'all' | 'namespace' | 'pod' | 'ip_block'
+  pod_selector?: string
+  namespace_selector?: string
+  /** Set only for a bare podSelector, which is scoped to the policy's own namespace. */
+  namespace?: string
+  cidr?: string
+  except?: string[]
+}
+
+/**
+ * A workload's own view of the policies that select it — what may reach it,
+ * what it may reach, and whether nothing selects it at all. This is a
+ * derivation from the NetworkPolicy objects alone: `disclaimer` carries the
+ * statement that it is not what the cluster's CNI enforces and does not trace
+ * a live connection, and the console renders it rather than only the backend
+ * knowing it.
+ */
+export interface NetworkPolicyReachability {
+  kind: string
+  name: string
+  namespace: string
+  pod_labels: Record<string, string>
+  /** Whether `pod_labels` came off the object itself (a Pod) or its pod template. */
+  label_source: 'pod' | 'pod template'
+
+  ingress_covered: boolean
+  ingress_policies: string[]
+  ingress_peers: NetworkPolicyPeer[]
+  /**
+   * True when *some* policy in this namespace declares Ingress, whether or not
+   * it selects this workload — what turns "not covered" into "wide open by
+   * omission" rather than "nobody here uses NetworkPolicy at all".
+   */
+  namespace_has_ingress_policies: boolean
+
+  egress_covered: boolean
+  egress_policies: string[]
+  egress_peers: NetworkPolicyPeer[]
+  namespace_has_egress_policies: boolean
+
+  /** False when the policy list itself could not be read — everything above is
+      then unknown rather than "no policies", and `unavailable_reason` says why. */
+  policies_available: boolean
+  unavailable_reason?: string
+  disclaimer: string
+}
+
+/** The namespace-level summary of what is and is not covered by a NetworkPolicy. */
+export interface NetworkPolicyCoverage {
+  namespace: string
+  policy_count: number
+  pod_count: number
+  ingress_covered_pods: number
+  ingress_uncovered_pods: number
+  ingress_uncovered_examples?: string[]
+  egress_covered_pods: number
+  egress_uncovered_pods: number
+  egress_uncovered_examples?: string[]
+  available: boolean
+  unavailable_reason?: string
+  disclaimer: string
+}
+
+/**
+ * One of the seven workload security posture rules. There is no eighth —
+ * see the backend's postureRules for what each one means and why it ranks
+ * where it does.
+ */
+export type PostureRule =
+  | 'privileged_container'
+  | 'host_namespace'
+  | 'hostpath_volume'
+  | 'namespace_no_network_policy'
+  | 'automount_default_service_account'
+  | 'no_nonroot_declaration'
+  | 'no_resource_limits'
+
+/**
+ * One rule firing on one object (or, for the namespace rule, on the namespace
+ * itself). `field` names the manifest path that produced it; `permits` is the
+ * server's own ranking of what the finding permits, which is the order the
+ * list sorts on rather than a count of how many fired.
+ */
+export interface PostureFinding {
+  rule: PostureRule
+  title: string
+  permits: number
+
+  kind: string
+  name: string
+  namespace?: string
+  container?: string
+
+  field: string
+  message: string
+
+  acknowledged: boolean
+  ack_reason?: string
+  ack_by?: string
+  ack_at?: string
+}
+
+export interface PostureReadGap {
+  resource: string
+  reason: string
+}
+
+/** The whole answer for one cluster or one namespace, ordered by permits. */
+export interface PostureScan {
+  namespace: string
+  all_namespaces: boolean
+
+  findings: PostureFinding[]
+
+  scanned_workloads: number
+  scanned_pods: number
+  truncated: boolean
+  findings_capped?: boolean
+
+  unavailable?: PostureReadGap[]
+
+  disclaimer: string
+  non_goal_notice: string
+}
+
+/** The stored record of one acknowledged finding, as the server returns it. */
+export interface PostureAcknowledgement {
+  id: number
+  cluster_id: number
+  kind: string
+  namespace?: string
+  name: string
+  rule: PostureRule
+  reason: string
+  acked_by_id: number
+  acked_by: string
+  created_at: string
+  updated_at: string
 }
 
 export interface PersistentVolume {
@@ -971,6 +1143,13 @@ export interface RuntimeSettings {
   /** Whether this server *can* record at all. Without a recording directory the
       switch above can only ever be off. */
   recording_available: boolean
+  /** Whether an `update` audit row carries the manifest diff it wrote. Off by
+      default, unlike every other switch on this page: a manifest body can
+      hold values as sensitive as a Secret's without the object being one, so
+      this is a new class of retained data an operator opts into rather than
+      one that starts happening quietly. There is no environment default for
+      it — `defaults.record_manifest_diffs` is always false. */
+  record_manifest_diffs: boolean
 }
 
 export interface SettingsResponse {
@@ -1110,6 +1289,34 @@ export interface ResourceManifest {
   resource_version?: string
   editable: boolean
   reason?: string
+}
+
+/**
+ * One field-level difference between two decoded objects, mirroring the
+ * backend's pkg/objdiff.Change. `old`/`new` are the decoded value on each
+ * side — absent rather than null on the side that does not apply, so an
+ * "added" change carries no `old` at all instead of an explicit null that
+ * would read as though the field used to hold one.
+ */
+export interface ManifestDiffChange {
+  path: string
+  kind: 'added' | 'removed' | 'changed'
+  old?: unknown
+  new?: unknown
+  /** Set when a giant value was clipped to fit the diff's own size cap. */
+  truncated?: boolean
+}
+
+/**
+ * A complete structural diff — the confirmation step's payload before a write,
+ * and what an `update` audit row carries when the setting to store one is on.
+ * One shape, one renderer, for both.
+ */
+export interface ManifestDiff {
+  changes: ManifestDiffChange[]
+  /** The object carried more differences than the diff's own cap; what is
+      here is a prefix of the real diff, not a sample of it. */
+  truncated: boolean
 }
 
 /**
@@ -1371,7 +1578,7 @@ export interface ObservabilityResponse {
  * transport built for the Kubernetes API. KubeMG stores an address, holds no
  * session for either tool, and the operator signs in to them as themselves.
  */
-export type ConsoleKind = 'grafana' | 'argocd'
+export type ConsoleKind = 'grafana' | 'argocd' | 'registry'
 
 export interface ClusterConsole {
   kind: ConsoleKind

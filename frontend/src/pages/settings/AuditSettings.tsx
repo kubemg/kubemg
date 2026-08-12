@@ -19,6 +19,7 @@ type Draft = {
       not the same as an empty array, and the API preserves the difference. */
   audit_verbs: string[] | null
   record_exec_sessions: boolean
+  record_manifest_diffs: boolean
 }
 
 /** draftOf turns a settings response into the form's own shape. */
@@ -36,6 +37,9 @@ function draftOf(settings: SettingsResponse): Draft {
     // Recording follows the process, so the effective value is the truth here —
     // there is no "unset" state for a boolean to fall back to.
     record_exec_sessions: effective.record_exec_sessions,
+    // Off by default and there is no process-level fallback either, so the
+    // effective value is the whole truth for this one too.
+    record_manifest_diffs: effective.record_manifest_diffs,
   }
 }
 
@@ -58,6 +62,7 @@ export function AuditSettings() {
     session_recording_retention_days: '',
     audit_verbs: null,
     record_exec_sessions: true,
+    record_manifest_diffs: false,
   })
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -105,6 +110,7 @@ export function AuditSettings() {
         // it back to every verb" rather than as "record nothing".
         audit_verbs: draft.audit_verbs ?? [],
         record_exec_sessions: draft.record_exec_sessions,
+        record_manifest_diffs: draft.record_manifest_diffs,
       })
       setSettings(next)
       setDraft(draftOf(next))
@@ -129,7 +135,8 @@ export function AuditSettings() {
         draft.audit_verbs,
         settings.overrides.audit_verbs_selected ? settings.overrides.audit_verbs : null,
       ) ||
-      draft.record_exec_sessions !== settings.effective.record_exec_sessions)
+      draft.record_exec_sessions !== settings.effective.record_exec_sessions ||
+      draft.record_manifest_diffs !== settings.effective.record_manifest_diffs)
 
   const valid = retentionValid && recordingRetentionValid
 
@@ -180,6 +187,8 @@ export function AuditSettings() {
             onVerbsChange={(next) => set('audit_verbs', next)}
             recordSessions={draft.record_exec_sessions}
             onRecordSessionsChange={(next) => set('record_exec_sessions', next)}
+            recordManifestDiffs={draft.record_manifest_diffs}
+            onRecordManifestDiffsChange={(next) => set('record_manifest_diffs', next)}
             retentionDays={draft.audit_retention_days}
             onRetentionChange={(next) => set('audit_retention_days', next)}
             recordingRetentionDays={draft.session_recording_retention_days}

@@ -3,6 +3,7 @@ import {
   CalendarClock,
   ChevronLeft,
   ChevronRight,
+  FileDiff,
   PlayCircle,
   Radio,
   RefreshCw,
@@ -12,6 +13,7 @@ import { useParams } from 'react-router'
 import { errorMessage, fetchAudit, fetchAuditSummary, fetchUsers } from '../api/client'
 import type { AuditEvent, AuditQuery, AuditSummary, User } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { ManifestDiffView } from '../components/ManifestDiffView'
 import { timeRangeLabel } from '../lib/timerange'
 import { useTimeRange } from '../state/timerange-context'
 import {
@@ -135,6 +137,10 @@ export function AuditTrail() {
   const [offset, setOffset] = useState(0)
   // The session being replayed, addressed by the id its audit rows carry.
   const [replaying, setReplaying] = useState<AuditEvent | null>(null)
+  // The row whose stored manifest diff is open. Only an `update` row written
+  // while "record manifest diffs" was on for a non-redacted kind carries one
+  // at all — see AuditEvent.diff — so most rows never offer this.
+  const [viewingDiff, setViewingDiff] = useState<AuditEvent | null>(null)
 
   const query = useMemo<AuditQuery>(
     () => ({
@@ -485,17 +491,24 @@ export function AuditTrail() {
                     </Pill>
                   </Td>
                   <Td>
-                    {/* A shell in a production pod is the line an auditor stops
-                        on, so the replay is offered right there rather than on a
-                        page of its own. */}
-                    {replayable(event) ? (
-                      <IconButton
-                        label="Replay terminal session"
-                        onClick={() => setReplaying(event)}
-                      >
-                        <PlayCircle aria-hidden="true" className="size-4" />
-                      </IconButton>
-                    ) : null}
+                    <div className="flex items-center gap-1">
+                      {/* A shell in a production pod is the line an auditor
+                          stops on, so the replay is offered right there rather
+                          than on a page of its own. */}
+                      {replayable(event) ? (
+                        <IconButton
+                          label="Replay terminal session"
+                          onClick={() => setReplaying(event)}
+                        >
+                          <PlayCircle aria-hidden="true" className="size-4" />
+                        </IconButton>
+                      ) : null}
+                      {event.diff ? (
+                        <IconButton label="View manifest diff" onClick={() => setViewingDiff(event)}>
+                          <FileDiff aria-hidden="true" className="size-4" />
+                        </IconButton>
+                      ) : null}
+                    </div>
                   </Td>
                 </Row>
               ))}
@@ -559,6 +572,18 @@ export function AuditTrail() {
           <Suspense fallback={<p className="text-[13px] text-muted">Loading the player…</p>}>
             <TerminalSessionPlayer sessionId={replaying.session_id} />
           </Suspense>
+        </Sheet>
+      ) : null}
+
+      {viewingDiff?.diff ? (
+        <Sheet
+          width="lg"
+          eyebrow={`${viewingDiff.cluster} · ${viewingDiff.username} · ${relativeAge(viewingDiff.at)}`}
+          title="Manifest diff"
+          onClose={() => setViewingDiff(null)}
+        >
+          <p className="font-mono text-[12.5px] text-muted">{viewingDiff.path}</p>
+          <ManifestDiffView diff={viewingDiff.diff} />
         </Sheet>
       ) : null}
     </AppShell>

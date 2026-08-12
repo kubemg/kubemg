@@ -152,6 +152,12 @@ type Store interface {
 	ClusterConsoles(ctx context.Context, clusterID uint) ([]db.ClusterConsole, error)
 	PutClusterConsole(ctx context.Context, console *db.ClusterConsole) error
 	DeleteClusterConsole(ctx context.Context, clusterID uint, kind string) error
+
+	// Workload security posture acknowledgements — see pkg/api/resources_posture.go.
+	// The scan itself is stateless; this is the one thing it cannot recompute.
+	ListPostureAcknowledgements(ctx context.Context, clusterID uint) ([]db.PostureAcknowledgement, error)
+	AcknowledgePostureFinding(ctx context.Context, ack *db.PostureAcknowledgement) error
+	UnacknowledgePostureFinding(ctx context.Context, clusterID uint, kind, namespace, name, rule string) error
 }
 
 // Options wires the router's dependencies.
@@ -266,26 +272,26 @@ type tunnels interface {
 }
 
 type server struct {
-	store              Store
+	store Store
 	// instanceID identifies this process for the duration of its life. It is what
 	// a background job holds a lease as, so a restart is a new holder rather than
 	// something that renews a claim its previous incarnation took.
-	instanceID         string
-	jwt                *auth.Manager
-	tokens             k8s.Issuer
-	health             k8s.Checker
-	tunnels            tunnels
-	proxy              *bastion.Proxy
-	saNamespace        string
-	publicURL          string
-	agentImage         string
-	agentNamespace     string
-	bastionCA          string
+	instanceID     string
+	jwt            *auth.Manager
+	tokens         k8s.Issuer
+	health         k8s.Checker
+	tunnels        tunnels
+	proxy          *bastion.Proxy
+	saNamespace    string
+	publicURL      string
+	agentImage     string
+	agentNamespace string
+	bastionCA      string
 	// recordings is the directory terminal recordings are read back from. Empty
 	// means this server is not recording sessions.
-	recordings         string
-	recordingKey       []byte
-	recordingInput     bool
+	recordings     string
+	recordingKey   []byte
+	recordingInput bool
 	// auditor records this server's own sensitive reads. See Options.Auditor.
 	auditor            bastion.Auditor
 	auditRetentionDays int
@@ -301,7 +307,7 @@ type server struct {
 	// chat rather than from a session.
 	jit               *jit.Engine
 	jitCallbackSecret []byte
-	logger             *slog.Logger
+	logger            *slog.Logger
 	// reads holds recently-answered live reads, keyed by caller and question.
 	// Nil turns caching off entirely; see cachedRead.
 	reads *cache.Cache[cachedResponse]
@@ -594,6 +600,16 @@ func NewRouter(opts Options) *gin.Engine {
 			resources.GET("/httproutes", s.listHTTPRoutes)
 			resources.GET("/virtualservices", s.listVirtualServices)
 
+			// NetworkPolicies: the fixed-inventory list, plus the derivation
+			// worth building beside it — a workload's own view of the
+			// policies that select it, and a namespace's own coverage
+			// summary. Both are read-only reads over the same policy objects
+			// the list above shows; neither traces a live connection or
+			// speaks for the cluster's CNI, which each response states.
+			resources.GET("/networkpolicies", s.listNetworkPolicies)
+			resources.GET("/networkpolicies/reachability", s.networkPolicyReachability)
+			resources.GET("/networkpolicies/coverage", s.networkPolicyCoverage)
+
 			resources.GET("/persistentvolumes", s.listPersistentVolumes)
 			resources.GET("/persistentvolumeclaims", s.listPersistentVolumeClaims)
 			resources.GET("/storageclasses", s.listStorageClasses)
@@ -658,6 +674,14 @@ func NewRouter(opts Options) *gin.Engine {
 			// the caller may actually change anything.
 			resources.GET("/object", s.showResourceObject)
 			resources.PUT("/object", s.updateResourceObject)
+			// The confirmation step's diff, computed fresh against whatever the
+			// cluster holds right now rather than against the object the editor
+			// opened on. It is a POST because a manifest of arbitrary size travels
+			// in the body, but it writes nothing — deliberately outside the cached
+			// resources group all the same, since a diff has to be computed on the
+			// live object every time it is asked for, the same reasoning as
+			// access-review below.
+			clusters.POST("/:id/resources/object/diff", s.previewResourceObjectDiff)
 
 			// The two workload writes that are not worth hand-editing a
 			// manifest for. Both are read-modify-writes down the same
@@ -679,6 +703,24 @@ func NewRouter(opts Options) *gin.Engine {
 			// through an object you already suspected. Grouped by involved
 			// object, so a failing Deployment is one entry rather than forty.
 			resources.GET("/events", s.listClusterEvents)
+
+			// Workload security posture: seven fixed rules over fields these
+			// same lists already fetch (privileged containers, hostPath,
+			// hostNetwork/hostPID, an undeclared non-root user, missing
+			// resource limits, an automounted default ServiceAccount token,
+			// and a namespace with no NetworkPolicy). A read like every other
+			// one above — impersonated, scoped, cached — that adds no
+			// permission and no dependency; see resources_posture.go.
+			resources.GET("/posture", s.postureScan)
+			// Acknowledging a finding is a write against KubeMG's own database
+			// rather than the cluster, but it mutes a security control until
+			// someone reverses it — the same reasoning that keeps
+			// access-review and the object diff outside the cached group
+			// applies here too, and doubly so: caching a write's own response
+			// makes no sense, and this one needs no cache invalidation on the
+			// cluster's resources at all since nothing on the cluster changed.
+			clusters.POST("/:id/resources/posture/ack", s.acknowledgePostureFinding)
+			clusters.DELETE("/:id/resources/posture/ack", s.unacknowledgePostureFinding)
 
 			// Live utilisation from the cluster's own Metrics API. It rides the
 			// same tunnel, grant and audit trail as the lists above; a cluster

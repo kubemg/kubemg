@@ -893,7 +893,7 @@ func (s *server) supersedeHelmSecret(c *gin.Context, user *db.User, cluster *db.
 
 	path := fmt.Sprintf("/api/v1/namespaces/%s/secrets/%s",
 		url.PathEscape(namespace), url.PathEscape(previousName))
-	resp, err := s.proxy.Call(c.Request.Context(), user, cluster, grant, http.MethodPut, path, body)
+	resp, err := s.proxy.Call(c.Request.Context(), user, cluster, grant, http.MethodPut, path, body, nil)
 	if err != nil {
 		return fmt.Errorf("the cluster could not be reached")
 	}

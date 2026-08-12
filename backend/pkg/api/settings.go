@@ -45,6 +45,11 @@ type runtimeSettings struct {
 	// started without a recording directory cannot be talked into it from here, and
 	// a switch that silently does nothing is worse than one that says why.
 	RecordingAvailable bool `json:"recording_available"`
+	// RecordManifestDiffs turns on storing the field-level diff of a manifest
+	// write on its `update` audit row. It defaults false: see
+	// db.SettingRecordManifestDiffs for why this one setting starts off where
+	// the others do not.
+	RecordManifestDiffs bool `json:"record_manifest_diffs"`
 }
 
 type settingsResponse struct {
@@ -78,8 +83,9 @@ type updateSettingsRequest struct {
 	// would keep recording refusals and sessions regardless, so a server claiming
 	// to be silent would be lying about itself. Unticking every box therefore means
 	// the same thing as never having ticked one.
-	AuditVerbs         *[]string `json:"audit_verbs"`
-	RecordExecSessions *bool     `json:"record_exec_sessions"`
+	AuditVerbs          *[]string `json:"audit_verbs"`
+	RecordExecSessions  *bool     `json:"record_exec_sessions"`
+	RecordManifestDiffs *bool     `json:"record_manifest_diffs"`
 }
 
 // Audit retention bounds. The floor stops an operator from silently emptying
@@ -112,6 +118,11 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 	if v := strings.TrimSpace(stored[db.SettingRecordExecSessions]); v != "" {
 		if enabled, err := strconv.ParseBool(v); err == nil {
 			out.RecordExecSessions = out.RecordingAvailable && enabled
+		}
+	}
+	if v := strings.TrimSpace(stored[db.SettingRecordManifestDiffs]); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			out.RecordManifestDiffs = enabled
 		}
 	}
 	if v := strings.TrimSpace(stored[db.SettingPublicURL]); v != "" {
@@ -238,6 +249,7 @@ func (s *server) getSettings(c *gin.Context) {
 		AuditVerbsSelected:            verbsSelected,
 		RecordExecSessions:            effective.RecordExecSessions,
 		RecordingAvailable:            effective.RecordingAvailable,
+		RecordManifestDiffs:           effective.RecordManifestDiffs,
 	}
 
 	c.JSON(http.StatusOK, settingsResponse{
@@ -253,6 +265,9 @@ func (s *server) getSettings(c *gin.Context) {
 			SessionRecordingRetentionDays: effective.AuditRetentionDays,
 			RecordExecSessions:            effective.RecordingAvailable,
 			RecordingAvailable:            effective.RecordingAvailable,
+			// Off by default and there is no environment override for it — see
+			// db.SettingRecordManifestDiffs.
+			RecordManifestDiffs: false,
 		},
 		Warnings: settingsWarnings(effective),
 	})
@@ -342,6 +357,9 @@ func (s *server) updateSettings(c *gin.Context) {
 	}
 	if req.RecordExecSessions != nil {
 		values[db.SettingRecordExecSessions] = strconv.FormatBool(*req.RecordExecSessions)
+	}
+	if req.RecordManifestDiffs != nil {
+		values[db.SettingRecordManifestDiffs] = strconv.FormatBool(*req.RecordManifestDiffs)
 	}
 
 	if err := s.store.PutSettings(c.Request.Context(), values, caller.ID); err != nil {

@@ -51,7 +51,11 @@ import type {
   Kubeconfig,
   LogQueryResponse,
   LoginResponse,
+  ManifestDiff,
   Namespace,
+  NetworkPolicy,
+  NetworkPolicyCoverage,
+  NetworkPolicyReachability,
   NewCluster,
   ObservabilityResponse,
   ObservabilitySource,
@@ -69,6 +73,9 @@ import type {
   Pod,
   PodListMetrics,
   PodMetrics,
+  PostureAcknowledgement,
+  PostureRule,
+  PostureScan,
   ResourceDescribeResult,
   ResourceManifest,
   RoleBindingEntry,
@@ -188,6 +195,30 @@ export function errorMessage(error: unknown, fallback: string): string {
     if (error.code === 'ERR_NETWORK') return 'Cannot reach the KubeMG server.'
   }
   return fallback
+}
+
+/**
+ * What a KubeMG guardrail said, as opposed to the cluster's own RBAC. The two
+ * read identically as a bare 403 — both `guardAPIRequest` in the gateway and
+ * the manifest write path stamp the same three fields on a refusal that came
+ * from a policy rather than from the tunnel — so this is the one place that
+ * tells them apart. `null` covers both "this was not a 403" and "it was a
+ * 403 the cluster itself sent back", which the confirmation step treats the
+ * same way: as the cluster's own answer, not KubeMG's.
+ */
+export interface GuardrailRefusal {
+  message: string
+  policy: string
+  scope: string
+}
+
+export function guardrailRefusal(error: unknown): GuardrailRefusal | null {
+  if (!axios.isAxiosError(error)) return null
+  const data = error.response?.data as
+    | { guardrail_blocked?: boolean; error?: string; policy?: string; scope?: string }
+    | undefined
+  if (!data?.guardrail_blocked) return null
+  return { message: data.error ?? 'Blocked by a guardrail policy.', policy: data.policy ?? '', scope: data.scope ?? '' }
 }
 
 export async function login(username: string, password: string): Promise<LoginResponse> {
@@ -571,6 +602,94 @@ export function fetchIngresses(clusterId: number, namespace: string): Promise<In
   return fetchList<Ingress>(clusterId, 'ingresses', 'ingresses', namespace)
 }
 
+export function fetchNetworkPolicies(
+  clusterId: number,
+  namespace: string,
+): Promise<NetworkPolicy[]> {
+  return fetchList<NetworkPolicy>(clusterId, 'networkpolicies', 'networkpolicies', namespace)
+}
+
+/**
+ * A workload's own view of the policies that select it. It is read on demand
+ * from the detail drawer's tab rather than with the list, on the same rule
+ * every other per-object read here follows: the reachability question is about
+ * one object, so it is asked about one object.
+ */
+export async function fetchNetworkPolicyReachability(
+  clusterId: number,
+  kind: string,
+  name: string,
+  namespace: string,
+): Promise<NetworkPolicyReachability> {
+  const { data } = await http.get<NetworkPolicyReachability>(
+    resourceURL(clusterId, 'networkpolicies/reachability'),
+    { params: { kind, name, namespace } },
+  )
+  return data
+}
+
+/** The namespace-level summary of what is and is not covered. */
+export async function fetchNetworkPolicyCoverage(
+  clusterId: number,
+  namespace: string,
+): Promise<NetworkPolicyCoverage> {
+  const { data } = await http.get<NetworkPolicyCoverage>(
+    resourceURL(clusterId, 'networkpolicies/coverage'),
+    { params: { namespace } },
+  )
+  return data
+}
+
+/**
+ * Workload security posture — the seven fixed rules over fields Explore's own
+ * lists already fetch. Scoped exactly like every other resource list: one
+ * namespace, or every namespace the caller's grant covers.
+ */
+export async function fetchClusterPosture(
+  clusterId: number,
+  namespace: string,
+): Promise<PostureScan> {
+  const { data } = await http.get<PostureScan>(resourceURL(clusterId, 'posture'), {
+    params: scopeParams(namespace),
+  })
+  return data
+}
+
+/**
+ * Marking a finding as reviewed and accepted. It stays in the next scan,
+ * marked — see PostureFinding.acknowledged — rather than disappearing, and a
+ * reason is required by the server for the same audit-ability reason.
+ */
+export async function acknowledgePostureFinding(
+  clusterId: number,
+  finding: { kind: string; namespace?: string; name: string; rule: PostureRule },
+  reason: string,
+): Promise<PostureAcknowledgement> {
+  const { data } = await http.post<PostureAcknowledgement>(resourceURL(clusterId, 'posture/ack'), {
+    kind: finding.kind,
+    namespace: finding.namespace ?? '',
+    name: finding.name,
+    rule: finding.rule,
+    reason,
+  })
+  return data
+}
+
+/** Reversing an acknowledgement, so the finding reads as unreviewed again. */
+export async function unacknowledgePostureFinding(
+  clusterId: number,
+  finding: { kind: string; namespace?: string; name: string; rule: PostureRule },
+): Promise<void> {
+  await http.delete(resourceURL(clusterId, 'posture/ack'), {
+    params: {
+      kind: finding.kind,
+      namespace: finding.namespace ?? '',
+      name: finding.name,
+      rule: finding.rule,
+    },
+  })
+}
+
 export function fetchHTTPRoutes(
   clusterId: number,
   namespace: string,
@@ -890,6 +1009,28 @@ export async function updateResourceYaml(
 ): Promise<ResourceManifest> {
   const { data } = await http.put<ResourceManifest>(
     resourceURL(clusterId, 'object'),
+    { yaml },
+    { params: { kind, name, namespace: namespace || undefined } },
+  )
+  return data
+}
+
+/**
+ * previewResourceObjectDiff answers what a manifest would change against the
+ * cluster's current object, without writing anything. It is a fresh read
+ * every time — not the object the editor opened on — because the confirmation
+ * step it powers is asking about the cluster as it stands right now, not as
+ * it stood when the tab was opened.
+ */
+export async function previewResourceObjectDiff(
+  clusterId: number,
+  kind: ResourceKey,
+  name: string,
+  namespace: string | undefined,
+  yaml: string,
+): Promise<ManifestDiff> {
+  const { data } = await http.post<ManifestDiff>(
+    `${resourceURL(clusterId, 'object')}/diff`,
     { yaml },
     { params: { kind, name, namespace: namespace || undefined } },
   )

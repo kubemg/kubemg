@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { BarChart3, ExternalLink, GitBranch, Pencil, Plus, Trash2 } from 'lucide-react'
+import { BarChart3, ExternalLink, GitBranch, Pencil, Plus, ShieldAlert, Trash2 } from 'lucide-react'
 import {
   deleteClusterConsole,
   errorMessage,
@@ -154,7 +154,7 @@ export function ConsolesPanel({
   )
 }
 
-const CONSOLE_ICON = { grafana: BarChart3, argocd: GitBranch } as const
+const CONSOLE_ICON = { grafana: BarChart3, argocd: GitBranch, registry: ShieldAlert } as const
 
 /** ConsoleRow is one console: where it is, or the offer to say where it is. */
 function ConsoleRow({

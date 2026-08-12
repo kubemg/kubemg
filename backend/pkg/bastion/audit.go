@@ -62,6 +62,18 @@ type Event struct {
 	// read to find out what it would have caught, and only then is it armed.
 	GuardrailPolicy string
 	GuardrailAction string
+
+	// Diff is the field-level structural diff of a manifest write (see
+	// pkg/objdiff), already JSON-encoded by the caller that computed it —
+	// this package does not import objdiff so that a proxy built to relay
+	// arbitrary API calls does not also have to know how to decode a
+	// Kubernetes manifest. It is set by Call's diff parameter and only ever
+	// reaches the audit row on the success path: Call clears it before
+	// recording a guardrail refusal, a tunnel failure, or a non-2xx response
+	// from the cluster, because the roadmap rule this exists for is "never
+	// stored for a refused write" and the one place that can honestly tell a
+	// refusal from a success is the call that just made the round trip.
+	Diff []byte
 }
 
 // Audit phases for a streaming call. A non-streaming call carries neither.

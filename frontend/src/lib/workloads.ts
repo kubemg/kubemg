@@ -56,6 +56,30 @@ export function supportsWorkloadLogs(key: string): boolean {
 }
 
 /**
+ * The kinds a NetworkPolicy reachability question can be asked about — the
+ * kinds that carry pod labels, which is what a `podSelector` actually matches
+ * against. It is `WORKLOAD_LOG_KINDS` plus Pods rather than a copy of it,
+ * because the two questions ("what are this workload's pods" and "what labels
+ * does this workload's pods carry") land on the same four apps/batch kinds for
+ * the same reason: both need a real `spec.template`, which is why CronJob is
+ * absent from both — it owns Jobs, not pods, and has no template of its own.
+ *
+ * Pods are the one addition, and deliberately not folded into the same table:
+ * a Pod carries its labels directly on its own metadata, while every other
+ * kind here carries them on a pod *template* — the labels a policy will
+ * actually see belong to the pod that template produces, which can drift from
+ * it after the fact. `hasPodLabels` only says the tab applies; the honesty
+ * about which case a given answer is lives in the reachability response
+ * itself (`label_source`), not in this predicate.
+ */
+const POD_LABEL_KINDS: readonly ResourceKey[] = ['pods', ...WORKLOAD_LOG_KINDS]
+
+/** hasPodLabels says whether a kind's detail drawer offers the Reachability tab. */
+export function hasPodLabels(key: string): boolean {
+  return POD_LABEL_KINDS.includes(key as ResourceKey)
+}
+
+/**
  * workloadKeyFor turns the Kind a workload row carries into the resource key the
  * API is addressed by. The workload table serves three kinds at once, so a row
  * knows what it is in Kubernetes' terms rather than in the sidebar's.
