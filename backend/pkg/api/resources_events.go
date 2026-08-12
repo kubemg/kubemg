@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
 /*
@@ -41,11 +43,36 @@ import (
  */
 
 const (
-	// maxTimelineEvents bounds one list read. A cluster in trouble produces
-	// events faster than anybody reads them, and the recent ones are the ones
-	// that explain it — the same reason the describe tab is bounded, with more
-	// room because this is a page rather than a drawer tab.
-	maxTimelineEvents = 500
+	// eventPageSize is one page of a list read. It is a *page* rather than the
+	// answer, which is the distinction the first version of this file got wrong:
+	// `limit` pages in **key order** (namespace/name), and an Event's name is
+	// `<object>.<hex>`, so a single page of a busy cluster is an alphabetical
+	// slice by involved object and not the newest anything. A timeline built from
+	// one page would order that slice by time and present it as "the newest",
+	// which is wrong in a way that only appears once a cluster is big enough to
+	// exceed one page — that is, only in production.
+	eventPageSize = 500
+
+	// maxEventScan is the default global budget for one request: how many events
+	// will be read and folded before the answer is declared partial. It is global
+	// rather than per-namespace because an all-namespaces read fans out, and a
+	// per-page bound would multiply by the fan-out instead of bounding it.
+	// `KUBEMG_EVENT_SCAN_LIMIT` moves it, since the right value is a property of
+	// the cluster rather than of this code.
+	maxEventScan = 4000
+
+	// defaultEventCacheTTL is how long a timeline answer is held — six times the
+	// resource default, for the reason readTTL sets out: no KubeMG write produces
+	// an Event, so there is nothing for a stale entry to hide, and this is the
+	// page a whole team opens at once during an incident.
+	defaultEventCacheTTL = 30 * time.Second
+
+	// maxEventRequests bounds the round trips one page view costs, whatever the
+	// budget above would otherwise allow. Every page is a tunnel round trip, an
+	// impersonated call and an audit record; a read that quietly cost forty of
+	// them would be a worse surface than one that admits it saw part of the
+	// cluster.
+	maxEventRequests = 12
 
 	// maxEventGroups bounds the answer after grouping. Grouping is what keeps a
 	// crash-looping cluster to a readable page, but a cluster with four hundred
@@ -143,7 +170,28 @@ type eventTimelineView struct {
 
 	// Truncated reports that the cluster had more to say than was read, so the
 	// page can say the window is incomplete rather than implying it is the lot.
+	//
+	// It matters more than it looks. A page of events read in **key order** and
+	// then sorted by time is the newest of *that page*, not the newest of the
+	// cluster — so on a cluster big enough to truncate, "newest first" is a claim
+	// about the sample rather than about the cluster, and the page has to say so
+	// instead of quietly presenting a slice as the whole.
 	Truncated bool `json:"truncated,omitempty"`
+	// Scanned is how many events were actually read and folded, and Available is
+	// the API server's own count of how many there were. Together they are the
+	// honest "you are looking at 4,000 of 20,431" — Available is zero where the
+	// server did not offer a count, which it does not do for a filtered list.
+	Scanned   int   `json:"scanned"`
+	Available int64 `json:"available,omitempty"`
+
+	// Buffered marks the answer that came from the cluster's own watch-fed
+	// buffer rather than from a list. It is worth saying out loud rather than
+	// keeping as an implementation detail, because it is the difference between
+	// "newest first" being a fact about the cluster and a claim about a sample —
+	// and because an operator comparing two clusters deserves to know why one
+	// page is complete and the other says it is partial.
+	Buffered   bool       `json:"buffered,omitempty"`
+	BufferedAt *time.Time `json:"buffered_at,omitempty"`
 	// Groups before the group cap applied, so a truncated answer can say how
 	// much it is standing in for.
 	TotalGroups int `json:"total_groups"`
@@ -279,7 +327,7 @@ func (s *server) listClusterEvents(c *gin.Context) {
 	}
 
 	query := url.Values{}
-	query.Set("limit", strconv.Itoa(maxTimelineEvents))
+	query.Set("limit", strconv.Itoa(eventPageSize))
 	if selector := eventSelector(kind, name, typeFilter); selector != "" {
 		query.Set("fieldSelector", selector)
 	}
@@ -292,71 +340,73 @@ func (s *server) listClusterEvents(c *gin.Context) {
 	}
 
 	collector := newEventCollector()
+
+	/*
+	 * The buffered path, where there is one.
+	 *
+	 * A warm ring holds every event the cluster has produced in the last hour, so
+	 * "newest first" is a fact about the cluster rather than about a page of it —
+	 * and it costs no API call at all. It is tried first and falls through to the
+	 * paginated read whenever it cannot answer: a cluster whose watch has not
+	 * synced yet, a server built without one, or a cluster the watch is being
+	 * refused on. The fallback is not a nicety; it is what makes the first page
+	 * view (which starts the watch) return something.
+	 */
+	if ring := s.eventRingFor(cluster); ring != nil {
+		if synced, syncedAt, _ := ring.state(); synced {
+			// The filter that now stands where the API server's authorizer stood
+			// for this surface: the buffer is filled cluster-wide, and a scoped
+			// caller sees exactly the namespaces their grant lists.
+			for _, item := range ring.snapshot(grant.NamespaceList()) {
+				if !matchesEventNarrowing(item, kind, name, scope) {
+					continue
+				}
+				foldEvent(collector, item, typeFilter, floor)
+			}
+
+			view.EventsAvailable = true
+			view.Buffered = true
+			view.BufferedAt = &syncedAt
+			finishTimeline(c, &view, collector)
+			return
+		}
+	}
+
+	budget := &eventBudget{scan: s.eventScanLimit}
 	reads := 0
 	refusals := 0
 
+	fold := func(item eventObject) { foldEvent(collector, item, typeFilter, floor) }
+
 	for _, path := range scope.paths(resourceListPath{"/api/v1", "events"}) {
 		reads++
-		resp, callOK := s.callResource(c, user, cluster, grant, path+"?"+query.Encode())
+		// A fan-out shares one budget, so an all-namespaces read over a scoped
+		// grant cannot cost twenty-five times what a single-namespace one does.
+		// The namespaces that got nothing are as much a part of the honest answer
+		// as the ones that did, which is what `exhausted` ends up saying.
+		if budget.spent() {
+			budget.exhausted = true
+			break
+		}
+
+		reason, callOK := s.readEventPages(c, user, cluster, grant, path, query, budget, fold)
 		if !callOK {
 			// The call itself already answered the request — a transport failure
 			// or a refusal from the bastion, neither of which is an RBAC answer
 			// about events.
 			return
 		}
-		if resp.Status < 200 || resp.Status >= 300 {
+		if reason != "" {
 			refusals++
 			if view.Reason == "" {
-				view.Reason = kubeErrorMessage(resp.Body, resp.Status)
+				view.Reason = reason
 			}
 			// Which namespace refused is the useful half when only some did. A
-			// cluster-wide read has no namespace to name, and there is only one
-			// of them, so the flag below carries it instead.
+			// cluster-wide read has no namespace to name, and there is only one of
+			// them, so the flag below carries it instead.
 			if namespace := namespaceOfPath(path); namespace != "" {
 				view.UnreadableNamespaces = append(view.UnreadableNamespaces, namespace)
 			}
-			continue
-		}
-
-		var list struct {
-			Metadata struct {
-				Continue string `json:"continue"`
-			} `json:"metadata"`
-			Items []eventObject `json:"items"`
-		}
-		if err := json.Unmarshal(resp.Body, &list); err != nil {
-			refusals++
-			if view.Reason == "" {
-				view.Reason = "the cluster returned an unreadable event list"
-			}
-			continue
-		}
-		// A continue token is the API server saying there was more than the limit
-		// asked for. It is not paged through: a timeline is about what is
-		// happening now, and the honest thing is to say the window is partial.
-		if list.Metadata.Continue != "" {
-			view.Truncated = true
-		}
-
-		for _, item := range list.Items {
-			// The type filter is applied here as well as in the selector because
-			// only a cluster serving field selection on `type` honours the query,
-			// and a filter that silently does nothing is worse than a slow one.
-			if typeFilter != "" && item.Type != typeFilter {
-				continue
-			}
-			// An event is in the window if its *last* firing is: something that
-			// started an hour ago and fired ten seconds ago is exactly what "the
-			// last fifteen minutes" is asking about. An event carrying no time at
-			// all is kept rather than dropped — a row with no timestamp is a
-			// decode gap worth seeing, and hiding it would hide the gap too.
-			if !floor.IsZero() {
-				last := eventAt(item.view())
-				if !last.IsZero() && last.Before(floor) {
-					continue
-				}
-			}
-			collector.add(item)
 		}
 	}
 
@@ -372,6 +422,70 @@ func (s *server) listClusterEvents(c *gin.Context) {
 	}
 
 	view.EventsAvailable = true
+	view.Scanned = budget.scanned
+	view.Available = budget.remaining
+	// Truncated means "this is part of the cluster", and it has exactly one
+	// cause worth reporting: the walk stopped before the events did. The group
+	// cap in finishTimeline is a second, independent one.
+	view.Truncated = budget.exhausted
+
+	finishTimeline(c, &view, collector)
+}
+
+/*
+ * foldEvent applies the two narrowings that cannot ride on a field selector.
+ *
+ * The type *can* — and does, so a warnings-only read spends its budget on
+ * warnings — but it is re-applied here because the buffered path has no selector
+ * at all, and because a filter that silently does nothing on one of two code
+ * paths is exactly the kind of difference nobody notices until it matters.
+ */
+func foldEvent(collector *eventCollector, item eventObject, typeFilter string, floor time.Time) {
+	if typeFilter != "" && item.Type != typeFilter {
+		return
+	}
+	// An event is in the window if its *last* firing is: something that started
+	// an hour ago and fired ten seconds ago is exactly what "the last fifteen
+	// minutes" is asking about. An event carrying no time at all is kept rather
+	// than dropped — a row with no timestamp is a decode gap worth seeing, and
+	// hiding it would hide the gap too.
+	if !floor.IsZero() {
+		last := eventAt(item.view())
+		if !last.IsZero() && last.Before(floor) {
+			return
+		}
+	}
+	collector.add(item)
+}
+
+// matchesEventNarrowing is the object and namespace narrowing the *selector*
+// does on the read path. The buffer holds the whole cluster, so the buffered
+// path has to apply both by hand — and it has to agree exactly with what the
+// selector would have matched, or the same question answers differently
+// depending on whether a watch happens to be warm.
+func matchesEventNarrowing(item eventObject, kind, name string, scope readScope) bool {
+	if name != "" && item.InvolvedObject.Name != name {
+		return false
+	}
+	if kind != "" && item.InvolvedObject.Kind != kind {
+		return false
+	}
+	// An unscoped, all-namespaces read reads the whole buffer; anything else is
+	// bounded by the namespaces the scope resolved to, which is the same set the
+	// paginated path would have issued one call each for.
+	if len(scope.Namespaces) == 0 {
+		return true
+	}
+	namespace := item.InvolvedObject.Namespace
+	if namespace == "" {
+		namespace = item.Metadata.Namespace
+	}
+	return slices.Contains(scope.Namespaces, namespace)
+}
+
+// finishTimeline groups, bounds and writes the answer. Both paths end here so
+// the group cap and the ordering cannot drift between them.
+func finishTimeline(c *gin.Context, view *eventTimelineView, collector *eventCollector) {
 	groups := collector.groups()
 	view.TotalGroups = len(groups)
 	if len(groups) > maxEventGroups {
@@ -379,7 +493,7 @@ func (s *server) listClusterEvents(c *gin.Context) {
 		view.Truncated = true
 	}
 	view.Groups = groups
-	c.JSON(http.StatusOK, view)
+	c.JSON(http.StatusOK, *view)
 }
 
 // eventSelector builds the field selector for the narrowings the API server can
@@ -418,6 +532,172 @@ func namespaceOfPath(path string) string {
 		return rest[:end]
 	}
 	return namespace
+}
+
+/* ---------------------------------------------------------------- reading --- */
+
+/*
+ * Reading an event list, in pages.
+ *
+ * `limit` alone is not a read — it is the first page of one, and the API server
+ * is explicit that a page may come back **empty while more results exist**:
+ * "setting a limit may return fewer than the requested amount of items (up to
+ * zero items) in the event all requested objects are filtered out, and clients
+ * should only use the presence of the continue field to determine whether more
+ * results are available."
+ *
+ * That sentence is the whole reason this exists. A `fieldSelector` is applied
+ * *after* the page is taken from etcd, so asking for one object's events on a
+ * cluster with twenty thousand of them can legitimately answer "none" for an
+ * object that has plenty — the first page simply contained other objects'
+ * events. Reading a single page therefore produces a confident, wrong "nothing
+ * was recorded", which is the worst answer a diagnostic surface can give: it
+ * ends the investigation.
+ *
+ * So the read follows the continue token, under a budget it reports honestly.
+ * The budget is what keeps this from becoming the thing it is guarding against —
+ * a page view that walks a cluster's entire event history.
+ */
+
+// eventBudget is what one request may spend, shared across a fan-out.
+type eventBudget struct {
+	// scan is the ceiling on `scanned`, from the server's configuration. Zero
+	// takes maxEventScan, so a zero-valued budget is bounded rather than
+	// unlimited — the failure mode of the other default would be a page view
+	// that walks a whole cluster.
+	scan int
+	// scanned is how many events have been read and folded so far.
+	scanned int
+	// requests is how many round trips have been spent.
+	requests int
+	// remaining is the API server's own count of what it had left after the
+	// first page, where it offered one. It is the honest denominator for
+	// "you are looking at part of this cluster", and it is only offered on an
+	// unfiltered list — with a selector the server omits it, which is itself
+	// worth knowing.
+	remaining int64
+	// exhausted marks a read that stopped because it ran out of budget rather
+	// than because the cluster ran out of events.
+	exhausted bool
+}
+
+func (b *eventBudget) spent() bool {
+	scan := b.scan
+	if scan <= 0 {
+		scan = maxEventScan
+	}
+	return b.scanned >= scan || b.requests >= maxEventRequests
+}
+
+// eventPage is one decoded page.
+type eventPage struct {
+	Metadata struct {
+		Continue           string `json:"continue"`
+		RemainingItemCount *int64 `json:"remainingItemCount"`
+	} `json:"metadata"`
+	Items []eventObject `json:"items"`
+}
+
+/*
+ * readEventPages walks one list path, handing every event to `fold` until the
+ * cluster runs out or the budget does.
+ *
+ * The three outcomes are deliberately distinct. `ok=false` means the call itself
+ * already answered the request — a transport failure or a refusal from the
+ * bastion — and the caller must simply return. A non-2xx from the *cluster* is
+ * returned as a reason, because events are their own resource with their own
+ * RBAC and a refusal has to narrow the answer rather than fail it. Anything else
+ * is a successful read, partial or not, and the budget says which.
+ */
+func (s *server) readEventPages(c *gin.Context, user *db.User, cluster *db.Cluster,
+	grant db.UserClusterAccess, path string, query url.Values, budget *eventBudget,
+	fold func(eventObject),
+) (reason string, ok bool) {
+	return walkEventPages(func(page url.Values) (int, []byte, bool) {
+		resp, callOK := s.callResource(c, user, cluster, grant, path+"?"+page.Encode())
+		if !callOK {
+			return 0, nil, false
+		}
+		return resp.Status, resp.Body, true
+	}, query, budget, fold)
+}
+
+// eventPageFetcher fetches one page of a list.
+//
+// It exists as a seam so the paging loop below can be exercised without a
+// cluster. That is not testing for its own sake: the loop's contract — that an
+// **empty page with a continue token is not the end of the collection** — is the
+// single thing in this file most worth pinning, because getting it wrong
+// produces a confident "nothing was recorded" rather than an error, and only on
+// clusters large enough that nobody sees it before production.
+//
+// `ok=false` means the fetch already answered the HTTP request.
+type eventPageFetcher func(query url.Values) (status int, body []byte, ok bool)
+
+// walkEventPages is the paging loop.
+func walkEventPages(fetch eventPageFetcher, query url.Values, budget *eventBudget,
+	fold func(eventObject),
+) (reason string, ok bool) {
+	token := ""
+	for {
+		page := query
+		if token != "" {
+			// A continue token travels with an otherwise identical query, which is
+			// why the base query is copied rather than mutated: the same query is
+			// reused for the next namespace of a fan-out.
+			page = cloneQuery(query)
+			page.Set("continue", token)
+		}
+
+		budget.requests++
+		status, body, fetchOK := fetch(page)
+		if !fetchOK {
+			return "", false
+		}
+		if status < 200 || status >= 300 {
+			return kubeErrorMessage(body, status), true
+		}
+
+		var decoded eventPage
+		if err := json.Unmarshal(body, &decoded); err != nil {
+			return "the cluster returned an unreadable event list", true
+		}
+
+		// The server's own count of what is left, taken from the first page —
+		// later pages report the remainder of the walk rather than of the
+		// collection, and the first number is the one that means "this is how much
+		// cluster there is". It is omitted entirely for a filtered list, which is
+		// why the page cannot simply always show a denominator.
+		if token == "" && decoded.Metadata.RemainingItemCount != nil {
+			budget.remaining += *decoded.Metadata.RemainingItemCount + int64(len(decoded.Items))
+		}
+
+		for _, item := range decoded.Items {
+			fold(item)
+			budget.scanned++
+		}
+
+		// An empty continue is the only statement that the collection is finished.
+		// An empty page is not — see the note on the fetcher above.
+		token = decoded.Metadata.Continue
+		if token == "" {
+			return "", true
+		}
+		if budget.spent() {
+			budget.exhausted = true
+			return "", true
+		}
+	}
+}
+
+// cloneQuery copies a query so a continue token can be added to one page without
+// changing the query the next namespace in a fan-out will send.
+func cloneQuery(in url.Values) url.Values {
+	out := make(url.Values, len(in)+1)
+	for key, values := range in {
+		out[key] = append([]string(nil), values...)
+	}
+	return out
 }
 
 /* --------------------------------------------------------------- grouping --- */

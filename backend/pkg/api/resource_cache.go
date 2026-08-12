@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -119,12 +120,44 @@ func (s *server) cachedRead() gin.HandlerFunc {
 		c.Writer = recorder.ResponseWriter
 
 		if recorder.cacheable() {
-			s.reads.Put(scope, key, cachedResponse{
+			s.reads.PutFor(scope, key, cachedResponse{
 				contentType: recorder.Header().Get("Content-Type"),
 				body:        recorder.body.Bytes(),
-			})
+			}, s.readTTL(c))
 		}
 	}
+}
+
+/*
+ * readTTL is how long *this* answer is worth holding.
+ *
+ * Almost every read here takes the default, because the default is chosen
+ * against the thing they have in common: a list has to reflect a scale or a
+ * restart the operator just performed, and five seconds is the largest window
+ * that stays true.
+ *
+ * The events timeline is the exception, and it is an exception on both halves of
+ * that reasoning. Nothing an operator does through KubeMG writes an Event — they
+ * are the cluster's own account, append-only, and discarded by the cluster after
+ * an hour — so there is no write for a stale entry to hide. And it is the one
+ * page a whole team opens at the same moment, because it is the page you open
+ * when something is wrong: an incident with a dozen people watching turns into a
+ * dozen cluster-wide event LISTs on exactly the API server that is already
+ * having a bad day. Holding the answer for half a minute makes that one LIST,
+ * and the cost is seeing a new event up to half a minute late on a surface whose
+ * rows are timestamped anyway.
+ *
+ * Refresh still bypasses this, as it bypasses everything: `Cache-Control:
+ * no-cache` is what the button sends, so an operator asking again explicitly is
+ * asking the cluster.
+ */
+func (s *server) readTTL(c *gin.Context) time.Duration {
+	// The registered route pattern rather than the path, so a cluster id or a
+	// namespace in the URL cannot make this miss.
+	if strings.HasSuffix(c.FullPath(), "/resources/events") {
+		return s.eventCacheTTL
+	}
+	return 0 // the cache's own default
 }
 
 // readCacheKey is the question plus who is asking it: the cluster, the caller

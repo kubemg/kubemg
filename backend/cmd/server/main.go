@@ -151,6 +151,8 @@ func main() {
 		// work that has to stop when the process is winding down.
 		AuditRetentionDays: cfg.AuditRetentionDays,
 		ReadCacheTTL:       cfg.ReadCacheTTL,
+		EventCacheTTL:      cfg.EventCacheTTL,
+		EventScanLimit:     cfg.EventScanLimit,
 		RecordingDir:       recording.dir,
 		RecordingKey:       recording.key,
 		RecordingInput:     recording.input,

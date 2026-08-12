@@ -240,6 +240,17 @@ type Options struct {
 	// asked of the cluster again. Zero takes cache.DefaultTTL; a negative value
 	// turns the cache off, so every read is a tunnel call as it was before.
 	ReadCacheTTL time.Duration
+	// EventCacheTTL is the same window for the events timeline, which earns one
+	// of its own: nothing an operator does through KubeMG writes an Event, so
+	// there is no write for a stale entry to hide, and it is the one page a whole
+	// team opens at the same moment — during an incident, on the API server
+	// already having a bad day. Zero takes defaultEventCacheTTL.
+	EventCacheTTL time.Duration
+	// EventScanLimit is how many events one timeline read will walk before it
+	// declares the answer partial. It is the knob that decides what a page view
+	// costs on a cluster holding tens of thousands of them; zero takes
+	// maxEventScan.
+	EventScanLimit int
 	// Background scopes the housekeeping goroutines that run alongside the
 	// handlers — today just the audit retention pruner. Left nil, as the tests
 	// leave it, nothing is started and the router is purely request-driven.
@@ -294,6 +305,17 @@ type server struct {
 	// reads holds recently-answered live reads, keyed by caller and question.
 	// Nil turns caching off entirely; see cachedRead.
 	reads *cache.Cache[cachedResponse]
+	// eventCacheTTL and eventScanLimit are what one events read is allowed to
+	// cost; see Options and readTTL.
+	eventCacheTTL  time.Duration
+	eventScanLimit int
+	// events holds one watch-fed buffer per cluster, started lazily the first
+	// time somebody opens a timeline on it; see events_watch.go. Nil means this
+	// server answers timelines with the paginated read alone.
+	events *eventWatcher
+	// background is what a watch's lifetime is scoped to — it outlives the
+	// request that started it, so it cannot hang off a gin context.
+	background context.Context
 	// allowedOrigins is where a browser app may live. Federation reads it as the
 	// set of consoles a finished sign-in may be handed back to, which is what
 	// keeps the callback from being an open redirect for session tokens.
@@ -364,6 +386,26 @@ func NewRouter(opts Options) *gin.Engine {
 	if opts.ReadCacheTTL >= 0 {
 		s.reads = cache.New[cachedResponse](opts.ReadCacheTTL)
 	}
+	// The events timeline's own two bounds. They are read here rather than at the
+	// call site so a deployment tuning them for a large cluster changes one place,
+	// and so a zero value means "the default" rather than "no budget at all" —
+	// which for the scan limit would be a page view that walks the whole cluster.
+	s.eventCacheTTL = opts.EventCacheTTL
+	if s.eventCacheTTL <= 0 {
+		s.eventCacheTTL = defaultEventCacheTTL
+	}
+	s.eventScanLimit = opts.EventScanLimit
+	if s.eventScanLimit <= 0 {
+		s.eventScanLimit = maxEventScan
+	}
+	// The timeline's buffer. It needs both a proxy to watch through and a
+	// background context to outlive the request that starts a watch — without
+	// either, timelines fall back to the paginated read, which is what the tests
+	// and any server built without a proxy get.
+	if opts.Proxy != nil && opts.Background != nil {
+		s.events = newEventWatcher()
+		s.background = opts.Background
+	}
 	if opts.Background != nil {
 		// The audit table is the one thing here that grows without an operator
 		// touching it, so enforcing its retention is a server responsibility
@@ -384,6 +426,13 @@ func NewRouter(opts Options) *gin.Engine {
 		// Nothing is read until a cluster-event rule exists; see alarms_watch.go.
 		if s.alarms != nil && opts.Proxy != nil {
 			go s.startAlarmWatcher(opts.Background)
+		}
+		// Stops the event watches nobody is reading. It is a sweeper rather than
+		// a timer per cluster, for the reason the JIT expirer is: one loop that
+		// knows about all of them is easier to reason about than N that each know
+		// about one.
+		if s.events != nil {
+			go s.startEventWatchSweeper(opts.Background)
 		}
 		// An elevation ends by itself, and the resolver already refuses it the
 		// moment its window passes. This is what closes the rows out and stops the

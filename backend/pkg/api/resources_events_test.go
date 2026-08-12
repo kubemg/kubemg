@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 )
@@ -202,6 +203,165 @@ func TestEventGroupBoundsItsEntries(t *testing.T) {
 	}
 	if !group.EntriesTruncated {
 		t.Fatal("expected a capped group to say so")
+	}
+}
+
+/* ------------------------------------------------------------- the paging --- */
+
+/*
+ * The API server pages a list in **key order** and applies a `fieldSelector`
+ * afterwards, so it is explicit that a page may come back empty while matches
+ * remain: "up to zero items ... clients should only use the presence of the
+ * continue field to determine whether more results are available."
+ *
+ * Reading one page therefore answers "no events" for an object that has plenty,
+ * on any cluster busy enough that the first page belongs to somebody else. That
+ * is the worst answer a diagnostic surface can give — it is confident, it is
+ * wrong, and it ends the investigation. These tests exist because the failure is
+ * invisible on any cluster small enough to fit in one page, which is every
+ * cluster anybody develops against.
+ */
+
+// pager replays a fixed set of pages, recording what it was asked for.
+func pager(pages ...string) (eventPageFetcher, *[]string) {
+	asked := &[]string{}
+	i := 0
+	return func(query url.Values) (int, []byte, bool) {
+		*asked = append(*asked, query.Get("continue"))
+		if i >= len(pages) {
+			return 200, []byte(`{"items":[]}`), true
+		}
+		body := pages[i]
+		i++
+		return 200, []byte(body), true
+	}, asked
+}
+
+func TestWalkEventPagesFollowsAnEmptyPage(t *testing.T) {
+	// The shape that breaks a single-page read: the object's events exist, but
+	// they are on the second page because the first belongs to other objects.
+	fetch, asked := pager(
+		`{"metadata":{"continue":"token-1"},"items":[]}`,
+		`{"metadata":{"continue":""},"items":[
+			{"type":"Warning","reason":"BackOff","message":"back-off","count":7,
+			 "involvedObject":{"kind":"Pod","name":"api-0","namespace":"shop"}}]}`,
+	)
+
+	seen := 0
+	budget := &eventBudget{}
+	reason, ok := walkEventPages(fetch, url.Values{}, budget, func(eventObject) { seen++ })
+
+	if !ok || reason != "" {
+		t.Fatalf("walk = %q/%v, want a clean read", reason, ok)
+	}
+	if seen != 1 {
+		t.Fatalf("folded %d events; an empty first page must not end the read", seen)
+	}
+	if len(*asked) != 2 || (*asked)[0] != "" || (*asked)[1] != "token-1" {
+		t.Fatalf("continue tokens sent = %v, want the second page requested", *asked)
+	}
+}
+
+// An empty continue is the only statement that the collection is finished.
+func TestWalkEventPagesStopsOnEmptyContinue(t *testing.T) {
+	fetch, asked := pager(`{"metadata":{"continue":""},"items":[
+		{"type":"Normal","reason":"Pulled","involvedObject":{"kind":"Pod","name":"a"}}]}`)
+
+	budget := &eventBudget{}
+	if _, ok := walkEventPages(fetch, url.Values{}, budget, func(eventObject) {}); !ok {
+		t.Fatal("expected a clean read")
+	}
+	if len(*asked) != 1 {
+		t.Fatalf("requests = %d, want one — an empty continue ends the collection", len(*asked))
+	}
+	if budget.exhausted {
+		t.Fatal("a completed collection is not an exhausted budget")
+	}
+}
+
+// The budget is what keeps this from becoming the thing it guards against: a
+// page view that walks a cluster's whole event history.
+func TestWalkEventPagesStopsAtTheBudget(t *testing.T) {
+	// A cluster that always has more to give.
+	endless := func(query url.Values) (int, []byte, bool) {
+		return 200, []byte(`{"metadata":{"continue":"more"},"items":[
+			{"type":"Normal","reason":"Pulled","involvedObject":{"kind":"Pod","name":"a"}}]}`), true
+	}
+
+	budget := &eventBudget{scan: 3}
+	if _, ok := walkEventPages(endless, url.Values{}, budget, func(eventObject) {}); !ok {
+		t.Fatal("expected a clean read")
+	}
+	if budget.scanned != 3 {
+		t.Fatalf("scanned = %d, want the configured budget of 3", budget.scanned)
+	}
+	// And it has to *say* it stopped early, or the page presents a slice of the
+	// cluster as the whole of it.
+	if !budget.exhausted {
+		t.Fatal("expected a budget-stopped walk to mark itself exhausted")
+	}
+}
+
+// A zero-valued budget is bounded rather than unlimited: the other default
+// would make a forgotten field into a walk of the whole cluster.
+func TestEventBudgetDefaultsToBounded(t *testing.T) {
+	budget := &eventBudget{scanned: maxEventScan}
+	if !budget.spent() {
+		t.Fatal("a zero scan limit must fall back to maxEventScan, not to unlimited")
+	}
+	if (&eventBudget{requests: maxEventRequests}).spent() != true {
+		t.Fatal("the request ceiling has to bound the walk on its own")
+	}
+}
+
+// `remainingItemCount` is the server's own denominator, and it is taken from the
+// first page only — later pages report the remainder of the walk rather than of
+// the collection.
+func TestWalkEventPagesRecordsTheClusterTotal(t *testing.T) {
+	fetch, _ := pager(
+		`{"metadata":{"continue":"t","remainingItemCount":19998},"items":[
+			{"type":"Normal","reason":"A","involvedObject":{"kind":"Pod","name":"a"}},
+			{"type":"Normal","reason":"B","involvedObject":{"kind":"Pod","name":"b"}}]}`,
+		`{"metadata":{"continue":"","remainingItemCount":5},"items":[]}`,
+	)
+
+	budget := &eventBudget{}
+	walkEventPages(fetch, url.Values{}, budget, func(eventObject) {})
+
+	if budget.remaining != 20000 {
+		t.Fatalf("remaining = %d, want 20000 from the first page alone", budget.remaining)
+	}
+}
+
+// A refusal is the cluster's own answer about events, not a failed page.
+func TestWalkEventPagesReportsARefusal(t *testing.T) {
+	refuse := func(url.Values) (int, []byte, bool) {
+		return 403, []byte(`{"message":"events is forbidden"}`), true
+	}
+
+	reason, ok := walkEventPages(refuse, url.Values{}, &eventBudget{}, func(eventObject) {})
+	if !ok {
+		t.Fatal("a cluster refusal is an answer, not a handled failure")
+	}
+	if reason != "events is forbidden" {
+		t.Fatalf("reason = %q, want the cluster's own words", reason)
+	}
+}
+
+// The continue token must not leak into the query the next namespace of a
+// fan-out sends.
+func TestCloneQueryLeavesTheOriginalAlone(t *testing.T) {
+	base := url.Values{}
+	base.Set("limit", "500")
+
+	page := cloneQuery(base)
+	page.Set("continue", "token")
+
+	if base.Get("continue") != "" {
+		t.Fatal("the base query must not carry another page's continue token")
+	}
+	if page.Get("limit") != "500" {
+		t.Fatalf("the copy lost the base query: %v", page)
 	}
 }
 

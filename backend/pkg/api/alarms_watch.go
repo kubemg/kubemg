@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -17,26 +18,34 @@ import (
 /*
  * Watching the fleet for events worth alarming on.
  *
- * There is no push here and there cannot be. A watch over the tunnel would be a
- * long-lived stream per cluster held open by the server for its own purposes,
- * which is a different lifetime from every other stream KubeMG carries — those
- * belong to a request somebody made. So this polls: one bounded list per cluster
- * per interval, through the same impersonated tunnel as every other read.
+ * This file used to open by saying there was no push here and there could not
+ * be — that a long-lived stream held by the server for its own purposes was a
+ * lifetime KubeMG did not have, since every other stream belongs to a request
+ * somebody made. That was true when it was written and it is not any more:
+ * `events_watch.go` now holds exactly such a stream, one per cluster, because
+ * the events *timeline* needed the same data continuously and for the same
+ * reason. Given that buffer exists, polling beside it would be reading the same
+ * events twice a minute through two mechanisms.
  *
- * Four things keep the cost honest:
+ * So the pass now prefers the buffer and keeps the poll as its fallback. The
+ * fallback is not vestigial: a watch can be refused where a list is not, and
+ * alarms are the one surface here that must not go quiet because an optimisation
+ * did not apply. A cluster whose watch will not establish is polled exactly as
+ * it always was.
  *
- *   - Nothing polls unless a cluster-event rule exists. A fleet with no alarms
- *     configured makes no calls at all.
+ * What has not changed, and is the reason this file is careful:
+ *
+ *   - Nothing runs unless a cluster-event rule exists. A fleet with no alarms
+ *     configured still makes no calls at all — the buffer is only asked for on
+ *     behalf of a cluster some rule covers.
  *   - A cluster with no attached agent is skipped rather than dialled.
  *   - The first pass on a cluster establishes a watermark and delivers nothing.
  *     Otherwise switching a rule on would page for a week of history, which is
  *     both useless and the fastest way to have the integration muted.
- *   - **Exactly one replica polls.** This is the only work in the product whose
- *     cost is multiplied by how many copies of KubeMG are running, and it lands
- *     on somebody's production API server rather than here — so running three
- *     replicas for availability would have meant three cluster-wide event lists
- *     a minute per covered cluster. A lease decides which process does it; see
- *     pkg/db/lease.go.
+ *   - **Exactly one replica alarms.** A lease decides which process does it (see
+ *     pkg/db/lease.go), and that matters more rather than less now: every
+ *     replica could hold its own buffer, so the lease is the only thing standing
+ *     between three replicas and three copies of every page.
  */
 
 // Cluster event polling.
@@ -216,15 +225,75 @@ func watched(rules []db.AlarmRule, clusterID uint) bool {
 func (s *server) pollOneCluster(
 	ctx context.Context, cluster db.Cluster, watermarks *watermarkTable,
 ) {
+	items, ok := s.alarmEvents(ctx, cluster)
+	if !ok {
+		return
+	}
+
+	now := time.Now().UTC()
+	if watermarks.establish(cluster.ID, now) {
+		s.log().Info("alarm watcher is now watching cluster events",
+			slog.String("cluster", cluster.Name),
+			slog.Int("events_in_window", len(items)))
+		return
+	}
+
+	s.offerEvents(cluster, items, watermarks, now)
+}
+
+/*
+ * alarmEvents is where this pass gets its events: the cluster's own buffer if
+ * one is warm, and the list it always used if not.
+ *
+ * Asking for the ring is also what *keeps* it warm. The idle sweeper stops a
+ * watch nobody has read from in a while, and this pass reading it every minute
+ * is a read — so a cluster carrying an alarm rule holds its watch open for as
+ * long as the rule exists, and one carrying none is left to the timeline's
+ * laziness. That falls out of the existing mechanism rather than needing a
+ * second one, which is why there is no "pinned" flag anywhere.
+ *
+ * Only the lease holder runs this, so only the lease holder keeps a buffer warm
+ * for alarming — the other replicas let theirs idle out. On a handover the new
+ * holder starts cold: its first tick starts a watch and reads nothing, its
+ * second establishes the watermark, its third delivers. That is one tick slower
+ * than the poll used to be, on a signal whose events live for an hour, and it is
+ * the same shape of delay a restart has always had.
+ */
+func (s *server) alarmEvents(ctx context.Context, cluster db.Cluster) ([]eventObject, bool) {
+	if ring := s.eventRingFor(&cluster); ring != nil {
+		synced, _, err := ring.state()
+		if synced {
+			// The whole buffer: a rule may name any namespace, or none, so the
+			// alarm path is the one caller that is never narrowed.
+			return ring.snapshot(nil), true
+		}
+		if err == nil {
+			// The watch is starting or re-syncing. Waiting a tick is right —
+			// polling *as well* would be the duplicate read this change removes.
+			return nil, false
+		}
+		// The watch cannot be established on this cluster. Alarms are not allowed
+		// to go quiet because an optimisation did not apply, so this falls through
+		// to the list below and keeps falling through for as long as it fails.
+		s.log().Debug("alarm watcher is falling back to polling cluster events",
+			slog.String("cluster", cluster.Name), slog.String("error", err.Error()))
+	}
+
+	return s.listAlarmEvents(ctx, cluster)
+}
+
+// listAlarmEvents is the original read, kept whole as the fallback.
+//
+// It goes through Proxy.Call like everything else, so it is impersonated and it
+// lands in the audit trail — which is why the audit verb selection and this
+// feature are worth having together: on a fleet where successful `list` records
+// have been switched off, the watcher costs the trail nothing.
+func (s *server) listAlarmEvents(ctx context.Context, cluster db.Cluster) ([]eventObject, bool) {
 	user := &db.User{Username: alarmWatcherUser}
 	grant := db.UserClusterAccess{ClusterID: cluster.ID, K8sRole: db.K8sRoleClusterAdmin}
 
 	// Events are read cluster-wide because a rule may name any namespace, or
-	// none. The read goes through Proxy.Call like everything else, so it is
-	// impersonated and it lands in the audit trail — which is why the audit verb
-	// selection and this feature are worth having together: on a fleet where
-	// successful `list` records have been switched off, the watcher costs the trail
-	// nothing.
+	// none.
 	path := fmt.Sprintf("/api/v1/events?limit=%d", alarmEventLimit)
 	resp, err := s.proxy.Call(ctx, user, &cluster, grant, "GET", path, nil)
 	if err != nil {
@@ -236,7 +305,7 @@ func (s *server) pollOneCluster(
 				slog.String("cluster", cluster.Name),
 				slog.String("error", err.Error()))
 		}
-		return
+		return nil, false
 	}
 
 	var list struct {
@@ -246,28 +315,70 @@ func (s *server) pollOneCluster(
 		s.log().Warn("alarm watcher could not decode a cluster event list",
 			slog.String("cluster", cluster.Name),
 			slog.String("error", err.Error()))
-		return
+		return nil, false
 	}
+	return list.Items, true
+}
 
-	now := time.Now().UTC()
-	if watermarks.establish(cluster.ID, now) {
-		s.log().Info("alarm watcher is now watching cluster events",
-			slog.String("cluster", cluster.Name),
-			slog.Int("events_in_window", len(list.Items)))
-		return
+/*
+ * offerEvents hands the new events to the dispatcher, oldest first.
+ *
+ * The ordering is load-bearing and it was wrong before, in a way worth naming
+ * because it was silent. `watermarks.advance` both tests an event and raises the
+ * mark to it, so whichever event is offered first sets the floor for the rest of
+ * the pass — and the list arrives in the API server's key order, which has
+ * nothing to do with time. An event at T+50s reaching the loop before one at
+ * T+30s therefore dropped the second, even though both were new since the last
+ * pass. Sorting oldest-first makes every event in the window pass the mark it is
+ * actually being compared against.
+ *
+ * The events at the far end of the window are dropped by `alarmEventMaxAge`
+ * rather than by the mark: a cluster whose clock is behind, or a list that
+ * arrives out of order, must not resurrect yesterday.
+ */
+func (s *server) offerEvents(
+	cluster db.Cluster, items []eventObject, watermarks *watermarkTable, now time.Time,
+) {
+	for _, entry := range selectAlarmEvents(cluster.ID, items, watermarks, now) {
+		s.alarms.Observe(eventSignal(cluster, entry.item, entry.view))
 	}
+}
 
+// alarmCandidate is one event that survived the window and the watermark.
+type alarmCandidate struct {
+	item eventObject
+	view eventView
+	at   time.Time
+}
+
+// selectAlarmEvents is the decision half of offerEvents, separated from the
+// dispatch so the ordering rule above can be asserted directly. Which events a
+// pass delivers is the entire behaviour of this feature, and it is not something
+// a test should have to reach through a dispatcher to observe.
+func selectAlarmEvents(
+	clusterID uint, items []eventObject, watermarks *watermarkTable, now time.Time,
+) []alarmCandidate {
 	floor := now.Add(-alarmEventMaxAge)
-	for _, item := range list.Items {
+
+	fresh := make([]alarmCandidate, 0, len(items))
+	for _, item := range items {
 		view := item.view()
 		if view.LastSeen == nil || view.LastSeen.Before(floor) {
 			continue
 		}
-		if !watermarks.advance(cluster.ID, view.LastSeen.UTC()) {
+		fresh = append(fresh, alarmCandidate{item: item, view: view, at: view.LastSeen.UTC()})
+	}
+
+	sort.SliceStable(fresh, func(a, b int) bool { return fresh[a].at.Before(fresh[b].at) })
+
+	out := fresh[:0]
+	for _, entry := range fresh {
+		if !watermarks.advance(clusterID, entry.at) {
 			continue
 		}
-		s.alarms.Observe(eventSignal(cluster, item, view))
+		out = append(out, entry)
 	}
+	return out
 }
 
 // eventSignal turns one Kubernetes Event into the shape a rule matches against.
