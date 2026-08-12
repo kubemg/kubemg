@@ -289,6 +289,18 @@ export function ClusterSummary() {
                   which cluster and namespaces KubeMG will carry you to. Every call is written to the
                   audit trail.
                 </p>
+                {/* "The cluster decides" is only honest if the console can show
+                    what the cluster decided. This is that view. */}
+                <p className="mt-3 max-w-3xl text-[13px] leading-relaxed text-muted">
+                  <Link
+                    to={`/clusters/${cluster.id}/explore/clusterroles`}
+                    className="text-accent hover:underline"
+                  >
+                    Read this cluster&rsquo;s own RBAC
+                  </Link>{' '}
+                  to see the Roles and bindings behind that, and to ask the cluster directly whether
+                  an identity may do something.
+                </p>
               </Panel>
             ) : (
               <Panel

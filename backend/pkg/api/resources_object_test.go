@@ -18,9 +18,12 @@ func TestResourceObjectRefusesUnknownKind(t *testing.T) {
 	cluster := env.store.addAgentCluster("edge", "dev", "agent-token")
 	token := env.tokenFor(t, admin)
 
-	// "clusterroles" is a real Kubernetes resource and deliberately not one of
-	// ours: the editor addresses the inventory the sidebar browses, not the API.
-	for _, kind := range []string{"", "clusterroles", "../secrets"} {
+	// "componentstatuses" is a real Kubernetes resource and deliberately not one
+	// of ours: the editor addresses the inventory the sidebar browses, not the
+	// API. (It used to be "clusterroles", until the Access section made that one
+	// browsable — which is the point: this list has to name something the
+	// sidebar genuinely does not carry.)
+	for _, kind := range []string{"", "componentstatuses", "../secrets"} {
 		rec := env.do(t, http.MethodGet,
 			"/api/v1/clusters/"+itoa(cluster.ID)+"/resources/object?kind="+kind+"&name=x", token, nil)
 

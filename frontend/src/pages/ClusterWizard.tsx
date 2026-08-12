@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -1095,7 +1095,23 @@ function AccessStep({
           kubeconfig claims — not what the cluster allows. Agent-based clusters bind these roles for
           real.
         </Notice>
-      ) : null}
+      ) : (
+        /* The same disclosure from the other side, and now with somewhere to
+           go: on an agent cluster the grant decides reach and the cluster
+           decides permission, which is only a meaningful statement if the
+           console can show what the cluster decided. */
+        <p className="text-[12.5px] leading-relaxed text-muted">
+          A grant here decides which cluster and namespaces KubeMG will carry someone to; what they
+          may then do is decided by this cluster&rsquo;s own RBAC through impersonation.{' '}
+          <Link
+            to={`/clusters/${cluster.id}/explore/clusterroles`}
+            className="text-accent hover:underline"
+          >
+            Read what this cluster binds
+          </Link>{' '}
+          once its agent is attached.
+        </p>
+      )}
     </div>
   )
 }

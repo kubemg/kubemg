@@ -93,9 +93,30 @@ var objectKinds = map[string]objectKind{
 		writable:   true,
 	},
 
+	// ServiceAccounts are writable like any other core object; the RBAC kinds
+	// below are the deliberate exception. See the block after this one.
+	"serviceaccounts": {versions: []resourceListPath{{"/api/v1", "serviceaccounts"}}, namespaced: true, writable: true},
+
 	"persistentvolumes": {versions: []resourceListPath{{"/api/v1", "persistentvolumes"}}, writable: true},
 	"storageclasses":    {versions: []resourceListPath{{"/apis/storage.k8s.io/v1", "storageclasses"}}, writable: true},
 	"nodes":             {versions: []resourceListPath{{"/api/v1", "nodes"}}, writable: true},
+
+	// The cluster's own RBAC, addressable as objects so the Access lists get the
+	// same detail drawer, describe and manifest view every other list has.
+	//
+	// They are `writable` for one reason and it is worth stating: this is the
+	// *generic* manifest editor, which has applied a Role for anyone whose grant
+	// permitted it since the day it existed, and singling RBAC out here would
+	// take away a capability rather than add safety — the write is impersonated
+	// like every other, so the cluster refuses it unless the caller may
+	// genuinely do it (and RBAC's `escalate` rule means it usually will). What
+	// KubeMG deliberately does *not* build is an RBAC editor of its own: no
+	// route here creates a Role or a Binding, because a tool with a separate
+	// permission model authoring the cluster's is how the two silently diverge.
+	"roles":               {versions: []resourceListPath{{rbacGroup, "roles"}}, namespaced: true, writable: true},
+	"rolebindings":        {versions: []resourceListPath{{rbacGroup, "rolebindings"}}, namespaced: true, writable: true},
+	"clusterroles":        {versions: []resourceListPath{{rbacGroup, "clusterroles"}}, writable: true},
+	"clusterrolebindings": {versions: []resourceListPath{{rbacGroup, "clusterrolebindings"}}, writable: true},
 	"namespaces":        {versions: []resourceListPath{{"/api/v1", "namespaces"}}, writable: true},
 	"crds": {
 		versions: []resourceListPath{{"/apis/apiextensions.k8s.io/v1", "customresourcedefinitions"}},

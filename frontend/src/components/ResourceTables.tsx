@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
   ClusterNode,
+  ClusterRoleEntry,
   ConfigEntry,
   CronJob,
   CustomResource,
@@ -14,8 +15,10 @@ import type {
   PersistentVolumeClaim,
   Pod,
   PodUsage,
+  RoleBindingEntry,
   Route,
   Service,
+  ServiceAccountEntry,
   StorageClass,
   Workload,
 } from '../api/types'
@@ -58,6 +61,15 @@ export type LoadedResource =
   | { kind: 'storageclasses'; rows: StorageClass[] }
   | { kind: 'config'; rows: ConfigEntry[]; secrets: boolean }
   | { kind: 'crds'; rows: CustomResourceDefinition[] }
+  /**
+   * Roles and ClusterRoles share a row shape because they share a definition —
+   * the same rules, differing only in whether a namespace bounds them — and
+   * `clusterScoped` is what the table needs to know to drop the namespace
+   * qualifier and say so in the heading.
+   */
+  | { kind: 'roles'; rows: ClusterRoleEntry[]; clusterScoped: boolean }
+  | { kind: 'rolebindings'; rows: RoleBindingEntry[]; clusterScoped: boolean }
+  | { kind: 'serviceaccounts'; rows: ServiceAccountEntry[] }
   | { kind: 'custom'; rows: CustomResource[]; available: boolean; reason?: string }
   | { kind: 'nodes'; rows: ClusterNode[] }
   | { kind: 'namespaces'; rows: Namespace[] }
@@ -182,6 +194,32 @@ export function ResourceView({
       )
     case 'crds':
       return <CRDTable crds={loaded.rows} onManifest={open} />
+    case 'roles':
+      return (
+        <RoleTable
+          roles={loaded.rows}
+          clusterScoped={loaded.clusterScoped}
+          showNamespace={showNamespace}
+          onManifest={open}
+        />
+      )
+    case 'rolebindings':
+      return (
+        <BindingTable
+          bindings={loaded.rows}
+          clusterScoped={loaded.clusterScoped}
+          showNamespace={showNamespace}
+          onManifest={open}
+        />
+      )
+    case 'serviceaccounts':
+      return (
+        <ServiceAccountTable
+          accounts={loaded.rows}
+          showNamespace={showNamespace}
+          onManifest={open}
+        />
+      )
     case 'custom':
       return (
         <CustomResourceTable
@@ -1588,6 +1626,287 @@ function CRDTable({
               <List values={crd.versions} />
             </Td>
             <ManifestCell onManifest={onManifest} name={crd.name} />
+          </Row>
+        ))}
+      </tbody>
+    </Table>
+  )
+}
+
+/* -------------------------------------------------- the cluster's own RBAC --- */
+
+/**
+ * A Role or a ClusterRole. What a row has to answer is "how much does this
+ * grant", and the honest short form of that is the two axes together: the verbs
+ * and the resources, as the union across every rule. A rule count alone says
+ * nothing — a one-rule role can be `*` on `*` — which is why `wildcard` is the
+ * one property here that earns a colour.
+ *
+ * The rules themselves are on the object, one tab away: this is a list, and a
+ * policy printed into a table cell is neither readable nor complete.
+ */
+function RoleTable({
+  roles,
+  clusterScoped,
+  showNamespace,
+  onManifest,
+}: {
+  roles: ClusterRoleEntry[]
+  clusterScoped: boolean
+  showNamespace: boolean
+  onManifest?: OpenManifest
+}) {
+  return (
+    <Table resizeKey={clusterScoped ? 'kubemg_cols_clusterroles' : 'kubemg_cols_roles'}>
+      <thead>
+        <tr>
+          <Th columnKey="name">{clusterScoped ? 'ClusterRole' : 'Role'}</Th>
+          <Th className="w-[14%] md:w-[min(8%,5rem)]" columnKey="rules">
+            Rules
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(26%,18rem)]" columnKey="verbs">
+            Verbs
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(26%,20rem)]" columnKey="resources">
+            Resources
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
+          <ManifestHead onManifest={onManifest} />
+        </tr>
+      </thead>
+      <tbody>
+        {roles.map((role) => (
+          <Row key={`${role.namespace ?? ''}/${role.name}`}>
+            <Td className="truncate">
+              <span className="flex items-center gap-2">
+                <Name
+                  title={role.name}
+                  namespace={showNamespace ? role.namespace : undefined}
+                  onOpen={opener(onManifest, role)}
+                >
+                  {role.name}
+                </Name>
+                {/* A rule granting `*` is how a role that reads as narrow turns
+                    out not to be, and it is invisible in every other column. */}
+                {role.wildcard ? <Pill tone="warn">wildcard</Pill> : null}
+                {role.aggregated ? (
+                  <Pill tone="idle" dot={false}>
+                    aggregated
+                  </Pill>
+                ) : null}
+                {role.builtin ? (
+                  <Pill tone="idle" dot={false}>
+                    built-in
+                  </Pill>
+                ) : null}
+              </span>
+            </Td>
+            <Td className="font-mono text-[12.5px] text-muted">{role.rule_count}</Td>
+            <Td className={`hidden md:table-cell ${MONO}`}>
+              <List values={role.verbs} empty="none" />
+            </Td>
+            <Td className={`hidden lg:table-cell ${MONO}`}>
+              <List values={role.resources} empty="none" />
+            </Td>
+            <Td className={AGE}>{relativeAge(role.created_at)}</Td>
+            <ManifestCell onManifest={onManifest} name={role.name} namespace={role.namespace} />
+          </Row>
+        ))}
+      </tbody>
+    </Table>
+  )
+}
+
+/**
+ * Subjects, rendered as the thing a binding is actually about. A subject is a
+ * kind and a name, and a ServiceAccount's name means nothing without the
+ * namespace it lives in — `system:serviceaccount:prod:deployer` and the one in
+ * `dev` are different identities that print identically without it.
+ */
+function Subjects({ binding }: { binding: RoleBindingEntry }) {
+  const shown = binding.subjects ?? []
+  if (shown.length === 0) {
+    // A binding with no subjects grants nothing to anybody. It is legal, it
+    // happens (a group was removed, a template rendered empty), and it is worth
+    // saying out loud rather than leaving as a blank cell.
+    return <span className="text-faint">nobody</span>
+  }
+
+  const names = shown.map((subject) =>
+    subject.namespace ? `${subject.namespace}/${subject.name}` : subject.name,
+  )
+  // The overflow is counted rather than dropped: a row that silently shows 20 of
+  // 200 subjects is a wrong answer, not a shortened one.
+  const hidden = binding.subject_count - shown.length
+
+  return (
+    <span className="truncate" title={names.join(', ')}>
+      {names.join(', ')}
+      {hidden > 0 ? <span className="text-faint"> +{hidden} more</span> : null}
+    </span>
+  )
+}
+
+/**
+ * A RoleBinding or ClusterRoleBinding, read as subject → role. That direction is
+ * the whole point of the table: the API stores a roleRef and a subject list, and
+ * an operator looking at it is always asking one of "who can do this" or "what
+ * can they do" — neither of which a printed `roleRef` answers without two more
+ * lookups.
+ */
+function BindingTable({
+  bindings,
+  clusterScoped,
+  showNamespace,
+  onManifest,
+}: {
+  bindings: RoleBindingEntry[]
+  clusterScoped: boolean
+  showNamespace: boolean
+  onManifest?: OpenManifest
+}) {
+  return (
+    <Table
+      resizeKey={clusterScoped ? 'kubemg_cols_clusterrolebindings' : 'kubemg_cols_rolebindings'}
+    >
+      <thead>
+        <tr>
+          <Th columnKey="name">{clusterScoped ? 'ClusterRoleBinding' : 'RoleBinding'}</Th>
+          <Th className="w-[30%] md:w-[min(24%,16rem)]" columnKey="role">
+            Role
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(30%,22rem)]" columnKey="subjects">
+            Subjects
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(12%,8rem)]" columnKey="kinds">
+            Kind
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
+          <ManifestHead onManifest={onManifest} />
+        </tr>
+      </thead>
+      <tbody>
+        {bindings.map((binding) => (
+          <Row key={`${binding.namespace ?? ''}/${binding.name}`}>
+            <Td className="truncate">
+              <Name
+                title={binding.name}
+                namespace={showNamespace ? binding.namespace : undefined}
+                onOpen={opener(onManifest, binding)}
+              >
+                {binding.name}
+              </Name>
+            </Td>
+            <Td className="truncate">
+              <span className="flex items-center gap-1.5">
+                {/* Which *kind* of role is the load-bearing half: a RoleBinding
+                    pointing at a ClusterRole applies that ClusterRole's rules
+                    inside this namespace only, and reading it as cluster-wide
+                    (or the reverse) is the classic RBAC misreading. */}
+                <span className="shrink-0 text-[11px] text-faint">
+                  {binding.role_kind === 'ClusterRole' ? 'ClusterRole' : 'Role'}
+                </span>
+                <span className="truncate font-mono text-[12.5px] text-fg" title={binding.role_name}>
+                  {binding.role_name}
+                </span>
+              </span>
+            </Td>
+            <Td className={`hidden md:table-cell ${MONO}`}>
+              <Subjects binding={binding} />
+            </Td>
+            <Td className={`hidden lg:table-cell ${MONO}`}>
+              <List values={binding.kinds} empty="none" />
+            </Td>
+            <Td className={AGE}>{relativeAge(binding.created_at)}</Td>
+            <ManifestCell
+              onManifest={onManifest}
+              name={binding.name}
+              namespace={binding.namespace}
+            />
+          </Row>
+        ))}
+      </tbody>
+    </Table>
+  )
+}
+
+/**
+ * ServiceAccounts — the identity half of the section. Every pod runs as one,
+ * and the one it runs as by default is `default`, which is why that row is
+ * marked: a binding granted to `default` grants it to every workload in the
+ * namespace that never named an account.
+ */
+function ServiceAccountTable({
+  accounts,
+  showNamespace,
+  onManifest,
+}: {
+  accounts: ServiceAccountEntry[]
+  showNamespace: boolean
+  onManifest?: OpenManifest
+}) {
+  return (
+    <Table resizeKey="kubemg_cols_serviceaccounts">
+      <thead>
+        <tr>
+          <Th columnKey="name">ServiceAccount</Th>
+          <Th className="w-[16%] md:w-[min(10%,7rem)]" columnKey="secrets">
+            Secrets
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(14%,9rem)]" columnKey="pull">
+            Pull secrets
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(16%,11rem)]" columnKey="automount">
+            Token
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
+          <ManifestHead onManifest={onManifest} />
+        </tr>
+      </thead>
+      <tbody>
+        {accounts.map((account) => (
+          <Row key={`${account.namespace}/${account.name}`}>
+            <Td className="truncate">
+              <span className="flex items-center gap-2">
+                <Name
+                  title={account.name}
+                  namespace={showNamespace ? account.namespace : undefined}
+                  onOpen={opener(onManifest, account)}
+                >
+                  {account.name}
+                </Name>
+                {account.default ? (
+                  <Pill tone="idle" dot={false}>
+                    default
+                  </Pill>
+                ) : null}
+              </span>
+            </Td>
+            <Td className="font-mono text-[12.5px] text-muted">{account.secrets}</Td>
+            <Td className="hidden font-mono text-[12.5px] text-muted md:table-cell">
+              {account.image_pull_secrets}
+            </Td>
+            {/* Three states, not two: unset is the common case and means the pod
+                spec decides, which is a different answer from either. */}
+            <Td className={`hidden lg:table-cell ${MONO}`}>
+              {account.automount_token === undefined
+                ? 'pod decides'
+                : account.automount_token
+                  ? 'automounted'
+                  : 'not mounted'}
+            </Td>
+            <Td className={AGE}>{relativeAge(account.created_at)}</Td>
+            <ManifestCell
+              onManifest={onManifest}
+              name={account.name}
+              namespace={account.namespace}
+            />
           </Row>
         ))}
       </tbody>

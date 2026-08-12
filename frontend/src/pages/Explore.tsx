@@ -4,6 +4,8 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import {
   errorMessage,
   fetchCRDs,
+  fetchClusterRoleBindings,
+  fetchClusterRoles,
   fetchConfigMaps,
   fetchCustomResources,
   fetchCronJobs,
@@ -19,13 +21,17 @@ import {
   fetchPersistentVolumes,
   fetchPodListMetrics,
   fetchPods,
+  fetchRoleBindings,
+  fetchRoles,
   fetchSecrets,
+  fetchServiceAccounts,
   fetchServices,
   fetchStatefulSets,
   fetchStorageClasses,
   fetchVirtualServices,
 } from '../api/client'
 import type { CustomResourceDefinition, Namespace } from '../api/types'
+import { AccessReviewPanel } from '../components/AccessReviewPanel'
 import { AppShell } from '../components/AppShell'
 import { ExploreSidebar } from '../components/ExploreSidebar'
 import { InsightTrend } from '../components/InsightTrend'
@@ -49,11 +55,13 @@ import {
   ALL_NAMESPACES,
   discoverCategories,
   exploreCategories,
+  isAccessResource,
   resourceItem,
   resourceSingular,
 } from '../lib/resources'
 import type { InsightBucket, ResourceInsight } from '../lib/insights'
 import {
+  bindingInsights,
   bucketLabel as labelForBucket,
   claimInsights,
   configInsights,
@@ -68,7 +76,9 @@ import {
   namespaceInsights,
   nodeInsights,
   podInsights,
+  roleInsights,
   routeInsights,
+  serviceAccountInsights,
   serviceInsights,
   storageClassInsights,
   volumeInsights,
@@ -152,6 +162,28 @@ async function loadResource(
       return { kind: 'config', rows: await fetchConfigMaps(clusterId, namespace), secrets: false }
     case 'secrets':
       return { kind: 'config', rows: await fetchSecrets(clusterId, namespace), secrets: true }
+    // The cluster's own RBAC. Roles and ClusterRoles — and the two binding kinds
+    // — share a loaded shape because they share a definition; `clusterScoped` is
+    // what the table needs to title itself and to drop a namespace that is not
+    // there.
+    case 'roles':
+      return { kind: 'roles', rows: await fetchRoles(clusterId, namespace), clusterScoped: false }
+    case 'clusterroles':
+      return { kind: 'roles', rows: await fetchClusterRoles(clusterId), clusterScoped: true }
+    case 'rolebindings':
+      return {
+        kind: 'rolebindings',
+        rows: await fetchRoleBindings(clusterId, namespace),
+        clusterScoped: false,
+      }
+    case 'clusterrolebindings':
+      return {
+        kind: 'rolebindings',
+        rows: await fetchClusterRoleBindings(clusterId),
+        clusterScoped: true,
+      }
+    case 'serviceaccounts':
+      return { kind: 'serviceaccounts', rows: await fetchServiceAccounts(clusterId, namespace) }
     case 'crds':
       return { kind: 'crds', rows: await fetchCRDs(clusterId) }
     case 'nodes':
@@ -190,6 +222,11 @@ const SKELETON_COLUMNS: Partial<Record<string, number>> = {
   secrets: 4,
   helmreleases: 5,
   namespaces: 3,
+  roles: 5,
+  clusterroles: 5,
+  rolebindings: 5,
+  clusterrolebindings: 5,
+  serviceaccounts: 5,
 }
 
 function skeletonColumns(item: ResourceItem, showNamespace: boolean): number {
@@ -233,6 +270,12 @@ function filterLoaded(loaded: LoadedResource, needle: string): LoadedResource {
     case 'config':
       return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
     case 'crds':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'roles':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'rolebindings':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'serviceaccounts':
       return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
     case 'custom':
       return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
@@ -284,6 +327,12 @@ function insightsFor(
       return configInsights(loaded.rows, label, loaded.secrets)
     case 'crds':
       return crdInsights(loaded.rows, label)
+    case 'roles':
+      return roleInsights(loaded.rows, label, loaded.clusterScoped)
+    case 'rolebindings':
+      return bindingInsights(loaded.rows, label, loaded.clusterScoped)
+    case 'serviceaccounts':
+      return serviceAccountInsights(loaded.rows, label)
     case 'custom':
       return customInsights(loaded.rows, label)
     case 'nodes':
@@ -763,6 +812,22 @@ export function Explore() {
             ))}
           </Select>
         </div>
+
+        {/* The access review, over the RBAC lists and nowhere else. The lists
+            below it are what is *written down*; this is the authorizer's own
+            verdict, which is the part reading a binding table cannot give — and
+            it belongs beside those tables rather than on a page of its own,
+            because the question is asked while looking at them. */}
+        {cluster && isAccessResource(item.key) ? (
+          <AccessReviewPanel
+            cluster={cluster}
+            // A cluster-scoped list has no namespace picker above it, so the
+            // question it frames is a cluster-wide one — asking it in whichever
+            // namespace the query string still carried would be answering a
+            // question this page is not showing.
+            namespace={namespaced ? namespace : ALL_NAMESPACES}
+          />
+        ) : null}
 
         {/* The pilot header. It sits above the list rather than inside it
             because it describes the whole list, including the rows a filter or

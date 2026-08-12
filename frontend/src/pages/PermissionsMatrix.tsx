@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
+import { Link } from 'react-router'
 import { KeyRound, Timer } from 'lucide-react'
 import {
   assignPermission,
@@ -120,6 +121,13 @@ export function PermissionsMatrix() {
   const agentClusters = clusters.filter((cluster) => cluster.connection_mode === 'agent').length
   const directClusters = clusters.length - agentClusters
 
+  // A cluster whose own RBAC can actually be read, for the link below the
+  // matrix. Only an agent cluster with a live tunnel has one to read through, so
+  // a fleet without one gets no link rather than a link to a refusal.
+  const rbacCluster =
+    clusters.find((cluster) => cluster.connection_mode === 'agent' && cluster.agent_attached) ??
+    null
+
   return (
     <AppShell title="Permissions">
       <div className="flex min-w-0 flex-col gap-4">
@@ -152,6 +160,26 @@ export function PermissionsMatrix() {
             Click a cell to grant, change, or revoke access.
           </span>
         </div>
+
+        {/* What this page governs, and what it does not. A grant here decides
+            which cluster and namespaces KubeMG will carry somebody to; what they
+            may then *do* is the cluster's decision, and that is a different
+            model living in a different place. Saying so is only honest if the
+            console can show the other one, which it now can. */}
+        {rbacCluster ? (
+          <p className="text-[12.5px] leading-relaxed text-muted">
+            These grants govern KubeMG. On an agent cluster the substantive
+            &ldquo;may they&rdquo; is the cluster&rsquo;s, decided by its own RBAC through
+            impersonation —{' '}
+            <Link
+              to={`/clusters/${rbacCluster.id}/explore/clusterroles`}
+              className="text-accent hover:underline"
+            >
+              read what {rbacCluster.name} itself binds
+            </Link>
+            , and ask it directly whether an identity may do something.
+          </p>
+        ) : null}
 
         {clusters.length === 0 || subjects.length === 0 ? (
           <div className="card">

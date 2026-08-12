@@ -240,7 +240,9 @@ func TestDescribeRefusesUnknownKind(t *testing.T) {
 
 	base := "/api/v1/clusters/" + itoa(cluster.ID) + "/resources/describe"
 	for _, query := range []string{
-		"?kind=clusterroles&name=admin",
+		// A real Kubernetes resource the sidebar does not browse — describe
+		// addresses the inventory, not the API.
+		"?kind=componentstatuses&name=etcd-0",
 		"?kind=pods&namespace=shop",
 		"?kind=crd:v1/v1/secrets&name=db&namespace=shop",
 	} {

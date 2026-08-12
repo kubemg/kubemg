@@ -3,6 +3,8 @@ import type { CustomResourceRef, ResourceKey } from '../lib/resources'
 import { ALL_NAMESPACES } from '../lib/resources'
 import type { TimeRangeId } from '../lib/timerange'
 import type {
+  AccessReviewQuestion,
+  AccessReviewResult,
   AgentInstall,
   AlarmChannel,
   AlarmChannelInput,
@@ -33,6 +35,8 @@ import type {
   DatasourceCheck,
   DatasourceInput,
   DatasourceKind,
+  ClusterRoleEntry,
+  GrantIdentity,
   Group,
   HelmHistory,
   HelmRelease,
@@ -66,7 +70,9 @@ import type {
   PodMetrics,
   ResourceDescribeResult,
   ResourceManifest,
+  RoleBindingEntry,
   Route,
+  ServiceAccountEntry,
   Service,
   SettingsPatch,
   SettingsResponse,
@@ -612,6 +618,75 @@ export function fetchCRDs(clusterId: number): Promise<CustomResourceDefinition[]
 
 export function fetchNodes(clusterId: number): Promise<ClusterNode[]> {
   return fetchList<ClusterNode>(clusterId, 'nodes', 'nodes')
+}
+
+/*
+ * The cluster's own RBAC. Read like every other list — impersonated, scoped and
+ * audited — which is also why a `view` grant sees exactly as much of it as
+ * `kubectl get roles` would show that same identity.
+ */
+
+export function fetchRoles(clusterId: number, namespace: string): Promise<ClusterRoleEntry[]> {
+  return fetchList<ClusterRoleEntry>(clusterId, 'roles', 'roles', namespace)
+}
+
+export function fetchClusterRoles(clusterId: number): Promise<ClusterRoleEntry[]> {
+  return fetchList<ClusterRoleEntry>(clusterId, 'clusterroles', 'clusterroles')
+}
+
+export function fetchRoleBindings(
+  clusterId: number,
+  namespace: string,
+): Promise<RoleBindingEntry[]> {
+  return fetchList<RoleBindingEntry>(clusterId, 'rolebindings', 'rolebindings', namespace)
+}
+
+export function fetchClusterRoleBindings(clusterId: number): Promise<RoleBindingEntry[]> {
+  return fetchList<RoleBindingEntry>(clusterId, 'clusterrolebindings', 'clusterrolebindings')
+}
+
+export function fetchServiceAccounts(
+  clusterId: number,
+  namespace: string,
+): Promise<ServiceAccountEntry[]> {
+  return fetchList<ServiceAccountEntry>(clusterId, 'serviceaccounts', 'serviceaccounts', namespace)
+}
+
+/**
+ * Asks the cluster's authorizer about a named subject. It is a POST because a
+ * SubjectAccessReview is a `create` in RBAC's eyes even though it changes
+ * nothing — so a caller whose grant does not carry it is refused *by the
+ * cluster*, and that refusal is the answer rather than a broken page.
+ */
+export async function askAccessReview(
+  clusterId: number,
+  question: AccessReviewQuestion,
+): Promise<AccessReviewResult> {
+  const { data } = await http.post<AccessReviewResult>(
+    resourceURL(clusterId, 'access-review'),
+    question,
+  )
+  return data
+}
+
+/** The verbs the server will accept, so the form cannot offer one it refuses. */
+export async function fetchAccessReviewVerbs(clusterId: number): Promise<string[]> {
+  const { data } = await http.get<{ verbs: string[] }>(
+    resourceURL(clusterId, 'access-review/verbs'),
+  )
+  return data.verbs ?? []
+}
+
+/**
+ * Who KubeMG impersonates for you on this cluster. It is what makes the review
+ * answer the question people actually open it with — not "what may some user
+ * do", but "what is my own grant worth here".
+ */
+export async function fetchGrantIdentity(clusterId: number): Promise<GrantIdentity> {
+  const { data } = await http.get<GrantIdentity>(
+    resourceURL(clusterId, 'access-review/identity'),
+  )
+  return data
 }
 
 /**

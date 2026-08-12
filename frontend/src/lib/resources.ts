@@ -34,6 +34,11 @@ export type ResourceKey =
   | 'crds'
   | 'nodes'
   | 'namespaces'
+  | 'serviceaccounts'
+  | 'roles'
+  | 'clusterroles'
+  | 'rolebindings'
+  | 'clusterrolebindings'
 
 /**
  * A section KubeMG did not know about until it read a cluster's CRDs: one API
@@ -49,6 +54,7 @@ export type CategoryId =
   | 'helm'
   | 'networking'
   | 'storage'
+  | 'access'
   | 'custom'
   | 'cluster'
   | 'other'
@@ -176,6 +182,54 @@ export const RESOURCE_CATEGORIES: ResourceCategory[] = [
       },
       { key: 'configmaps', label: 'ConfigMaps', scope: 'namespaced', aliases: ['cm'] },
       { key: 'secrets', label: 'Secrets', scope: 'namespaced', manifestReadOnly: true },
+    ],
+  },
+  {
+    /*
+     * The cluster's own RBAC — a section of its own rather than rows under
+     * Cluster, because it answers a different question from everything above it.
+     * Every other list says what is *running*; these say who may change it, and
+     * they are the one part of the inventory that describes the authorization
+     * KubeMG delegates to rather than the one KubeMG enforces.
+     *
+     * The console's own Access section (users, groups, the permissions matrix)
+     * governs KubeMG. This governs the cluster. They are deliberately not merged
+     * and each says which it is, because a page that blurred them would be worse
+     * than either alone: someone would read a KubeMG `view` grant as proof of
+     * what the cluster will refuse.
+     */
+    id: 'access',
+    label: 'Access (RBAC)',
+    items: [
+      {
+        key: 'serviceaccounts',
+        label: 'ServiceAccounts',
+        singular: 'ServiceAccount',
+        scope: 'namespaced',
+        aliases: ['sa', 'serviceaccount', 'identity'],
+      },
+      { key: 'roles', label: 'Roles', scope: 'namespaced', aliases: ['rbac'] },
+      {
+        key: 'rolebindings',
+        label: 'RoleBindings',
+        singular: 'RoleBinding',
+        scope: 'namespaced',
+        aliases: ['rb', 'rbac', 'binding'],
+      },
+      {
+        key: 'clusterroles',
+        label: 'ClusterRoles',
+        singular: 'ClusterRole',
+        scope: 'cluster',
+        aliases: ['cr', 'rbac'],
+      },
+      {
+        key: 'clusterrolebindings',
+        label: 'ClusterRoleBindings',
+        singular: 'ClusterRoleBinding',
+        scope: 'cluster',
+        aliases: ['crb', 'rbac', 'binding'],
+      },
     ],
   },
   {
@@ -498,6 +552,27 @@ export function exploreCategories(discovered: ResourceCategory[]): ResourceCateg
   const other = extra.get('other')
   if (other) merged.push(other)
   return merged
+}
+
+/**
+ * The keys under Access (RBAC) — the lists that describe the *cluster's* own
+ * permission model rather than any of its workloads. Derived from the category
+ * rather than restated, so adding a kind to that section is one edit.
+ *
+ * It exists because that section earns something no other does: the access
+ * review, which is the only surface in the console that asks the cluster's
+ * authorizer a question directly. Showing it over a Pod list would be noise;
+ * showing it beside the bindings is showing it where the question is being
+ * asked anyway, in the form the cluster will actually answer.
+ */
+const ACCESS_KEYS = new Set<ResourceKey>(
+  RESOURCE_CATEGORIES.find((category) => category.id === 'access')?.items.map(
+    (item) => item.key,
+  ) ?? [],
+)
+
+export function isAccessResource(key: ResourceKey): boolean {
+  return ACCESS_KEYS.has(key)
 }
 
 /** resourceSingular names one object of a kind, for a drawer over one row. */

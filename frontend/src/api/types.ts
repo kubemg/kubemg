@@ -491,6 +491,138 @@ export interface CustomResource {
   api_version?: string
 }
 
+/*
+ * The target cluster's own RBAC.
+ *
+ * Everything else under Access in the console describes *KubeMG's* permission
+ * model — who may open which cluster, in which namespaces, with which role.
+ * These describe the model that actually decides: the cluster's, read through
+ * the same impersonated tunnel as every other list. The two are separate on
+ * purpose and the console says so; this is what makes "the cluster decides"
+ * checkable rather than a claim.
+ */
+
+/** One rule of a Role or ClusterRole, on RBAC's own three axes. */
+export interface PolicyRule {
+  verbs: string[]
+  api_groups?: string[]
+  resources?: string[]
+  /** Narrows a rule to named objects — "may delete *one* pod". */
+  resource_names?: string[]
+  /** The other kind of rule entirely: `/healthz`, `/metrics`. ClusterRoles only. */
+  non_resource_urls?: string[]
+}
+
+/**
+ * A Role or a ClusterRole. They are one type here because they are one type in
+ * every way that matters to a reader: the same rules, differing only in whether
+ * a namespace bounds them.
+ */
+export interface ClusterRoleEntry {
+  name: string
+  /** Absent on a ClusterRole, which is how the two are told apart in a table. */
+  namespace?: string
+  created_at: string
+  /** A bounded prefix of the policy; `rule_count` is how many there really are. */
+  rules: PolicyRule[]
+  rule_count: number
+  /** The union across every rule, which is what a single row can show. */
+  verbs: string[]
+  resources: string[]
+  /** Assembled by the aggregation controller, so its rules are an output. */
+  aggregated?: boolean
+  /** One of Kubernetes' own (`kubernetes.io/bootstrapping`). */
+  builtin?: boolean
+  /** Holds a rule granting `*` verbs or `*` resources. */
+  wildcard?: boolean
+}
+
+/** Who a binding binds. `namespace` is meaningful for a ServiceAccount only. */
+export interface BindingSubject {
+  kind: string
+  name: string
+  namespace?: string
+}
+
+/**
+ * A RoleBinding or ClusterRoleBinding, resolved the way the question is asked —
+ * who gets what — rather than printed as a roleRef the reader then has to look
+ * up in two other lists.
+ */
+export interface RoleBindingEntry {
+  name: string
+  namespace?: string
+  created_at: string
+  /** `Role` or `ClusterRole`: a RoleBinding may reference either. */
+  role_kind: string
+  role_name: string
+  /** A ClusterRoleBinding's grant covers every namespace at once. */
+  cluster_scoped?: boolean
+  subjects: BindingSubject[]
+  subject_count: number
+  kinds?: string[]
+}
+
+/**
+ * A ServiceAccount — an identity, which is why it is under Access rather than
+ * with the workloads that run as it.
+ */
+export interface ServiceAccountEntry {
+  name: string
+  namespace: string
+  created_at: string
+  secrets: number
+  image_pull_secrets: number
+  /** The explicit setting only; absent means the pod spec decides. */
+  automount_token?: boolean
+  default?: boolean
+}
+
+/** A question for the cluster's authorizer, about somebody who is not you. */
+export interface AccessReviewQuestion {
+  subject: string
+  groups?: string[]
+  verb: string
+  group?: string
+  resource: string
+  subresource?: string
+  name?: string
+  namespace?: string
+}
+
+/**
+ * The authorizer's own verdict. It is asked rather than derived because reading
+ * bindings and reasoning about them is KubeMG guessing at an answer the cluster
+ * will state — aggregation, wildcards, several bindings reaching one subject, and
+ * authorizers that are not RBAC at all are each a way for the guess to be wrong.
+ */
+export interface AccessReviewResult {
+  allowed: boolean
+  /**
+   * Not merely "not allowed": an explicit deny that no later authorizer can
+   * overturn. It is the difference between "add a binding" and "that will not
+   * help".
+   */
+  denied?: boolean
+  /** The authorizer's own words, usually naming the binding that decided it. */
+  reason?: string
+  /** The authorizer could not finish. Not a denial, and never shown as one. */
+  evaluation_error?: string
+  subject: string
+  verb: string
+  resource: string
+  namespace?: string
+}
+
+/** Who KubeMG impersonates for you on one cluster — the subject to ask about. */
+export interface GrantIdentity {
+  subject: string
+  groups: string[]
+  k8s_role: string
+  namespaces: string[]
+  cluster: string
+}
+
 /**
  * One Kubernetes Event recorded against an object. This is the part of describe
  * that neither a list nor a manifest has: a spec is what was asked for, and only

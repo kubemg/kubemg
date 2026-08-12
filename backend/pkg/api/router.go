@@ -555,6 +555,32 @@ func NewRouter(opts Options) *gin.Engine {
 			resources.GET("/crds", s.listCRDs)
 			resources.GET("/nodes", s.listNodes)
 
+			// The target cluster's own RBAC. KubeMG's permissions matrix governs
+			// KubeMG's authorization; what a grant is *worth* is decided here, by
+			// the cluster, and until these routes existed the console could not
+			// show it. They are reads like every other list — KubeMG never writes
+			// a Role or a Binding, because a tool with its own separate permission
+			// model writing the cluster's is how the two silently diverge.
+			resources.GET("/roles", s.listRoles)
+			resources.GET("/clusterroles", s.listClusterRoles)
+			resources.GET("/rolebindings", s.listRoleBindings)
+			resources.GET("/clusterrolebindings", s.listClusterRoleBindings)
+			resources.GET("/serviceaccounts", s.listServiceAccounts)
+
+			// The answer an inventory cannot give: the authorizer's own verdict on
+			// a named subject. It is a POST because a SubjectAccessReview is a
+			// `create` in RBAC's eyes — so a grant that may not create one is
+			// refused by the cluster, which is correct and is surfaced as the
+			// cluster's refusal. Deliberately outside the cached group: it is a
+			// write down the tunnel, and the middleware would drop the cluster's
+			// cached reads on every question asked.
+			clusters.POST("/:id/resources/access-review", s.accessReview)
+			resources.GET("/access-review/verbs", s.accessReviewVerbs)
+			// Who KubeMG impersonates for this caller on this cluster — the
+			// subject to ask a review about to find out what your own grant is
+			// actually worth here.
+			resources.GET("/access-review/identity", s.grantIdentity)
+
 			// Anything a CRD serves. There cannot be a route per kind here —
 			// which CRDs exist is a property of the cluster, discovered from its
 			// own CRD list — so this one names the API instead, built from three

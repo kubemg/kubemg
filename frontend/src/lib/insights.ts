@@ -31,6 +31,7 @@
 
 import type {
   ClusterNode,
+  ClusterRoleEntry,
   ConfigEntry,
   CronJob,
   CustomResource,
@@ -42,8 +43,10 @@ import type {
   PersistentVolume,
   PersistentVolumeClaim,
   Pod,
+  RoleBindingEntry,
   Route,
   Service,
+  ServiceAccountEntry,
   StorageClass,
   Workload,
 } from '../api/types'
@@ -1080,6 +1083,130 @@ export function nodeInsights(nodes: ClusterNode[], label: string): ResourceInsig
     alerting: alerts.length,
     summary: [`${ready}/${nodes.length} ready`],
   }
+}
+
+/*
+ * The RBAC headers.
+ *
+ * These are inventory kinds — a Role has no health, and inventing one would be a
+ * claim the list cannot back up. But they are not *only* inventory, because one
+ * property of an RBAC list is genuinely worth an operator's eye landing on it:
+ * how much of it grants everything. A wildcard rule is how a role that reads as
+ * narrow turns out not to be, and it is invisible in a table of names.
+ *
+ * So the wildcard count is toned, and nothing else is. It is deliberately not an
+ * *alert* — a wildcard role is not a fault, it is a fact about the cluster
+ * (`cluster-admin` is one, and every cluster has it), and naming a handful of
+ * them as things to go and look at would be a header crying wolf on a fresh
+ * install. What is honest is the count and the ability to see it at a glance.
+ */
+
+/** A Role or ClusterRole list, summarised by how much it grants. */
+export function roleInsights(
+  roles: ClusterRoleEntry[],
+  label: string,
+  clusterScoped: boolean,
+): ResourceInsight {
+  if (roles.length === 0) return nothing(label, `No ${label.toLowerCase()} visible to you`)
+
+  const wildcard = roles.filter((role) => role.wildcard).length
+  // Kubernetes' own roles are most of a fresh cluster's ClusterRole list, so
+  // separating them is what makes the remainder — the ones somebody here wrote —
+  // legible at all.
+  const builtin = roles.filter((role) => role.builtin).length
+  const authored = roles.length - builtin
+  const rules = roles.reduce((sum, role) => sum + role.rule_count, 0)
+
+  return inventory(
+    label,
+    roles.length,
+    [
+      ...(wildcard > 0
+        ? [reading('Wildcard rules', wildcard, 'grant * on something', 'warn')]
+        : []),
+      ...(builtin > 0 ? [reading('Built-in', builtin, "Kubernetes' own", 'idle')] : []),
+      reading('Rules', rules),
+    ],
+    // A ClusterRole has no namespace to spread over, so what is worth knowing is
+    // the shape of the policy instead: how many of them touch each resource.
+    clusterScoped
+      ? distribute('Resources', roles, (role) => role.resources[0] ?? 'non-resource URLs')
+      : distribute('Namespaces', roles, (role) => role.namespace ?? '—'),
+    wildcard > 0
+      ? `${plural(roles.length, 'role')}, ${wildcard} granting * on something`
+      : `${plural(authored, 'role')}${builtin > 0 ? ` beyond Kubernetes' own ${builtin}` : ''}`,
+    wildcard > 0 ? [`${wildcard} wildcard`] : [],
+  )
+}
+
+/**
+ * A binding list, summarised by blast radius. The reading that matters is how
+ * many bindings reach every namespace at once and how many reach a subject that
+ * is a group — a group binding is one line of YAML that can grant a hundred
+ * people something, which is the shape an audit is looking for.
+ */
+export function bindingInsights(
+  bindings: RoleBindingEntry[],
+  label: string,
+  clusterScoped: boolean,
+): ResourceInsight {
+  if (bindings.length === 0) return nothing(label, `No ${label.toLowerCase()} visible to you`)
+
+  const subjects = bindings.reduce((sum, binding) => sum + binding.subject_count, 0)
+  const groups = bindings.filter((binding) => binding.kinds?.includes('Group')).length
+  // A RoleBinding pointing at a ClusterRole is the construct people misread
+  // most: it applies that ClusterRole's rules *inside one namespace*, and
+  // counting them is the cheapest way to see how much of a namespace's access
+  // is defined somewhere else entirely.
+  const viaClusterRole = bindings.filter((binding) => binding.role_kind === 'ClusterRole').length
+  const empty = bindings.filter((binding) => binding.subject_count === 0).length
+
+  return inventory(
+    label,
+    bindings.length,
+    [
+      reading('Subjects', subjects),
+      ...(groups > 0 ? [reading('Bind a group', groups)] : []),
+      ...(!clusterScoped && viaClusterRole > 0
+        ? [reading('Use a ClusterRole', viaClusterRole, 'applied in-namespace')]
+        : []),
+      // A binding with no subjects grants nothing. It is not a fault, but it is
+      // almost always a leftover, and it never shows up in a list of names.
+      ...(empty > 0 ? [reading('Bind nobody', empty, undefined, 'idle')] : []),
+    ],
+    distribute('Roles', bindings, (binding) => binding.role_name),
+    clusterScoped
+      ? `${plural(bindings.length, 'cluster-wide binding')} reaching ${plural(subjects, 'subject')}`
+      : `${plural(bindings.length, 'binding')} reaching ${plural(subjects, 'subject')}`,
+    [plural(subjects, 'subject')],
+  )
+}
+
+/**
+ * ServiceAccounts. The reading worth having is how many are `default` — that is
+ * one per namespace whether anyone wanted it, and anything bound to it is bound
+ * to every workload in that namespace that never named an account.
+ */
+export function serviceAccountInsights(
+  accounts: ServiceAccountEntry[],
+  label: string,
+): ResourceInsight {
+  if (accounts.length === 0) return nothing(label, 'No service accounts visible to you')
+
+  const defaults = accounts.filter((account) => account.default).length
+  const declined = accounts.filter((account) => account.automount_token === false).length
+
+  return inventory(
+    label,
+    accounts.length,
+    [
+      reading('Default', defaults, 'one per namespace'),
+      ...(declined > 0 ? [reading('Token declined', declined, 'not automounted', 'idle')] : []),
+    ],
+    distribute('Namespaces', accounts, (account) => account.namespace),
+    `${plural(accounts.length, 'account')} workloads here can run as`,
+    [],
+  )
 }
 
 /**
