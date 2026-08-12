@@ -40,6 +40,7 @@ import type {
   Ingress,
   Job,
   Namespace,
+  NetworkPolicy,
   PersistentVolume,
   PersistentVolumeClaim,
   Pod,
@@ -777,6 +778,46 @@ export function ingressInsights(ingresses: Ingress[], label: string): ResourceIn
     alerting: alerts.length,
     summary: [plural(hosts, 'host')],
   }
+}
+
+/**
+ * A NetworkPolicy list has no working/broken state of its own — a policy is
+ * either there or it is not, and whether it is doing the right thing is what
+ * the reachability tab answers, not this header. So this reads as an
+ * inventory: how many policies, which directions they govern, and how many
+ * select every pod in their namespace (an empty `podSelector`), which is worth
+ * naming because it is easy to write by accident and hard to spot in a list of
+ * peer rules.
+ */
+export function networkPolicyInsights(policies: NetworkPolicy[], label: string): ResourceInsight {
+  if (policies.length === 0) return nothing(label, 'No NetworkPolicies here')
+
+  const both = policies.filter(
+    (policy) => policy.policy_types.includes('Ingress') && policy.policy_types.includes('Egress'),
+  ).length
+  const ingressOnly = policies.filter(
+    (policy) => policy.policy_types.includes('Ingress') && !policy.policy_types.includes('Egress'),
+  ).length
+  const egressOnly = policies.filter(
+    (policy) => policy.policy_types.includes('Egress') && !policy.policy_types.includes('Ingress'),
+  ).length
+  const selectsEveryPod = policies.filter((policy) => policy.pod_selector === '').length
+
+  return inventory(
+    label,
+    policies.length,
+    [
+      ...(both > 0 ? [reading('Both directions', both)] : []),
+      ...(ingressOnly > 0 ? [reading('Ingress only', ingressOnly)] : []),
+      ...(egressOnly > 0 ? [reading('Egress only', egressOnly)] : []),
+      ...(selectsEveryPod > 0
+        ? [reading('Select every pod', selectsEveryPod, 'empty podSelector', 'idle')]
+        : []),
+    ],
+    distribute('Namespaces', policies, (policy) => policy.namespace),
+    `${policies.length} ${policies.length === 1 ? 'NetworkPolicy' : 'NetworkPolicies'} here`,
+    [],
+  )
 }
 
 /**

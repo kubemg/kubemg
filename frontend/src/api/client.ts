@@ -53,6 +53,9 @@ import type {
   LoginResponse,
   ManifestDiff,
   Namespace,
+  NetworkPolicy,
+  NetworkPolicyCoverage,
+  NetworkPolicyReachability,
   NewCluster,
   ObservabilityResponse,
   ObservabilitySource,
@@ -594,6 +597,44 @@ export function fetchServices(clusterId: number, namespace: string): Promise<Ser
 
 export function fetchIngresses(clusterId: number, namespace: string): Promise<Ingress[]> {
   return fetchList<Ingress>(clusterId, 'ingresses', 'ingresses', namespace)
+}
+
+export function fetchNetworkPolicies(
+  clusterId: number,
+  namespace: string,
+): Promise<NetworkPolicy[]> {
+  return fetchList<NetworkPolicy>(clusterId, 'networkpolicies', 'networkpolicies', namespace)
+}
+
+/**
+ * A workload's own view of the policies that select it. It is read on demand
+ * from the detail drawer's tab rather than with the list, on the same rule
+ * every other per-object read here follows: the reachability question is about
+ * one object, so it is asked about one object.
+ */
+export async function fetchNetworkPolicyReachability(
+  clusterId: number,
+  kind: string,
+  name: string,
+  namespace: string,
+): Promise<NetworkPolicyReachability> {
+  const { data } = await http.get<NetworkPolicyReachability>(
+    resourceURL(clusterId, 'networkpolicies/reachability'),
+    { params: { kind, name, namespace } },
+  )
+  return data
+}
+
+/** The namespace-level summary of what is and is not covered. */
+export async function fetchNetworkPolicyCoverage(
+  clusterId: number,
+  namespace: string,
+): Promise<NetworkPolicyCoverage> {
+  const { data } = await http.get<NetworkPolicyCoverage>(
+    resourceURL(clusterId, 'networkpolicies/coverage'),
+    { params: { namespace } },
+  )
+  return data
 }
 
 export function fetchHTTPRoutes(

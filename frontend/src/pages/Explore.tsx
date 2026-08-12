@@ -16,6 +16,7 @@ import {
   fetchIngresses,
   fetchJobs,
   fetchNamespaces,
+  fetchNetworkPolicies,
   fetchNodes,
   fetchPersistentVolumeClaims,
   fetchPersistentVolumes,
@@ -35,6 +36,7 @@ import { AccessReviewPanel } from '../components/AccessReviewPanel'
 import { AppShell } from '../components/AppShell'
 import { ExploreSidebar } from '../components/ExploreSidebar'
 import { InsightTrend } from '../components/InsightTrend'
+import { NetworkPolicyCoveragePanel } from '../components/NetworkPolicyCoveragePanel'
 import { ResourceDetailDrawer } from '../components/ResourceDetailDrawer'
 import type { DetailTarget } from '../components/ResourceDetailDrawer'
 import { ResourceInsights } from '../components/ResourceInsights'
@@ -74,6 +76,7 @@ import {
   matchesPodBucket,
   matchesWorkloadBucket,
   namespaceInsights,
+  networkPolicyInsights,
   nodeInsights,
   podInsights,
   roleInsights,
@@ -141,6 +144,8 @@ async function loadResource(
       return { kind: 'services', rows: await fetchServices(clusterId, namespace) }
     case 'ingresses':
       return { kind: 'ingresses', rows: await fetchIngresses(clusterId, namespace) }
+    case 'networkpolicies':
+      return { kind: 'networkpolicies', rows: await fetchNetworkPolicies(clusterId, namespace) }
     case 'httproutes': {
       const list = await fetchHTTPRoutes(clusterId, namespace)
       return { kind: 'routes', rows: list.items, available: list.available, reason: list.reason }
@@ -215,6 +220,7 @@ const SKELETON_COLUMNS: Partial<Record<string, number>> = {
   cronjobs: 5,
   services: 5,
   ingresses: 4,
+  networkpolicies: 5,
   nodes: 5,
   persistentvolumes: 5,
   persistentvolumeclaims: 5,
@@ -258,6 +264,8 @@ function filterLoaded(loaded: LoadedResource, needle: string): LoadedResource {
     case 'services':
       return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
     case 'ingresses':
+      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+    case 'networkpolicies':
       return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
     case 'routes':
       return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
@@ -313,6 +321,8 @@ function insightsFor(
       return serviceInsights(loaded.rows, label)
     case 'ingresses':
       return ingressInsights(loaded.rows, label)
+    case 'networkpolicies':
+      return networkPolicyInsights(loaded.rows, label)
     case 'routes':
       return routeInsights(loaded.rows, label)
     case 'helmreleases':
@@ -868,6 +878,16 @@ export function Explore() {
             // question this page is not showing.
             namespace={namespaced ? namespace : ALL_NAMESPACES}
           />
+        ) : null}
+
+        {/* The namespace-level half of the NetworkPolicy feature: what is and
+            is not covered, over the list of the policies themselves. A
+            NetworkPolicy never crosses a namespace boundary, so this only
+            answers something for one namespace at a time — it stays quiet
+            under "All namespaces" rather than guessing at a rollup nothing
+            here actually computes. */}
+        {cluster && item.key === 'networkpolicies' && namespace && namespace !== ALL_NAMESPACES ? (
+          <NetworkPolicyCoveragePanel cluster={cluster} namespace={namespace} />
         ) : null}
 
         {/* The pilot header. It sits above the list rather than inside it

@@ -594,6 +594,16 @@ func NewRouter(opts Options) *gin.Engine {
 			resources.GET("/httproutes", s.listHTTPRoutes)
 			resources.GET("/virtualservices", s.listVirtualServices)
 
+			// NetworkPolicies: the fixed-inventory list, plus the derivation
+			// worth building beside it — a workload's own view of the
+			// policies that select it, and a namespace's own coverage
+			// summary. Both are read-only reads over the same policy objects
+			// the list above shows; neither traces a live connection or
+			// speaks for the cluster's CNI, which each response states.
+			resources.GET("/networkpolicies", s.listNetworkPolicies)
+			resources.GET("/networkpolicies/reachability", s.networkPolicyReachability)
+			resources.GET("/networkpolicies/coverage", s.networkPolicyCoverage)
+
 			resources.GET("/persistentvolumes", s.listPersistentVolumes)
 			resources.GET("/persistentvolumeclaims", s.listPersistentVolumeClaims)
 			resources.GET("/storageclasses", s.listStorageClasses)

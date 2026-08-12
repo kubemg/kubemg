@@ -93,6 +93,7 @@ var objectKinds = map[string]objectKind{
 	"cronjobs":               {versions: []resourceListPath{{"/apis/batch/v1", "cronjobs"}}, namespaced: true, writable: true},
 	"services":               {versions: []resourceListPath{{"/api/v1", "services"}}, namespaced: true, writable: true},
 	"ingresses":              {versions: []resourceListPath{{"/apis/networking.k8s.io/v1", "ingresses"}}, namespaced: true, writable: true},
+	"networkpolicies":        {versions: []resourceListPath{{networkPolicyGroup, "networkpolicies"}}, namespaced: true, writable: true},
 	"persistentvolumeclaims": {versions: []resourceListPath{{"/api/v1", "persistentvolumeclaims"}}, namespaced: true, writable: true},
 	"configmaps":             {versions: []resourceListPath{{"/api/v1", "configmaps"}}, namespaced: true, writable: true},
 

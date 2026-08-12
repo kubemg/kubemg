@@ -17,10 +17,11 @@ import { relativeAge } from '../lib/time'
 import { HelmHistoryPanel } from './HelmHistoryPanel'
 import { HelmValuesPanel } from './HelmValuesPanel'
 import { LogExplorer } from './LogExplorer'
+import { ReachabilityTab } from './NetworkPolicyReachability'
 import { PodLogView, PodOverview } from './PodPanels'
 import { WorkloadActionPanel } from './WorkloadActionPanel'
 import type { WorkloadActionName, WorkloadActionTarget } from './WorkloadActionPanel'
-import { supportsWorkloadLogs, workloadCapability } from '../lib/workloads'
+import { hasPodLabels, supportsWorkloadLogs, workloadCapability } from '../lib/workloads'
 import { WorkloadLogView } from './WorkloadLogView'
 import { YamlPanel } from './YamlPanel'
 import {
@@ -50,7 +51,14 @@ const PodTerminal = lazy(() =>
  * Helm ones and appear only for a release, which has no manifest for `yaml` to
  * address and no API object for `describe` to read.
  */
-export type DetailTab = 'overview' | 'describe' | 'yaml' | 'logs' | 'values' | 'history'
+export type DetailTab =
+  | 'overview'
+  | 'describe'
+  | 'yaml'
+  | 'logs'
+  | 'values'
+  | 'history'
+  | 'reachability'
 
 /** Which stream the logs tab is showing. */
 type StreamView = 'logs' | 'history' | 'terminal'
@@ -214,6 +222,12 @@ export function ResourceDetailDrawer({
   // attach to, and the history view searches by pod — so the tab is named for
   // what it holds.
   else if (!release && workloadLogs) tabs.push({ value: 'logs', label: 'Logs' })
+  // Gated to the kinds that carry pod labels — what a NetworkPolicy's
+  // podSelector actually matches against — and to an object that has a
+  // namespace at all, which every one of those kinds does.
+  if (!release && target.namespace && hasPodLabels(target.kind)) {
+    tabs.push({ value: 'reachability', label: 'Reachability' })
+  }
 
   // What the object says it is running, for the scale dialog's prefill. It comes
   // from the describe already on screen rather than from a read of its own.
@@ -376,6 +390,15 @@ export function ResourceDetailDrawer({
       ) : null}
 
       {tab === 'describe' ? <DescribeTab describe={describe} loading={loading} /> : null}
+
+      {tab === 'reachability' && target.namespace ? (
+        <ReachabilityTab
+          cluster={cluster}
+          kind={target.kind}
+          name={target.name}
+          namespace={target.namespace}
+        />
+      ) : null}
 
       {tab === 'yaml' ? (
         <YamlPanel

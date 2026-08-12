@@ -432,6 +432,92 @@ export interface OptionalList<T> {
   reason?: string
 }
 
+/**
+ * A NetworkPolicy, reduced to what a list row can show. There is no single axis
+ * like a Role's verbs-and-resources union — a peer list has no such summary —
+ * so the rule counts are what the row states and the reachability view is
+ * where a rule is actually worth reading.
+ */
+export interface NetworkPolicy {
+  name: string
+  namespace: string
+  created_at: string
+  pod_selector: string
+  policy_types: string[]
+  ingress_rules: number
+  egress_rules: number
+}
+
+/**
+ * One source (ingress) or destination (egress) a NetworkPolicy rule names.
+ * `pod_selector`/`namespace_selector` are the selector text, and an *empty*
+ * string is a real answer — an empty LabelSelector matches every pod or every
+ * namespace — never a missing one.
+ */
+export interface NetworkPolicyPeer {
+  kind: 'all' | 'namespace' | 'pod' | 'ip_block'
+  pod_selector?: string
+  namespace_selector?: string
+  /** Set only for a bare podSelector, which is scoped to the policy's own namespace. */
+  namespace?: string
+  cidr?: string
+  except?: string[]
+}
+
+/**
+ * A workload's own view of the policies that select it — what may reach it,
+ * what it may reach, and whether nothing selects it at all. This is a
+ * derivation from the NetworkPolicy objects alone: `disclaimer` carries the
+ * statement that it is not what the cluster's CNI enforces and does not trace
+ * a live connection, and the console renders it rather than only the backend
+ * knowing it.
+ */
+export interface NetworkPolicyReachability {
+  kind: string
+  name: string
+  namespace: string
+  pod_labels: Record<string, string>
+  /** Whether `pod_labels` came off the object itself (a Pod) or its pod template. */
+  label_source: 'pod' | 'pod template'
+
+  ingress_covered: boolean
+  ingress_policies: string[]
+  ingress_peers: NetworkPolicyPeer[]
+  /**
+   * True when *some* policy in this namespace declares Ingress, whether or not
+   * it selects this workload — what turns "not covered" into "wide open by
+   * omission" rather than "nobody here uses NetworkPolicy at all".
+   */
+  namespace_has_ingress_policies: boolean
+
+  egress_covered: boolean
+  egress_policies: string[]
+  egress_peers: NetworkPolicyPeer[]
+  namespace_has_egress_policies: boolean
+
+  /** False when the policy list itself could not be read — everything above is
+      then unknown rather than "no policies", and `unavailable_reason` says why. */
+  policies_available: boolean
+  unavailable_reason?: string
+  disclaimer: string
+}
+
+/** The namespace-level summary of what is and is not covered by a NetworkPolicy. */
+export interface NetworkPolicyCoverage {
+  namespace: string
+  policy_count: number
+  pod_count: number
+  ingress_covered_pods: number
+  ingress_uncovered_pods: number
+  ingress_uncovered_examples?: string[]
+  egress_covered_pods: number
+  egress_uncovered_pods: number
+  egress_uncovered_examples?: string[]
+  available: boolean
+  unavailable_reason?: string
+  disclaimer: string
+}
+
 export interface PersistentVolume {
   name: string
   created_at: string

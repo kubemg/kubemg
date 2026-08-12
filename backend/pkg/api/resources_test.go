@@ -50,7 +50,7 @@ func TestNamespacedResourcesRefuseNamespaceOutsideGrant(t *testing.T) {
 	env.store.grant(user.ID, cluster.ID, "view", []string{"team-a"})
 	token := env.tokenFor(t, user)
 
-	for _, resource := range []string{"services", "configmaps", "secrets", "jobs"} {
+	for _, resource := range []string{"services", "configmaps", "secrets", "jobs", "networkpolicies"} {
 		t.Run(resource, func(t *testing.T) {
 			rec := env.do(t, http.MethodGet,
 				"/api/v1/clusters/"+itoa(cluster.ID)+"/resources/"+resource+"?namespace=team-b",
@@ -74,7 +74,7 @@ func TestInventoryRoutesRefuseDirectClusters(t *testing.T) {
 	// state to offer and says so rather than half-answering.
 	for _, resource := range []string{
 		"deployments", "statefulsets", "daemonsets", "jobs", "cronjobs",
-		"services", "ingresses", "httproutes", "virtualservices",
+		"services", "ingresses", "httproutes", "virtualservices", "networkpolicies",
 		"persistentvolumes", "persistentvolumeclaims", "storageclasses",
 		"configmaps", "secrets", "crds", "nodes",
 	} {
