@@ -50,6 +50,15 @@ function clusterViewTargets(cluster: Cluster): CommandTarget[] {
       to: `/clusters/${cluster.id}/events`,
       cluster,
     })
+    // "Why will nothing schedule" is a question somebody arrives with too, and
+    // arriving means the palette as often as the panel.
+    views.push({
+      id: `cluster-${cluster.id}-capacity`,
+      label: `${cluster.name} — Capacity`,
+      hint: 'Cluster · Capacity',
+      to: `/clusters/${cluster.id}/capacity`,
+      cluster,
+    })
     views.push({
       id: `cluster-${cluster.id}-security`,
       label: `${cluster.name} — Security posture`,

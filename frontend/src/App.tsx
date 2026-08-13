@@ -10,6 +10,7 @@ import { EventsTimeline } from './pages/EventsTimeline'
 import { Explore } from './pages/Explore'
 import { GroupManagement } from './pages/GroupManagement'
 import { Login } from './pages/Login'
+import { NodeCapacity } from './pages/NodeCapacity'
 import { Overview } from './pages/Overview'
 import { PermissionsMatrix } from './pages/PermissionsMatrix'
 import { SecurityPosture } from './pages/SecurityPosture'
@@ -233,6 +234,19 @@ export default function App() {
               element={
                 <RequireAuth>
                   <EventsTimeline />
+                </RequireAuth>
+              }
+            />
+            {/* Allocation rather than consumption. It is its own address rather
+                than a tab on the summary because it answers a question the
+                summary's Capacity panel cannot — what the scheduler has already
+                promised away — and because "why will nothing schedule" is a
+                question somebody arrives with, and arriving means a link. */}
+            <Route
+              path="/clusters/:id/capacity"
+              element={
+                <RequireAuth>
+                  <NodeCapacity />
                 </RequireAuth>
               }
             />
