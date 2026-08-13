@@ -1,14 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router'
-import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
-  Info,
-  ShieldCheck,
-} from 'lucide-react'
+import { ArrowLeft, ArrowRight } from 'lucide-react'
 import {
   completeSetup,
   errorMessage,
@@ -17,18 +10,11 @@ import {
   updateSettings,
   updateUser,
 } from '../api/client'
-import type { SettingsResponse, SetupCheck, SetupPreflight } from '../api/types'
+import type { SettingsResponse, SetupPreflight } from '../api/types'
 import { SsoSettingsPanel } from '../components/SsoSettingsPanel'
 import { AuditSettingsPanel } from '../components/settings/AuditSettingsPanel'
-import {
-  Button,
-  CodeBlock,
-  Field,
-  Notice,
-  Panel,
-  Spinner,
-  TextInput,
-} from '../components/primitives'
+import { DeploymentCheckList } from '../components/settings/DeploymentChecks'
+import { Button, Field, Notice, Panel, Spinner, TextInput } from '../components/primitives'
 import { StepActions, Stepper } from '../components/WizardChrome'
 import { useAuth } from '../state/auth-context'
 
@@ -729,13 +715,7 @@ function PreflightStep({
           </Notice>
         ))}
 
-        {(preflight?.checks ?? []).map((check) => (
-          <CheckRow key={check.key} check={check} />
-        ))}
-
-        {preflight && preflight.checks.length === 0 ? (
-          <p className="text-[13px] text-muted">Nothing to report.</p>
-        ) : null}
+        {preflight ? <DeploymentCheckList checks={preflight.checks} /> : null}
       </Panel>
 
       <div className="card overflow-hidden">
@@ -754,37 +734,6 @@ function PreflightStep({
           </Button>
         </StepActions>
       </div>
-    </div>
-  )
-}
-
-const CHECK_ICON = {
-  ok: CheckCircle2,
-  warn: AlertTriangle,
-  blocked: ShieldCheck,
-} as const
-
-/* The same three tones Notice paints, on a card rather than a line — a check
-   carries a title, an explanation and often a command, which is more than one
-   paragraph's worth. */
-const CHECK_TONE = {
-  ok: 'border-ok/35 bg-ok-soft text-ok',
-  warn: 'border-warn/35 bg-warn-soft text-warn',
-  blocked: 'border-danger/35 bg-danger-soft text-danger',
-} as const
-
-function CheckRow({ check }: { check: SetupCheck }) {
-  const Icon = CHECK_ICON[check.severity] ?? Info
-  const tone = CHECK_TONE[check.severity] ?? CHECK_TONE.ok
-
-  return (
-    <div className={`flex flex-col gap-2 rounded-card border p-3.5 ${tone}`}>
-      <p className="flex items-center gap-2 text-[13px] font-medium">
-        <Icon aria-hidden="true" className="size-4 shrink-0" />
-        {check.title}
-      </p>
-      <p className="text-[12.5px] leading-relaxed text-muted">{check.detail}</p>
-      {check.fix ? <CodeBlock label="To change it" value={check.fix} /> : null}
     </div>
   )
 }

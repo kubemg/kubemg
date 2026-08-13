@@ -97,20 +97,42 @@ nobody.
 
 ## Using a real certificate
 
-Mount the certificate and key over `/etc/kubemg/tls` and turn the self-signed
-path off:
+Copy it into the `ssl` directory next to `docker-compose.yml` and restart. There
+is nothing to configure — that directory is already mounted at `/etc/kubemg/ssl`,
+and it is the first place the server looks:
 
-```yaml
-    volumes:
-      - /etc/ssl/kubemg:/etc/kubemg/tls:ro
-    environment:
-      - KUBEMG_TLS_SELF_SIGNED=false
+```bash
+cp fullchain.pem ssl/tls.crt
+cp privkey.pem   ssl/tls.key
+chmod 644 ssl/tls.crt ssl/tls.key
+docker compose restart kubemg
 ```
 
-The files must be named `tls.crt` and `tls.key`, or set `KUBEMG_TLS_CERT_FILE`
-and `KUBEMG_TLS_KEY_FILE`. With a certificate agents' trust stores already
-recognise, the pinning stops mattering — which is what makes replacing the
-bastion host straightforward rather than a fleet-wide reinstall.
+`fullchain.pem` + `privkey.pem` are recognised under those names as well, so a
+certbot live directory can be mounted at `/etc/kubemg/ssl` instead of copied out
+of. Nothing else in the directory is read: names are fixed rather than searched
+for, because a directory scanned for "something that looks like a certificate" is
+one where renaming a file quietly changes what the bastion serves.
+
+The server runs unprivileged (uid `65532`), so the files have to be readable by
+it — a key left at certbot's root-only `0600` stops the boot with a message
+saying so, as does half a pair or a certificate and key that do not match. None
+of those fall back to the self-signed certificate: an operator who mounted a
+certificate believes it is the one in force, and a silent fallback would pin that
+fallback into every agent package they hand out next.
+
+A certificate here wins over the pair in the `tls-certs` volume, which is what
+makes this work on an install whose first boot already minted one. Setting
+`KUBEMG_TLS_SELF_SIGNED=false` is the stricter version of the same decision: it
+refuses to start without a real certificate rather than minting one. And
+`KUBEMG_TLS_CERT_FILE` / `KUBEMG_TLS_KEY_FILE` still name explicit paths for an
+install that was already configured that way.
+
+With a certificate agents' trust stores already recognise, the pinning stops
+mattering — which is what makes replacing the bastion host straightforward rather
+than a fleet-wide reinstall. **Settings → Deployment** reports which of the two
+the running server is serving, along with everything else settled at boot:
+whether recordings are encrypted, and where the signing key came from.
 
 TLS itself is not optional: client-go refuses to send a bearer token over plain
 HTTP, so a plaintext bastion cannot serve a generated kubeconfig or an `exec`

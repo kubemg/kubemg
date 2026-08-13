@@ -35,6 +35,7 @@ import type {
   DatasourceCheck,
   DatasourceInput,
   DatasourceKind,
+  DeploymentPosture,
   ClusterRoleEntry,
   EventTimeline,
   GrantIdentity,
@@ -1212,6 +1213,14 @@ export async function fetchSettings(): Promise<SettingsResponse> {
 export async function updateSettings(patch: SettingsPatch): Promise<SettingsResponse> {
   const { data } = await http.put<SettingsResponse>('/settings', patch)
   return { ...data, warnings: data.warnings ?? [] }
+}
+
+/** What this install was started with. Read-only, because every value in it was
+    settled at boot from an environment no request can rewrite — the settings
+    pages next to it are where the writable ones live. */
+export async function fetchDeploymentPosture(): Promise<DeploymentPosture> {
+  const { data } = await http.get<DeploymentPosture>('/settings/deployment')
+  return { checks: data?.checks ?? [], attention: data?.attention ?? 0 }
 }
 
 /* --------------------------------------------------------------- setup --- */
