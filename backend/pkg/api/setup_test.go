@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -175,6 +176,68 @@ func TestCompletingSetupTwiceIsHarmless(t *testing.T) {
 	if env.store.settings[db.SettingSetupCompletedAt] != first {
 		t.Fatal("the stamp records when setup finished, so a repeat must not move it")
 	}
+}
+
+// The boot-time decision, and the bug it was written for.
+//
+// "Has this database ever been offered setup" is not the same question as "does
+// it have users", and answering the first with the second is wrong on the second
+// boot of every fresh install — which is the boot that would then stamp setup
+// finished and hide the wizard from an operator who saw it exactly once.
+func TestResolveSetupStampTellsAPendingInstallFromAnUpgrade(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("a fresh install is marked started, not finished", func(t *testing.T) {
+		store := newFakeStore()
+		if err := ResolveSetupStamp(ctx, store, true, 0); err != nil {
+			t.Fatalf("resolve: %v", err)
+		}
+		if store.settings[db.SettingSetupCompletedAt] != "" {
+			t.Fatal("seeding a database does not finish setting it up")
+		}
+		if store.settings[db.SettingSetupStartedAt] == "" {
+			t.Fatal("expected the install to be marked as started")
+		}
+	})
+
+	t.Run("restarting before setup is finished leaves it unfinished", func(t *testing.T) {
+		store := newFakeStore()
+		// First boot seeds; every boot after it finds users already there.
+		if err := ResolveSetupStamp(ctx, store, true, 0); err != nil {
+			t.Fatalf("first boot: %v", err)
+		}
+		for i := 0; i < 3; i++ {
+			if err := ResolveSetupStamp(ctx, store, false, 0); err != nil {
+				t.Fatalf("restart %d: %v", i, err)
+			}
+		}
+		if store.settings[db.SettingSetupCompletedAt] != "" {
+			t.Fatal("a restart must not finish setup on the operator's behalf")
+		}
+	})
+
+	t.Run("an install predating the wizard is stamped complete", func(t *testing.T) {
+		store := newFakeStore()
+		// Users, and no mark of any kind: this database was created before the
+		// wizard existed.
+		if err := ResolveSetupStamp(ctx, store, false, 0); err != nil {
+			t.Fatalf("resolve: %v", err)
+		}
+		if store.settings[db.SettingSetupCompletedAt] == "" {
+			t.Fatal("an upgrade must never be sent through setup")
+		}
+	})
+
+	t.Run("a finished install keeps the moment it finished", func(t *testing.T) {
+		store := newFakeStore()
+		store.settings[db.SettingSetupCompletedAt] = "2026-01-01T00:00:00Z"
+		if err := ResolveSetupStamp(ctx, store, false, 0); err != nil {
+			t.Fatalf("resolve: %v", err)
+		}
+		if store.settings[db.SettingSetupCompletedAt] != "2026-01-01T00:00:00Z" {
+			t.Fatal("the stamp records when setup finished, so a reboot must not move it")
+		}
+	})
 }
 
 func checkByKey(checks []setupCheck, key string) (setupCheck, bool) {

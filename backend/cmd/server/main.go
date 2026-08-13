@@ -12,7 +12,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/kubemg/kubemg/backend/pkg/api"
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
@@ -65,14 +64,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("admin bootstrap failed: %v", err)
 	}
-	// Nothing was seeded, so this database already had users: an install that
-	// predates the setup wizard, being upgraded. Stamp it complete rather than
-	// walking an administrator back through decisions their fleet already
-	// depends on. It is written once and never cleared.
-	if !seeded {
-		if err := markSetupComplete(boot, store); err != nil {
-			log.Fatalf("setup state could not be recorded: %v", err)
-		}
+	// Whether this database has ever been offered the wizard — which is not the
+	// same question as whether it has users. See api.ResolveSetupStamp.
+	if err := api.ResolveSetupStamp(boot, store, seeded, 0); err != nil {
+		log.Fatalf("setup state could not be recorded: %v", err)
 	}
 
 	clusters := k8s.NewManager()
@@ -418,22 +413,6 @@ func resolveSigningKey(
 		slog.String("source", "database"),
 		slog.String("note", "set JWT_SECRET to supply your own; it takes precedence"))
 	return key, nil
-}
-
-// markSetupComplete stamps first-run setup as done. It is idempotent by way of
-// the check: an already-stamped install keeps its original timestamp, so the
-// record stays the moment setup actually finished.
-func markSetupComplete(ctx context.Context, store *db.Store) error {
-	stored, err := store.Settings(ctx)
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(stored[db.SettingSetupCompletedAt]) != "" {
-		return nil
-	}
-	return store.PutSettings(ctx, map[string]string{
-		db.SettingSetupCompletedAt: time.Now().UTC().Format(time.RFC3339),
-	}, 0)
 }
 
 // seedAdmin creates the bootstrap admin account on a fresh database so the

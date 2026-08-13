@@ -42,6 +42,51 @@ type Deployment struct {
 	AgentCABundleSet bool
 }
 
+// SetupStore is the slice of persistence the boot-time decision below needs.
+// It is an interface rather than *db.Store so the decision can be tested
+// without a database, which matters more here than usual: it is taken once per
+// boot, before anything can observe it going wrong.
+type SetupStore interface {
+	Settings(ctx context.Context) (map[string]string, error)
+	PutSettings(ctx context.Context, values map[string]string, updatedBy uint) error
+}
+
+// ResolveSetupStamp settles, at boot, whether this database has ever been
+// offered first-run setup. It is called once, after the bootstrap administrator
+// has been seeded or found already present.
+//
+// The distinction it draws is the whole point. Three databases arrive here:
+//
+//   - One just seeded. It is waiting for somebody to walk the wizard, so it is
+//     marked as started and left alone.
+//   - One seeded by an earlier boot of this same version, restarted before
+//     anybody finished. It carries that mark, and is left alone again — this is
+//     the case that matters, because it is indistinguishable from the next one
+//     by user count alone, and getting it wrong means an operator sees the
+//     wizard once and never again.
+//   - One that predates the wizard: users, no marks at all. Stamping it complete
+//     is what keeps an upgrade from walking an administrator back through
+//     decisions their fleet already depends on.
+func ResolveSetupStamp(ctx context.Context, store SetupStore, seeded bool, by uint) error {
+	stored, err := store.Settings(ctx)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(stored[db.SettingSetupCompletedAt]) != "" {
+		return nil
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	if seeded {
+		return store.PutSettings(ctx, map[string]string{db.SettingSetupStartedAt: now}, by)
+	}
+	if strings.TrimSpace(stored[db.SettingSetupStartedAt]) != "" {
+		// Seeded by an earlier boot and still unfinished. Leave it be.
+		return nil
+	}
+	return store.PutSettings(ctx, map[string]string{db.SettingSetupCompletedAt: now}, by)
+}
+
 // setupCheck is one thing the wizard looked at. Severity is what the console
 // paints it as; Fix is the literal line to add somewhere, because a warning
 // that does not say what to type is a warning somebody closes.
