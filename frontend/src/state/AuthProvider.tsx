@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { fetchMe, login, readToken, setUnauthorizedHandler, writeToken } from '../api/client'
+import {
+  fetchMe,
+  fetchSetupState,
+  login,
+  readToken,
+  setUnauthorizedHandler,
+  writeToken,
+} from '../api/client'
 import type { User } from '../api/types'
 import { invalidateQueries } from '../lib/query'
 import { AuthContext } from './auth-context'
@@ -9,6 +16,23 @@ import type { AuthState } from './auth-context'
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+
+  // Whether this server has been through first-run setup. It is asked once, on
+  // load, and unauthenticated — the sign-in page says so before anybody has a
+  // session, and the console redirects an administrator into the wizard the
+  // moment they have one.
+  const [setupRequired, setSetupRequired] = useState(false)
+  const [setupLoading, setSetupLoading] = useState(true)
+
+  const refreshSetupState = useCallback(async () => {
+    const state = await fetchSetupState()
+    setSetupRequired(state.required)
+    setSetupLoading(false)
+  }, [])
+
+  useEffect(() => {
+    void refreshSetupState()
+  }, [refreshSetupState])
 
   const signOut = useCallback(() => {
     writeToken(null)
@@ -72,8 +96,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<AuthState>(
-    () => ({ user, loading, signIn, adoptSession, signOut }),
-    [user, loading, signIn, adoptSession, signOut],
+    () => ({
+      user,
+      loading,
+      signIn,
+      adoptSession,
+      signOut,
+      setupRequired,
+      setupLoading,
+      refreshSetupState,
+    }),
+    [
+      user,
+      loading,
+      signIn,
+      adoptSession,
+      signOut,
+      setupRequired,
+      setupLoading,
+      refreshSetupState,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

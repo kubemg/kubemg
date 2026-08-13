@@ -14,6 +14,7 @@ import { Overview } from './pages/Overview'
 import { PermissionsMatrix } from './pages/PermissionsMatrix'
 import { SecurityPosture } from './pages/SecurityPosture'
 import { SessionRecordings } from './pages/SessionRecordings'
+import { Setup } from './pages/Setup'
 import { AgentSettings } from './pages/settings/AgentSettings'
 import { AlertingSettings } from './pages/settings/AlertingSettings'
 import { AuditSettings } from './pages/settings/AuditSettings'
@@ -39,15 +40,58 @@ function RestoringSession() {
   )
 }
 
-/** RequireAuth gates the app; adminOnly additionally gates the admin pages. */
+/**
+ * RequireAuth gates the app; adminOnly additionally gates the admin pages.
+ *
+ * It also holds the setup gate. A server that has never been configured has no
+ * address clusters can reach and no administrator password worth the name, so
+ * an admin is sent to the wizard rather than to a console whose every page would
+ * be about a fleet that cannot exist yet. A non-admin is shown why instead:
+ * there is nothing for them to do about it, and a redirect loop into a page they
+ * may not open would be worse than an explanation.
+ */
 function RequireAuth({ children, adminOnly = false }: { children: ReactNode; adminOnly?: boolean }) {
-  const { user, loading } = useAuth()
+  const { user, loading, setupRequired, setupLoading } = useAuth()
 
-  if (loading) return <RestoringSession />
+  if (loading || setupLoading) return <RestoringSession />
   if (!user) return <Navigate to="/login" replace />
+  if (setupRequired) {
+    return user.role === 'admin' ? <Navigate to="/setup" replace /> : <SetupPending />
+  }
   if (adminOnly && user.role !== 'admin') return <Navigate to="/" replace />
 
   return <ClustersProvider>{children}</ClustersProvider>
+}
+
+/** What somebody without the rights to finish setup sees while it is unfinished. */
+function SetupPending() {
+  return (
+    <div className="flex min-h-svh flex-col items-center justify-center gap-3 bg-bg px-6 text-center">
+      <span className="text-[18px] font-semibold tracking-[-0.02em]">
+        <span className="text-fg">Kube</span>
+        <span className="text-accent">MG</span>
+      </span>
+      <p className="max-w-sm text-[13px] leading-relaxed text-muted">
+        This bastion has not finished being set up. An administrator has to complete the install
+        before there is anything here to reach.
+      </p>
+    </div>
+  )
+}
+
+/**
+ * The wizard's own route. It runs once: the moment the install is stamped, this
+ * address stops being a page and becomes a redirect, and every field it held
+ * lives on its own Settings page instead.
+ */
+function SetupRoute() {
+  const { user, loading, setupRequired, setupLoading } = useAuth()
+
+  if (loading || setupLoading) return <RestoringSession />
+  if (!user) return <Navigate to="/login" replace />
+  if (!setupRequired || user.role !== 'admin') return <Navigate to="/" replace />
+
+  return <Setup />
 }
 
 function LoginRoute() {
@@ -107,6 +151,10 @@ export default function App() {
                 RequireAuth because it is what creates the session; once it has,
                 the redirect below sends the browser on. */}
             <Route path="/auth/callback" element={<CallbackRoute />} />
+            {/* First-run setup. Outside RequireAuth because RequireAuth is what
+                redirects *into* it — routing it through the same gate would be a
+                loop. It does its own gating instead. */}
+            <Route path="/setup" element={<SetupRoute />} />
             <Route
               path="/"
               element={

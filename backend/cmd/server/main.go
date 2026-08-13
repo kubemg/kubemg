@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"log"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/kubemg/kubemg/backend/pkg/api"
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
@@ -33,6 +37,7 @@ var version = "dev"
 
 func main() {
 	cfg := config.Load()
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	gdb, err := db.Open(cfg.DB)
 	if err != nil {
@@ -43,8 +48,31 @@ func main() {
 	}
 
 	store := db.NewStore(gdb)
-	if err := seedAdmin(context.Background(), store, cfg); err != nil {
+
+	// Everything from here to the router is what makes an install possible with
+	// no configuration at all: the signing key, the first administrator and the
+	// question of whether this database has ever been set up. All three used to
+	// be an operator's problem before the first boot; the console now asks for
+	// what it genuinely needs and the server supplies the rest.
+	boot := context.Background()
+
+	signingKey, err := resolveSigningKey(boot, store, cfg, logger)
+	if err != nil {
+		log.Fatalf("signing key setup failed: %v", err)
+	}
+
+	seeded, err := seedAdmin(boot, store, cfg)
+	if err != nil {
 		log.Fatalf("admin bootstrap failed: %v", err)
+	}
+	// Nothing was seeded, so this database already had users: an install that
+	// predates the setup wizard, being upgraded. Stamp it complete rather than
+	// walking an administrator back through decisions their fleet already
+	// depends on. It is written once and never cleared.
+	if !seeded {
+		if err := markSetupComplete(boot, store); err != nil {
+			log.Fatalf("setup state could not be recorded: %v", err)
+		}
 	}
 
 	clusters := k8s.NewManager()
@@ -52,7 +80,6 @@ func main() {
 	// The bastion and the proxy share one connection pool: the tunnel listener
 	// fills it, the proxy draws from it, and the API reads it to report which
 	// clusters have an agent attached.
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	gateway := bastion.NewServer(bastion.ServerOptions{Store: store, Logger: logger})
 
 	// Which verbs reach the audit table and whether shells are recorded are
@@ -119,7 +146,7 @@ func main() {
 		Store:          store,
 		Auditor:        auditor,
 		Notify:         alarms,
-		CallbackSecret: []byte(cfg.JWTSecret),
+		CallbackSecret: []byte(signingKey),
 		ConsoleURL:     cfg.PublicURL,
 		Logger:         logger,
 	})
@@ -143,7 +170,7 @@ func main() {
 
 	router := api.NewRouter(api.Options{
 		Store:          store,
-		JWT:            auth.NewManager(cfg.JWTSecret, cfg.JWTTTL),
+		JWT:            auth.NewManager(signingKey, cfg.JWTTTL),
 		Tokens:         clusters,
 		Health:         clusters,
 		SANamespace:    cfg.SANamespace,
@@ -168,7 +195,16 @@ func main() {
 		Guardrails:         guard,
 		Alarms:             alarms,
 		JIT:                access,
-		JITCallbackSecret:  []byte(cfg.JWTSecret),
+		JITCallbackSecret:  []byte(signingKey),
+		// What this install was started with, for the setup wizard to report
+		// rather than pretend to own. See api.Deployment.
+		Deployment: api.Deployment{
+			SigningKeyFromEnv: strings.TrimSpace(cfg.JWTSecret) != "",
+			TLSEnabled:        cfg.TLS.Enabled,
+			TLSSelfSigned:     tlsMaterial.selfSigned,
+			TLSCertFile:       cfg.TLS.CertFile,
+			AgentCABundleSet:  strings.TrimSpace(cfg.TLS.AgentCABundle) != "",
+		},
 		Background:         auditCtx,
 		Logger:             logger,
 	})
@@ -283,6 +319,10 @@ func resolveRecorder(
 // certificate an agent must trust, if it is not one the public CAs cover.
 type tlsMaterial struct {
 	agentCA string
+	// selfSigned reports that the certificate this process serves vouches for
+	// itself. The setup wizard says so, because replacing it later means
+	// re-issuing the install package for every cluster that pinned it.
+	selfSigned bool
 }
 
 // resolveTLS provisions the listener's certificate and decides what agents are
@@ -330,7 +370,7 @@ func resolveTLS(cfg config.Config, logger *slog.Logger) (tlsMaterial, error) {
 	// Shipping a publicly-trusted certificate to every agent would pin KubeMG
 	// to that one certificate, so renewing it would strand the whole fleet.
 	if isSelfSigned(material.CertPEM) {
-		return tlsMaterial{agentCA: string(material.CertPEM)}, nil
+		return tlsMaterial{agentCA: string(material.CertPEM), selfSigned: true}, nil
 	}
 	return tlsMaterial{}, nil
 }
@@ -349,30 +389,161 @@ func isSelfSigned(certPEM []byte) bool {
 	return cert.CheckSignatureFrom(cert) == nil
 }
 
-// seedAdmin creates the bootstrap admin account on a fresh database so the
-// platform is reachable before any user exists.
-func seedAdmin(ctx context.Context, store *db.Store, cfg config.Config) error {
-	count, err := store.CountUsers(ctx)
-	if err != nil {
-		return err
-	}
-	if count > 0 {
-		return nil
+// resolveSigningKey settles the key that signs sessions, generated kubeconfigs
+// and the JIT approval links.
+//
+// `JWT_SECRET` wins wherever it is set — a deployment already rotating it out of
+// a secret manager is untouched. Where it is not, the server mints one and keeps
+// it in the database, which is what lets an install come up having been told
+// nothing at all. The alternative KubeMG shipped with until now was a literal
+// default in the source, and a signing key everybody has is not a signing key.
+//
+// It is generated once and read forever after: minting a fresh one on every boot
+// would invalidate every session and every kubeconfig on each restart.
+func resolveSigningKey(
+	ctx context.Context, store *db.Store, cfg config.Config, logger *slog.Logger,
+) (string, error) {
+	if key := strings.TrimSpace(cfg.JWTSecret); key != "" {
+		logger.Info("signing sessions with the configured key", slog.String("source", "JWT_SECRET"))
+		return key, nil
 	}
 
-	hash, err := auth.HashPassword(cfg.AdminPassword)
+	key, err := store.EnsureServerSecret(ctx, db.ServerSecretJWTSigningKey, func() (string, error) {
+		return randomSecret(32)
+	})
+	if err != nil {
+		return "", err
+	}
+	logger.Info("signing sessions with a server-generated key",
+		slog.String("source", "database"),
+		slog.String("note", "set JWT_SECRET to supply your own; it takes precedence"))
+	return key, nil
+}
+
+// markSetupComplete stamps first-run setup as done. It is idempotent by way of
+// the check: an already-stamped install keeps its original timestamp, so the
+// record stays the moment setup actually finished.
+func markSetupComplete(ctx context.Context, store *db.Store) error {
+	stored, err := store.Settings(ctx)
 	if err != nil {
 		return err
 	}
-	if err := store.CreateUser(ctx, &db.User{
+	if strings.TrimSpace(stored[db.SettingSetupCompletedAt]) != "" {
+		return nil
+	}
+	return store.PutSettings(ctx, map[string]string{
+		db.SettingSetupCompletedAt: time.Now().UTC().Format(time.RFC3339),
+	}, 0)
+}
+
+// seedAdmin creates the bootstrap admin account on a fresh database so the
+// platform is reachable before any user exists. It reports whether it created
+// one, which is how the caller tells a fresh install from an existing one.
+//
+// With no `KUBEMG_ADMIN_PASSWORD` it generates a password and prints it once,
+// here, rather than seeding a fleet gateway with something guessable. That log
+// line is the only place the password is ever readable — the console makes
+// changing it the first step of setup, and after that it is a hash like any
+// other.
+func seedAdmin(ctx context.Context, store *db.Store, cfg config.Config) (bool, error) {
+	count, err := store.CountUsers(ctx)
+	if err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return false, nil
+	}
+
+	password := strings.TrimSpace(cfg.AdminPassword)
+	generated := password == ""
+	if generated {
+		if password, err = randomPassword(); err != nil {
+			return false, err
+		}
+	}
+
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return false, err
+	}
+	admin := &db.User{
 		Username:     cfg.AdminUsername,
 		PasswordHash: hash,
 		SystemRole:   db.SystemRoleSuperAdmin,
 		IsActive:     true,
-	}); err != nil {
-		return err
+	}
+	if err := store.CreateUser(ctx, admin); err != nil {
+		return false, err
 	}
 
-	log.Printf("bootstrap admin user %q created", cfg.AdminUsername)
-	return nil
+	// Remember which account this is for as long as it still holds the password
+	// seeded here. Setup refuses to finish while that is true, so a bastion
+	// cannot end up configured, connected to production, and still reachable
+	// with the password that scrolled past in a log.
+	if err := store.PutSettings(ctx, map[string]string{
+		db.SettingBootstrapAdminID: strconv.FormatUint(uint64(admin.ID), 10),
+	}, admin.ID); err != nil {
+		return false, err
+	}
+
+	if generated {
+		// Deliberately on the plain logger and deliberately shouted: this is a
+		// credential printed to stdout exactly once, and somebody has to see it
+		// scroll past to be able to sign in at all.
+		log.Printf("\n"+
+			"  ┌───────────────────────────────────────────────────────────────┐\n"+
+			"  │  KubeMG is not configured yet. Sign in to set it up:          │\n"+
+			"  │                                                               │\n"+
+			"  │    username: %-49s│\n"+
+			"  │    password: %-49s│\n"+
+			"  │                                                               │\n"+
+			"  │  This password is shown once. Change it in the first step of  │\n"+
+			"  │  setup; set KUBEMG_ADMIN_PASSWORD to choose your own instead. │\n"+
+			"  └───────────────────────────────────────────────────────────────┘\n",
+			cfg.AdminUsername, password)
+	} else {
+		log.Printf("bootstrap admin user %q created", cfg.AdminUsername)
+	}
+	return true, nil
+}
+
+// randomSecret returns n cryptographically random bytes, base64url-encoded so it
+// survives an environment variable, a YAML file and a copy-paste unchanged.
+func randomSecret(n int) (string, error) {
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+// randomPassword returns a password a human has to type once. It is shorter than
+// a signing key for that reason, and drawn from an alphabet with no character
+// whose shape is ambiguous in a terminal font — a password nobody can transcribe
+// is a bastion nobody can sign into.
+func randomPassword() (string, error) {
+	const alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	const length = 20
+
+	// Rejection sampling rather than a modulo: 256 does not divide by 56, so
+	// folding a byte would quietly favour the first 32 letters of the alphabet.
+	// The ceiling is the largest multiple of the alphabet that fits in a byte.
+	ceiling := byte(256 / len(alphabet) * len(alphabet))
+
+	out := make([]byte, 0, length)
+	buf := make([]byte, length)
+	for len(out) < length {
+		if _, err := rand.Read(buf); err != nil {
+			return "", err
+		}
+		for _, b := range buf {
+			if b >= ceiling {
+				continue
+			}
+			if out = append(out, alphabet[int(b)%len(alphabet)]); len(out) == length {
+				break
+			}
+		}
+	}
+	return string(out), nil
 }
