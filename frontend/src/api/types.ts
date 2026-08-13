@@ -1180,6 +1180,42 @@ export interface SettingsResponse {
 
 export type SettingsPatch = Partial<RuntimeSettings>
 
+/* -------------------------------------------------------------- setup --- */
+
+/** Whether this server still needs first-run setup. The sign-in page reads it
+    before anybody has a session, so the server answers this and nothing else —
+    a configuration description served to a stranger would be reconnaissance. */
+export interface SetupState {
+  required: boolean
+}
+
+/** How loudly the wizard paints one preflight check. `blocked` is reserved for a
+    state in which a documented feature cannot work at all, as opposed to one
+    that works less safely. */
+export type SetupCheckSeverity = 'ok' | 'warn' | 'blocked'
+
+/** One thing about this install that no form can change: TLS material read off
+    a volume at boot, the origin of the signing key, whether recordings are
+    encrypted. `fix` is the literal line to set somewhere outside the console —
+    a warning that does not say what to type is a warning somebody closes. */
+export interface SetupCheck {
+  key: string
+  title: string
+  severity: SetupCheckSeverity
+  detail: string
+  fix?: string
+}
+
+export interface SetupPreflight {
+  /** The administrator seeded on first boot still has the password it was
+      created with. Setup will not finish while this is true. */
+  admin_password_pristine: boolean
+  checks: SetupCheck[]
+  /** The settings-level warnings, reused verbatim from the settings API so the
+      two surfaces cannot drift into saying different things about one address. */
+  warnings: string[]
+}
+
 /* ------------------------------------------------------------- alarms --- */
 
 export type AlarmChannelKind =

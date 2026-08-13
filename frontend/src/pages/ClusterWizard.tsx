@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FormEvent, ReactNode } from 'react'
+import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
-  Check,
   Download,
   Plug,
   RefreshCw,
@@ -53,6 +52,7 @@ import {
   TextArea,
   TextInput,
 } from '../components/primitives'
+import { StepActions, Stepper } from '../components/WizardChrome'
 import { YamlView } from '../components/YamlView'
 import { useClusters } from '../state/clusters-context'
 
@@ -149,9 +149,10 @@ export function ClusterWizard() {
     >
       <div className="flex min-w-0 max-w-4xl flex-col gap-5">
         <Stepper
+          steps={STEPS}
           current={step}
           furthest={cluster ? STEPS.length - 1 : identityReady ? 1 : 0}
-          onSelect={setStep}
+          onSelect={(next) => setStep(next as StepIndex)}
         />
 
         {error ? <Notice tone="error">{error}</Notice> : null}
@@ -211,80 +212,6 @@ export function ClusterWizard() {
         ) : null}
       </div>
     </AppShell>
-  )
-}
-
-/**
- * Stepper numbers the steps because registration really is a sequence: the
- * cluster is created on leaving step two, and steps three and four act on the
- * record. The strand between markers is the same device used everywhere else.
- */
-function Stepper({
-  current,
-  furthest,
-  onSelect,
-}: {
-  current: StepIndex
-  /** The highest step reachable so far; anything past it is not yet meaningful. */
-  furthest: number
-  onSelect: (step: StepIndex) => void
-}) {
-  return (
-    <ol className="flex items-center gap-1.5">
-      {STEPS.map((label, index) => {
-        const done = index < current
-        const active = index === current
-        const reachable = index <= furthest
-
-        return (
-          <li key={label} className="flex min-w-0 flex-1 items-center gap-1.5">
-            <button
-              type="button"
-              disabled={!reachable}
-              onClick={() => onSelect(index as StepIndex)}
-              className={`flex min-w-0 items-center gap-2 rounded-control px-1.5 py-1 transition-colors ${
-                reachable ? 'hover:bg-raised' : 'cursor-not-allowed opacity-45'
-              }`}
-            >
-              <span
-                className={`grid size-6 shrink-0 place-items-center rounded-full font-mono text-[11.5px] font-semibold ${
-                  done
-                    ? 'bg-ok-soft text-ok'
-                    : active
-                      ? 'bg-accent text-on-accent'
-                      : 'bg-raised text-muted'
-                }`}
-              >
-                {done ? <Check aria-hidden="true" className="size-3.5" /> : index + 1}
-              </span>
-              <span
-                className={`hidden truncate text-[13px] sm:block ${
-                  active ? 'font-medium text-fg' : 'text-muted'
-                }`}
-              >
-                {label}
-              </span>
-            </button>
-            {index < STEPS.length - 1 ? (
-              <LinkStrand
-                state={done ? 'direct' : 'idle'}
-                size="sm"
-                className="min-w-4 flex-1"
-              />
-            ) : null}
-          </li>
-        )
-      })}
-    </ol>
-  )
-}
-
-/** StepActions is the consistent footer every step ends with. */
-function StepActions({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex items-center justify-end gap-2 border-t border-line-soft bg-raised/40 px-4 py-3">
-      {children}
-    </div>
   )
 }
 

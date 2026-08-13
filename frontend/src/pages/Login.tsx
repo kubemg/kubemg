@@ -9,7 +9,7 @@ import { useAuth } from '../state/auth-context'
 import { useTheme } from '../lib/theme'
 
 export function Login() {
-  const { signIn } = useAuth()
+  const { signIn, setupRequired } = useAuth()
   const { theme, toggle } = useTheme()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -105,8 +105,22 @@ export function Login() {
 
           <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Sign in</h2>
           <p className="mt-1.5 text-[13px] text-muted">
-            Use the account your administrator issued.
+            {setupRequired
+              ? 'This bastion has not been set up yet. Sign in as the administrator to configure it.'
+              : 'Use the account your administrator issued.'}
           </p>
+
+          {/* Said here rather than after the sign-in, because the password
+              somebody needs is in a place they may have to go and look. */}
+          {setupRequired ? (
+            <div className="mt-4">
+              <Notice tone="info">
+                With no administrator password configured, one was generated on first boot and
+                printed once to the server’s log — <span className="font-mono">docker compose logs
+                kubemg</span> on a compose install. Setup makes changing it the first step.
+              </Notice>
+            </div>
+          ) : null}
 
           <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
             <Field label="Username" htmlFor="username">
