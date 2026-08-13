@@ -18,6 +18,7 @@ import { Setup } from './pages/Setup'
 import { AgentSettings } from './pages/settings/AgentSettings'
 import { AlertingSettings } from './pages/settings/AlertingSettings'
 import { AuditSettings } from './pages/settings/AuditSettings'
+import { DeploymentSettings } from './pages/settings/DeploymentSettings'
 import { GeneralSettings } from './pages/settings/GeneralSettings'
 import { GuardrailsSettings } from './pages/settings/GuardrailsSettings'
 import { SsoSettings } from './pages/settings/SsoSettings'
@@ -374,6 +375,14 @@ export default function App() {
               element={
                 <RequireAuth adminOnly>
                   <SsoSettings />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/settings/deployment"
+              element={
+                <RequireAuth adminOnly>
+                  <DeploymentSettings />
                 </RequireAuth>
               }
             />

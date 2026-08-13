@@ -240,6 +240,86 @@ func TestResolveSetupStampTellsAPendingInstallFromAnUpgrade(t *testing.T) {
 	})
 }
 
+// The wizard runs once; a self-signed certificate and unencrypted recordings do
+// not stop being true when it does. The settings route reports the same checks
+// from the same place, so the two surfaces cannot drift.
+func TestDeploymentPostureOutlivesTheWizard(t *testing.T) {
+	env := newTestEnvWith(t, func(o *Options) {
+		o.Deployment = Deployment{
+			TLSEnabled:     true,
+			TLSSelfSigned:  true,
+			TLSCertFile:    "/etc/kubemg/tls/tls.crt",
+			TLSSuppliedDir: "/etc/kubemg/ssl",
+		}
+	})
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	// Stamped finished: the point is that this answers afterwards.
+	env.store.settings[db.SettingSetupCompletedAt] = "2026-01-01T00:00:00Z"
+	token := env.tokenFor(t, admin)
+
+	body := decode[deploymentPostureResponse](t,
+		env.do(t, http.MethodGet, "/api/v1/settings/deployment", token, nil))
+	tls, ok := checkByKey(body.Checks, "tls")
+	if !ok || tls.Severity != checkWarn {
+		t.Fatalf("expected the self-signed warning to survive setup, got %v", body.Checks)
+	}
+	// The remedy has to name the directory the deployment mounts for it, since
+	// that is the whole of what an operator has to do.
+	if !strings.Contains(tls.Fix, "/etc/kubemg/ssl") {
+		t.Fatalf("the fix must say where to put a certificate, got %q", tls.Fix)
+	}
+	if body.Attention == 0 {
+		t.Fatal("a warning that nothing counts is a tab with no badge on it")
+	}
+
+	// It is an administrative reading of how the server was started, so a
+	// non-admin has no business with it.
+	viewer := env.store.addUser("viewer", "pw", db.RoleUser)
+	if rec := env.do(t, http.MethodGet, "/api/v1/settings/deployment",
+		env.tokenFor(t, viewer), nil); rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+// A certificate the operator mounted is served and said so, and the case where
+// that certificate is itself self-signed still warns — agents pin it either way.
+func TestDeploymentPostureDistinguishesASuppliedCertificate(t *testing.T) {
+	env := newTestEnvWith(t, func(o *Options) {
+		o.Deployment = Deployment{
+			TLSEnabled:     true,
+			TLSSupplied:    true,
+			TLSCertFile:    "/etc/kubemg/ssl/tls.crt",
+			TLSSuppliedDir: "/etc/kubemg/ssl",
+		}
+	})
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	body := decode[deploymentPostureResponse](t,
+		env.do(t, http.MethodGet, "/api/v1/settings/deployment", env.tokenFor(t, admin), nil))
+	if check, ok := checkByKey(body.Checks, "tls"); !ok || check.Severity != checkOK {
+		t.Fatalf("a real certificate is not something to warn about, got %v", body.Checks)
+	}
+
+	selfSigned := newTestEnvWith(t, func(o *Options) {
+		o.Deployment = Deployment{
+			TLSEnabled:     true,
+			TLSSupplied:    true,
+			TLSSelfSigned:  true,
+			TLSCertFile:    "/etc/kubemg/ssl/tls.crt",
+			TLSSuppliedDir: "/etc/kubemg/ssl",
+		}
+	})
+	admin = selfSigned.store.addUser("admin", "pw", db.RoleAdmin)
+	body = decode[deploymentPostureResponse](t,
+		selfSigned.do(t, http.MethodGet, "/api/v1/settings/deployment", selfSigned.tokenFor(t, admin), nil))
+	check, ok := checkByKey(body.Checks, "tls")
+	if !ok || check.Severity != checkWarn {
+		t.Fatalf("a supplied self-signed certificate is still pinned, got %v", body.Checks)
+	}
+	if !strings.Contains(check.Fix, "/etc/kubemg/ssl/tls.crt") {
+		t.Fatalf("the fix must name the file to replace, got %q", check.Fix)
+	}
+}
+
 func checkByKey(checks []setupCheck, key string) (setupCheck, bool) {
 	for _, check := range checks {
 		if check.Key == key {

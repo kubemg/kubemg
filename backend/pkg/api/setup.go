@@ -35,8 +35,18 @@ type Deployment struct {
 	// itself — the one minted on first boot, which browsers warn about and which
 	// is pinned into every agent install package.
 	TLSSelfSigned bool
-	// TLSCertFile is where that certificate lives, named so the fix can name it.
+	// TLSCertFile is where the certificate being served lives, named so the fix
+	// can name it.
 	TLSCertFile string
+	// TLSSuppliedDir is the directory a deployment mounts a real certificate
+	// into, checked ahead of everything else at boot. The remedy for a
+	// self-signed certificate is stated in terms of it, because "copy two files
+	// here and restart" is a smaller instruction than any arrangement of
+	// environment variables.
+	TLSSuppliedDir string
+	// TLSSupplied reports that the certificate came from that directory rather
+	// than being minted here.
+	TLSSupplied bool
 	// AgentCABundleSet reports that an operator supplied the chain agents must
 	// trust explicitly, which is the case an ingress in front of KubeMG creates.
 	AgentCABundleSet bool
@@ -165,6 +175,34 @@ func (s *server) setupPreflight(c *gin.Context) {
 	})
 }
 
+// deploymentPostureResponse is the same reading of this install the wizard's
+// last step shows, served to a console that has no wizard left.
+type deploymentPostureResponse struct {
+	Checks []setupCheck `json:"checks"`
+	// Attention counts the checks that are not ok, so a tab can carry a badge
+	// without the caller re-deriving what "not ok" means.
+	Attention int `json:"attention"`
+}
+
+// deploymentPosture reports what this install was started with (admin only).
+//
+// It answers off the same deploymentChecks the setup wizard reads, deliberately:
+// a self-signed certificate and unencrypted recordings do not stop being true
+// once setup is stamped finished, and the wizard was the only place that said so.
+// An operator who inherits an install, or who took the fast path through setup,
+// has to be able to find these later — and a second implementation of the same
+// facts would be free to drift into disagreeing with the first.
+func (s *server) deploymentPosture(c *gin.Context) {
+	checks := s.deploymentChecks()
+	attention := 0
+	for _, check := range checks {
+		if check.Severity != checkOK {
+			attention++
+		}
+	}
+	c.JSON(http.StatusOK, deploymentPostureResponse{Checks: checks, Attention: attention})
+}
+
 // deploymentChecks resolves the boot-time facts into something a console can
 // render. The order is the order they matter in: a bastion without TLS cannot
 // serve kubectl at all, an unencrypted recording is production shell output
@@ -184,6 +222,17 @@ func (s *server) deploymentChecks() []setupCheck {
 				"The console still does.",
 			Fix: "KUBEMG_TLS_ENABLED=true",
 		})
+	case s.deployment.TLSSelfSigned && s.deployment.TLSSupplied:
+		checks = append(checks, setupCheck{
+			Key:      "tls",
+			Title:    "The certificate you supplied is self-signed",
+			Severity: checkWarn,
+			Detail: "It is being served and it is pinned into every agent install package, so agents " +
+				"connect — but browsers warn, and replacing it later means re-issuing the install " +
+				"package for every cluster that pinned it. A certificate issued by a CA the agents " +
+				"already trust avoids both.",
+			Fix: "replace " + s.deployment.TLSCertFile + " with a CA-issued certificate, then restart KubeMG",
+		})
 	case s.deployment.TLSSelfSigned:
 		checks = append(checks, setupCheck{
 			Key:      "tls",
@@ -191,9 +240,21 @@ func (s *server) deploymentChecks() []setupCheck {
 			Severity: checkWarn,
 			Detail: "Minted on first boot and pinned into every agent install package, so agents " +
 				"connect and browsers warn once. Replacing it later means re-issuing the install " +
-				"package for every cluster, which is why it is worth deciding now.",
-			Fix: "mount a certificate over " + certDir(s.deployment.TLSCertFile) +
-				" (tls.crt + tls.key) and set KUBEMG_TLS_SELF_SIGNED=false",
+				"package for every cluster, which is why it is worth deciding now. Drop a real " +
+				"certificate into the directory below — in the compose install that is ./ssl next to " +
+				"docker-compose.yml — and it is served instead, with no variable to set. Certbot's " +
+				"fullchain.pem and privkey.pem are recognised there too, so a Let's Encrypt live " +
+				"directory can be mounted as it stands.",
+			Fix: "put tls.crt and tls.key in " + s.suppliedCertDir() + ", then restart KubeMG",
+		})
+	case s.deployment.TLSSupplied:
+		checks = append(checks, setupCheck{
+			Key:      "tls",
+			Title:    "Serving the certificate you supplied",
+			Severity: checkOK,
+			Detail: "Read from " + s.deployment.TLSCertFile + ". Agents verify it against the public " +
+				"CAs, so nothing is pinned and renewing it strands nobody — a renewed file in the same " +
+				"place is picked up on the next restart.",
 		})
 	default:
 		checks = append(checks, setupCheck{
@@ -266,7 +327,18 @@ func (s *server) deploymentChecks() []setupCheck {
 	return checks
 }
 
-// certDir names the directory to mount over, from the certificate path. It is
+// suppliedCertDir names where to put a real certificate. It is the directory the
+// deployment mounts for exactly that, and falls back to the directory the served
+// certificate sits in for an install configured before that directory existed —
+// wording a suggestion is all it is for, so it degrades rather than guessing.
+func (s *server) suppliedCertDir() string {
+	if dir := strings.TrimSpace(s.deployment.TLSSuppliedDir); dir != "" {
+		return dir
+	}
+	return certDir(s.deployment.TLSCertFile)
+}
+
+// certDir names the directory a certificate sits in, from its path. It is
 // only ever used to word a suggestion, so an unexpected path degrades to the
 // path itself rather than to anything wrong.
 func certDir(certFile string) string {
