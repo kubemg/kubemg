@@ -750,6 +750,14 @@ func NewRouter(opts Options) *gin.Engine {
 			metrics.GET("/nodes", s.nodeMetrics)
 			metrics.GET("/pods", s.podMetrics)
 			metrics.GET("/pods/:pod", s.showPodMetrics)
+			// Allocation rather than consumption: what the scheduler has
+			// already promised away, against what the node has. It sits in
+			// this group because it reads the same two lists through the same
+			// tunnel and answers the question the usage figures cannot — a
+			// node at 30% CPU that will not take another pod. Cluster-wide by
+			// nature, so a namespace-scoped grant is refused, exactly as it is
+			// on node metrics above.
+			metrics.GET("/capacity", s.clusterCapacity)
 		}
 
 		// Identity and access management is an administrative surface only.

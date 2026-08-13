@@ -1103,6 +1103,102 @@ export interface PodListMetrics {
   pods: PodUsage[]
 }
 
+/*
+ * Allocation, which is a different question from consumption and has a
+ * different answer. The metrics above say what a node is *using*; these say
+ * what has already been promised away. A node can be idle and still refuse to
+ * take another pod, because the scheduler places work against requests.
+ *
+ * `used` is the only part that needs metrics-server. A cluster without one
+ * still gets the two numbers scheduling actually turns on, and `available`
+ * marks which column is missing rather than failing the page.
+ */
+
+/** One resource on one node: millicores for CPU, bytes for memory. */
+export interface CapacityDimension {
+  allocatable: number
+  requested: number
+  limited: number
+  used: number
+  requested_percent: number
+  limited_percent: number
+  used_percent: number
+  /**
+   * Containers here declaring no limit for this resource. It travels with the
+   * limit because it is what the limit means: a node whose containers mostly
+   * declare nothing has a limit figure describing a minority of what runs.
+   */
+  unlimited_containers: number
+}
+
+/** The kubelet's own ceiling — the one nobody remembers until it binds. */
+export interface PodSlots {
+  allocatable: number
+  scheduled: number
+  percent: number
+  without_requests: number
+}
+
+export type CapacitySeverity = 'ok' | 'note' | 'warn' | 'danger'
+
+/** One thing a node's numbers say, in the words the server wrote for it. */
+export interface CapacityConcern {
+  code: string
+  severity: CapacitySeverity
+  title: string
+  detail: string
+}
+
+/** A pod's share of the node it sits on — why that node reads as it does. */
+export interface PodRequest {
+  name: string
+  namespace: string
+  cpu_millicores: number
+  memory_bytes: number
+  share_percent: number
+}
+
+export interface NodeCapacity {
+  name: string
+  roles: string[]
+  ready: boolean
+  schedulable: boolean
+  cpu: CapacityDimension
+  memory: CapacityDimension
+  pods: PodSlots
+  concerns: CapacityConcern[]
+  severity: CapacitySeverity
+  top_requests: PodRequest[]
+}
+
+export interface CapacitySummary {
+  nodes: number
+  ready: number
+  schedulable: number
+  cpu: CapacityDimension
+  memory: CapacityDimension
+  pods: PodSlots
+  severity_counts: Partial<Record<CapacitySeverity, number>>
+}
+
+/** A pod the scheduler has not placed, with its own explanation of why. */
+export interface UnscheduledPod {
+  name: string
+  namespace: string
+  reason?: string
+}
+
+export interface ClusterCapacity {
+  /** Whether live usage could be read; the rest of the report never depends on it. */
+  available: boolean
+  reason?: string
+  nodes: NodeCapacity[]
+  summary: CapacitySummary
+  /** A sample — the count beside it is exact. */
+  unscheduled: UnscheduledPod[]
+  unscheduled_pods: number
+}
+
 /** Everything needed to install the agent into a freshly registered cluster. */
 export interface AgentInstall {
   cluster_id: number

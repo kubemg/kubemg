@@ -5,6 +5,7 @@ import {
   Bell,
   ChevronDown,
   ChevronRight,
+  Cpu,
   Gauge,
   KeyRound,
   Layers,
@@ -275,6 +276,10 @@ function clusterPanelItems(cluster: Cluster): NavItem[] {
     // happened", which is the question somebody arrives with rather than one
     // they navigate to.
     items.push({ to: `/clusters/${cluster.id}/events`, label: 'Events', icon: Siren })
+    // Capacity reads the node and pod lists Explore already reads, and needs
+    // the same tunnel. It sits above Security because it is the one of the two
+    // an operator opens while something is wrong right now.
+    items.push({ to: `/clusters/${cluster.id}/capacity`, label: 'Capacity', icon: Cpu })
     // Security posture reads the same lists Explore does, through the same
     // tunnel, so it needs exactly the tunnel Explore and Events already need.
     items.push({ to: `/clusters/${cluster.id}/security`, label: 'Security', icon: ShieldAlert })
