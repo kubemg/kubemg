@@ -59,6 +59,15 @@ function clusterViewTargets(cluster: Cluster): CommandTarget[] {
       to: `/clusters/${cluster.id}/capacity`,
       cluster,
     })
+    // "What is this costing" arrives from somebody who was not looking at this
+    // cluster at all, which is exactly what the palette is for.
+    views.push({
+      id: `cluster-${cluster.id}-cost`,
+      label: `${cluster.name} — Cost`,
+      hint: 'Cluster · Cost',
+      to: `/clusters/${cluster.id}/cost`,
+      cluster,
+    })
     views.push({
       id: `cluster-${cluster.id}-security`,
       label: `${cluster.name} — Security posture`,

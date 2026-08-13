@@ -175,6 +175,7 @@ mindmap
       Scale · restart · YAML · Helm values
       Metrics & logs from your datasource
       Capacity · reserved vs used per node
+      Cost · your rates on those reservations
     Activity
       Access requests · JIT approvals
       Queryable audit trail
@@ -243,7 +244,25 @@ scheduler's own arithmetic, sidecars and pod overhead included, and is pinned in
 `kubectl describe node` reports for the same cluster. Pod slots are the third ceiling and the one
 that binds first on a node full of small pods. Pods the scheduler could not place are listed with
 its own explanation of why. Live usage needs metrics-server and is the only column that can be
-missing; the page says so and stays whole without it. It estimates no cost and changes nothing.
+missing; the page says so and stays whole without it. It changes nothing on the cluster.
+
+**Cost** — the same reservations with your own rates on them, and an estimate that says so.
+**KubeMG calls no billing API and holds no cloud credential**: a Cost Explorer key would be the
+largest standing credential in a product built around a bastion needing none, and it would answer
+the wrong question — an invoice arrives days late and is netted against commitments nothing here
+can attribute to a Deployment. So the rates are typed in once (per installation, overridable per
+cluster, because a fleet is very often not one cloud), and an unpriced fleet is told it is unpriced
+rather than shown zeroes. Two totals are reported and **they deliberately do not match**: a cluster
+buys nodes, not pods, so what the fleet costs and what the workloads reserved are a whole and a
+part of it, and the gap is its own line rather than spread over the teams — a showback number that
+moves when a *different* team scales down is one nobody trusts. **Right-sizing refuses where it
+cannot be honest**: it needs a window of history, so a cluster with no metrics datasource gets no
+recommendation rather than one derived from metrics-server's two-minute sample. Where it can, it
+recommends **requests and never limits**, sizes CPU from the sustained mean and memory from the
+observed peak — throttled versus killed — and renders a strategic-merge patch KubeMG does not
+apply. Alongside it, orphaned volumes and load balancers nothing is using, each carrying the
+ordinary reason it might legitimately look like that. It invoices nothing, converts no currency and
+writes nothing to the cluster.
 
 **Access** — local users and groups with effective-permission merging, a permission matrix,
 federation with OIDC, SAML and LDAP including IdP group mapping, and just-in-time elevation:
@@ -525,13 +544,14 @@ timeline
         Phase 6 : Cluster-scoped console IA : Operate · Activity · Admin
         Phase 6.5 : Helm rollback : RBAC visibility : Events timeline : Security posture
     section Next
-        Phase 7 : FinOps : Capacity heatmap : Topology graph : AI RCA : GitOps drift
+        Phase 7 : Capacity : FinOps : Topology graph : AI RCA : GitOps drift
 ```
 
-**Phases 1–6.5 are shipped.** Phase 6 was scheduled ahead of Phase 7 deliberately: a capacity
-heatmap, a topology graph and an RCA panel are all *per-cluster* views, and building them into a
-global shell would have meant building each one twice — once where it fits today and once where it
-belongs. So the shell went first. Phase 6.5 followed as a survey against a competing tool's feature
+**Phases 1–6.5 are shipped, and Phase 7 is under way** — node capacity and the FinOps layer above
+it are in; the topology graph, RCA and GitOps drift are not. Phase 6 was scheduled ahead of Phase 7
+deliberately: a capacity heatmap, a topology graph and an RCA panel are all *per-cluster* views,
+and building them into a global shell would have meant building each one twice — once where it fits
+today and once where it belongs. So the shell went first. Phase 6.5 followed as a survey against a competing tool's feature
 set — seven surfaces it answers that KubeMG could not, none of them a new capability, since every
 one reads objects the impersonated tunnel already reaches, under grants that already exist.
 
@@ -647,14 +667,14 @@ head-of-line blocking, agent sizing and read rate limiting are the open items.
 - [x] NetworkPolicies as an Explore resource, plus a reachability check per workload — a derivation from policy objects, not a live trace
 - [x] Workload security posture findings tied to Pod Security Standards, with an auditable acknowledgement for an accepted risk
 - [x] Node capacity and oversubscription — reserved vs used vs limits per node, pod slots, and the pods the scheduler could not place
+- [x] FinOps cost estimation and idle resource triage — typed-in rates, workload and namespace cost, right-sizing that refuses without history, and orphaned volumes and load balancers
 
 </details>
 
-### Next — Phase 7, not started
+### Next — Phase 7, under way
 
 | | What it is |
 |---|---|
-| **FinOps &amp; waste triage** | Workload-level cost estimation, over-provisioning and abandoned-volume detection, right-sizing YAML in the drawer |
 | **Topology graph** | `Ingress → Service → Workload → Pod → Volume/Config`, traceable and filterable by health |
 | **AI root-cause analysis** | `CrashLoopBackOff`, `OOMKilled`, node pressure and log anomalies synthesised into a cause and a remediation |
 | **GitOps drift detection** | Live cluster state against the Git manifests that were supposed to produce it |

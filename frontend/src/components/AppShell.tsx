@@ -5,6 +5,7 @@ import {
   Bell,
   ChevronDown,
   ChevronRight,
+  Coins,
   Cpu,
   Gauge,
   KeyRound,
@@ -280,6 +281,11 @@ function clusterPanelItems(cluster: Cluster): NavItem[] {
     // the same tunnel. It sits above Security because it is the one of the two
     // an operator opens while something is wrong right now.
     items.push({ to: `/clusters/${cluster.id}/capacity`, label: 'Capacity', icon: Cpu })
+    // Cost sits under Capacity because it is the same arithmetic answering a
+    // different question, to a different person: allocation is read by whoever
+    // is trying to get a pod scheduled, and the bill by whoever is being asked
+    // about it.
+    items.push({ to: `/clusters/${cluster.id}/cost`, label: 'Cost', icon: Coins })
     // Security posture reads the same lists Explore does, through the same
     // tunnel, so it needs exactly the tunnel Explore and Events already need.
     items.push({ to: `/clusters/${cluster.id}/security`, label: 'Security', icon: ShieldAlert })

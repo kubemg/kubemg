@@ -1199,6 +1199,198 @@ export interface ClusterCapacity {
   unscheduled_pods: number
 }
 
+/* ------------------------------------------------------------------ cost --- */
+
+/**
+ * The rates every cost figure is computed against.
+ *
+ * KubeMG calls no billing API and holds no cloud credential, so these are typed
+ * in by an operator. `inherited` is what separates "this cluster is priced at
+ * the installation default" from "this cluster has a card that happens to match
+ * it" — only one of the two changes when the default does.
+ */
+export interface RateCard {
+  provider: 'aws' | 'gcp' | 'azure' | 'custom'
+  currency: string
+  cpu_core_hour: number
+  memory_gib_hour: number
+  storage_gib_month: number
+  load_balancer_month: number
+  note?: string
+  inherited: boolean
+}
+
+/** A starting point for a rate card, offered to be replaced rather than accepted. */
+export interface RatePreset {
+  provider: RateCard['provider']
+  label: string
+  currency: string
+  cpu_core_hour: number
+  memory_gib_hour: number
+  storage_gib_month: number
+  load_balancer_month: number
+  note: string
+}
+
+export interface RateCardResponse {
+  rate_card: RateCard | null
+  presets: RatePreset[]
+}
+
+/** One amount split by the resource it was spent on, per month. */
+export interface MoneyDimension {
+  cpu: number
+  memory: number
+  total: number
+}
+
+export interface CostedWorkload {
+  kind: string
+  name: string
+  namespace: string
+  pods: number
+  cpu_millicores: number
+  memory_bytes: number
+  monthly: MoneyDimension
+  /** Whether live usage was measured at all. `false` never means "idle". */
+  used: boolean
+  used_cpu_millicores: number
+  used_memory_bytes: number
+  idle_monthly: MoneyDimension
+}
+
+export interface CostedNamespace {
+  namespace: string
+  workloads: number
+  pods: number
+  monthly: MoneyDimension
+  idle_monthly: MoneyDimension
+}
+
+/**
+ * The fleet totals. `infrastructure` and `attributed` deliberately do not
+ * match: a cluster buys nodes, not pods, and the gap is reported as its own
+ * line rather than spread over the workloads — a per-team number that moves
+ * when a different team scales down is one nobody trusts.
+ */
+export interface CostSummary {
+  nodes: number
+  infrastructure_monthly: MoneyDimension
+  attributed_monthly: MoneyDimension
+  unallocated_monthly: MoneyDimension
+  attributed_percent: number
+  idle_monthly: MoneyDimension
+}
+
+export interface ClusterCost {
+  /** False when no rates exist. Everything below is then absent. */
+  priced: boolean
+  reason?: string
+  currency: string
+  rate_card: RateCard | null
+  summary: CostSummary
+  workloads: CostedWorkload[]
+  /** How many workloads were costed, which is not how many are in the table. */
+  workloads_total: number
+  namespaces: CostedNamespace[]
+  usage_available: boolean
+  usage_reason?: string
+}
+
+/* ----------------------------------------------------------------- waste --- */
+
+/** One object nothing appears to be using. */
+export interface WasteFinding {
+  code: string
+  kind: string
+  name: string
+  namespace?: string
+  title: string
+  detail: string
+  /** Why this might legitimately look like this. Never a footnote. */
+  caveat: string
+  severity: CapacitySeverity
+  monthly: number
+  bytes?: number
+  age_days: number
+}
+
+export interface WasteSummary {
+  findings: number
+  monthly: number
+  unmounted_claims: number
+  released_volumes: number
+  idle_load_balancers: number
+}
+
+export interface ClusterWaste {
+  priced: boolean
+  reason?: string
+  currency?: string
+  findings: WasteFinding[]
+  summary: WasteSummary
+}
+
+/* ----------------------------------------------------------- right-sizing --- */
+
+/** One resource's recommendation. `recommended` of 0 means none is offered. */
+export interface SizeAdvice {
+  requested: number
+  observed: number
+  recommended: number
+  used_percent: number
+  /** False where the backend returned no series — a state, not a zero. */
+  measured: boolean
+}
+
+export interface ContainerAdvice {
+  name: string
+  cpu_request: number
+  memory_request: number
+  cpu_recommended: number
+  memory_recommended: number
+}
+
+export interface SizingFinding {
+  kind: string
+  name: string
+  namespace: string
+  pods: number
+  code: 'over-reserved' | 'under-reserved'
+  severity: CapacitySeverity
+  title: string
+  detail: string
+  cpu: SizeAdvice
+  memory: SizeAdvice
+  monthly_saving: number
+  containers: ContainerAdvice[]
+  /** A strategic-merge patch against the pod template, requests only. */
+  patch: string
+}
+
+export interface SizingSummary {
+  workloads: number
+  over_reserved: number
+  under_reserved: number
+  monthly_saving: number
+  right_sized: number
+  unmeasured: number
+}
+
+export interface ClusterRightsizing {
+  priced: boolean
+  currency: string
+  findings: SizingFinding[]
+  summary: SizingSummary
+  start: string
+  end: string
+  /** The server's own sentence about whether the window is long enough. */
+  coverage: string
+  cpu_query: string
+  memory_query: string
+  provider: string
+}
+
 /** Everything needed to install the agent into a freshly registered cluster. */
 export interface AgentInstall {
   cluster_id: number

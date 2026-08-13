@@ -304,6 +304,9 @@ func (s *Store) DeleteCluster(ctx context.Context, id uint) error {
 		if err := deleteClusterConsoles(tx, id); err != nil {
 			return err
 		}
+		if err := deleteClusterRateCard(tx, id); err != nil {
+			return err
+		}
 		// Access requests go with the cluster they are about. The audit trail keeps
 		// the record of who approved what; what must not survive is a row still
 		// counting down an elevation on a cluster nobody can reach.
