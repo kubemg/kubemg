@@ -883,6 +883,10 @@ func NewRouter(opts Options) *gin.Engine {
 		settings := v1.Group("/settings", requireAuth, requireAdmin)
 		settings.GET("", s.getSettings)
 		settings.PUT("", s.updateSettings)
+		// Read-only, and read-only by nature: these are the boot-time facts the
+		// setup wizard reports, on a page that outlives the wizard. Nothing here
+		// can be written from a browser — see Deployment.
+		settings.GET("/deployment", s.deploymentPosture)
 	}
 
 	return router

@@ -1216,6 +1216,17 @@ export interface SetupPreflight {
   warnings: string[]
 }
 
+/** The same reading of this install the wizard's last step shows, served to a
+    console that has no wizard left: setup runs once, and a self-signed
+    certificate or an unencrypted recording directory does not stop being true
+    when it finishes. */
+export interface DeploymentPosture {
+  checks: SetupCheck[]
+  /** How many checks are not `ok`, so a tab can carry a badge without
+      re-deriving what that means. */
+  attention: number
+}
+
 /* ------------------------------------------------------------- alarms --- */
 
 export type AlarmChannelKind =

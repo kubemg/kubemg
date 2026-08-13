@@ -123,10 +123,21 @@ type TLS struct {
 	Enabled  bool
 	CertFile string
 	KeyFile  string
-	// SelfSigned mints a certificate when CertFile/KeyFile do not exist yet,
-	// so a fresh install serves HTTPS without an operator having to produce
-	// one first. A real deployment drops its own files in and this does
-	// nothing.
+	// SuppliedDir is a directory the deployment mounts, checked before anything
+	// is minted: a `tls.crt` + `tls.key` (or certbot's `fullchain.pem` +
+	// `privkey.pem`) found in it is what the listener serves.
+	//
+	// It exists so that replacing the self-signed certificate is a file copy
+	// and a restart rather than an environment variable, two paths and a
+	// rebuilt compose file. A pair found here wins over CertFile/KeyFile — that
+	// is the whole point on an install whose first boot already minted one,
+	// where the alternative would be for the generated certificate to keep
+	// winning over the real one the operator just put in place.
+	SuppliedDir string
+	// SelfSigned mints a certificate when neither SuppliedDir nor
+	// CertFile/KeyFile holds one yet, so a fresh install serves HTTPS without
+	// an operator having to produce one first. A real deployment drops its own
+	// files in and this does nothing.
 	SelfSigned bool
 	// Hosts are extra SANs for a generated certificate. The public URL's host
 	// and loopback are always included.
@@ -181,6 +192,10 @@ func Load() Config {
 			Enabled:  envBool("KUBEMG_TLS_ENABLED", false),
 			CertFile: env("KUBEMG_TLS_CERT_FILE", "/etc/kubemg/tls/tls.crt"),
 			KeyFile:  env("KUBEMG_TLS_KEY_FILE", "/etc/kubemg/tls/tls.key"),
+			// Separate from the directory above on purpose: that one holds what
+			// the server minted and must survive, this one holds what an
+			// operator hands it and is theirs to overwrite.
+			SuppliedDir: env("KUBEMG_TLS_SUPPLIED_DIR", "/etc/kubemg/ssl"),
 			// Defaulting this on only matters when TLS is enabled at all, and
 			// there it is the difference between a server that starts and one
 			// that stops on a missing file nobody has been asked for yet.

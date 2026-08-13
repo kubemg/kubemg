@@ -197,7 +197,9 @@ func main() {
 			SigningKeyFromEnv: strings.TrimSpace(cfg.JWTSecret) != "",
 			TLSEnabled:        cfg.TLS.Enabled,
 			TLSSelfSigned:     tlsMaterial.selfSigned,
-			TLSCertFile:       cfg.TLS.CertFile,
+			TLSCertFile:       tlsMaterial.certFile,
+			TLSSuppliedDir:    tlsMaterial.suppliedDir,
+			TLSSupplied:       tlsMaterial.supplied,
 			AgentCABundleSet:  strings.TrimSpace(cfg.TLS.AgentCABundle) != "",
 		},
 		Background:         auditCtx,
@@ -216,9 +218,9 @@ func main() {
 		logger.Info("serving https",
 			slog.String("version", version),
 			slog.String("addr", cfg.ListenAddr),
-			slog.String("certificate", cfg.TLS.CertFile),
+			slog.String("certificate", tlsMaterial.certFile),
 		)
-		if err := router.RunTLS(cfg.ListenAddr, cfg.TLS.CertFile, cfg.TLS.KeyFile); err != nil {
+		if err := router.RunTLS(cfg.ListenAddr, tlsMaterial.certFile, tlsMaterial.keyFile); err != nil {
 			log.Fatalf("server exited: %v", err)
 		}
 		return
@@ -318,56 +320,110 @@ type tlsMaterial struct {
 	// itself. The setup wizard says so, because replacing it later means
 	// re-issuing the install package for every cluster that pinned it.
 	selfSigned bool
+	// certFile and keyFile are what the listener actually serves, which is not
+	// always what the configuration named: a certificate found in the supplied
+	// directory wins over both the generated pair and the configured paths.
+	certFile string
+	keyFile  string
+	// supplied reports that the pair came from that directory rather than from
+	// this process, and suppliedDir names it either way — a check that tells an
+	// operator where to put a certificate is worth more than one that tells them
+	// they have not.
+	supplied    bool
+	suppliedDir string
 }
 
 // resolveTLS provisions the listener's certificate and decides what agents are
-// told to trust. With TLS off it does nothing beyond an explicit CA bundle;
-// with TLS on it uses the operator's files, and mints a self-signed pair when
-// there are none, so a first boot serves HTTPS rather than refusing to start on
-// a file nobody has been asked for yet.
+// told to trust. With TLS off it does nothing beyond an explicit CA bundle; with
+// TLS on it serves a certificate an operator dropped into the supplied
+// directory, or the files they configured, and mints a self-signed pair when
+// there is neither — so a first boot serves HTTPS rather than refusing to start
+// on a file nobody has been asked for yet.
 func resolveTLS(cfg config.Config, logger *slog.Logger) (tlsMaterial, error) {
+	out := tlsMaterial{
+		certFile:    cfg.TLS.CertFile,
+		keyFile:     cfg.TLS.KeyFile,
+		suppliedDir: cfg.TLS.SuppliedDir,
+	}
+
 	// An explicit bundle wins over anything inferred, and is read whether or
 	// not this process terminates TLS: behind an ingress the certificate agents
 	// verify is the ingress's, which nothing here can see. An internal
 	// corporate PKI is the case that matters — it is not self-signed, so no
 	// amount of inspecting our own certificate would reveal that agents need it.
-	if bundle := strings.TrimSpace(cfg.TLS.AgentCABundle); bundle != "" {
+	bundle := strings.TrimSpace(cfg.TLS.AgentCABundle)
+	if bundle != "" {
 		pemBytes, err := certs.LoadBundle(bundle)
 		if err != nil {
 			return tlsMaterial{}, err
 		}
 		logger.Info("pinning an operator-supplied CA bundle into agent install packages",
 			slog.String("bundle", bundle))
-		return tlsMaterial{agentCA: string(pemBytes)}, nil
+		out.agentCA = string(pemBytes)
 	}
 
 	if !cfg.TLS.Enabled {
-		return tlsMaterial{}, nil
+		return out, nil
 	}
 
-	hosts := certs.HostsFor(cfg.PublicURL, cfg.TLS.Hosts)
-	material, err := certs.Ensure(cfg.TLS.CertFile, cfg.TLS.KeyFile, hosts)
+	// The supplied directory is read first, and a pair in it wins. On a first
+	// boot that is the only certificate there is; on every boot after one, the
+	// generated pair also exists — and letting it win would mean an operator who
+	// dropped a real certificate in place watched the self-signed one keep
+	// serving, with nothing saying why.
+	material, supplied, err := certs.Supplied(cfg.TLS.SuppliedDir)
 	if err != nil {
 		return tlsMaterial{}, err
 	}
-	if material.Generated {
+	if supplied {
+		out.certFile, out.keyFile, out.supplied = material.CertFile, material.KeyFile, true
+		logger.Info("serving the certificate found in the supplied directory",
+			slog.String("directory", cfg.TLS.SuppliedDir),
+			slog.String("certificate", material.CertFile))
+	} else {
+		// Refused before Ensure rather than on its answer: Ensure writes the pair
+		// it reports as generated, so refusing afterwards would leave a
+		// self-signed certificate on disk that the next boot finds, honours, and
+		// pins into every agent package — with the setting that forbade it still
+		// off.
 		if !cfg.TLS.SelfSigned {
-			return tlsMaterial{}, fmt.Errorf(
-				"no certificate at %s and KUBEMG_TLS_SELF_SIGNED is off", cfg.TLS.CertFile)
+			has, err := certs.HasPair(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+			if err != nil {
+				return tlsMaterial{}, err
+			}
+			if !has {
+				return tlsMaterial{}, fmt.Errorf(
+					"no certificate in %s or at %s, and KUBEMG_TLS_SELF_SIGNED is off",
+					cfg.TLS.SuppliedDir, cfg.TLS.CertFile)
+			}
 		}
-		logger.Warn("generated a self-signed certificate; replace it before this is a real deployment",
-			slog.String("certificate", cfg.TLS.CertFile),
-			slog.Any("hosts", hosts),
-		)
+
+		hosts := certs.HostsFor(cfg.PublicURL, cfg.TLS.Hosts)
+		material, err = certs.Ensure(cfg.TLS.CertFile, cfg.TLS.KeyFile, hosts)
+		if err != nil {
+			return tlsMaterial{}, err
+		}
+		if material.Generated {
+			logger.Warn("generated a self-signed certificate; replace it before this is a real deployment",
+				slog.String("certificate", cfg.TLS.CertFile),
+				slog.String("replace_by", "putting tls.crt and tls.key in "+cfg.TLS.SuppliedDir),
+				slog.Any("hosts", hosts),
+			)
+		}
 	}
 
-	// The CA is pinned into agent install packages only when it is self-signed.
-	// Shipping a publicly-trusted certificate to every agent would pin KubeMG
-	// to that one certificate, so renewing it would strand the whole fleet.
+	// The CA is pinned into agent install packages only when it is self-signed —
+	// including a self-signed certificate the operator supplied themselves, since
+	// agents have no other way to verify one. Shipping a publicly-trusted
+	// certificate to every agent would pin KubeMG to that one certificate, so
+	// renewing it would strand the whole fleet.
 	if isSelfSigned(material.CertPEM) {
-		return tlsMaterial{agentCA: string(material.CertPEM), selfSigned: true}, nil
+		out.selfSigned = true
+		if bundle == "" {
+			out.agentCA = string(material.CertPEM)
+		}
 	}
-	return tlsMaterial{}, nil
+	return out, nil
 }
 
 // isSelfSigned reports whether the leaf certificate vouches for itself, which
