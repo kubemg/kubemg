@@ -459,7 +459,11 @@ function Capacity({ cluster }: { cluster: Cluster }) {
               Capacity
             </Link>{' '}
             shows what has already been reserved, which is what decides whether anything more will
-            schedule.
+            schedule, and{' '}
+            <Link to={`/clusters/${cluster.id}/cost`} className="text-accent hover:underline">
+              Cost
+            </Link>{' '}
+            puts your own rates on the same figures.
           </p>
         </>
       ) : null}

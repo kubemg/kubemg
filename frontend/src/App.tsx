@@ -11,6 +11,8 @@ import { Explore } from './pages/Explore'
 import { GroupManagement } from './pages/GroupManagement'
 import { Login } from './pages/Login'
 import { NodeCapacity } from './pages/NodeCapacity'
+import { ClusterCost } from './pages/ClusterCost'
+import { CostSettings } from './pages/settings/CostSettings'
 import { Overview } from './pages/Overview'
 import { PermissionsMatrix } from './pages/PermissionsMatrix'
 import { SecurityPosture } from './pages/SecurityPosture'
@@ -250,6 +252,19 @@ export default function App() {
                 </RequireAuth>
               }
             />
+            {/* Cost sits beside Capacity rather than inside it because it is a
+                different question with a different audience: allocation is read
+                by whoever is trying to get a pod scheduled, and the bill is read
+                by whoever is being asked about it. They share the arithmetic and
+                nothing else. */}
+            <Route
+              path="/clusters/:id/cost"
+              element={
+                <RequireAuth>
+                  <ClusterCost />
+                </RequireAuth>
+              }
+            />
             {/* Workload security posture: seven fixed rules over fields Explore
                 already reads, per cluster or per namespace. Reached the same
                 way Events is — a live tunnel, and a row in the cluster's own
@@ -365,6 +380,16 @@ export default function App() {
               element={
                 <RequireAuth adminOnly>
                   <AuditSettings />
+                </RequireAuth>
+              }
+            />
+            {/* The rates every cost figure is computed against. Administrative
+                because it decides what the whole console says about money. */}
+            <Route
+              path="/settings/cost"
+              element={
+                <RequireAuth adminOnly>
+                  <CostSettings />
                 </RequireAuth>
               }
             />

@@ -37,6 +37,63 @@ export function formatMemory(bytes: number): string {
 }
 
 /**
+ * formatMoney renders an estimated monthly cost in the rate card's own
+ * currency.
+ *
+ * The currency is whatever the operator typed and is **never converted** — a
+ * fleet priced in two currencies shows two currencies rather than a total that
+ * is neither. `Intl` is asked to render it and falls back to the bare code on a
+ * currency it does not know, which is better than refusing to draw the number.
+ *
+ * Above a thousand the cents are dropped. A monthly figure of $12,481.37 is
+ * read as "about twelve and a half thousand" by everybody, and the two digits
+ * are precision this report does not have: it is an estimate over rates
+ * somebody typed in.
+ */
+export function formatMoney(amount: number, currency: string): string {
+  if (!Number.isFinite(amount)) return '—'
+  const code = (currency || 'USD').toUpperCase()
+  const fractionDigits = Math.abs(amount) >= 1000 ? 0 : 2
+
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
+    }).format(amount)
+  } catch {
+    return `${amount.toFixed(fractionDigits)} ${code}`
+  }
+}
+
+/**
+ * formatRate renders one entry off a rate card, which is a different number to
+ * a cost and needs different treatment.
+ *
+ * A cost is a monthly total and reads fine to the cent. A rate is a vCPU-hour at
+ * $0.0353, and `formatMoney` would round that to four cents — a 13% error in the
+ * one figure every other number on the page is derived from. So a rate keeps up
+ * to four decimal places and drops the trailing zeroes, since $0.0800 is a price
+ * list quoting more precision than it has.
+ */
+export function formatRate(amount: number, currency: string): string {
+  if (!Number.isFinite(amount)) return '—'
+  const code = (currency || 'USD').toUpperCase()
+
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 4,
+    }).format(amount)
+  } catch {
+    return `${amount} ${code}`
+  }
+}
+
+/**
  * formatCount renders a tally — restarts, containers. It keeps one decimal
  * below ten because these come from `increase()` over a window, which is
  * genuinely fractional: rounding 0.4 restarts to zero would report a crash loop

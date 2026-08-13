@@ -24,13 +24,20 @@ export function isClusterPath(pathname: string, id: number): boolean {
 }
 
 /** The views a cluster's own address space holds. */
-export type ClusterView = 'summary' | 'explore' | 'audit' | 'events' | 'capacity' | 'security'
+export type ClusterView =
+  | 'summary'
+  | 'explore'
+  | 'audit'
+  | 'events'
+  | 'capacity'
+  | 'cost'
+  | 'security'
 
 /** Which of a cluster's own views the address currently names, Summary when it
     does not — the same view `clusterHref` opens by default. */
 export function currentClusterView(pathname: string, clusterId: number): ClusterView {
   const match = pathname.match(
-    new RegExp(`^/clusters/${clusterId}/(summary|explore|audit|events|capacity|security)(?:/|$)`),
+    new RegExp(`^/clusters/${clusterId}/(summary|explore|audit|events|capacity|cost|security)(?:/|$)`),
   )
   return (match?.[1] as ClusterView | undefined) ?? 'summary'
 }
@@ -42,7 +49,7 @@ export function currentClusterView(pathname: string, clusterId: number): Cluster
  * them to a cluster with no tunnel lands on that cluster's summary rather than
  * on a page that can only refuse.
  */
-const LIVE_VIEWS: readonly ClusterView[] = ['explore', 'events', 'capacity', 'security']
+const LIVE_VIEWS: readonly ClusterView[] = ['explore', 'events', 'capacity', 'cost', 'security']
 
 export function hasClusterView(cluster: Cluster, view: ClusterView): boolean {
   if (!LIVE_VIEWS.includes(view)) return true

@@ -8,6 +8,7 @@ const TABS = [
   { to: '/settings/general', label: 'General' },
   { to: '/settings/agent', label: 'Agent' },
   { to: '/settings/audit', label: 'Audit' },
+  { to: '/settings/cost', label: 'Cost' },
   { to: '/settings/guardrails', label: 'Guardrails' },
   { to: '/settings/alerting', label: 'Alerting' },
   { to: '/settings/sso', label: 'SSO' },

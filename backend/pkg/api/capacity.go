@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -339,17 +340,49 @@ type capacityInitContainer struct {
 	RestartPolicy string `json:"restartPolicy"`
 }
 
+// ownerRef is the slice of an ownerReference that says which workload an object
+// belongs to. The controller flag matters: an object can carry several owners
+// and only one of them is the controller that manages it.
+type ownerRef struct {
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	Controller *bool  `json:"controller"`
+}
+
+// podVolume is a pod's volume in the one field the idle-resource triage reads:
+// which claim, if any, it is backed by. Everything else a volume can be —
+// a ConfigMap, an emptyDir, a projected token — costs nothing and is skipped.
+type podVolume struct {
+	PersistentVolumeClaim struct {
+		ClaimName string `json:"claimName"`
+	} `json:"persistentVolumeClaim"`
+}
+
 // capacityPod is one pod reduced to what it takes out of a node.
 type capacityPod struct {
 	Metadata struct {
 		Name      string `json:"name"`
 		Namespace string `json:"namespace"`
+		// CreationTimestamp is what the right-sizing pass checks a pod's
+		// evidence against: a pod younger than the window was measured for only
+		// part of it, and a recommendation from a partial window is the guess
+		// this whole feature refuses to make.
+		CreationTimestamp time.Time `json:"creationTimestamp"`
+		// OwnerReferences is what the cost report rolls a pod up by. It rides
+		// on this shape rather than on a second pod type because both reports
+		// read the same list through the same call, and two decodes of one list
+		// are two things that can disagree about what is on the cluster.
+		OwnerReferences []ownerRef `json:"ownerReferences"`
 	} `json:"metadata"`
 	Spec struct {
 		NodeName       string                  `json:"nodeName"`
 		Overhead       map[string]string       `json:"overhead"`
 		Containers     []capacityContainer     `json:"containers"`
 		InitContainers []capacityInitContainer `json:"initContainers"`
+		// Volumes is what the idle-resource triage reads: which claims a
+		// running pod has mounted. It rides on this shape for the same reason
+		// the owner references above do — one decode of one list.
+		Volumes []podVolume `json:"volumes"`
 	} `json:"spec"`
 	Status struct {
 		Phase      string `json:"phase"`

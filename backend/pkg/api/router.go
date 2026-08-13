@@ -158,6 +158,15 @@ type Store interface {
 	ListPostureAcknowledgements(ctx context.Context, clusterID uint) ([]db.PostureAcknowledgement, error)
 	AcknowledgePostureFinding(ctx context.Context, ack *db.PostureAcknowledgement) error
 	UnacknowledgePostureFinding(ctx context.Context, clusterID uint, kind, namespace, name, rule string) error
+
+	// The rates every cost figure is computed against. RateCardFor resolves a
+	// cluster's card to the installation default where it has none; RateCard
+	// reads exactly one scope, which is what the settings screens need to tell
+	// "inheriting" from "happens to match".
+	RateCardFor(ctx context.Context, clusterID uint) (*db.RateCard, error)
+	RateCard(ctx context.Context, clusterID uint) (*db.RateCard, error)
+	PutRateCard(ctx context.Context, card *db.RateCard) error
+	DeleteRateCard(ctx context.Context, clusterID uint) error
 }
 
 // Options wires the router's dependencies.
@@ -551,6 +560,18 @@ func NewRouter(opts Options) *gin.Engine {
 		consoles.PUT("/:kind", requireAdmin, s.putClusterConsole)
 		consoles.DELETE("/:kind", requireAdmin, s.deleteClusterConsole)
 
+		// A cluster's own rates, where it has any: readable by anyone the
+		// cluster is granted to, because every cost figure they are shown is
+		// computed from it and a number whose rates are off screen is one
+		// nobody can argue with. Written by an admin, like the installation
+		// default it overrides. The override exists because a fleet is very
+		// often not one cloud, and pricing an on-prem cluster at a list price
+		// is worse than pricing it at nothing.
+		rateCard := clusters.Group("/:id/rate-card")
+		rateCard.GET("", s.getClusterRateCard)
+		rateCard.PUT("", requireAdmin, s.putClusterRateCard)
+		rateCard.DELETE("", requireAdmin, s.deleteClusterRateCard)
+
 		// The query path: reading history out of the backend the rows above
 		// name. Open to anyone the cluster is granted to, because the scope is
 		// enforced *inside* the query — a caller never sends one, they name a
@@ -758,6 +779,20 @@ func NewRouter(opts Options) *gin.Engine {
 			// nature, so a namespace-scoped grant is refused, exactly as it is
 			// on node metrics above.
 			metrics.GET("/capacity", s.clusterCapacity)
+			// The same allocation figures with a price on them, and the two
+			// reports that fall out of having one. Cluster-wide for the same
+			// reason capacity is: a node's price says nothing about a
+			// namespace. All three are unpriced-safe — a fleet with no rate
+			// card is told so rather than shown zeroes.
+			metrics.GET("/cost", s.clusterCost)
+			metrics.GET("/waste", s.clusterWaste)
+			// Right-sizing is the one read here that needs *history*, so it
+			// refuses on a cluster with no metrics datasource instead of
+			// recommending a size from metrics-server's two-minute window.
+			// Deliberately outside the cached group: it carries the console's
+			// time range, and a cached answer keyed without it would serve an
+			// hour's evidence to somebody who asked for a week's.
+			clusters.GET("/:id/metrics/rightsizing", s.clusterRightsizing)
 		}
 
 		// Identity and access management is an administrative surface only.
@@ -895,6 +930,13 @@ func NewRouter(opts Options) *gin.Engine {
 		// setup wizard reports, on a page that outlives the wizard. Nothing here
 		// can be written from a browser — see Deployment.
 		settings.GET("/deployment", s.deploymentPosture)
+		// The installation-wide rate card. Administrative because it decides
+		// what every cost figure in the console says, and because a fleet's
+		// negotiated rates are commercially sensitive even though they are not
+		// a credential — nothing here opens anything.
+		settings.GET("/rate-card", s.getDefaultRateCard)
+		settings.PUT("/rate-card", s.putDefaultRateCard)
+		settings.DELETE("/rate-card", s.deleteDefaultRateCard)
 	}
 
 	return router

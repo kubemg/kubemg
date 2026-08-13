@@ -22,6 +22,13 @@ import type {
   AuditSummary,
   Cluster,
   ClusterCapacity,
+  ClusterCost,
+  ClusterRightsizing,
+  ClusterWaste,
+  CostSummary,
+  MoneyDimension,
+  RateCard,
+  RateCardResponse,
   ClusterListResponse,
   ClusterNode,
   ConfigEntry,
@@ -1214,6 +1221,134 @@ export async function fetchClusterCapacity(clusterId: number): Promise<ClusterCa
     unscheduled: data.unscheduled ?? [],
     unscheduled_pods: data.unscheduled_pods ?? 0,
   }
+}
+
+const EMPTY_MONEY: MoneyDimension = { cpu: 0, memory: 0, total: 0 }
+
+const EMPTY_COST_SUMMARY: CostSummary = {
+  nodes: 0,
+  infrastructure_monthly: EMPTY_MONEY,
+  attributed_monthly: EMPTY_MONEY,
+  unallocated_monthly: EMPTY_MONEY,
+  attributed_percent: 0,
+  idle_monthly: EMPTY_MONEY,
+}
+
+/**
+ * What the cluster costs at the rates an operator entered.
+ *
+ * `priced: false` is the ordinary state of a fresh install and is an answer
+ * rather than a failure: there is nothing to cost anything against yet, and the
+ * page says what to do about it.
+ */
+export async function fetchClusterCost(clusterId: number): Promise<ClusterCost> {
+  const { data } = await http.get<ClusterCost>(`/clusters/${clusterId}/metrics/cost`)
+  return {
+    priced: data.priced ?? false,
+    reason: data.reason,
+    currency: data.currency ?? '',
+    rate_card: data.rate_card ?? null,
+    summary: data.summary ?? EMPTY_COST_SUMMARY,
+    workloads: data.workloads ?? [],
+    workloads_total: data.workloads_total ?? 0,
+    namespaces: data.namespaces ?? [],
+    usage_available: data.usage_available ?? false,
+    usage_reason: data.usage_reason,
+  }
+}
+
+/** The objects nothing is using. Unpriced findings are still findings. */
+export async function fetchClusterWaste(clusterId: number): Promise<ClusterWaste> {
+  const { data } = await http.get<ClusterWaste>(`/clusters/${clusterId}/metrics/waste`)
+  return {
+    priced: data.priced ?? false,
+    reason: data.reason,
+    currency: data.currency,
+    findings: data.findings ?? [],
+    summary: data.summary ?? {
+      findings: 0,
+      monthly: 0,
+      unmounted_claims: 0,
+      released_volumes: 0,
+      idle_load_balancers: 0,
+    },
+  }
+}
+
+/**
+ * Right-sizing over the console's own time window.
+ *
+ * This is the one read here that needs history, so it 404s with
+ * `unconfigured: true` on a cluster with no metrics datasource rather than
+ * recommending a size from metrics-server's two-minute sample.
+ */
+export async function fetchClusterRightsizing(
+  clusterId: number,
+  range?: TimeRangeId,
+): Promise<ClusterRightsizing> {
+  const { data } = await http.get<ClusterRightsizing>(
+    `/clusters/${clusterId}/metrics/rightsizing`,
+    { params: { range: range || undefined } },
+  )
+  return {
+    ...data,
+    findings: data.findings ?? [],
+    summary: data.summary ?? {
+      workloads: 0,
+      over_reserved: 0,
+      under_reserved: 0,
+      monthly_saving: 0,
+      right_sized: 0,
+      unmeasured: 0,
+    },
+  }
+}
+
+/* ------------------------------------------------------------- rate cards --- */
+
+export async function fetchDefaultRateCard(): Promise<RateCardResponse> {
+  const { data } = await http.get<RateCardResponse>('/settings/rate-card')
+  return { rate_card: data.rate_card ?? null, presets: data.presets ?? [] }
+}
+
+export async function saveDefaultRateCard(card: RateCardInput): Promise<void> {
+  await http.put('/settings/rate-card', card)
+}
+
+export async function clearDefaultRateCard(): Promise<void> {
+  await http.delete('/settings/rate-card')
+}
+
+export async function fetchClusterRateCard(clusterId: number): Promise<RateCardResponse> {
+  const { data } = await http.get<RateCardResponse>(`/clusters/${clusterId}/rate-card`)
+  return { rate_card: data.rate_card ?? null, presets: data.presets ?? [] }
+}
+
+export async function saveClusterRateCard(
+  clusterId: number,
+  card: RateCardInput,
+): Promise<void> {
+  await http.put(`/clusters/${clusterId}/rate-card`, card)
+}
+
+/** Clearing a cluster's card returns it to the installation default. */
+export async function clearClusterRateCard(clusterId: number): Promise<void> {
+  await http.delete(`/clusters/${clusterId}/rate-card`)
+}
+
+/**
+ * RateCardInput is a submitted card. Every rate is sent on every save rather
+ * than only the changed ones: a form that silently keeps a rate the operator
+ * thought they had cleared is one that reports a number nobody chose.
+ */
+export interface RateCardInput {
+  provider: RateCard['provider']
+  currency: string
+  cpu_core_hour: number
+  memory_gib_hour: number
+  storage_gib_month: number
+  load_balancer_month: number
+  note: string
 }
 
 /**

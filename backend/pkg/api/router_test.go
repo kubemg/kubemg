@@ -47,6 +47,9 @@ type fakeStore struct {
 	sources map[uint]map[string]db.ObservabilitySource
 	// consoles holds the external console links, keyed the same way.
 	consoles map[uint]map[string]db.ClusterConsole
+	// rateCards holds the cost rates, keyed by scope: a cluster id, or
+	// db.RateCardScopeDefault for the installation-wide card.
+	rateCards map[uint]db.RateCard
 	// Federation: the providers and the rules that say what an external group is
 	// worth. Keyed by id like the tables they stand in for.
 	providers   map[uint]*db.SSOProviderConfig
@@ -862,6 +865,44 @@ func (f *fakeStore) DeleteClusterConsole(_ context.Context, clusterID uint, kind
 		return db.ErrNotFound
 	}
 	delete(f.consoles[clusterID], kind)
+	return nil
+}
+
+func (f *fakeStore) RateCardFor(_ context.Context, clusterID uint) (*db.RateCard, error) {
+	if card, ok := f.rateCards[clusterID]; ok {
+		return &card, nil
+	}
+	if card, ok := f.rateCards[db.RateCardScopeDefault]; ok {
+		return &card, nil
+	}
+	return nil, nil
+}
+
+func (f *fakeStore) RateCard(_ context.Context, clusterID uint) (*db.RateCard, error) {
+	if card, ok := f.rateCards[clusterID]; ok {
+		return &card, nil
+	}
+	return nil, nil
+}
+
+func (f *fakeStore) PutRateCard(_ context.Context, card *db.RateCard) error {
+	if f.rateCards == nil {
+		f.rateCards = map[uint]db.RateCard{}
+	}
+	if card.ID == 0 {
+		card.ID = f.nextID
+		f.nextID++
+	}
+	card.UpdatedAt = time.Now()
+	f.rateCards[card.ClusterID] = *card
+	return nil
+}
+
+func (f *fakeStore) DeleteRateCard(_ context.Context, clusterID uint) error {
+	if _, ok := f.rateCards[clusterID]; !ok {
+		return db.ErrNotFound
+	}
+	delete(f.rateCards, clusterID)
 	return nil
 }
 

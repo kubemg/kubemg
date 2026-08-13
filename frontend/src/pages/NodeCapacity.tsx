@@ -433,8 +433,12 @@ export function NodeCapacity() {
         <p className="text-[12px] leading-relaxed text-muted">
           Reserved and limit figures are read from the pod specs and are exact — the same arithmetic
           the scheduler does, sidecars and pod overhead included. Live usage comes from the cluster's
-          Metrics API and is a single sample rather than a series. Nothing here estimates a cost or
-          changes anything on the cluster.
+          Metrics API and is a single sample rather than a series. Nothing here changes anything on
+          the cluster.{' '}
+          <Link to={`/clusters/${clusterId}/cost`} className="text-accent hover:underline">
+            Cost
+          </Link>{' '}
+          puts your own rates on these same reservations.
         </p>
       </div>
     </AppShell>
