@@ -48,6 +48,17 @@ const (
 	// turns, and re-running setup on a configured bastion would mean walking an
 	// administrator back through decisions their fleet is already relying on.
 	SettingSetupCompletedAt = "setup_completed_at"
+	// SettingSetupStartedAt stamps the boot that seeded this database, which is
+	// what marks it as an install that has been offered the wizard.
+	//
+	// It exists to tell two states apart that otherwise look identical from a
+	// later boot: a database created by this version and still waiting for
+	// somebody to finish setup, and one that predates the wizard entirely. Both
+	// have users and no completion stamp. Deriving the difference from the user
+	// count would be wrong on the second boot of every fresh install — which is
+	// the boot that would then silently stamp setup as finished and hide the
+	// wizard from an operator who never saw it.
+	SettingSetupStartedAt = "setup_started_at"
 	// SettingBootstrapAdminID names the administrator seeded on first boot, for
 	// exactly as long as that account still holds the password it was seeded
 	// with. Changing that password clears it, and deleting the account clears it
