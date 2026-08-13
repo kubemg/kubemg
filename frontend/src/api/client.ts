@@ -84,6 +84,8 @@ import type {
   Service,
   SettingsPatch,
   SettingsResponse,
+  SetupPreflight,
+  SetupState,
   SSOGroupMapping,
   SSOGroupMappingInput,
   SSOProvider,
@@ -1210,6 +1212,37 @@ export async function fetchSettings(): Promise<SettingsResponse> {
 export async function updateSettings(patch: SettingsPatch): Promise<SettingsResponse> {
   const { data } = await http.put<SettingsResponse>('/settings', patch)
   return { ...data, warnings: data.warnings ?? [] }
+}
+
+/* --------------------------------------------------------------- setup --- */
+
+/** Whether this server still needs first-run setup.
+ *
+ * Called before there is a session, so a failure has to mean something: it
+ * resolves to "already set up". That is the safe direction — the wizard
+ * overrides the whole console, and a server that cannot be reached must not
+ * drop an established install back into it. */
+export async function fetchSetupState(): Promise<SetupState> {
+  try {
+    const { data } = await http.get<SetupState>('/setup/state')
+    return { required: Boolean(data?.required) }
+  } catch {
+    return { required: false }
+  }
+}
+
+export async function fetchSetupPreflight(): Promise<SetupPreflight> {
+  const { data } = await http.get<SetupPreflight>('/setup/preflight')
+  return {
+    admin_password_pristine: Boolean(data?.admin_password_pristine),
+    checks: data?.checks ?? [],
+    warnings: data?.warnings ?? [],
+  }
+}
+
+export async function completeSetup(): Promise<SetupState> {
+  const { data } = await http.post<SetupState>('/setup/complete')
+  return { required: Boolean(data?.required) }
 }
 
 /* -------------------------------------------------------------- alarms --- */

@@ -14,6 +14,18 @@ export interface AuthState {
    */
   adoptSession: (token: string, user?: User) => Promise<void>
   signOut: () => void
+  /**
+   * Whether this server still needs first-run setup. It lives here rather than
+   * in a provider of its own because it is the same phase of the session as
+   * `loading` is: the console cannot decide what to render until both the
+   * identity and this are known, and the sign-in page needs it before there is
+   * an identity at all.
+   */
+  setupRequired: boolean
+  /** True until that answer has come back. */
+  setupLoading: boolean
+  /** Re-read it after the wizard finishes, which is what closes the gate. */
+  refreshSetupState: () => Promise<void>
 }
 
 export const AuthContext = createContext<AuthState | null>(null)

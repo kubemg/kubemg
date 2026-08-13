@@ -11,30 +11,42 @@ two are unrelated and can coexist.
 ## Install
 
 ```bash
-cp .env.example .env
-$EDITOR .env          # four values are required; see below
 docker compose up -d
+docker compose logs kubemg | grep -A6 'not configured yet'
 ```
 
-Then open `https://<your-host>:8443` and sign in with the administrator from
-`.env`. The certificate is self-signed on first boot, so a browser will warn
-once.
+That is the whole install. The second line reads the administrator password,
+which is generated on first boot and printed exactly once. Then open
+`https://<your-host>:8443`, sign in, and the console walks you through setup —
+the address clusters dial, the agent image, what the trail keeps, optionally an
+SSO provider — before it lets you register anything. The certificate is
+self-signed on first boot, so a browser will warn once.
 
-Four values have no default, and compose refuses to start without them rather
-than bringing up a bastion with a password from an example file:
+Setup will not finish until that generated password is changed. Everything it
+collects is stored in the database and editable afterwards from **Settings**.
+
+## Deciding it up front instead
+
+Copy `.env.example` to `.env` and set what you want to decide yourself; anything
+in it wins over what setup would have asked for. This is what you want when the
+install is scripted, when secrets come out of a manager, or when several
+replicas have to agree on a signing key.
 
 | Variable | What it is |
 | --- | --- |
-| `DB_PASSWORD` | Postgres password. Nothing outside the compose network reaches it — it publishes no port — but generate one anyway. |
-| `JWT_SECRET` | Signs every session token and generated kubeconfig. Changing it revokes all of them at once. |
-| `KUBEMG_ADMIN_PASSWORD` | The first administrator, created on first boot only. Change it later in the console, not here. |
+| `DB_PASSWORD` | Postgres password. Nothing outside the compose network reaches it — it publishes no port — but generate one rather than leaving the default. |
+| `JWT_SECRET` | Signs every session token and generated kubeconfig. Unset, the server mints one on first boot and keeps it in the database, so sessions survive a restart. Changing it revokes all of them at once. |
+| `KUBEMG_ADMIN_PASSWORD` | The first administrator, created on first boot only. Unset, one is generated and logged. Change it later in the console, not here. |
 | `KUBEMG_PUBLIC_URL` | The address **target clusters** dial to reach this host. |
 
 `KUBEMG_PUBLIC_URL` is the one that is easy to get wrong and hard to diagnose:
 it is baked into every rendered agent manifest, so `localhost` produces an agent
 that dials itself and never connects. Use the LAN, VPN or DNS name, with the
-port. Every other name the certificate must be valid for goes in
-`KUBEMG_TLS_HOSTS`, or the cluster's handshake fails.
+port. It is also the one field setup will not let you past without, so leaving
+it here is only a question of whether you would rather answer it now or in the
+browser. Every other name the certificate must be valid for goes in
+`KUBEMG_TLS_HOSTS` — that one is read at boot and setup cannot change it, so a
+host you will need later belongs here now.
 
 ## What it runs
 

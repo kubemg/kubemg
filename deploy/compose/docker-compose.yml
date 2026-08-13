@@ -5,8 +5,14 @@
 # on a host that has no toolchain, no source checkout and — the case it was
 # written for — no route to the internet beyond a mirrored registry.
 #
-#   cp .env.example .env      # then edit it; it will not start with the defaults
 #   docker compose up -d
+#
+# That is the whole install. Nothing here is required: the server mints its own
+# signing key on first boot and prints a generated administrator password to the
+# log, and the console then carries you through setup — the address clusters
+# reach this host on, the agent image, audit retention, SSO — before it lets you
+# register anything. Copy `.env.example` to `.env` if you would rather decide
+# those up front; anything set there wins over what the wizard would ask for.
 #
 # Everything the install needs is three images: this one, postgres, and the
 # agent that clusters pull (KUBEMG_AGENT_IMAGE below). Point all three at an
@@ -20,7 +26,7 @@ services:
     environment:
       - POSTGRES_DB=${DB_NAME:-kubemg}
       - POSTGRES_USER=${DB_USER:-kubemg}
-      - POSTGRES_PASSWORD=${DB_PASSWORD:?set DB_PASSWORD in .env}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-kubemg_local_only}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     # No published port. The database is reachable on the compose network and
@@ -54,18 +60,27 @@ services:
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USER=${DB_USER:-kubemg}
-      - DB_PASSWORD=${DB_PASSWORD:?set DB_PASSWORD in .env}
+      - DB_PASSWORD=${DB_PASSWORD:-kubemg_local_only}
       - DB_NAME=${DB_NAME:-kubemg}
       - DB_SSLMODE=${DB_SSLMODE:-disable}
 
-      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET in .env}
+      # Left empty, the server mints a signing key on first boot and keeps it in
+      # the database, so sessions survive a restart. Set it to supply your own —
+      # a secret manager, or a value shared by several replicas of this image —
+      # and it takes precedence. Changing it revokes every issued token at once.
+      - JWT_SECRET=${JWT_SECRET:-}
       - KUBEMG_ADMIN_USERNAME=${KUBEMG_ADMIN_USERNAME:-admin}
-      - KUBEMG_ADMIN_PASSWORD=${KUBEMG_ADMIN_PASSWORD:?set KUBEMG_ADMIN_PASSWORD in .env}
+      # Left empty, a password is generated on first boot and printed once to
+      # this container's log — `docker compose logs kubemg` is where to read it.
+      # Setup makes changing it the first thing you do either way.
+      - KUBEMG_ADMIN_PASSWORD=${KUBEMG_ADMIN_PASSWORD:-}
 
       # The address clusters and operators reach this host on. It is baked into
       # every rendered agent manifest, so "localhost" produces an agent that
-      # dials itself and never connects.
-      - KUBEMG_PUBLIC_URL=${KUBEMG_PUBLIC_URL:?set KUBEMG_PUBLIC_URL in .env}
+      # dials itself and never connects. Left empty it stays at that unusable
+      # default until setup asks for it, which it does before you can register
+      # a cluster — this is the one value the wizard will not let you skip.
+      - KUBEMG_PUBLIC_URL=${KUBEMG_PUBLIC_URL:-}
 
       # No CORS_ALLOWED_ORIGINS: the console is served by this container from
       # the same origin as the API it calls, so there is no cross-origin request
