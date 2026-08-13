@@ -257,6 +257,11 @@ type Options struct {
 	// costs on a cluster holding tens of thousands of them; zero takes
 	// maxEventScan.
 	EventScanLimit int
+	// Deployment describes the parts of this install that were settled before the
+	// router existed and cannot be changed from inside it — TLS, the signing key's
+	// origin, whether recordings are encrypted. The setup wizard reports them
+	// rather than pretending to own them; see setup.go.
+	Deployment Deployment
 	// Background scopes the housekeeping goroutines that run alongside the
 	// handlers — today just the audit retention pruner. Left nil, as the tests
 	// leave it, nothing is started and the router is purely request-driven.
@@ -328,6 +333,8 @@ type server struct {
 	allowedOrigins []string
 	// ssoFlows holds sign-ins that have left for an IdP and not yet come back.
 	ssoFlows *flowStore
+	// deployment is what this process was started with; see Options.Deployment.
+	deployment Deployment
 }
 
 // NewRouter builds the KubeMG HTTP router. Authenticated routes are only
@@ -382,6 +389,7 @@ func NewRouter(opts Options) *gin.Engine {
 		logger:             opts.Logger,
 		allowedOrigins:     opts.AllowedOrigins,
 		ssoFlows:           newFlowStore(),
+		deployment:         opts.Deployment,
 	}
 	if opts.Bastion != nil {
 		s.tunnels = opts.Bastion.Registry()
@@ -467,6 +475,16 @@ func NewRouter(opts Options) *gin.Engine {
 	{
 		v1.POST("/auth/login", s.login)
 		v1.GET("/auth/me", requireAuth, s.me)
+
+		// First-run setup. The state route is unauthenticated by necessity — the
+		// sign-in page has to know whether this server has been configured before
+		// anybody has a session — and is narrow for the same reason the public SSO
+		// list is: it answers one boolean and carries nothing else. The other two
+		// are admin-only and read or stamp what the wizard needs.
+		setup := v1.Group("/setup")
+		setup.GET("/state", s.setupState)
+		setup.GET("/preflight", requireAuth, requireAdmin, s.setupPreflight)
+		setup.POST("/complete", requireAuth, requireAdmin, s.completeSetup)
 
 		// Federated sign-in. Every route here is unauthenticated by necessity —
 		// nobody has a session yet — so each one is narrow: the list carries no

@@ -39,6 +39,25 @@ const (
 	// Deployment's env — so this is a new class of retained data that an
 	// operator opts into rather than one that quietly starts happening.
 	SettingRecordManifestDiffs = "record_manifest_diffs"
+	// SettingSetupCompletedAt stamps the moment first-run setup finished, as an
+	// RFC 3339 timestamp. Its presence is the whole signal — the console shows
+	// the install wizard until it is set, and never again afterwards.
+	//
+	// It is deliberately absent from SettingKeys and from the settings API: this
+	// is a fact about the install's lifecycle rather than a knob an operator
+	// turns, and re-running setup on a configured bastion would mean walking an
+	// administrator back through decisions their fleet is already relying on.
+	SettingSetupCompletedAt = "setup_completed_at"
+	// SettingBootstrapAdminID names the administrator seeded on first boot, for
+	// exactly as long as that account still holds the password it was seeded
+	// with. Changing that password clears it, and deleting the account clears it
+	// too — so its presence means "somebody could still sign in with the password
+	// printed in the boot log", which is the one thing setup must not be allowed
+	// to finish while it is true.
+	//
+	// Like SettingSetupCompletedAt this is lifecycle state rather than a setting,
+	// and is kept out of SettingKeys and the settings API for the same reason.
+	SettingBootstrapAdminID = "bootstrap_admin_id"
 )
 
 // SettingKeys enumerates the runtime-configurable settings.

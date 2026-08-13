@@ -31,11 +31,19 @@ func (d DB) DSN() string {
 
 // Config is the fully resolved backend configuration.
 type Config struct {
-	ListenAddr    string
-	JWTSecret     string
-	JWTTTL        time.Duration
-	DB            DB
+	ListenAddr string
+	// JWTSecret signs sessions and generated kubeconfigs. It is **empty when
+	// unset**, rather than carrying a placeholder: a shipped default signing key
+	// is a signing key everybody has, and the boot path now mints a real one and
+	// keeps it in the database instead. See db.ServerSecretJWTSigningKey.
+	JWTSecret string
+	JWTTTL    time.Duration
+	DB        DB
+	// AdminUsername names the bootstrap administrator.
 	AdminUsername string
+	// AdminPassword is likewise empty when unset, and for the same reason: the
+	// boot path generates one and prints it once instead of seeding a fleet
+	// gateway with a password from an example file.
 	AdminPassword string
 	// SANamespace is the namespace on target clusters that holds KubeMG's
 	// per-user service accounts.
@@ -138,7 +146,7 @@ type TLS struct {
 func Load() Config {
 	return Config{
 		ListenAddr: env("KUBEMG_LISTEN_ADDR", ":8080"),
-		JWTSecret:  env("JWT_SECRET", "kubemg_dev_secret_change_me"),
+		JWTSecret:  env("JWT_SECRET", ""),
 		JWTTTL:     envDuration("JWT_TTL", 12*time.Hour),
 		DB: DB{
 			Host:     env("DB_HOST", "localhost"),
@@ -149,7 +157,7 @@ func Load() Config {
 			SSLMode:  env("DB_SSLMODE", "disable"),
 		},
 		AdminUsername: env("KUBEMG_ADMIN_USERNAME", "admin"),
-		AdminPassword: env("KUBEMG_ADMIN_PASSWORD", "admin"),
+		AdminPassword: env("KUBEMG_ADMIN_PASSWORD", ""),
 		SANamespace:   env("KUBEMG_SA_NAMESPACE", "kubemg-system"),
 		AllowedOrigins: envList(
 			"CORS_ALLOWED_ORIGINS",

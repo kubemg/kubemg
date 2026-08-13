@@ -201,6 +201,13 @@ func (s *server) updateUser(c *gin.Context) {
 		return
 	}
 
+	// A password write on the seeded administrator is the moment the password
+	// printed at first boot stops being a way in. Setup is gated on it, so this
+	// is where the gate opens.
+	if update.PasswordHash != nil {
+		s.clearBootstrapAdmin(c.Request.Context(), target.ID, caller.ID)
+	}
+
 	c.JSON(http.StatusOK, toUserResponse(user))
 }
 

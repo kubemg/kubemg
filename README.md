@@ -356,6 +356,24 @@ inserts a bounded grant that expires on its own.
 
 ## Configuration
 
+**A fresh install configures itself in the browser.** Bring the management plane up with nothing
+set — `docker compose up -d` — and the first sign-in opens a setup wizard: the administrator's
+password, the address clusters dial, where the agent image comes from, what the trail keeps, and
+optionally an SSO provider. It ends on "add your first cluster", handing straight over to
+registration. The signing key is minted on first boot and kept in the database; the administrator
+password, if you did not choose one, is generated and printed once to the server log.
+
+The wizard has no write surface of its own — every field saves through the endpoint its Settings
+page already uses — and it runs exactly once. Finishing stamps the install and the wizard does not
+come back; an upgrade of an existing install is stamped at boot and never sees it.
+
+Four things it deliberately does not collect, because the server reads them once at boot from an
+environment it cannot rewrite: the **database credentials** (it needs the database in order to store
+anything the wizard is told), the **recording encryption key** (deliberately never stored beside the
+ciphertext it protects), the **TLS certificate files**, and the **listen address**. The wizard's
+final step reports all four instead, with the line to set and where — before you leave rather than
+after. Everything below still works and still wins over anything the wizard would have asked for.
+
 <details>
 <summary><b>Server environment (click to expand — all optional, these are the defaults)</b></summary>
 
@@ -363,8 +381,8 @@ inserts a bounded grant that expires on its own.
 |---|---|---|
 | `KUBEMG_LISTEN_ADDR` | `:8080` | Listen address |
 | `DB_HOST` … `DB_SSLMODE` | localhost / kubemg | PostgreSQL 16 connection |
-| `JWT_SECRET`, `JWT_TTL` | dev secret, `12h` | Session signing |
-| `KUBEMG_ADMIN_USERNAME` / `_PASSWORD` | `admin` / `admin` | Bootstrap admin, seeded only when the users table is empty |
+| `JWT_SECRET`, `JWT_TTL` | generated, `12h` | Session signing. Unset, a key is minted on first boot and kept in the database, so sessions survive a restart; set it to supply your own, or to make several replicas agree |
+| `KUBEMG_ADMIN_USERNAME` / `_PASSWORD` | `admin` / generated | Bootstrap admin, seeded only when the users table is empty. With no password set, one is generated and printed once to the log |
 | `KUBEMG_PUBLIC_URL` | `http://localhost:8080` | The outside address agents and operators reach; baked into install commands |
 | `CORS_ALLOWED_ORIGINS` | Vite dev server | Where the browser app may live |
 | `KUBEMG_AGENT_IMAGE`, `KUBEMG_AGENT_NAMESPACE` | pinned image, `kubemg-system` | Rendered into agent manifests |
@@ -389,7 +407,8 @@ bastion. The rendered manifests set all of these for you.
 ### Production checklist
 
 - [ ] Real TLS material mounted over `/etc/kubemg/tls`, or `KUBEMG_AGENT_CA_BUNDLE` set behind an ingress
-- [ ] `JWT_SECRET` replaced; bootstrap admin password changed
+- [ ] Bootstrap admin password changed — setup refuses to finish until it is, so this is ticked by getting through the wizard
+- [ ] `JWT_SECRET` set explicitly if more than one replica serves the same address
 - [ ] `KUBEMG_SESSION_RECORDING_KEY` generated per install and kept out of the recordings backup
 - [ ] `KUBEMG_SESSION_RECORDING_DIR` on a persistent volume
 - [ ] `KUBEMG_PUBLIC_URL` = the address your clusters dial, over HTTPS
@@ -625,6 +644,7 @@ The auto-provisioned VictoriaMetrics/VictoriaLogs stack is still not built; brin
 - **Existing agent installs must re-apply their manifests** to pick up the CRD-discovery and custom-resource ClusterRoles. Until they do, discovery 403s and the Explore sidebar shows no custom resources.
 - **Browsing a new operator's CRDs means adding its API group** to that ClusterRole and re-applying. The groups are enumerated rather than wildcarded on purpose: `apiGroups: ["*"]` includes the core group, and the core group is where Secrets live.
 - **No frontend test framework yet.** The backend has tests; `make verify` runs `oxlint`, the contrast gate and `tsc` on the frontend and nothing else.
+- **The setup wizard cannot configure four things**, and says so on its last step rather than quietly omitting them: the database credentials, the recording encryption key, the TLS certificate files and the listen address. Each is read once at boot from an environment the process cannot rewrite, so a form collecting them would be collecting values that vanish at the next restart — and in the recording key's case, storing it beside the ciphertext it protects would defeat the point of encrypting anything.
 
 ## Licensing
 

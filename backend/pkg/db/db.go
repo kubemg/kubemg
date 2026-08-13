@@ -42,6 +42,7 @@ func Migrate(gdb *gorm.DB) error {
 		&AuditEvent{},
 		&TerminalSession{},
 		&Setting{},
+		&ServerSecret{},
 		&ObservabilitySource{},
 		&ClusterConsole{},
 		&SSOProviderConfig{},
