@@ -374,6 +374,14 @@ ciphertext it protects), the **TLS certificate files**, and the **listen address
 final step reports all four instead, with the line to set and where — before you leave rather than
 after. Everything below still works and still wins over anything the wizard would have asked for.
 
+Those reports do not end with the wizard. **Settings → Deployment** answers the same question at any
+later point, from the same checks: which certificate is in force, whether recordings are encrypted at
+rest, where the signing key came from — and the tab carries a count whenever one of them wants
+attention, because a self-signed certificate is still self-signed a year on, in front of whoever
+inherited the bastion and never saw the wizard. The certificate in particular is a file copy away:
+put `tls.crt` and `tls.key` in the `ssl` directory beside the compose file (certbot's `fullchain.pem`
+and `privkey.pem` are recognised too) and it is served on the next restart, with no variable to set.
+
 <details>
 <summary><b>Server environment (click to expand — all optional, these are the defaults)</b></summary>
 
@@ -387,8 +395,9 @@ after. Everything below still works and still wins over anything the wizard woul
 | `CORS_ALLOWED_ORIGINS` | Vite dev server | Where the browser app may live |
 | `KUBEMG_AGENT_IMAGE`, `KUBEMG_AGENT_NAMESPACE` | pinned image, `kubemg-system` | Rendered into agent manifests |
 | `KUBEMG_TLS_ENABLED` | `false` | Terminate HTTPS here. Required for `kubectl` through the proxy |
-| `KUBEMG_TLS_CERT_FILE`, `_KEY_FILE` | `/etc/kubemg/tls/tls.*` | Certificate material; a self-signed pair is minted if absent |
-| `KUBEMG_TLS_SELF_SIGNED`, `KUBEMG_TLS_HOSTS` | `true`, — | Whether to mint, and extra SANs |
+| `KUBEMG_TLS_SUPPLIED_DIR` | `/etc/kubemg/ssl` | Checked first: a `tls.crt` + `tls.key` (or certbot's `fullchain.pem` + `privkey.pem`) found here is what gets served, ahead of anything minted or configured. Mount a directory over it and replacing the certificate is a file copy and a restart |
+| `KUBEMG_TLS_CERT_FILE`, `_KEY_FILE` | `/etc/kubemg/tls/tls.*` | Where the minted pair lives, and the explicit paths for an install configured that way |
+| `KUBEMG_TLS_SELF_SIGNED`, `KUBEMG_TLS_HOSTS` | `true`, — | Whether to mint when there is nothing supplied, and extra SANs |
 | `KUBEMG_AGENT_CA_BUNDLE` | — | The chain agents must trust. Set it behind an ingress or an internal PKI, where nothing here can infer it |
 | `KUBEMG_AUDIT_RETENTION_DAYS` | `30` | Retention for the trail *and* the recordings; also settable at runtime |
 | `KUBEMG_RESOURCE_CACHE_TTL` | `5s` | Per-caller read cache; negative turns it off |
@@ -406,7 +415,7 @@ bastion. The rendered manifests set all of these for you.
 
 ### Production checklist
 
-- [ ] Real TLS material mounted over `/etc/kubemg/tls`, or `KUBEMG_AGENT_CA_BUNDLE` set behind an ingress
+- [ ] Real TLS material dropped into `/etc/kubemg/ssl` (`ssl/` beside the compose file), or `KUBEMG_AGENT_CA_BUNDLE` set behind an ingress — **Settings → Deployment** reports which certificate is actually in force
 - [ ] Bootstrap admin password changed — setup refuses to finish until it is, so this is ticked by getting through the wizard
 - [ ] `JWT_SECRET` set explicitly if more than one replica serves the same address
 - [ ] `KUBEMG_SESSION_RECORDING_KEY` generated per install and kept out of the recordings backup
@@ -644,7 +653,8 @@ The auto-provisioned VictoriaMetrics/VictoriaLogs stack is still not built; brin
 - **Existing agent installs must re-apply their manifests** to pick up the CRD-discovery and custom-resource ClusterRoles. Until they do, discovery 403s and the Explore sidebar shows no custom resources.
 - **Browsing a new operator's CRDs means adding its API group** to that ClusterRole and re-applying. The groups are enumerated rather than wildcarded on purpose: `apiGroups: ["*"]` includes the core group, and the core group is where Secrets live.
 - **No frontend test framework yet.** The backend has tests; `make verify` runs `oxlint`, the contrast gate and `tsc` on the frontend and nothing else.
-- **The setup wizard cannot configure four things**, and says so on its last step rather than quietly omitting them: the database credentials, the recording encryption key, the TLS certificate files and the listen address. Each is read once at boot from an environment the process cannot rewrite, so a form collecting them would be collecting values that vanish at the next restart — and in the recording key's case, storing it beside the ciphertext it protects would defeat the point of encrypting anything.
+- **The setup wizard cannot configure four things**, and says so on its last step rather than quietly omitting them: the database credentials, the recording encryption key, the TLS certificate files and the listen address. Each is read once at boot from an environment the process cannot rewrite, so a form collecting them would be collecting values that vanish at the next restart — and in the recording key's case, storing it beside the ciphertext it protects would defeat the point of encrypting anything. **Settings → Deployment** reports the same set afterwards, but it reports only: none of it is writable from a browser, and a change to any of it takes a restart.
+- **A supplied certificate is picked up on restart, not on change.** The `ssl` directory is read once at boot, so a renewal that lands in it is served the next time the container starts — a certbot deploy hook has to restart KubeMG, and nothing here watches the directory for it.
 
 ## Licensing
 

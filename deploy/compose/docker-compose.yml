@@ -53,6 +53,18 @@ services:
       # already-installed agent refuses the new certificate — so this is the
       # volume to back up, not just to keep.
       - tls-certs:/etc/kubemg/tls
+      # Where a real certificate goes. Put tls.crt and tls.key in the `ssl`
+      # directory beside this file — certbot's fullchain.pem and privkey.pem are
+      # recognised as well, so a Let's Encrypt live directory can be mounted here
+      # as it stands — and it is served on the next restart, in place of the
+      # self-signed one, with no variable to set. Empty is the normal state.
+      #
+      # Read-only, and a bind mount rather than a volume on purpose: this is the
+      # one directory an operator has to be able to drop a file into from the
+      # host. The server runs unprivileged, so the files have to be readable by
+      # uid 65532 — a key left at certbot's 0600 root-only mode stops the boot
+      # with a message saying so.
+      - ./ssl:/etc/kubemg/ssl:ro
       # Recordings are audit evidence. A replay that vanishes on the next deploy
       # is not evidence, so this outlives the container.
       - session-recordings:/var/lib/kubemg/recordings
@@ -89,9 +101,11 @@ services:
 
       # TLS is not optional for kubectl — client-go refuses to send a bearer
       # token over http, so a plaintext bastion cannot serve a generated
-      # kubeconfig or an exec session at all. The image defaults to a
-      # self-signed certificate; mount a real one over /etc/kubemg/tls and set
-      # KUBEMG_TLS_SELF_SIGNED=false, and the pinning stops.
+      # kubeconfig or an exec session at all. The image mints a self-signed
+      # certificate on first boot and pins it into every agent install package;
+      # put a real one in ./ssl (above) and the pinning stops. Setting
+      # KUBEMG_TLS_SELF_SIGNED=false is the stricter version of the same
+      # decision: it refuses to start rather than minting one at all.
       - KUBEMG_TLS_ENABLED=${KUBEMG_TLS_ENABLED:-true}
       - KUBEMG_TLS_SELF_SIGNED=${KUBEMG_TLS_SELF_SIGNED:-true}
       # Every hostname and IP the certificate must be valid for. A cluster
