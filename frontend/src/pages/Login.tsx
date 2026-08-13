@@ -1,15 +1,16 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, Moon, Sun } from 'lucide-react'
 import { errorMessage } from '../api/client'
 import { Button, Field, Notice, TextInput } from '../components/primitives'
-import { LinkStrand } from '../components/LinkStrand'
 import { Mark } from '../components/Mark'
 import { SsoLoginPage } from '../components/SsoLoginPage'
 import { useAuth } from '../state/auth-context'
+import { useTheme } from '../lib/theme'
 
 export function Login() {
   const { signIn } = useAuth()
+  const { theme, toggle } = useTheme()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -29,10 +30,46 @@ export function Login() {
 
   return (
     <main className="grid min-h-svh lg:grid-cols-[1.1fr_minmax(420px,0.9fr)]">
-      {/* The left half is the product in one picture: clusters dial out, and
-          everything an operator does travels back along those strands. */}
+      <button
+        type="button"
+        onClick={toggle}
+        title={theme === 'dark' ? 'Switch to the light deck' : 'Switch to the dark deck'}
+        className="fixed top-4 right-4 z-10 grid size-9 place-items-center rounded-control border border-line bg-surface text-muted transition-colors hover:bg-raised hover:text-fg"
+      >
+        {theme === 'dark' ? (
+          <Sun aria-hidden="true" className="size-4" />
+        ) : (
+          <Moon aria-hidden="true" className="size-4" />
+        )}
+        <span className="sr-only">
+          {theme === 'dark' ? 'Switch to the light deck' : 'Switch to the dark deck'}
+        </span>
+      </button>
+
+      {/* The left half is the product's own words: clusters dial out, and
+          nothing here needs to prove that with a diagram. */}
       <section className="relative hidden flex-col justify-between overflow-hidden bg-rail p-10 lg:flex">
-        <div className="flex items-center gap-2.5">
+        {/* Texture, not signal — a static field standing in for the fleet, and
+            a soft accent glow anchoring the corner. Nothing here animates: the
+            link strand is the deck's one moving part, and this page doesn't
+            draw one. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage: 'radial-gradient(circle, var(--deck-rail-border) 1px, transparent 1px)',
+            backgroundSize: '22px 22px',
+          }}
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-28 -bottom-28 size-[480px] rounded-full"
+          style={{
+            backgroundImage: 'radial-gradient(circle, var(--deck-accent-soft), transparent 70%)',
+          }}
+        />
+
+        <div className="relative flex items-center gap-2.5">
           <Mark className="size-7 shrink-0 text-accent" />
           <span className="text-[16px] font-semibold tracking-[-0.02em]">
             <span className="text-rail-fg">Kube</span>
@@ -40,7 +77,7 @@ export function Login() {
           </span>
         </div>
 
-        <div className="max-w-md">
+        <div className="relative max-w-md">
           <h1 className="text-[34px] leading-[1.1] font-semibold tracking-[-0.03em] text-rail-fg">
             Clusters dial out.
             <br />
@@ -50,17 +87,15 @@ export function Login() {
             Every cluster holds an outbound tunnel to KubeMG. Access is issued here, kubectl traffic
             is proxied under your own identity, and every call lands in the audit trail.
           </p>
-
-          <Convergence />
         </div>
 
-        <p className="font-mono text-[11.5px] text-rail-faint">
+        <p className="relative font-mono text-[11.5px] text-rail-faint">
           kubemg · centralized Kubernetes access
         </p>
       </section>
 
       <section className="flex items-center justify-center bg-bg p-6">
-        <div className="w-full max-w-[380px]">
+        <div className="card lift w-full max-w-[380px] p-8">
           <div className="mb-7 lg:hidden">
             <span className="text-[20px] font-semibold tracking-[-0.02em]">
               <span className="text-fg">Kube</span>
@@ -113,28 +148,5 @@ export function Login() {
         </div>
       </section>
     </main>
-  )
-}
-
-/**
- * Convergence draws the shape of the product: several clusters, one node. The
- * strands are the same device used throughout the console, so the login page
- * teaches the reading before anyone needs it.
- */
-function Convergence() {
-  return (
-    <div className="mt-10 flex items-center gap-4" aria-hidden="true">
-      <div className="flex flex-1 flex-col gap-3">
-        {(['live', 'live', 'idle'] as const).map((state, index) => (
-          <div key={index} className="flex items-center gap-3">
-            <span className="size-1.5 shrink-0 rounded-full bg-rail-faint" />
-            <LinkStrand state={state} className="flex-1" />
-          </div>
-        ))}
-      </div>
-      <span className="grid size-11 shrink-0 place-items-center rounded-card border border-accent-line bg-accent-soft font-mono text-[12px] font-semibold text-accent">
-        MG
-      </span>
-    </div>
   )
 }
