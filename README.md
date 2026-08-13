@@ -174,6 +174,7 @@ mindmap
       Terminal · pooled logs · port-forward
       Scale · restart · YAML · Helm values
       Metrics & logs from your datasource
+      Capacity · reserved vs used per node
     Activity
       Access requests · JIT approvals
       Queryable audit trail
@@ -230,6 +231,19 @@ because a metrics backend has never heard of the caller and will answer whatever
 
 Reached either **in-cluster** (through the tunnel, via the API server's service proxy — nothing
 exposed) or **direct** (dialled from the bastion, the shape a central Thanos takes).
+
+**Capacity** — allocation rather than consumption, per node, which is the question the utilisation
+figures above cannot answer: a node at 30% CPU can be one the scheduler will refuse to place
+another pod on, because placement is decided on **requests** — a reservation nobody is obliged to
+spend. Every bar carries three numbers against the same allocatable denominator — what is reserved,
+what is being used, and what the ceiling would be if every container spent its limit — and
+**limits are stated rather than drawn**, because they routinely exceed a node's own size and a bar
+clamped to its track would misreport by exactly the amount that matters. The reserved figure is the
+scheduler's own arithmetic, sidecars and pod overhead included, and is pinned in CI against what
+`kubectl describe node` reports for the same cluster. Pod slots are the third ceiling and the one
+that binds first on a node full of small pods. Pods the scheduler could not place are listed with
+its own explanation of why. Live usage needs metrics-server and is the only column that can be
+missing; the page says so and stays whole without it. It estimates no cost and changes nothing.
 
 **Access** — local users and groups with effective-permission merging, a permission matrix,
 federation with OIDC, SAML and LDAP including IdP group mapping, and just-in-time elevation:
@@ -632,6 +646,7 @@ head-of-line blocking, agent sizing and read rate limiting are the open items.
 - [x] A diff before a manifest write, and an optional diff stored in the audit trail — off by default, excluded for redacted kinds
 - [x] NetworkPolicies as an Explore resource, plus a reachability check per workload — a derivation from policy objects, not a live trace
 - [x] Workload security posture findings tied to Pod Security Standards, with an auditable acknowledgement for an accepted risk
+- [x] Node capacity and oversubscription — reserved vs used vs limits per node, pod slots, and the pods the scheduler could not place
 
 </details>
 
@@ -640,7 +655,6 @@ head-of-line blocking, agent sizing and read rate limiting are the open items.
 | | What it is |
 |---|---|
 | **FinOps &amp; waste triage** | Workload-level cost estimation, over-provisioning and abandoned-volume detection, right-sizing YAML in the drawer |
-| **Node capacity heatmap** | Requested vs guaranteed vs live consumption per node — over-commitment and noisy-neighbour risk |
 | **Topology graph** | `Ingress → Service → Workload → Pod → Volume/Config`, traceable and filterable by health |
 | **AI root-cause analysis** | `CrashLoopBackOff`, `OOMKilled`, node pressure and log anomalies synthesised into a cause and a remediation |
 | **GitOps drift detection** | Live cluster state against the Git manifests that were supposed to produce it |

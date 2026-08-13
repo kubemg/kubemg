@@ -21,6 +21,7 @@ import type {
   AuditQuery,
   AuditSummary,
   Cluster,
+  ClusterCapacity,
   ClusterListResponse,
   ClusterNode,
   ConfigEntry,
@@ -1175,6 +1176,44 @@ const EMPTY_USAGE = {
   memory_bytes: 0,
   memory_capacity_bytes: 0,
   memory_percent: 0,
+}
+
+const EMPTY_DIMENSION = {
+  allocatable: 0,
+  requested: 0,
+  limited: 0,
+  used: 0,
+  requested_percent: 0,
+  limited_percent: 0,
+  used_percent: 0,
+  unlimited_containers: 0,
+}
+
+const EMPTY_CAPACITY_SUMMARY = {
+  nodes: 0,
+  ready: 0,
+  schedulable: 0,
+  cpu: EMPTY_DIMENSION,
+  memory: EMPTY_DIMENSION,
+  pods: { allocatable: 0, scheduled: 0, percent: 0, without_requests: 0 },
+  severity_counts: {},
+}
+
+/**
+ * Allocation against capacity, per node. Unlike the metrics reads above this
+ * one is whole without metrics-server — `available` marks the missing live
+ * column, not a missing answer — so a failure here is a real failure.
+ */
+export async function fetchClusterCapacity(clusterId: number): Promise<ClusterCapacity> {
+  const { data } = await http.get<ClusterCapacity>(`/clusters/${clusterId}/metrics/capacity`)
+  return {
+    available: data.available ?? false,
+    reason: data.reason,
+    nodes: data.nodes ?? [],
+    summary: data.summary ?? EMPTY_CAPACITY_SUMMARY,
+    unscheduled: data.unscheduled ?? [],
+    unscheduled_pods: data.unscheduled_pods ?? 0,
+  }
 }
 
 /**

@@ -448,6 +448,19 @@ function Capacity({ cluster }: { cluster: Cluster }) {
               </li>
             ))}
           </ul>
+
+          {/* Consumption is half the story and the half that explains least: a
+              node idle here can still be one the scheduler will not place
+              anything on. The page that answers that is one hop away rather
+              than folded in, because it is a different question. */}
+          <p className="border-t border-line-soft pt-4 text-[12px] leading-relaxed text-muted">
+            This is what the cluster is using.{' '}
+            <Link to={`/clusters/${cluster.id}/capacity`} className="text-accent hover:underline">
+              Capacity
+            </Link>{' '}
+            shows what has already been reserved, which is what decides whether anything more will
+            schedule.
+          </p>
         </>
       ) : null}
     </Panel>

@@ -169,40 +169,21 @@ type nodeSize struct {
 	memory int64
 }
 
-// nodeCapacity reads what each node has to give. Allocatable is used rather
-// than capacity because it is what a workload can actually be scheduled into —
-// reserving for the kubelet and the system is not headroom anyone can use.
+// nodeCapacity reads what each node has to give, keyed by name. It is the node
+// list reduced to the two numbers this route needs; the same read, with the
+// roles and conditions the capacity report also needs, lives in fetchNodes —
+// one shape rather than two readings of the same list that can disagree.
 func (s *server) nodeCapacity(c *gin.Context, user *db.User, cluster *db.Cluster,
 	grant db.UserClusterAccess,
 ) (map[string]nodeSize, bool) {
-	var list struct {
-		Items []struct {
-			Metadata struct {
-				Name string `json:"name"`
-			} `json:"metadata"`
-			Status struct {
-				Allocatable map[string]string `json:"allocatable"`
-				Capacity    map[string]string `json:"capacity"`
-			} `json:"status"`
-		} `json:"items"`
-	}
-	if !s.fetch(c, user, cluster, grant, "/api/v1/nodes", &list) {
+	nodes, ok := s.fetchNodes(c, user, cluster, grant)
+	if !ok {
 		return nil, false
 	}
 
-	out := make(map[string]nodeSize, len(list.Items))
-	for _, item := range list.Items {
-		size := nodeSize{
-			cpu:    parseCPUMillicores(item.Status.Allocatable["cpu"]),
-			memory: parseMemoryBytes(item.Status.Allocatable["memory"]),
-		}
-		if size.cpu == 0 {
-			size.cpu = parseCPUMillicores(item.Status.Capacity["cpu"])
-		}
-		if size.memory == 0 {
-			size.memory = parseMemoryBytes(item.Status.Capacity["memory"])
-		}
-		out[item.Metadata.Name] = size
+	out := make(map[string]nodeSize, len(nodes))
+	for _, node := range nodes {
+		out[node.Name] = node.Allocatable
 	}
 	return out, true
 }
