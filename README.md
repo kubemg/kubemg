@@ -407,10 +407,13 @@ backend/            Go server: Gin + GORM + PostgreSQL 16
   pkg/guardrails/     command guardrails — the one refusal KubeMG makes itself
   pkg/auditpolicy/    which verbs reach the table, and the floor nothing suppresses
   pkg/db/             models and query layer
+  pkg/webui/          the built console, embedded and served on NoRoute (empty in a source checkout)
   pkg/auth/ k8s/ certs/ observability/ cache/ agentpkg/
 frontend/           Vite + React + TypeScript + Tailwind v4
 agent/              the in-cluster agent — a separate Go module
+Dockerfile          the management plane image (repo root — spans both modules)
 deploy/kustomize/   the agent's install manifests (human-facing copy)
+deploy/compose/     standalone-VM install — pulls published images, builds nothing
 ```
 
 The agent is its own module on purpose: it depends only on `gorilla/websocket`, has no client-go,
@@ -428,6 +431,7 @@ make backend-test      # go test ./...
 make frontend-lint
 make frontend-contrast # measure every deck colour pairing against WCAG — gates verify
 make agent-image-check # prove the amd64 + arm64 matrix still builds
+make image-check       # prove the management plane image builds for amd64 + arm64
 make up / down / logs / ps
 ```
 
@@ -436,6 +440,34 @@ every pairing the components build, and **fails on a violation**. A violation is
 token, never by adding an exception in a component.
 
 `docker-compose.ci.yml` exposes the same jobs as services for CI runners.
+
+## Deployment
+
+`make up` is the **dev stack** — it builds from source and bind-mounts it, and is what the Quick
+start above uses. It is not how KubeMG runs in production.
+
+For a real install there is one production artefact for the management plane: `Dockerfile` at the
+repository root builds the console with a node stage and embeds it into the Go binary
+(`backend/pkg/webui`), so the console and the gateway ship and version together, and a production
+install needs no CORS configuration at all — the SPA calls the origin it was served from. The image
+is distroless and non-root, ~21 MB against the dev image's ~1 GB.
+
+`deploy/compose/` is the standalone-VM path: a compose file that only ever **pulls** published
+images and builds nothing, so it runs on a host with no toolchain and no source checkout. Four
+values (`DB_PASSWORD`, `JWT_SECRET`, `KUBEMG_ADMIN_PASSWORD`, `KUBEMG_PUBLIC_URL`) have no default,
+and compose refuses to start without them. See [`deploy/compose/README.md`](deploy/compose/README.md)
+for the full install, air-gapped mirroring, volumes to back up, and using a real certificate.
+
+```bash
+make image / image-push / image-check   # management plane (repo-root Dockerfile)
+make agent-image / agent-push           # the agent, published separately
+```
+
+`.github/workflows/release.yml` publishes both images on a `v*` tag as amd64+arm64 manifest
+indexes, with the Trivy vulnerability gate running **before** the push.
+
+A **Helm chart for the management plane** is planned but not yet shipped, along with the remaining
+air-gap work (a `make save-images` bundle and pull-secret support for the agent's mirror).
 
 ## Roadmap
 
@@ -449,14 +481,23 @@ timeline
         Phase 4 : SSO federation : OIDC · SAML · LDAP
         Phase 5 : Session recording : JIT elevation : Guardrails : Alarms
         Phase 6 : Cluster-scoped console IA : Operate · Activity · Admin
+        Phase 6.5 : Helm rollback : RBAC visibility : Events timeline : Security posture
     section Next
         Phase 7 : FinOps : Capacity heatmap : Topology graph : AI RCA : GitOps drift
 ```
 
-**Phases 1–6 are shipped.** Phase 6 was scheduled ahead of Phase 7 deliberately: a capacity
+**Phases 1–6.5 are shipped.** Phase 6 was scheduled ahead of Phase 7 deliberately: a capacity
 heatmap, a topology graph and an RCA panel are all *per-cluster* views, and building them into a
 global shell would have meant building each one twice — once where it fits today and once where it
-belongs. So the shell went first.
+belongs. So the shell went first. Phase 6.5 followed as a survey against a competing tool's feature
+set — seven surfaces it answers that KubeMG could not, none of them a new capability, since every
+one reads objects the impersonated tunnel already reaches, under grants that already exist.
+
+Alongside the numbered phases, two standing efforts run in parallel rather than as a phase:
+**packaging &amp; deployment** — the management-plane image and the compose install above are the
+first shipped item there; a Helm chart and the remaining air-gap work are open — and **maintenance
+&amp; dependency hygiene**, operational risk rather than missing features, where tunnel
+head-of-line blocking, agent sizing and read rate limiting are the open items.
 
 ### Shipped
 
@@ -550,6 +591,19 @@ belongs. So the shell went first.
 - [x] Light-deck contrast debt closed, and `make frontend-contrast` added as a gate on `make verify`
 - [x] The rail splits on the job being done — Operate / Activity / Admin, with the environment on the panel's own edge
 - [x] A pilot header over the lists that have a state worth summarising — pods and workloads
+
+</details>
+
+<details>
+<summary><b>Phase 6.5 · Security visibility &amp; release lifecycle</b></summary>
+
+- [x] Helm release history and rollback — restores a revision's `config` only, never applies a manifest, and says so on the write and the confirmation
+- [x] Grafana, Argo CD and a datasource's own UI reachable from the cluster page — outbound links only, never an embed or a proxied application
+- [x] The target cluster's own RBAC, read — a Role/Binding inventory plus a `SubjectAccessReview`-backed access check, both read-only
+- [x] A cluster-wide events timeline — grouped by object and reason, backed by a lazy per-cluster watch rather than a poll
+- [x] A diff before a manifest write, and an optional diff stored in the audit trail — off by default, excluded for redacted kinds
+- [x] NetworkPolicies as an Explore resource, plus a reachability check per workload — a derivation from policy objects, not a live trace
+- [x] Workload security posture findings tied to Pod Security Standards, with an auditable acknowledgement for an accepted risk
 
 </details>
 
