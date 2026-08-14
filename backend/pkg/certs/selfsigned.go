@@ -229,7 +229,12 @@ func exists(path string) (bool, error) {
 
 func write(path string, content []byte, mode os.FileMode) error {
 	if dir := filepath.Dir(path); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		// Owner-only: this is the tls-certs volume, and nothing else on the box
+		// shares it. It holds the private key that every rendered agent package
+		// is pinned against, so a group- or world-readable directory would widen
+		// exposure of that key for no operational reason — the same process that
+		// creates it is the only one that ever needs to read it back.
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return fmt.Errorf("create %s: %w", dir, err)
 		}
 	}
