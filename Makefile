@@ -1,14 +1,20 @@
 GO_IMAGE   ?= golang:1.26-alpine
 NODE_IMAGE ?= node:22-alpine
 
-AGENT_VERSION ?= 0.3.0
-AGENT_REPO    ?= docker.io/ozkanpoyrazoglu/kubemg-agent
+# Both images are published to GitHub's registry under the same org that owns
+# the source, so the image and the code it was built from have one name and one
+# set of permissions. REGISTRY is a variable because an air-gapped site mirrors
+# these under its own host and needs to retag them without editing the Makefile.
+REGISTRY ?= ghcr.io/kubemg
+
+AGENT_VERSION ?= 0.4.0
+AGENT_REPO    ?= $(REGISTRY)/kubemg-agent
 AGENT_IMAGE   ?= $(AGENT_REPO):$(AGENT_VERSION)
 
 # The management plane ships as one image — console embedded in the server
 # binary. See the root Dockerfile for why one rather than two.
-KUBEMG_VERSION ?= 0.3.0
-KUBEMG_REPO    ?= docker.io/ozkanpoyrazoglu/kubemg
+KUBEMG_VERSION ?= 0.4.0
+KUBEMG_REPO    ?= $(REGISTRY)/kubemg
 KUBEMG_IMAGE   ?= $(KUBEMG_REPO):$(KUBEMG_VERSION)
 
 # The bastion is deployed on hardware the operator chooses, which increasingly
