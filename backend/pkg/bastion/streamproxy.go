@@ -105,6 +105,7 @@ func (p *Proxy) serveBodyStream(c *gin.Context, tunnel *Tunnel, event *Event, he
 				return
 			}
 			sent += int64(len(chunk.Data))
+			stream.Consumed(len(chunk.Data))
 			flusher.Flush()
 
 			if !idle.Stop() {
@@ -271,6 +272,7 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 				return
 			}
 			fromCluster += int64(len(chunk.Data))
+			stream.Consumed(len(chunk.Data))
 			recordFromCluster(sink, chunk.Data)
 
 		case notice := <-notices:

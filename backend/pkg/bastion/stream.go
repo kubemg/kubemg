@@ -5,14 +5,34 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
-// streamBuffer is how many chunks may sit unread for one stream before the
-// server gives up on its consumer. A reader that cannot drain this much is
-// broken rather than slow, and killing its stream is far better than letting it
-// block the read loop and stall every other stream on the same tunnel.
-const streamBuffer = 256
+// Bounds on how much of one stream's output may sit unread before the server
+// gives up on its consumer.
+//
+// Both are needed, and for different reasons — the same shape as the agent's
+// own input queue (agent/internal/tunnel/stream.go), which this mirrors. The
+// frame count alone used to be the only bound, at 256, and a single ordinary
+// `kubectl cp` download reliably tripped it: the agent hands frames to
+// deliver() as fast as the cluster produces them, and a client write a few
+// dozen milliseconds slower for any reason drains it below what one burst of
+// a bulk transfer needs. The byte ceiling is what actually matters for a
+// stream carrying real payloads rather than keystrokes; the frame count stays
+// as a backstop against a great many tiny chunks.
+//
+// deliver() runs on the tunnel's one read loop, shared by every stream on that
+// cluster, so it can never block waiting for room — that would stall every
+// other session on the socket, which is exactly the head-of-line problem the
+// outbound queue in registry.go exists to remove on the write side. Raising
+// these bounds does not remove the ceiling, only moves it past the burst an
+// ordinary bulk transfer produces; a consumer that is genuinely, sustainedly
+// slower than its producer still loses its stream, and is told why.
+const (
+	streamBuffer      = 1024
+	streamBufferBytes = 32 << 20
+)
 
 // streamOpenTimeout bounds the handshake only. The stream itself is unbounded
 // on purpose — a watch on a quiet namespace is meant to sit there.
@@ -41,6 +61,8 @@ type Stream struct {
 	// start carries the response head exactly once.
 	start chan *StreamStart
 	data  chan StreamData
+	// queued is how many bytes are sitting in data, unread.
+	queued atomic.Int64
 
 	closeOnce sync.Once
 	closed    chan struct{}
@@ -61,8 +83,19 @@ func newStream(id string, tunnel *Tunnel) *Stream {
 }
 
 // Chunks yields data arriving from the agent. It is closed when the stream
-// ends, so a plain range terminates naturally.
+// ends, so a plain range terminates naturally. Every chunk read from it must
+// be handed to Consumed, which is what lets deliver() know there is room for
+// more.
 func (s *Stream) Chunks() <-chan StreamData { return s.data }
+
+// Consumed releases a chunk's share of the stream's byte budget. Callers read
+// a chunk from Chunks() and hand its length here once they are done with it —
+// separate calls, rather than folding this into Chunks() itself, because a
+// channel receive cannot also report how many bytes the caller is about to
+// free.
+func (s *Stream) Consumed(n int) {
+	s.queued.Add(-int64(n))
+}
 
 // Done is closed when the stream ends, from either side.
 func (s *Stream) Done() <-chan struct{} { return s.closed }
@@ -111,8 +144,8 @@ func (s *Stream) Close(cause error) {
 }
 
 // deliver hands a chunk to the consumer without ever blocking the tunnel's read
-// loop. A full buffer kills this stream rather than everything sharing the
-// socket.
+// loop — see the bounds' own comment for why. A stream that outruns both of
+// them loses itself rather than the socket everything else shares.
 func (s *Stream) deliver(chunk StreamData) {
 	select {
 	case <-s.closed:
@@ -120,9 +153,16 @@ func (s *Stream) deliver(chunk StreamData) {
 	default:
 	}
 
+	if s.queued.Add(int64(len(chunk.Data))) > streamBufferBytes {
+		s.queued.Add(-int64(len(chunk.Data)))
+		s.Close(ErrStreamBacklog)
+		return
+	}
+
 	select {
 	case s.data <- chunk:
 	default:
+		s.queued.Add(-int64(len(chunk.Data)))
 		s.Close(ErrStreamBacklog)
 	}
 }
