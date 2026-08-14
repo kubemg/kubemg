@@ -255,7 +255,9 @@ func (c *Client) runUpgradeStream(ctx context.Context, s *stream, open protocol.
 		case <-s.closed:
 		case <-ctx.Done():
 		}
-		conn.Close()
+		// Best effort: this is here purely to unblock the read loop below, and
+		// the loop's own error handling is what reports anything worth reporting.
+		_ = conn.Close()
 	}()
 
 	// Cluster to bastion: whatever the session is printing.

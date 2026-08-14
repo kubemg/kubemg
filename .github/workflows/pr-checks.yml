@@ -1,10 +1,12 @@
 name: PR checks
 
 # Runs on every pull request into master (and again on push to master as a
-# post-merge safety net) so a fast-moving PR flow still gets three things
+# post-merge safety net) so a fast-moving PR flow still gets four things
 # checked automatically: the PR is actually mergeable, no credential slipped
-# into the diff, and nothing newly added carries a known-vulnerable
-# dependency or a risky container/K8s misconfiguration.
+# into the diff, nothing newly added carries a known-vulnerable dependency or
+# a risky container/K8s misconfiguration, and nothing this code actually calls
+# has a known vulnerability — including in the Go standard library, which is
+# the part a dependency scanner cannot see.
 on:
   pull_request:
     branches: [master]
@@ -140,6 +142,59 @@ jobs:
         with:
           sarif_file: trivy-repo-results.sarif
           category: trivy-repo
+
+  # Trivy matches a dependency's *version* against an advisory feed.
+  # govulncheck walks the *call graph* and reports only what this code can
+  # actually reach — which is both narrower (a vulnerable package nothing calls
+  # is not a finding) and considerably wider, because it covers the Go standard
+  # library. That last part is the reason this job exists: nothing in go.sum
+  # names the toolchain, so a version-matching scanner has nothing to match on.
+  #
+  # The two provably do not overlap. When this job was added, Trivy called the
+  # published agent image's Go binary clean while govulncheck found five
+  # reachable standard-library vulnerabilities in that same binary, and eight in
+  # the backend — one of them `encoding/xml` recursion depth, reached from the
+  # unauthenticated SAML assertion path.
+  #
+  # Two things to know before this goes red on somebody:
+  #   - The gate has no `ignore-unfixed` equivalent, unlike the Trivy jobs. A new
+  #     advisory with no released fix will fail this job through no fault of the
+  #     PR that happens to be open. That is deliberate — the alternative is a
+  #     check that stays green while the fleet is exposed — but it means the
+  #     answer is sometimes "wait for the upstream release", not "fix the PR".
+  #   - The Go version comes from each module's own `go` directive via
+  #     go-version-file, so raising the directive is what clears a standard
+  #     library finding, and this job is what notices it was not raised.
+  govulncheck:
+    name: govulncheck (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      # Both modules report. The agent and the backend fail for different
+      # reasons and knowing only the first one is not useful.
+      fail-fast: false
+      matrix:
+        module: [backend, agent]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      # Installed at @latest on purpose: govulncheck fetches the advisory
+      # database at run time regardless of the binary's version, so pinning the
+      # binary buys reproducibility of the *tool* and nothing about the *data* —
+      # and a scanner that lags its own analysis passes is worse than one that
+      # occasionally changes how it reports.
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        working-directory: ${{ matrix.module }}
+        run: govulncheck ./...
 
   # The agent is the one artefact this project ships to clusters it does not
   # control, so its built image is scanned on its own rather than trusted

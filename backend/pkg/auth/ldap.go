@@ -188,7 +188,9 @@ func dialLDAP(ctx context.Context, config *db.SSOProviderConfig) (*ldap.Conn, er
 
 	if config.LDAPStartTLS && !config.LDAPUseTLS {
 		if err := conn.StartTLS(tlsConfig); err != nil {
-			conn.Close()
+			// Best effort: the connection is being abandoned because StartTLS
+			// already failed, and that error is the one worth returning.
+			_ = conn.Close()
 			return nil, fmt.Errorf("start TLS on %s: %w", address, err)
 		}
 	}
