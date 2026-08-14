@@ -302,7 +302,7 @@ flowchart LR
 ### 1. Bring the stack up
 
 ```bash
-git clone https://github.com/ozkanpoyrazoglu/kubemg.git
+git clone https://github.com/kubemg/kubemg.git
 cd kubemg
 cp .env.example .env      # optional: only if the defaults are wrong for your machine
 make up                   # backend + frontend + PostgreSQL 16
@@ -506,7 +506,11 @@ make agent-image / agent-push           # the agent, published separately
 ```
 
 `.github/workflows/release.yml` publishes both images on a `v*` tag as amd64+arm64 manifest
-indexes, with the Trivy vulnerability gate running **before** the push.
+indexes, with the Trivy vulnerability gate running **before** the push. They go to GitHub's own
+registry under the org that owns the source — `ghcr.io/kubemg/kubemg` and
+`ghcr.io/kubemg/kubemg-agent` — so the image and the commit it was built from carry one name, and
+the push authenticates with the workflow's own token rather than a credential somebody has to
+rotate. `REGISTRY` in the Makefile is what an air-gapped site overrides to retag them.
 
 A **Helm chart for the management plane** is planned but not yet shipped, along with the remaining
 air-gap work (a `make save-images` bundle and pull-secret support for the agent's mirror).

@@ -37,7 +37,7 @@ four placeholders yourself, or point an overlay at it:
 | `__AGENT_NAMESPACE__` | namespace to install into, normally `kubemg-system` |
 | `__BASTION_URL__` | your KubeMG server's public URL |
 | `__CLUSTER_TOKEN__` | the registration token from the wizard |
-| `__AGENT_IMAGE__` | agent image, normally `docker.io/ozkanpoyrazoglu/kubemg-agent:<version>` |
+| `__AGENT_IMAGE__` | agent image, normally `ghcr.io/kubemg/kubemg-agent:<version>` |
 
 Keep `__CLUSTER_TOKEN__` out of the repository — use your existing secret
 management for the `kubemg-agent` Secret and drop `secret.yaml` from

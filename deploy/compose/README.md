@@ -59,6 +59,10 @@ never this host:
 | `postgres:16-alpine` | this host | Users, grants, clusters, the audit trail. |
 | `kubemg-agent` | **your target clusters** | The outbound tunnel. Named in `KUBEMG_AGENT_IMAGE`. |
 
+Both KubeMG images are published to GitHub's registry — `ghcr.io/kubemg/kubemg`
+and `ghcr.io/kubemg/kubemg-agent`, each a manifest index covering amd64 and
+arm64 — and are public, so no `docker login` is needed to pull them.
+
 The console is served by the `kubemg` container from the same origin as the API
 it calls, which is why there is no CORS setting here. The dev stack needs one
 because Vite serves the console on a separate port.
@@ -69,9 +73,9 @@ Mirror the three images above into an internal registry and point the install at
 them:
 
 ```dotenv
-KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.3.0
+KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.4.0
 KUBEMG_POSTGRES_IMAGE=registry.internal/postgres:16-alpine
-KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.3.0
+KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.4.0
 ```
 
 Nothing else is fetched at runtime: the console's fonts are served out of the
