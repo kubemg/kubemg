@@ -14,8 +14,9 @@
  * tabular figures, because they are data and get compared column to column.
  *
  * The signature device is the link strand (see components/LinkStrand.tsx): a
- * hairline that gathers toward the KubeMG end, the direction the real
- * connection is made. It glows; it does not march. Nothing else animates.
+ * telemetry trace, not a gauge — a pulse gathered toward the KubeMG end, the
+ * direction the real connection is made. It glows; it does not march.
+ * Nothing else animates.
  *
  * Dark is the default deck; light is a full peer, not an afterthought. Every
  * colour below is a token pair — never hard-code a hex in a component.
@@ -357,8 +358,8 @@
 }
 
 /*
- * The link strand: one continuous hairline, shaped rather than dashed. A live
- * link brightens toward the KubeMG end — the direction the connection is
+ * The link strand: a telemetry trace, not a filling bar. A live link carries
+ * a pulse gathered toward the KubeMG end — the direction the connection is
  * actually made, since the cluster dials out and KubeMG never dials in — and
  * glows gently instead of running a marquee across the screen.
  */
