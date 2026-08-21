@@ -113,7 +113,7 @@ export function Overview() {
               title="No clusters yet"
               action={
                 isAdmin ? (
-                  <Link to="/clusters/new">
+                  <Link to="/admin/clusters/new">
                     <Button variant="primary">
                       <Plus aria-hidden="true" className="size-4" />
                       Register a cluster

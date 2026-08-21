@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router'
 import type { Cluster } from '../api/types'
-import { clusterViewHref, currentClusterView } from '../lib/navigation'
+import { clusterSlotHref, currentClusterSlot } from '../lib/navigation'
 import { useClusters } from '../state/clusters-context'
 import { ClusterMenu } from './ClusterMenu'
 import { EnvironmentDot } from './primitives'
@@ -12,8 +12,9 @@ import { EnvironmentDot } from './primitives'
  * open: a cluster is a place, not a page, and the fastest way out of one is
  * into another rather than back through the fleet list first.
  *
- * The list itself is `ClusterMenu`, shared with the section panel's own
- * switcher — the header is the trigger, not a second inventory.
+ * The list itself is `ClusterMenu`, shared with the tree's own switcher — the
+ * header is the trigger, not a second inventory. Switching keeps the slot that
+ * is open, so Pods stays Pods on the cluster you land on.
  */
 export function ClusterSwitcher({ cluster }: { cluster: Cluster }) {
   const { clusters } = useClusters()
@@ -23,7 +24,7 @@ export function ClusterSwitcher({ cluster }: { cluster: Cluster }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
-  const view = currentClusterView(pathname, cluster.id)
+  const slot = currentClusterSlot(pathname, cluster.id)
 
   useEffect(() => {
     if (!open) return
@@ -57,7 +58,7 @@ export function ClusterSwitcher({ cluster }: { cluster: Cluster }) {
           currentId={cluster.id}
           onPick={(target) => {
             setOpen(false)
-            navigate(clusterViewHref(target, view))
+            navigate(clusterSlotHref(target, slot))
           }}
           onFleet={() => {
             setOpen(false)

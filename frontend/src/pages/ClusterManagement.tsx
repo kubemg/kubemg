@@ -69,7 +69,7 @@ export function ClusterManagement() {
     <AppShell
       title="Clusters"
       actions={
-        <Link to="/clusters/new">
+        <Link to="/admin/clusters/new">
           <Button variant="primary">
             <Plus aria-hidden="true" className="size-4" />
             Register cluster
@@ -198,7 +198,7 @@ export function ClusterManagement() {
               icon={<Server aria-hidden="true" className="size-5" />}
               title="No clusters registered"
               action={
-                <Link to="/clusters/new">
+                <Link to="/admin/clusters/new">
                   <Button variant="primary">
                     <Plus aria-hidden="true" className="size-4" />
                     Register cluster

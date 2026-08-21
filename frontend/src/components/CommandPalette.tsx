@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router'
 import type { Cluster } from '../api/types'
 import { EnvironmentDot, KeyHint } from './primitives'
 import { LinkStrand } from './LinkStrand'
-import { clusterHref } from '../lib/navigation'
+import { clusterHref, clusterPageHref, hasTunnel, resourceHref } from '../lib/navigation'
 import { strandState } from '../lib/status'
 
 export interface CommandTarget {
@@ -17,53 +17,58 @@ export interface CommandTarget {
 
 /**
  * A cluster's own views, addressed directly rather than through its default
- * landing: someone who wants that cluster's audit trail should not have to
- * jump to its summary first and click again. Explore is offered only where
- * there is a tunnel to read through — the panel applies the same rule.
+ * landing: someone who wants that cluster's audit trail should not have to jump
+ * to its dashboard first and click again.
+ *
+ * The pages that read through the tunnel are offered only where there is one,
+ * and so are the two resource lists — the tree applies the same rule, and an
+ * entry that can only refuse is worse than no entry. Pods and Deployments are
+ * the two kinds worth a palette row of their own: they are where most of a
+ * developer's day is spent, and every other kind is one keystroke away in the
+ * tree once the cluster is open.
  */
 function clusterViewTargets(cluster: Cluster): CommandTarget[] {
   const views: CommandTarget[] = [
     {
-      id: `cluster-${cluster.id}-summary`,
-      label: `${cluster.name} — Summary`,
-      hint: 'Cluster · Summary',
-      to: `/clusters/${cluster.id}/summary`,
+      id: `cluster-${cluster.id}-dashboard`,
+      label: `${cluster.name} — Dashboard`,
+      hint: 'Cluster · Dashboard',
+      to: clusterPageHref(cluster.id, 'dashboard'),
       cluster,
     },
   ]
-  if (cluster.connection_mode === 'agent' && cluster.agent_attached) {
-    views.push({
-      id: `cluster-${cluster.id}-explore`,
-      label: `${cluster.name} — Explore`,
-      hint: 'Cluster · Explore',
-      to: `/clusters/${cluster.id}/explore`,
-      cluster,
-    })
-    // Reached the same way and gated the same way: events are read through the
-    // tunnel too. It is worth its own entry because it is the page somebody is
-    // looking for when they open the palette at all — "what broke" is a question
-    // people arrive with, not one they navigate to.
+  if (hasTunnel(cluster)) {
+    for (const kind of ['pods', 'deployments'] as const) {
+      views.push({
+        id: `cluster-${cluster.id}-${kind}`,
+        label: `${cluster.name} — ${kind === 'pods' ? 'Pods' : 'Deployments'}`,
+        hint: `Cluster · ${kind === 'pods' ? 'Pods' : 'Deployments'}`,
+        to: resourceHref(cluster.id, kind),
+        cluster,
+      })
+    }
+    // "What broke" is a question people arrive with, not one they navigate to,
+    // and arriving means the palette as often as the tree. Same for "why will
+    // nothing schedule".
     views.push({
       id: `cluster-${cluster.id}-events`,
       label: `${cluster.name} — Events`,
       hint: 'Cluster · Events',
-      to: `/clusters/${cluster.id}/events`,
+      to: clusterPageHref(cluster.id, 'events'),
       cluster,
     })
-    // "Why will nothing schedule" is a question somebody arrives with too, and
-    // arriving means the palette as often as the panel.
     views.push({
       id: `cluster-${cluster.id}-capacity`,
       label: `${cluster.name} — Capacity`,
       hint: 'Cluster · Capacity',
-      to: `/clusters/${cluster.id}/capacity`,
+      to: clusterPageHref(cluster.id, 'capacity'),
       cluster,
     })
     views.push({
       id: `cluster-${cluster.id}-security`,
       label: `${cluster.name} — Security posture`,
       hint: 'Cluster · Security posture',
-      to: `/clusters/${cluster.id}/security`,
+      to: clusterPageHref(cluster.id, 'security'),
       cluster,
     })
   }
@@ -71,7 +76,7 @@ function clusterViewTargets(cluster: Cluster): CommandTarget[] {
     id: `cluster-${cluster.id}-audit`,
     label: `${cluster.name} — Audit trail`,
     hint: 'Cluster · Audit trail',
-    to: `/clusters/${cluster.id}/audit`,
+    to: clusterPageHref(cluster.id, 'audit'),
     cluster,
   })
   return views
@@ -104,8 +109,8 @@ export function CommandPalette({
         id: `cluster-${cluster.id}`,
         label: cluster.name,
         hint: cluster.connection_mode === 'agent' ? 'Cluster · agent' : 'Cluster · direct',
-        // The same rule as the fleet list: a cluster with a tunnel opens on its
-        // resources, one without opens on its own summary.
+        // The same rule as the fleet list and the rail: a cluster with a
+        // tunnel opens on its resources, one without opens on its dashboard.
         to: clusterHref(cluster),
         cluster,
       })),

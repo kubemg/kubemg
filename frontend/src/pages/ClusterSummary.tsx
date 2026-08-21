@@ -22,6 +22,7 @@ import {
   Panel,
 } from '../components/primitives'
 import { CardSkeleton, MeterGridSkeleton } from '../components/SkeletonLoader'
+import { DEFAULT_RESOURCE, resourceHref } from '../lib/navigation'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { strandState } from '../lib/status'
 import { relativeAge } from '../lib/time'
@@ -102,18 +103,20 @@ export function ClusterSummary() {
     // The cluster's name is the switcher beside this, so the heading names the
     // view instead — the way every other cluster page's does.
     <AppShell
-      title="Summary"
+      title="Dashboard"
       timeRange
       actions={
         cluster ? (
           <>
+            {/* The tree beside this page reaches every kind; this is the one
+                the dashboard is a preamble to, named after what it opens. */}
             {viaAgent && cluster.agent_attached ? (
               <Button
                 variant="primary"
-                onClick={() => navigate(`/clusters/${cluster.id}/explore`)}
+                onClick={() => navigate(resourceHref(cluster.id, DEFAULT_RESOURCE))}
               >
                 <Layers aria-hidden="true" className="size-4" />
-                Explore
+                Pods
               </Button>
             ) : null}
             <Button onClick={() => setRequesting(true)}>
@@ -147,7 +150,7 @@ export function ClusterSummary() {
         {requested ? (
           <Notice tone="ok">
             Request submitted. It is waiting for an approver — follow it on{' '}
-            <Link to="/access-requests" className="text-accent hover:underline">
+            <Link to="/me/access" className="text-accent hover:underline">
               access requests
             </Link>
             , where an approved elevation shows its countdown.
