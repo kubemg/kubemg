@@ -137,7 +137,7 @@ export function ClusterWizard() {
   return (
     <AppShell
       title="Register cluster"
-      parent={{ label: 'Clusters', to: '/clusters' }}
+      parent={{ label: 'Clusters', to: '/admin/clusters' }}
       actions={
         cluster ? (
           <Button variant="primary" onClick={() => navigate(`/clusters/${cluster.id}`)}>

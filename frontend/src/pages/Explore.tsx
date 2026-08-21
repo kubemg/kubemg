@@ -31,10 +31,9 @@ import {
   fetchStorageClasses,
   fetchVirtualServices,
 } from '../api/client'
-import type { CustomResourceDefinition, Namespace } from '../api/types'
+import type { Namespace } from '../api/types'
 import { AccessReviewPanel } from '../components/AccessReviewPanel'
 import { AppShell } from '../components/AppShell'
-import { ExploreSidebar } from '../components/ExploreSidebar'
 import { InsightTrend } from '../components/InsightTrend'
 import { NetworkPolicyCoveragePanel } from '../components/NetworkPolicyCoveragePanel'
 import { ResourceDetailDrawer } from '../components/ResourceDetailDrawer'
@@ -55,8 +54,6 @@ import {
 import type { ResourceItem, ResourceKey } from '../lib/resources'
 import {
   ALL_NAMESPACES,
-  discoverCategories,
-  exploreCategories,
   isAccessResource,
   resourceItem,
   resourceSingular,
@@ -90,7 +87,9 @@ import {
 import { queryKey, useCachedQuery } from '../lib/query'
 import { podUsageIndex } from '../lib/units'
 import { workloadKeyFor } from '../lib/workloads'
+import { clusterPageHref, resourceHref } from '../lib/navigation'
 import { useClusters } from '../state/clusters-context'
+import { useInventory } from '../state/inventory-context'
 
 /**
  * loadResource reads one list. The tagged result is what keeps the table
@@ -509,12 +508,12 @@ export function Explore() {
   // sharing the list's.
   const [namespaceError, setNamespaceError] = useState<string | null>(null)
 
-  // What this particular cluster turned out to have installed. `null` means the
-  // question has not been answered yet, which is different from "none" — a
-  // discovered resource cannot be resolved until it is settled. Reading it is
-  // best-effort: a grant that cannot list CRDs still browses everything else, so
-  // a refusal narrows the sidebar rather than failing the page.
-  const [crds, setCrds] = useState<CustomResourceDefinition[] | null>(null)
+  // What this particular cluster turned out to have installed, read once per
+  // cluster by the shell — the tree is drawn on every one of a cluster's pages,
+  // so the inventory has to outlive any one of them. `ready` is false while the
+  // question is still open, which is different from "none": a discovered
+  // resource cannot be resolved until it is settled.
+  const { discovered, categories, ready: inventoryReady } = useInventory()
 
   // Only agent clusters have a tunnel to read through; a direct-mode cluster has
   // no live state to show.
@@ -526,9 +525,6 @@ export function Explore() {
   // A cluster that is registered but cannot be read: the address is honoured and
   // explained rather than quietly swapped for a different cluster's resources.
   const unreadable = cluster ? null : (clusters.find((entry) => entry.id === clusterId) ?? null)
-
-  const discovered = useMemo(() => discoverCategories(crds ?? []), [crds])
-  const categories = useMemo(() => exploreCategories(discovered), [discovered])
 
   // A `crd:` key belongs to the cluster it was discovered on, so it resolves to
   // nothing both while discovery is still running and on a cluster that does not
@@ -547,7 +543,7 @@ export function Explore() {
     (key: ResourceKey, replace = false) => {
       if (!cluster) return
       const qs = searchParams.toString()
-      navigate(`/clusters/${cluster.id}/explore/${key}${qs ? `?${qs}` : ''}`, { replace })
+      navigate(resourceHref(cluster.id, key, qs), { replace })
     },
     [cluster, searchParams, navigate],
   )
@@ -612,36 +608,12 @@ export function Explore() {
     }
   }, [cluster, setSearchParams])
 
-  // Which CRDs the cluster has is read once per cluster, not per list: it is
-  // what the sidebar is built from, and it changes only when someone installs an
-  // operator.
-  useEffect(() => {
-    if (!cluster) return
-
-    let cancelled = false
-    setCrds(null)
-
-    fetchCRDs(cluster.id)
-      .then((result) => {
-        if (!cancelled) setCrds(result)
-      })
-      .catch(() => {
-        // A namespace-scoped grant cannot list CRDs cluster-wide, and that is a
-        // legitimate answer: the sidebar keeps its fixed inventory.
-        if (!cancelled) setCrds([])
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [cluster])
-
   // Once discovery has answered, a selection it could not account for belongs to
   // a cluster that is no longer open. Dropping it back to Pods keeps the sidebar
   // highlight, the heading and the list describing the same thing.
   useEffect(() => {
-    if (crds !== null && !resolved) selectResource('pods', true)
-  }, [crds, resolved, selectResource])
+    if (inventoryReady && !resolved) selectResource('pods', true)
+  }, [inventoryReady, resolved, selectResource])
 
   /*
    * The list is read through the query cache, which is what makes the sidebar
@@ -698,7 +670,7 @@ export function Explore() {
 
   if (!clustersLoading && reachable.length === 0) {
     return (
-      <AppShell title="Explore">
+      <AppShell title={item.label}>
         <div className="card">
           <EmptyState
             icon={<Boxes aria-hidden="true" className="size-5" />}
@@ -717,7 +689,7 @@ export function Explore() {
   // own page, which is where its connection is managed.
   if (!clustersLoading && clusterId !== null && !cluster) {
     return (
-      <AppShell title="Explore">
+      <AppShell title={item.label}>
         <div className="card">
           <EmptyState
             icon={<Boxes aria-hidden="true" className="size-5" />}
@@ -733,7 +705,7 @@ export function Explore() {
                   ? 'Its agent has not dialled in, so there is no tunnel to read through. '
                   : 'It is registered in direct mode, which has no agent tunnel for live reads. '}
                 <Link
-                  to={`/clusters/${unreadable.id}/summary`}
+                  to={clusterPageHref(unreadable.id, 'dashboard')}
                   className="text-accent hover:underline"
                 >
                   Open the cluster
@@ -785,7 +757,7 @@ export function Explore() {
       <InsightTrend
         cluster={cluster}
         namespace={namespace}
-        onConfigure={() => navigate(`/clusters/${cluster.id}/summary`)}
+        onConfigure={() => navigate(clusterPageHref(cluster.id, 'dashboard'))}
       />
     ) : undefined
   // The active narrowing named in the list header, so a reading clicked at the
@@ -795,7 +767,10 @@ export function Explore() {
 
   return (
     <AppShell
-      title="Explore"
+      // The kind *is* the page now: the tree is the navigation, and this is the
+      // leaf it landed on. "Explore" as a page title would name a destination
+      // that no longer exists in the chrome.
+      title={item.label}
       fullWidth
       timeRange
       scope={
@@ -828,9 +803,6 @@ export function Explore() {
             </Select>
           </div>
         ) : undefined
-      }
-      panel={
-        <ExploreSidebar categories={categories} selected={resource} onSelect={selectResource} />
       }
       actions={
         <Button onClick={() => void load()} disabled={loading || (namespaced && !namespace)}>
