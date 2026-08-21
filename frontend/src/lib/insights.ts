@@ -102,32 +102,36 @@ export interface InsightAlert {
 }
 
 /**
- * One band of the composition bar. `slot` indexes the deck's eight chart
- * tokens, which are a validated colour-blindness set in that order — so a slice
- * carries its slot rather than a colour, and nothing here may reorder them or
- * invent a ninth.
+ * One band of the bar: a slice of the total, and the whole point of the
+ * distinction this file now draws.
+ *
+ * A segment is **part of a partition** — every row of the list is in exactly one
+ * of them, and they sum to the total. That is what earns a width on a bar and a
+ * place in its legend. A reading that is not a partition (keys in a ConfigMap
+ * list, restarts across a pod list, replicas against desired) is an
+ * `InsightStat` instead: true, useful, and meaningless as a width.
+ *
+ * The band used to mix the two in one column, which is why it read as
+ * arbitrary — "Not ready 2" and "Keys 214" sat in the same list, one a third of
+ * the rows and the other a number larger than the total.
+ *
+ * A segment carries either a `tone` (a state: running, failed, bound) or a
+ * `slot` (a composition: a Service type, an API group). `slot` indexes the
+ * deck's eight chart tokens, which are a validated colour-blindness set in that
+ * order — so a segment carries its slot rather than a colour, and nothing here
+ * may reorder them or invent a ninth.
  */
-export interface InsightSlice {
-  key: string
+export interface InsightSegment {
+  id: InsightBucket
   label: string
   value: number
-  /** Share of the whole, 0–1, for the bar's own width. */
+  detail?: string
+  /** Share of the total, 0–1, which is the segment's width on the bar. */
   share: number
-  slot: number
-}
-
-/**
- * How a list is composed, along whichever axis is worth knowing for that kind:
- * namespaces for most, roles for Nodes, API groups for CRDs, storage classes for
- * PVs. It is deliberately not a second state reading — it answers "where is all
- * this" rather than "is it working".
- */
-export interface InsightDistribution {
-  /** What the axis is, as the band's own micro-caps heading. */
-  label: string
-  slices: InsightSlice[]
-  /** How many distinct values were folded into the final slice. */
-  folded: number
+  tone?: Tone
+  slot?: number
+  /** Whether clicking it narrows the list; see the note on `InsightStat`. */
+  selectable: boolean
 }
 
 export interface ResourceInsight {
@@ -135,15 +139,17 @@ export interface ResourceInsight {
   headline: string
   /** The dot beside that sentence. `idle` is what an inventory reads as. */
   headlineTone: Tone
+  /** How many rows there are. Selectable wherever the kind has a matcher, since
+      clicking the total is how a narrowing is cleared. */
+  total: InsightStat
   /**
-   * The one or two readings drawn large. The first is always the total, so it is
-   * also what the collapsed line leads with.
+   * The partition of that total, empty buckets left out — the bar, and the
+   * chips under it. Empty for a kind that has no honest partition at all, and
+   * then no bar is drawn rather than one band claiming to be a shape.
    */
-  lead: InsightStat[]
-  /** The state or composition list beside them, empty buckets left out. */
-  breakdown: InsightStat[]
-  /** How this list is spread, or null when there is nothing to spread it over. */
-  distribution: InsightDistribution | null
+  segments: InsightSegment[]
+  /** The scalars that are true of the list without being slices of it. */
+  readings: InsightStat[]
   alerts: InsightAlert[]
   /** How many objects are in an alerting state, which is more than `alerts` holds. */
   alerting: number
@@ -187,12 +193,15 @@ const RESTART_ALERT = 5
 export const MAX_ALERTS = 5
 
 /**
- * How many bands the composition bar draws. It is the chart palette's length
- * because that palette *is* the colour-blindness mechanism: past eight, the ninth
- * value would either repeat a hue or rest identity on position alone, so the
- * tail folds into one band that says how many it stands for.
+ * How many bands a composition bar draws. It is the chart palette's length
+ * because that palette *is* the colour-blindness mechanism: past eight, the
+ * ninth value would either repeat a hue or rest identity on position alone, so
+ * the tail folds into one band that says how many it stands for.
+ *
+ * A state partition is never folded — its buckets are a closed set this file
+ * enumerates, and none of them is ever the ninth.
  */
-export const MAX_SLICES = 8
+export const MAX_SEGMENTS = 8
 
 /** Which bucket a pod is in. Every pod is in exactly one. */
 export function podBucket(pod: Pod): Exclude<PodBucket, 'all' | 'restarting'> {
@@ -283,7 +292,7 @@ export function bucketLabel(
   bucket: InsightBucket | null,
 ): string | null {
   if (!insight || !bucket) return null
-  for (const stat of [...insight.lead, ...insight.breakdown]) {
+  for (const stat of [insight.total, ...insight.segments, ...insight.readings]) {
     if (stat.selectable && stat.id === bucket) return stat.label
   }
   return null
@@ -324,58 +333,98 @@ function ranked(counts: Map<string, number>): Array<[string, number]> {
 }
 
 /**
- * The composition band. It is drawn only where there is genuinely a spread: one
- * value covering everything is a bar with a single band and a list with a single
- * row, which restates the total and earns none of the width it takes.
+ * A composition: how a list divides along a categorical field it carries — a
+ * Service type, an API group, a storage class, a namespace.
+ *
+ * Drawn only where there is genuinely a spread. One value covering everything is
+ * a bar with a single band, which restates the total and earns none of the width
+ * it takes, so that returns nothing and the band draws no bar at all.
+ *
+ * Never selectable: there is no matcher behind an open set of values the cluster
+ * named, and a control that does nothing is worse than a number.
  */
-function distribute<T>(
-  label: string,
+function composition<T>(
   rows: T[],
   value: (row: T) => string | undefined | null,
-): InsightDistribution | null {
+): InsightSegment[] {
   const entries = ranked(tally(rows, value))
-  if (entries.length < 2) return null
+  if (entries.length < 2) return []
 
   const total = entries.reduce((sum, [, count]) => sum + count, 0)
-  const named = entries.length > MAX_SLICES ? entries.slice(0, MAX_SLICES - 1) : entries
-  const slices: InsightSlice[] = named.map(([key, count], index) => ({
-    key,
+  const named = entries.length > MAX_SEGMENTS ? entries.slice(0, MAX_SEGMENTS - 1) : entries
+  const segments: InsightSegment[] = named.map(([key, count], index) => ({
+    id: 'all' as const,
     label: key,
     value: count,
     share: count / total,
     slot: index,
+    selectable: false,
   }))
 
   const rest = entries.slice(named.length)
   if (rest.length > 0) {
     const count = rest.reduce((sum, [, n]) => sum + n, 0)
-    slices.push({
-      key: ' other',
+    segments.push({
+      id: 'all',
       label: `${rest.length} more`,
       value: count,
       share: count / total,
-      slot: MAX_SLICES - 1,
+      slot: MAX_SEGMENTS - 1,
+      selectable: false,
     })
   }
 
-  return { label, slices, folded: rest.length }
+  return segments
 }
 
 /**
- * The state list for a kind whose states are an open set the cluster names
- * rather than a closed one this file can enumerate — a Service type, a PV phase,
- * a Helm status. Ordered by count so the dominant state leads, and never
- * selectable: there is no matcher behind these, and a control that does nothing
- * is worse than a number.
+ * The same thing for a kind whose states are an open set the cluster names
+ * rather than a closed one this file can enumerate — a PV phase, a Helm status,
+ * a Job state. A tone rather than a slot, because these mean something.
+ *
+ * Ordered by count so the dominant state leads, and never selectable for the
+ * same reason a composition is not.
  */
-function states<T>(rows: T[], value: (row: T) => string, tone: (state: string) => Tone) {
-  return ranked(tally(rows, value)).map(([state, count]) => ({
+function states<T>(
+  rows: T[],
+  value: (row: T) => string,
+  tone: (state: string) => Tone,
+): InsightSegment[] {
+  const entries = ranked(tally(rows, value))
+  const total = entries.reduce((sum, [, count]) => sum + count, 0)
+  return entries.map(([state, count]) => ({
     id: 'all' as const,
     label: state,
     value: count,
+    share: total > 0 ? count / total : 0,
     tone: tone(state),
     selectable: false,
   }))
+}
+
+/**
+ * One band of a closed state partition — the buckets this file does enumerate,
+ * and the only segments that are ever selectable. The total is passed in rather
+ * than derived, because a share is of the whole list and not of whichever
+ * buckets happened to come out non-empty.
+ */
+function segment(
+  id: InsightBucket,
+  label: string,
+  value: number,
+  total: number,
+  tone: Tone,
+  options: { detail?: string; selectable?: boolean } = {},
+): InsightSegment {
+  return {
+    id,
+    label,
+    value,
+    share: total > 0 ? value / total : 0,
+    tone,
+    detail: options.detail,
+    selectable: options.selectable ?? false,
+  }
 }
 
 /** A plain reading with no state behind it. */
@@ -391,17 +440,17 @@ function reading(label: string, value: number, detail?: string, tone?: Tone): In
 function inventory(
   label: string,
   count: number,
-  breakdown: InsightStat[],
-  distribution: InsightDistribution | null,
+  segments: InsightSegment[],
+  readings: InsightStat[],
   headline: string,
   summary: string[],
 ): ResourceInsight {
   return {
     headline,
     headlineTone: 'idle',
-    lead: [reading(label, count)],
-    breakdown,
-    distribution,
+    total: reading(label, count),
+    segments,
+    readings,
     alerts: [],
     alerting: 0,
     summary,
@@ -413,9 +462,9 @@ function nothing(label: string, headline: string): ResourceInsight {
   return {
     headline,
     headlineTone: 'idle',
-    lead: [reading(label, 0)],
-    breakdown: [],
-    distribution: null,
+    total: reading(label, 0),
+    segments: [],
+    readings: [],
     alerts: [],
     alerting: 0,
     summary: [],
@@ -473,25 +522,33 @@ export function podInsights(
     }
   }
 
-  const breakdown: InsightStat[] = []
-  const optional: Array<[Exclude<PodBucket, 'all' | 'restarting'>, string, Tone]> = [
+  // The partition, healthy band first so the bar reads left to right from
+  // "fine" to "not". Empty buckets are left out entirely: on a healthy namespace
+  // the bar is one band, not six with five of them zero-width.
+  const segments: InsightSegment[] = []
+  const buckets: Array<[Exclude<PodBucket, 'all' | 'restarting'>, string, Tone]> = [
+    ['running', 'Running', 'ok'],
     ['notready', 'Not ready', 'warn'],
     ['pending', 'Pending', 'warn'],
     ['failed', 'Failed', 'bad'],
     ['unknown', 'Unknown', 'warn'],
     ['succeeded', 'Succeeded', 'idle'],
   ]
-  for (const [id, name, tone] of optional) {
-    if (counts[id] > 0) breakdown.push({ id, label: name, value: counts[id], tone, selectable: true })
+  for (const [id, name, tone] of buckets) {
+    if (counts[id] > 0) {
+      segments.push(segment(id, name, counts[id], pods.length, tone, { selectable: true }))
+    }
   }
 
+  const readings: InsightStat[] = []
   if (restarts > 0) {
-    // The value counts restarts and the detail counts pods, because both
-    // answer something: one restart across forty pods is a rollout, forty
-    // restarts on one pod is a crash loop.
-    breakdown.push({
+    // Not a segment: a pod that has restarted is still Running, so this crosses
+    // the partition rather than dividing it. The value counts restarts and the
+    // detail counts pods, because both answer something — one restart across
+    // forty pods is a rollout, forty restarts on one pod is a crash loop.
+    readings.push({
       id: 'restarting',
-      label: 'Restarts',
+      label: 'restarts',
       value: restarts,
       detail: `across ${plural(restarting, 'pod')}`,
       tone: 'warn',
@@ -525,12 +582,9 @@ export function podInsights(
         ? `All ${plural(pods.length, 'pod')} are running`
         : `${plural(unhealthy, 'pod')} not running normally`,
     headlineTone: unhealthy === 0 ? (restarts > 0 ? 'warn' : 'ok') : counts.failed > 0 ? 'bad' : 'warn',
-    lead: [
-      { id: 'all', label, value: pods.length, selectable: true },
-      { id: 'running', label: 'Running', value: counts.running, tone: 'ok', selectable: true },
-    ],
-    breakdown,
-    distribution: distribute('Namespaces', pods, (pod) => pod.namespace),
+    total: { id: 'all', label, value: pods.length, selectable: true },
+    segments,
+    readings,
     alerts: rankAlerts(alerts).slice(0, MAX_ALERTS),
     alerting: alerts.length,
     usage: aggregate,
@@ -579,24 +633,29 @@ export function workloadInsights(workloads: Workload[], label: string): Resource
     }
   }
 
-  const breakdown: InsightStat[] = []
-  const optional: Array<[Exclude<WorkloadBucket, 'all' | 'available'>, string, Tone]> = [
+  const segments: InsightSegment[] = []
+  const buckets: Array<[Exclude<WorkloadBucket, 'all'>, string, Tone]> = [
+    ['available', 'Available', 'ok'],
     ['degraded', 'Degraded', 'warn'],
     ['unavailable', 'Unavailable', 'bad'],
     ['scaledtozero', 'Scaled to zero', 'idle'],
   ]
-  for (const [id, name, tone] of optional) {
-    if (counts[id] > 0) breakdown.push({ id, label: name, value: counts[id], tone, selectable: true })
+  for (const [id, name, tone] of buckets) {
+    if (counts[id] > 0) {
+      segments.push(segment(id, name, counts[id], workloads.length, tone, { selectable: true }))
+    }
   }
 
+  const readings: InsightStat[] = []
   if (desired > 0) {
-    breakdown.push({
+    readings.push({
       id: 'all',
-      label: 'Replicas ready',
+      label: 'replicas ready',
       value: ready,
       detail: `of ${desired} desired`,
       tone: ready === desired ? 'ok' : 'warn',
-      // Replicas are not rows: there is no list of them to narrow to.
+      // Replicas are not rows: there is no list of them to narrow to, and they
+      // outnumber the objects, so they were never a slice of this total.
       selectable: false,
     })
   }
@@ -609,12 +668,9 @@ export function workloadInsights(workloads: Workload[], label: string): Resource
         ? 'Every workload has the replicas it asked for'
         : `${failing} of ${workloads.length} below their desired replicas`,
     headlineTone: failing === 0 ? 'ok' : counts.unavailable > 0 ? 'bad' : 'warn',
-    lead: [
-      { id: 'all', label, value: workloads.length, selectable: true },
-      { id: 'available', label: 'Available', value: counts.available, tone: 'ok', selectable: true },
-    ],
-    breakdown,
-    distribution: distribute('Namespaces', workloads, (workload) => workload.namespace),
+    total: { id: 'all', label, value: workloads.length, selectable: true },
+    segments,
+    readings,
     alerts: rankAlerts(alerts).slice(0, MAX_ALERTS),
     alerting: alerts.length,
     summary: desired > 0 ? [`${ready}/${desired} replicas`] : [],
@@ -652,12 +708,10 @@ export function jobInsights(jobs: Job[], label: string): ResourceInsight {
         ? `${complete} of ${jobs.length} complete, none failed`
         : `${plural(failedJobs.length, 'job')} failed`,
     headlineTone: failedJobs.length === 0 ? 'ok' : 'bad',
-    lead: [reading(label, jobs.length), reading('Complete', complete, undefined, 'ok')],
-    breakdown: [
-      ...states(jobs, (job) => job.state || 'Unknown', jobStateTone),
-      ...(running > 0 ? [reading('Active pods', running, undefined, 'accent')] : []),
-    ],
-    distribution: distribute('Namespaces', jobs, (job) => job.namespace),
+    total: reading(label, jobs.length),
+    segments: states(jobs, (job) => job.state || 'Unknown', jobStateTone),
+    // Jobs with a pod in flight, which cuts across Running and Suspended alike.
+    readings: running > 0 ? [reading('active', running, 'with a pod in flight', 'accent')] : [],
     alerts: alerts.slice(0, MAX_ALERTS),
     alerting: alerts.length,
     summary: failedJobs.length > 0 ? [`${failedJobs.length} failed`] : [`${complete} complete`],
@@ -689,12 +743,15 @@ export function cronJobInsights(cronjobs: CronJob[], label: string): ResourceIns
         ? `All ${plural(cronjobs.length, 'schedule')} are active`
         : `${suspended} of ${cronjobs.length} suspended`,
     headlineTone: suspended === 0 ? 'ok' : 'warn',
-    lead: [reading(label, cronjobs.length), reading('Active', active, undefined, 'ok')],
-    breakdown: [
-      ...(suspended > 0 ? [reading('Suspended', suspended, undefined, 'idle')] : []),
-      ...(running > 0 ? [reading('Running now', running, 'jobs in flight', 'accent')] : []),
+    total: reading(label, cronjobs.length),
+    segments: [
+      segment('all', 'Active', active, cronjobs.length, 'ok'),
+      ...(suspended > 0
+        ? [segment('all', 'Suspended', suspended, cronjobs.length, 'idle')]
+        : []),
     ],
-    distribution: distribute('Namespaces', cronjobs, (job) => job.namespace),
+    // Jobs, not schedules: one CronJob can have several in flight at once.
+    readings: running > 0 ? [reading('running now', running, 'jobs in flight', 'accent')] : [],
     alerts: [],
     alerting: 0,
     summary: suspended > 0 ? [`${suspended} suspended`] : [`${running} in flight`],
@@ -717,7 +774,7 @@ export function serviceInsights(services: Service[], label: string): ResourceIns
     label,
     services.length,
     states(services, (service) => service.type || 'Unknown', serviceTypeTone),
-    distribute('Namespaces', services, (service) => service.namespace),
+    [],
     exposed === 0
       ? `${plural(services.length, 'service')}, none exposed outside the cluster`
       : `${exposed} of ${services.length} exposed outside the cluster`,
@@ -761,19 +818,20 @@ export function ingressInsights(ingresses: Ingress[], label: string): ResourceIn
         ? `All ${plural(ingresses.length, 'ingress')} have an address`
         : `${plural(pending.length, 'ingress')} without an address`,
     headlineTone: pending.length === 0 ? 'ok' : 'warn',
-    lead: [
-      reading(label, ingresses.length),
-      reading('Addressed', ingresses.length - pending.length, undefined, 'ok'),
+    total: reading(label, ingresses.length),
+    segments: [
+      segment('all', 'Addressed', ingresses.length - pending.length, ingresses.length, 'ok'),
+      ...(pending.length > 0
+        ? [segment('all', 'No address', pending.length, ingresses.length, 'warn')]
+        : []),
     ],
-    breakdown: [
-      ...(pending.length > 0 ? [reading('No address', pending.length, undefined, 'warn')] : []),
-      reading('Hosts', hosts),
+    readings: [
+      reading('hosts', hosts),
       reading(
-        'Rules',
+        'rules',
         ingresses.reduce((sum, ingress) => sum + ingress.rules, 0),
       ),
     ],
-    distribution: distribute('Ingress classes', ingresses, (ingress) => ingress.class || 'default'),
     alerts: alerts.slice(0, MAX_ALERTS),
     alerting: alerts.length,
     summary: [plural(hosts, 'host')],
@@ -806,15 +864,21 @@ export function networkPolicyInsights(policies: NetworkPolicy[], label: string):
   return inventory(
     label,
     policies.length,
+    // Which directions a policy governs *is* a partition — a policy is one of
+    // the three — so it is the bar. Selecting every pod is not: it cuts across
+    // all three, and it is the one worth a tone.
     [
-      ...(both > 0 ? [reading('Both directions', both)] : []),
-      ...(ingressOnly > 0 ? [reading('Ingress only', ingressOnly)] : []),
-      ...(egressOnly > 0 ? [reading('Egress only', egressOnly)] : []),
-      ...(selectsEveryPod > 0
-        ? [reading('Select every pod', selectsEveryPod, 'empty podSelector', 'idle')]
+      ...(both > 0 ? [segment('all', 'Both directions', both, policies.length, 'idle')] : []),
+      ...(ingressOnly > 0
+        ? [segment('all', 'Ingress only', ingressOnly, policies.length, 'idle')]
+        : []),
+      ...(egressOnly > 0
+        ? [segment('all', 'Egress only', egressOnly, policies.length, 'idle')]
         : []),
     ],
-    distribute('Namespaces', policies, (policy) => policy.namespace),
+    selectsEveryPod > 0
+      ? [reading('select every pod', selectsEveryPod, 'empty podSelector', 'idle')]
+      : [],
     `${policies.length} ${policies.length === 1 ? 'NetworkPolicy' : 'NetworkPolicies'} here`,
     [],
   )
@@ -848,19 +912,20 @@ export function routeInsights(routes: Route[], label: string): ResourceInsight {
         ? `All ${plural(routes.length, 'route')} are attached to a gateway`
         : `${plural(orphaned.length, 'route')} attached to no gateway`,
     headlineTone: orphaned.length === 0 ? 'ok' : 'warn',
-    lead: [
-      reading(label, routes.length),
-      reading('Attached', routes.length - orphaned.length, undefined, 'ok'),
+    total: reading(label, routes.length),
+    segments: [
+      segment('all', 'Attached', routes.length - orphaned.length, routes.length, 'ok'),
+      ...(orphaned.length > 0
+        ? [segment('all', 'Unattached', orphaned.length, routes.length, 'warn')]
+        : []),
     ],
-    breakdown: [
-      ...(orphaned.length > 0 ? [reading('Unattached', orphaned.length, undefined, 'warn')] : []),
-      reading('Hostnames', hosts),
+    readings: [
+      reading('hostnames', hosts),
       reading(
-        'Rules',
+        'rules',
         routes.reduce((sum, route) => sum + route.rules, 0),
       ),
     ],
-    distribution: distribute('Namespaces', routes, (route) => route.namespace),
     alerts: alerts.slice(0, MAX_ALERTS),
     alerting: alerts.length,
     summary: [plural(hosts, 'hostname')],
@@ -892,12 +957,10 @@ export function helmInsights(releases: HelmRelease[], label: string): ResourceIn
         ? `All ${plural(releases.length, 'release')} are deployed`
         : `${plural(broken.length, 'release')} in a failed state`,
     headlineTone: broken.length === 0 ? 'ok' : 'bad',
-    lead: [reading(label, releases.length), reading('Deployed', deployed, undefined, 'ok')],
-    breakdown: [
-      ...states(releases, (release) => release.status || 'unknown', helmStatusTone),
-      reading('Charts', new Set(releases.map((release) => release.chart_name)).size),
-    ],
-    distribution: distribute('Namespaces', releases, (release) => release.namespace),
+    total: reading(label, releases.length),
+    segments: states(releases, (release) => release.status || 'unknown', helmStatusTone),
+    // Distinct charts, which is not a slice: several releases can share one.
+    readings: [reading('charts', new Set(releases.map((release) => release.chart_name)).size)],
     alerts: alerts.slice(0, MAX_ALERTS),
     alerting: alerts.length,
     summary: broken.length > 0 ? [`${broken.length} failed`] : [`${deployed} deployed`],
@@ -940,9 +1003,11 @@ export function volumeInsights(volumes: PersistentVolume[], label: string): Reso
         ? `All ${plural(volumes.length, 'volume')} are bound`
         : `${bound} of ${volumes.length} bound`,
     headlineTone: alerts.length > 0 ? 'warn' : bound === volumes.length ? 'ok' : 'idle',
-    lead: [reading(label, volumes.length), reading('Bound', bound, undefined, 'ok')],
-    breakdown: states(volumes, (volume) => volume.status || 'Unknown', volumeStatusTone),
-    distribution: distribute('Storage classes', volumes, (volume) => volume.storage_class || 'none'),
+    total: reading(label, volumes.length),
+    segments: states(volumes, (volume) => volume.status || 'Unknown', volumeStatusTone),
+    readings: [
+      reading('storage classes', new Set(volumes.map((volume) => volume.storage_class || 'none')).size),
+    ],
     alerts: alerts.slice(0, MAX_ALERTS),
     alerting: alerts.length,
     summary: [`${bound}/${volumes.length} bound`],
@@ -981,9 +1046,11 @@ export function claimInsights(claims: PersistentVolumeClaim[], label: string): R
         ? `All ${plural(claims.length, 'claim')} are bound`
         : `${plural(waiting.length, 'claim')} not bound`,
     headlineTone: waiting.length === 0 ? 'ok' : 'warn',
-    lead: [reading(label, claims.length), reading('Bound', bound, undefined, 'ok')],
-    breakdown: states(claims, (claim) => claim.status || 'Unknown', volumeStatusTone),
-    distribution: distribute('Storage classes', claims, (claim) => claim.storage_class || 'none'),
+    total: reading(label, claims.length),
+    segments: states(claims, (claim) => claim.status || 'Unknown', volumeStatusTone),
+    readings: [
+      reading('storage classes', new Set(claims.map((claim) => claim.storage_class || 'none')).size),
+    ],
     alerts: alerts.slice(0, MAX_ALERTS),
     alerting: alerts.length,
     summary: [`${bound}/${claims.length} bound`],
@@ -999,13 +1066,15 @@ export function storageClassInsights(classes: StorageClass[], label: string): Re
   return inventory(
     label,
     classes.length,
+    // Which provisioner backs each class is the partition worth seeing; the
+    // binding mode is a second one, and a bar can only be one.
+    composition(classes, (entry) => entry.provisioner),
     [
       // No default class means a claim with no class named stays Pending
       // forever, which is worth the eye landing on.
-      reading('Default', defaults, undefined, defaults === 1 ? 'ok' : 'warn'),
-      ...states(classes, (entry) => entry.binding_mode || 'Unknown', () => 'idle'),
+      reading('default', defaults, undefined, defaults === 1 ? 'ok' : 'warn'),
+      reading('provisioners', new Set(classes.map((entry) => entry.provisioner)).size),
     ],
-    distribute('Provisioners', classes, (entry) => entry.provisioner),
     defaults === 1
       ? `${plural(classes.length, 'class')}, one of them the default`
       : defaults === 0
@@ -1029,13 +1098,15 @@ export function configInsights(entries: ConfigEntry[], label: string, secrets: b
   return inventory(
     label,
     entries.length,
+    // A Secret's type is a real partition and a useful one — a TLS secret and a
+    // Helm release record are not the same object. A ConfigMap has no such
+    // field, so it gets no bar rather than a bar of namespaces, which the
+    // namespace scope above the list already answers.
+    secrets ? composition(entries, (entry) => entry.type || 'Opaque') : [],
     [
-      reading('Keys', keys),
-      ...(immutable > 0 ? [reading('Immutable', immutable, undefined, 'idle')] : []),
+      reading('keys', keys),
+      ...(immutable > 0 ? [reading('immutable', immutable, undefined, 'idle')] : []),
     ],
-    secrets
-      ? distribute('Types', entries, (entry) => entry.type || 'Opaque')
-      : distribute('Namespaces', entries, (entry) => entry.namespace),
     `${plural(entries.length, secrets ? 'secret' : 'config map')} holding ${plural(keys, 'key')}`,
     [plural(keys, 'key')],
   )
@@ -1051,12 +1122,13 @@ export function crdInsights(crds: CustomResourceDefinition[], label: string): Re
   return inventory(
     label,
     crds.length,
+    // Whose extension it is, which is the question a CRD list is opened with.
+    composition(crds, (crd) => crd.group),
     [
-      reading('Namespaced', namespaced),
-      reading('Cluster-scoped', crds.length - namespaced),
+      reading('namespaced', namespaced),
+      reading('cluster-scoped', crds.length - namespaced),
       reading('API groups', groups),
     ],
-    distribute('API groups', crds, (crd) => crd.group),
     `${plural(crds.length, 'definition')} across ${plural(groups, 'API group')}`,
     [plural(groups, 'group')],
   )
@@ -1072,8 +1144,9 @@ export function customInsights(rows: CustomResource[], label: string): ResourceI
   return inventory(
     label,
     rows.length,
-    [reading('Kinds', new Set(rows.map((row) => row.kind).filter(Boolean)).size)],
-    distribute('Namespaces', rows, (row) => row.namespace),
+    // One list can hold several kinds when it came from a discovered group.
+    composition(rows, (row) => row.kind),
+    [reading('kinds', new Set(rows.map((row) => row.kind).filter(Boolean)).size)],
     `${plural(rows.length, 'object')} on this cluster`,
     [],
   )
@@ -1111,15 +1184,18 @@ export function nodeInsights(nodes: ClusterNode[], label: string): ResourceInsig
           : `${plural(nodes.length, 'node')} ready, ${cordoned} cordoned`
         : `${plural(down.length, 'node')} not ready`,
     headlineTone: down.length > 0 ? 'bad' : cordoned > 0 ? 'warn' : 'ok',
-    lead: [reading(label, nodes.length), reading('Ready', ready, undefined, 'ok')],
-    breakdown: [
-      ...(down.length > 0 ? [reading('Not ready', down.length, undefined, 'bad')] : []),
-      ...(cordoned > 0 ? [reading('Cordoned', cordoned, 'unschedulable', 'warn')] : []),
-      reading('Kubelet versions', new Set(nodes.map((node) => node.version)).size),
+    total: reading(label, nodes.length),
+    segments: [
+      segment('all', 'Ready', ready, nodes.length, 'ok'),
+      ...(down.length > 0 ? [segment('all', 'Not ready', down.length, nodes.length, 'bad')] : []),
     ],
-    // Roles rather than namespaces: a node has no namespace, and how the
-    // control plane and the workers split is the shape of the cluster.
-    distribution: distribute('Roles', nodes, (node) => node.roles[0] ?? 'none'),
+    readings: [
+      // Cordoned is not a slice: a cordoned node is usually Ready as well, and
+      // that overlap is the whole reason it is worth saying out loud.
+      ...(cordoned > 0 ? [reading('cordoned', cordoned, 'unschedulable', 'warn')] : []),
+      reading('kubelet versions', new Set(nodes.map((node) => node.version)).size),
+      reading('roles', new Set(nodes.map((node) => node.roles[0] ?? 'none')).size),
+    ],
     alerts: alerts.slice(0, MAX_ALERTS),
     alerting: alerts.length,
     summary: [`${ready}/${nodes.length} ready`],
@@ -1161,18 +1237,29 @@ export function roleInsights(
   return inventory(
     label,
     roles.length,
+    // Who wrote them is the partition that makes the list legible: Kubernetes'
+    // own roles are most of a fresh cluster's, and the remainder is what
+    // somebody here actually authored.
+    builtin > 0 && authored > 0
+      ? [
+          segment('all', 'Authored here', authored, roles.length, 'accent'),
+          segment('all', "Kubernetes' own", builtin, roles.length, 'idle'),
+        ]
+      : [],
     [
       ...(wildcard > 0
-        ? [reading('Wildcard rules', wildcard, 'grant * on something', 'warn')]
+        ? [reading('grant * on something', wildcard, undefined, 'warn')]
         : []),
-      ...(builtin > 0 ? [reading('Built-in', builtin, "Kubernetes' own", 'idle')] : []),
-      reading('Rules', rules),
+      reading('rules', rules),
+      // A ClusterRole has no namespace, so the shape worth counting is the
+      // policy's: how much of the API surface these roles touch between them.
+      clusterScoped
+        ? reading(
+            'resources touched',
+            new Set(roles.flatMap((role) => role.resources)).size,
+          )
+        : reading('namespaces', new Set(roles.map((role) => role.namespace ?? '-')).size),
     ],
-    // A ClusterRole has no namespace to spread over, so what is worth knowing is
-    // the shape of the policy instead: how many of them touch each resource.
-    clusterScoped
-      ? distribute('Resources', roles, (role) => role.resources[0] ?? 'non-resource URLs')
-      : distribute('Namespaces', roles, (role) => role.namespace ?? '—'),
     wildcard > 0
       ? `${plural(roles.length, 'role')}, ${wildcard} granting * on something`
       : `${plural(authored, 'role')}${builtin > 0 ? ` beyond Kubernetes' own ${builtin}` : ''}`,
@@ -1205,17 +1292,19 @@ export function bindingInsights(
   return inventory(
     label,
     bindings.length,
+    // Which role each binding points at: the partition an audit reads first,
+    // because it is how "who can do this" is actually grouped.
+    composition(bindings, (binding) => binding.role_name),
     [
-      reading('Subjects', subjects),
-      ...(groups > 0 ? [reading('Bind a group', groups)] : []),
+      reading('subjects', subjects),
+      ...(groups > 0 ? [reading('bind a group', groups)] : []),
       ...(!clusterScoped && viaClusterRole > 0
-        ? [reading('Use a ClusterRole', viaClusterRole, 'applied in-namespace')]
+        ? [reading('use a ClusterRole', viaClusterRole, 'applied in-namespace')]
         : []),
       // A binding with no subjects grants nothing. It is not a fault, but it is
       // almost always a leftover, and it never shows up in a list of names.
-      ...(empty > 0 ? [reading('Bind nobody', empty, undefined, 'idle')] : []),
+      ...(empty > 0 ? [reading('bind nobody', empty, undefined, 'idle')] : []),
     ],
-    distribute('Roles', bindings, (binding) => binding.role_name),
     clusterScoped
       ? `${plural(bindings.length, 'cluster-wide binding')} reaching ${plural(subjects, 'subject')}`
       : `${plural(bindings.length, 'binding')} reaching ${plural(subjects, 'subject')}`,
@@ -1240,11 +1329,17 @@ export function serviceAccountInsights(
   return inventory(
     label,
     accounts.length,
-    [
-      reading('Default', defaults, 'one per namespace'),
-      ...(declined > 0 ? [reading('Token declined', declined, 'not automounted', 'idle')] : []),
-    ],
-    distribute('Namespaces', accounts, (account) => account.namespace),
+    // The `default` account exists whether anyone wanted it, so the split that
+    // matters is it against the accounts somebody created on purpose.
+    defaults > 0 && accounts.length > defaults
+      ? [
+          segment('all', 'Created here', accounts.length - defaults, accounts.length, 'accent'),
+          segment('all', 'default', defaults, accounts.length, 'idle', {
+            detail: 'one per namespace',
+          }),
+        ]
+      : [],
+    declined > 0 ? [reading('token declined', declined, 'not automounted', 'idle')] : [],
     `${plural(accounts.length, 'account')} workloads here can run as`,
     [],
   )
@@ -1279,16 +1374,19 @@ export function namespaceInsights(namespaces: Namespace[], label: string): Resou
         ? `${plural(namespaces.length, 'namespace')}, all active`
         : `${plural(terminating.length, 'namespace')} still terminating`,
     headlineTone: terminating.length === 0 ? 'ok' : 'warn',
-    lead: [reading(label, namespaces.length), reading('Active', active, undefined, 'ok')],
-    breakdown: [
+    total: reading(label, namespaces.length),
+    segments: [
+      segment('all', 'Active', active, namespaces.length, 'ok'),
       ...(terminating.length > 0
-        ? [reading('Terminating', terminating.length, undefined, 'warn')]
+        ? [segment('all', 'Terminating', terminating.length, namespaces.length, 'warn')]
         : []),
-      // What the grant actually covers, which is the question a namespace list
-      // is usually opened to answer.
-      reading('Granted to you', granted, granted === namespaces.length ? 'all of them' : undefined),
     ],
-    distribution: distribute('Status', namespaces, (entry) => entry.status || 'Unknown'),
+    readings: [
+      // What the grant actually covers, which is the question a namespace list
+      // is usually opened to answer. Not a slice: a granted namespace is also
+      // an active one.
+      reading('granted to you', granted, granted === namespaces.length ? 'all of them' : undefined),
+    ],
     alerts: alerts.slice(0, MAX_ALERTS),
     alerting: alerts.length,
     summary: [`${granted} granted`],

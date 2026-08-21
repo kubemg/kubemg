@@ -1,14 +1,22 @@
 export type StrandState = 'live' | 'direct' | 'down' | 'idle'
 
-/* The shape of the line carries the state, so the strand survives greyscale and
-   a squint: a live link swells toward the KubeMG end, a fixed wire is flat and
-   even, a broken one is severed in the middle, a waiting one barely registers.
-   No dashes and no marquee — the form does the work, not the motion. */
-const TRACK: Record<StrandState, string> = {
-  live: 'linear-gradient(90deg, transparent, currentColor 30%, currentColor)',
-  direct: 'linear-gradient(90deg, currentColor, currentColor)',
-  down: 'linear-gradient(90deg, currentColor, transparent 40%, transparent 60%, currentColor)',
-  idle: 'linear-gradient(90deg, transparent, currentColor 45%, currentColor 55%, transparent)',
+/* The shape of the trace carries the state, so the strand survives greyscale
+   and a squint: a live link has a pulse gathered toward the KubeMG end — the
+   direction the connection is actually made — a fixed wire is a flat run, a
+   broken one is cut clean in the middle, and a waiting one is a line not yet
+   drawn solid. It reads as telemetry, not as a gauge filling up. */
+const PATH: Record<StrandState, string> = {
+  live: 'M0 12 L60 12 L65 3 L70 21 L75 6 L80 17 L84 12 L100 12',
+  direct: 'M0 12 L100 12',
+  down: 'M0 12 L42 12 M42 5 L42 19 M58 5 L58 19 M58 12 L100 12',
+  idle: 'M0 12 L100 12',
+}
+
+const DASH: Record<StrandState, string | undefined> = {
+  live: undefined,
+  direct: undefined,
+  down: undefined,
+  idle: '1.5 5',
 }
 
 const COLOR: Record<StrandState, string> = {
@@ -20,9 +28,9 @@ const COLOR: Record<StrandState, string> = {
 
 const OPACITY: Record<StrandState, string> = {
   live: 'strand-live',
-  direct: 'opacity-40',
-  down: 'opacity-75',
-  idle: 'opacity-30',
+  direct: 'opacity-55',
+  down: 'opacity-85',
+  idle: 'opacity-45',
 }
 
 const READING: Record<StrandState, string> = {
@@ -34,12 +42,11 @@ const READING: Record<StrandState, string> = {
 
 /**
  * LinkStrand is the deck's signature: one cluster's link to KubeMG, drawn as a
- * single continuous hairline. An open agent tunnel gathers toward the KubeMG
- * end — the direction the connection is actually made, since the cluster dials
- * out and KubeMG never dials in — and carries a soft glow that breathes rather
- * than a pulse that races across the row. A direct-mode cluster is a flat wire
- * with no traffic of its own; a broken link is severed in the middle; a cluster
- * that has not dialled in yet is a faint thread fading out at both ends.
+ * telemetry trace rather than a gauge. An open agent tunnel carries a pulse
+ * gathered toward the KubeMG end, glowing with a soft breath rather than a
+ * pulse that races across the row. A direct-mode cluster is a flat, steady
+ * run with no traffic of its own; a broken link is cut clean in the middle;
+ * a cluster that has not dialled in yet is a line not yet drawn solid.
  */
 export function LinkStrand({
   state,
@@ -50,25 +57,36 @@ export function LinkStrand({
   size?: 'sm' | 'md' | 'lg'
   className?: string
 }) {
-  const height = size === 'lg' ? 'h-1' : size === 'sm' ? 'h-px' : 'h-[3px]'
+  const height = size === 'lg' ? 'h-4' : size === 'sm' ? 'h-2' : 'h-2.5'
 
   return (
     <span
       role="img"
       aria-label={READING[state]}
       title={READING[state]}
-      className={`relative block rounded-full ${height} ${COLOR[state]} ${className ?? ''}`}
+      className={`relative block ${height} ${COLOR[state]} ${className ?? ''}`}
     >
-      {/* drop-shadow rather than box-shadow: it follows the gradient's own alpha,
-          so the glow gathers where the link is live and dies out where it isn't. */}
-      <span
+      {/* drop-shadow rather than box-shadow: it follows the stroke's own alpha,
+          so the glow only ever gathers around a trace that is actually live. */}
+      <svg
         aria-hidden="true"
-        className={`absolute inset-0 rounded-full ${OPACITY[state]}`}
+        viewBox="0 0 100 24"
+        preserveAspectRatio="none"
+        className={`absolute inset-0 h-full w-full ${OPACITY[state]}`}
         style={{
-          backgroundImage: TRACK[state],
-          filter: state === 'live' ? 'drop-shadow(0 0 3px currentColor)' : undefined,
+          filter: state === 'live' ? 'drop-shadow(0 0 2.5px currentColor)' : undefined,
         }}
-      />
+      >
+        <path
+          d={PATH[state]}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={3}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeDasharray={DASH[state]}
+        />
+      </svg>
     </span>
   )
 }
