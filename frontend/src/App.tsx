@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router'
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router'
 import { AccessRequests } from './pages/AccessRequests'
 import { AuditTrail } from './pages/AuditTrail'
 import { AuthCallback } from './pages/AuthCallback'
@@ -24,8 +24,11 @@ import { GeneralSettings } from './pages/settings/GeneralSettings'
 import { GuardrailsSettings } from './pages/settings/GuardrailsSettings'
 import { SsoSettings } from './pages/settings/SsoSettings'
 import { UserManagement } from './pages/UserManagement'
+import type { ClusterPage } from './lib/navigation'
+import { DEFAULT_RESOURCE } from './lib/navigation'
 import { AuthProvider } from './state/AuthProvider'
 import { ClustersProvider } from './state/ClustersProvider'
+import { InventoryProvider } from './state/InventoryProvider'
 import { TimeRangeProvider } from './state/TimeRangeProvider'
 import { useAuth } from './state/auth-context'
 import { useClusters } from './state/clusters-context'
@@ -62,7 +65,14 @@ function RequireAuth({ children, adminOnly = false }: { children: ReactNode; adm
   }
   if (adminOnly && user.role !== 'admin') return <Navigate to="/" replace />
 
-  return <ClustersProvider>{children}</ClustersProvider>
+  return (
+    <ClustersProvider>
+      {/* The tree is drawn on every one of a cluster's pages, so what a cluster
+          can browse is read here rather than by whichever page happens to be
+          open. */}
+      <InventoryProvider>{children}</InventoryProvider>
+    </ClustersProvider>
+  )
 }
 
 /** What somebody without the rights to finish setup sees while it is unfinished. */
@@ -117,7 +127,44 @@ function CallbackRoute() {
  */
 function ExploreClusterRedirect() {
   const { clusterId } = useParams<{ clusterId: string }>()
-  return <Navigate to={`/clusters/${clusterId}/explore/pods`} replace />
+  return <Navigate to={`/clusters/${clusterId}/${DEFAULT_RESOURCE}`} replace />
+}
+
+/**
+ * `/clusters/:id/explore/...` — the address every resource list had while the
+ * tree lived inside a page called Explore. The word is gone from the interface,
+ * so it is gone from the address; the kind sits directly under the cluster now.
+ * The query string comes along because it carries the namespace, which is the
+ * half of one of these links that people actually care about.
+ */
+function ExploreResourceRedirect() {
+  const params = useParams<{ id: string; '*': string }>()
+  const { search } = useLocation()
+  const key = params['*'] || DEFAULT_RESOURCE
+  return <Navigate to={`/clusters/${params.id}/${key}${search}`} replace />
+}
+
+/** A cluster page whose slug changed, at the address it changed from. */
+function ClusterPageRedirect({ page }: { page: ClusterPage }) {
+  const { id } = useParams<{ id: string }>()
+  const { search } = useLocation()
+  return <Navigate to={`/clusters/${id}/${page}${search}`} replace />
+}
+
+/** A bookmarked Settings tab, at the address that tab used to have. */
+function SettingsPaneRedirect() {
+  const { pane } = useParams<{ pane: string }>()
+  return <Navigate to={`/admin/settings/${pane ?? 'general'}`} replace />
+}
+
+/**
+ * An address that moved wholesale into `/admin` or `/me`. Registered so that
+ * every link already pasted into a runbook still lands, and so a bookmark on
+ * the old Settings tab does not answer with the fleet overview.
+ */
+function MovedTo({ to }: { to: string }) {
+  const { search } = useLocation()
+  return <Navigate to={`${to}${search}`} replace />
 }
 
 /**
@@ -134,7 +181,7 @@ function ExploreLanding() {
     (cluster) => cluster.connection_mode === 'agent' && cluster.agent_attached,
   )
   if (!loading && reachable) {
-    return <Navigate to={`/clusters/${reachable.id}/explore/pods`} replace />
+    return <Navigate to={`/clusters/${reachable.id}/${DEFAULT_RESOURCE}`} replace />
   }
   return <Explore />
 }
@@ -165,62 +212,61 @@ export default function App() {
                 </RequireAuth>
               }
             />
-            <Route
-              path="/clusters"
-              element={
-                <RequireAuth adminOnly>
-                  <ClusterManagement />
-                </RequireAuth>
-              }
-            />
+
+            {/* ── A cluster's own space ──────────────────────────────────────
+                Which cluster, which kind, and which namespace are all in the
+                address — "the Services in `payments` on prod-eu-west-1" is a
+                link, not a sequence of clicks to reproduce.
+
+                The five page slugs below are reserved: the resource route is a
+                splat, so a kind that collided with one of them would be
+                unreachable. Everything else under a cluster is a resource key,
+                and it is a splat rather than a `:kind` segment because a
+                discovered CRD's key (`crd:group/version/plural`) carries
+                slashes of its own that one segment cannot hold. */}
+
             {/* Registered before /clusters/:id so "new" is never read as an id. */}
             <Route
               path="/clusters/new"
               element={
                 <RequireAuth adminOnly>
-                  <ClusterWizard />
+                  <MovedTo to="/admin/clusters/new" />
                 </RequireAuth>
               }
             />
-            {/* A cluster now has an address space of its own — /clusters/:id is
-                nothing on its own, just where its default view lives. The
-                redirect is relative so it preserves whatever id matched. */}
+            {/* The inventory is administration; `/` is the picker. */}
+            <Route
+              path="/clusters"
+              element={
+                <RequireAuth adminOnly>
+                  <MovedTo to="/admin/clusters" />
+                </RequireAuth>
+              }
+            />
             <Route
               path="/clusters/:id"
               element={
                 <RequireAuth>
-                  <Navigate to="summary" replace />
+                  <Navigate to="dashboard" replace />
                 </RequireAuth>
               }
             />
+            {/* Summary became Dashboard: it is the first row under Cluster in
+                the tree, and "dashboard" is what everybody arriving from
+                Rancher or Lens already calls it. */}
             <Route
               path="/clusters/:id/summary"
               element={
                 <RequireAuth>
+                  <ClusterPageRedirect page="dashboard" />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/clusters/:id/dashboard"
+              element={
+                <RequireAuth>
                   <ClusterSummary />
-                </RequireAuth>
-              }
-            />
-            {/* Which cluster is being explored — and which resource, and which
-                namespace — is part of the address, not page state: the entity
-                switcher, the fleet list and the palette are how an operator moves
-                between clusters, and a link to what someone is looking at has to
-                carry all three. The resource key is a splat rather than a plain
-                `:kind` because a discovered CRD's key (`crd:group/version/plural`)
-                contains slashes of its own. */}
-            <Route
-              path="/clusters/:id/explore"
-              element={
-                <RequireAuth>
-                  <Navigate to="pods" replace />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/clusters/:id/explore/*"
-              element={
-                <RequireAuth>
-                  <Explore />
                 </RequireAuth>
               }
             />
@@ -238,10 +284,10 @@ export default function App() {
               }
             />
             {/* Allocation rather than consumption. It is its own address rather
-                than a tab on the summary because it answers a question the
-                summary's Capacity panel cannot — what the scheduler has already
-                promised away — and because "why will nothing schedule" is a
-                question somebody arrives with, and arriving means a link. */}
+                than a tab on the dashboard because it answers a question the
+                dashboard's Capacity panel cannot — what the scheduler has
+                already promised away — and because "why will nothing schedule"
+                is a question somebody arrives with, and arriving means a link. */}
             <Route
               path="/clusters/:id/capacity"
               element={
@@ -250,11 +296,8 @@ export default function App() {
                 </RequireAuth>
               }
             />
-            {/* Workload security posture: seven fixed rules over fields Explore
-                already reads, per cluster or per namespace. Reached the same
-                way Events is — a live tunnel, and a row in the cluster's own
-                quick-nav — because it answers a question about the cluster as
-                a whole rather than about one object somebody already opened. */}
+            {/* Workload security posture: seven fixed rules over fields the
+                resource lists already read, per cluster or per namespace. */}
             <Route
               path="/clusters/:id/security"
               element={
@@ -270,6 +313,36 @@ export default function App() {
               element={
                 <RequireAuth>
                   <AuditTrail />
+                </RequireAuth>
+              }
+            />
+            {/* The tree used to live inside a page called Explore, one click
+                below the cluster. Both of its addresses now redirect onto the
+                kind itself. */}
+            <Route
+              path="/clusters/:id/explore"
+              element={
+                <RequireAuth>
+                  <ExploreResourceRedirect />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/clusters/:id/explore/*"
+              element={
+                <RequireAuth>
+                  <ExploreResourceRedirect />
+                </RequireAuth>
+              }
+            />
+            {/* Every other address under a cluster is one of its resource
+                lists. Ranked below every static route above it, so it only
+                catches what none of them claimed. */}
+            <Route
+              path="/clusters/:id/*"
+              element={
+                <RequireAuth>
+                  <Explore />
                 </RequireAuth>
               }
             />
@@ -290,29 +363,13 @@ export default function App() {
                 </RequireAuth>
               }
             />
-            <Route
-              path="/audit"
-              element={
-                <RequireAuth>
-                  <AuditTrail />
-                </RequireAuth>
-              }
-            />
-            {/* Everyone reaches their own recordings; an admin reaches the fleet's.
-                The narrowing is the server's, exactly as it is for the trail. */}
-            <Route
-              path="/recordings"
-              element={
-                <RequireAuth>
-                  <SessionRecordings />
-                </RequireAuth>
-              }
-            />
-            {/* Not adminOnly: the people who need to ask for access are the ones
-                without it, and the server narrows a non-admin to their own
+
+            {/* ── The operator's own business ────────────────────────────────
+                Not adminOnly: the people who need to ask for access are the
+                ones without it, and the server narrows a non-admin to their own
                 requests exactly as it does on the audit trail. */}
             <Route
-              path="/access-requests"
+              path="/me/access"
               element={
                 <RequireAuth>
                   <AccessRequests />
@@ -320,7 +377,39 @@ export default function App() {
               }
             />
             <Route
-              path="/users"
+              path="/access-requests"
+              element={
+                <RequireAuth>
+                  <MovedTo to="/me/access" />
+                </RequireAuth>
+              }
+            />
+
+            {/* ── Administration ────────────────────────────────────────────
+                One door, admins only. Registering a cluster, mapping identity,
+                writing guardrails and reading the fleet-wide trail are the
+                platform team's work; they used to sit one row below the thing a
+                developer opens forty times a day. */}
+            <Route path="/admin" element={<Navigate to="/admin/clusters" replace />} />
+            {/* Before /admin/clusters so "new" is never read as an id. */}
+            <Route
+              path="/admin/clusters/new"
+              element={
+                <RequireAuth adminOnly>
+                  <ClusterWizard />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/clusters"
+              element={
+                <RequireAuth adminOnly>
+                  <ClusterManagement />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/users"
               element={
                 <RequireAuth adminOnly>
                   <UserManagement />
@@ -328,7 +417,7 @@ export default function App() {
               }
             />
             <Route
-              path="/groups"
+              path="/admin/groups"
               element={
                 <RequireAuth adminOnly>
                   <GroupManagement />
@@ -336,16 +425,46 @@ export default function App() {
               }
             />
             <Route
-              path="/permissions"
+              path="/admin/permissions"
               element={
                 <RequireAuth adminOnly>
                   <PermissionsMatrix />
                 </RequireAuth>
               }
             />
-            <Route path="/settings" element={<Navigate to="/settings/general" replace />} />
+            {/* The approver's door onto the same page `/me/access` is the
+                asker's. Two entrances, one surface, narrowed by the server. */}
             <Route
-              path="/settings/general"
+              path="/admin/access-requests"
+              element={
+                <RequireAuth adminOnly>
+                  <AccessRequests />
+                </RequireAuth>
+              }
+            />
+            {/* The fleet-wide trail. A cluster's own trail stays in its tree. */}
+            <Route
+              path="/admin/audit"
+              element={
+                <RequireAuth adminOnly>
+                  <AuditTrail />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/recordings"
+              element={
+                <RequireAuth adminOnly>
+                  <SessionRecordings />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/settings"
+              element={<Navigate to="/admin/settings/general" replace />}
+            />
+            <Route
+              path="/admin/settings/general"
               element={
                 <RequireAuth adminOnly>
                   <GeneralSettings />
@@ -353,7 +472,7 @@ export default function App() {
               }
             />
             <Route
-              path="/settings/agent"
+              path="/admin/settings/agent"
               element={
                 <RequireAuth adminOnly>
                   <AgentSettings />
@@ -361,7 +480,7 @@ export default function App() {
               }
             />
             <Route
-              path="/settings/audit"
+              path="/admin/settings/audit"
               element={
                 <RequireAuth adminOnly>
                   <AuditSettings />
@@ -369,7 +488,7 @@ export default function App() {
               }
             />
             <Route
-              path="/settings/guardrails"
+              path="/admin/settings/guardrails"
               element={
                 <RequireAuth adminOnly>
                   <GuardrailsSettings />
@@ -377,7 +496,7 @@ export default function App() {
               }
             />
             <Route
-              path="/settings/alerting"
+              path="/admin/settings/alerting"
               element={
                 <RequireAuth adminOnly>
                   <AlertingSettings />
@@ -385,7 +504,7 @@ export default function App() {
               }
             />
             <Route
-              path="/settings/sso"
+              path="/admin/settings/sso"
               element={
                 <RequireAuth adminOnly>
                   <SsoSettings />
@@ -393,13 +512,66 @@ export default function App() {
               }
             />
             <Route
-              path="/settings/deployment"
+              path="/admin/settings/deployment"
               element={
                 <RequireAuth adminOnly>
                   <DeploymentSettings />
                 </RequireAuth>
               }
             />
+
+            {/* ── Where administration used to live ─────────────────────────
+                Every one of these is in somebody's bookmarks or a runbook. */}
+            <Route
+              path="/users"
+              element={
+                <RequireAuth adminOnly>
+                  <MovedTo to="/admin/users" />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/groups"
+              element={
+                <RequireAuth adminOnly>
+                  <MovedTo to="/admin/groups" />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/permissions"
+              element={
+                <RequireAuth adminOnly>
+                  <MovedTo to="/admin/permissions" />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/audit"
+              element={
+                <RequireAuth adminOnly>
+                  <MovedTo to="/admin/audit" />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/recordings"
+              element={
+                <RequireAuth adminOnly>
+                  <MovedTo to="/admin/recordings" />
+                </RequireAuth>
+              }
+            />
+            <Route path="/settings" element={<Navigate to="/admin/settings/general" replace />} />
+            <Route
+              path="/settings/:pane"
+              element={
+                <RequireAuth adminOnly>
+                  <SettingsPaneRedirect />
+                </RequireAuth>
+              }
+            />
+
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </TimeRangeProvider>

@@ -1,21 +1,100 @@
 import type { Cluster } from '../api/types'
 
 /**
- * Where picking a cluster goes.
+ * The console has two address spaces, and they answer to two different people.
  *
- * A cluster now has an address space of its own (`/clusters/:id/*`), so
- * picking one is choosing a view inside that space rather than choosing
- * between two unrelated pages. Picking a cluster is asking to look inside it,
- * so a cluster with a live agent tunnel opens on its resources — the fleet
- * list, the palette and the entity switcher are the cluster switcher, which is
- * why Explore has no picker of its own. A cluster with no tunnel has no live
- * state to show, so it opens on its summary, which is where its connection and
- * access are managed either way.
+ * `/clusters/:id/*` is a cluster: its dashboard, the reads taken from it, and
+ * every kind of object in it. This is the space a developer or an analyst lives
+ * in, and it is the console's default — picking a cluster is asking to look
+ * inside one, so it opens on its resources rather than on a page about it.
+ *
+ * `/admin/*` is the fleet's administration: registering clusters, mapping
+ * identity, guardrails, settings, and the fleet-wide trail. Those are the
+ * platform team's work — done rarely, change-controlled — so they sit behind
+ * one door rather than one row above the thing somebody opens forty times a
+ * day.
+ *
+ * `/me/*` is the operator's own business: the access they hold and the access
+ * they are waiting on.
+ */
+
+/** Whether a cluster has a live tunnel, which is what any read *from* it needs. */
+export function hasTunnel(cluster: Cluster): boolean {
+  return cluster.connection_mode === 'agent' && cluster.agent_attached
+}
+
+/**
+ * A page a cluster carries that is not one of its resource lists. Everything
+ * else under `/clusters/:id/` is a resource key, which is why these five names
+ * are reserved: the resource route is a splat, so a kind called `capacity`
+ * would otherwise be unreachable.
+ */
+export type ClusterPage = 'dashboard' | 'events' | 'capacity' | 'security' | 'audit'
+
+export const CLUSTER_PAGES: readonly ClusterPage[] = [
+  'dashboard',
+  'events',
+  'capacity',
+  'security',
+  'audit',
+]
+
+/**
+ * The pages that read the cluster itself. Dashboard and the audit trail are
+ * served from KubeMG's own records — the connection it holds, the calls it made
+ * — so they survive an agent that has stopped dialling in. The other three are
+ * reads through the tunnel and cannot.
+ */
+const LIVE_PAGES: readonly ClusterPage[] = ['events', 'capacity', 'security']
+
+export function pageNeedsTunnel(page: ClusterPage): boolean {
+  return LIVE_PAGES.includes(page)
+}
+
+function isClusterPage(segment: string): segment is ClusterPage {
+  return (CLUSTER_PAGES as readonly string[]).includes(segment)
+}
+
+/**
+ * What a `/clusters/:id/...` address is looking at: one of the cluster's own
+ * pages, or one of its resource lists. A resource key can carry slashes of its
+ * own (`crd:group/version/plural`), so it is the whole tail rather than one
+ * segment.
+ */
+export type ClusterSlot =
+  | { kind: 'page'; page: ClusterPage }
+  | { kind: 'resource'; key: string }
+
+/** What every cluster opens on when it has nothing to read through. */
+export const DEFAULT_PAGE: ClusterPage = 'dashboard'
+
+/** What a cluster with a tunnel opens on: the list people actually arrive for. */
+export const DEFAULT_RESOURCE = 'pods'
+
+export function clusterPageHref(clusterId: number, page: ClusterPage): string {
+  return `/clusters/${clusterId}/${page}`
+}
+
+/**
+ * A resource list's address, carrying a query string when one applies — the
+ * namespace scope travels with the kind, so a click in the tree keeps the
+ * namespace the operator is working in.
+ */
+export function resourceHref(clusterId: number, key: string, search = ''): string {
+  const qs = search.replace(/^\?/, '')
+  return `/clusters/${clusterId}/${key}${qs ? `?${qs}` : ''}`
+}
+
+/**
+ * Where picking a cluster goes. A cluster with a tunnel opens on its
+ * resources — that is what the fleet list, the rail, the switchers and the
+ * palette are all asking for. One without has no live state to show, so it
+ * opens on its dashboard, which is where its connection is explained.
  */
 export function clusterHref(cluster: Cluster): string {
-  return cluster.connection_mode === 'agent' && cluster.agent_attached
-    ? `/clusters/${cluster.id}/explore`
-    : `/clusters/${cluster.id}/summary`
+  return hasTunnel(cluster)
+    ? resourceHref(cluster.id, DEFAULT_RESOURCE)
+    : clusterPageHref(cluster.id, DEFAULT_PAGE)
 }
 
 /** Whether a path is looking at this cluster, anywhere in its address space. */
@@ -23,39 +102,48 @@ export function isClusterPath(pathname: string, id: number): boolean {
   return pathname === `/clusters/${id}` || pathname.startsWith(`/clusters/${id}/`)
 }
 
-/** The views a cluster's own address space holds. */
-export type ClusterView = 'summary' | 'explore' | 'audit' | 'events' | 'capacity' | 'security'
+/** The cluster id a path names, or `null` outside a cluster's space entirely. */
+export function clusterIdFromPath(pathname: string): number | null {
+  const match = /^\/clusters\/(\d+)(?:\/|$)/.exec(pathname)
+  return match ? Number(match[1]) : null
+}
 
-/** Which of a cluster's own views the address currently names, Summary when it
-    does not — the same view `clusterHref` opens by default. */
-export function currentClusterView(pathname: string, clusterId: number): ClusterView {
-  const match = pathname.match(
-    new RegExp(`^/clusters/${clusterId}/(summary|explore|audit|events|capacity|security)(?:/|$)`),
-  )
-  return (match?.[1] as ClusterView | undefined) ?? 'summary'
+/** Which slot of `clusterId`'s space the address names; its dashboard by default. */
+export function currentClusterSlot(pathname: string, clusterId: number): ClusterSlot {
+  const prefix = `/clusters/${clusterId}/`
+  if (!pathname.startsWith(prefix)) return { kind: 'page', page: DEFAULT_PAGE }
+  const tail = pathname.slice(prefix.length)
+  if (!tail) return { kind: 'page', page: DEFAULT_PAGE }
+  const head = tail.split('/')[0]
+  return isClusterPage(head) ? { kind: 'page', page: head } : { kind: 'resource', key: tail }
 }
 
 /**
- * Every cluster has a summary and a trail. The rest are read *from the
- * cluster* — its resources, the events it recorded, its allocation, its
- * posture — and are agent-only for the same reason, so switching from one of
- * them to a cluster with no tunnel lands on that cluster's summary rather than
- * on a page that can only refuse.
+ * Where switching to `target` goes while `slot` is open. Switching clusters
+ * keeps what you were reading — Pods stays Pods, Capacity stays Capacity — and
+ * falls back to the dashboard on a cluster that cannot serve it. Every switcher
+ * goes through this, so a click in one cannot land somewhere a click in another
+ * would not.
  */
-const LIVE_VIEWS: readonly ClusterView[] = ['explore', 'events', 'capacity', 'security']
-
-export function hasClusterView(cluster: Cluster, view: ClusterView): boolean {
-  if (!LIVE_VIEWS.includes(view)) return true
-  return cluster.connection_mode === 'agent' && cluster.agent_attached
+export function clusterSlotHref(target: Cluster, slot: ClusterSlot, search = ''): string {
+  if (slot.kind === 'resource') {
+    return hasTunnel(target)
+      ? resourceHref(target.id, slot.key, search)
+      : clusterPageHref(target.id, DEFAULT_PAGE)
+  }
+  return pageNeedsTunnel(slot.page) && !hasTunnel(target)
+    ? clusterPageHref(target.id, DEFAULT_PAGE)
+    : clusterPageHref(target.id, slot.page)
 }
 
-/**
- * Where switching to `target` goes while `view` is open. Switching clusters
- * keeps whichever view you were reading — Summary stays Summary, Explore stays
- * Explore — and falls back to Summary on a target that cannot serve it. Both
- * switchers (the header's and the panel's) go through this, so a click in one
- * cannot land somewhere a click in the other would not.
- */
-export function clusterViewHref(target: Cluster, view: ClusterView): string {
-  return `/clusters/${target.id}/${hasClusterView(target, view) ? view : 'summary'}`
+/* ── Administration ─────────────────────────────────────────────────────── */
+
+/** The door's own landing: the inventory, which is what it is entered for. */
+export const ADMIN_HOME = '/admin/clusters'
+
+export function isAdminPath(pathname: string): boolean {
+  return pathname === '/admin' || pathname.startsWith('/admin/')
 }
+
+/** The operator's own access — theirs to read whatever their role is. */
+export const ACCESS_HOME = '/me/access'

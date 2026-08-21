@@ -102,7 +102,7 @@ export function Setup() {
   async function finish() {
     await completeSetup()
     await refreshSetupState()
-    navigate('/clusters/new', { replace: true })
+    navigate('/admin/clusters/new', { replace: true })
   }
 
   return (

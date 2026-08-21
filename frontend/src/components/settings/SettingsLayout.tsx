@@ -5,13 +5,13 @@ import { fetchDeploymentPosture } from '../../api/client'
 import { AppShell } from '../AppShell'
 
 const TABS = [
-  { to: '/settings/general', label: 'General' },
-  { to: '/settings/agent', label: 'Agent' },
-  { to: '/settings/audit', label: 'Audit' },
-  { to: '/settings/guardrails', label: 'Guardrails' },
-  { to: '/settings/alerting', label: 'Alerting' },
-  { to: '/settings/sso', label: 'SSO' },
-  { to: '/settings/deployment', label: 'Deployment' },
+  { to: '/admin/settings/general', label: 'General' },
+  { to: '/admin/settings/agent', label: 'Agent' },
+  { to: '/admin/settings/audit', label: 'Audit' },
+  { to: '/admin/settings/guardrails', label: 'Guardrails' },
+  { to: '/admin/settings/alerting', label: 'Alerting' },
+  { to: '/admin/settings/sso', label: 'SSO' },
+  { to: '/admin/settings/deployment', label: 'Deployment' },
 ] as const
 
 /**
@@ -38,7 +38,7 @@ export function SettingsLayout({
   const attention = useDeploymentAttention()
 
   return (
-    <AppShell title={title} parent={{ label: 'Settings', to: '/settings/general' }} actions={actions}>
+    <AppShell title={title} parent={{ label: 'Settings', to: '/admin/settings/general' }} actions={actions}>
       <div className="flex min-w-0 flex-col gap-4">
         <nav aria-label="Settings sections" className="flex gap-1 overflow-x-auto border-b border-line">
           {TABS.map((tab) => (
@@ -52,7 +52,7 @@ export function SettingsLayout({
               }
             >
               {tab.label}
-              {tab.to === '/settings/deployment' && attention > 0 ? (
+              {tab.to === '/admin/settings/deployment' && attention > 0 ? (
                 <span
                   className="rounded-full bg-warn-soft px-1.5 py-0.5 text-[11px] font-medium text-warn"
                   title={`${attention} thing${attention === 1 ? '' : 's'} about this install worth reading`}
