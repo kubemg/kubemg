@@ -1,43 +1,50 @@
 /*
- * The pilot header: what a list is, above the list itself.
+ * What a list is, in three lines above it.
  *
- * One skeleton, every resource kind. It used to appear over Pods and the three
- * workload kinds and nowhere else, which meant the page above the table changed
- * height and shape depending on which row of the tree was clicked — so the eye
- * had no fixed place to look and the band was worth less than the space it took.
- * Now every list has one, and what differs per kind is only what is honest to
- * put in it (`lib/insights.ts` decides that; this file only draws it).
+ * This band used to be a three-column panel: two readings drawn at 30px, a
+ * mixed list beside them, a namespace donut, and under it all a wrapping strip
+ * of chips. It was about 250px of chrome over a table somebody was trying to
+ * read, and the reason it looked arbitrary was not the layout — it was the
+ * model. The middle column mixed three different kinds of fact in one list:
+ * slices of the total ("Not ready 2"), numbers that cut across it ("Restarts
+ * 70"), and numbers that were not slices of anything ("Keys 214", larger than
+ * the total). No arrangement of those reads as one thing, because they are not
+ * one thing.
  *
- * Three regions, left to right, because they answer three different questions:
+ * `lib/insights.ts` now separates them, and this draws the separation:
  *
- *   1. **how much, and is it all right** — the one or two readings drawn large,
- *      with a state sentence under them and live usage where the cluster serves
- *      it. This region is never empty: every kind has a total.
- *   2. **broken down how** — the state or composition list. Empty buckets are
- *      not drawn at all, so a healthy namespace shows two rows rather than a
- *      column of zeroes, and the one non-zero number is easier to find.
- *   3. **spread over what** — namespaces for most kinds, roles for Nodes, API
- *      groups for CRDs. Drawn only where there is a spread to draw.
+ *   1. **the line** — how many, and is it all right. The total, the state
+ *      sentence, and on the right the scalars that cut across the list
+ *      (restarts, replicas, live usage). Always present.
+ *   2. **the bar** — the partition, full width, one band per bucket. It is the
+ *      only thing here that reads at a glance, and it is deliberately the one
+ *      bold mark on the band: a ruler over the table, drawn in the same tones
+ *      the table's own state column uses.
+ *   3. **the legend** — the same bands as chips, and *these* are the controls.
+ *      Clicking one narrows the table. The bar itself is not clickable, because
+ *      a 2px sliver is not a hit target; the chip beside it is.
  *
- * Under them, one strip: the objects worth naming now, and the fold control.
+ * Then, only when something is wrong, one line naming the worst two objects and
+ * counting the rest. Not the old chip cloud: five padded chips wrapping to two
+ * lines read as a tag list, and the names were the least of what they said. The
+ * table is better at lists than this band is, so the band names what is worst
+ * and hands off.
  *
- * Folding is the concession the band makes to the work. Everything here is
- * derived, so it costs no read, but it does cost vertical space above a table
- * somebody is trying to read — so it folds to a single line and **remembers the
- * choice**, because an operator who folds it does not want it back on the next
- * resource. What the folded line keeps is the total, the state sentence and the
- * mono summary: folding must not cost the reader the reason they would have
- * unfolded it.
+ * The namespace donut is gone entirely. It was not actionable, and the namespace
+ * scope above the list already answers "which namespace" — while the *kinds*
+ * that genuinely divide along something worth seeing (a Secret's type, a
+ * ClusterRole's author, a CRD's API group) now carry that composition on the bar
+ * itself, in the same device as everything else.
  */
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { AlertTriangle, ChevronsDownUp, ChevronsUpDown, Siren } from 'lucide-react'
+import { ChevronsDownUp, ChevronsUpDown, Siren, TriangleAlert } from 'lucide-react'
 import { Link } from 'react-router'
 import type {
   InsightAlert,
   InsightBucket,
-  InsightDistribution,
+  InsightSegment,
   InsightStat,
   ResourceInsight,
 } from '../lib/insights'
@@ -45,11 +52,11 @@ import { TONE_FILL, TONE_TEXT } from '../lib/status'
 import { formatCPU, formatMemory } from '../lib/units'
 
 /**
- * The fold is a preference, not page state: it is stored the way the panel's own
+ * The fold is a preference, not page state: it is stored the way the tree's own
  * collapse is, so it survives a navigation between resources and a reload. One
- * key for the whole of Explore rather than one per kind — it is a statement
- * about how much chrome somebody wants over a table, and that does not change
- * between Pods and Services.
+ * key for the whole console rather than one per kind — it is a statement about
+ * how much chrome somebody wants over a table, and that does not change between
+ * Pods and Services.
  */
 const FOLD_KEY = 'kubemg_explore_header_folded'
 
@@ -75,8 +82,8 @@ function writeFolded(folded: boolean) {
  * literals rather than an interpolation, because Tailwind reads the source for
  * class names and a template string compiles to a rule that does not exist. The
  * order *is* the colour-blindness mechanism (see index.css): never reorder it,
- * and never add a ninth. A slice never rests on its colour alone — the list
- * beside the bar writes every band out by name.
+ * and never add a ninth. A band never rests on its colour alone — the legend
+ * under the bar writes every one of them out by name.
  */
 const SLICE_FILL = [
   'bg-chart-1',
@@ -89,24 +96,14 @@ const SLICE_FILL = [
   'bg-chart-8',
 ] as const
 
-/**
- * How many regions the band divides into. Literal classes for the same reason as
- * above; the count is decided by how much this particular kind has to say, so a
- * ConfigMap list does not draw two empty thirds.
- */
-const REGION_COLUMNS: Record<number, string> = {
-  1: '',
-  2: 'lg:grid-cols-2',
-  3: 'lg:grid-cols-3',
-}
+/** How many alerting objects the band names before it starts counting instead. */
+const NAMED_ALERTS = 2
 
-/**
- * With a trend in the band the columns stop being equal: a curve needs width to
- * be a curve rather than a scribble, and the two reading columns beside it are
- * numbers that do not. Its own literal template rather than a `col-span`, so the
- * ratio is one thing to read rather than two that have to agree.
- */
-const TREND_COLUMNS = 'lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.6fr)]'
+/** A segment's fill, whichever of the two colour systems it belongs to. */
+function segmentFill(segment: InsightSegment): string {
+  if (segment.tone) return TONE_FILL[segment.tone]
+  return SLICE_FILL[segment.slot ?? 0]
+}
 
 export function ResourceInsights({
   insight,
@@ -120,7 +117,7 @@ export function ResourceInsights({
   /** The bucket the list is currently narrowed to, or null for the whole list. */
   bucket: InsightBucket | null
   onBucket: (next: InsightBucket | null) => void
-  /** Opens one alerting object, which is where a header full of names should lead. */
+  /** Opens one alerting object, which is where a band naming names should lead. */
   onOpen?: (name: string, namespace: string) => void
   /**
    * Where an alert's *events* live — the cluster's own account of what has been
@@ -129,7 +126,7 @@ export function ResourceInsights({
    * It is a href builder rather than a callback because it produces a link, and
    * a link is the thing that can be middle-clicked, copied and pasted into a
    * ticket. The page supplies it because only the page knows which cluster is
-   * open; the header only knows which objects it named.
+   * open; the band only knows which objects it named.
    */
   alertHref?: (alert: InsightAlert) => string
   /**
@@ -137,7 +134,11 @@ export function ResourceInsights({
    * arrives as a node rather than as a cluster and a metric because deciding
    * *whether* there is history worth charting is the page's business — it knows
    * the cluster, the namespace and whether the list is one whose objects consume
-   * anything — and drawing the band is this component's.
+   * anything — and drawing the band around it is this component's.
+   *
+   * It is a full-width row under the legend rather than a third column. A curve
+   * needs width to be a curve, and the two things above it are a sentence and a
+   * bar, which do not.
    */
   trend?: ReactNode
 }) {
@@ -149,19 +150,14 @@ export function ResourceInsights({
     writeFolded(next)
   }
 
-  const { lead, breakdown, distribution, alerts, alerting, usage, headline, summary } = insight
-  const hidden = alerting - alerts.length
-  const total = lead[0]
+  const { total, segments, readings, alerts, alerting, usage, headline, summary } = insight
+  const named = alerts.slice(0, NAMED_ALERTS)
+  const rest = alerting - named.length
 
   if (folded) {
     return (
       <section className="card flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
-        <p className="flex shrink-0 items-baseline gap-2">
-          <span className="font-mono text-[17px] leading-none font-semibold text-fg tabular-nums">
-            {total.value}
-          </span>
-          <span className="label">{total.label}</span>
-        </p>
+        <Total stat={total} bucket={bucket} onBucket={onBucket} />
         <span aria-hidden="true" className="h-4 w-px shrink-0 bg-line" />
         <StateLine tone={insight.headlineTone} headline={headline} />
         {alerting > 0 ? (
@@ -179,156 +175,104 @@ export function ResourceInsights({
     )
   }
 
-  // A region is dropped rather than drawn empty: a kind with nothing to break
-  // down and nothing to spread over is one column wide, not three with two
-  // blanks in them.
-  const regions = [
-    <div key="lead" className="flex min-w-0 flex-col gap-3 px-4 py-3.5">
-      <div className="flex flex-wrap items-start gap-x-7 gap-y-3">
-        {lead.map((stat) => (
-          <Lead
-            key={stat.label}
-            stat={stat}
-            active={isActive(stat, bucket)}
-            onSelect={selector(stat, bucket, onBucket)}
-          />
-        ))}
-      </div>
-      <StateLine tone={insight.headlineTone} headline={headline} />
-      {usage ? (
-        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 border-t border-line-soft pt-3">
-          <span className="label">In use</span>
-          <span className="font-mono text-[13px] text-fg tabular-nums">
-            {formatCPU(usage.cpu)} · {formatMemory(usage.memory)}
-          </span>
-          <span className="text-[11px] text-faint">
-            sampled on {usage.sampled} of {total.value}
-          </span>
-        </div>
-      ) : null}
-    </div>,
-    breakdown.length > 0 ? (
-      <div key="breakdown" className="flex min-w-0 flex-col gap-1 px-4 py-3.5">
-        {breakdown.map((stat) => (
-          <BreakdownRow
-            key={stat.label}
-            stat={stat}
-            active={isActive(stat, bucket)}
-            onSelect={selector(stat, bucket, onBucket)}
-          />
-        ))}
-      </div>
-    ) : null,
-    // A trend and a composition never both appear: the trend is drawn for one
-    // namespace, and a one-namespace list has nothing to spread over — which is
-    // why they share the third column rather than competing for a fourth.
-    trend ? (
-      <div key="trend" className="min-w-0">
-        {trend}
-      </div>
-    ) : distribution ? (
-      <Distribution key="distribution" distribution={distribution} />
-    ) : null,
-  ].filter((region) => region !== null)
-
-  // The unequal template only describes three columns, so a list with nothing to
-  // break down falls back to two equal ones rather than leaving a blank third.
-  const columns =
-    trend && regions.length === 3 ? TREND_COLUMNS : (REGION_COLUMNS[regions.length] ?? '')
-
   return (
     <section className="card overflow-hidden">
-      <div className={`grid divide-y divide-line-soft lg:divide-x lg:divide-y-0 ${columns}`}>
-        {regions}
-      </div>
+      {/* 1 — the line. */}
+      <div
+        className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-4 pt-3 ${
+          segments.length > 0 ? '' : 'pb-3'
+        }`}
+      >
+        <Total stat={total} bucket={bucket} onBucket={onBucket} />
+        <StateLine tone={insight.headlineTone} headline={headline} />
 
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-line-soft bg-raised/40 px-4 py-2.5">
-        {alerts.length > 0 ? (
-          <>
-            <AlertTriangle
-              aria-hidden="true"
-              className={`size-3.5 shrink-0 ${alerts[0].tone === 'bad' ? 'text-danger' : 'text-warn'}`}
+        <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
+          {readings.map((stat) => (
+            <Reading
+              key={stat.label}
+              stat={stat}
+              active={isActive(stat, bucket)}
+              onSelect={selector(stat, bucket, onBucket)}
             />
-            {alerts.map((alert) => {
-              const title = `${alert.namespace ? `${alert.namespace}/` : ''}${alert.name} — ${alert.reason}`
-              const body = (
-                <>
-                  <span className="font-mono">{alert.name}</span>
-                  <span className="opacity-80"> · {alert.reason}</span>
-                </>
-              )
-              const tint =
-                alert.tone === 'bad' ? 'bg-danger-soft text-danger' : 'bg-warn-soft text-warn'
-
-              /*
-               * An alert raises a question with two honest next steps, and they
-               * are different questions: "show me this object" (the drawer) and
-               * "what has the cluster been saying about it" (the timeline). The
-               * chip carries both rather than choosing — the name opens the
-               * object, and the trailing glyph opens its events, filtered to the
-               * object the header just named.
-               *
-               * They sit inside one chip rather than as two, because the alert is
-               * one thing: two chips per alert would double a strip that already
-               * folds when it runs out of room.
-               */
-              const events = alertHref?.(alert)
-
-              if (!onOpen && !events) {
-                return (
-                  <span
-                    key={alert.key}
-                    title={title}
-                    className={`rounded-chip px-2 py-0.5 text-[12px] ${tint}`}
-                  >
-                    {body}
-                  </span>
-                )
-              }
-
-              return (
-                <span
-                  key={alert.key}
-                  className={`flex max-w-full items-center rounded-chip text-[12px] ${tint}`}
-                >
-                  {onOpen ? (
-                    <button
-                      type="button"
-                      onClick={() => onOpen(alert.name, alert.namespace)}
-                      title={title}
-                      className="min-w-0 truncate px-2 py-0.5 transition-opacity hover:opacity-80"
-                    >
-                      {body}
-                    </button>
-                  ) : (
-                    <span title={title} className="min-w-0 truncate px-2 py-0.5">
-                      {body}
-                    </span>
-                  )}
-                  {events ? (
-                    <Link
-                      to={events}
-                      title={`What the cluster recorded about ${alert.name}`}
-                      className="flex shrink-0 items-center py-0.5 pr-2 pl-1 transition-opacity hover:opacity-80"
-                    >
-                      <Siren aria-hidden="true" className="size-3.5" />
-                      <span className="sr-only">Events for {alert.name}</span>
-                    </Link>
-                  ) : null}
-                </span>
-              )
-            })}
-            {hidden > 0 ? <span className="text-[12px] text-faint">and {hidden} more</span> : null}
-          </>
-        ) : null}
-        <FoldButton folded={false} onClick={toggleFold} className="ml-auto" />
+          ))}
+          {usage ? (
+            <span
+              title={`Sampled on ${usage.sampled} of ${total.value}`}
+              className="font-mono text-[11.5px] text-faint tabular-nums"
+            >
+              CPU {formatCPU(usage.cpu)} · MEM {formatMemory(usage.memory)}
+            </span>
+          ) : null}
+          <FoldButton folded={false} onClick={toggleFold} />
+        </div>
       </div>
+
+      {segments.length > 0 ? (
+        <>
+          {/* 2 — the bar. Decoration to a screen reader: the legend below is the
+              readable version of exactly the same numbers. */}
+          <div aria-hidden="true" className="mx-4 mt-3 flex h-1.5 gap-0.5 overflow-hidden rounded-chip">
+            {segments.map((segment) => (
+              <span
+                key={segment.label}
+                className={segmentFill(segment)}
+                // Geometry, not colour: a share is a number the deck has no
+                // token for, so it is the one thing here set inline. The floor
+                // keeps a single failing pod out of a thousand visible.
+                style={{ width: `${Math.max(segment.share * 100, 1.5)}%` }}
+              />
+            ))}
+          </div>
+
+          {/* 3 — the legend, which is where the clicking happens. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 pt-2.5 pb-3">
+            {segments.map((segment) => (
+              <SegmentChip
+                key={segment.label}
+                segment={segment}
+                active={isActive(segment, bucket)}
+                onSelect={selector(segment, bucket, onBucket)}
+              />
+            ))}
+          </div>
+        </>
+      ) : null}
+
+      {named.length > 0 ? (
+        <div className="flex items-center gap-2 border-t border-line-soft bg-raised/40 px-4 py-2">
+          <TriangleAlert
+            aria-hidden="true"
+            className={`size-3.5 shrink-0 ${
+              named[0].tone === 'bad' ? 'text-danger' : 'text-warn'
+            }`}
+          />
+          <div className="flex min-w-0 flex-1 items-center gap-x-2 overflow-hidden">
+            {named.map((alert, index) => (
+              <span key={alert.key} className="flex min-w-0 items-baseline gap-2">
+                {index > 0 ? (
+                  <span aria-hidden="true" className="text-faint">
+                    ·
+                  </span>
+                ) : null}
+                <Alert alert={alert} onOpen={onOpen} href={alertHref?.(alert)} />
+              </span>
+            ))}
+          </div>
+          {rest > 0 ? (
+            <span className="shrink-0 text-[12px] text-faint">
+              and {rest} more in the table
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {trend ? <div className="border-t border-line-soft">{trend}</div> : null}
     </section>
   )
 }
 
 /** Whether a reading is the one the list is currently narrowed to. */
-function isActive(stat: InsightStat, bucket: InsightBucket | null): boolean {
+function isActive(stat: { id: InsightBucket; selectable: boolean }, bucket: InsightBucket | null) {
   return bucket !== null && stat.selectable && bucket === stat.id && stat.id !== 'all'
 }
 
@@ -338,12 +282,51 @@ function isActive(stat: InsightStat, bucket: InsightBucket | null): boolean {
  * is what a person clicking the total after clicking a bucket means.
  */
 function selector(
-  stat: InsightStat,
+  stat: { id: InsightBucket; selectable: boolean },
   bucket: InsightBucket | null,
   onBucket: (next: InsightBucket | null) => void,
 ): (() => void) | undefined {
   if (!stat.selectable) return undefined
   return () => onBucket(stat.id === 'all' || bucket === stat.id ? null : stat.id)
+}
+
+/**
+ * How many rows there are, and the way back to all of them. It is a button only
+ * while a narrowing is active — that is the only time clicking the total does
+ * anything, and a control that does nothing is worse than a number.
+ */
+function Total({
+  stat,
+  bucket,
+  onBucket,
+}: {
+  stat: InsightStat
+  bucket: InsightBucket | null
+  onBucket: (next: InsightBucket | null) => void
+}) {
+  const body = (
+    <>
+      <span className="font-mono text-[19px] leading-none font-semibold text-fg tabular-nums">
+        {stat.value}
+      </span>
+      <span className="label">{stat.label}</span>
+    </>
+  )
+
+  if (!stat.selectable || bucket === null) {
+    return <p className="flex shrink-0 items-baseline gap-2">{body}</p>
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onBucket(null)}
+      title="Show every row again"
+      className="-mx-1.5 flex shrink-0 items-baseline gap-2 rounded-control px-1.5 py-0.5 transition-colors hover:bg-raised"
+    >
+      {body}
+    </button>
+  )
 }
 
 /** The state sentence, with a dot so it reads in greyscale as well as in colour. */
@@ -354,62 +337,63 @@ function StateLine({ tone, headline }: { tone: InsightStat['tone']; headline: st
         aria-hidden="true"
         className={`size-2 shrink-0 rounded-full ${tone ? TONE_FILL[tone] : 'bg-faint'}`}
       />
-      <span className="text-[12.5px] text-muted">{headline}</span>
+      <span className="truncate text-[12.5px] text-muted">{headline}</span>
     </p>
   )
 }
 
 /**
- * One of the readings drawn large. It is a button wherever clicking it narrows
- * the list, because a count somebody is looking at is almost always a count they
- * want the rows for; a reading with no rows behind it stays plain text rather
- * than becoming a control that does nothing.
+ * One band of the bar, written out. The count leads because that is what is
+ * being compared down the row; the label follows it as prose, so `9 Running`
+ * reads as a phrase rather than as a cell in a table that is not there.
  */
-function Lead({
-  stat,
+function SegmentChip({
+  segment,
   active,
   onSelect,
 }: {
-  stat: InsightStat
+  segment: InsightSegment
   active: boolean
   onSelect?: () => void
 }) {
-  const value = (
+  const body = (
     <>
-      <span
-        className={`block font-mono text-[30px] leading-none font-semibold tabular-nums ${
-          stat.tone ? TONE_TEXT[stat.tone] : 'text-fg'
-        }`}
-      >
-        {stat.value}
+      <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${segmentFill(segment)}`} />
+      <span className="font-mono text-[13px] font-semibold text-fg tabular-nums">
+        {segment.value}
       </span>
-      <span className="label mt-2 block whitespace-nowrap">{stat.label}</span>
+      <span className="min-w-0 truncate text-[12.5px] text-muted">
+        {segment.label}
+        {segment.detail ? <span className="text-faint"> {segment.detail}</span> : null}
+      </span>
     </>
   )
 
-  if (!onSelect) return <div className="min-w-0 px-1">{value}</div>
+  if (!onSelect) {
+    return <span className="flex min-w-0 items-center gap-1.5">{body}</span>
+  }
 
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-pressed={active}
-      className={`min-w-0 rounded-control px-1.5 py-1 text-left transition-colors ${
-        active ? 'bg-accent-soft' : 'hover:bg-raised'
+      title={active ? `Showing only ${segment.label}` : `Show only ${segment.label}`}
+      className={`-mx-1.5 flex min-w-0 items-center gap-1.5 rounded-control px-1.5 py-0.5 transition-colors ${
+        active ? 'bg-accent-soft ring-1 ring-accent-line ring-inset' : 'hover:bg-raised'
       }`}
     >
-      {value}
+      {body}
     </button>
   )
 }
 
 /**
- * One row of the breakdown: a swatch carrying the tone, the name, and the count
- * on the right in mono so a column of them lines up. The swatch is a square
- * rather than the dot a `Pill` carries, so a reading in a list is never mistaken
- * for a live state indicator.
+ * A scalar that is true of the list without being a slice of it. Set small and
+ * on the right, because it is the kind of thing you read once and then stop
+ * looking at — unlike the bar, which you glance at every time the list reloads.
  */
-function BreakdownRow({
+function Reading({
   stat,
   active,
   onSelect,
@@ -421,21 +405,19 @@ function BreakdownRow({
   const body = (
     <>
       <span
-        aria-hidden="true"
-        className={`size-[7px] shrink-0 rounded-[2px] ${stat.tone ? TONE_FILL[stat.tone] : 'bg-faint'}`}
-      />
-      <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted">
-        {stat.label}
-        {stat.detail ? <span className="text-faint"> {stat.detail}</span> : null}
-      </span>
-      <span className="font-mono text-[12.5px] font-semibold text-fg tabular-nums">
+        className={`font-mono text-[12.5px] font-semibold tabular-nums ${
+          stat.tone ? TONE_TEXT[stat.tone] : 'text-fg'
+        }`}
+      >
         {stat.value}
       </span>
+      <span className="text-[12px] text-muted">{stat.label}</span>
+      {stat.detail ? <span className="text-[11.5px] text-faint">{stat.detail}</span> : null}
     </>
   )
 
   if (!onSelect) {
-    return <div className="flex items-center gap-2.5 px-1.5 py-1">{body}</div>
+    return <span className="flex shrink-0 items-baseline gap-1.5">{body}</span>
   }
 
   return (
@@ -443,8 +425,8 @@ function BreakdownRow({
       type="button"
       onClick={onSelect}
       aria-pressed={active}
-      className={`flex items-center gap-2.5 rounded-control px-1.5 py-1 text-left transition-colors ${
-        active ? 'bg-accent-soft' : 'hover:bg-raised'
+      className={`-mx-1.5 flex shrink-0 items-baseline gap-1.5 rounded-control px-1.5 py-0.5 transition-colors ${
+        active ? 'bg-accent-soft ring-1 ring-accent-line ring-inset' : 'hover:bg-raised'
       }`}
     >
       {body}
@@ -453,47 +435,63 @@ function BreakdownRow({
 }
 
 /**
- * The composition band: one stacked bar over its own legend. The bar is the
- * glance and the list is the answer — the widths carry no numbers, so every band
- * is written out below it with its count and its share.
+ * One named object worth looking at now.
+ *
+ * An alert raises a question with two honest next steps, and they are different
+ * questions: "show me this object" (the drawer) and "what has the cluster been
+ * saying about it" (its events). The name opens the object and the trailing
+ * glyph opens the timeline, filtered to it.
+ *
+ * No chip fill. Five tinted chips wrapping to two lines was the thing that made
+ * this strip read as a tag cloud; the tone on the reason is enough to say which
+ * of two named objects is the worse one.
  */
-function Distribution({ distribution }: { distribution: InsightDistribution }) {
+function Alert({
+  alert,
+  onOpen,
+  href,
+}: {
+  alert: InsightAlert
+  onOpen?: (name: string, namespace: string) => void
+  href?: string
+}) {
+  const title = `${alert.namespace ? `${alert.namespace}/` : ''}${alert.name} — ${alert.reason}`
+  const tint = alert.tone === 'bad' ? 'text-danger' : 'text-warn'
+
+  const body = (
+    <>
+      <span className="min-w-0 truncate font-mono text-[12px] text-fg">{alert.name}</span>
+      <span className={`shrink-0 text-[12px] ${tint}`}>{alert.reason}</span>
+    </>
+  )
+
   return (
-    <div className="flex min-w-0 flex-col gap-2.5 px-4 py-3.5">
-      <p className="label">{distribution.label}</p>
-      {/* The bar carries no text of its own — the legend under it is the
-          readable version, so this is decoration to a screen reader. */}
-      <div aria-hidden="true" className="flex h-2 gap-px overflow-hidden rounded-chip">
-        {distribution.slices.map((slice) => (
-          <span
-            key={slice.key}
-            className={SLICE_FILL[slice.slot]}
-            // Geometry, not colour: a share is a number the deck has no token
-            // for, so it is the one thing here set inline.
-            style={{ width: `${Math.max(slice.share * 100, 1.5)}%` }}
-          />
-        ))}
-      </div>
-      <div className="flex flex-col gap-1">
-        {distribution.slices.map((slice) => (
-          <div key={slice.key} className="flex items-center gap-2.5">
-            <span
-              aria-hidden="true"
-              className={`size-[7px] shrink-0 rounded-[2px] ${SLICE_FILL[slice.slot]}`}
-            />
-            <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-muted">
-              {slice.label}
-            </span>
-            <span className="font-mono text-[12px] font-semibold text-fg tabular-nums">
-              {slice.value}
-            </span>
-            <span className="w-9 text-right font-mono text-[11.5px] text-faint tabular-nums">
-              {Math.round(slice.share * 100)}%
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
+    <span className="flex min-w-0 items-baseline gap-1.5">
+      {onOpen ? (
+        <button
+          type="button"
+          onClick={() => onOpen(alert.name, alert.namespace)}
+          title={title}
+          className="flex min-w-0 items-baseline gap-1.5 rounded-control transition-opacity hover:opacity-70"
+        >
+          {body}
+        </button>
+      ) : (
+        <span title={title} className="flex min-w-0 items-baseline gap-1.5">
+          {body}
+        </span>
+      )}
+      {href ? (
+        <Link
+          to={href}
+          title={`What the cluster recorded about ${alert.name}`}
+          className={`shrink-0 transition-opacity hover:opacity-70 ${tint}`}
+        >
+          <Siren aria-hidden="true" className="size-3.5" />
+          <span className="sr-only">Events for {alert.name}</span>
+        </Link>
+      ) : null}
+    </span>
   )
 }
 
