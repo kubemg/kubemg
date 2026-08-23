@@ -4,7 +4,7 @@ import { Plug, Plus, RefreshCw, Server } from 'lucide-react'
 import { checkCluster, errorMessage, fetchNodeMetrics } from '../api/client'
 import type { Cluster, Environment, UsageSummary } from '../api/types'
 import { AppShell } from '../components/AppShell'
-import { LinkStrand } from '../components/LinkStrand'
+import { LinkStatus } from '../components/LinkStatus'
 import {
   Button,
   ClusterState,
@@ -15,7 +15,7 @@ import {
   SectionHeading,
 } from '../components/primitives'
 import { clusterHref } from '../lib/navigation'
-import { strandState } from '../lib/status'
+import { linkState } from '../lib/status'
 import { relativeAge } from '../lib/time'
 import { formatCPU, formatMemory, ratio } from '../lib/units'
 import { useAuth } from '../state/auth-context'
@@ -338,17 +338,19 @@ function ClusterCard({ cluster, usage }: { cluster: Cluster; usage?: UsageSummar
         <ClusterState cluster={cluster} />
       </div>
 
-      <div className="mt-3 flex items-center gap-2.5">
-        <span className="shrink-0 text-faint">
+      {/* The link, in the two words it takes to say it: what the connection is
+          doing, and which shape of connection it is. */}
+      <div className="mt-3 flex items-center gap-3">
+        <LinkStatus state={linkState(cluster)} />
+        <span className="flex min-w-0 items-center gap-1.5 text-faint">
           {viaAgent ? (
-            <Plug aria-hidden="true" className="size-3.5" />
+            <Plug aria-hidden="true" className="size-3.5 shrink-0" />
           ) : (
-            <Server aria-hidden="true" className="size-3.5" />
+            <Server aria-hidden="true" className="size-3.5 shrink-0" />
           )}
-        </span>
-        <LinkStrand state={strandState(cluster)} className="flex-1" />
-        <span className="shrink-0 font-mono text-[11px] text-faint">
-          {viaAgent ? (cluster.agent_attached ? 'tunnel up' : 'no tunnel') : 'direct'}
+          <span className="truncate font-mono text-[11px]">
+            {viaAgent ? 'agent · outbound' : 'api server'}
+          </span>
         </span>
       </div>
 

@@ -4,7 +4,7 @@ import { Plug, Plus, RefreshCw, Server, Trash2 } from 'lucide-react'
 import { checkCluster, deleteCluster, errorMessage } from '../api/client'
 import type { Cluster } from '../api/types'
 import { AppShell } from '../components/AppShell'
-import { LinkStrand } from '../components/LinkStrand'
+import { LinkStatus } from '../components/LinkStatus'
 import {
   Button,
   ClusterState,
@@ -18,7 +18,7 @@ import {
   Td,
   Th,
 } from '../components/primitives'
-import { strandState } from '../lib/status'
+import { linkState } from '../lib/status'
 import { relativeAge } from '../lib/time'
 import { useClusters } from '../state/clusters-context'
 
@@ -133,14 +133,7 @@ export function ClusterManagement() {
                       ) : (
                         <Server aria-hidden="true" className="size-3.5 shrink-0 text-faint" />
                       )}
-                      <LinkStrand state={strandState(cluster)} className="w-14 shrink-0" />
-                      <span className="font-mono text-[12px] text-muted">
-                        {cluster.connection_mode === 'agent'
-                          ? cluster.agent_attached
-                            ? 'up'
-                            : 'down'
-                          : 'direct'}
-                      </span>
+                      <LinkStatus state={linkState(cluster)} />
                     </span>
                   </Td>
                   <Td

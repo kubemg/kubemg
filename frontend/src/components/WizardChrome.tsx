@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
 import { Check } from 'lucide-react'
-import { LinkStrand } from './LinkStrand'
 
 /**
  * The shared chrome behind KubeMG's two wizards — first-run setup and cluster
@@ -8,11 +7,11 @@ import { LinkStrand } from './LinkStrand'
  *
  * Both are genuinely sequences rather than tabbed forms: a step commits
  * something the next one acts on, and a step past the furthest one reached is
- * not yet meaningful. Numbering them says so, and the strand between markers is
- * the same device the fleet uses to draw a connection that has or has not been
- * made. It lives here rather than in either page because the two appear minutes
- * apart on a fresh install — setup hands straight over to registration — and
- * reading as one device is the whole point.
+ * not yet meaningful. Numbering them says so, and the hairline between markers
+ * carries the order without adding a second thing to read. It lives here rather
+ * than in either page because the two appear minutes apart on a fresh install —
+ * setup hands straight over to registration — and reading as one device is the
+ * whole point.
  */
 export function Stepper({
   steps,
@@ -63,7 +62,12 @@ export function Stepper({
               </span>
             </button>
             {index < steps.length - 1 ? (
-              <LinkStrand state={done ? 'direct' : 'idle'} size="sm" className="min-w-4 flex-1" />
+              /* A hairline, not a strand: what a stepper's connector says is
+                 "these are in order", and the step markers already say it. */
+              <span
+                aria-hidden="true"
+                className={`h-px min-w-4 flex-1 ${done ? 'bg-accent-line' : 'bg-line'}`}
+              />
             ) : null}
           </li>
         )

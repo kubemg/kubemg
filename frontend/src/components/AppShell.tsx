@@ -42,13 +42,13 @@ import {
   isClusterPath,
 } from '../lib/navigation'
 import type { ResourceKey } from '../lib/resources'
-import { strandState } from '../lib/status'
+import { linkState } from '../lib/status'
 import { ClusterMenu } from './ClusterMenu'
 import { ClusterSwitcher } from './ClusterSwitcher'
 import { ClusterTree } from './ClusterTree'
 import { CommandPalette } from './CommandPalette'
 import type { CommandTarget } from './CommandPalette'
-import { LinkStrand } from './LinkStrand'
+import { LinkStatus } from './LinkStatus'
 import { Mark } from './Mark'
 import { TimeRangeControl } from './TimeRangeControl'
 import { EnvironmentDot, EnvironmentTag, IconButton, KeyHint } from './primitives'
@@ -615,9 +615,9 @@ function railLinkClass({ isActive }: { isActive: boolean }) {
  *
  * Two earlier attempts are worth naming so they are not tried again. A 3px slab
  * of solid colour is the loudest thing on the deck, and the chrome is meant to
- * be the quietest. Lighting it — a glow plus a wash bleeding inward, borrowing
- * the link strand's device — was quieter but still an *object*: the deck has one
- * signature and a second thing glowing beside it competes with it. What is
+ * be the quietest. Lighting it — a glow plus a wash bleeding inward — was
+ * quieter but still an *object*, and the deck's only moving mark is the breath
+ * on a link that is genuinely open. What is
  * wanted here is peripheral vision only. You should not see this line when you
  * look at the tree; you should know the colour of the room.
  */
@@ -693,7 +693,7 @@ function PanelContext({
                     {cluster.kubernetes_version}
                   </span>
                 ) : null}
-                <LinkStrand state={strandState(cluster)} className="w-6 shrink-0" />
+                <LinkStatus state={linkState(cluster)} variant="glyph" surface="rail" />
               </span>
             </span>
           </>
@@ -827,7 +827,7 @@ function FleetNav({ clusters, pathname }: { clusters: Cluster[]; pathname: strin
                   >
                     {cluster.name}
                   </span>
-                  <LinkStrand state={strandState(cluster)} className="w-8 shrink-0" />
+                  <LinkStatus state={linkState(cluster)} variant="glyph" surface="rail" />
                 </Link>
               </li>
             ))}

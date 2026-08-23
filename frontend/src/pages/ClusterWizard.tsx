@@ -36,7 +36,7 @@ import type {
 } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { DatasourcePanel } from '../components/DatasourcePanel'
-import { LinkStrand, StrandNode } from '../components/LinkStrand'
+import { LinkStatus, PathHop, PathNode } from '../components/LinkStatus'
 import {
   Button,
   ClusterState,
@@ -353,7 +353,7 @@ function ConnectionStep({
             icon={Plug}
             title="Agent-based"
             tagline="Recommended"
-            strand="live"
+            shape="live"
             points={[
               'The cluster dials out to KubeMG — no inbound firewall rule, no exposed API server.',
               'KubeMG stores no credential for the cluster.',
@@ -368,7 +368,7 @@ function ConnectionStep({
             icon={Server}
             title="Direct API access"
             tagline="Requires reachability"
-            strand="direct"
+            shape="direct"
             points={[
               'KubeMG dials the API server itself, so it must be routable from here.',
               'A service account token is stored in KubeMG.',
@@ -456,7 +456,7 @@ function ModeCard({
   icon: Icon,
   title,
   tagline,
-  strand,
+  shape,
   points,
 }: {
   mode: ConnectionMode
@@ -466,7 +466,7 @@ function ModeCard({
   icon: typeof Plug
   title: string
   tagline: string
-  strand: 'live' | 'direct'
+  shape: 'live' | 'direct'
   points: string[]
 }) {
   return (
@@ -494,7 +494,10 @@ function ModeCard({
         </span>
       </div>
 
-      <LinkStrand state={strand} />
+      <LinkStatus
+        state={shape}
+        label={shape === 'live' ? 'Cluster dials out to KubeMG' : 'KubeMG dials the API server'}
+      />
 
       <ul className="flex flex-col gap-1.5">
         {points.map((point) => (
@@ -659,27 +662,32 @@ function HandshakeStep({
       <div className="flex flex-col gap-4 p-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
 
-        {/* The wait is the strand filling in: nothing else on this screen says
-            as directly whether the cluster has found us. */}
+        {/* The wait, said plainly: nothing else on this screen answers as
+            directly whether the cluster has found us yet. */}
         <div className="flex flex-col gap-4 rounded-card border border-line-soft bg-raised/50 p-4 sm:flex-row sm:items-end">
-          <StrandNode label="Cluster" value={cluster.name} tone={connected ? 'ok' : 'idle'} />
-          <span className="min-w-16 flex-1 pb-2">
-            <LinkStrand
-              state={connected ? 'live' : viaAgent ? 'idle' : 'direct'}
-              size="lg"
-              className={connected ? '' : 'breathe'}
-            />
-            <span className="mt-1.5 block font-mono text-[11px] text-faint">
-              {connected
+          <PathNode label="Cluster" value={cluster.name} tone={connected ? 'ok' : 'idle'} />
+          <PathHop
+            state={connected ? 'live' : viaAgent ? 'idle' : 'direct'}
+            label={
+              connected
                 ? viaAgent
-                  ? 'tunnel open'
+                  ? 'Tunnel open'
                   : 'API server answered'
                 : viaAgent
-                  ? 'waiting for the agent to dial in'
-                  : 'not probed yet'}
-            </span>
-          </span>
-          <StrandNode label="KubeMG" value="bastion" tone="accent" />
+                  ? 'Waiting'
+                  : 'Not probed'
+            }
+            caption={
+              viaAgent
+                ? connected
+                  ? 'the agent dialled in'
+                  : 'waiting for the agent to dial in'
+                : connected
+                  ? 'KubeMG reached the API server'
+                  : 'run a check to probe the API server'
+            }
+          />
+          <PathNode label="KubeMG" value="bastion" tone="accent" />
           <span className="shrink-0 pb-2 sm:pb-0">
             <ClusterState cluster={cluster} />
           </span>

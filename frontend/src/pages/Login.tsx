@@ -51,8 +51,8 @@ export function Login() {
       <section className="relative hidden flex-col justify-between overflow-hidden bg-rail p-10 lg:flex">
         {/* Texture, not signal — a static field standing in for the fleet, and
             a soft accent glow anchoring the corner. Nothing here animates: the
-            link strand is the deck's one moving part, and this page doesn't
-            draw one. */}
+            deck's one moving mark is the breath on a live link, and this page
+            has no cluster to draw one for. */}
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0"

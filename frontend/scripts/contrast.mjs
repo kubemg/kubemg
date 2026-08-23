@@ -185,7 +185,15 @@ function check(deck, tokens) {
   // where a dark-deck assumption about "plenty of room" stops holding.
   measure('accent', 'rail', TEXT_FLOOR, 'accent on rail')
   measure('accent', 'rail-raised', GLYPH_FLOOR, 'accent glyph on rail-raised')
-  measure('danger', 'rail-raised', GLYPH_FLOOR, 'danger glyph on rail-raised')
+  // A cluster's link state is a glyph on every rail row — `ok` where a tunnel
+  // is up, `danger` where it is down. The two neutral link states take the
+  // rail's own tokens, measured just above; these two are state, they stay
+  // semantic wherever they land, so they are measured where they land.
+  for (const tone of ['ok', 'danger']) {
+    for (const surface of ['rail', 'rail-raised']) {
+      measure(tone, surface, GLYPH_FLOOR, `${tone} glyph on ${surface}`)
+    }
+  }
   measure('on-accent', 'accent', TEXT_FLOOR, 'on-accent on accent')
 
   return { failures, report }

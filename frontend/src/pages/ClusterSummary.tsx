@@ -11,7 +11,7 @@ import type { ComparisonKind } from '../components/MetricComparison'
 import { MetricsChart } from '../components/MetricsChart'
 import { JitRequestModal } from '../components/jit/JitRequestModal'
 import { KubeconfigDrawer } from '../components/KubeconfigDrawer'
-import { LinkStrand, StrandNode } from '../components/LinkStrand'
+import { PathHop, PathNode } from '../components/LinkStatus'
 import {
   Button,
   ClusterState,
@@ -24,7 +24,7 @@ import {
 import { CardSkeleton, MeterGridSkeleton } from '../components/SkeletonLoader'
 import { DEFAULT_RESOURCE, resourceHref } from '../lib/navigation'
 import { queryKey, useCachedQuery } from '../lib/query'
-import { strandState } from '../lib/status'
+import { linkState } from '../lib/status'
 import { relativeAge } from '../lib/time'
 import { formatCPU, formatMemory } from '../lib/units'
 import { useAuth } from '../state/auth-context'
@@ -157,7 +157,7 @@ export function ClusterSummary() {
           </Notice>
         ) : null}
         {/* The card that is coming, at the size it will be: this page opens with
-            a header, a strand and a four-row detail list, and drawing that shape
+            a header, the path row and a four-row detail list, and drawing that shape
             keeps the whole page from shifting when the cluster arrives. */}
         {query.loading ? <CardSkeleton lines={4} label="Loading this cluster" /> : null}
 
@@ -181,36 +181,37 @@ export function ClusterSummary() {
                 </p>
               ) : null}
 
-              {/* The path traffic actually takes, drawn once, at the top of the
-                  cluster it belongs to. */}
-              <div className="mt-5 flex flex-col gap-3 rounded-card border border-line-soft bg-raised/50 p-4 sm:flex-row sm:items-end sm:gap-5">
-                <StrandNode
+              {/* The path traffic actually takes, said once, at the top of the
+                  cluster it belongs to. Three nodes and what happens between
+                  them — the order of the row is the direction of travel, so
+                  there is nothing left for a drawn line to add. */}
+              <div className="mt-5 flex flex-col gap-3 rounded-card border border-line-soft bg-raised/50 p-4 sm:flex-row sm:items-end sm:gap-4">
+                <PathNode
                   label="Cluster"
                   value={cluster.name}
                   tone={cluster.status === 'healthy' ? 'ok' : 'idle'}
                 />
-                <span className="min-w-16 flex-1 pb-2">
-                  <LinkStrand state={strandState(cluster)} size="lg" />
-                  <span className="mt-1.5 block font-mono text-[11px] text-faint">
-                    {viaAgent
+                <PathHop
+                  state={linkState(cluster)}
+                  caption={
+                    viaAgent
                       ? cluster.agent_attached
                         ? 'outbound tunnel · open'
                         : 'outbound tunnel · not connected'
-                      : 'KubeMG dials the API server'}
-                  </span>
-                </span>
-                <StrandNode
+                      : 'KubeMG dials the API server'
+                  }
+                />
+                <PathNode
                   label="KubeMG"
                   value={viaAgent ? 'bastion proxy' : 'token issuer'}
                   tone="accent"
                 />
-                <span className="min-w-16 flex-1 pb-2">
-                  <LinkStrand state={viaAgent ? 'live' : 'direct'} size="lg" />
-                  <span className="mt-1.5 block font-mono text-[11px] text-faint">
-                    {viaAgent ? 'proxied · audited' : 'kubeconfig · not proxied'}
-                  </span>
-                </span>
-                <StrandNode label="You" value={user?.username ?? 'you'} />
+                <PathHop
+                  state={viaAgent ? 'live' : 'direct'}
+                  label={viaAgent ? 'Proxied' : 'Kubeconfig'}
+                  caption={viaAgent ? 'proxied · audited' : 'kubeconfig · not proxied'}
+                />
+                <PathNode label="You" value={user?.username ?? 'you'} />
               </div>
 
               <div className="mt-5 border-t border-line-soft pt-4">

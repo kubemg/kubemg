@@ -31,8 +31,8 @@ export function clusterStateLabel(cluster: Cluster): string {
   return 'Never checked'
 }
 
-/** How the strand for a cluster should read: is a tunnel carrying traffic now. */
-export function strandState(cluster: Cluster): 'live' | 'direct' | 'down' | 'idle' {
+/** How a cluster's link should read: is a tunnel carrying traffic right now. */
+export function linkState(cluster: Cluster): 'live' | 'direct' | 'down' | 'idle' {
   if (cluster.connection_mode === 'agent') {
     if (cluster.agent_attached) return 'live'
     return cluster.status === 'unhealthy' ? 'down' : 'idle'
