@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Layers, Search } from 'lucide-react'
 import type { Cluster, Environment } from '../api/types'
-import { strandState } from '../lib/status'
-import { LinkStrand } from './LinkStrand'
+import { linkState } from '../lib/status'
+import { LinkStatus } from './LinkStatus'
 import { EnvironmentTag } from './primitives'
 
 /**
@@ -161,7 +161,7 @@ export function ClusterMenu({
                             {entry.kubernetes_version}
                           </span>
                         ) : null}
-                        <LinkStrand state={strandState(entry)} className="w-8 shrink-0" />
+                        <LinkStatus state={linkState(entry)} variant="glyph" />
                         {active ? (
                           <Check aria-hidden="true" className="size-3.5 shrink-0 text-accent" />
                         ) : (
