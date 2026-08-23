@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Boxes, RefreshCw, X } from 'lucide-react'
+import { Boxes, X } from 'lucide-react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import {
   errorMessage,
@@ -35,6 +35,7 @@ import type { Namespace } from '../api/types'
 import { AccessReviewPanel } from '../components/AccessReviewPanel'
 import { AppShell } from '../components/AppShell'
 import { InsightTrend } from '../components/InsightTrend'
+import { LiveRefresh } from '../components/LiveRefresh'
 import { NetworkPolicyCoveragePanel } from '../components/NetworkPolicyCoveragePanel'
 import { ResourceDetailDrawer } from '../components/ResourceDetailDrawer'
 import type { DetailTarget } from '../components/ResourceDetailDrawer'
@@ -43,7 +44,6 @@ import { ResourceView } from '../components/ResourceTables'
 import { TableSkeleton } from '../components/SkeletonLoader'
 import type { LoadedResource } from '../components/ResourceTables'
 import {
-  Button,
   Chip,
   EmptyState,
   Notice,
@@ -637,13 +637,23 @@ export function Explore() {
         )
       : null
 
-  const list = useCachedQuery<LoadedResource>(readKey, async () => {
-    // Unreachable while the key is null, which is the only state without a
-    // cluster; it is written as a guard rather than an assertion so the two
-    // cannot drift apart silently.
-    if (!cluster) throw new Error('no cluster is selected')
-    return loadResource(item, cluster.id, namespace, namespaces)
-  })
+  const list = useCachedQuery<LoadedResource>(
+    readKey,
+    async () => {
+      // Unreachable while the key is null, which is the only state without a
+      // cluster; it is written as a guard rather than an assertion so the two
+      // cannot drift apart silently.
+      if (!cluster) throw new Error('no cluster is selected')
+      return loadResource(item, cluster.id, namespace, namespaces)
+    },
+    // The list keeps itself true. A rollout, a crash loop or a scale-down is
+    // exactly what somebody has this page open to watch, and a table that
+    // silently describes the cluster as it was a minute ago taught people to
+    // reach for Refresh instead of trusting it. The tick is invisible: nothing
+    // is redrawn unless the answer actually changed, and it stops the moment
+    // the tab does.
+    { live: true },
+  )
 
   const loaded = list.data
   // Anything in flight counts as loading for the header's live note; only
@@ -804,12 +814,7 @@ export function Explore() {
           </div>
         ) : undefined
       }
-      actions={
-        <Button onClick={() => void load()} disabled={loading || (namespaced && !namespace)}>
-          <RefreshCw aria-hidden="true" className={`size-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
-      }
+      actions={<LiveRefresh query={list} disabled={namespaced && !namespace} />}
     >
       <div className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}

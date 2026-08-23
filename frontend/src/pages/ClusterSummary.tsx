@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { AlertTriangle, ChevronRight, KeyRound, Layers, RefreshCw, Timer } from 'lucide-react'
 import { checkCluster, errorMessage, fetchCluster, fetchNodeMetrics } from '../api/client'
@@ -22,6 +22,7 @@ import {
   Panel,
 } from '../components/primitives'
 import { CardSkeleton, MeterGridSkeleton } from '../components/SkeletonLoader'
+import { useLiveTick } from '../lib/live'
 import { DEFAULT_RESOURCE, resourceHref } from '../lib/navigation'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { linkState } from '../lib/status'
@@ -71,8 +72,14 @@ export function ClusterSummary() {
   // Read through the query cache: coming back here from Explore or the fleet
   // list inside the window draws the cluster immediately instead of spending a
   // round trip on facts that have not moved.
-  const query = useCachedQuery<Cluster>(valid ? queryKey('cluster', clusterId) : null, () =>
-    fetchCluster(clusterId),
+  const query = useCachedQuery<Cluster>(
+    valid ? queryKey('cluster', clusterId) : null,
+    () => fetchCluster(clusterId),
+    // A cluster registered a minute ago lands on this page and says its agent
+    // has not dialled in yet. Re-reading is what turns that into the connected
+    // state without a reload — the wizard's own handshake step waits the same
+    // way, and this is where an operator ends up afterwards.
+    { live: true },
   )
 
   useEffect(() => {
@@ -369,31 +376,42 @@ function Capacity({ cluster }: { cluster: Cluster }) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    let live = true
-    async function read() {
+  // Which cluster the newest sample belongs to, so an answer that lands after
+  // the page has moved on is dropped rather than drawn under another name.
+  const active = useRef(cluster.id)
+
+  const read = useCallback(
+    async (quiet = false) => {
+      const target = cluster.id
+      active.current = target
       try {
-        const next = await fetchNodeMetrics(cluster.id)
-        if (!live) return
+        const next = await fetchNodeMetrics(target)
+        if (active.current !== target) return
         setMetrics(next)
         setError(null)
       } catch (err) {
-        if (!live) return
-        setError(errorMessage(err, 'Could not read this cluster’s usage.'))
+        if (active.current !== target) return
+        // A background sample that fails leaves the last one on screen: this
+        // panel is a reading, and taking the numbers away because one poll
+        // missed says less than the numbers did.
+        if (!quiet) setError(errorMessage(err, 'Could not read this cluster’s usage.'))
       } finally {
-        if (live) setLoading(false)
+        if (active.current === target) setLoading(false)
       }
-    }
+    },
+    [cluster.id],
+  )
 
+  useEffect(() => {
+    setLoading(true)
     void read()
-    // metrics-server samples every 15s or so; matching it keeps the panel live
-    // without spending tunnel round trips on numbers that have not moved.
-    const timer = window.setInterval(() => void read(), 15_000)
-    return () => {
-      live = false
-      window.clearInterval(timer)
-    }
-  }, [cluster.id])
+  }, [read])
+
+  // metrics-server samples every 15s or so; matching it keeps the panel live
+  // without spending tunnel round trips on numbers that have not moved — and it
+  // stops entirely behind a hidden tab, because a cluster should not be sampled
+  // for a panel nobody is looking at.
+  useLiveTick(useCallback(() => read(true), [read]))
 
   const summary = metrics?.summary
 

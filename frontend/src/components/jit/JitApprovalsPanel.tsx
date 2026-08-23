@@ -10,6 +10,7 @@ import {
 import type { Cluster, JitRequest, JitRequestList, JitStatus } from '../../api/types'
 import type { Tone } from '../../lib/status'
 import { useAuth } from '../../state/auth-context'
+import { useLiveTick } from '../../lib/live'
 import { formatDuration, formatWindow, relativeAge } from '../../lib/time'
 import {
   Button,
@@ -99,9 +100,15 @@ export function JitApprovalsPanel({
 
   useEffect(() => {
     void load()
-    const timer = window.setInterval(() => void load(true), REFRESH_MS)
-    return () => window.clearInterval(timer)
   }, [load])
+
+  // The list re-reads on the console's live cadence, which also means it stops
+  // behind a hidden tab. The countdowns below are drawn locally against the
+  // server's `expires_at`, so a window still runs out on screen while it does.
+  useLiveTick(
+    useCallback(() => load(true), [load]),
+    { interval: REFRESH_MS },
+  )
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick(Date.now()), 1000)

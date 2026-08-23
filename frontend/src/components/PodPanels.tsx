@@ -10,6 +10,7 @@ import {
 import type { Cluster, ContainerUsage, Pod, PodContainer, PodUsage } from '../api/types'
 import { MetricsChart } from './MetricsChart'
 import { Button, Chip, DetailList, Meter, Notice, Pill, SearchInput } from './primitives'
+import { useLiveTick } from '../lib/live'
 import { relativeAge } from '../lib/time'
 import { formatCPU, formatMemory, podLimit, ratio } from '../lib/units'
 
@@ -39,30 +40,41 @@ function usePodUsage(cluster: Cluster, pod: Pod, enabled: boolean) {
   const [unavailable, setUnavailable] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!enabled) return
+  // Which pod the newest sample belongs to, so an answer that lands after the
+  // drawer has moved to another one is dropped rather than drawn under its name.
+  const active = useRef('')
 
-    let live = true
-    async function read() {
+  const read = useCallback(
+    async (quiet = false) => {
+      const target = `${cluster.id}/${pod.namespace}/${pod.name}`
+      active.current = target
       try {
         const result = await fetchPodMetrics(cluster.id, pod.namespace, pod.name)
-        if (!live) return
+        if (active.current !== target) return
         setUsage(result.pod)
         setUnavailable(result.available ? null : (result.reason ?? 'No metrics for this cluster.'))
         setError(null)
       } catch (err) {
-        if (!live) return
-        setError(errorMessage(err, 'Could not read this pod’s usage.'))
+        if (active.current !== target) return
+        // A background sample that fails keeps the last one: bars that vanish
+        // because one poll missed say less than the bars did.
+        if (!quiet) setError(errorMessage(err, 'Could not read this pod’s usage.'))
       }
-    }
+    },
+    [cluster.id, pod.namespace, pod.name],
+  )
 
+  useEffect(() => {
+    if (!enabled) return
     void read()
-    const timer = window.setInterval(() => void read(), USAGE_POLL_MS)
-    return () => {
-      live = false
-      window.clearInterval(timer)
-    }
-  }, [cluster.id, pod.namespace, pod.name, enabled])
+  }, [enabled, read])
+
+  // Sampling stops behind a hidden tab: a drawer left open on a pod is a tunnel
+  // round trip every fifteen seconds for a panel nobody is looking at.
+  useLiveTick(useCallback(() => read(true), [read]), {
+    interval: USAGE_POLL_MS,
+    enabled,
+  })
 
   return { usage, unavailable, error }
 }
