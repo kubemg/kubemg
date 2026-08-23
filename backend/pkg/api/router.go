@@ -520,6 +520,10 @@ func NewRouter(opts Options) *gin.Engine {
 		if s.tokens != nil || opts.Proxy != nil {
 			clusters.POST("/:id/kubeconfig/generate", s.generateKubeconfig)
 		}
+		// How long a credential may be asked to live is server-wide rather than
+		// per cluster, so it is not under /clusters/:id — a per-cluster path
+		// would read as a per-cluster policy.
+		v1.GET("/kubeconfig/policy", requireAuth, s.kubeconfigPolicy)
 		if opts.Bastion != nil {
 			clusters.GET("/:id/kustomize", requireAdmin, s.clusterKustomize)
 		}
