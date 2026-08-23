@@ -290,16 +290,19 @@ export function RowMenuItem({
 export function Chip({
   active,
   onClick,
+  title,
   children,
 }: {
   active: boolean
   onClick: () => void
+  title?: string
   children: ReactNode
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      title={title}
       aria-pressed={active}
       className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control border px-2.5 text-[13px] transition-colors ${
         active

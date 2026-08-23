@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { ChevronDown, Cpu, RefreshCw } from 'lucide-react'
+import { ChevronDown, Cpu } from 'lucide-react'
 import { errorMessage, fetchClusterCapacity } from '../api/client'
 import type {
   CapacityDimension,
@@ -9,7 +9,8 @@ import type {
   PodSlots,
 } from '../api/types'
 import { AppShell } from '../components/AppShell'
-import { Button, EmptyState, Notice, Pill } from '../components/primitives'
+import { LiveRefresh } from '../components/LiveRefresh'
+import { EmptyState, Notice, Pill } from '../components/primitives'
 import { TableSkeleton } from '../components/SkeletonLoader'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { formatCPU, formatMemory } from '../lib/units'
@@ -300,6 +301,9 @@ export function NodeCapacity() {
       if (!cluster) throw new Error('no cluster is selected')
       return fetchClusterCapacity(cluster.id)
     },
+    // Allocation moves whenever anything is scheduled, and this page is opened
+    // precisely while somebody is waiting for something to schedule.
+    { live: true },
   )
 
   if (!clustersLoading && !cluster) {
@@ -346,12 +350,7 @@ export function NodeCapacity() {
     <AppShell
       title="Capacity"
       fullWidth
-      actions={
-        <Button onClick={() => void report.refresh()} disabled={loading}>
-          <RefreshCw aria-hidden="true" className={`size-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
-      }
+      actions={<LiveRefresh query={report} />}
     >
       <div className="flex min-w-0 flex-col gap-4">
         {report.error ? (

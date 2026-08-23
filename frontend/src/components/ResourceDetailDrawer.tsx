@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { ExternalLink, RefreshCw, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { errorMessage, fetchResourceDescribe } from '../api/client'
+import { useLiveTick } from '../lib/live'
 import type {
   Cluster,
   HelmRelease,
@@ -169,21 +170,35 @@ export function ResourceDetailDrawer({
    */
   const workloadLogs = !pod && !!target.namespace && supportsWorkloadLogs(target.kind)
 
-  const load = useCallback(async () => {
-    // There is no object to describe for a Helm release, and asking would be a
-    // read of a kind the cluster does not serve.
-    if (release) return
-    setLoading(true)
-    try {
-      setDescribe(await fetchResourceDescribe(cluster.id, target.kind, target.name, target.namespace))
-      setError(null)
-    } catch (err) {
-      setError(errorMessage(err, 'Could not describe this object.'))
-      setDescribe(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [cluster.id, target.kind, target.name, target.namespace, release])
+  const load = useCallback(
+    async (quiet = false) => {
+      // There is no object to describe for a Helm release, and asking would be a
+      // read of a kind the cluster does not serve.
+      if (release) return
+      if (!quiet) setLoading(true)
+      try {
+        const next = await fetchResourceDescribe(
+          cluster.id,
+          target.kind,
+          target.name,
+          target.namespace,
+        )
+        setDescribe(next)
+        setError(null)
+      } catch (err) {
+        // A quiet re-read that fails leaves the description on screen. The next
+        // one says the same thing if it is real, and an object that has actually
+        // been deleted is a state the list behind this drawer already shows.
+        if (!quiet) {
+          setError(errorMessage(err, 'Could not describe this object.'))
+          setDescribe(null)
+        }
+      } finally {
+        if (!quiet) setLoading(false)
+      }
+    },
+    [cluster.id, target.kind, target.name, target.namespace, release],
+  )
 
   // The describe read backs both the overview and the events tab, so it happens
   // once when the drawer opens rather than on every tab switch. The YAML tab
@@ -191,6 +206,20 @@ export function ResourceDetailDrawer({
   useEffect(() => {
     void load()
   }, [load])
+
+  /*
+   * And it re-reads on the console's live cadence, because this is the surface
+   * somebody watches while they wait: the events under a pod that is not coming
+   * up are the whole reason this tab exists, and they arrive one at a time. The
+   * It runs only for the two tabs the description is actually drawn on. The YAML
+   * tab reads its own object and must not have a buffer replaced under a
+   * half-typed change; a terminal or a log tail is already the live thing on
+   * screen, and re-describing the pod behind it would be two audited reads every
+   * fifteen seconds that nobody is looking at.
+   */
+  useLiveTick(useCallback(() => load(true), [load]), {
+    enabled: !release && (tab === 'overview' || tab === 'describe'),
+  })
 
   // Closing on a half-typed manifest or set of values throws the edit away, so
   // it asks first. Escape reaches the same guard, because the Sheet closes
