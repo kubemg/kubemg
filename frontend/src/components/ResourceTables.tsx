@@ -30,7 +30,7 @@ import type { WorkloadActionName } from './WorkloadActionPanel'
 import { workloadCapability, workloadKeyFor } from '../lib/workloads'
 import type { Tone } from '../lib/status'
 import { TONE_FILL, podTone, workloadTone } from '../lib/status'
-import { relativeAge } from '../lib/time'
+import { formatCountdown, relativeAge, secondsUntil, useTicker } from '../lib/time'
 import { formatCPU, formatMemory, podLimit, ratio, usageTone } from '../lib/units'
 import type { PodUsageIndex } from '../lib/units'
 
@@ -1088,6 +1088,40 @@ function JobTable({
   )
 }
 
+/**
+ * NextRun reads the schedule's next firing. It has four answers and they are
+ * different facts, so none of them is a bare dash: a suspended CronJob is not
+ * going to run, an expression this build cannot evaluate says so and carries the
+ * reason, a schedule with no firing left is a valid CronJob that never runs
+ * again, and everything else is a countdown against the server's own clock.
+ */
+function NextRun({ cronjob }: { cronjob: CronJob }) {
+  if (cronjob.suspended) {
+    return <span className="font-mono text-[12.5px] text-faint">suspended</span>
+  }
+  if (cronjob.schedule_error) {
+    return (
+      <span className="text-[12.5px] text-warn" title={cronjob.schedule_error}>
+        unreadable
+      </span>
+    )
+  }
+  if (!cronjob.next_schedule_at) {
+    return (
+      <span className="font-mono text-[12.5px] text-faint" title="This schedule has no further run">
+        never
+      </span>
+    )
+  }
+
+  const at = new Date(cronjob.next_schedule_at)
+  return (
+    <span className="font-mono text-[12.5px] text-fg" title={at.toLocaleString()}>
+      {formatCountdown(secondsUntil(cronjob.next_schedule_at))}
+    </span>
+  )
+}
+
 function CronJobTable({
   cronjobs,
   showNamespace,
@@ -1097,13 +1131,32 @@ function CronJobTable({
   showNamespace: boolean
   onManifest?: OpenManifest
 }) {
+  // One timer for the whole table, and its cadence follows what is actually
+  // being watched: a schedule ten minutes out is counted down by the second, a
+  // nightly one is not — a column redrawing every second to change nothing is
+  // exactly the movement this deck spends its chrome budget avoiding.
+  const soonest = cronjobs.reduce(
+    (nearest, job) =>
+      job.next_schedule_at ? Math.min(nearest, secondsUntil(job.next_schedule_at)) : nearest,
+    Number.POSITIVE_INFINITY,
+  )
+  useTicker(soonest < 600 ? 1000 : 30_000)
+
   return (
     <Table resizeKey="kubemg_cols_cronjobs">
       <thead>
         <tr>
           <Th columnKey="name">CronJob</Th>
-          <Th className="w-[28%] md:w-[min(16%,11rem)]" columnKey="schedule">
+          {/*
+            The expression is what hides below md rather than the countdown: a
+            cron field is the least readable thing in this row on a narrow screen,
+            and "in 12m" answers the question the expression is being read for.
+          */}
+          <Th className="hidden md:table-cell md:w-[min(15%,11rem)]" columnKey="schedule">
             Schedule
+          </Th>
+          <Th className="w-[30%] md:w-[min(14%,9rem)]" columnKey="next">
+            Next run
           </Th>
           <Th className="w-[16%] md:w-[min(12%,8rem)]" columnKey="state">
             State
@@ -1133,7 +1186,15 @@ function CronJobTable({
                 {cronjob.name}
               </Name>
             </Td>
-            <Td className="truncate font-mono text-[12.5px] text-fg">{cronjob.schedule}</Td>
+            <Td className="hidden truncate font-mono text-[12.5px] text-fg md:table-cell">
+              {cronjob.schedule}
+              {cronjob.time_zone ? (
+                <span className="ml-1.5 font-sans text-faint">{cronjob.time_zone}</span>
+              ) : null}
+            </Td>
+            <Td>
+              <NextRun cronjob={cronjob} />
+            </Td>
             <Td>
               <Pill tone={cronjob.suspended ? 'idle' : 'ok'}>
                 {cronjob.suspended ? 'Suspended' : 'Active'}

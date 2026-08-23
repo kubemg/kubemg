@@ -95,3 +95,40 @@ export function useCountdown(expiresAt: string | null): number {
 
   return remaining
 }
+
+/**
+ * formatCountdown renders time until something the cluster will do on its own,
+ * as opposed to formatDuration's clock face: a schedule is read down a column of
+ * rows, so it has to be scannable rather than precise. Seconds are only shown
+ * where they are what somebody is watching — under ten minutes — because "in 6d
+ * 04h" and "in 6d 04h 12m 09s" answer the same question and only one of them
+ * fits in a cell.
+ */
+export function formatCountdown(totalSeconds: number): string {
+  if (totalSeconds <= 0) return 'due now'
+  if (totalSeconds < 60) return `in ${totalSeconds}s`
+  if (totalSeconds < 600) return `in ${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`
+  if (totalSeconds < 3600) return `in ${Math.floor(totalSeconds / 60)}m`
+  if (totalSeconds < 86400) {
+    return `in ${Math.floor(totalSeconds / 3600)}h ${Math.floor((totalSeconds % 3600) / 60)}m`
+  }
+  return `in ${Math.floor(totalSeconds / 86400)}d ${Math.floor((totalSeconds % 86400) / 3600)}h`
+}
+
+/**
+ * useTicker re-renders on a cadence so a list of countdowns stays true, with one
+ * timer for the whole list rather than useCountdown's one per value — a table of
+ * fifty schedules would otherwise hold fifty intervals.
+ *
+ * The cadence is the caller's, because it depends on what is being counted: a
+ * schedule firing in six days does not need a second-by-second redraw, and this
+ * deck's rule is that nothing moves without a reason.
+ */
+export function useTicker(intervalMs: number): void {
+  const [, setTick] = useState(0)
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setTick((tick) => tick + 1), intervalMs)
+    return () => window.clearInterval(timer)
+  }, [intervalMs])
+}
