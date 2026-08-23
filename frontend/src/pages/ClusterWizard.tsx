@@ -619,6 +619,15 @@ function HandshakeStep({
 
   const clusterId = cluster.id
 
+  /*
+   * This is the one poll in the console that is deliberately *not* gated on the
+   * tab being watched (`lib/live.ts`). Every other read stops behind a hidden
+   * tab because nobody is looking; here, being away is the expected state — the
+   * operator is in a terminal pasting the install command — and the whole point
+   * of the step is that coming back shows it already connected. It costs a query
+   * against KubeMG's own database, touches no cluster, and stops the moment the
+   * agent attaches.
+   */
   useEffect(() => {
     if (!polling) return
 

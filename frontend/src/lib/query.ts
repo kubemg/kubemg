@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { withFreshReads } from '../api/client'
+import { LIVE_INTERVAL, useLiveTick } from './live'
 
 /**
  * A small stale-while-revalidate cache for reads.
@@ -29,6 +30,14 @@ import { withFreshReads } from '../api/client'
  * Refresh is the escape hatch and it is honest: it skips this cache and sends
  * `Cache-Control: no-cache`, so it also skips the server's. An operator who
  * clicks Refresh is asking the cluster.
+ *
+ * A caller may also ask for the answer to stay true on its own (`live`), which
+ * is the same read on `lib/live.ts`'s cadence — only while somebody is looking
+ * at the tab. A live tick is deliberately invisible: it never draws a skeleton,
+ * never blanks what is on screen when it fails, and does not even re-render when
+ * the answer has not changed. The point of it is that an operator stops having
+ * to wonder whether what they are reading is current, and a page that flickers
+ * every fifteen seconds to prove it is refreshing has missed that entirely.
  *
  * This is deliberately not React Query or SWR. What is needed is one hook, and
  * the smallest of those libraries is larger than the terminal emulator this app
@@ -63,6 +72,35 @@ function readEntry(key: string): { value: unknown; fresh: boolean } | null {
     return null
   }
   return { value: found.value, fresh: age <= STALE_TIME }
+}
+
+/** entryAge is how old the held answer is, or null if there is none. It is what
+ * keeps a live tick from re-reading something that was just read by hand. */
+function entryAge(key: string): number | null {
+  const found = entries.get(key)
+  return found ? Date.now() - found.at : null
+}
+
+/**
+ * sameAnswer compares a new answer with the one on screen. Exported because the
+ * fleet list does the same thing outside this cache, for the same reason. A live read mostly
+ * returns exactly what it returned last time — nothing in the cluster moved —
+ * and replacing state with an identical value re-renders a table, recomputes
+ * every derived insight above it and resets nothing anybody asked to be reset.
+ * Skipping that is most of what makes the refresh feel smooth.
+ *
+ * It is a structural compare rather than a shallow one because every answer here
+ * is a decoded JSON list, which is exactly what this is cheap and correct for;
+ * anything it cannot serialize is treated as changed, which is the safe way to
+ * be wrong.
+ */
+export function sameAnswer(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  try {
+    return JSON.stringify(a) === JSON.stringify(b)
+  } catch {
+    return false
+  }
 }
 
 function writeEntry(key: string, value: unknown) {
@@ -104,6 +142,21 @@ export type CachedQuery<T> = {
   loading: boolean
   /** True when data is on screen and a newer answer is on its way. */
   revalidating: boolean
+  /**
+   * When the answer on screen was read, as epoch milliseconds. A live tick
+   * updates it even when the answer came back identical — that a read happened
+   * is the fact a surface saying "live" is claiming, and it is deliberately the
+   * *only* state a tick changes in that case. There is no `polling` flag to go
+   * with it: nothing here should spin, dim or disable itself four times a minute
+   * for a read nobody asked for.
+   */
+  updatedAt: number | null
+  /**
+   * True when a live tick failed and what is drawn is older than it should be.
+   * The data stays: one failed read is not a reason to replace a list somebody
+   * is reading with an error. This is how a surface stays honest about it.
+   */
+  stale: boolean
   /** Re-read, skipping this cache and the server's. */
   refresh: () => Promise<void>
 }
@@ -114,10 +167,20 @@ type State<T> = {
   error: unknown
   loading: boolean
   revalidating: boolean
+  updatedAt: number | null
+  stale: boolean
 }
 
 function idle<T>(): State<T> {
-  return { key: null, data: null, error: null, loading: false, revalidating: false }
+  return {
+    key: null,
+    data: null,
+    error: null,
+    loading: false,
+    revalidating: false,
+    updatedAt: null,
+    stale: false,
+  }
 }
 
 /**
@@ -125,16 +188,25 @@ function idle<T>(): State<T> {
  * nothing to read yet — no cluster picked, no namespace resolved — and is not an
  * error; the hook simply sits idle, which is what lets a page render its chrome
  * before it knows what it is showing.
+ *
+ * `live` asks for the answer to keep itself true. See the note at the top of the
+ * file, and `lib/live.ts` for when a tick is allowed to happen at all.
  */
-export function useCachedQuery<T>(key: string | null, read: () => Promise<T>): CachedQuery<T> {
+export function useCachedQuery<T>(
+  key: string | null,
+  read: () => Promise<T>,
+  { live = false, interval = LIVE_INTERVAL }: { live?: boolean; interval?: number } = {},
+): CachedQuery<T> {
   const [state, setState] = useState<State<T>>(() => {
     if (key === null) return idle<T>()
     const cached = readEntry(key)
+    const at = entryAge(key)
+    const base = { key, stale: false, updatedAt: at === null ? null : Date.now() - at }
     if (cached?.fresh) {
-      return { key, data: cached.value as T, error: null, loading: false, revalidating: false }
+      return { ...base, data: cached.value as T, error: null, loading: false, revalidating: false }
     }
     return {
-      key,
+      ...base,
       data: (cached?.value as T) ?? null,
       error: null,
       loading: cached === null,
@@ -156,19 +228,57 @@ export function useCachedQuery<T>(key: string | null, read: () => Promise<T>): C
   // arrives after the operator has moved on is dropped rather than rendered
   // under the wrong heading.
   const activeKey = useRef<string | null>(key)
+  // And whether one is in flight at all, which is what stops a live tick from
+  // asking the same question twice at once.
+  const inFlight = useRef(false)
 
-  const run = useCallback(async (target: string, fresh: boolean) => {
+  const run = useCallback(async (target: string, fresh: boolean, background = false) => {
     activeKey.current = target
+    inFlight.current = true
     try {
       const value = fresh ? await withFreshReads(() => readRef.current()) : await readRef.current()
       if (activeKey.current !== target) return
       writeEntry(target, value)
-      setState({ key: target, data: value, error: null, loading: false, revalidating: false })
+      setState((previous) => {
+        // A live tick that changed nothing keeps the data it already has, so
+        // every table, chart and derived reading above it is left exactly as it
+        // was; only the timestamp moves, because a read did happen.
+        const unchanged = background && previous.key === target && sameAnswer(previous.data, value)
+        return {
+          key: target,
+          data: unchanged ? previous.data : value,
+          error: null,
+          loading: false,
+          revalidating: false,
+          updatedAt: Date.now(),
+          stale: false,
+        }
+      })
     } catch (error) {
       if (activeKey.current !== target) return
-      // A failed read drops what it was replacing: showing a list next to the
-      // error explaining that it could not be read is a contradiction.
-      setState({ key: target, data: null, error, loading: false, revalidating: false })
+      setState((previous) => {
+        // A background tick keeps what is on screen. The operator did not ask
+        // for this read, and answering their list with an error because one
+        // fifteen-second poll failed would be the console losing its nerve; the
+        // next tick says the same thing if it is real, and `stale` says so
+        // meanwhile.
+        if (background && previous.key === target && previous.data !== null) {
+          return previous.stale ? previous : { ...previous, stale: true }
+        }
+        // A failed read drops what it was replacing: showing a list next to the
+        // error explaining that it could not be read is a contradiction.
+        return {
+          key: target,
+          data: null,
+          error,
+          loading: false,
+          revalidating: false,
+          updatedAt: null,
+          stale: false,
+        }
+      })
+    } finally {
+      inFlight.current = false
     }
   }, [])
 
@@ -180,11 +290,20 @@ export function useCachedQuery<T>(key: string | null, read: () => Promise<T>): C
     }
 
     const cached = readEntry(key)
+    const age = entryAge(key)
     if (cached?.fresh) {
       // The whole point: a question asked again within the window is answered
       // without touching the network.
       activeKey.current = key
-      setState({ key, data: cached.value as T, error: null, loading: false, revalidating: false })
+      setState({
+        key,
+        data: cached.value as T,
+        error: null,
+        loading: false,
+        revalidating: false,
+        updatedAt: age === null ? null : Date.now() - age,
+        stale: false,
+      })
       return
     }
 
@@ -197,6 +316,8 @@ export function useCachedQuery<T>(key: string | null, read: () => Promise<T>): C
       error: null,
       loading: cached === null,
       revalidating: cached !== null || previous.key === key,
+      updatedAt: cached === null || age === null ? null : Date.now() - age,
+      stale: false,
     }))
     void run(key, false)
 
@@ -209,15 +330,47 @@ export function useCachedQuery<T>(key: string | null, read: () => Promise<T>): C
   const refresh = useCallback(async () => {
     if (key === null) return
     entries.delete(key)
-    setState((previous) => ({ ...previous, key, error: null, revalidating: previous.data !== null }))
+    setState((previous) => ({
+      ...previous,
+      key,
+      error: null,
+      revalidating: previous.data !== null,
+      stale: false,
+    }))
     await run(key, true)
   }, [key, run])
+
+  /*
+   * The live tick.
+   *
+   * It stands down for a read already in flight and for an answer somebody just
+   * asked for by hand — a tick landing on top of a manual Refresh would spend a
+   * second cluster read to learn what the first one is about to say.
+   *
+   * And it does *not* ask fresh, unlike Refresh. A tick is allowed to be
+   * answered by the server's own five-second cache: at this cadence that is at
+   * most a third of an interval's staleness, and in exchange several tabs of the
+   * same console — a list, the drawer over it, the same page open twice —
+   * collapse into one tunnel round trip and one audit record instead of one
+   * each. Refresh is what asks the cluster, and it stays that way.
+   */
+  useLiveTick(
+    useCallback(() => {
+      if (key === null || inFlight.current) return
+      const age = entryAge(key)
+      if (age !== null && age < interval / 2) return
+      return run(key, false, true)
+    }, [key, interval, run]),
+    { enabled: live && key !== null, interval },
+  )
 
   return {
     data: state.key === key ? state.data : null,
     error: state.key === key ? state.error : null,
     loading: state.key === key ? state.loading : key !== null,
     revalidating: state.key === key ? state.revalidating : false,
+    updatedAt: state.key === key ? state.updatedAt : null,
+    stale: state.key === key ? state.stale : false,
     refresh,
   }
 }

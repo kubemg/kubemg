@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
-import { ChevronRight, RefreshCw, Siren, X } from 'lucide-react'
+import { ChevronRight, Siren, X } from 'lucide-react'
 import { errorMessage, fetchClusterEvents, fetchNamespaces } from '../api/client'
 import type { EventGroup, Namespace } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { LiveRefresh } from '../components/LiveRefresh'
 import { Button, Chip, EmptyState, Notice, Pill, SearchInput, Select } from '../components/primitives'
 import { TableSkeleton } from '../components/SkeletonLoader'
 import { ALL_NAMESPACES } from '../lib/resources'
@@ -147,15 +148,22 @@ export function EventsTimeline() {
       ? queryKey('events', cluster.id, namespace, warningsOnly ? 'Warning' : '', objectKind, objectName, range)
       : null
 
-  const timeline = useCachedQuery(readKey, async () => {
-    if (!cluster) throw new Error('no cluster is selected')
-    return fetchClusterEvents(cluster.id, namespace, {
-      type: warningsOnly ? 'Warning' : undefined,
-      kind: objectKind || undefined,
-      name: objectName || undefined,
-      range,
-    })
-  })
+  const timeline = useCachedQuery(
+    readKey,
+    async () => {
+      if (!cluster) throw new Error('no cluster is selected')
+      return fetchClusterEvents(cluster.id, namespace, {
+        type: warningsOnly ? 'Warning' : undefined,
+        kind: objectKind || undefined,
+        name: objectName || undefined,
+        range,
+      })
+    },
+    // The one page in the console where the answer is *only* worth having if it
+    // is current: "what broke in the last fifteen minutes" asked against a
+    // reading from twenty minutes ago is the wrong question answered.
+    { live: true },
+  )
 
   const loaded = timeline.data
   const loading = timeline.loading || timeline.revalidating
@@ -245,12 +253,7 @@ export function EventsTimeline() {
           </div>
         ) : undefined
       }
-      actions={
-        <Button onClick={() => void timeline.refresh()} disabled={loading || !namespace}>
-          <RefreshCw aria-hidden="true" className={`size-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
-      }
+      actions={<LiveRefresh query={timeline} disabled={!namespace} />}
     >
       <div className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}

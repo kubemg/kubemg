@@ -4,6 +4,7 @@ import { Plug, Plus, RefreshCw, Server } from 'lucide-react'
 import { checkCluster, errorMessage, fetchNodeMetrics } from '../api/client'
 import type { Cluster, Environment, UsageSummary } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { LiveChip } from '../components/LiveRefresh'
 import { LinkStatus } from '../components/LinkStatus'
 import {
   Button,
@@ -18,6 +19,7 @@ import { clusterHref } from '../lib/navigation'
 import { linkState } from '../lib/status'
 import { relativeAge } from '../lib/time'
 import { formatCPU, formatMemory, ratio } from '../lib/units'
+import { FLEET_INTERVAL } from '../lib/live'
 import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
 
@@ -65,12 +67,18 @@ export function Overview() {
     <AppShell
       title="Fleet"
       actions={
-        isAdmin && clusters.length > 0 ? (
-          <Button variant="primary" onClick={checkAll} disabled={checking}>
-            <RefreshCw aria-hidden="true" className={`size-4 ${checking ? 'animate-spin' : ''}`} />
-            {checking ? 'Checking…' : 'Check every cluster'}
-          </Button>
-        ) : null
+        <div className="flex items-center gap-2">
+          {/* The fleet list re-reads itself, which is how a cluster registered a
+              minute ago appears here the moment its agent dials in. The chip is
+              where that is said, and where it is turned off. */}
+          <LiveChip interval={FLEET_INTERVAL} />
+          {isAdmin && clusters.length > 0 ? (
+            <Button variant="primary" onClick={checkAll} disabled={checking}>
+              <RefreshCw aria-hidden="true" className={`size-4 ${checking ? 'animate-spin' : ''}`} />
+              {checking ? 'Checking…' : 'Check every cluster'}
+            </Button>
+          ) : null}
+        </div>
       }
     >
       <div className="flex flex-col gap-6">
