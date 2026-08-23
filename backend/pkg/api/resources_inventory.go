@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kubemg/kubemg/backend/pkg/cronsched"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
@@ -143,6 +144,16 @@ type cronJobView struct {
 	Suspended    bool       `json:"suspended"`
 	Active       int        `json:"active"`
 	LastSchedule *time.Time `json:"last_schedule_at,omitempty"`
+
+	// NextSchedule is the firing this build derived from the schedule, which no
+	// Kubernetes field reports — see pkg/cronsched. It is absent for three
+	// different reasons and each is stated rather than collapsed into a blank:
+	// a suspended CronJob has no next run, a schedule this build cannot read
+	// says so in ScheduleError, and a valid expression that never fires again
+	// (`0 0 31 2 *`) has neither.
+	NextSchedule  *time.Time `json:"next_schedule_at,omitempty"`
+	TimeZone      string     `json:"time_zone,omitempty"`
+	ScheduleError string     `json:"schedule_error,omitempty"`
 }
 
 // listWorkloadsOf serves one apps/v1 kind on its own route, reusing the same
@@ -255,6 +266,34 @@ func (s *server) listJobs(c *gin.Context) {
 	})
 }
 
+// cronJobNext derives the firing a CronJob's schedule implies, which is the one
+// thing a list of them cannot read off the object. It never fails: a schedule
+// this build cannot evaluate comes back as a reason to show on the row, because
+// one unreadable expression must not cost the operator the whole list.
+func cronJobNext(schedule, timeZone string, suspended bool, last *time.Time, now time.Time) (*time.Time, string) {
+	// A suspended CronJob is not going to run, so deriving a time for it would
+	// be a countdown to something that never happens.
+	if suspended {
+		return nil, ""
+	}
+
+	var lastRun time.Time
+	if last != nil {
+		lastRun = *last
+	}
+
+	next, err := cronsched.NextIn(schedule, timeZone, now, lastRun)
+	if err != nil {
+		return nil, strings.TrimPrefix(err.Error(), cronsched.ErrUnsupported.Error()+": ")
+	}
+	// A valid expression can still have no firing left within the search
+	// horizon; that is silence rather than an error.
+	if next.IsZero() {
+		return nil, ""
+	}
+	return &next, ""
+}
+
 func (s *server) listCronJobs(c *gin.Context) {
 	user, cluster, grant, ok := s.resourceCluster(c)
 	if !ok {
@@ -265,6 +304,10 @@ func (s *server) listCronJobs(c *gin.Context) {
 		return
 	}
 
+	// One clock for the whole list: two rows on the same schedule must not be
+	// answered a millisecond apart and report different countdowns.
+	now := time.Now()
+
 	out := []cronJobView{}
 	for _, path := range scope.paths(resourceListPath{"/apis/batch/v1", "cronjobs"}) {
 		var list struct {
@@ -273,6 +316,7 @@ func (s *server) listCronJobs(c *gin.Context) {
 				Spec     struct {
 					Schedule string `json:"schedule"`
 					Suspend  *bool  `json:"suspend"`
+					TimeZone string `json:"timeZone"`
 				} `json:"spec"`
 				Status struct {
 					Active           []struct{} `json:"active"`
@@ -290,10 +334,14 @@ func (s *server) listCronJobs(c *gin.Context) {
 				Schedule:     item.Spec.Schedule,
 				Active:       len(item.Status.Active),
 				LastSchedule: item.Status.LastScheduleTime,
+				TimeZone:     item.Spec.TimeZone,
 			}
 			if item.Spec.Suspend != nil {
 				view.Suspended = *item.Spec.Suspend
 			}
+			view.NextSchedule, view.ScheduleError = cronJobNext(
+				item.Spec.Schedule, item.Spec.TimeZone, view.Suspended,
+				item.Status.LastScheduleTime, now)
 			out = append(out, view)
 		}
 	}

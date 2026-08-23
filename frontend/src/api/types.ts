@@ -389,6 +389,16 @@ export interface CronJob {
   suspended: boolean
   active: number
   last_schedule_at?: string
+  /**
+   * When the schedule fires next, derived server-side because no Kubernetes
+   * field reports it. It is absent for three distinct reasons and the row says
+   * which: the CronJob is suspended, `schedule_error` names an expression this
+   * build cannot read, or the schedule has no firing left at all.
+   */
+  next_schedule_at?: string
+  /** `spec.timeZone`, shown beside the expression because it is what the expression means. */
+  time_zone?: string
+  schedule_error?: string
 }
 
 export interface Service {
