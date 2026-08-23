@@ -3,9 +3,9 @@ import { CornerDownLeft, Search } from 'lucide-react'
 import { useNavigate } from 'react-router'
 import type { Cluster } from '../api/types'
 import { EnvironmentDot, KeyHint } from './primitives'
-import { LinkStrand } from './LinkStrand'
+import { LinkStatus } from './LinkStatus'
 import { clusterHref, clusterPageHref, hasTunnel, resourceHref } from '../lib/navigation'
-import { strandState } from '../lib/status'
+import { linkState } from '../lib/status'
 
 export interface CommandTarget {
   id: string
@@ -239,7 +239,7 @@ export function CommandPalette({
                   </span>
 
                   {target.cluster ? (
-                    <LinkStrand state={strandState(target.cluster)} className="w-12 shrink-0" />
+                    <LinkStatus state={linkState(target.cluster)} variant="glyph" />
                   ) : null}
 
                   {active ? (

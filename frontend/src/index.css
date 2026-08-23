@@ -13,10 +13,13 @@
  * cluster names, endpoints, versions, counts, paths — are set in mono with
  * tabular figures, because they are data and get compared column to column.
  *
- * The signature device is the link strand (see components/LinkStrand.tsx): a
- * telemetry trace, not a gauge — a pulse gathered toward the KubeMG end, the
- * direction the real connection is made. It glows; it does not march.
- * Nothing else animates.
+ * A cluster's link to KubeMG is stated, not drawn (see
+ * components/LinkStatus.tsx): a glyph whose silhouette carries the state — two
+ * nodes met, a fixed cable, a plug pulled apart, a circle not yet drawn solid
+ * — and the word for it. It used to be a strand: a coloured trace running the
+ * width of a card or a rail row, which made a green or a red band the loudest
+ * thing on a surface whose job is to be read. A live link breathes slowly;
+ * nothing else animates.
  *
  * Dark is the default deck; light is a full peer, not an afterthought. Every
  * colour below is a token pair — never hard-code a hex in a component.
@@ -99,7 +102,7 @@
      rail on both decks, and that was wrong twice over: a near-black column
      beside a white page is the loudest thing on screen when the chrome should
      be the quietest, and everything the panel draws from the *work* palette
-     (the link strand's `muted`/`faint`, an environment tag's soft fill) was
+     (a link glyph's `muted`/`faint`, an environment tag's soft fill) was
      dark-on-dark there. Its tokens stay separate rather than reusing
      `bg`/`raised` because the rail's own hover and selected states have to be
      legible against the rail, not against the page. */
@@ -358,23 +361,24 @@
 }
 
 /*
- * The link strand: a telemetry trace, not a filling bar. A live link carries
- * a pulse gathered toward the KubeMG end — the direction the connection is
- * actually made, since the cluster dials out and KubeMG never dials in — and
- * glows gently instead of running a marquee across the screen.
+ * A live link: the one glyph on the deck that is genuinely still happening, so
+ * it breathes slowly rather than sitting still. It is a breath and not a
+ * marquee, and it is deliberately slower and shallower than `breathe` — a
+ * fleet list can hold fifty of these at once, and fifty things blinking at a
+ * stream's tempo is a status board nobody can read past.
  */
-@keyframes strand-glow {
+@keyframes link-breath {
   0%,
   100% {
-    opacity: 0.9;
+    opacity: 1;
   }
   50% {
-    opacity: 0.55;
+    opacity: 0.5;
   }
 }
 
-@utility strand-live {
-  animation: strand-glow 3.6s ease-in-out infinite;
+@utility link-live {
+  animation: link-breath 3.6s ease-in-out infinite;
 }
 
 @keyframes rise {
