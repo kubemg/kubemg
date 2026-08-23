@@ -299,3 +299,81 @@ func TestRecordingSwitchTurnsRecordingOff(t *testing.T) {
 		t.Fatal("the capability is still there; only the setting changed")
 	}
 }
+
+// The ceiling on a generated kubeconfig is the one thing an administrator
+// changes here that a *user* then relies on, so it has to move in both
+// directions and it has to be bounded at both ends.
+func TestKubeconfigCeilingDefaultsAndMoves(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+
+	body := decode[settingsResponse](t,
+		env.do(t, http.MethodGet, "/api/v1/settings", token, nil))
+	if body.Effective.KubeconfigMaxTTLHours != 24 {
+		t.Fatalf("expected a 24h default ceiling, got %d", body.Effective.KubeconfigMaxTTLHours)
+	}
+	if body.Overrides.KubeconfigMaxTTLHours != 0 {
+		t.Fatalf("expected no stored override, got %d", body.Overrides.KubeconfigMaxTTLHours)
+	}
+
+	// A quarter, which is what "three months" means and the absolute bound.
+	body = decode[settingsResponse](t, env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]any{
+		"kubeconfig_max_ttl_hours": 2160,
+	}))
+	if body.Effective.KubeconfigMaxTTLHours != 2160 {
+		t.Fatalf("expected the raised ceiling, got %d", body.Effective.KubeconfigMaxTTLHours)
+	}
+	// A raised ceiling is disclosed, because the two connection modes differ on
+	// whether a long-lived credential can be withdrawn.
+	if !hasWarningAbout(body.Warnings, "90 days") {
+		t.Fatalf("expected a warning naming the window, got %v", body.Warnings)
+	}
+
+	// Lowering it below the default is the same decision as raising it.
+	body = decode[settingsResponse](t, env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]any{
+		"kubeconfig_max_ttl_hours": 8,
+	}))
+	if body.Effective.KubeconfigMaxTTLHours != 8 {
+		t.Fatalf("expected an 8h ceiling, got %d", body.Effective.KubeconfigMaxTTLHours)
+	}
+	if hasWarningAbout(body.Warnings, "Kubeconfigs may be issued") {
+		t.Fatal("a ceiling at or below the default needs no disclosure")
+	}
+
+	// Zero clears it back to the build's default, the same way every other
+	// setting is cleared.
+	body = decode[settingsResponse](t, env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]any{
+		"kubeconfig_max_ttl_hours": 0,
+	}))
+	if body.Effective.KubeconfigMaxTTLHours != 24 || body.Overrides.KubeconfigMaxTTLHours != 0 {
+		t.Fatalf("expected the override to be cleared, got %+v", body.Overrides)
+	}
+}
+
+func TestKubeconfigCeilingIsBounded(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+
+	// Past the build's absolute bound, and below the floor a request is measured
+	// against — a ceiling there would refuse every request.
+	for _, hours := range []int{2161, -1} {
+		rec := env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]any{
+			"kubeconfig_max_ttl_hours": hours,
+		})
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%d hours: expected status %d, got %d (%s)",
+				hours, http.StatusBadRequest, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func hasWarningAbout(warnings []string, needle string) bool {
+	for _, warning := range warnings {
+		if strings.Contains(warning, needle) {
+			return true
+		}
+	}
+	return false
+}

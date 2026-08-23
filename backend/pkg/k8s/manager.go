@@ -22,10 +22,22 @@ import (
 // TTL bounds accepted for generated credentials. The Kubernetes API server may
 // enforce a shorter ceiling of its own, in which case the token it returns
 // expires earlier than requested.
+//
+// There are two ceilings on purpose. DefaultMaxTTL is what an install allows
+// with nobody having said otherwise, and it is a day because a credential
+// sitting on a laptop is the one KubeMG cannot see being used. MaxTTL is the
+// absolute bound an administrator cannot configure past: a quarter, which is
+// the longest window anyone asking for "a few months" means, and past it a
+// bearer token is not access control but a permanent key.
+//
+// The effective ceiling between the two is resolved from the settings and
+// enforced in the API layer, which is where the policy lives. This package
+// enforces only the absolute bound — its job is minting.
 const (
-	MinTTL     = 10 * time.Minute
-	MaxTTL     = 24 * time.Hour
-	DefaultTTL = time.Hour
+	MinTTL        = 10 * time.Minute
+	DefaultMaxTTL = 24 * time.Hour
+	MaxTTL        = 90 * 24 * time.Hour
+	DefaultTTL    = time.Hour
 )
 
 // ErrInvalidTTL is returned for a TTL outside [MinTTL, MaxTTL].

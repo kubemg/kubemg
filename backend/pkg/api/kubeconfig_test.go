@@ -452,3 +452,140 @@ func TestAgentKubeconfigOmitsTheCAWhenPubliclyTrusted(t *testing.T) {
 		t.Fatal("a publicly-trusted bastion must not be pinned into the kubeconfig")
 	}
 }
+
+// The default ceiling is a day, and it is the *policy* ceiling rather than a
+// build constant — a request past it is refused with the number it was measured
+// against, so whoever asked can see what the install allows.
+func TestGenerateKubeconfigRefusesPastTheCeiling(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addCluster("prod-eu", db.EnvProd)
+
+	rec := env.do(t, http.MethodPost, generatePath(cluster.ID), env.tokenFor(t, admin), map[string]any{
+		"ttl_seconds": int(90 * 24 * time.Hour / time.Second),
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "86400") {
+		t.Fatalf("the refusal should name the ceiling it applied: %s", rec.Body.String())
+	}
+	if env.tokens.calls != 0 {
+		t.Fatal("a refused TTL must not reach the cluster")
+	}
+}
+
+// Raising the ceiling is the whole point of the setting: an admin who allows a
+// quarter gets a quarter, on the mode where a credential that long is
+// revocable — the proxy re-reads the grant on every call.
+func TestGenerateKubeconfigHonoursARaisedCeiling(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addAgentCluster("edge-us", db.EnvStaging, "kmg_token")
+	token := env.tokenFor(t, admin)
+
+	quarter := int(90 * 24 * time.Hour / time.Second)
+	rec := env.do(t, http.MethodPost, generatePath(cluster.ID), token, map[string]any{
+		"ttl_seconds": quarter,
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("a quarter must be refused before an admin allows it, got %d", rec.Code)
+	}
+
+	if rec := env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]any{
+		"kubeconfig_max_ttl_hours": 2160,
+	}); rec.Code != http.StatusOK {
+		t.Fatalf("could not raise the ceiling: %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	rec = env.do(t, http.MethodPost, generatePath(cluster.ID), token, map[string]any{
+		"ttl_seconds": quarter,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	body := decode[generateKubeconfigResponse](t, rec)
+	if body.TTLSeconds != int64(quarter) {
+		t.Fatalf("expected the full window, got %d", body.TTLSeconds)
+	}
+	// The credential itself has to carry the window, not just the response.
+	if left := time.Until(body.ExpiresAt); left < 89*24*time.Hour {
+		t.Fatalf("the issued token expires in %s, not a quarter", left)
+	}
+}
+
+// A cluster's own API server caps service account tokens
+// (--service-account-max-token-expiration) and answers a longer request with an
+// earlier expiry rather than an error. Reporting the window that was asked for
+// would have the console counting down from time the token does not have.
+func TestGenerateKubeconfigReportsTheWindowTheClusterGranted(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addCluster("prod-eu", db.EnvProd)
+	env.tokens.capTTL = time.Hour
+
+	rec := env.do(t, http.MethodPost, generatePath(cluster.ID), env.tokenFor(t, admin), map[string]any{
+		"ttl_seconds": 86400,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	body := decode[generateKubeconfigResponse](t, rec)
+	if body.TTLSeconds > 3600 || body.TTLSeconds < 3500 {
+		t.Fatalf("expected the granted hour to be reported, got %d", body.TTLSeconds)
+	}
+	if body.Warning == "" || !strings.Contains(body.Warning, "service-account-max-token-expiration") {
+		t.Fatalf("a shortened credential must say who shortened it, got %q", body.Warning)
+	}
+	// The full window still reached the cluster: KubeMG asked, the cluster
+	// decided.
+	if env.tokens.lastRequest.TTL != 24*time.Hour {
+		t.Fatalf("expected the requested TTL to reach the issuer, got %s", env.tokens.lastRequest.TTL)
+	}
+}
+
+// The window a caller may ask for is readable by anyone who may generate a
+// kubeconfig, for the same reason the recording policy is readable by anyone who
+// might be recorded: the form offering the choice must not discover the ceiling
+// by being refused.
+func TestKubeconfigPolicyIsReadableByAnyone(t *testing.T) {
+	env := newTestEnv(t)
+	user := env.store.addUser("dev", "pw", db.RoleUser)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+
+	rec := env.do(t, http.MethodGet, "/api/v1/kubeconfig/policy", env.tokenFor(t, user), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	policy := decode[struct {
+		MinTTLSeconds     int64 `json:"min_ttl_seconds"`
+		DefaultTTLSeconds int64 `json:"default_ttl_seconds"`
+		MaxTTLSeconds     int64 `json:"max_ttl_seconds"`
+	}](t, rec)
+	if policy.MinTTLSeconds != 600 || policy.DefaultTTLSeconds != 3600 || policy.MaxTTLSeconds != 86400 {
+		t.Fatalf("unexpected policy: %+v", policy)
+	}
+
+	if rec := env.do(t, http.MethodPut, "/api/v1/settings", env.tokenFor(t, admin), map[string]any{
+		"kubeconfig_max_ttl_hours": 2160,
+	}); rec.Code != http.StatusOK {
+		t.Fatalf("could not raise the ceiling: %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	rec = env.do(t, http.MethodGet, "/api/v1/kubeconfig/policy", env.tokenFor(t, user), nil)
+	if got := decode[struct {
+		MaxTTLSeconds int64 `json:"max_ttl_seconds"`
+	}](t, rec).MaxTTLSeconds; got != int64(90*24*time.Hour/time.Second) {
+		t.Fatalf("the policy must follow the setting, got %d", got)
+	}
+}
+
+// An unauthenticated caller learns nothing, including the policy: it is a fact
+// about this install's access rules.
+func TestKubeconfigPolicyNeedsAuth(t *testing.T) {
+	env := newTestEnv(t)
+	if rec := env.do(t, http.MethodGet, "/api/v1/kubeconfig/policy", "", nil); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, rec.Code)
+	}
+}

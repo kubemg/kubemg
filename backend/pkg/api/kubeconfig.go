@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -82,11 +83,15 @@ func (s *server) generateKubeconfig(c *gin.Context) {
 	if req.TTLSeconds != 0 {
 		ttl = time.Duration(req.TTLSeconds) * time.Second
 	}
-	if ttl < k8s.MinTTL || ttl > k8s.MaxTTL {
+	// The ceiling is an operator setting rather than a build constant: an
+	// install that hands out a quarter's access and one that refuses anything
+	// past a shift are both legitimate, and neither should need a redeploy.
+	maxTTL := s.kubeconfigMaxTTL(ctx)
+	if ttl < k8s.MinTTL || ttl > maxTTL {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": fmt.Sprintf(
 				"ttl_seconds must be between %d and %d",
-				int64(k8s.MinTTL.Seconds()), int64(k8s.MaxTTL.Seconds()),
+				int64(k8s.MinTTL.Seconds()), int64(maxTTL.Seconds()),
 			),
 		})
 		return
@@ -140,11 +145,18 @@ func (s *server) generateKubeconfig(c *gin.Context) {
 		return
 	}
 
+	// The cluster's own API server enforces a ceiling of its own
+	// (--service-account-max-token-expiration) and answers a longer request with
+	// an earlier expiry rather than an error. Reporting the TTL that was asked
+	// for would make the console count down from a window the token does not
+	// have, so what is reported is the window the cluster granted.
+	granted, shortened := grantedTTL(ttl, issued.ExpiresAt)
+
 	c.JSON(http.StatusOK, generateKubeconfigResponse{
 		Cluster:        cluster.Name,
 		Context:        input.ContextName(),
 		Namespace:      namespace,
-		TTLSeconds:     int64(ttl.Seconds()),
+		TTLSeconds:     int64(granted.Seconds()),
 		ExpiresAt:      issued.ExpiresAt,
 		Filename:       fmt.Sprintf("%s-%s.kubeconfig", cluster.Name, user.Username),
 		Kubeconfig:     string(kubeconfig),
@@ -152,6 +164,70 @@ func (s *server) generateKubeconfig(c *gin.Context) {
 		ServiceAcct:    serviceAccount,
 		ConnectionMode: db.ModeDirect,
 		Server:         cluster.APIURL,
+		Warning:        shortened,
+	})
+}
+
+// grantedTTL reconciles the window that was asked for with the expiry the
+// cluster reported. A difference under a minute is the round trip rather than a
+// policy, and an API server that reports no expiry at all is left alone — the
+// issuer already substitutes a fallback there.
+func grantedTTL(asked time.Duration, expiresAt time.Time) (time.Duration, string) {
+	if expiresAt.IsZero() {
+		return asked, ""
+	}
+	granted := time.Until(expiresAt).Round(time.Second)
+	if granted <= 0 || granted >= asked-time.Minute {
+		return asked, ""
+	}
+	return granted, fmt.Sprintf(
+		"This cluster's API server caps service account tokens at about %s, so it issued %s instead of "+
+			"the %s that was requested. Raising it means raising the API server's own "+
+			"--service-account-max-token-expiration, or registering the cluster in agent mode, where the "+
+			"credential is KubeMG's rather than the cluster's.",
+		roughDuration(granted), roughDuration(granted), roughDuration(asked))
+}
+
+// roughDuration is a duration said the way an operator says it. Go's own
+// formatting renders three months as "2160h0m0s".
+func roughDuration(d time.Duration) string {
+	switch {
+	case d >= 48*time.Hour:
+		return fmt.Sprintf("%d days", int(d.Hours())/24)
+	case d >= 2*time.Hour:
+		return fmt.Sprintf("%d hours", int(d.Hours()))
+	case d >= time.Hour:
+		return "1 hour"
+	default:
+		return fmt.Sprintf("%d minutes", int(d.Minutes()))
+	}
+}
+
+// kubeconfigMaxTTL resolves the longest credential this install will issue. A
+// stored value out of bounds or a database that cannot be read both fall back to
+// the build's default rather than to no ceiling at all.
+func (s *server) kubeconfigMaxTTL(ctx context.Context) time.Duration {
+	hours := s.settings(ctx).KubeconfigMaxTTLHours
+	ceiling := time.Duration(hours) * time.Hour
+	if ceiling < time.Hour || ceiling > k8s.MaxTTL {
+		return k8s.DefaultMaxTTL
+	}
+	return ceiling
+}
+
+// kubeconfigPolicy reports the window a caller may ask for. It is readable by
+// anyone who can generate a kubeconfig — which is anyone with a grant — for the
+// same reason the recording policy is readable by anyone who might be recorded:
+// the surface offering the choice has to know what the choices are, and the
+// alternative is a form that discovers the ceiling by being refused.
+func (s *server) kubeconfigPolicy(c *gin.Context) {
+	if _, ok := s.currentUser(c); !ok {
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"min_ttl_seconds":     int64(k8s.MinTTL.Seconds()),
+		"default_ttl_seconds": int64(k8s.DefaultTTL.Seconds()),
+		"max_ttl_seconds":     int64(s.kubeconfigMaxTTL(c.Request.Context()).Seconds()),
 	})
 }
 

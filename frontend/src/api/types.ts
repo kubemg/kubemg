@@ -1230,8 +1230,18 @@ export interface Kubeconfig {
   connection_mode: ConnectionMode
   /** What kubectl dials — the API server directly, or KubeMG's proxy. */
   server: string
-  /** Set when the kubeconfig is valid but cannot work as configured. */
+  /** Set when the kubeconfig is valid but cannot work as configured, or when
+      the cluster's own API server granted less time than was asked for. */
   warning?: string
+}
+
+/** The window a caller may ask a kubeconfig to live for. Readable by anyone who
+    may generate one, so the form offering the choice does not have to discover
+    the ceiling by being refused. */
+export interface KubeconfigPolicy {
+  min_ttl_seconds: number
+  default_ttl_seconds: number
+  max_ttl_seconds: number
 }
 
 /**
@@ -1265,6 +1275,12 @@ export interface RuntimeSettings {
       one that starts happening quietly. There is no environment default for
       it — `defaults.record_manifest_diffs` is always false. */
   record_manifest_diffs: boolean
+  /** The longest a generated kubeconfig may be asked to live, in hours. 0 in
+      `overrides` means unset, which takes the build's own default of a day. It
+      is hours rather than days because the setting has to move both ways: an
+      install that hands out a quarter and one that refuses anything past a
+      shift are the same decision. */
+  kubeconfig_max_ttl_hours: number
 }
 
 export interface SettingsResponse {

@@ -6,12 +6,43 @@ export function secondsUntil(iso: string): number {
   return Number.isFinite(remaining) && remaining > 0 ? remaining : 0
 }
 
-/** formatDuration renders seconds as hh:mm:ss, the way a countdown should read. */
+/**
+ * formatDuration renders seconds as hh:mm:ss, the way a countdown should read —
+ * except past two days, where a clock face stops being a countdown. "2160:00:00"
+ * is a number nobody reads as three months, so a long window reads as days and
+ * hours instead. The cut is at 48h because "47:12:03" is still a shift somebody
+ * is counting down; "72:00:00" is not.
+ */
 export function formatDuration(totalSeconds: number): string {
+  if (totalSeconds >= 48 * 3600) {
+    const days = Math.floor(totalSeconds / 86400)
+    const hours = Math.floor((totalSeconds % 86400) / 3600)
+    return `${days}d ${String(hours).padStart(2, '0')}h`
+  }
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
   return [hours, minutes, seconds].map((part) => String(part).padStart(2, '0')).join(':')
+}
+
+/**
+ * formatTTL renders a window somebody is *choosing* rather than watching run
+ * out: "8 hours", "30 days". formatWindow below does the same job for minutes
+ * in operator shorthand; this one is spelled out because it labels a control
+ * whose options have to be told apart at a glance, and "90d" beside "30d" is
+ * two characters of difference.
+ */
+export function formatTTL(seconds: number): string {
+  if (seconds % 86400 === 0) {
+    const days = seconds / 86400
+    return days === 1 ? '1 day' : `${days} days`
+  }
+  if (seconds % 3600 === 0) {
+    const hours = seconds / 3600
+    return hours === 1 ? '1 hour' : `${hours} hours`
+  }
+  const minutes = Math.round(seconds / 60)
+  return minutes === 1 ? '1 minute' : `${minutes} minutes`
 }
 
 /**

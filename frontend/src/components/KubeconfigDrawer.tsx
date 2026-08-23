@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Check, Copy, Download } from 'lucide-react'
-import { errorMessage, generateKubeconfig } from '../api/client'
-import type { Cluster, Kubeconfig } from '../api/types'
-import { formatDuration, useCountdown } from '../lib/time'
+import { errorMessage, fetchKubeconfigPolicy, generateKubeconfig } from '../api/client'
+import type { Cluster, Kubeconfig, KubeconfigPolicy } from '../api/types'
+import { formatDuration, formatTTL, useCountdown } from '../lib/time'
 import {
   Button,
   DetailList,
@@ -15,11 +15,27 @@ import {
 } from './primitives'
 import { YamlView } from './YamlView'
 
-const TTL_CHOICES = [
-  { value: '3600', label: '1 hour' },
-  { value: '28800', label: '8 hours' },
-  { value: '86400', label: '24 hours' },
-]
+/**
+ * The windows worth offering, from a shift to a quarter. Which of them a caller
+ * may actually pick is the server's decision — an administrator moves the
+ * ceiling — so the ladder is filtered against the policy rather than being the
+ * choice itself.
+ *
+ * It stays a ladder of presets rather than a number box for the reason the JIT
+ * window does: a text field invites 480, and nobody typing into one is choosing
+ * between two windows they can see side by side.
+ */
+const TTL_LADDER = [3600, 8 * 3600, 86400, 7 * 86400, 30 * 86400, 90 * 86400]
+
+/** ttlChoices is the ladder narrowed to what this install allows, with the
+    ceiling itself always offered — an admin who sets 36 hours means it to be
+    reachable, not rounded down to a day. */
+function ttlChoices(policy: KubeconfigPolicy | null): number[] {
+  const max = policy?.max_ttl_seconds ?? 86400
+  const min = policy?.min_ttl_seconds ?? 600
+  const rungs = TTL_LADDER.filter((seconds) => seconds >= min && seconds <= max)
+  return rungs.includes(max) ? rungs : [...rungs, max]
+}
 
 /**
  * KubeconfigDrawer issues access to one cluster. It is a cluster action, not a
@@ -32,11 +48,28 @@ export function KubeconfigDrawer({
   cluster: Cluster
   onClose: () => void
 }) {
+  const [policy, setPolicy] = useState<KubeconfigPolicy | null>(null)
   const [ttl, setTtl] = useState('3600')
   const [namespace, setNamespace] = useState('')
   const [issued, setIssued] = useState<Kubeconfig | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  // How long a credential may live is an install-wide policy, so the sheet asks
+  // rather than assuming. A failure leaves the default ladder in place: the
+  // server refuses anything past its own ceiling anyway, so the worst case is a
+  // refusal carrying the real number rather than a form that cannot be used.
+  useEffect(() => {
+    let live = true
+    void fetchKubeconfigPolicy()
+      .then((next) => {
+        if (live) setPolicy(next)
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -90,8 +123,22 @@ export function KubeconfigDrawer({
           ariaLabel="Valid for"
           value={ttl}
           onChange={setTtl}
-          options={TTL_CHOICES.map((choice) => ({ value: choice.value, label: choice.label }))}
+          options={ttlChoices(policy).map((seconds) => ({
+            value: String(seconds),
+            label: formatTTL(seconds),
+          }))}
         />
+        {/* A window past a day is worth a word: the file outlives the session
+            that generated it, and in direct mode it outlives the grant too —
+            the token is the cluster's, and revoking access here does not reach
+            it. */}
+        {Number(ttl) > 86400 ? (
+          <p className="text-[12px] text-muted">
+            {cluster.connection_mode === 'agent'
+              ? 'A long-lived file, but not long-lived access: every call re-reads your grant, so revoking it stops this kubeconfig at once.'
+              : 'This token is minted on the cluster and cannot be withdrawn before it expires — revoking access in KubeMG does not reach it. Keep the file somewhere a laptop backup will not.'}
+          </p>
+        ) : null}
       </div>
 
       <Field
@@ -171,8 +218,14 @@ function IssuedCredential({ issued }: { issued: Kubeconfig }) {
               {formatDuration(remaining)}
             </p>
           </div>
+          {/* A time of day is enough for a credential that dies this afternoon
+              and useless for one that dies in July, so the date joins it once
+              the window is longer than a day. */}
           <p className="text-right text-[11.5px] text-muted">
-            expires {new Date(issued.expires_at).toLocaleTimeString()}
+            expires{' '}
+            {issued.ttl_seconds > 86400
+              ? new Date(issued.expires_at).toLocaleString()
+              : new Date(issued.expires_at).toLocaleTimeString()}
           </p>
         </div>
 
