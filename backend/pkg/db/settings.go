@@ -32,6 +32,16 @@ const (
 	// runtime, within what the process was started able to do — a server with no
 	// recording directory cannot be talked into recording by a database row.
 	SettingRecordExecSessions = "record_exec_sessions"
+	// SettingKubeconfigMaxTTLHours is the longest a generated kubeconfig may be
+	// asked to live, in hours. Unset takes k8s.DefaultMaxTTL, and no value can
+	// raise it past k8s.MaxTTL — this setting moves the ceiling within a bound
+	// the build fixes, it does not remove one.
+	//
+	// Hours rather than days because the setting has to be able to move in both
+	// directions: an install handing out three-month credentials and one that
+	// refuses anything over an eight-hour shift are the same decision, and days
+	// cannot express the second.
+	SettingKubeconfigMaxTTLHours = "kubeconfig_max_ttl_hours"
 	// SettingRecordManifestDiffs turns on storing the field-level diff of a
 	// manifest write on its audit row. It defaults OFF, unlike the trail's
 	// other switches: a manifest body can carry values as sensitive as a
@@ -81,6 +91,7 @@ var SettingKeys = []string{
 	SettingAuditVerbs,
 	SettingRecordExecSessions,
 	SettingRecordManifestDiffs,
+	SettingKubeconfigMaxTTLHours,
 }
 
 // Setting is one operator-configurable value. An empty Value means "unset" and

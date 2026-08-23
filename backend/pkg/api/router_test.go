@@ -865,13 +865,16 @@ func (f *fakeStore) DeleteClusterConsole(_ context.Context, clusterID uint, kind
 	return nil
 }
 
-// fakeIssuer stands in for a target Kubernetes cluster's TokenRequest API.
+// fakeIssuer stands in for a target Kubernetes cluster's TokenRequest API. Like
+// a real one it grants what was asked for unless capTTL says this cluster
+// enforces a shorter ceiling, which is what --service-account-max-token-expiration
+// does in the field.
 type fakeIssuer struct {
 	calls       int
 	lastCluster *db.Cluster
 	lastRequest k8s.TokenRequest
 	token       string
-	expiresAt   time.Time
+	capTTL      time.Duration
 	err         error
 }
 
@@ -882,7 +885,12 @@ func (f *fakeIssuer) IssueToken(_ context.Context, cluster *db.Cluster, req k8s.
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &k8s.IssuedToken{Token: f.token, ExpiresAt: f.expiresAt}, nil
+	granted := req.TTL
+	if f.capTTL > 0 && f.capTTL < granted {
+		granted = f.capTTL
+	}
+	expiresAt := time.Now().Add(granted).UTC().Truncate(time.Second)
+	return &k8s.IssuedToken{Token: f.token, ExpiresAt: expiresAt}, nil
 }
 
 // fakeChecker stands in for probing a target cluster.
@@ -943,10 +951,7 @@ func newTestEnvWith(t *testing.T, adjust func(*Options)) *testEnv {
 	t.Helper()
 	store := newFakeStore()
 	manager := authManagerForTest()
-	issuer := &fakeIssuer{
-		token:     "issued-token",
-		expiresAt: time.Now().Add(time.Hour).UTC().Truncate(time.Second),
-	}
+	issuer := &fakeIssuer{token: "issued-token"}
 	checker := &fakeChecker{report: k8s.HealthReport{Reachable: true, Version: "v1.31.4"}}
 	gateway := bastion.NewServer(bastion.ServerOptions{Store: store})
 	// The guardrail engine is wired into both halves by default, exactly as the

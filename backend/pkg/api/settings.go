@@ -10,11 +10,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
 	"github.com/kubemg/kubemg/backend/pkg/db"
+	"github.com/kubemg/kubemg/backend/pkg/k8s"
 )
 
 // runtimeSettings is the resolved view of the operator-configurable settings:
@@ -50,6 +52,10 @@ type runtimeSettings struct {
 	// db.SettingRecordManifestDiffs for why this one setting starts off where
 	// the others do not.
 	RecordManifestDiffs bool `json:"record_manifest_diffs"`
+	// KubeconfigMaxTTLHours is the longest a generated kubeconfig may be asked
+	// to live. Zero in the overrides means "unset", which takes the build's own
+	// default ceiling.
+	KubeconfigMaxTTLHours int `json:"kubeconfig_max_ttl_hours"`
 }
 
 type settingsResponse struct {
@@ -86,6 +92,9 @@ type updateSettingsRequest struct {
 	AuditVerbs          *[]string `json:"audit_verbs"`
 	RecordExecSessions  *bool     `json:"record_exec_sessions"`
 	RecordManifestDiffs *bool     `json:"record_manifest_diffs"`
+	// KubeconfigMaxTTLHours accepts 0 to clear the override back to the
+	// build's default ceiling.
+	KubeconfigMaxTTLHours *int `json:"kubeconfig_max_ttl_hours"`
 }
 
 // Audit retention bounds. The floor stops an operator from silently emptying
@@ -94,6 +103,15 @@ type updateSettingsRequest struct {
 const (
 	minAuditRetentionDays = 1
 	maxAuditRetentionDays = 3650
+)
+
+// Kubeconfig ceiling bounds, in hours. The floor is an hour rather than
+// k8s.MinTTL because a ceiling below the floor a request is measured against
+// would refuse every request, which is a setting that reads as a broken
+// feature. The ceiling is the build's absolute bound — see k8s.MaxTTL.
+var (
+	minKubeconfigMaxTTLHours = 1
+	maxKubeconfigMaxTTLHours = int(k8s.MaxTTL / time.Hour)
 )
 
 // settings resolves the effective configuration. A database failure falls back
@@ -109,6 +127,11 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 		// directory cannot record, and the switch below can only turn that off.
 		RecordExecSessions: s.recordings != "",
 		RecordingAvailable: s.recordings != "",
+		// There is no environment variable behind this one: the default is the
+		// build's own ceiling, and an operator who wants another one is making a
+		// policy decision that belongs in the database where it can be audited
+		// and changed without a redeploy.
+		KubeconfigMaxTTLHours: int(k8s.DefaultMaxTTL / time.Hour),
 	}
 	stored, err := s.store.Settings(ctx)
 	if err != nil {
@@ -136,6 +159,9 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 	}
 	if v := storedRetentionDays(stored); v > 0 {
 		out.AuditRetentionDays = v
+	}
+	if v := storedKubeconfigMaxTTLHours(stored); v > 0 {
+		out.KubeconfigMaxTTLHours = v
 	}
 	out.SessionRecordingRetentionDays = clampRecordingRetention(
 		storedDays(stored, db.SettingSessionRecordingRetentionDays), out.AuditRetentionDays)
@@ -200,6 +226,22 @@ func storedDays(stored map[string]string, key string) int {
 	return days
 }
 
+// storedKubeconfigMaxTTLHours reads the kubeconfig ceiling override. A value
+// outside the bounds reads as unset for the same reason a retention window
+// does: a ceiling read wrong is either every request refused or a credential
+// living longer than this build is willing to sign for.
+func storedKubeconfigMaxTTLHours(stored map[string]string) int {
+	raw := strings.TrimSpace(stored[db.SettingKubeconfigMaxTTLHours])
+	if raw == "" {
+		return 0
+	}
+	hours, err := strconv.Atoi(raw)
+	if err != nil || hours < minKubeconfigMaxTTLHours || hours > maxKubeconfigMaxTTLHours {
+		return 0
+	}
+	return hours
+}
+
 // auditPolicySnapshot is the settings above reduced to the two questions the
 // gateway's hot path asks.
 func (s *server) auditPolicySnapshot(ctx context.Context) auditpolicy.Snapshot {
@@ -250,6 +292,7 @@ func (s *server) getSettings(c *gin.Context) {
 		RecordExecSessions:            effective.RecordExecSessions,
 		RecordingAvailable:            effective.RecordingAvailable,
 		RecordManifestDiffs:           effective.RecordManifestDiffs,
+		KubeconfigMaxTTLHours:         storedKubeconfigMaxTTLHours(stored),
 	}
 
 	c.JSON(http.StatusOK, settingsResponse{
@@ -267,7 +310,8 @@ func (s *server) getSettings(c *gin.Context) {
 			RecordingAvailable:            effective.RecordingAvailable,
 			// Off by default and there is no environment override for it — see
 			// db.SettingRecordManifestDiffs.
-			RecordManifestDiffs: false,
+			RecordManifestDiffs:   false,
+			KubeconfigMaxTTLHours: int(k8s.DefaultMaxTTL / time.Hour),
 		},
 		Warnings: settingsWarnings(effective),
 	})
@@ -361,6 +405,23 @@ func (s *server) updateSettings(c *gin.Context) {
 	if req.RecordManifestDiffs != nil {
 		values[db.SettingRecordManifestDiffs] = strconv.FormatBool(*req.RecordManifestDiffs)
 	}
+	if req.KubeconfigMaxTTLHours != nil {
+		hours := *req.KubeconfigMaxTTLHours
+		switch {
+		case hours == 0:
+			values[db.SettingKubeconfigMaxTTLHours] = ""
+		case hours < minKubeconfigMaxTTLHours || hours > maxKubeconfigMaxTTLHours:
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf(
+					"the kubeconfig ceiling must be between %d and %d hours, or 0 to use the default of %d",
+					minKubeconfigMaxTTLHours, maxKubeconfigMaxTTLHours,
+					int(k8s.DefaultMaxTTL/time.Hour)),
+			})
+			return
+		default:
+			values[db.SettingKubeconfigMaxTTLHours] = strconv.Itoa(hours)
+		}
+	}
 
 	if err := s.store.PutSettings(c.Request.Context(), values, caller.ID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save the settings"})
@@ -421,6 +482,17 @@ var errInvalidPublicURL = errors.New(
 // from inside a target cluster.
 func settingsWarnings(s runtimeSettings) []string {
 	warnings := []string{}
+	// A raised ceiling is a policy an administrator chose, so this is a
+	// disclosure rather than a complaint — but it has to be made, because the
+	// two connection modes differ on the one thing that matters about a
+	// long-lived credential.
+	if ceiling := time.Duration(s.KubeconfigMaxTTLHours) * time.Hour; ceiling > k8s.DefaultMaxTTL {
+		warnings = append(warnings, fmt.Sprintf(
+			"Kubeconfigs may be issued for up to %s. Through an agent tunnel that is safe to revoke — "+
+				"every call re-reads the caller's grant — but a direct-mode kubeconfig carries a token "+
+				"minted on the cluster, which keeps working until it expires however the grant changes.",
+			humanHours(s.KubeconfigMaxTTLHours)))
+	}
 	parsed, err := url.Parse(s.PublicURL)
 	if err != nil || parsed.Host == "" {
 		return warnings
@@ -437,6 +509,25 @@ func settingsWarnings(s runtimeSettings) []string {
 			"The server URL is plain http. Agent traffic and kubectl exec both need TLS in production.")
 	}
 	return warnings
+}
+
+// humanHours renders a ceiling the way an operator set it: in days once it is a
+// whole number of them, since "2160 hours" is not how anyone says a quarter.
+func humanHours(hours int) string {
+	switch {
+	case hours <= 0:
+		return "0 hours"
+	case hours%24 == 0:
+		days := hours / 24
+		if days == 1 {
+			return "1 day"
+		}
+		return fmt.Sprintf("%d days", days)
+	case hours == 1:
+		return "1 hour"
+	default:
+		return fmt.Sprintf("%d hours", hours)
+	}
 }
 
 func isLoopbackHost(host string) bool {

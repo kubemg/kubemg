@@ -215,7 +215,10 @@ func TestIssueTokenValidatesTTL(t *testing.T) {
 	f := newFakeCluster(true)
 	m, _ := f.manager()
 
-	for _, ttl := range []time.Duration{0, time.Minute, 48 * time.Hour, -time.Hour} {
+	// 48h is deliberately absent: it is past the *default* ceiling but inside
+	// the absolute one, and which of those applies is a policy the API layer
+	// resolves from the settings. This package enforces the absolute bound only.
+	for _, ttl := range []time.Duration{0, time.Minute, MaxTTL + time.Hour, -time.Hour} {
 		req := validRequest()
 		req.TTL = ttl
 		if _, err := m.IssueToken(context.Background(), testCluster(), req); !errors.Is(err, ErrInvalidTTL) {

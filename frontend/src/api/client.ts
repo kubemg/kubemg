@@ -51,6 +51,7 @@ import type {
   JitStatus,
   Job,
   Kubeconfig,
+  KubeconfigPolicy,
   LogQueryResponse,
   LoginResponse,
   ManifestDiff,
@@ -1241,6 +1242,13 @@ export async function generateKubeconfig(
     ttl_seconds: ttlSeconds,
     namespace: namespace || undefined,
   })
+  return data
+}
+
+/** The window a kubeconfig may be issued for. Not cached: it is read once when
+    the sheet opens, and an admin who has just raised the ceiling should see it. */
+export async function fetchKubeconfigPolicy(): Promise<KubeconfigPolicy> {
+  const { data } = await http.get<KubeconfigPolicy>('/kubeconfig/policy')
   return data
 }
 
