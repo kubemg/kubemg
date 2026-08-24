@@ -1101,6 +1101,7 @@ export function Explore() {
           target={detail}
           onClose={() => setDetail(null)}
           onRefresh={load}
+          onOpen={setDetail}
         />
       ) : null}
     </AppShell>

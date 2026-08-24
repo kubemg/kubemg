@@ -89,6 +89,49 @@ func TestEncodeLabelSelectorRefusesAnythingItCannotRepresent(t *testing.T) {
 	}
 }
 
+// A CronJob has no selector of its own — it owns Jobs, and a Job's pods are
+// found through the Job's UID — so the one thing standing between an operator
+// and somebody else's pods is this match staying exact.
+
+func TestJobsOwnedByCronJobMatchesOnKindAndUID(t *testing.T) {
+	job := func(uid, ownerKind, ownerUID string) ownedJob {
+		var j ownedJob
+		j.Metadata.UID = uid
+		if ownerKind != "" {
+			j.Metadata.OwnerReferences = []struct {
+				Kind string `json:"kind"`
+				UID  string `json:"uid"`
+			}{{Kind: ownerKind, UID: ownerUID}}
+		}
+		return j
+	}
+
+	jobs := []ownedJob{
+		job("job-mine-1", "CronJob", "cron-uid"),
+		job("job-mine-2", "CronJob", "cron-uid"),
+		// Same UID string, wrong owner kind — a Job owned directly (not by a
+		// CronJob) must never match just because some other object shares a UID.
+		job("job-other-kind", "Job", "cron-uid"),
+		// Right kind, different CronJob.
+		job("job-other-cron", "CronJob", "some-other-uid"),
+		// No owner at all — a hand-created Job.
+		job("job-orphan", "", ""),
+	}
+
+	got := jobsOwnedByCronJob("cron-uid", jobs)
+	want := []string{"job-mine-1", "job-mine-2"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("jobsOwnedByCronJob = %v, want %v", got, want)
+	}
+}
+
+func TestJobsOwnedByCronJobFindsNoneForAnUnrelatedList(t *testing.T) {
+	jobs := []ownedJob{}
+	if got := jobsOwnedByCronJob("cron-uid", jobs); len(got) != 0 {
+		t.Fatalf("expected no owned jobs, got %v", got)
+	}
+}
+
 func TestWorkloadPodKindsCoverTheWorkloadsThatOwnPods(t *testing.T) {
 	for _, key := range []string{"deployments", "statefulsets", "daemonsets", "jobs"} {
 		if _, ok := workloadPodKinds[key]; !ok {
