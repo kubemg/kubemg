@@ -1,9 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"slices"
 	"strconv"
@@ -299,17 +301,35 @@ type jitCallbackBody struct {
 // jitWebhookCallback applies a decision that arrived from a chat integration.
 //
 // It is outside the JWT middleware by necessity — a Slack app carries no KubeMG
-// session — so it authenticates on two things at once, and needs both:
+// session — so it authenticates on **three** things, and needs all of them:
 //
+//   - a valid **Slack request signature**, proving this call actually came from
+//     Slack and not from anyone who read the token off a notification;
 //   - the **signed action token** from the notification, which proves the decision
 //     is about a request KubeMG itself published and has not expired; and
 //   - a **KubeMG identity** that resolves to an active administrator who is not the
 //     requester, which is what makes the audit record true.
 //
-// The token alone would let anyone who read a Slack thread grant production
-// access. The identity alone would let anyone who guessed a username do it. The
+// The token is broadcast into the channel every member can read, so on its own
+// it proves nothing about who is calling; the identity is a claim the caller
+// typed in, so on its own it proves nothing either. Only the signature ties the
+// call to Slack itself — and through Slack, to whoever actually clicked. The
 // self-approval rule is enforced in the workflow, so it applies here unchanged.
 func (s *server) jitWebhookCallback(c *gin.Context) {
+	raw, err := c.GetRawData()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "could not read that request"})
+		return
+	}
+	if !s.verifySlackCallbackSignature(c, raw) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "that request could not be verified as coming from a configured Slack app",
+		})
+		return
+	}
+	// readJitCallback still needs the body, so give it back what GetRawData took.
+	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
+
 	body, ok := s.readJitCallback(c)
 	if !ok {
 		return
@@ -378,6 +398,46 @@ func (s *server) jitWebhookCallback(c *gin.Context) {
 		"text":    "KubeMG: access request " + request.Status + " by " + approver.Username,
 		"request": toJitRequestResponse(*request, s.jit.Now()),
 	})
+}
+
+// verifySlackCallbackSignature checks the raw request against every enabled
+// Slack channel's signing secret, and accepts if any one of them verifies.
+//
+// The callback carries nothing that names which channel it came from — a
+// single message is posted to one channel, but a fleet may configure several
+// — so this tries each rather than requiring the caller to say. A channel
+// with no signing secret configured is skipped rather than treated as a
+// match: an unset secret must never be read as "this channel does not need
+// checking."
+//
+// This is deliberately a hard requirement, not a fallback: a callback that
+// arrives as plain JSON (rather than Slack's form-encoded interaction
+// payload) still has to pass this, because nothing else here authenticates
+// the caller. A future non-Slack integration wanting the one-click callback
+// would need an equivalent signature scheme of its own — Teams' cards are
+// Action.OpenUrl only today and never post back, so there is none to satisfy
+// yet.
+func (s *server) verifySlackCallbackSignature(c *gin.Context, raw []byte) bool {
+	timestamp := c.GetHeader("X-Slack-Request-Timestamp")
+	signature := c.GetHeader("X-Slack-Signature")
+	if timestamp == "" || signature == "" {
+		return false
+	}
+
+	channels, err := s.store.ListAlarmChannels(c.Request.Context())
+	if err != nil {
+		return false
+	}
+	now := s.jit.Now()
+	for _, channel := range channels {
+		if channel.Kind != db.ChannelSlack || !channel.Enabled || channel.Secret == "" {
+			continue
+		}
+		if jit.VerifySlackSignature([]byte(channel.Secret), timestamp, string(raw), signature, now) {
+			return true
+		}
+	}
+	return false
 }
 
 // readJitCallback accepts the two shapes a decision arrives in: KubeMG's own JSON,

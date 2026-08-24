@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
@@ -35,6 +36,19 @@ import (
  * The signature is HMAC-SHA256 over the whole payload with the server's signing
  * secret. There is no revocation list and none is needed: applying the action
  * moves the request off `pending`, so a replayed token finds nothing to decide.
+ *
+ * That leaves one gap the token and the named identity do not close between
+ * them: the token is broadcast into the channel, not handed to one person, so
+ * *anyone* who can read the notification — every member of the channel, a
+ * forwarded message, a log or proxy that saw it in transit — can replay it and
+ * name any active administrator as the approver. The named identity is not
+ * proof of anything; it is a claim the caller typed in. So the HTTP caller
+ * itself has to be authenticated before its claim is trusted at all, and for
+ * Slack that means verifying the request carries Slack's own signature —
+ * `VerifySlackSignature` below, checked against the signing secret of a
+ * configured Slack channel before the callback body is even parsed. Without a
+ * valid signature there is no reason to believe the request came from Slack,
+ * let alone that the named approver is the person who clicked.
  */
 
 // Actions a callback may carry. They are the two decisions a pending request
@@ -147,6 +161,47 @@ func ParseAction(secret []byte, raw string, now time.Time) (Action, error) {
 		return Action{}, ErrTokenExpired
 	}
 	return action, nil
+}
+
+// slackSignatureVersion is the scheme version Slack's own request signing
+// uses. There has only ever been one.
+const slackSignatureVersion = "v0"
+
+// slackSignatureMaxAge bounds how old a signed request may be, the replay
+// window Slack's own documentation recommends: long enough for ordinary
+// network delay, short enough that a captured request cannot be replayed
+// hours or days later.
+const slackSignatureMaxAge = 5 * time.Minute
+
+// VerifySlackSignature checks a request against Slack's own signing scheme:
+// HMAC-SHA256 over "v0:{timestamp}:{body}" with the app's signing secret,
+// hex-encoded and prefixed "v0=". This is what proves a callback actually
+// came from Slack — and therefore that the identity inside its payload is the
+// person who clicked, not a claim replayed by whoever read the notification.
+//
+// secret is empty whenever no channel configured one, which is refused rather
+// than treated as "nothing to check": a server that cannot verify a request
+// must not act on it.
+func VerifySlackSignature(secret []byte, timestamp, body, signature string, now time.Time) bool {
+	if len(secret) == 0 || timestamp == "" || signature == "" {
+		return false
+	}
+	seconds, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		return false
+	}
+	age := now.Sub(time.Unix(seconds, 0))
+	if age < 0 {
+		age = -age
+	}
+	if age > slackSignatureMaxAge {
+		return false
+	}
+
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(slackSignatureVersion + ":" + timestamp + ":" + body))
+	expected := slackSignatureVersion + "=" + hex.EncodeToString(mac.Sum(nil))
+	return subtle.ConstantTimeCompare([]byte(expected), []byte(signature)) == 1
 }
 
 // newRequestID mints the identifier a request is known by everywhere: in the

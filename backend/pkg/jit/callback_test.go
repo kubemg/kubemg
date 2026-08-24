@@ -1,7 +1,11 @@
 package jit
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -107,6 +111,74 @@ func tamper(token string) string {
 		edited[3] = 'A'
 	}
 	return string(edited) + "." + signature
+}
+
+// TestVerifySlackSignature covers the check that stands between a captured
+// callback token and an unauthenticated caller replaying it: without a valid
+// signature, nothing about the request can be trusted.
+func TestVerifySlackSignature(t *testing.T) {
+	secret := []byte("slack-signing-secret")
+	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
+	body := `{"token":"abc","approver_username":"admin"}`
+
+	sign := func(withSecret []byte, at time.Time) (string, string) {
+		timestamp := strconv.FormatInt(at.Unix(), 10)
+		mac := hmac.New(sha256.New, withSecret)
+		mac.Write([]byte("v0:" + timestamp + ":" + body))
+		return timestamp, "v0=" + hex.EncodeToString(mac.Sum(nil))
+	}
+
+	t.Run("a request signed with the right secret", func(t *testing.T) {
+		timestamp, signature := sign(secret, now)
+		if !VerifySlackSignature(secret, timestamp, body, signature, now) {
+			t.Fatal("a correctly signed, fresh request must verify")
+		}
+	})
+
+	t.Run("the wrong secret", func(t *testing.T) {
+		timestamp, signature := sign([]byte("not-the-secret"), now)
+		if VerifySlackSignature(secret, timestamp, body, signature, now) {
+			t.Fatal("a signature from the wrong secret must not verify")
+		}
+	})
+
+	t.Run("a tampered body", func(t *testing.T) {
+		timestamp, signature := sign(secret, now)
+		if VerifySlackSignature(secret, timestamp, body+"x", signature, now) {
+			t.Fatal("changing the body after signing must invalidate the signature")
+		}
+	})
+
+	t.Run("a stale timestamp", func(t *testing.T) {
+		timestamp, signature := sign(secret, now.Add(-10*time.Minute))
+		if VerifySlackSignature(secret, timestamp, body, signature, now) {
+			t.Fatal("a signature older than the replay window must not verify")
+		}
+	})
+
+	t.Run("a timestamp from the future", func(t *testing.T) {
+		timestamp, signature := sign(secret, now.Add(10*time.Minute))
+		if VerifySlackSignature(secret, timestamp, body, signature, now) {
+			t.Fatal("a signature far in the future must not verify either")
+		}
+	})
+
+	t.Run("no secret configured", func(t *testing.T) {
+		timestamp, signature := sign(secret, now)
+		if VerifySlackSignature(nil, timestamp, body, signature, now) {
+			t.Fatal("an unset secret must never be treated as a match")
+		}
+	})
+
+	t.Run("missing headers", func(t *testing.T) {
+		if VerifySlackSignature(secret, "", body, "v0=whatever", now) {
+			t.Fatal("no timestamp must not verify")
+		}
+		timestamp, _ := sign(secret, now)
+		if VerifySlackSignature(secret, timestamp, body, "", now) {
+			t.Fatal("no signature must not verify")
+		}
+	})
 }
 
 func TestNewRequestIDIsUnguessable(t *testing.T) {
