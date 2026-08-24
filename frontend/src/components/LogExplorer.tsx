@@ -95,7 +95,7 @@ export function LogExplorer({
           icon={<ScrollText aria-hidden="true" className="size-5" />}
           title="No logs datasource"
         >
-          This cluster ships its logs nowhere KubeMG knows about, so there is no history
+          This cluster ships its logs nowhere kubemg knows about, so there is no history
           to search — a pod&rsquo;s own log is all there is, and it goes when the pod does.
           {onConfigure ? (
             <span className="mt-3 block">
@@ -196,7 +196,7 @@ export function LogExplorer({
           </p>
           <details className="mt-3">
             <summary className="cursor-pointer text-center text-[12px] text-faint">
-              What KubeMG asked for
+              What kubemg asked for
             </summary>
             {/* An empty result is usually a shipper writing different field names
                 than the query expects, which is invisible without the query. */}

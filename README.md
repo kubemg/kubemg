@@ -581,7 +581,7 @@ head-of-line blocking, agent sizing and read rate limiting are the open items.
 - [x] RBAC-aware multi-cluster namespace and resource visibility
 - [x] On-demand state fetching through the agent — no privileged shortcut for the UI
 - [x] Settings page: public URL, agent image and agent namespace configurable at runtime
-- [x] The Signal Deck design system — rail, live fleet list, ⌘K palette, dark/light decks, self-hosted Inter + JetBrains Mono
+- [x] The Signal Deck design system — rail, live fleet list, ⌘K palette, dark/light decks, self-hosted Archivo + JetBrains Mono
 - [x] Third-level resource sidebar in Explore — workloads, networking, storage &amp; config, custom resources, cluster
 - [x] Live utilisation from the cluster's own Metrics API, as capacity meters on the fleet, the cluster and the pod drawer
 - [x] Log viewer controls on the streamed container log — filter, wrap, tail

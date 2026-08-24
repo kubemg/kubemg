@@ -83,7 +83,7 @@ export function ConsolesPanel({
     <Panel
       eyebrow="Elsewhere"
       title="Other consoles"
-      description="Where this cluster is operated from outside KubeMG. These are links — KubeMG stores no session for them and you sign in as yourself."
+      description="Where this cluster is operated from outside kubemg. These are links — kubemg stores no session for them and you sign in as yourself."
       className={className}
     >
       <div className="flex flex-col">
@@ -328,7 +328,7 @@ function ConsoleSheet({
         ) : null}
 
         <Notice tone="info">
-          KubeMG stores this address and nothing else — no session, no credential, and no proxy to
+          kubemg stores this address and nothing else — no session, no credential, and no proxy to
           it. Anyone this cluster is granted to can see the link; they still sign in to{' '}
           {info.label} as themselves. Leave any username and password out of the address.
         </Notice>

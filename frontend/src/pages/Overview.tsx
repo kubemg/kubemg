@@ -131,7 +131,7 @@ export function Overview() {
               }
             >
               {isAdmin
-                ? 'Register one to bring it under KubeMG. The cluster dials out to here, so nothing needs to be opened inbound.'
+                ? 'Register one to bring it under kubemg. The cluster dials out to here, so nothing needs to be opened inbound.'
                 : 'Ask an administrator for access to a cluster.'}
             </EmptyState>
           </div>

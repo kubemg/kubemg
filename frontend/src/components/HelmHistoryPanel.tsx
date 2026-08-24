@@ -230,7 +230,7 @@ export function HelmHistoryPanel({
 
       <p className="flex items-center gap-1.5 text-[12px] text-muted">
         <History aria-hidden="true" className="size-3.5" />
-        Every revision is a Secret Helm wrote in this namespace; nothing here is stored by KubeMG.
+        Every revision is a Secret Helm wrote in this namespace; nothing here is stored by kubemg.
       </p>
     </>
   )

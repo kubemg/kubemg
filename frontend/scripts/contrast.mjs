@@ -194,7 +194,33 @@ function check(deck, tokens) {
       measure(tone, surface, GLYPH_FLOOR, `${tone} glyph on ${surface}`)
     }
   }
-  measure('on-accent', 'accent', TEXT_FLOOR, 'on-accent on accent')
+  // A primary button is lime with ink on it, on both decks — `accent-fill`
+  // rather than `accent`, which on the light deck is the same hue taken down the
+  // ramp so it can be read as text.
+  measure('on-accent', 'accent-fill', TEXT_FLOOR, 'on-accent on accent-fill')
+
+  // The mark is lime on a chip that is ink where the deck needs one and nothing
+  // where it does not. Measured where there is a chip to measure against — on
+  // the dark deck the chip is `transparent`, which is not a hex and so is not a
+  // token this reads, and the mark sits on the rail and the surface instead.
+  if (tokens['mark-chip']) {
+    measure('accent-fill', 'mark-chip', GLYPH_FLOOR, 'mark on its chip')
+  } else {
+    for (const surface of ['rail', 'surface']) {
+      measure('accent-fill', surface, GLYPH_FLOOR, `mark on ${surface}`)
+    }
+  }
+
+  // 1.4.11 wants a control's boundary discernible. On ink, lime does that by
+  // itself; on bone it is 1.25:1 and cannot, which is why the button draws an
+  // `accent` hairline there. So the boundary is measured only on the deck that
+  // needs one — where the fill does not clear the glyph floor against the
+  // surface, the hairline has to, and a deck that stops needing it stops being
+  // asked. Skipping it outright would let a light-deck lime button lose its
+  // outline unnoticed.
+  if (contrast(tokens['accent-fill'], tokens.surface) < GLYPH_FLOOR) {
+    measure('accent', 'accent-fill', GLYPH_FLOOR, 'accent hairline on accent-fill')
+  }
 
   return { failures, report }
 }

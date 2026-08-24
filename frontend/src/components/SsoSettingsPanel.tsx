@@ -261,7 +261,7 @@ export function SsoSettingsPanel() {
       <Panel
         eyebrow="Identity"
         title="Single sign-on"
-        description="Federate KubeMG accounts to your own directory. An account signs in through exactly one of these or with a local password — never both — and what an external group is worth here is decided by the mapping rules, not by the directory."
+        description="Federate kubemg accounts to your own directory. An account signs in through exactly one of these or with a local password — never both — and what an external group is worth here is decided by the mapping rules, not by the directory."
         actions={
           <Button type="button" variant="primary" onClick={() => setEditing('new')}>
             <Plus aria-hidden="true" className="size-4" />
@@ -275,7 +275,7 @@ export function SsoSettingsPanel() {
 
         {!loading && providers.length === 0 ? (
           <EmptyState icon={<KeyRound className="size-4" />} title="No identity providers">
-            KubeMG is using local accounts only. Add an OIDC, SAML or LDAP provider to let people
+            kubemg is using local accounts only. Add an OIDC, SAML or LDAP provider to let people
             sign in with the credentials they already have.
           </EmptyState>
         ) : null}
@@ -499,7 +499,7 @@ function ProviderSheet({
           <Field
             label="Issuer URL"
             htmlFor="sso-issuer"
-            hint="KubeMG reads the provider's discovery document from here; no endpoint has to be entered by hand."
+            hint="kubemg reads the provider's discovery document from here; no endpoint has to be entered by hand."
           >
             <TextInput
               id="sso-issuer"
@@ -523,7 +523,7 @@ function ProviderSheet({
             hint={
               provider?.has_client_secret
                 ? 'A secret is stored. Leave empty to keep it.'
-                : 'Optional for a public client; KubeMG always uses PKCE.'
+                : 'Optional for a public client; kubemg always uses PKCE.'
             }
           >
             <TextInput
@@ -581,7 +581,7 @@ function ProviderSheet({
           <Field
             label="Entity ID"
             htmlFor="sso-saml-entity"
-            hint="What KubeMG calls itself to this IdP. Leave empty to use the SP metadata URL."
+            hint="What kubemg calls itself to this IdP. Leave empty to use the SP metadata URL."
           >
             <TextInput
               id="sso-saml-entity"
@@ -653,7 +653,7 @@ function ProviderSheet({
           <Field
             label="Bind DN"
             htmlFor="sso-ldap-binddn"
-            hint="The service account KubeMG searches as. Leave empty for an anonymous search."
+            hint="The service account kubemg searches as. Leave empty for an anonymous search."
           >
             <TextInput
               id="sso-ldap-binddn"

@@ -133,7 +133,7 @@ export function AuditSettingsPanel({
           <span className="inline-flex items-baseline gap-1.5">
             <ShieldCheck aria-hidden="true" className="size-3.5 translate-y-0.5" />
             <span>
-              Three things are recorded whatever is selected: anything KubeMG{' '}
+              Three things are recorded whatever is selected: anything kubemg{' '}
               <strong>refused</strong> or that failed, every <strong>interactive session</strong>{' '}
               while it is open, and who <strong>replayed or deleted</strong> a recording. Turning a
               verb off reduces volume; it cannot hide an action.

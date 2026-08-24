@@ -47,7 +47,7 @@ export function Stepper({
                   done
                     ? 'bg-ok-soft text-ok'
                     : active
-                      ? 'bg-accent text-on-accent'
+                      ? 'bg-accent-fill text-on-accent'
                       : 'bg-raised text-muted'
                 }`}
               >

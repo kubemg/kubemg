@@ -123,7 +123,7 @@ export function GeneralSettings() {
         {settings ? (
           <Panel
             eyebrow="Server"
-            title="Where clusters reach KubeMG"
+            title="Where clusters reach kubemg"
             description="Baked into every agent install command and into the agent's tunnel address, so it must be routable from inside a target cluster — not the address your browser uses."
             bodyClassName="flex flex-col gap-4 p-4"
           >

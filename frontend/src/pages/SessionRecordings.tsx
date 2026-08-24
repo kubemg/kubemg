@@ -217,7 +217,7 @@ export function SessionRecordings() {
         {scopedToSelf ? (
           <Notice tone="info">
             You are seeing your own sessions. Replaying somebody else&rsquo;s is a capability of
-            its own, separate from administering KubeMG, and only a super admin can grant it.
+            its own, separate from administering kubemg, and only a super admin can grant it.
           </Notice>
         ) : null}
 

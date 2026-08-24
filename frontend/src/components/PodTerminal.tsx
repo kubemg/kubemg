@@ -44,10 +44,10 @@ function deckTheme() {
     deck.getPropertyValue(name).trim() || fallback
 
   return {
-    background: token('--deck-sunken', '#0d1017'),
-    foreground: token('--deck-text', '#e7ebf3'),
-    cursor: token('--deck-accent', '#8878fb'),
-    selectionBackground: token('--deck-border', '#242b38'),
+    background: token('--deck-sunken', '#101215'),
+    foreground: token('--deck-text', '#f2f3ef'),
+    cursor: token('--deck-accent', '#bff23c'),
+    selectionBackground: token('--deck-border', '#3a4033'),
   }
 }
 
