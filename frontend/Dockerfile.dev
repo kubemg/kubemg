@@ -1,5 +1,10 @@
 FROM node:22-alpine
 
+# node:22-alpine vendors an older npm CLI whose own bundled dependencies
+# (tar, brace-expansion, picomatch, sigstore, ip-address) carry known CVEs.
+# Upgrading npm itself pulls in patched copies of all of them.
+RUN npm install -g npm@latest
+
 WORKDIR /app
 
 RUN chown -R node:node /app
