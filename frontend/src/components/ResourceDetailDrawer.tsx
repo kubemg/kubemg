@@ -22,8 +22,9 @@ import { ReachabilityTab } from './NetworkPolicyReachability'
 import { PodLogView, PodOverview } from './PodPanels'
 import { WorkloadActionPanel } from './WorkloadActionPanel'
 import type { WorkloadActionName, WorkloadActionTarget } from './WorkloadActionPanel'
-import { hasPodLabels, supportsWorkloadLogs, workloadCapability } from '../lib/workloads'
+import { hasPodLabels, supportsWorkloadLogs, supportsWorkloadPods, workloadCapability } from '../lib/workloads'
 import { WorkloadLogView } from './WorkloadLogView'
+import { WorkloadPodsView } from './WorkloadPodsView'
 import { YamlPanel } from './YamlPanel'
 import {
   Button,
@@ -127,11 +128,19 @@ export function ResourceDetailDrawer({
   target,
   onClose,
   onRefresh,
+  onOpen,
 }: {
   cluster: Cluster
   target: DetailTarget
   onClose: () => void
   onRefresh?: () => Promise<void> | void
+  /**
+   * Opens a different object in this same drawer. Only the Pods tab uses it
+   * today, to jump from a workload to one of its own pods without closing and
+   * reopening — every other tab already addresses the object the drawer was
+   * opened on.
+   */
+  onOpen?: (target: DetailTarget) => void
 }) {
   const release = target.release
   // A release's two faces are not the object tabs, so an inherited `overview`
@@ -169,6 +178,15 @@ export function ResourceDetailDrawer({
    * because a pod set is resolved inside one.
    */
   const workloadLogs = !pod && !!target.namespace && supportsWorkloadLogs(target.kind)
+
+  /*
+   * A workload's health is its pods' health. The tab is gated the same way the
+   * logs one is — a namespace to resolve pods inside, and never on a pod itself,
+   * which already has this in its Overview — but the set of kinds is wider: a
+   * CronJob has no selector for the logs view to read, yet its Jobs' pods are
+   * exactly what "is the last run still going, and is it healthy" needs.
+   */
+  const workloadPods = !pod && !!target.namespace && supportsWorkloadPods(target.kind)
 
   const load = useCallback(
     async (quiet = false) => {
@@ -415,7 +433,19 @@ export function ResourceDetailDrawer({
       ) : null}
 
       {tab === 'overview' ? (
-        <OverviewTab cluster={cluster} pod={pod} describe={describe} loading={loading} />
+        <OverviewTab
+          cluster={cluster}
+          pod={pod}
+          describe={describe}
+          loading={loading}
+          workloadPods={workloadPods}
+          kind={target.kind}
+          name={target.name}
+          namespace={target.namespace}
+          onOpenPod={(row) =>
+            onOpen?.({ kind: 'pods', label: 'Pod', name: row.name, namespace: row.namespace, pod: row })
+          }
+        />
       ) : null}
 
       {tab === 'describe' ? <DescribeTab describe={describe} loading={loading} /> : null}
@@ -530,11 +560,22 @@ function OverviewTab({
   pod,
   describe,
   loading,
+  workloadPods,
+  kind,
+  name,
+  namespace,
+  onOpenPod,
 }: {
   cluster: Cluster
   pod?: Pod
   describe: ResourceDescribeResult | null
   loading: boolean
+  /** Whether this kind's pods can be resolved — see `supportsWorkloadPods`. */
+  workloadPods: boolean
+  kind: ResourceKey
+  name: string
+  namespace?: string
+  onOpenPod: (pod: Pod) => void
 }) {
   if (loading && !describe) return <p className="text-[13px] text-muted">Reading the object…</p>
   if (!describe) return null
@@ -572,6 +613,23 @@ function OverviewTab({
       {pod ? <PodOverview cluster={cluster} pod={pod} /> : null}
 
       {describe.conditions.length > 0 ? <Conditions conditions={describe.conditions} /> : null}
+
+      {/* A workload's health is its pods' health — what it owns right now, and
+          whether each one is ready, is answered here rather than behind a tab
+          of its own, the way Rancher's own workload page reads. */}
+      {!pod && workloadPods && namespace ? (
+        <div className="flex flex-col gap-2">
+          <span className="label">Pods</span>
+          <WorkloadPodsView
+            cluster={cluster}
+            kind={kind}
+            name={name}
+            namespace={namespace}
+            label={describe.kind || kind}
+            onOpenPod={onOpenPod}
+          />
+        </div>
+      ) : null}
 
       <KeyValues title="Labels" values={describe.labels} />
       <KeyValues title="Annotations" values={describe.annotations} />
