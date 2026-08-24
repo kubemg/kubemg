@@ -1,7 +1,14 @@
 package api
 
 import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -48,12 +55,46 @@ func newJitEnv(t *testing.T, clock func() time.Time) *jitEnv {
 		opts.JIT = engine
 		opts.JITCallbackSecret = []byte("callback-secret")
 		opts.Auditor = auditor
+		// A Slack channel with a signing secret, so the webhook callback tests
+		// exercise real signature verification rather than a server with nothing
+		// configured to check against.
+		store.addAlarmChannel(db.AlarmChannel{
+			Kind: db.ChannelSlack, Enabled: true, Secret: string(slackSigningSecret),
+		})
 	})
 	return &jitEnv{testEnv: env, auditor: auditor, now: clock, engine: engine}
 }
 
 func fixedClock(at time.Time) func() time.Time {
 	return func() time.Time { return at }
+}
+
+// slackSigningSecret is the fake Slack app's signing secret, shared by the
+// channel seeded in newJitEnv and by doSlackCallback's signature.
+var slackSigningSecret = []byte("slack-signing-secret")
+
+// doSlackCallback posts a JIT webhook callback body signed exactly as Slack
+// signs a real request, so the tests exercise the same verification path
+// production traffic does rather than bypassing it.
+func (e *jitEnv) doSlackCallback(t *testing.T, body map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal callback body: %v", err)
+	}
+	timestamp := strconv.FormatInt(e.now().Unix(), 10)
+	mac := hmac.New(sha256.New, slackSigningSecret)
+	mac.Write([]byte("v0:" + timestamp + ":" + string(payload)))
+	signature := "v0=" + hex.EncodeToString(mac.Sum(nil))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/jit/webhooks/callback", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Slack-Request-Timestamp", timestamp)
+	req.Header.Set("X-Slack-Signature", signature)
+
+	rec := httptest.NewRecorder()
+	e.router.ServeHTTP(rec, req)
+	return rec
 }
 
 // requestBody is the shape the console posts.
@@ -398,7 +439,7 @@ func TestJitWebhookCallback(t *testing.T) {
 		token := jit.SignAction(secret, jit.Action{
 			RequestID: request.ID, Action: jit.ActionApprove, Expires: start.Add(time.Hour),
 		})
-		rec := env.do(t, http.MethodPost, "/api/v1/jit/webhooks/callback", "", map[string]any{
+		rec := env.doSlackCallback(t, map[string]any{
 			"token":             token,
 			"approver_username": admin.Username,
 		})
@@ -417,7 +458,7 @@ func TestJitWebhookCallback(t *testing.T) {
 		token := jit.SignAction([]byte("not-the-secret"), jit.Action{
 			RequestID: request.ID, Action: jit.ActionApprove, Expires: start.Add(time.Hour),
 		})
-		rec := env.do(t, http.MethodPost, "/api/v1/jit/webhooks/callback", "", map[string]any{
+		rec := env.doSlackCallback(t, map[string]any{
 			"token": token, "approver_username": admin.Username,
 		})
 		if rec.Code != http.StatusForbidden {
@@ -430,7 +471,7 @@ func TestJitWebhookCallback(t *testing.T) {
 		token := jit.SignAction(secret, jit.Action{
 			RequestID: request.ID, Action: jit.ActionApprove, Expires: start.Add(-time.Minute),
 		})
-		rec := env.do(t, http.MethodPost, "/api/v1/jit/webhooks/callback", "", map[string]any{
+		rec := env.doSlackCallback(t, map[string]any{
 			"token": token, "approver_username": admin.Username,
 		})
 		if rec.Code != http.StatusForbidden {
@@ -443,7 +484,7 @@ func TestJitWebhookCallback(t *testing.T) {
 		token := jit.SignAction(secret, jit.Action{
 			RequestID: request.ID, Action: jit.ActionApprove, Expires: start.Add(time.Hour),
 		})
-		rec := env.do(t, http.MethodPost, "/api/v1/jit/webhooks/callback", "", map[string]any{
+		rec := env.doSlackCallback(t, map[string]any{
 			"token": token, "approver_username": dev.Username,
 		})
 		// The requester's own name on their own request: the self-approval rule
@@ -458,11 +499,65 @@ func TestJitWebhookCallback(t *testing.T) {
 		token := jit.SignAction(secret, jit.Action{
 			RequestID: request.ID, Action: jit.ActionReject, Expires: start.Add(time.Hour),
 		})
-		rec := env.do(t, http.MethodPost, "/api/v1/jit/webhooks/callback", "", map[string]any{
+		rec := env.doSlackCallback(t, map[string]any{
 			"token": token, "action": "approve", "approver_username": admin.Username,
 		})
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("mismatched action: want 403, got %d", rec.Code)
+		}
+	})
+
+	// This is the vulnerability the signature check exists for: without it, a
+	// valid token plus a claimed identity was sufficient, and both travel in
+	// the same broadcast notification everyone in the channel can read.
+	t.Run("a valid token and identity but no Slack signature at all", func(t *testing.T) {
+		request := seed()
+		token := jit.SignAction(secret, jit.Action{
+			RequestID: request.ID, Action: jit.ActionApprove, Expires: start.Add(time.Hour),
+		})
+		rec := env.do(t, http.MethodPost, "/api/v1/jit/webhooks/callback", "", map[string]any{
+			"token":             token,
+			"approver_username": admin.Username,
+		})
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("unsigned callback: want 403, got %d: %s", rec.Code, rec.Body.String())
+		}
+		stored, err := env.store.JitRequestByID(t.Context(), request.ID)
+		if err != nil {
+			t.Fatalf("re-read request: %v", err)
+		}
+		if stored.Status != db.JitStatusPending {
+			t.Fatalf("an unverified callback must not decide the request, status is %q", stored.Status)
+		}
+	})
+
+	t.Run("a valid token and identity with a forged Slack signature", func(t *testing.T) {
+		request := seed()
+		token := jit.SignAction(secret, jit.Action{
+			RequestID: request.ID, Action: jit.ActionApprove, Expires: start.Add(time.Hour),
+		})
+		payload := map[string]any{
+			"token":             token,
+			"approver_username": admin.Username,
+		}
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatalf("marshal callback body: %v", err)
+		}
+		timestamp := strconv.FormatInt(start.Unix(), 10)
+		mac := hmac.New(sha256.New, []byte("not-the-slack-signing-secret"))
+		mac.Write([]byte("v0:" + timestamp + ":" + string(raw)))
+		signature := "v0=" + hex.EncodeToString(mac.Sum(nil))
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jit/webhooks/callback", bytes.NewReader(raw))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Slack-Request-Timestamp", timestamp)
+		req.Header.Set("X-Slack-Signature", signature)
+		rec := httptest.NewRecorder()
+		env.router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("forged signature: want 403, got %d: %s", rec.Code, rec.Body.String())
 		}
 	})
 }

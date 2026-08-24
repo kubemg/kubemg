@@ -559,14 +559,22 @@ function ChannelSheet({
           </Field>
         ) : null}
 
-        {draft.auth_mode !== 'none' ? (
+        {draft.auth_mode !== 'none' || draft.kind === 'slack' ? (
           <Field
-            label={draft.auth_mode === 'key' ? 'Routing key' : 'Token or password'}
+            label={
+              draft.kind === 'slack'
+                ? 'Signing secret'
+                : draft.auth_mode === 'key'
+                  ? 'Routing key'
+                  : 'Token or password'
+            }
             htmlFor="channel_secret"
             hint={
-              channel?.has_secret
-                ? 'A credential is stored. Leave this empty to keep it — it is never read back out.'
-                : 'Stored and never returned by the API.'
+              draft.kind === 'slack'
+                ? "From the Slack app's Basic Information page. Verifies that a just-in-time approval clicked in Slack really came from Slack — without it, one-click approve/reject over this channel is refused."
+                : channel?.has_secret
+                  ? 'A credential is stored. Leave this empty to keep it — it is never read back out.'
+                  : 'Stored and never returned by the API.'
             }
           >
             <TextInput
