@@ -22,8 +22,9 @@ import { ReachabilityTab } from './NetworkPolicyReachability'
 import { PodLogView, PodOverview } from './PodPanels'
 import { WorkloadActionPanel } from './WorkloadActionPanel'
 import type { WorkloadActionName, WorkloadActionTarget } from './WorkloadActionPanel'
-import { hasPodLabels, supportsWorkloadLogs, workloadCapability } from '../lib/workloads'
+import { hasPodLabels, supportsWorkloadLogs, supportsWorkloadPods, workloadCapability } from '../lib/workloads'
 import { WorkloadLogView } from './WorkloadLogView'
+import { WorkloadPodsView } from './WorkloadPodsView'
 import { YamlPanel } from './YamlPanel'
 import {
   Button,
@@ -56,6 +57,7 @@ export type DetailTab =
   | 'overview'
   | 'describe'
   | 'yaml'
+  | 'pods'
   | 'logs'
   | 'values'
   | 'history'
@@ -127,11 +129,19 @@ export function ResourceDetailDrawer({
   target,
   onClose,
   onRefresh,
+  onOpen,
 }: {
   cluster: Cluster
   target: DetailTarget
   onClose: () => void
   onRefresh?: () => Promise<void> | void
+  /**
+   * Opens a different object in this same drawer. Only the Pods tab uses it
+   * today, to jump from a workload to one of its own pods without closing and
+   * reopening — every other tab already addresses the object the drawer was
+   * opened on.
+   */
+  onOpen?: (target: DetailTarget) => void
 }) {
   const release = target.release
   // A release's two faces are not the object tabs, so an inherited `overview`
@@ -169,6 +179,15 @@ export function ResourceDetailDrawer({
    * because a pod set is resolved inside one.
    */
   const workloadLogs = !pod && !!target.namespace && supportsWorkloadLogs(target.kind)
+
+  /*
+   * A workload's health is its pods' health. The tab is gated the same way the
+   * logs one is — a namespace to resolve pods inside, and never on a pod itself,
+   * which already has this in its Overview — but the set of kinds is wider: a
+   * CronJob has no selector for the logs view to read, yet its Jobs' pods are
+   * exactly what "is the last run still going, and is it healthy" needs.
+   */
+  const workloadPods = !pod && !!target.namespace && supportsWorkloadPods(target.kind)
 
   const load = useCallback(
     async (quiet = false) => {
@@ -246,6 +265,11 @@ export function ResourceDetailDrawer({
         },
         { value: 'yaml', label: 'YAML' },
       ]
+  // The pods a workload owns, right after the object itself: what it is, then
+  // what it is running. It comes before Logs because a pod is what a log
+  // belongs to — seeing which one is unhealthy is the question that sends
+  // someone to read one's log in the first place.
+  if (!release && workloadPods) tabs.push({ value: 'pods', label: 'Pods' })
   if (!release && pod) tabs.push({ value: 'logs', label: 'Logs & Terminal' })
   // A workload has no terminal and no history of its own — there is no one pod to
   // attach to, and the history view searches by pod — so the tab is named for
@@ -441,6 +465,19 @@ export function ResourceDetailDrawer({
             await load()
             await onRefresh?.()
           }}
+        />
+      ) : null}
+
+      {tab === 'pods' && !pod && workloadPods && target.namespace ? (
+        <WorkloadPodsView
+          cluster={cluster}
+          kind={target.kind}
+          name={target.name}
+          namespace={target.namespace}
+          label={describe?.kind || target.label}
+          onOpenPod={(row) =>
+            onOpen?.({ kind: 'pods', label: 'Pod', name: row.name, namespace: row.namespace, pod: row })
+          }
         />
       ) : null}
 

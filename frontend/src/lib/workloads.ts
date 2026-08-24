@@ -56,6 +56,27 @@ export function supportsWorkloadLogs(key: string): boolean {
 }
 
 /**
+ * The kinds whose pods can be listed — "what is this thing running right now,
+ * and is it healthy" — which is a wider question than the pooled log view
+ * answers and the one reason to add CronJob here on its own. A CronJob owns no
+ * pods directly and answers for none of the other workload questions (it has no
+ * `spec.selector`, so it is absent from `WORKLOAD_LOG_KINDS` and from
+ * `workloadPodKinds` on the backend), but the pods its Jobs are running *right
+ * now* — one, none, or several under `concurrencyPolicy: Allow` — are exactly
+ * what "is core-worker-cronjob's last run still going, and is it healthy"
+ * means, so the backend resolves it through its Jobs instead of a selector.
+ */
+const WORKLOAD_POD_KINDS: readonly ResourceKey[] = [...WORKLOAD_LOG_KINDS, 'cronjobs']
+
+/**
+ * supportsWorkloadPods says whether a kind's detail drawer offers the Pods tab
+ * — the list of pods it owns, with each one's health and live resource usage.
+ */
+export function supportsWorkloadPods(key: string): boolean {
+  return WORKLOAD_POD_KINDS.includes(key as ResourceKey)
+}
+
+/**
  * The kinds a NetworkPolicy reachability question can be asked about — the
  * kinds that carry pod labels, which is what a `podSelector` actually matches
  * against. It is `WORKLOAD_LOG_KINDS` plus Pods rather than a copy of it,

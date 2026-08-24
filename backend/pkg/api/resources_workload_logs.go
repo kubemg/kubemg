@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -10,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
 /*
@@ -49,6 +52,11 @@ const maxWorkloadLogPods = 50
 // ReplicaSets and Jobs are here even though neither is a first-class sidebar
 // entry: a Job's pods are the only place its failure is written down, and both
 // carry a real `spec.selector`.
+//
+// CronJob is deliberately absent from this table, even though `listWorkloadPods`
+// answers for it — it owns Jobs, not pods, and has no selector of its own, so its
+// resolution is a different function (`listCronJobPods`) chaining two list reads
+// rather than reading one selector off the object.
 var workloadPodKinds = map[string]resourceListPath{
 	"deployments":  {"/apis/apps/v1", "deployments"},
 	"statefulsets": {"/apis/apps/v1", "statefulsets"},
@@ -56,6 +64,16 @@ var workloadPodKinds = map[string]resourceListPath{
 	"replicasets":  {"/apis/apps/v1", "replicasets"},
 	"jobs":         {"/apis/batch/v1", "jobs"},
 }
+
+// cronJobKind and jobListPath are where a CronJob and its Jobs are read from,
+// kept out of workloadPodKinds because neither read follows that table's shape.
+var cronJobKind = resourceListPath{"/apis/batch/v1", "cronjobs"}
+var jobListPath = resourceListPath{"/apis/batch/v1", "jobs"}
+
+// jobOwnerUIDLabel is what the Job controller stamps on every pod it creates —
+// the only label a Job's own pods are guaranteed to carry, which is what makes
+// it usable as a selector once a Job's UID is known.
+const jobOwnerUIDLabel = "batch.kubernetes.io/controller-uid"
 
 // labelSelector is the `metav1.LabelSelector` shape, decoded by hand for the same
 // reason every other read here is: pulling in the full typed object to read two
@@ -95,12 +113,6 @@ func (s *server) listWorkloadPods(c *gin.Context) {
 	}
 
 	key := strings.TrimSpace(c.Query("kind"))
-	path, known := workloadPodKinds[key]
-	if !known {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "kubemg does not resolve pods for " + key})
-		return
-	}
-
 	name := strings.TrimSpace(c.Query("name"))
 	if name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "a resource name is required"})
@@ -109,6 +121,17 @@ func (s *server) listWorkloadPods(c *gin.Context) {
 
 	namespace, ok := s.resourceNamespace(c, grant)
 	if !ok {
+		return
+	}
+
+	if key == "cronjobs" {
+		s.listCronJobPods(c, user, cluster, grant, namespace, name)
+		return
+	}
+
+	path, known := workloadPodKinds[key]
+	if !known {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "kubemg does not resolve pods for " + key})
 		return
 	}
 
@@ -174,6 +197,124 @@ func (s *server) listWorkloadPods(c *gin.Context) {
 		result.Truncated = true
 	}
 
+	for _, pod := range result.Pods {
+		for _, container := range pod.Containers {
+			if !slices.Contains(result.Containers, container.Name) {
+				result.Containers = append(result.Containers, container.Name)
+			}
+		}
+	}
+	slices.Sort(result.Containers)
+
+	c.JSON(http.StatusOK, result)
+}
+
+// ownedJob is the slice of a Job's own JSON this file reads: its own UID, and
+// the owner it names. Decoded by hand for the same reason every other object
+// here is — the caller wants two fields, not a whole BatchV1Job.
+type ownedJob struct {
+	Metadata struct {
+		UID             string `json:"uid"`
+		OwnerReferences []struct {
+			Kind string `json:"kind"`
+			UID  string `json:"uid"`
+		} `json:"ownerReferences"`
+	} `json:"metadata"`
+}
+
+// jobsOwnedByCronJob picks the UIDs of the Jobs in a list that a given CronJob
+// owns. It is a pure function so the ownership match — a CronJob's `uid`
+// appearing in a Job's `ownerReferences` under `Kind: "CronJob"` — is testable
+// without a fake cluster: this is the one piece of `listCronJobPods` that can
+// silently answer with somebody else's Jobs if it is wrong.
+func jobsOwnedByCronJob(cronJobUID string, jobs []ownedJob) []string {
+	var uids []string
+	for _, job := range jobs {
+		for _, owner := range job.Metadata.OwnerReferences {
+			if owner.Kind == "CronJob" && owner.UID == cronJobUID {
+				uids = append(uids, job.Metadata.UID)
+				break
+			}
+		}
+	}
+	return uids
+}
+
+// listCronJobPods resolves a CronJob to the pods its Jobs currently own. A
+// CronJob declares no `spec.selector` — the schedule creates Jobs, and the Job
+// controller stamps `jobOwnerUIDLabel` onto the pods it creates — so this reads
+// the CronJob, lists its namespace's Jobs to find the ones it owns by
+// `ownerReferences`, and lists pods matching any of those Jobs' UIDs. A CronJob
+// with `successfulJobsHistoryLimit`/`failedJobsHistoryLimit` above zero can own
+// more than one Job at once, which is why the match is `in (...)` over every
+// owned UID rather than one Job's alone: a currently-running Job and the ones
+// history is still keeping around answer together, exactly as `kubectl get pods
+// -l job-name=...` would need repeating once per Job to do by hand.
+func (s *server) listCronJobPods(c *gin.Context, user *db.User, cluster *db.Cluster,
+	grant db.UserClusterAccess, namespace, name string,
+) {
+	kind := objectKind{versions: []resourceListPath{cronJobKind}, namespaced: true}
+	body, ok := s.readObject(c, user, cluster, grant, kind, namespace, name)
+	if !ok {
+		return
+	}
+
+	var object struct {
+		Kind     string `json:"kind"`
+		Metadata struct {
+			UID string `json:"uid"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal(body, &object); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "the cluster returned an unreadable response"})
+		return
+	}
+
+	var jobs struct {
+		Items []ownedJob `json:"items"`
+	}
+	if !s.fetch(c, user, cluster, grant, jobListPath.namespaced(namespace), &jobs) {
+		return
+	}
+	uids := jobsOwnedByCronJob(object.Metadata.UID, jobs.Items)
+
+	result := workloadPodsResult{
+		Pods:       []podView{},
+		Namespace:  namespace,
+		Kind:       cmp.Or(object.Kind, "CronJob"),
+		Containers: []string{},
+	}
+
+	if len(uids) == 0 {
+		// No Job has ever run under this schedule, or none is still around to
+		// find pods through — either way there is nothing owned right now.
+		c.JSON(http.StatusOK, result)
+		return
+	}
+
+	selector := fmt.Sprintf("%s in (%s)", jobOwnerUIDLabel, strings.Join(uids, ","))
+	result.Selector = selector
+
+	query := url.Values{}
+	query.Set("labelSelector", selector)
+	podsPath := fmt.Sprintf("%s?%s",
+		resourceListPath{"/api/v1", "pods"}.namespaced(namespace), query.Encode())
+
+	var list struct {
+		Items []podObject `json:"items"`
+	}
+	if !s.fetch(c, user, cluster, grant, podsPath, &list) {
+		return
+	}
+
+	for _, item := range list.Items {
+		result.Pods = append(result.Pods, item.view())
+	}
+	sortResources(result.Pods)
+	if len(result.Pods) > maxWorkloadLogPods {
+		result.Pods = result.Pods[:maxWorkloadLogPods]
+		result.Truncated = true
+	}
 	for _, pod := range result.Pods {
 		for _, container := range pod.Containers {
 			if !slices.Contains(result.Containers, container.Name) {
