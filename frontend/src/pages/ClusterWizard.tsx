@@ -246,7 +246,7 @@ function IdentityStep({
           <Field
             label="Name"
             htmlFor="name"
-            hint="How the cluster is referred to everywhere in KubeMG, and in generated kubeconfig contexts."
+            hint="How the cluster is referred to everywhere in kubemg, and in generated kubeconfig contexts."
           >
             <TextInput
               id="name"
@@ -343,7 +343,7 @@ function ConnectionStep({
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-5">
-      <Panel eyebrow="Step 2" title="How should KubeMG reach it?">
+      <Panel eyebrow="Step 2" title="How should kubemg reach it?">
         <div className="grid gap-3 p-4 sm:grid-cols-2">
           <ModeCard
             mode="agent"
@@ -355,8 +355,8 @@ function ConnectionStep({
             tagline="Recommended"
             shape="live"
             points={[
-              'The cluster dials out to KubeMG — no inbound firewall rule, no exposed API server.',
-              'KubeMG stores no credential for the cluster.',
+              'The cluster dials out to kubemg — no inbound firewall rule, no exposed API server.',
+              'kubemg stores no credential for the cluster.',
               'kubectl traffic is proxied and audited, and acts under your own identity.',
             ]}
           />
@@ -370,8 +370,8 @@ function ConnectionStep({
             tagline="Requires reachability"
             shape="direct"
             points={[
-              'KubeMG dials the API server itself, so it must be routable from here.',
-              'A service account token is stored in KubeMG.',
+              'kubemg dials the API server itself, so it must be routable from here.',
+              'A service account token is stored in kubemg.',
               'Issues kubeconfigs only — no proxy and no audit trail.',
             ]}
           />
@@ -496,7 +496,7 @@ function ModeCard({
 
       <LinkStatus
         state={shape}
-        label={shape === 'live' ? 'Cluster dials out to KubeMG' : 'KubeMG dials the API server'}
+        label={shape === 'live' ? 'Cluster dials out to kubemg' : 'kubemg dials the API server'}
       />
 
       <ul className="flex flex-col gap-1.5">
@@ -522,7 +522,7 @@ function AgentInstaller({ install }: { install: AgentInstall }) {
     <Panel
       eyebrow="Handoff"
       title="Install the agent"
-      description={`Run this against ${install.cluster} with a kubeconfig that can create resources in ${install.namespace}. The agent dials back out to KubeMG — nothing needs to be opened inbound.`}
+      description={`Run this against ${install.cluster} with a kubeconfig that can create resources in ${install.namespace}. The agent dials back out to kubemg — nothing needs to be opened inbound.`}
       actions={
         <a
           href={install.manifest_url}
@@ -692,11 +692,11 @@ function HandshakeStep({
                   ? 'the agent dialled in'
                   : 'waiting for the agent to dial in'
                 : connected
-                  ? 'KubeMG reached the API server'
+                  ? 'kubemg reached the API server'
                   : 'run a check to probe the API server'
             }
           />
-          <PathNode label="KubeMG" value="bastion" tone="accent" />
+          <PathNode label="kubemg" value="bastion" tone="accent" />
           <span className="shrink-0 pb-2 sm:pb-0">
             <ClusterState cluster={cluster} />
           </span>
@@ -705,11 +705,11 @@ function HandshakeStep({
         <p className="text-[13px] leading-relaxed text-muted">
           {connected
             ? viaAgent
-              ? 'The agent is connected and the tunnel is open. Anything KubeMG does on this cluster now travels along it.'
-              : 'The API server answered. KubeMG can issue kubeconfigs for this cluster.'
+              ? 'The agent is connected and the tunnel is open. Anything kubemg does on this cluster now travels along it.'
+              : 'The API server answered. kubemg can issue kubeconfigs for this cluster.'
             : viaAgent
               ? 'No agent has dialled in yet. Run the install command against the cluster and this screen updates on its own.'
-              : 'The cluster has not been probed yet. Run a check to confirm KubeMG can reach the API server.'}
+              : 'The cluster has not been probed yet. Run a check to confirm kubemg can reach the API server.'}
         </p>
 
         {cluster.status_message ? (
@@ -1034,8 +1034,8 @@ function AccessStep({
 
       {cluster.connection_mode === 'direct' ? (
         <Notice tone="warn">
-          <strong className="font-semibold">These grants govern KubeMG, not the cluster.</strong> In
-          direct mode KubeMG issues a token but creates no RoleBinding, so a grant decides what the
+          <strong className="font-semibold">These grants govern kubemg, not the cluster.</strong> In
+          direct mode kubemg issues a token but creates no RoleBinding, so a grant decides what the
           kubeconfig claims — not what the cluster allows. Agent-based clusters bind these roles for
           real.
         </Notice>
@@ -1045,7 +1045,7 @@ function AccessStep({
            decides permission, which is only a meaningful statement if the
            console can show what the cluster decided. */
         <p className="text-[12.5px] leading-relaxed text-muted">
-          A grant here decides which cluster and namespaces KubeMG will carry someone to; what they
+          A grant here decides which cluster and namespaces kubemg will carry someone to; what they
           may then do is decided by this cluster&rsquo;s own RBAC through impersonation.{' '}
           <Link
             to={`/clusters/${cluster.id}/explore/clusterroles`}

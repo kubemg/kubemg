@@ -30,16 +30,14 @@ import { AuthProvider } from './state/AuthProvider'
 import { ClustersProvider } from './state/ClustersProvider'
 import { InventoryProvider } from './state/InventoryProvider'
 import { TimeRangeProvider } from './state/TimeRangeProvider'
+import { Lockup } from './components/Mark'
 import { useAuth } from './state/auth-context'
 import { useClusters } from './state/clusters-context'
 
 function RestoringSession() {
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-3 bg-bg">
-      <span className="text-[18px] font-semibold tracking-[-0.02em]">
-        <span className="text-fg">Kube</span>
-        <span className="text-accent">MG</span>
-      </span>
+      <Lockup className="text-[18px] text-fg" />
       <p className="label">Restoring session…</p>
     </div>
   )
@@ -79,10 +77,7 @@ function RequireAuth({ children, adminOnly = false }: { children: ReactNode; adm
 function SetupPending() {
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-3 bg-bg px-6 text-center">
-      <span className="text-[18px] font-semibold tracking-[-0.02em]">
-        <span className="text-fg">Kube</span>
-        <span className="text-accent">MG</span>
-      </span>
+      <Lockup className="text-[18px] text-fg" />
       <p className="max-w-sm text-[13px] leading-relaxed text-muted">
         This bastion has not finished being set up. An administrator has to complete the install
         before there is anything here to reach.

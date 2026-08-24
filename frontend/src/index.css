@@ -6,10 +6,10 @@
  * KubeMG watches clusters that cannot be reached from the outside: each one
  * dials out and holds a tunnel open. The interface is built around that fact.
  * Chrome is a deck of three planes (rail → section panel → work surface) so the
- * eye always knows where it is in a fleet — graphite on the dark deck, a cool
- * grey on the light one, in both cases a step behind the page rather than in
- * front of it; violet is the only interactive accent,
- * and green/amber/red are state that is actually changing. Identifiers —
+ * eye always knows where it is in a fleet — ink and moss on the dark deck, bone
+ * on the light one, in both cases a step behind the page rather than in
+ * front of it; lime (#BFF23C) is the only interactive accent, and sage/amber/rust
+ * are state that is actually changing. Identifiers —
  * cluster names, endpoints, versions, counts, paths — are set in mono with
  * tabular figures, because they are data and get compared column to column.
  *
@@ -20,6 +20,12 @@
  * width of a card or a rail row, which made a green or a red band the loudest
  * thing on a surface whose job is to be read. A live link breathes slowly;
  * nothing else animates.
+ *
+ * The palette is the kubemg brand kit: ink #14161A, lime #BFF23C, moss #3A4033,
+ * bone #F2F3EF, amber #E8A33D, rust #D1553C, sage #7FB069. Lime is an accent and
+ * not a surface — it must not cover more than about 5% of a screen — and text on
+ * lime is always ink, never white. Type is Archivo for the interface and
+ * JetBrains Mono for the data.
  *
  * Dark is the default deck; light is a full peer, not an afterthought. Every
  * colour below is a token pair — never hard-code a hex in a component.
@@ -41,21 +47,21 @@
  */
 
 @font-face {
-  font-family: 'Inter';
+  font-family: 'Archivo';
   font-style: normal;
-  font-weight: 100 900;
+  font-weight: 400 800;
   font-display: swap;
-  src: url('/fonts/inter-latin.woff2') format('woff2');
+  src: url('/fonts/archivo-latin.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
     U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 @font-face {
-  font-family: 'Inter';
+  font-family: 'Archivo';
   font-style: normal;
-  font-weight: 100 900;
+  font-weight: 400 800;
   font-display: swap;
-  src: url('/fonts/inter-latin-ext.woff2') format('woff2');
+  src: url('/fonts/archivo-latin-ext.woff2') format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
     U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
     U+2C60-2C7F, U+A720-A7FF;
@@ -86,6 +92,17 @@
 :root {
   color-scheme: light;
 
+  /*
+   * The light deck's chrome is a plain grey, and deliberately not bone.
+   *
+   * Bone (#f2f3ef) is the brand's light surface and it was tried here first,
+   * stepped down through the moss hue for `raised` and the rail. Over a whole
+   * screen it does not read as paper — it reads as a yellow-green wash, because
+   * a tint that is a whisper on one card is a cast on every plane at once. So
+   * the surfaces stay neutral and carry no hue of their own, and the brand
+   * arrives as the accent, the state tones and the mark. Bone survives where it
+   * was always doing work: as the text on the dark deck.
+   */
   --deck-bg: #f4f6f9;
   --deck-surface: #ffffff;
   --deck-raised: #eef1f6;
@@ -113,18 +130,48 @@
   --deck-rail-muted: #414a58;
   --deck-rail-faint: #525c6b;
 
-  --deck-accent: #5a47e0;
-  --deck-accent-hover: #4b39d1;
-  --deck-accent-soft: #eeecfd;
-  --deck-accent-line: #cdc6f8;
-  --deck-on-accent: #ffffff;
+  /*
+   * The accent has two jobs and, on this deck only, two values.
+   *
+   * `accent-fill` is the brand's lime, and it is lime on both decks: it is the
+   * primary button, the current wizard step, the one saturated thing on screen.
+   * Text on it is always `on-accent`, which is ink on both decks — the brand
+   * kit forbids white on lime, and 13.78:1 is why.
+   *
+   * `accent` is the accent as *text and line* — a link, an active label, a
+   * selected row's hairline — and `text-accent` appears fifty times in the
+   * console. Lime on bone is 1.25:1, so on the light deck this is lime taken
+   * down the ramp until it reads (6.44:1 on the surface) while staying the same
+   * hue. On the dark deck the two are the same value, because there lime reads
+   * at 12.73:1 and splitting them would be invention.
+   */
+  /* Ink, the brand's own #14161A. It is the one colour that does not flip
+     between decks: text on lime is ink on both, and the mark's chip is ink on
+     both. It is declared in each block rather than shared so the contrast pass,
+     which reads hex literals out of these two blocks, can see it. */
+  --deck-ink: #14161a;
+  /* The chip the mark sits on. Lime is 1.25:1 on this deck's surfaces, so here
+     the mark gets the ink tile the favicon has always drawn it on; on the dark
+     deck the page is already ink and the chip would be a plaque with nothing to
+     do, so there it is nothing at all. */
+  --deck-mark-chip: #14161a;
 
-  --deck-ok: #0c7753;
-  --deck-ok-soft: #e2f5ed;
-  --deck-warn: #905e0a;
-  --deck-warn-soft: #fbf0dc;
-  --deck-danger: #bf382e;
-  --deck-danger-soft: #fceae8;
+  --deck-accent: #4c650c;
+  --deck-accent-hover: #3d5209;
+  --deck-accent-fill: #bff23c;
+  --deck-accent-fill-hover: #cef95e;
+  --deck-accent-soft: #edf4d6;
+  --deck-accent-line: #cfe293;
+  --deck-on-accent: #14161a;
+
+  /* Sage, amber and rust, each taken down the ramp until it clears the text
+     floor on white. The hues are the brand's; the lightness is measured. */
+  --deck-ok: #2f6b3d;
+  --deck-ok-soft: #e4f1e8;
+  --deck-warn: #7a5205;
+  --deck-warn-soft: #f8efdc;
+  --deck-danger: #a8341f;
+  --deck-danger-soft: #fae8e4;
 
   --deck-shadow: 0 1px 2px rgb(15 19 26 / 0.05), 0 8px 24px -16px rgb(15 19 26 / 0.28);
   --deck-shadow-lift: 0 2px 4px rgb(15 19 26 / 0.06), 0 18px 40px -20px rgb(15 19 26 / 0.35);
@@ -172,35 +219,47 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --deck-bg: #0a0d13;
-  --deck-surface: #11151d;
-  --deck-raised: #181d27;
-  --deck-sunken: #0d1017;
-  --deck-border: #242b38;
-  --deck-border-soft: #1a202b;
-  --deck-text: #e7ebf3;
-  --deck-muted: #9aa4b5;
-  --deck-faint: #7c869b;
+  /* Ink is the page; the card is one step up from it and the border is moss. */
+  --deck-bg: #14161a;
+  --deck-surface: #1b1e22;
+  --deck-raised: #23272b;
+  --deck-sunken: #101215;
+  --deck-border: #3a4033;
+  --deck-border-soft: #262a24;
+  /* Bone, then moss brought up until it reads: `faint` is the brand's own quiet
+     text and sits at 4.57:1 on `raised`, which is the tightest pairing here. */
+  --deck-text: #f2f3ef;
+  --deck-muted: #adb4a2;
+  --deck-faint: #8a9080;
 
-  --deck-rail: #0d1017;
-  --deck-rail-raised: #191f2a;
-  --deck-rail-border: #212836;
-  --deck-rail-text: #e7ebf3;
-  --deck-rail-muted: #9aa4b5;
-  --deck-rail-faint: #7e889d;
+  --deck-rail: #101215;
+  --deck-rail-raised: #22261e;
+  --deck-rail-border: #2e3329;
+  --deck-rail-text: #f2f3ef;
+  --deck-rail-muted: #adb4a2;
+  --deck-rail-faint: #949a89;
 
-  --deck-accent: #8878fb;
-  --deck-accent-hover: #9a8dfc;
-  --deck-accent-soft: #1d1b33;
-  --deck-accent-line: #3b3470;
-  --deck-on-accent: #0a0d13;
+  /* Lime, undiluted, in both roles — see the light deck for why they split
+     there and not here. */
+  --deck-ink: #14161a;
+  --deck-mark-chip: transparent;
 
-  --deck-ok: #3dd68c;
-  --deck-ok-soft: #10241c;
-  --deck-warn: #f2b33d;
-  --deck-warn-soft: #291f10;
-  --deck-danger: #f2685b;
-  --deck-danger-soft: #2a1414;
+  --deck-accent: #bff23c;
+  --deck-accent-hover: #d0f95e;
+  --deck-accent-fill: #bff23c;
+  --deck-accent-fill-hover: #cef95e;
+  --deck-accent-soft: #242b14;
+  --deck-accent-line: #4b5a22;
+  --deck-on-accent: #14161a;
+
+  /* Sage and amber as the brand ships them; rust lightened, because #d1553c is
+     3.63:1 on `raised` and an error nobody can read is not an error. */
+  --deck-ok: #7fb069;
+  --deck-ok-soft: #18271a;
+  --deck-warn: #e8a33d;
+  --deck-warn-soft: #2a2011;
+  --deck-danger: #e4735c;
+  --deck-danger-soft: #2b1714;
 
   --deck-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
   --deck-shadow-lift: 0 2px 6px rgb(0 0 0 / 0.45), 0 20px 44px -24px rgb(0 0 0 / 0.7);
@@ -240,6 +299,10 @@
 
   --color-accent: var(--deck-accent);
   --color-accent-hover: var(--deck-accent-hover);
+  --color-ink: var(--deck-ink);
+  --color-mark-chip: var(--deck-mark-chip);
+  --color-accent-fill: var(--deck-accent-fill);
+  --color-accent-fill-hover: var(--deck-accent-fill-hover);
   --color-accent-soft: var(--deck-accent-soft);
   --color-accent-line: var(--deck-accent-line);
   --color-on-accent: var(--deck-on-accent);
@@ -269,7 +332,7 @@
   --shadow-deck: var(--deck-shadow);
   --shadow-lift: var(--deck-shadow-lift);
 
-  --font-sans: 'Inter', ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-sans: 'Archivo', ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -286,15 +349,17 @@
     font-family: var(--font-sans);
     font-size: 14px;
     line-height: 1.5;
-    font-feature-settings: 'cv05' 1, 'ss03' 1;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
 
+  /* Archivo is a grotesque with a tall x-height, so headings are set tight —
+     -0.03em is the brand's own figure and it is what stops a large heading from
+     reading as spaced-out. */
   h1,
   h2,
   h3 {
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
   }
 
   /* Every figure that gets compared down a column lines up. */
@@ -341,11 +406,19 @@
   }
 }
 
-/* Micro-caps used for field labels, column heads, and panel eyebrows. */
+/*
+ * Micro-caps used for field labels, column heads, and panel eyebrows.
+ *
+ * These are set in mono rather than in Archivo, and tracked wide. A label is
+ * not prose — it is the name of a slot, sitting above the data that fills it —
+ * and mono is what the data is already in, so the label and its value read as
+ * one column instead of two typefaces stacked.
+ */
 @utility label {
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.055em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--deck-faint);
 }

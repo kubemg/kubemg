@@ -226,7 +226,7 @@ export function AccessReviewPanel({
             htmlFor="review-subject"
             hint={
               identity && subject.trim() === identity.subject
-                ? `You, as KubeMG impersonates you here${
+                ? `You, as kubemg impersonates you here${
                     identity.groups.length > 0 ? ` (${identity.groups.join(', ')})` : ''
                   }`
                 : 'A user, a group, or system:serviceaccount:<namespace>:<name>'

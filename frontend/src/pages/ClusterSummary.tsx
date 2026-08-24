@@ -205,11 +205,11 @@ export function ClusterSummary() {
                       ? cluster.agent_attached
                         ? 'outbound tunnel · open'
                         : 'outbound tunnel · not connected'
-                      : 'KubeMG dials the API server'
+                      : 'kubemg dials the API server'
                   }
                 />
                 <PathNode
-                  label="KubeMG"
+                  label="kubemg"
                   value={viaAgent ? 'bastion proxy' : 'token issuer'}
                   tone="accent"
                 />
@@ -294,10 +294,10 @@ export function ClusterSummary() {
                 bodyClassName="p-4"
               >
                 <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
-                  An agent inside this cluster holds an outbound tunnel to KubeMG, and every proxied
+                  An agent inside this cluster holds an outbound tunnel to kubemg, and every proxied
                   call is replayed under your own identity using Kubernetes impersonation. The
                   cluster&rsquo;s own RBAC decides what that identity may do — the grant above decides
-                  which cluster and namespaces KubeMG will carry you to. Every call is written to the
+                  which cluster and namespaces kubemg will carry you to. Every call is written to the
                   audit trail.
                 </p>
                 {/* "The cluster decides" is only honest if the console can show
@@ -331,10 +331,10 @@ export function ClusterSummary() {
                 bodyClassName="p-4"
               >
                 <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
-                  KubeMG issues a short-lived token for this cluster&rsquo;s KubeMG service account
+                  kubemg issues a short-lived token for this cluster&rsquo;s kubemg service account
                   through the Kubernetes TokenRequest API. It creates no RoleBinding, so the grant
-                  above decides what you see in KubeMG — not what the cluster lets you do. Register
-                  the cluster in agent mode to have KubeMG bind these roles for real.
+                  above decides what you see in kubemg — not what the cluster lets you do. Register
+                  the cluster in agent mode to have kubemg bind these roles for real.
                 </p>
               </Panel>
             )}
@@ -502,7 +502,7 @@ function AccessPath({ cluster, username }: { cluster: Cluster; username: string 
 
   const hops = [
     { label: 'Identity', value: username, gap: false },
-    { label: 'Grant in KubeMG', value: cluster.k8s_role, gap: false },
+    { label: 'Grant in kubemg', value: cluster.k8s_role, gap: false },
     {
       label: 'Namespaces',
       value: cluster.namespaces.length > 0 ? cluster.namespaces.join(', ') : 'all',
