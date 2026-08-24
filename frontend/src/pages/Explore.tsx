@@ -235,7 +235,11 @@ const SKELETON_COLUMNS: Partial<Record<string, number>> = {
 }
 
 function skeletonColumns(item: ResourceItem, showNamespace: boolean): number {
-  return (SKELETON_COLUMNS[item.key] ?? 4) + (showNamespace ? 1 : 0)
+  // The extra column is the namespace one, so it is counted only where the table
+  // will actually draw it: a cluster-scoped kind has no namespace whatever the
+  // selector above the list says.
+  const namespaceColumn = showNamespace && item.scope === 'namespaced'
+  return (SKELETON_COLUMNS[item.key] ?? 4) + (namespaceColumn ? 1 : 0)
 }
 
 /**
@@ -245,47 +249,56 @@ function skeletonColumns(item: ResourceItem, showNamespace: boolean): number {
  * exhaustive switch rather than a generic cast: every `LoadedResource` variant
  * carries a `name` on its rows, but the union is what keeps the tag and the
  * filtered rows from drifting apart under a cast.
+ *
+ * A namespaced kind matches on its namespace too (`qualified`), because the
+ * namespace is a column of the list now: typing `monitoring` into a filter
+ * sitting above a visible Namespace column has to narrow to that namespace, and
+ * an all-namespaces list is exactly where somebody needs it to. A cluster-scoped
+ * kind has no namespace to match, which is why the two matchers stay separate
+ * rather than one reaching for a field half these row types do not have.
  */
 function filterLoaded(loaded: LoadedResource, needle: string): LoadedResource {
   if (!needle) return loaded
   const match = (name: string) => name.toLowerCase().includes(needle)
+  const qualified = (row: { name: string; namespace?: string }) =>
+    match(row.name) || (!!row.namespace && match(row.namespace))
   switch (loaded.kind) {
     case 'pods':
-      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'helmreleases':
-      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'workloads':
-      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'jobs':
-      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'cronjobs':
-      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'services':
-      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'ingresses':
-      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'networkpolicies':
-      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'routes':
-      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'persistentvolumes':
       return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
     case 'persistentvolumeclaims':
-      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'storageclasses':
       return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
     case 'config':
-      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'crds':
       return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
     case 'roles':
-      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'rolebindings':
-      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'serviceaccounts':
-      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'custom':
-      return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'nodes':
       return { ...loaded, rows: loaded.rows.filter((row) => match(row.name)) }
     case 'namespaces':

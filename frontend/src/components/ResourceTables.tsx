@@ -209,7 +209,9 @@ export function ResourceView({
         <RoleTable
           roles={loaded.rows}
           clusterScoped={loaded.clusterScoped}
-          showNamespace={showNamespace}
+          // A ClusterRole has no namespace to put in a column, whatever the
+          // namespace selector above the list happens to say.
+          showNamespace={showNamespace && !loaded.clusterScoped}
           onManifest={open}
         />
       )
@@ -218,7 +220,7 @@ export function ResourceView({
         <BindingTable
           bindings={loaded.rows}
           clusterScoped={loaded.clusterScoped}
-          showNamespace={showNamespace}
+          showNamespace={showNamespace && !loaded.clusterScoped}
           onManifest={open}
         />
       )
@@ -248,10 +250,10 @@ export function ResourceView({
 /* ------------------------------------------------------------- cell atoms --- */
 
 /**
- * Name is the first column of every list: mono, truncated, with a state dot. In
- * a list that spans namespaces it carries the namespace as a `ns/` prefix rather
- * than a column of its own — the same way kubectl names an object, and it keeps
- * the row one line tall.
+ * Name is the first column of every list: mono, truncated, with a state dot. It
+ * carries the name and nothing else — where the object lives is the namespace
+ * column's job (`NamespaceHead`/`NamespaceCell`), because a qualifier drawn
+ * inside this cell spends the name's own width on itself.
  */
 function Name({
   children,
@@ -263,6 +265,11 @@ function Name({
   children: ReactNode
   tone?: Tone
   title?: string
+  /**
+   * Where the object lives. It is *not* drawn here — it only qualifies the
+   * hover title, so the full `ns/name` kubectl identity is still one hover away
+   * on a row whose name is truncated.
+   */
   namespace?: string
   /**
    * Opens the row's object. Given one, the name becomes the button it always
@@ -271,7 +278,6 @@ function Name({
    */
   onOpen?: () => void
 }) {
-  const label = <QualifiedName namespace={namespace}>{children}</QualifiedName>
   const full = namespace && title ? `${namespace}/${title}` : title
 
   return (
@@ -283,48 +289,57 @@ function Name({
         <button
           type="button"
           onClick={onOpen}
-          className={`${NAME_BUTTON} font-mono text-fg transition-colors hover:text-accent`}
+          className={`${NAME_BUTTON} truncate font-mono text-fg transition-colors hover:text-accent`}
           title={full}
         >
-          {label}
+          {children}
         </button>
       ) : (
-        <span className="block min-w-0 font-mono text-fg" title={full}>
-          {label}
+        <span className="block min-w-0 truncate font-mono text-fg" title={full}>
+          {children}
         </span>
       )}
     </span>
   )
 }
 
-/** A name button is a block so its two lines stack; the text still reads left. */
+/** A name button is a block so it can truncate; the text still reads left. */
 const NAME_BUTTON = 'block min-w-0 text-left'
 
 /**
- * QualifiedName draws `namespace/name` without letting the qualifier eat the
- * name. The prefix is the answer to "which one of these is it", but the name is
- * what the row is *about* — and a single truncated line spends its width left to
- * right, so on a narrow column the namespace is drawn in full and the name is
- * the part that disappears. That is backwards, so the two are separated:
+ * The namespace column. It exists only while the list spans namespaces — in a
+ * single-namespace list the answer is in the header above the table, and a
+ * column repeating one value in every row is width taken from the name.
  *
- * - Below `sm` they stack. The namespace gets its own faint line above and the
- *   name gets a full-width one of its own, so neither is cut by the other. The
- *   row costs a second line only in the list that actually spans namespaces.
- * - At `sm` and up they stay on one line — the kubectl reading, and what keeps
- *   the table scannable — but the namespace is capped at 40% of the cell and
- *   truncates itself first, so the name always keeps the remaining 60%.
+ * It is a column rather than the `ns/name` prefix it used to be, because the
+ * prefix could not be both readable and out of the name's way: capped at a
+ * share of the name cell it truncated to `kube-s…`/`monitori…`, which is a
+ * different cut in every row, so neither half was legible and the names no
+ * longer started at one x to scan down. A column of its own truncates against
+ * its own width, keeps every name aligned, and is the shape Rancher, Lens and
+ * every other console settled on for the same reason.
+ *
+ * `md:` is where it gets a ceiling like every other sized column; below that it
+ * keeps a share, because a list that spans namespaces cannot drop the one field
+ * that says which of two same-named objects a row is.
  */
-function QualifiedName({ namespace, children }: { namespace?: string; children: ReactNode }) {
-  if (!namespace) return <span className="block truncate">{children}</span>
+const NAMESPACE_WIDTH = 'w-[26%] md:w-[min(16%,11rem)]'
 
+function NamespaceHead({ show }: { show: boolean }) {
+  if (!show) return null
   return (
-    <span className="flex min-w-0 flex-col leading-tight sm:flex-row sm:items-baseline">
-      <span className="min-w-0 truncate text-[11.5px] text-faint sm:max-w-[40%] sm:text-[length:inherit]">
-        {namespace}
-        <span className="hidden sm:inline">/</span>
-      </span>
-      <span className="min-w-0 truncate">{children}</span>
-    </span>
+    <Th className={NAMESPACE_WIDTH} columnKey="namespace">
+      Namespace
+    </Th>
+  )
+}
+
+function NamespaceCell({ show, namespace }: { show: boolean; namespace?: string }) {
+  if (!show) return null
+  return (
+    <Td className="truncate font-mono text-[12.5px] text-muted" title={namespace}>
+      {namespace || '—'}
+    </Td>
   )
 }
 
@@ -552,6 +567,7 @@ function HelmReleaseTable({
       <thead>
         <tr>
           <Th columnKey="name">Release</Th>
+          <NamespaceHead show={showNamespace} />
           <Th className="hidden md:table-cell md:w-[min(18%,14rem)]" columnKey="chart">
             Chart
           </Th>
@@ -584,11 +600,12 @@ function HelmReleaseTable({
               <Name
                 tone={helmTone(release.status)}
                 title={release.description || release.name}
-                namespace={showNamespace ? release.namespace : undefined}
+                namespace={release.namespace}
               >
                 {release.name}
               </Name>
             </Td>
+            <NamespaceCell show={showNamespace} namespace={release.namespace} />
             <Td className={`hidden md:table-cell ${MONO}`}>{release.chart_name || '—'}</Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>{release.chart_version || '—'}</Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>{release.app_version || '—'}</Td>
@@ -639,7 +656,7 @@ function HelmReleaseTable({
  * different read that the Kubernetes API cannot order a pod list by at all.
  */
 
-type PodSortKey = 'name' | 'phase' | 'cpu' | 'memory' | 'restarts' | 'node' | 'age'
+type PodSortKey = 'name' | 'namespace' | 'phase' | 'cpu' | 'memory' | 'restarts' | 'node' | 'age'
 
 type PodSort = { key: PodSortKey; direction: 'asc' | 'desc' }
 
@@ -651,6 +668,7 @@ type PodSort = { key: PodSortKey; direction: 'asc' | 'desc' }
  */
 const POD_SORT_FIRST: Record<PodSortKey, 'asc' | 'desc'> = {
   name: 'asc',
+  namespace: 'asc',
   phase: 'asc',
   cpu: 'desc',
   memory: 'desc',
@@ -668,7 +686,11 @@ function podSortValue(pod: Pod, usage: PodUsageIndex | null, key: PodSortKey): s
   const sample = usage?.get(`${pod.namespace}/${pod.name}`)
   switch (key) {
     case 'name':
+      // Namespace-qualified, so sorting by name in a list spanning namespaces
+      // still groups a namespace together rather than interleaving them.
       return `${pod.namespace}/${pod.name}`
+    case 'namespace':
+      return pod.namespace
     case 'phase':
       return pod.phase
     case 'cpu':
@@ -748,6 +770,13 @@ function PodTable({
               a name should have — the readings, the counts and the buttons all
               need a known amount of room and a pod name will take any. */}
           <SortTh {...column('name')}>Pod</SortTh>
+          {/* The one table whose headings sort, so its namespace column sorts
+              too rather than being the only unsortable heading in the row. */}
+          {showNamespace ? (
+            <SortTh className={NAMESPACE_WIDTH} {...column('namespace')}>
+              Namespace
+            </SortTh>
+          ) : null}
           {/* Ready rides beside the phase pill rather than a column of its own —
               1/1 only means something once you already know a pod is Running,
               so the two are one reading, not two. */}
@@ -791,15 +820,14 @@ function PodTable({
                 <button
                   type="button"
                   onClick={() => onSelect(pod)}
-                  className={`${NAME_BUTTON} font-mono text-fg transition-colors hover:text-accent`}
+                  className={`${NAME_BUTTON} truncate font-mono text-fg transition-colors hover:text-accent`}
                   title={`${pod.namespace}/${pod.name}`}
                 >
-                  <QualifiedName namespace={showNamespace ? pod.namespace : undefined}>
-                    {pod.name}
-                  </QualifiedName>
+                  {pod.name}
                 </button>
               </span>
             </Td>
+            <NamespaceCell show={showNamespace} namespace={pod.namespace} />
             <Td className="whitespace-nowrap">
               <span className="flex items-center gap-1.5">
                 <Pill tone={podTone(pod)}>{pod.phase}</Pill>
@@ -965,6 +993,7 @@ function WorkloadTable({
           {/* No width, on purpose: the sized columns and the five buttons take
               their measurements and the name takes what is left. */}
           <Th columnKey="name">Name</Th>
+          <NamespaceHead show={showNamespace} />
           <Th className="w-[22%] md:w-[min(13%,9rem)]" columnKey="kind">
             Kind
           </Th>
@@ -988,11 +1017,12 @@ function WorkloadTable({
                 tone={workloadTone(workload)}
                 title={workload.name}
                 onOpen={opener(onManifest, workload)}
-                namespace={showNamespace ? workload.namespace : undefined}
+                namespace={workload.namespace}
               >
                 {workload.name}
               </Name>
             </Td>
+            <NamespaceCell show={showNamespace} namespace={workload.namespace} />
             <Td className="text-[12.5px] text-muted">{workload.kind}</Td>
             <Td
               className={`font-mono text-[12.5px] ${
@@ -1032,6 +1062,7 @@ function JobTable({
       <thead>
         <tr>
           <Th columnKey="name">Job</Th>
+          <NamespaceHead show={showNamespace} />
           <Th className="w-[22%] md:w-[min(14%,9rem)]" columnKey="state">
             State
           </Th>
@@ -1058,11 +1089,12 @@ function JobTable({
                 tone={jobTone(job.state)}
                 title={job.name}
                 onOpen={opener(onManifest, job)}
-                namespace={showNamespace ? job.namespace : undefined}
+                namespace={job.namespace}
               >
                 {job.name}
               </Name>
             </Td>
+            <NamespaceCell show={showNamespace} namespace={job.namespace} />
             <Td>
               <Pill tone={jobTone(job.state)}>{job.state}</Pill>
             </Td>
@@ -1147,6 +1179,7 @@ function CronJobTable({
       <thead>
         <tr>
           <Th columnKey="name">CronJob</Th>
+          <NamespaceHead show={showNamespace} />
           {/*
             The expression is what hides below md rather than the countdown: a
             cron field is the least readable thing in this row on a narrow screen,
@@ -1181,11 +1214,12 @@ function CronJobTable({
                 tone={cronjob.suspended ? 'idle' : 'ok'}
                 title={cronjob.name}
                 onOpen={opener(onManifest, cronjob)}
-                namespace={showNamespace ? cronjob.namespace : undefined}
+                namespace={cronjob.namespace}
               >
                 {cronjob.name}
               </Name>
             </Td>
+            <NamespaceCell show={showNamespace} namespace={cronjob.namespace} />
             <Td className="hidden truncate font-mono text-[12.5px] text-fg md:table-cell">
               {cronjob.schedule}
               {cronjob.time_zone ? (
@@ -1233,6 +1267,7 @@ function ServiceTable({
       <thead>
         <tr>
           <Th columnKey="name">Service</Th>
+          <NamespaceHead show={showNamespace} />
           <Th className="w-[24%] md:w-[min(13%,9rem)]" columnKey="type">
             Type
           </Th>
@@ -1258,11 +1293,12 @@ function ServiceTable({
               <Name
                 title={service.name}
                 onOpen={opener(onManifest, service)}
-                namespace={showNamespace ? service.namespace : undefined}
+                namespace={service.namespace}
               >
                 {service.name}
               </Name>
             </Td>
+            <NamespaceCell show={showNamespace} namespace={service.namespace} />
             <Td className="text-[12.5px] text-muted">{service.type}</Td>
             <Td className={`hidden md:table-cell ${MONO}`}>{service.cluster_ip || '—'}</Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>
@@ -1298,6 +1334,7 @@ function IngressTable({
       <thead>
         <tr>
           <Th columnKey="name">Ingress</Th>
+          <NamespaceHead show={showNamespace} />
           <Th className="w-[24%] md:w-[min(14%,10rem)]" columnKey="class">
             Class
           </Th>
@@ -1323,11 +1360,12 @@ function IngressTable({
               <Name
                 title={ingress.name}
                 onOpen={opener(onManifest, ingress)}
-                namespace={showNamespace ? ingress.namespace : undefined}
+                namespace={ingress.namespace}
               >
                 {ingress.name}
               </Name>
             </Td>
+            <NamespaceCell show={showNamespace} namespace={ingress.namespace} />
             <Td className={MONO}>{ingress.class || '—'}</Td>
             <Td className={MONO}>
               <List values={ingress.hosts} empty="*" />
@@ -1371,6 +1409,7 @@ function NetworkPolicyTable({
       <thead>
         <tr>
           <Th columnKey="name">NetworkPolicy</Th>
+          <NamespaceHead show={showNamespace} />
           <Th className="hidden md:table-cell md:w-[min(28%,20rem)]" columnKey="selector">
             Pod selector
           </Th>
@@ -1392,12 +1431,13 @@ function NetworkPolicyTable({
             <Td className="truncate">
               <Name
                 title={policy.name}
-                namespace={showNamespace ? policy.namespace : undefined}
+                namespace={policy.namespace}
                 onOpen={opener(onManifest, policy)}
               >
                 {policy.name}
               </Name>
             </Td>
+            <NamespaceCell show={showNamespace} namespace={policy.namespace} />
             <Td className={`hidden md:table-cell ${MONO}`}>
               {/* An empty selector is a real answer — every pod in the
                   namespace — and it is worth saying so rather than leaving
@@ -1437,6 +1477,7 @@ function RouteTable({
       <thead>
         <tr>
           <Th columnKey="name">Route</Th>
+          <NamespaceHead show={showNamespace} />
           <Th className="w-[32%] md:w-[min(30%,20rem)]" columnKey="hostnames">
             Hostnames
           </Th>
@@ -1456,10 +1497,11 @@ function RouteTable({
         {routes.map((route) => (
           <Row key={`${route.namespace}/${route.name}`}>
             <Td className="truncate">
-              <Name title={route.name} namespace={showNamespace ? route.namespace : undefined}>
+              <Name title={route.name} namespace={route.namespace}>
                 {route.name}
               </Name>
             </Td>
+            <NamespaceCell show={showNamespace} namespace={route.namespace} />
             <Td className={MONO}>
               <List values={route.hostnames} empty="*" />
             </Td>
@@ -1551,6 +1593,7 @@ function ClaimTable({
       <thead>
         <tr>
           <Th columnKey="name">Claim</Th>
+          <NamespaceHead show={showNamespace} />
           <Th className="w-[20%] md:w-[min(12%,8rem)]" columnKey="status">
             Status
           </Th>
@@ -1580,11 +1623,12 @@ function ClaimTable({
                 tone={phaseTone(claim.status)}
                 title={claim.name}
                 onOpen={opener(onManifest, claim)}
-                namespace={showNamespace ? claim.namespace : undefined}
+                namespace={claim.namespace}
               >
                 {claim.name}
               </Name>
             </Td>
+            <NamespaceCell show={showNamespace} namespace={claim.namespace} />
             <Td>
               <Pill tone={phaseTone(claim.status)}>{claim.status}</Pill>
             </Td>
@@ -1671,6 +1715,7 @@ function ConfigTable({
       <thead>
         <tr>
           <Th columnKey="name">{secrets ? 'Secret' : 'ConfigMap'}</Th>
+          <NamespaceHead show={showNamespace} />
           {secrets ? (
             <Th className="hidden md:table-cell md:w-[min(20%,14rem)]" columnKey="type">
               Type
@@ -1696,7 +1741,7 @@ function ConfigTable({
           <Row key={`${entry.namespace}/${entry.name}`}>
             <Td className="truncate">
               <span className="flex items-center gap-2">
-                <Name title={entry.name} namespace={showNamespace ? entry.namespace : undefined}>
+                <Name title={entry.name} namespace={entry.namespace}>
                   {entry.name}
                 </Name>
                 {entry.immutable ? (
@@ -1706,6 +1751,7 @@ function ConfigTable({
                 ) : null}
               </span>
             </Td>
+            <NamespaceCell show={showNamespace} namespace={entry.namespace} />
             {secrets ? <Td className={`hidden md:table-cell ${MONO}`}>{entry.type || '—'}</Td> : null}
             <Td className="font-mono text-[12.5px] text-muted">{entry.keys?.length ?? 0}</Td>
             {/* Key names, never values: a value is not in the response at all. */}
@@ -1804,6 +1850,7 @@ function RoleTable({
       <thead>
         <tr>
           <Th columnKey="name">{clusterScoped ? 'ClusterRole' : 'Role'}</Th>
+          <NamespaceHead show={showNamespace} />
           <Th className="w-[14%] md:w-[min(8%,5rem)]" columnKey="rules">
             Rules
           </Th>
@@ -1826,7 +1873,7 @@ function RoleTable({
               <span className="flex items-center gap-2">
                 <Name
                   title={role.name}
-                  namespace={showNamespace ? role.namespace : undefined}
+                  namespace={role.namespace}
                   onOpen={opener(onManifest, role)}
                 >
                   {role.name}
@@ -1846,6 +1893,7 @@ function RoleTable({
                 ) : null}
               </span>
             </Td>
+            <NamespaceCell show={showNamespace} namespace={role.namespace} />
             <Td className="font-mono text-[12.5px] text-muted">{role.rule_count}</Td>
             <Td className={`hidden md:table-cell ${MONO}`}>
               <List values={role.verbs} empty="none" />
@@ -1917,6 +1965,7 @@ function BindingTable({
       <thead>
         <tr>
           <Th columnKey="name">{clusterScoped ? 'ClusterRoleBinding' : 'RoleBinding'}</Th>
+          <NamespaceHead show={showNamespace} />
           <Th className="w-[30%] md:w-[min(24%,16rem)]" columnKey="role">
             Role
           </Th>
@@ -1938,12 +1987,13 @@ function BindingTable({
             <Td className="truncate">
               <Name
                 title={binding.name}
-                namespace={showNamespace ? binding.namespace : undefined}
+                namespace={binding.namespace}
                 onOpen={opener(onManifest, binding)}
               >
                 {binding.name}
               </Name>
             </Td>
+            <NamespaceCell show={showNamespace} namespace={binding.namespace} />
             <Td className="truncate">
               <span className="flex items-center gap-1.5">
                 {/* Which *kind* of role is the load-bearing half: a RoleBinding
@@ -1997,6 +2047,7 @@ function ServiceAccountTable({
       <thead>
         <tr>
           <Th columnKey="name">ServiceAccount</Th>
+          <NamespaceHead show={showNamespace} />
           <Th className="w-[16%] md:w-[min(10%,7rem)]" columnKey="secrets">
             Secrets
           </Th>
@@ -2019,7 +2070,7 @@ function ServiceAccountTable({
               <span className="flex items-center gap-2">
                 <Name
                   title={account.name}
-                  namespace={showNamespace ? account.namespace : undefined}
+                  namespace={account.namespace}
                   onOpen={opener(onManifest, account)}
                 >
                   {account.name}
@@ -2031,6 +2082,7 @@ function ServiceAccountTable({
                 ) : null}
               </span>
             </Td>
+            <NamespaceCell show={showNamespace} namespace={account.namespace} />
             <Td className="font-mono text-[12.5px] text-muted">{account.secrets}</Td>
             <Td className="hidden font-mono text-[12.5px] text-muted md:table-cell">
               {account.image_pull_secrets}
@@ -2078,6 +2130,7 @@ function CustomResourceTable({
       <thead>
         <tr>
           <Th columnKey="name">Name</Th>
+          <NamespaceHead show={showNamespace} />
           <Th className="hidden md:table-cell md:w-[min(22%,14rem)]" columnKey="kind">
             Kind
           </Th>
@@ -2094,10 +2147,11 @@ function CustomResourceTable({
         {rows.map((row) => (
           <Row key={`${row.namespace}/${row.name}`}>
             <Td className="truncate">
-              <Name title={row.name} namespace={showNamespace ? row.namespace : undefined}>
+              <Name title={row.name} namespace={row.namespace}>
                 {row.name}
               </Name>
             </Td>
+            <NamespaceCell show={showNamespace} namespace={row.namespace} />
             <Td className="hidden truncate text-[12.5px] text-fg md:table-cell">
               {row.kind || '—'}
             </Td>
