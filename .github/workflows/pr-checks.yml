@@ -216,7 +216,7 @@ jobs:
       # the target. Keep the platform list in step with AGENT_PLATFORMS in the
       # Makefile.
       - name: Set up buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Cross-build the agent image for every published platform
         run: docker buildx build --platform linux/amd64,linux/arm64 ./agent

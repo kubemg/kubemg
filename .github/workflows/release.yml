@@ -93,7 +93,7 @@ jobs:
           echo "Publishing $IMAGE:$version"
 
       - name: Set up buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Scanning needs an image in the local daemon, which a multi-platform build
       # cannot produce — so the gate runs against the runner's architecture. The
