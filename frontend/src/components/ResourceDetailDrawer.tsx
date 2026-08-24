@@ -57,7 +57,6 @@ export type DetailTab =
   | 'overview'
   | 'describe'
   | 'yaml'
-  | 'pods'
   | 'logs'
   | 'values'
   | 'history'
@@ -265,11 +264,6 @@ export function ResourceDetailDrawer({
         },
         { value: 'yaml', label: 'YAML' },
       ]
-  // The pods a workload owns, right after the object itself: what it is, then
-  // what it is running. It comes before Logs because a pod is what a log
-  // belongs to — seeing which one is unhealthy is the question that sends
-  // someone to read one's log in the first place.
-  if (!release && workloadPods) tabs.push({ value: 'pods', label: 'Pods' })
   if (!release && pod) tabs.push({ value: 'logs', label: 'Logs & Terminal' })
   // A workload has no terminal and no history of its own — there is no one pod to
   // attach to, and the history view searches by pod — so the tab is named for
@@ -439,7 +433,19 @@ export function ResourceDetailDrawer({
       ) : null}
 
       {tab === 'overview' ? (
-        <OverviewTab cluster={cluster} pod={pod} describe={describe} loading={loading} />
+        <OverviewTab
+          cluster={cluster}
+          pod={pod}
+          describe={describe}
+          loading={loading}
+          workloadPods={workloadPods}
+          kind={target.kind}
+          name={target.name}
+          namespace={target.namespace}
+          onOpenPod={(row) =>
+            onOpen?.({ kind: 'pods', label: 'Pod', name: row.name, namespace: row.namespace, pod: row })
+          }
+        />
       ) : null}
 
       {tab === 'describe' ? <DescribeTab describe={describe} loading={loading} /> : null}
@@ -465,19 +471,6 @@ export function ResourceDetailDrawer({
             await load()
             await onRefresh?.()
           }}
-        />
-      ) : null}
-
-      {tab === 'pods' && !pod && workloadPods && target.namespace ? (
-        <WorkloadPodsView
-          cluster={cluster}
-          kind={target.kind}
-          name={target.name}
-          namespace={target.namespace}
-          label={describe?.kind || target.label}
-          onOpenPod={(row) =>
-            onOpen?.({ kind: 'pods', label: 'Pod', name: row.name, namespace: row.namespace, pod: row })
-          }
         />
       ) : null}
 
@@ -567,11 +560,22 @@ function OverviewTab({
   pod,
   describe,
   loading,
+  workloadPods,
+  kind,
+  name,
+  namespace,
+  onOpenPod,
 }: {
   cluster: Cluster
   pod?: Pod
   describe: ResourceDescribeResult | null
   loading: boolean
+  /** Whether this kind's pods can be resolved — see `supportsWorkloadPods`. */
+  workloadPods: boolean
+  kind: ResourceKey
+  name: string
+  namespace?: string
+  onOpenPod: (pod: Pod) => void
 }) {
   if (loading && !describe) return <p className="text-[13px] text-muted">Reading the object…</p>
   if (!describe) return null
@@ -609,6 +613,23 @@ function OverviewTab({
       {pod ? <PodOverview cluster={cluster} pod={pod} /> : null}
 
       {describe.conditions.length > 0 ? <Conditions conditions={describe.conditions} /> : null}
+
+      {/* A workload's health is its pods' health — what it owns right now, and
+          whether each one is ready, is answered here rather than behind a tab
+          of its own, the way Rancher's own workload page reads. */}
+      {!pod && workloadPods && namespace ? (
+        <div className="flex flex-col gap-2">
+          <span className="label">Pods</span>
+          <WorkloadPodsView
+            cluster={cluster}
+            kind={kind}
+            name={name}
+            namespace={namespace}
+            label={describe.kind || kind}
+            onOpenPod={onOpenPod}
+          />
+        </div>
+      ) : null}
 
       <KeyValues title="Labels" values={describe.labels} />
       <KeyValues title="Annotations" values={describe.annotations} />
