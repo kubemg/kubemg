@@ -197,7 +197,7 @@ export function errorMessage(error: unknown, fallback: string): string {
   if (axios.isAxiosError(error)) {
     const detail = (error.response?.data as { error?: string } | undefined)?.error
     if (detail) return detail
-    if (error.code === 'ERR_NETWORK') return 'Cannot reach the KubeMG server.'
+    if (error.code === 'ERR_NETWORK') return 'Cannot reach the kubemg server.'
   }
   return fallback
 }
@@ -1629,12 +1629,12 @@ export function queryError(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err) && !(err.response?.data as { error?: string } | undefined)?.error) {
     if (err.response?.status === 404) {
       return (
-        'This KubeMG server has no history endpoint — it is running a build older ' +
+        'This kubemg server has no history endpoint — it is running a build older ' +
         'than this page. Restart the backend so it picks up the current code.'
       )
     }
     if (err.response && err.response.status >= 500) {
-      return `The KubeMG server failed on this query (HTTP ${err.response.status}). Check its logs.`
+      return `The kubemg server failed on this query (HTTP ${err.response.status}). Check its logs.`
     }
   }
   return errorMessage(err, fallback)

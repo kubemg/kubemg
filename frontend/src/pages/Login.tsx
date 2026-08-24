@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { ArrowRight, Moon, Sun } from 'lucide-react'
 import { errorMessage } from '../api/client'
 import { Button, Field, Notice, TextInput } from '../components/primitives'
-import { Mark } from '../components/Mark'
+import { Lockup } from '../components/Mark'
 import { SsoLoginPage } from '../components/SsoLoginPage'
 import { useAuth } from '../state/auth-context'
 import { useTheme } from '../lib/theme'
@@ -65,16 +65,16 @@ export function Login() {
           aria-hidden="true"
           className="pointer-events-none absolute -right-28 -bottom-28 size-[480px] rounded-full"
           style={{
-            backgroundImage: 'radial-gradient(circle, var(--deck-accent-soft), transparent 70%)',
+            /* A haze of the accent itself, not `accent-soft`. That token is a
+               fill meant to sit under text, so as a gradient it reads as a
+               dirty olive smudge on both decks rather than as lime light. */
+            backgroundImage:
+              'radial-gradient(circle, color-mix(in oklab, var(--deck-accent-fill) 20%, transparent), transparent 70%)',
           }}
         />
 
         <div className="relative flex items-center gap-2.5">
-          <Mark className="size-7 shrink-0 text-accent" />
-          <span className="text-[16px] font-semibold tracking-[-0.02em]">
-            <span className="text-rail-fg">Kube</span>
-            <span className="text-accent">MG</span>
-          </span>
+          <Lockup className="text-[22px] text-rail-fg" />
         </div>
 
         <div className="relative max-w-md">
@@ -84,7 +84,7 @@ export function Login() {
             Nothing dials in.
           </h1>
           <p className="mt-4 text-[14px] leading-relaxed text-rail-muted">
-            Every cluster holds an outbound tunnel to KubeMG. Access is issued here, kubectl traffic
+            Every cluster holds an outbound tunnel to kubemg. Access is issued here, kubectl traffic
             is proxied under your own identity, and every call lands in the audit trail.
           </p>
         </div>
@@ -96,11 +96,10 @@ export function Login() {
 
       <section className="flex items-center justify-center bg-bg p-6">
         <div className="card lift w-full max-w-[380px] p-8">
+          {/* Below `lg` the brand panel beside this card is gone, so the card
+              carries the lockup itself. */}
           <div className="mb-7 lg:hidden">
-            <span className="text-[20px] font-semibold tracking-[-0.02em]">
-              <span className="text-fg">Kube</span>
-              <span className="text-accent">MG</span>
-            </span>
+            <Lockup className="text-[20px] text-fg" />
           </div>
 
           <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Sign in</h2>

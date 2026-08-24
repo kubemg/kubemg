@@ -158,7 +158,7 @@ export function DatasourcePanel({
     <Panel
       eyebrow={eyebrow}
       title="Metrics & logs sources"
-      description="Where this cluster's history lives. KubeMG's live meters read the cluster's own Metrics API, which keeps about two minutes — anything over time comes from here."
+      description="Where this cluster's history lives. kubemg's live meters read the cluster's own Metrics API, which keeps about two minutes — anything over time comes from here."
       className={className}
       actions={
         editable && viaTunnel ? (
@@ -205,8 +205,8 @@ export function DatasourcePanel({
         {!loading && !viaTunnel && editable ? (
           <p className="border-t border-line-soft px-4 py-3 text-[12px] leading-relaxed text-muted">
             {cluster.connection_mode === 'agent'
-              ? 'No agent is attached right now, so KubeMG cannot scan this cluster or reach a backend inside it. An external address still works.'
-              : 'This cluster is registered in direct mode and has no tunnel, so a datasource has to be one KubeMG can dial itself.'}
+              ? 'No agent is attached right now, so kubemg cannot scan this cluster or reach a backend inside it. An external address still works.'
+              : 'This cluster is registered in direct mode and has no tunnel, so a datasource has to be one kubemg can dial itself.'}
           </p>
         ) : null}
       </div>
@@ -291,7 +291,7 @@ function SourceRow({
         {source ? (
           <p className="mt-1 truncate font-mono text-[12px] text-faint" title={source.endpoint}>
             {source.endpoint}
-            {source.access_mode === 'in-cluster' ? ' · via tunnel' : ' · dialled from KubeMG'}
+            {source.access_mode === 'in-cluster' ? ' · via tunnel' : ' · dialled from kubemg'}
             {source.last_checked_at ? ` · checked ${relativeAge(source.last_checked_at)}` : null}
           </p>
         ) : (
@@ -365,7 +365,7 @@ function Discovered({
 
       {candidates.length === 0 ? (
         <p className="px-4 pb-3 text-[12.5px] leading-relaxed text-muted">
-          Nothing recognisable is running here. KubeMG looks for VictoriaMetrics, Prometheus,
+          Nothing recognisable is running here. kubemg looks for VictoriaMetrics, Prometheus,
           Thanos, Mimir, VictoriaLogs and Loki by Service name and port — a backend behind an
           unusual name still works, entered by hand.
         </p>
@@ -672,12 +672,12 @@ export function DatasourceSheet({
       </Field>
 
       <Field
-        label="How KubeMG reaches it"
+        label="How kubemg reaches it"
         htmlFor="access_mode"
         hint={
           inCluster
             ? 'Through the agent tunnel, by asking the API server to proxy to the Service. Nothing has to be exposed, and the read is impersonated and audited like any other.'
-            : 'KubeMG dials the address itself, so it has to be routable from this server.'
+            : 'kubemg dials the address itself, so it has to be routable from this server.'
         }
       >
         <Segmented<DatasourceAccess>
@@ -856,7 +856,7 @@ export function DatasourceSheet({
 
       {inCluster && draft.auth_mode !== 'none' ? (
         <Notice tone="info">
-          An in-cluster read is made by the cluster&rsquo;s own API server on KubeMG&rsquo;s behalf,
+          An in-cluster read is made by the cluster&rsquo;s own API server on kubemg&rsquo;s behalf,
           so there is nowhere to put this header. A datasource that needs a credential should be
           given as an external address.
         </Notice>

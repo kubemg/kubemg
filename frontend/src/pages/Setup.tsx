@@ -11,6 +11,7 @@ import {
   updateUser,
 } from '../api/client'
 import type { SettingsResponse, SetupPreflight } from '../api/types'
+import { Lockup } from '../components/Mark'
 import { SsoSettingsPanel } from '../components/SsoSettingsPanel'
 import { AuditSettingsPanel } from '../components/settings/AuditSettingsPanel'
 import { DeploymentCheckList } from '../components/settings/DeploymentChecks'
@@ -112,10 +113,7 @@ export function Setup() {
           leave halfway through. */}
       <header className="border-b border-line-soft">
         <div className="mx-auto flex max-w-4xl flex-wrap items-baseline gap-x-3 gap-y-1 px-5 py-5">
-          <span className="text-[18px] font-semibold tracking-[-0.02em]">
-            <span className="text-fg">Kube</span>
-            <span className="text-accent">MG</span>
-          </span>
+          <Lockup className="text-[18px] text-fg" />
           <h1 className="text-[15px] font-medium text-fg">Set up this bastion</h1>
           <p className="label ml-auto">signed in as {user?.username}</p>
         </div>

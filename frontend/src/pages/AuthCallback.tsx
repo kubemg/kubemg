@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { errorMessage } from '../api/client'
 import { Notice, Spinner } from '../components/primitives'
-import { Mark } from '../components/Mark'
+import { Lockup } from '../components/Mark'
 import { useAuth } from '../state/auth-context'
 
 /**
@@ -47,13 +47,7 @@ export function AuthCallback() {
 
   return (
     <main className="flex min-h-svh flex-col items-center justify-center gap-4 bg-bg px-6">
-      <span className="flex items-center gap-2.5">
-        <Mark className="size-7 shrink-0 text-accent" />
-        <span className="text-[18px] font-semibold tracking-[-0.02em]">
-          <span className="text-fg">Kube</span>
-          <span className="text-accent">MG</span>
-        </span>
-      </span>
+      <Lockup className="text-[18px] text-fg" />
 
       {error ? (
         <div className="flex w-full max-w-[420px] flex-col gap-3">

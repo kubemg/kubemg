@@ -51,7 +51,7 @@ export const PROVIDERS: Record<DatasourceProvider, ProviderInfo> = {
     kind: 'metrics',
     defaultPort: '8080',
     defaultPrefix: '/prometheus',
-    hint: 'Point at the query frontend or the gateway. A multi-tenant Mimir also needs its tenant header, which KubeMG does not send yet.',
+    hint: 'Point at the query frontend or the gateway. A multi-tenant Mimir also needs its tenant header, which kubemg does not send yet.',
   },
   victorialogs: {
     label: 'VictoriaLogs',
@@ -90,7 +90,7 @@ export const KIND_LABEL: Record<DatasourceKind, string> = {
 /** What each kind is *for*, said once rather than in every panel. */
 export const KIND_PURPOSE: Record<DatasourceKind, string> = {
   metrics:
-    'History behind the live meters. Without it KubeMG can only show the last couple of minutes the cluster keeps itself.',
+    'History behind the live meters. Without it kubemg can only show the last couple of minutes the cluster keeps itself.',
   logs: 'Searchable logs across pods. Without it a log is only readable while the pod that wrote it is still alive.',
 }
 

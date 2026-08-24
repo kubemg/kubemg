@@ -118,3 +118,6 @@ Thumbs.db
 coverage/
 coverage.out
 *.cover
+
+# Brand kit — source assets, not shipped from here.
+brand/

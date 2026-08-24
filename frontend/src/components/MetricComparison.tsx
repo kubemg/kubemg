@@ -76,7 +76,7 @@ export function MetricComparison({
           title="No metrics datasource"
         >
           Ranking a window against the one before it needs a metrics backend to read
-          history from. The live meters are all KubeMG can show without one.
+          history from. The live meters are all kubemg can show without one.
           {onConfigure ? (
             <span className="mt-3 block">
               <Button type="button" onClick={onConfigure}>
@@ -184,7 +184,7 @@ export function MetricComparison({
           </p>
           <details className="mt-3">
             <summary className="cursor-pointer text-center text-[12px] text-faint">
-              What KubeMG asked for
+              What kubemg asked for
             </summary>
             {/* An empty table is nearly always a backend that labels its series
                 differently, or an exporter that is not installed — neither of

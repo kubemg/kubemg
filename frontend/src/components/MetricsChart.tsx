@@ -85,7 +85,7 @@ export function MetricsChart({
           title="No metrics datasource"
         >
           This cluster has no metrics backend registered, so there is no history to
-          read — the live meters are all KubeMG can show.
+          read — the live meters are all kubemg can show.
           {onConfigure ? (
             <span className="mt-3 block">
               <Button type="button" onClick={onConfigure}>
@@ -180,7 +180,7 @@ export function MetricsChart({
               differently, and there is no way to see that without the query. */}
           <details className="mt-3">
             <summary className="cursor-pointer text-center text-[12px] text-faint">
-              What KubeMG asked for
+              What kubemg asked for
             </summary>
             <pre className="mt-2 overflow-x-auto rounded-control border border-line bg-sunken p-2.5 font-mono text-[11.5px] text-muted">
               {result?.query}

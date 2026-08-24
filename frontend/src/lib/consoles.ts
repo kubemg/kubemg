@@ -27,7 +27,7 @@ export const CONSOLES: Record<ConsoleKind, ConsoleInfo> = {
   grafana: {
     label: 'Grafana',
     purpose:
-      'The dashboards behind the charts here. KubeMG draws a fixed catalogue; the moment a question outgrows it, this is where it is answered.',
+      'The dashboards behind the charts here. kubemg draws a fixed catalogue; the moment a question outgrows it, this is where it is answered.',
     placeholder: 'https://grafana.example.com',
     // Grafana's identifier is per *datasource* rather than per console — one
     // Grafana holds the metrics datasource and the logs one — so it is asked for
@@ -50,7 +50,7 @@ export const CONSOLES: Record<ConsoleKind, ConsoleInfo> = {
   registry: {
     label: 'Registry scanner',
     purpose:
-      'Where this cluster’s images are actually scanned for known vulnerabilities. KubeMG reads manifests, not image contents — this is a link to whatever already does that.',
+      'Where this cluster’s images are actually scanned for known vulnerabilities. kubemg reads manifests, not image contents — this is a link to whatever already does that.',
     placeholder: 'https://scanner.example.com',
     refLabel: null,
   },

@@ -137,10 +137,10 @@ export function PermissionsMatrix() {
           <Notice tone="warn">
             <strong className="font-semibold">
               {directClusters === clusters.length
-                ? 'These grants govern KubeMG, not the cluster.'
-                : `${directClusters} of these clusters use direct mode, where a grant governs KubeMG rather than the cluster.`}
+                ? 'These grants govern kubemg, not the cluster.'
+                : `${directClusters} of these clusters use direct mode, where a grant governs kubemg rather than the cluster.`}
             </strong>{' '}
-            In direct mode KubeMG issues a token but creates no RoleBinding, so a grant decides what
+            In direct mode kubemg issues a token but creates no RoleBinding, so a grant decides what
             someone sees here and what their kubeconfig claims. Agent-based clusters bind these roles
             for real, and the cluster&rsquo;s own RBAC decides.
           </Notice>
@@ -168,7 +168,7 @@ export function PermissionsMatrix() {
             console can show the other one, which it now can. */}
         {rbacCluster ? (
           <p className="text-[12.5px] leading-relaxed text-muted">
-            These grants govern KubeMG. On an agent cluster the substantive
+            These grants govern kubemg. On an agent cluster the substantive
             &ldquo;may they&rdquo; is the cluster&rsquo;s, decided by its own RBAC through
             impersonation —{' '}
             <Link

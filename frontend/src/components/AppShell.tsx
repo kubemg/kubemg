@@ -49,7 +49,7 @@ import { ClusterTree } from './ClusterTree'
 import { CommandPalette } from './CommandPalette'
 import type { CommandTarget } from './CommandPalette'
 import { LinkStatus } from './LinkStatus'
-import { Mark } from './Mark'
+import { Lockup, MarkChip } from './Mark'
 import { TimeRangeControl } from './TimeRangeControl'
 import { EnvironmentDot, EnvironmentTag, IconButton, KeyHint } from './primitives'
 
@@ -321,8 +321,8 @@ export function AppShell({
         <Link to="/" title="All clusters" className="grid h-14 w-full shrink-0 place-items-center">
           {/* The hit target matches a chip's; only the slot around it is taller,
               so the mark lands on the tree header's line. */}
-          <span className="grid size-10 place-items-center rounded-control text-accent transition-colors hover:bg-rail-raised">
-            <Mark className="size-6.5" />
+          <span className="grid size-10 place-items-center rounded-control transition-colors hover:bg-rail-raised">
+            <MarkChip className="size-7" />
           </span>
           <span className="sr-only">All clusters</span>
         </Link>
@@ -889,11 +889,7 @@ function MobileNav({
         className="relative flex h-full w-[19rem] max-w-[85%] flex-col border-r border-rail-line bg-rail"
       >
         <div className="flex h-14 shrink-0 items-center gap-2.5 px-4">
-          <Mark className="size-6.5 shrink-0 text-accent" />
-          <span className="text-[15px] font-semibold tracking-[-0.02em]">
-            <span className="text-rail-fg">Kube</span>
-            <span className="text-accent">MG</span>
-          </span>
+          <Lockup className="text-[15px] text-rail-fg" />
           <button
             type="button"
             onClick={onClose}

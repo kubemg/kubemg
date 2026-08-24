@@ -292,7 +292,7 @@ export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
       <Panel
         eyebrow="Alarms"
         title="What is worth sending"
-        description="Cluster events are read down the agent tunnel — nothing is polled until a cluster-event rule exists. Audit rules cover the half no cluster-side alerting can see: a request KubeMG refused never reached the API server, so no cluster has an event for it."
+        description="Cluster events are read down the agent tunnel — nothing is polled until a cluster-event rule exists. Audit rules cover the half no cluster-side alerting can see: a request kubemg refused never reached the API server, so no cluster has an event for it."
         bodyClassName="flex flex-col"
         actions={
           <Button
@@ -515,7 +515,7 @@ function ChannelSheet({
         <Field
           label="Endpoint URL"
           htmlFor="channel_url"
-          hint="Dialled from KubeMG, so it has to be reachable from here. An internal address is the usual case."
+          hint="Dialled from kubemg, so it has to be reachable from here. An internal address is the usual case."
         >
           <TextInput
             id="channel_url"
@@ -584,7 +584,7 @@ function ChannelSheet({
         <Field
           label="Extra headers"
           htmlFor="channel_headers"
-          hint={`Optional JSON object, for a SIEM's tenant id or an API version. Authorization and Content-Type are set by KubeMG and cannot be overridden here.`}
+          hint={`Optional JSON object, for a SIEM's tenant id or an API version. Authorization and Content-Type are set by kubemg and cannot be overridden here.`}
         >
           <TextArea
             id="channel_headers"
@@ -755,7 +755,7 @@ function RuleSheet({
               ? vocabulary.cluster_events_available
                 ? 'Kubernetes Events read down the agent tunnel, once a minute per cluster a rule covers.'
                 : 'This server has no proxy, so there is no tunnel to read cluster events down. A rule here would never fire.'
-              : 'KubeMG’s own audit records — including the refusals no cluster ever sees.'
+              : 'kubemg’s own audit records — including the refusals no cluster ever sees.'
           }
         >
           <Select
@@ -764,7 +764,7 @@ function RuleSheet({
             onChange={(event) => setTrigger(event.target.value as AlarmTrigger)}
           >
             <option value="cluster_event">Cluster events</option>
-            <option value="audit">KubeMG audit records</option>
+            <option value="audit">kubemg audit records</option>
           </Select>
         </Field>
 
@@ -859,7 +859,7 @@ function RuleSheet({
                 onChange={(event) => setDeniedOnly(event.target.checked)}
               />
               <span className="min-w-0">
-                <span className="text-[13px] text-fg">Only when KubeMG refused it</span>
+                <span className="text-[13px] text-fg">Only when kubemg refused it</span>
                 <span className="mt-0.5 block text-[12px] leading-snug text-muted">
                   A refused request never reached the API server, so no cluster-side alerting can
                   see it. This is the setting most audit rules want.
@@ -928,7 +928,7 @@ function RuleSheet({
 
         <p className="flex items-baseline gap-1.5 text-[12px] text-muted">
           <BellRing aria-hidden="true" className="size-3.5 translate-y-0.5 shrink-0" />
-          Use Test on the channel to prove the endpoint accepts KubeMG’s payload before relying on
+          Use Test on the channel to prove the endpoint accepts kubemg’s payload before relying on
           this rule.
         </p>
       </div>

@@ -199,7 +199,7 @@ export function ClusterManagement() {
                 </Link>
               }
             >
-              Registration walks through identity, how KubeMG reaches the cluster, the handshake,
+              Registration walks through identity, how kubemg reaches the cluster, the handshake,
               and who gets access.
             </EmptyState>
           ) : null}

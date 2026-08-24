@@ -126,7 +126,11 @@ const BUTTON_SIZE = {
 }
 
 const BUTTON_VARIANT = {
-  primary: 'bg-accent text-on-accent hover:bg-accent-hover',
+  /* Lime with ink on it, on both decks — the brand's one saturated moment, and
+     never white text. The hairline is `accent`, which is lime on the dark deck
+     and so invisible there, and the darkened lime on the light one, where the
+     fill sits at 1.25:1 against bone and cannot delimit itself. */
+  primary: 'border border-accent bg-accent-fill text-on-accent hover:bg-accent-fill-hover',
   secondary: 'border border-line bg-surface text-fg hover:border-faint/60 hover:bg-raised',
   ghost: 'text-muted hover:bg-raised hover:text-fg',
   danger: 'border border-danger/40 text-danger hover:bg-danger-soft hover:border-danger/70',

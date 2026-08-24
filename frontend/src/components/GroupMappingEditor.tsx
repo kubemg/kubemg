@@ -411,7 +411,7 @@ function MappingSheet({
       ) : null}
 
       <Field
-        label="KubeMG role"
+        label="kubemg role"
         htmlFor="mapping-system-role"
         hint="Leave unset to keep the provider's default. Setting it here makes administrator access revocable by removing someone from the directory group."
       >

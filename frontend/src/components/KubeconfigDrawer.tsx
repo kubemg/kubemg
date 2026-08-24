@@ -111,7 +111,7 @@ export function KubeconfigDrawer({
           straight at the API server, the other only ever reaches KubeMG. */}
       <Notice tone="info">
         {cluster.connection_mode === 'agent'
-          ? 'kubectl will talk to KubeMG, which replays each call down this cluster’s agent ' +
+          ? 'kubectl will talk to kubemg, which replays each call down this cluster’s agent ' +
             'tunnel as you. The cluster’s own RBAC decides what you may do, and every call is audited.'
           : 'kubectl will talk to this cluster’s API server directly, using a short-lived token ' +
             'minted on the cluster.'}
@@ -136,7 +136,7 @@ export function KubeconfigDrawer({
           <p className="text-[12px] text-muted">
             {cluster.connection_mode === 'agent'
               ? 'A long-lived file, but not long-lived access: every call re-reads your grant, so revoking it stops this kubeconfig at once.'
-              : 'This token is minted on the cluster and cannot be withdrawn before it expires — revoking access in KubeMG does not reach it. Keep the file somewhere a laptop backup will not.'}
+              : 'This token is minted on the cluster and cannot be withdrawn before it expires — revoking access in kubemg does not reach it. Keep the file somewhere a laptop backup will not.'}
           </p>
         ) : null}
       </div>

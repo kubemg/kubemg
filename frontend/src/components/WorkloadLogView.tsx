@@ -457,7 +457,7 @@ export function WorkloadLogView({
 
       {resolved?.truncated ? (
         <Notice tone="info">
-          This {label.toLowerCase()} has more pods than KubeMG lists at once, so the pods above are
+          This {label.toLowerCase()} has more pods than kubemg lists at once, so the pods above are
           the first of them.
         </Notice>
       ) : null}
