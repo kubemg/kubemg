@@ -40,8 +40,8 @@ type fakeStore struct {
 	groupAccess map[uint]map[uint]db.GroupClusterAccess // groupID -> clusterID -> grant
 	audit       []db.AuditEvent
 	// recordings stands in for the terminal_sessions table.
-	recordings  []db.TerminalSession
-	settings    map[string]string
+	recordings []db.TerminalSession
+	settings   map[string]string
 	// sources holds the observability datasources, keyed the way the table is:
 	// one per cluster per kind.
 	sources map[uint]map[string]db.ObservabilitySource
@@ -61,10 +61,10 @@ type fakeStore struct {
 	// leases stands in for the leases table: name -> holder. A background job's
 	// fake acquisition is decided from here, so a test can put a *different*
 	// holder in and assert the job stays put.
-	leases      map[string]string
-	leaseErr    error
-	leaseCalls  int
-	createErr   error
+	leases     map[string]string
+	leaseErr   error
+	leaseCalls int
+	createErr  error
 	// pruned records the cutoff of every retention pass, so a test can assert
 	// on the window the pruner chose rather than only on what survived.
 	pruned   []time.Time
@@ -982,7 +982,7 @@ func newTestEnvWith(t *testing.T, adjust func(*Options)) *testEnv {
 	}
 
 	return &testEnv{
-		router: NewRouter(opts),
+		router:   NewRouter(opts),
 		store:    store,
 		jwt:      manager,
 		tokens:   issuer,
@@ -1069,6 +1069,46 @@ func TestHealthCORSHeader(t *testing.T) {
 
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got == "" {
 		t.Fatal("expected Access-Control-Allow-Origin header to be set")
+	}
+}
+
+func TestSecurityHeadersOnEveryResponse(t *testing.T) {
+	env := newTestEnv(t)
+
+	rec := env.do(t, http.MethodGet, "/health", "", nil)
+
+	cases := map[string]string{
+		"Content-Security-Policy":      "default-src 'self'",
+		"X-Frame-Options":              "DENY",
+		"X-Content-Type-Options":       "nosniff",
+		"Referrer-Policy":              "same-origin",
+		"Cross-Origin-Opener-Policy":   "same-origin",
+		"Cross-Origin-Resource-Policy": "same-origin",
+	}
+	for header, wantPrefix := range cases {
+		got := rec.Header().Get(header)
+		if got == "" || !strings.Contains(got, wantPrefix) {
+			t.Errorf("%s = %q, want it to contain %q", header, got, wantPrefix)
+		}
+	}
+	if rec.Header().Get("Permissions-Policy") == "" {
+		t.Error("expected a Permissions-Policy header")
+	}
+	// TLS is off in this test env, so HSTS — a promise this process cannot back
+	// with plaintext — must not be sent.
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Errorf("expected no HSTS header without TLS, got %q", got)
+	}
+}
+
+func TestSecurityHeadersIncludeHSTSWhenTLSIsEnabled(t *testing.T) {
+	env := newTestEnvWith(t, func(o *Options) {
+		o.Deployment = Deployment{TLSEnabled: true}
+	})
+
+	rec := env.do(t, http.MethodGet, "/health", "", nil)
+	if got := rec.Header().Get("Strict-Transport-Security"); got == "" {
+		t.Error("expected an HSTS header when this process terminates TLS")
 	}
 }
 

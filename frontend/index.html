@@ -8,16 +8,10 @@
     <meta name="theme-color" content="#14161a" />
     <title>kubemg</title>
     <!-- The deck the operator chose is applied before first paint, so a light
-         deck never flashes dark on the way in. -->
-    <script>
-      try {
-        if (localStorage.getItem('kubemg.theme') === 'light') {
-          document.documentElement.dataset.theme = 'light'
-        }
-      } catch (error) {
-        /* Private browsing refuses storage; dark is the default anyway. */
-      }
-    </script>
+         deck never flashes dark on the way in. Kept as a same-origin file
+         rather than inline so script-src 'self' covers it with no
+         'unsafe-inline' exception — see public/theme-init.js. -->
+    <script src="/theme-init.js"></script>
     <link
       rel="preload"
       href="/fonts/archivo-latin.woff2"

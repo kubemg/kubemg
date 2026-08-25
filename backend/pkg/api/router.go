@@ -343,6 +343,7 @@ func NewRouter(opts Options) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(cors.New(corsConfig(opts.AllowedOrigins)))
+	router.Use(securityHeaders(opts.Deployment.TLSEnabled))
 
 	router.GET("/health", healthHandler)
 
@@ -949,4 +950,55 @@ func corsConfig(origins []string) cors.Config {
 
 func healthHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// contentSecurityPolicy is scoped to what the console actually loads: itself.
+// The console is served same-origin (see webui.Mount), fonts are vendored
+// rather than pulled from a CDN, and there is no third-party script or embed
+// anywhere in the app — so `'self'` covers every directive but one.
+// style-src needs 'unsafe-inline' because React's inline `style={{...}}`
+// (the hand-drawn charts, the meter bars) renders as inline style
+// attributes, which CSP gates independently of script-src; there is no
+// script equivalent, so script-src stays free of it. frame-ancestors 'none'
+// is the modern, CSP-based half of clickjacking protection and does not
+// depend on a browser's X-Frame-Options support.
+const contentSecurityPolicy = "" +
+	"default-src 'self'; " +
+	"script-src 'self'; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data:; " +
+	"font-src 'self'; " +
+	"connect-src 'self'; " +
+	"object-src 'none'; " +
+	"base-uri 'self'; " +
+	"form-action 'self'; " +
+	"frame-ancestors 'none'"
+
+// securityHeaders adds the response headers a DAST baseline scan checks for:
+// a CSP and an anti-clickjacking header (issue-tracked as missing), plus the
+// header-hygiene set that goes with them. It runs over every response,
+// including the console's own static assets served from webui.Mount and the
+// JSON API — a JSON body ignores CSP, but a browser error page rendering an
+// API response as HTML (some do, on a misconfigured proxy) should not get a
+// free pass either.
+//
+// HSTS is sent only when this process terminates TLS itself: advertising it
+// while serving plaintext would tell a browser to require HTTPS for a host
+// that cannot yet serve it, and the header is a no-op anyway when the
+// response that carried it did not arrive over HTTPS.
+func securityHeaders(tlsEnabled bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		h := c.Writer.Header()
+		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		h.Set("Cross-Origin-Resource-Policy", "same-origin")
+		if tlsEnabled {
+			h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		}
+		c.Next()
+	}
 }
