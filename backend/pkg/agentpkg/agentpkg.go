@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -77,6 +78,12 @@ type Options struct {
 	BastionCA string
 }
 
+// dns1123Label is what Kubernetes itself requires of a namespace name. It is
+// also what keeps the value inert everywhere it lands unquoted in the
+// rendered manifest: no character in this set can open a new YAML document,
+// a new mapping key, or a newline.
+var dns1123Label = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
+
 func (o Options) normalize() (Options, error) {
 	if strings.TrimSpace(o.BastionURL) == "" {
 		return o, fmt.Errorf("bastion URL is required to render an agent package")
@@ -92,8 +99,12 @@ func (o Options) normalize() (Options, error) {
 		// the agent something its parser rejects.
 		o.BastionCA += "\n"
 	}
+	o.Namespace = strings.TrimSpace(o.Namespace)
 	if o.Namespace == "" {
 		o.Namespace = DefaultNamespace
+	}
+	if !dns1123Label.MatchString(o.Namespace) {
+		return o, fmt.Errorf("agent namespace %q is not a valid DNS-1123 label", o.Namespace)
 	}
 	if o.Image == "" {
 		o.Image = DefaultImage
@@ -116,7 +127,10 @@ func Render(opts Options) (map[string]string, error) {
 	}
 
 	replacer := strings.NewReplacer(
-		placeholderNamespace, opts.Namespace,
+		// normalize() already restricts this to a DNS-1123 label, but it is
+		// quoted too, the same as every other value below, so the guarantee in
+		// the doc comment above holds even if that validation is ever loosened.
+		placeholderNamespace, quote(opts.Namespace),
 		placeholderBastion, quote(opts.BastionURL),
 		placeholderToken, quote(opts.ClusterToken),
 		placeholderImage, quote(opts.Image),
