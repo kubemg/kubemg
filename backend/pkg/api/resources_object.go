@@ -288,28 +288,8 @@ func (s *server) updateResourceObject(c *gin.Context) {
 		return
 	}
 
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxManifestBody)
-	var payload struct {
-		YAML string `json:"yaml"`
-	}
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "the manifest could not be read"})
-		return
-	}
-	if strings.TrimSpace(payload.YAML) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "the manifest is empty"})
-		return
-	}
-
-	document, err := yaml.YAMLToJSON([]byte(payload.YAML))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "this is not valid YAML: " + err.Error()})
-		return
-	}
-
-	var object map[string]any
-	if err := json.Unmarshal(document, &object); err != nil || object == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "a manifest has to be a single YAML object"})
+	object, ok := readManifestBody(c)
+	if !ok {
 		return
 	}
 
@@ -325,7 +305,7 @@ func (s *server) updateResourceObject(c *gin.Context) {
 	// managedFields describe who last wrote each field; sending them back is
 	// meaningless and the field is stripped from what the editor showed anyway.
 	stripManagedFields(object)
-	document, err = json.Marshal(object)
+	document, err := json.Marshal(object)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "the manifest could not be encoded"})
 		return
@@ -606,27 +586,8 @@ func (s *server) previewResourceObjectDiff(c *gin.Context) {
 		return
 	}
 
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxManifestBody)
-	var payload struct {
-		YAML string `json:"yaml"`
-	}
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "the manifest could not be read"})
-		return
-	}
-	if strings.TrimSpace(payload.YAML) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "the manifest is empty"})
-		return
-	}
-
-	document, err := yaml.YAMLToJSON([]byte(payload.YAML))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "this is not valid YAML: " + err.Error()})
-		return
-	}
-	var after map[string]any
-	if err := json.Unmarshal(document, &after); err != nil || after == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "a manifest has to be a single YAML object"})
+	after, ok := readManifestBody(c)
+	if !ok {
 		return
 	}
 	if _, reason := kind.writePath(after, namespace, name); reason != "" {
