@@ -88,6 +88,12 @@ type Config struct {
 	// refuses to send a bearer token over plain http, so kubectl cannot use the
 	// proxy at all without it.
 	TLS TLS
+	// AllowInsecureBind overrides the refusal to serve plaintext HTTP on a
+	// listener reachable from more than this machine. Without TLS, session
+	// JWTs transit unencrypted; a loopback bind (127.0.0.1, localhost) is still
+	// allowed without this, because nothing off-box can intercept it.
+	// `KUBEMG_ALLOW_INSECURE`.
+	AllowInsecureBind bool
 }
 
 // SessionRecording configures replay capture for exec and attach sessions.
@@ -203,6 +209,7 @@ func Load() Config {
 			Hosts:         envList("KUBEMG_TLS_HOSTS", nil),
 			AgentCABundle: env("KUBEMG_AGENT_CA_BUNDLE", ""),
 		},
+		AllowInsecureBind: envBool("KUBEMG_ALLOW_INSECURE", false),
 	}
 }
 
