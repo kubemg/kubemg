@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   Boxes,
   ChevronDown,
@@ -19,9 +19,11 @@ import {
   Waypoints,
 } from 'lucide-react'
 import { Link, NavLink, useSearchParams } from 'react-router'
-import type { Cluster } from '../api/types'
+import { fetchResourceCounts } from '../api/client'
+import type { Cluster, ResourceCount } from '../api/types'
 import type { ClusterPage } from '../lib/navigation'
 import { clusterPageHref, hasTunnel, pageNeedsTunnel, resourceHref } from '../lib/navigation'
+import { queryKey, useCachedQuery } from '../lib/query'
 import type {
   CategoryId,
   OperatorCategoryId,
@@ -29,7 +31,7 @@ import type {
   ResourceItem,
   ResourceKey,
 } from '../lib/resources'
-import { isOperatorCategory, matchesResource } from '../lib/resources'
+import { ALL_NAMESPACES, isOperatorCategory, matchesResource } from '../lib/resources'
 
 /**
  * ClusterTree is the console's second level of navigation: everything in the
@@ -141,6 +143,58 @@ function buildGroups(categories: ResourceCategory[]): Group[] {
   ]
 }
 
+/*
+ * The numbers beside the rows.
+ *
+ * A count is read at limit=1 on the server, so what it costs does not grow with
+ * the cluster — but it is still a real impersonated LIST per kind, landing in the
+ * audit trail and served from etcd rather than the API server's watch cache. Two
+ * rules follow, and they are the whole reason this is not simply another live
+ * read:
+ *
+ *   - **Only what is open.** A collapsed section asks for nothing. Discovered
+ *     operator sections and the RBAC and CRD groups start collapsed, so a cluster
+ *     with forty CRDs costs the same as one with none until somebody opens them.
+ *   - **Never on a tick.** These do not go through the live machinery. A number
+ *     beside a nav row is not what anybody has this console open to watch, and
+ *     re-reading thirty kinds every fifteen seconds for as long as a tab is open
+ *     is the load pattern the whole counting approach exists to avoid. They are
+ *     read when the question changes — the cluster, the namespace, which sections
+ *     are open — and otherwise left alone.
+ *
+ * A failed batch is silence, not an error: the tree's job is navigation, and a
+ * column of numbers must never become the thing that reports a problem.
+ */
+
+/**
+ * The keys worth asking about. A Helm release is a labelled Secret rather than a
+ * kind the API server counts, so it is left out rather than asked for and
+ * refused — the row simply carries no number.
+ */
+function countableKeys(groups: Group[], open: (group: Group) => boolean): string[] {
+  const keys: string[] = []
+  for (const group of groups) {
+    if (!open(group)) continue
+    for (const row of group.rows) {
+      if (row.kind !== 'resource') continue
+      if (row.item.key === 'helmreleases') continue
+      keys.push(row.item.key)
+    }
+  }
+  return keys
+}
+
+/**
+ * What a count reads as on a row. A kind the caller may not list, one the
+ * cluster does not serve, or a total the cluster would not report all come back
+ * without a number, and all three draw as nothing: a nav column has no room to
+ * explain itself, and a guess in place of a blank would be worse than either.
+ */
+function countLabel(entry: ResourceCount | undefined): string | null {
+  if (!entry?.available || entry.count === undefined) return null
+  return entry.count.toLocaleString()
+}
+
 /** Whether a row can be opened at all, which without a tunnel is most of them. */
 function rowIsLive(row: Row, live: boolean): boolean {
   if (live) return true
@@ -199,6 +253,55 @@ export function ClusterTree({
     [groups, needle],
   )
 
+  // Whether a section is showing its rows: the operator's own toggle if they
+  // made one, otherwise the group's default, and always open under a filter.
+  const isOpen = useCallback(
+    (group: Group) => {
+      if (needle !== '') return true
+      const holdsSelection = group.rows.some(
+        (row) => row.kind === 'resource' && row.item.key === selected,
+      )
+      return !(collapsed[group.id] ?? (group.collapsed && !holdsSelection))
+    },
+    [collapsed, needle, selected],
+  )
+
+  // The namespace travels in the address, and with none named the tree is asking
+  // about the whole cluster rather than about nothing.
+  const namespace = searchParams.get('ns') || ALL_NAMESPACES
+
+  /*
+   * Which counts to ask for is decided from the sections' own state and
+   * deliberately *not* from the filter, even though a filter opens every section
+   * on screen. Two reasons, and the first is the important one: the filter
+   * changes on every keystroke, so counting what it reveals would put a batch of
+   * reads against the cluster behind each letter typed. The second is that a
+   * filter is a way of finding a row, not of asking how many of everything there
+   * are — the numbers already on screen stay, and a section opened only by a
+   * search shows its rows without them.
+   */
+  const keys = useMemo(
+    () =>
+      countableKeys(groups, (group) => {
+        const holdsSelection = group.rows.some(
+          (row) => row.kind === 'resource' && row.item.key === selected,
+        )
+        return !(collapsed[group.id] ?? (group.collapsed && !holdsSelection))
+      }),
+    [groups, collapsed, selected],
+  )
+
+  const counts = useCachedQuery<Record<string, ResourceCount>>(
+    // Without a tunnel there is nothing to count; a null key is what keeps the
+    // read from being made at all rather than made and refused.
+    live && keys.length > 0
+      ? queryKey('counts', cluster.id, namespace, [...keys].sort().join(','))
+      : null,
+    () => fetchResourceCounts(cluster.id, keys, namespace),
+    // Deliberately not live — see the note above countableKeys.
+  )
+  const countOf = counts.data ?? {}
+
   return (
     <div className="flex min-h-0 flex-col">
       <div className="relative mb-2">
@@ -239,7 +342,7 @@ export function ClusterTree({
           const shut = stored ?? (group.collapsed && !holdsSelection)
           // A filter opens everything: a search that skipped a closed section
           // would be lying about what the cluster has.
-          const open = needle !== '' || !shut
+          const open = isOpen(group)
 
           return (
             <div key={group.id} className="mb-1">
@@ -272,6 +375,9 @@ export function ClusterTree({
                         search={search}
                         selected={selected}
                         live={rowIsLive(row, live)}
+                        count={
+                          row.kind === 'resource' ? countLabel(countOf[row.item.key]) : null
+                        }
                       />
                     </li>
                   ))}
@@ -305,12 +411,15 @@ function TreeRow({
   search,
   selected,
   live,
+  count,
 }: {
   row: Row
   cluster: Cluster
   search: string
   selected: ResourceKey | null
   live: boolean
+  /** How many the cluster holds, or null where that is not known. */
+  count: string | null
 }) {
   // A row that cannot be opened is drawn rather than removed, and says so to a
   // screen reader as well as to the eye. A link that only ever answers "this
@@ -354,6 +463,16 @@ function TreeRow({
     >
       {active ? <Marker /> : null}
       <span className="min-w-0 flex-1 truncate">{row.label}</span>
+      {/* The count reads before the scope word: it is the thing the eye is
+          scanning the column for, and it is data, so it is mono like every
+          other number in the console. A row with no count draws nothing — the
+          space simply stays empty rather than holding a placeholder that would
+          read as a zero. */}
+      {count === null ? null : (
+        <span className="shrink-0 font-mono text-[11px] text-rail-muted tabular-nums">
+          {count}
+        </span>
+      )}
       {/* Cluster-scoped lists ignore the namespace picker; saying so here is
           why it disappears. */}
       {row.item.scope === 'cluster' ? (
