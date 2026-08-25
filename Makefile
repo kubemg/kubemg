@@ -7,13 +7,13 @@ NODE_IMAGE ?= node:22-alpine
 # these under its own host and needs to retag them without editing the Makefile.
 REGISTRY ?= ghcr.io/kubemg
 
-AGENT_VERSION ?= 0.5.0
+AGENT_VERSION ?= 0.6.0
 AGENT_REPO    ?= $(REGISTRY)/kubemg-agent
 AGENT_IMAGE   ?= $(AGENT_REPO):$(AGENT_VERSION)
 
 # The management plane ships as one image — console embedded in the server
 # binary. See the root Dockerfile for why one rather than two.
-KUBEMG_VERSION ?= 0.5.0
+KUBEMG_VERSION ?= 0.6.0
 KUBEMG_REPO    ?= $(REGISTRY)/kubemg
 KUBEMG_IMAGE   ?= $(KUBEMG_REPO):$(KUBEMG_VERSION)
 
