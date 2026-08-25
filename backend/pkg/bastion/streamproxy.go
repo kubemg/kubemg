@@ -10,20 +10,42 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// clientUpgrader accepts the browser terminal's WebSocket, and kubectl's for an
-// exec or a port-forward.
+// newClientUpgrader builds the upgrader that accepts the browser terminal's
+// WebSocket, and kubectl's for an exec or a port-forward.
 //
 // It deliberately declares no Subprotocols of its own: the subprotocol the
 // client is told is the one the *cluster* agreed to, echoed through the
 // response header. Letting the upgrader choose independently would let this end
 // answer v5 while the API server is speaking v4, and the two framings differ.
-var clientUpgrader = websocket.Upgrader{
-	HandshakeTimeout: 15 * time.Second,
-	ReadBufferSize:   32 << 10,
-	WriteBufferSize:  32 << 10,
-	// The caller is already authenticated by JWT before reaching here; there is
-	// no cookie to protect, so origin is not the control that matters.
-	CheckOrigin: func(*http.Request) bool { return true },
+//
+// CheckOrigin is built per-Proxy rather than shared as a package var, because
+// only the proxy knows this server's configured origins. The caller is already
+// authenticated by JWT before reaching here, so origin is not the primary
+// control — but leaving it unchecked drops a defense-in-depth layer that
+// matters most precisely when the JWT arrived over a query string (see
+// auth.QueryTokenParam) rather than a header. A request with no Origin header
+// at all is let through unconditionally: every non-browser caller (kubectl
+// exec, kubectl port-forward) sends none, only a browser does on a
+// cross-origin upgrade.
+func newClientUpgrader(allowedOrigins []string) websocket.Upgrader {
+	return websocket.Upgrader{
+		HandshakeTimeout: 15 * time.Second,
+		ReadBufferSize:   32 << 10,
+		WriteBufferSize:  32 << 10,
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				return true
+			}
+			if len(allowedOrigins) == 0 {
+				// Nothing configured to check against — the state every caller
+				// before this option existed, and every test env not wiring one,
+				// is in.
+				return true
+			}
+			return originAllowed(allowedOrigins, origin)
+		},
+	}
 }
 
 // ChannelSubprotocols are the Kubernetes exec/attach channel protocols, newest
@@ -168,7 +190,7 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 	if head.Subprotocol != "" {
 		responseHeader.Set("Sec-WebSocket-Protocol", head.Subprotocol)
 	}
-	conn, err := clientUpgrader.Upgrade(c.Writer, c.Request, responseHeader)
+	conn, err := p.clientUpgrader.Upgrade(c.Writer, c.Request, responseHeader)
 	if err != nil {
 		stream.Close(err)
 		return

@@ -148,12 +148,14 @@ func main() {
 	})
 
 	proxy := bastion.NewProxy(bastion.ProxyOptions{
-		Store:    store,
-		Registry: gateway.Registry(),
-		Auditor:  auditor,
-		Recorder: recorder,
-		Policy:   policy,
-		Guard:    guard,
+		Store:          store,
+		Registry:       gateway.Registry(),
+		Auditor:        auditor,
+		Recorder:       recorder,
+		Policy:         policy,
+		Guard:          guard,
+		AllowedOrigins: cfg.AllowedOrigins,
+		PublicURL:      cfg.PublicURL,
 	})
 
 	// TLS is resolved before the router is built: an agent's install package
