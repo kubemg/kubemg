@@ -1099,6 +1099,31 @@ export async function updateResourceYaml(
 }
 
 /**
+ * createResourceObject posts a manifest to the collection its kind is served
+ * by — `kubectl create -f`, addressed by the same sidebar key as every other
+ * resource call, so the browser still never names an API path. There is no
+ * name in the address because there is no object yet: the manifest declares it,
+ * or carries a `generateName` and lets the cluster decide.
+ *
+ * The namespace *is* in the address, and is the only place it belongs: it is
+ * checked against the caller's grant exactly as a read's is, and a manifest that
+ * names a different one is refused rather than quietly redirected.
+ */
+export async function createResourceObject(
+  clusterId: number,
+  kind: ResourceKey,
+  namespace: string | undefined,
+  yaml: string,
+): Promise<ResourceManifest> {
+  const { data } = await http.post<ResourceManifest>(
+    resourceURL(clusterId, 'object'),
+    { yaml },
+    { params: { kind, namespace: namespace || undefined } },
+  )
+  return data
+}
+
+/**
  * previewResourceObjectDiff answers what a manifest would change against the
  * cluster's current object, without writing anything. It is a fresh read
  * every time — not the object the editor opened on — because the confirmation

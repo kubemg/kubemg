@@ -4,6 +4,7 @@ import { AlertTriangle, ChevronRight, KeyRound, Layers, RefreshCw, Timer } from 
 import { checkCluster, errorMessage, fetchCluster, fetchNodeMetrics } from '../api/client'
 import type { Cluster, NodeMetrics } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { ClusterWorkloadSummary } from '../components/ClusterWorkloadSummary'
 import { ConsolesPanel } from '../components/ConsolesPanel'
 import { DatasourcePanel } from '../components/DatasourcePanel'
 import { MetricComparison } from '../components/MetricComparison'
@@ -105,6 +106,23 @@ export function ClusterSummary() {
   }
 
   const viaAgent = cluster?.connection_mode === 'agent'
+  const username = user?.username ?? 'you'
+  /*
+   * Which dashboard this is.
+   *
+   * The two views answer to two jobs rather than to two privilege levels — but
+   * the privilege is what says which job somebody is here to do. An
+   * administrator is the person who registered this cluster and who acts on its
+   * connection, its version and its capacity; everybody else is here to find out
+   * whether what they deployed is running. So the role picks the body, and the
+   * shell around it — the actions, the kubeconfig, the access request — is the
+   * same for both, because those are things either of them came to do.
+   *
+   * It reads the coarse role rather than `system_role`: a super admin is an
+   * administrator here, and this is the same reading every other admin-gated
+   * surface in the console takes.
+   */
+  const admin = user?.role === 'admin'
 
   return (
     // The cluster's name is the switcher beside this, so the heading names the
@@ -130,7 +148,7 @@ export function ClusterSummary() {
               <Timer aria-hidden="true" className="size-4" />
               Request access
             </Button>
-            {user?.role === 'admin' ? (
+            {admin ? (
               <Button onClick={check} disabled={checking}>
                 <RefreshCw
                   aria-hidden="true"
@@ -169,176 +187,11 @@ export function ClusterSummary() {
         {query.loading ? <CardSkeleton lines={4} label="Loading this cluster" /> : null}
 
         {cluster ? (
-          <>
-            <section className="card p-5">
-              <div className="flex flex-wrap items-center gap-3">
-                <h2 className="font-mono text-[22px] font-semibold tracking-[-0.01em] text-fg">
-                  {cluster.name}
-                </h2>
-                <EnvironmentTag environment={cluster.environment} />
-                <ClusterState cluster={cluster} />
-                <span className="ml-auto text-[12.5px] text-muted">
-                  checked {relativeAge(cluster.last_checked_at)}
-                </span>
-              </div>
-
-              {cluster.description ? (
-                <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-muted">
-                  {cluster.description}
-                </p>
-              ) : null}
-
-              {/* The path traffic actually takes, said once, at the top of the
-                  cluster it belongs to. Three nodes and what happens between
-                  them — the order of the row is the direction of travel, so
-                  there is nothing left for a drawn line to add. */}
-              <div className="mt-5 flex flex-col gap-3 rounded-card border border-line-soft bg-raised/50 p-4 sm:flex-row sm:items-end sm:gap-4">
-                <PathNode
-                  label="Cluster"
-                  value={cluster.name}
-                  tone={cluster.status === 'healthy' ? 'ok' : 'idle'}
-                />
-                <PathHop
-                  state={linkState(cluster)}
-                  caption={
-                    viaAgent
-                      ? cluster.agent_attached
-                        ? 'outbound tunnel · open'
-                        : 'outbound tunnel · not connected'
-                      : 'kubemg dials the API server'
-                  }
-                />
-                <PathNode
-                  label="kubemg"
-                  value={viaAgent ? 'bastion proxy' : 'token issuer'}
-                  tone="accent"
-                />
-                <PathHop
-                  state={viaAgent ? 'live' : 'direct'}
-                  label={viaAgent ? 'Proxied' : 'Kubeconfig'}
-                  caption={viaAgent ? 'proxied · audited' : 'kubeconfig · not proxied'}
-                />
-                <PathNode label="You" value={user?.username ?? 'you'} />
-              </div>
-
-              <div className="mt-5 border-t border-line-soft pt-4">
-                <DetailList
-                  columns={2}
-                  rows={[
-                    { term: 'API server', value: cluster.api_url || 'via agent tunnel' },
-                    { term: 'Kubernetes', value: cluster.kubernetes_version ?? 'unknown' },
-                    {
-                      term: viaAgent ? 'Agent' : 'Connection',
-                      value: viaAgent
-                        ? (cluster.agent_version ?? 'not seen yet')
-                        : 'direct API access',
-                    },
-                    {
-                      term: 'Registered',
-                      value: new Date(cluster.created_at).toLocaleString(),
-                    },
-                  ]}
-                />
-              </div>
-            </section>
-
-            {cluster.status === 'unhealthy' && cluster.status_message ? (
-              <Notice tone="error">{cluster.status_message}</Notice>
-            ) : null}
-
-            {/* Capacity only exists for a cluster KubeMG can actually read
-                through, which is the agent path. */}
-            {viaAgent ? <Capacity cluster={cluster} /> : null}
-
-            {/* Capacity above is a live sample and nothing more; this is where
-                the history behind it comes from, wired per cluster. */}
-            <DatasourcePanel cluster={cluster} />
-
-            {/* And where the questions this console does not answer are
-                answered. It sits under the datasource because that is what most
-                of it is derived from — and it is a link rather than an embed on
-                purpose: KubeMG stores no session for another tool. */}
-            <ConsolesPanel cluster={cluster} />
-
-            {/* And this is that history, once there is somewhere to read it
-                from. It sits directly under the datasource that answers it, so
-                a chart that says "no datasource" is next to the form that fixes
-                that rather than on some other page. */}
-            {viaAgent ? (
-              <section className="flex flex-col gap-3">
-                <MetricsChart
-                  cluster={cluster}
-                  title="Cluster CPU"
-                  metric="cluster_cpu"
-                />
-                <MetricsChart
-                  cluster={cluster}
-                  title="Cluster memory"
-                  metric="cluster_memory"
-                />
-                {/* The charts say what shape the cluster is in. This says what
-                    is worst inside it and whether that is new, which is the
-                    question somebody opening a cluster page arrived with — and
-                    it is a table because reading a rank off a chart with forty
-                    lines is not reading. */}
-                <MetricComparison cluster={cluster} kinds={CLUSTER_READINGS} />
-              </section>
-            ) : null}
-
-            <AccessPath cluster={cluster} username={user?.username ?? 'you'} />
-
-            {viaAgent ? (
-              <Panel
-                title="How this cluster is reached"
-                eyebrow="Agent mode"
-                bodyClassName="p-4"
-              >
-                <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
-                  An agent inside this cluster holds an outbound tunnel to kubemg, and every proxied
-                  call is replayed under your own identity using Kubernetes impersonation. The
-                  cluster&rsquo;s own RBAC decides what that identity may do — the grant above decides
-                  which cluster and namespaces kubemg will carry you to. Every call is written to the
-                  audit trail.
-                </p>
-                {/* "The cluster decides" is only honest if the console can show
-                    what the cluster decided. This is that view. */}
-                <p className="mt-3 max-w-3xl text-[13px] leading-relaxed text-muted">
-                  <Link
-                    to={`/clusters/${cluster.id}/explore/clusterroles`}
-                    className="text-accent hover:underline"
-                  >
-                    Read this cluster&rsquo;s own RBAC
-                  </Link>{' '}
-                  to see the Roles and bindings behind that, and to ask the cluster directly whether
-                  an identity may do something.
-                </p>
-                {/* Privileged containers, hostPath mounts and the rest are
-                    fields these same reads already carry — this is where
-                    they are turned into a ranked list rather than left for
-                    someone to notice by eye. */}
-                <p className="mt-3 max-w-3xl text-[13px] leading-relaxed text-muted">
-                  <Link to={`/clusters/${cluster.id}/security`} className="text-accent hover:underline">
-                    Check this cluster&rsquo;s workload security posture
-                  </Link>{' '}
-                  for privileged containers, hostPath mounts, missing NetworkPolicies and the rest —
-                  read from these same manifests, not a scan of your images.
-                </p>
-              </Panel>
-            ) : (
-              <Panel
-                title="What a kubeconfig for this cluster does"
-                eyebrow="Direct mode"
-                bodyClassName="p-4"
-              >
-                <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
-                  kubemg issues a short-lived token for this cluster&rsquo;s kubemg service account
-                  through the Kubernetes TokenRequest API. It creates no RoleBinding, so the grant
-                  above decides what you see in kubemg — not what the cluster lets you do. Register
-                  the cluster in agent mode to have kubemg bind these roles for real.
-                </p>
-              </Panel>
-            )}
-          </>
+          admin ? (
+            <AdminDashboard cluster={cluster} username={username} />
+          ) : (
+            <WorkloadDashboard cluster={cluster} username={username} />
+          )
         ) : null}
       </div>
 
@@ -357,6 +210,279 @@ export function ClusterSummary() {
         />
       ) : null}
     </AppShell>
+  )
+}
+
+/**
+ * The administrator's dashboard: this cluster as an installation.
+ *
+ * Everything here is a fact about the *connection* — the path traffic takes,
+ * which API server it is, what its agent runs, what its nodes are consuming,
+ * where its history is stored — and every one of them is something an
+ * administrator can act on. That is exactly why it is not what a developer is
+ * shown: see WorkloadDashboard below.
+ */
+function AdminDashboard({ cluster, username }: { cluster: Cluster; username: string }) {
+  const viaAgent = cluster.connection_mode === 'agent'
+
+  return (
+    <>
+      <section className="card p-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="font-mono text-[22px] font-semibold tracking-[-0.01em] text-fg">
+            {cluster.name}
+          </h2>
+          <EnvironmentTag environment={cluster.environment} />
+          <ClusterState cluster={cluster} />
+          <span className="ml-auto text-[12.5px] text-muted">
+            checked {relativeAge(cluster.last_checked_at)}
+          </span>
+        </div>
+
+        {cluster.description ? (
+          <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-muted">
+            {cluster.description}
+          </p>
+        ) : null}
+
+        {/* The path traffic actually takes, said once, at the top of the
+            cluster it belongs to. Three nodes and what happens between
+            them — the order of the row is the direction of travel, so
+            there is nothing left for a drawn line to add. */}
+        <div className="mt-5 flex flex-col gap-3 rounded-card border border-line-soft bg-raised/50 p-4 sm:flex-row sm:items-end sm:gap-4">
+          <PathNode
+            label="Cluster"
+            value={cluster.name}
+            tone={cluster.status === 'healthy' ? 'ok' : 'idle'}
+          />
+          <PathHop
+            state={linkState(cluster)}
+            caption={
+              viaAgent
+                ? cluster.agent_attached
+                  ? 'outbound tunnel · open'
+                  : 'outbound tunnel · not connected'
+                : 'kubemg dials the API server'
+            }
+          />
+          <PathNode
+            label="kubemg"
+            value={viaAgent ? 'bastion proxy' : 'token issuer'}
+            tone="accent"
+          />
+          <PathHop
+            state={viaAgent ? 'live' : 'direct'}
+            label={viaAgent ? 'Proxied' : 'Kubeconfig'}
+            caption={viaAgent ? 'proxied · audited' : 'kubeconfig · not proxied'}
+          />
+          <PathNode label="You" value={username} />
+        </div>
+
+        <div className="mt-5 border-t border-line-soft pt-4">
+          <DetailList
+            columns={2}
+            rows={[
+              { term: 'API server', value: cluster.api_url || 'via agent tunnel' },
+              { term: 'Kubernetes', value: cluster.kubernetes_version ?? 'unknown' },
+              {
+                term: viaAgent ? 'Agent' : 'Connection',
+                value: viaAgent
+                  ? (cluster.agent_version ?? 'not seen yet')
+                  : 'direct API access',
+              },
+              {
+                term: 'Registered',
+                value: new Date(cluster.created_at).toLocaleString(),
+              },
+            ]}
+          />
+        </div>
+      </section>
+
+      {cluster.status === 'unhealthy' && cluster.status_message ? (
+        <Notice tone="error">{cluster.status_message}</Notice>
+      ) : null}
+
+      {/* Capacity only exists for a cluster KubeMG can actually read
+          through, which is the agent path. */}
+      {viaAgent ? <Capacity cluster={cluster} /> : null}
+
+      {/* Capacity above is a live sample and nothing more; this is where
+          the history behind it comes from, wired per cluster. */}
+      <DatasourcePanel cluster={cluster} />
+
+      {/* And where the questions this console does not answer are
+          answered. It sits under the datasource because that is what most
+          of it is derived from — and it is a link rather than an embed on
+          purpose: KubeMG stores no session for another tool. */}
+      <ConsolesPanel cluster={cluster} />
+
+      {/* And this is that history, once there is somewhere to read it
+          from. It sits directly under the datasource that answers it, so
+          a chart that says "no datasource" is next to the form that fixes
+          that rather than on some other page. */}
+      {viaAgent ? (
+        <section className="flex flex-col gap-3">
+          <MetricsChart
+            cluster={cluster}
+            title="Cluster CPU"
+            metric="cluster_cpu"
+          />
+          <MetricsChart
+            cluster={cluster}
+            title="Cluster memory"
+            metric="cluster_memory"
+          />
+          {/* The charts say what shape the cluster is in. This says what
+              is worst inside it and whether that is new, which is the
+              question somebody opening a cluster page arrived with — and
+              it is a table because reading a rank off a chart with forty
+              lines is not reading. */}
+          <MetricComparison cluster={cluster} kinds={CLUSTER_READINGS} />
+        </section>
+      ) : null}
+
+      <AccessPath cluster={cluster} username={username} />
+
+      {viaAgent ? (
+        <Panel
+          title="How this cluster is reached"
+          eyebrow="Agent mode"
+          bodyClassName="p-4"
+        >
+          <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
+            An agent inside this cluster holds an outbound tunnel to kubemg, and every proxied
+            call is replayed under your own identity using Kubernetes impersonation. The
+            cluster&rsquo;s own RBAC decides what that identity may do — the grant above decides
+            which cluster and namespaces kubemg will carry you to. Every call is written to the
+            audit trail.
+          </p>
+          {/* "The cluster decides" is only honest if the console can show
+              what the cluster decided. This is that view. */}
+          <p className="mt-3 max-w-3xl text-[13px] leading-relaxed text-muted">
+            <Link
+              to={`/clusters/${cluster.id}/explore/clusterroles`}
+              className="text-accent hover:underline"
+            >
+              Read this cluster&rsquo;s own RBAC
+            </Link>{' '}
+            to see the Roles and bindings behind that, and to ask the cluster directly whether
+            an identity may do something.
+          </p>
+          {/* Privileged containers, hostPath mounts and the rest are
+              fields these same reads already carry — this is where
+              they are turned into a ranked list rather than left for
+              someone to notice by eye. */}
+          <p className="mt-3 max-w-3xl text-[13px] leading-relaxed text-muted">
+            <Link to={`/clusters/${cluster.id}/security`} className="text-accent hover:underline">
+              Check this cluster&rsquo;s workload security posture
+            </Link>{' '}
+            for privileged containers, hostPath mounts, missing NetworkPolicies and the rest —
+            read from these same manifests, not a scan of your images.
+          </p>
+        </Panel>
+      ) : (
+        <Panel
+          title="What a kubeconfig for this cluster does"
+          eyebrow="Direct mode"
+          bodyClassName="p-4"
+        >
+          <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
+            kubemg issues a short-lived token for this cluster&rsquo;s kubemg service account
+            through the Kubernetes TokenRequest API. It creates no RoleBinding, so the grant
+            above decides what you see in kubemg — not what the cluster lets you do. Register
+            the cluster in agent mode to have kubemg bind these roles for real.
+          </p>
+        </Panel>
+      )}
+    </>
+  )
+}
+
+/**
+ * What a developer's dashboard is instead: what is running, what is wrong, and
+ * how much of the namespace it is using. The identity card above it keeps only
+ * the facts that decide what they can do — the version they are talking to and
+ * the grant they hold — and the connection's own mechanics are left to the
+ * administrator's view rather than repeated here as prose nobody can act on.
+ */
+function WorkloadDashboard({ cluster, username }: { cluster: Cluster; username: string }) {
+  const viaAgent = cluster.connection_mode === 'agent'
+
+  return (
+    <>
+      <section className="card p-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="font-mono text-[22px] font-semibold tracking-[-0.01em] text-fg">
+            {cluster.name}
+          </h2>
+          <EnvironmentTag environment={cluster.environment} />
+          <ClusterState cluster={cluster} />
+          <span className="ml-auto text-[12.5px] text-muted">
+            checked {relativeAge(cluster.last_checked_at)}
+          </span>
+        </div>
+
+        {cluster.description ? (
+          <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-muted">
+            {cluster.description}
+          </p>
+        ) : null}
+
+        <div className="mt-5 border-t border-line-soft pt-4">
+          <DetailList
+            columns={2}
+            rows={[
+              { term: 'Kubernetes', value: cluster.kubernetes_version ?? 'unknown' },
+              { term: 'Your role', value: cluster.k8s_role },
+              {
+                term: 'Namespaces',
+                value:
+                  cluster.namespaces.length > 0
+                    ? cluster.namespaces.join(', ')
+                    : 'every namespace',
+              },
+              {
+                term: 'Every call',
+                value: viaAgent ? 'proxied and audited' : 'kubeconfig, not proxied',
+              },
+            ]}
+          />
+        </div>
+      </section>
+
+      {cluster.status === 'unhealthy' && cluster.status_message ? (
+        <Notice tone="error">{cluster.status_message}</Notice>
+      ) : null}
+
+      <ClusterWorkloadSummary cluster={cluster} />
+
+      {/* The questions this console does not answer, where the cluster says
+          they are answered. A link rather than an embed, as everywhere. */}
+      <ConsolesPanel cluster={cluster} />
+
+      {/* And where their own access stops, which is the one piece of the
+          connection's story a developer does act on — it is what a request for
+          more access is written against. */}
+      <AccessPath cluster={cluster} username={username} />
+
+      {/* The one piece of the administrator's prose that is kept here, because
+          this page offers the kubeconfig and a direct-mode file does not mean
+          what the chain above it appears to say. */}
+      {viaAgent ? null : (
+        <Panel
+          title="What a kubeconfig for this cluster does"
+          eyebrow="Direct mode"
+          bodyClassName="p-4"
+        >
+          <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
+            kubemg issues a short-lived token for this cluster&rsquo;s kubemg service account. It
+            creates no RoleBinding, so the grant above decides what you see in kubemg — not what
+            the cluster lets you do, and calls made with that file are not proxied or audited here.
+          </p>
+        </Panel>
+      )}
+    </>
   )
 }
 
