@@ -203,6 +203,16 @@ func TestAuditSummary(t *testing.T) {
 	}
 }
 
+func TestAuditSummaryRefusesNonAdmin(t *testing.T) {
+	env := newTestEnv(t)
+	viewer := env.store.addUser("viewer", "pw", db.RoleUser)
+
+	rec := env.do(t, http.MethodGet, "/api/v1/audit/summary", env.tokenFor(t, viewer), nil)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("a non-admin should not see fleet-wide summary counts, got status %d", rec.Code)
+	}
+}
+
 func TestAuditFiltersByAVerbSet(t *testing.T) {
 	env := newTestEnv(t)
 	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
