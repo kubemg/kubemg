@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 216" width="880" height="216" role="img" aria-label="Explore's pilot header: 34 pods, 29 running, 3 not ready, 2 failed, 1.4 cores and 6 GiB in use, with named alerts for payments-api-7f9 in CrashLoopBackOff and ledger-worker-2 OOMKilled.">
   <style>
-    .s { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .s { font-family: 'Commit Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .n { font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; }
     .l { font-size: 10px; font-weight: 600; letter-spacing: 1.7px; }
     .b { font-size: 13px; }

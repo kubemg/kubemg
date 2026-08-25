@@ -56,5 +56,5 @@ dependencies are, in full:
 
   Bundled assets (frontend/public/fonts, self-hosted woff2)
     Inter                                                        SIL Open Font License 1.1
-    JetBrains Mono                                               SIL Open Font License 1.1
+    Commit Mono                                                  SIL Open Font License 1.1
     Both licence texts sit beside the font files, as the OFL requires.

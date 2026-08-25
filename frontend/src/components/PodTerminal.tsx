@@ -106,7 +106,7 @@ export function PodTerminal({
     setDetail(null)
 
     const term = new Terminal({
-      fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+      fontFamily: '"Commit Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
       fontSize: 12.5,
       lineHeight: 1.35,
       cursorBlink: true,

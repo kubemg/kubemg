@@ -130,7 +130,7 @@ export function TerminalSessionPlayer({
     if (!element || !cast || view !== 'terminal') return
 
     const emulator = new Terminal({
-      fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+      fontFamily: '"Commit Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
       fontSize: 12.5,
       lineHeight: 1.35,
       convertEol: true,
