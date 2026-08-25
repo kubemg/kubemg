@@ -30,9 +30,18 @@ export interface User {
    * only a super admin may grant it.
    */
   can_view_recordings: boolean
+  /**
+   * Whether this row is a person or a machine. A machine account — a CI
+   * pipeline's release stage, a release bot — is a User because every grant,
+   * every namespace scope and the audit trail are keyed on a user id; what
+   * differs is that it holds no password and can never be an administrator.
+   */
+  account_type: AccountType
   last_login_at?: string
   created_at: string
 }
+
+export type AccountType = 'user' | 'service'
 
 /** `local`, or the federation protocol that authenticates the account. */
 export type AuthSource = 'local' | SSOProtocol
@@ -52,6 +61,69 @@ export interface UserPatch {
   password?: string
   system_role?: SystemRole
   can_view_recordings?: boolean
+}
+
+/** A machine account as the console lists it: the account, what it can reach,
+    and enough about its credentials to decide whether it is still in use. */
+export interface MachineAccount extends User {
+  token_count: number
+  active_tokens: number
+  /** The newest use across every credential the account holds. It is what
+      replaces an expiry as a control for a token that has none. */
+  last_used_at?: string
+  access: MachineAccountAccess[]
+}
+
+export interface MachineAccountAccess {
+  cluster_id: number
+  cluster_name: string
+  k8s_role: K8sRole
+  namespaces: string[]
+}
+
+/** One issued credential, as it reads back. The secret is never here — it is
+    returned once, on the response that created it. */
+export interface MachineToken {
+  id: number
+  user_id: number
+  name: string
+  /** The token's opening characters, which is what matches a row to a value in
+      a CI secret store. */
+  hint: string
+  cluster_id: number
+  cluster_name?: string
+  namespace?: string
+  expires_at?: string
+  revoked_at?: string
+  last_used_at?: string
+  created_at: string
+  status: MachineTokenStatus
+}
+
+export type MachineTokenStatus = 'active' | 'expired' | 'revoked'
+
+export interface NewMachineToken {
+  name: string
+  cluster_id: number
+  namespace?: string
+  ttl_seconds?: number
+  /** A credential with no expiry. Separate from ttl_seconds so a client that
+      omits everything cannot produce one by accident. */
+  never_expires?: boolean
+}
+
+export interface IssuedMachineToken {
+  token: MachineToken
+  /** Shown once and never again: what is stored is a hash. */
+  secret: string
+  kubeconfig: string
+  filename: string
+  context: string
+  server: string
+  k8s_role: string
+  /** States what cannot be read off the file — that it never expires, or that
+      this server is not on TLS. */
+  warning?: string
 }
 
 export interface Group {

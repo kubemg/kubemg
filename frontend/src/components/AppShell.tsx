@@ -4,6 +4,7 @@ import {
   Activity,
   ArrowLeft,
   Bell,
+  Bot,
   ChevronDown,
   ChevronRight,
   Gauge,
@@ -96,6 +97,7 @@ const ADMIN_GROUPS: readonly AdminGroup[] = [
     items: [
       { to: '/admin/users', label: 'Users', icon: Users },
       { to: '/admin/groups', label: 'Groups', icon: UsersRound },
+      { to: '/admin/machine-accounts', label: 'Machine accounts', icon: Bot },
       { to: '/admin/permissions', label: 'Permissions', icon: KeyRound },
     ],
   },

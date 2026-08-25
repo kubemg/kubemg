@@ -41,6 +41,10 @@ import type {
   EventTimeline,
   GrantIdentity,
   Group,
+  IssuedMachineToken,
+  MachineAccount,
+  MachineToken,
+  NewMachineToken,
   HelmHistory,
   HelmRelease,
   HelmValues,
@@ -430,6 +434,54 @@ export async function setUserStatus(id: number, isActive: boolean): Promise<User
 
 export async function deleteUser(id: number): Promise<void> {
   await http.delete(`/users/${id}`)
+}
+
+/* Programmatic access. A machine account's whole surface is administrative:
+   creating one is creating an account, and issuing its credential is handing out
+   standing access to a cluster. */
+
+export async function fetchMachineAccounts(): Promise<MachineAccount[]> {
+  const { data } = await http.get<{ machine_accounts: MachineAccount[] }>('/machine-accounts')
+  return data.machine_accounts ?? []
+}
+
+export async function createMachineAccount(username: string, email: string): Promise<MachineAccount> {
+  const { data } = await http.post<MachineAccount>('/machine-accounts', { username, email })
+  return data
+}
+
+export async function setMachineAccountStatus(id: number, isActive: boolean): Promise<MachineAccount> {
+  const { data } = await http.patch<MachineAccount>(`/machine-accounts/${id}/status`, {
+    is_active: isActive,
+  })
+  return data
+}
+
+export async function deleteMachineAccount(id: number): Promise<void> {
+  await http.delete(`/machine-accounts/${id}`)
+}
+
+export async function fetchMachineTokens(accountId: number): Promise<MachineToken[]> {
+  const { data } = await http.get<{ tokens: MachineToken[] }>(`/machine-accounts/${accountId}/tokens`)
+  return data.tokens ?? []
+}
+
+export async function issueMachineToken(
+  accountId: number,
+  input: NewMachineToken,
+): Promise<IssuedMachineToken> {
+  const { data } = await http.post<IssuedMachineToken>(
+    `/machine-accounts/${accountId}/tokens`,
+    input,
+  )
+  return data
+}
+
+export async function revokeMachineToken(accountId: number, tokenId: number): Promise<MachineToken> {
+  const { data } = await http.delete<MachineToken>(
+    `/machine-accounts/${accountId}/tokens/${tokenId}`,
+  )
+  return data
 }
 
 export async function fetchGroups(): Promise<Group[]> {

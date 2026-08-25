@@ -41,6 +41,7 @@ func Migrate(gdb *gorm.DB) error {
 		&GroupClusterAccess{},
 		&AuditEvent{},
 		&TerminalSession{},
+		&MachineToken{},
 		&Setting{},
 		&ServerSecret{},
 		&ObservabilitySource{},

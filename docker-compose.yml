@@ -111,6 +111,13 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
+    # frontend/package-lock.json carries only linux-x64 native bindings for
+    # oxlint and rolldown (see CLAUDE.md). Pinned rather than left to
+    # DOCKER_DEFAULT_PLATFORM so a plain `docker compose up`/`--build` on
+    # Apple Silicon cannot silently rebuild this image arm64-native and
+    # revive "Cannot find native binding". The backend must NOT get the same
+    # pin — the Go compiler crashes under amd64 emulation.
+    platform: linux/amd64
     container_name: kubemg-frontend
     ports:
       - "5173:5173"

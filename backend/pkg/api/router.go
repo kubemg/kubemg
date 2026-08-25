@@ -53,6 +53,16 @@ type Store interface {
 	DeleteUser(ctx context.Context, id uint) error
 	TouchLastLogin(ctx context.Context, id uint, at time.Time) error
 
+	// Programmatic access. A service account is a User row (see db.User's
+	// AccountType), so it needs no identity methods of its own — only its
+	// credentials do.
+	CreateMachineToken(ctx context.Context, token *db.MachineToken) error
+	MachineTokenByHash(ctx context.Context, hash string) (*db.MachineToken, error)
+	MachineTokenByID(ctx context.Context, id uint) (*db.MachineToken, error)
+	ListMachineTokens(ctx context.Context, userID uint) ([]db.MachineToken, error)
+	RevokeMachineToken(ctx context.Context, id uint, at time.Time) (*db.MachineToken, error)
+	TouchMachineToken(ctx context.Context, id uint, at time.Time) error
+
 	ListGroups(ctx context.Context) ([]db.GroupSummary, error)
 	GroupByID(ctx context.Context, id uint) (*db.Group, error)
 	CreateGroup(ctx context.Context, group *db.Group) error
@@ -456,7 +466,11 @@ func NewRouter(opts Options) *gin.Engine {
 			go s.jit.RunExpirer(opts.Background)
 		}
 	}
-	requireAuth := auth.RequireAuth(s.jwt)
+	// A service account's credential is verified against a stored row rather
+	// than parsed, which is what makes it revocable — see
+	// machineTokenVerifier. Everything past the middleware sees one shape of
+	// claims and cannot tell the two credentials apart.
+	requireAuth := auth.RequireAuth(s.jwt, newMachineTokenVerifier(s.store))
 	requireAdmin := auth.RequireRole(db.RoleAdmin)
 
 	if opts.Bastion != nil {
@@ -787,6 +801,20 @@ func NewRouter(opts Options) *gin.Engine {
 		}
 
 		// Identity and access management is an administrative surface only.
+		// Programmatic identities: a CI pipeline's release stage, a release bot,
+		// anything that holds a credential for months rather than a session. They
+		// are administrative in both directions — creating one is creating an
+		// account, and issuing its credential is handing out standing access to a
+		// cluster — so the whole surface is admin-only.
+		machineAccounts := v1.Group("/machine-accounts", requireAuth, requireAdmin)
+		machineAccounts.GET("", s.listMachineAccounts)
+		machineAccounts.POST("", s.createMachineAccount)
+		machineAccounts.PATCH("/:id/status", s.setMachineAccountStatus)
+		machineAccounts.DELETE("/:id", s.deleteMachineAccount)
+		machineAccounts.GET("/:id/tokens", s.listMachineTokens)
+		machineAccounts.POST("/:id/tokens", s.issueMachineToken)
+		machineAccounts.DELETE("/:id/tokens/:tokenId", s.revokeMachineToken)
+
 		users := v1.Group("/users", requireAuth, requireAdmin)
 		users.GET("", s.listUsers)
 		users.POST("", s.createUser)

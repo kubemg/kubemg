@@ -22,6 +22,13 @@ const (
 	SystemRoleUser       = "user"
 )
 
+// Account types separate a person from a programmatic caller — a CI pipeline's
+// release stage, a release bot, a controller somebody points at KubeMG.
+const (
+	AccountTypeUser    = "user"
+	AccountTypeMachine = "machine"
+)
+
 // SystemRoles enumerates the assignable system roles.
 var SystemRoles = []string{SystemRoleSuperAdmin, SystemRoleAdmin, SystemRoleUser}
 
@@ -96,6 +103,20 @@ type User struct {
 	// IsActive gates sign-in without destroying the account or its grants.
 	IsActive bool `gorm:"not null;default:true" json:"is_active"`
 
+	// AccountType says whether this row is a person or a machine. A machine
+	// account is a User row on purpose rather than a principal of its own: every
+	// grant, every namespace scope, the permissions matrix, the audit trail and
+	// the proxy's own impersonation are keyed on a user id, and a second kind of
+	// principal would mean teaching all of them a second shape for no gain — a
+	// Jenkins job needs exactly the access model a developer needs.
+	//
+	// Only two things differ, and both are enforced here rather than left to a
+	// handler. It never authenticates with a password — it holds no hash and
+	// login refuses it — and it can never be an administrator: Normalize pins its
+	// system role to SystemRoleUser, so a row edited by hand cannot smuggle admin
+	// onto a credential that lives in a CI secret store.
+	AccountType string `gorm:"size:20;not null;default:user" json:"account_type"`
+
 	// CanViewRecordings lets an administrator replay *other people's* terminal
 	// recordings. It is a capability of its own rather than part of the admin
 	// role because a recording is the most invasive thing this product stores —
@@ -140,8 +161,20 @@ func (u *User) Normalize() {
 	if !ValidSystemRole(u.SystemRole) {
 		u.SystemRole = SystemRoleUser
 	}
+	// A machine identity is never an administrator. This is here rather than in
+	// the handler that creates one because the credential outlives the request
+	// that made it: a token in a pipeline's secret store is replayed for months,
+	// and "which row said admin" is not a question anybody re-asks.
+	if u.IsMachine() {
+		u.SystemRole = SystemRoleUser
+	}
 	u.Role = LegacyRoleFor(u.SystemRole)
 }
+
+// IsMachine reports whether this account is a programmatic caller rather than a
+// person. A row written before machine accounts existed carries an empty type
+// and is a person, which is what the default reads as.
+func (u User) IsMachine() bool { return u.AccountType == AccountTypeMachine }
 
 // IsAdmin reports whether the user holds the KubeMG admin privilege.
 func (u User) IsAdmin() bool {

@@ -63,6 +63,12 @@ func (s *server) listUsers(c *gin.Context) {
 
 	out := make([]userResponse, 0, len(users))
 	for i := range users {
+		// Machine accounts are accounts, but this page is about people: it edits
+		// passwords and system roles, neither of which a machine identity has.
+		// They have their own surface at /machine-accounts.
+		if users[i].IsMachine() {
+			continue
+		}
 		out = append(out, toUserResponse(&users[i]))
 	}
 	c.JSON(http.StatusOK, gin.H{"users": out})
@@ -290,6 +296,14 @@ func (s *server) loadManageableUser(c *gin.Context) (caller *db.User, target *db
 	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load the user"})
+		return nil, nil, false
+	}
+
+	// A machine identity is managed where its credentials are. Answering 404
+	// rather than redirecting is deliberate: these routes would apply a person's
+	// affordances — a password, a system role — to a row that has neither.
+	if target.IsMachine() {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return nil, nil, false
 	}
 
