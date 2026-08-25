@@ -134,14 +134,24 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	return newHarnessWithOrigins(t, nil, "")
+}
+
+// newHarnessWithOrigins is newHarness with the proxy's WebSocket origin
+// allowlist wired the way main.go wires it, for the one test that needs to
+// exercise it — every other test gets the unrestricted default it always had.
+func newHarnessWithOrigins(t *testing.T, allowedOrigins []string, publicURL string) *harness {
+	t.Helper()
 
 	store := newTunnelStore()
 	auditor := &recordingAuditor{}
 	gateway := NewServer(ServerOptions{Store: store})
 	proxy := NewProxy(ProxyOptions{
-		Store:    store,
-		Registry: gateway.Registry(),
-		Auditor:  auditor,
+		Store:          store,
+		Registry:       gateway.Registry(),
+		Auditor:        auditor,
+		AllowedOrigins: allowedOrigins,
+		PublicURL:      publicURL,
 	})
 	manager := auth.NewManager("test-secret", time.Hour)
 
@@ -721,6 +731,60 @@ func TestProxyStreamHonoursTheNamespaceScope(t *testing.T) {
 	}
 	if len(agent.streamOpens()) != 0 {
 		t.Fatal("a refused watch must never open a stream on the cluster")
+	}
+}
+
+// TestProxyStreamUpgradeCheckOrigin covers the WebSocket handshake's defense
+// in depth against a disallowed browser Origin, while leaving kubectl (which
+// sends no Origin header at all) untouched — that path is exercised by every
+// other exec/port-forward test, which set no Origin and still pass.
+func TestProxyStreamUpgradeCheckOrigin(t *testing.T) {
+	h := newHarnessWithOrigins(t, []string{"https://console.example.com"}, "")
+	h.addCluster(1, "prod-eu", "kmg_valid")
+	admin := h.addUser(10, "admin", db.SystemRoleAdmin)
+
+	session := func(a *fakeAgent, id string, open StreamOpen) {
+		_ = a.send(Message{Type: MessageStreamStart, ID: id, StreamStart: &StreamStart{
+			Status: http.StatusSwitchingProtocols,
+		}})
+	}
+	agent, err := h.dialStreamingAgent("kmg_valid", okResponse("{}"), session)
+	if err != nil {
+		t.Fatalf("dial agent: %v", err)
+	}
+	waitFor(t, func() bool { return h.gateway.Registry().Connected(1) })
+	_ = agent
+
+	url := "ws" + strings.TrimPrefix(h.server.URL, "http") +
+		"/api/v1/clusters/1/proxy/api/v1/namespaces/team-a/pods/web-0/exec?command=sh&stdin=true"
+
+	dial := func(origin string) (*http.Response, error) {
+		header := http.Header{}
+		header.Set("Authorization", "Bearer "+h.token(admin))
+		if origin != "" {
+			header.Set("Origin", origin)
+		}
+		dialer := *websocket.DefaultDialer
+		dialer.Subprotocols = ChannelSubprotocols
+		conn, resp, err := dialer.Dial(url, header)
+		if conn != nil {
+			conn.Close()
+		}
+		return resp, err
+	}
+
+	if resp, err := dial("https://evil.example.com"); err == nil {
+		t.Fatalf("expected a disallowed Origin to be refused, got status %d", resp.StatusCode)
+	}
+	if resp, err := dial("https://console.example.com"); err != nil {
+		status := ""
+		if resp != nil {
+			status = resp.Status
+		}
+		t.Fatalf("expected the allowlisted Origin to upgrade: %v (%s)", err, status)
+	}
+	if _, err := dial(""); err != nil {
+		t.Fatalf("a request with no Origin header (kubectl) must not be affected: %v", err)
 	}
 }
 
