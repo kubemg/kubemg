@@ -68,8 +68,15 @@ export function CrdVisibilityPanel({
     void load()
   }, [load])
 
-  // Nothing to curate and no way to curate it is not worth a panel.
-  if (!editable || (crds !== null && crds.length === 0 && hidden.length === 0)) return null
+  // Nothing to curate and no way to curate it is not worth a panel — but a read
+  // that *failed* is not the same as one that answered "nothing here", and this
+  // panel is only ever drawn for an administrator in the first place. Hiding it
+  // on an error is how a server that predates this route, or a cluster whose
+  // agent cannot list CRDs, reads as a feature that was never shipped: nothing
+  // on the page, and nothing saying why. So an error keeps the panel and says so.
+  if (error === null && (!editable || (crds !== null && crds.length === 0 && hidden.length === 0))) {
+    return null
+  }
 
   const total = crds?.length ?? 0
   const hiddenHere = (crds ?? []).filter((crd) => hidden.includes(resourceKey(crd))).length
@@ -82,15 +89,21 @@ export function CrdVisibilityPanel({
         description="Which of this cluster’s CRDs everybody browsing it is offered. This is what the navigation shows — it is not a permission, and the cluster’s own RBAC still decides what can be read."
         className={className}
         actions={
-          <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!editable || crds === null}
+            onClick={() => setEditing(true)}
+          >
             <SlidersHorizontal className="size-3.5" />
             Choose
           </Button>
         }
         bodyClassName="p-4"
       >
-        {error ? <Notice tone="error">{error}</Notice> : null}
-        {crds === null ? (
+        {error ? (
+          <Notice tone="error">{error}</Notice>
+        ) : crds === null ? (
           <p className="text-[13px] text-muted">Loading…</p>
         ) : (
           <p className="text-[13px] text-muted">
