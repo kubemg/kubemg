@@ -9,7 +9,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
 /*
@@ -148,7 +147,7 @@ func (s *server) listNetworkPolicies(c *gin.Context) {
 		var list struct {
 			Items []netpolObject `json:"items"`
 		}
-		if !s.fetch(c, user, cluster, grant, path, &list) {
+		if !fetchList(s, c, user, cluster, grant, path, &list.Items) {
 			return
 		}
 		for _, item := range list.Items {
@@ -157,7 +156,7 @@ func (s *server) listNetworkPolicies(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"networkpolicies": out,
 		"namespace":       scope.Namespace,
 		"all_namespaces":  scope.All,
@@ -561,8 +560,8 @@ func (s *server) networkPolicyReachability(c *gin.Context) {
 	var policyList struct {
 		Items []netpolObject `json:"items"`
 	}
-	available, reason, ok := s.fetchDegrading(c, user, cluster, grant,
-		resourceListPath{networkPolicyGroup, "networkpolicies"}.namespaced(namespace), &policyList)
+	available, reason, ok := fetchDegradingList(s, c, user, cluster, grant,
+		resourceListPath{networkPolicyGroup, "networkpolicies"}.namespaced(namespace), &policyList.Items)
 	if !ok {
 		return
 	}
@@ -683,8 +682,8 @@ func (s *server) networkPolicyCoverage(c *gin.Context) {
 	var policyList struct {
 		Items []netpolObject `json:"items"`
 	}
-	policiesAvailable, reason, ok := s.fetchDegrading(c, user, cluster, grant,
-		resourceListPath{networkPolicyGroup, "networkpolicies"}.namespaced(namespace), &policyList)
+	policiesAvailable, reason, ok := fetchDegradingList(s, c, user, cluster, grant,
+		resourceListPath{networkPolicyGroup, "networkpolicies"}.namespaced(namespace), &policyList.Items)
 	if !ok {
 		return
 	}
@@ -701,8 +700,8 @@ func (s *server) networkPolicyCoverage(c *gin.Context) {
 			Metadata objectMeta `json:"metadata"`
 		} `json:"items"`
 	}
-	podsAvailable, podReason, ok := s.fetchDegrading(c, user, cluster, grant,
-		resourceListPath{"/api/v1", "pods"}.namespaced(namespace), &podList)
+	podsAvailable, podReason, ok := fetchDegradingList(s, c, user, cluster, grant,
+		resourceListPath{"/api/v1", "pods"}.namespaced(namespace), &podList.Items)
 	if !ok {
 		return
 	}
@@ -726,23 +725,3 @@ func (s *server) networkPolicyCoverage(c *gin.Context) {
 
 /* -------------------------------------------------------------- helpers --- */
 
-// fetchDegrading performs a namespaced GET, treating a refusal from the
-// cluster's own RBAC as a narrowed answer rather than a failed request — the
-// same convention describeResource's events already follow — and any other
-// failure (a transport error, an unreadable body) as the hard failure it is,
-// which writes its own response and reports ok=false.
-func (s *server) fetchDegrading(c *gin.Context, user *db.User, cluster *db.Cluster,
-	grant db.UserClusterAccess, path string, out any,
-) (available bool, reason string, ok bool) {
-	resp, callOK := s.callResource(c, user, cluster, grant, path)
-	if !callOK {
-		return false, "", false
-	}
-	if resp.Status == http.StatusForbidden {
-		return false, kubeErrorMessage(resp.Body, resp.Status), true
-	}
-	if !s.decodeResource(c, resp, out) {
-		return false, "", false
-	}
-	return true, "", true
-}

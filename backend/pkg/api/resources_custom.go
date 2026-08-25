@@ -165,14 +165,14 @@ func (s *server) listCustomResources(c *gin.Context) {
 			} `json:"items"`
 		}
 
-		found, callOK := s.fetchOptional(c, user, cluster, grant, []string{candidate}, &list)
+		found, callOK := fetchOptionalList(s, c, user, cluster, grant, []string{candidate}, &list.Items)
 		if !callOK {
 			return
 		}
 		// The API is either served by the cluster or it is not; one namespace
 		// answering 404 settles it for all of them.
 		if !found {
-			c.JSON(http.StatusOK, gin.H{
+			listResponse(c, gin.H{
 				"items":          []customResourceView{},
 				"namespace":      scope.Namespace,
 				"all_namespaces": scope.All,
@@ -192,7 +192,7 @@ func (s *server) listCustomResources(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"items":          out,
 		"namespace":      scope.Namespace,
 		"all_namespaces": scope.All,

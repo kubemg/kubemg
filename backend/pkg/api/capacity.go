@@ -1,7 +1,6 @@
 package api
 
 import (
-	"net/http"
 	"net/url"
 	"slices"
 	"strings"
@@ -223,7 +222,7 @@ func (s *server) clusterCapacity(c *gin.Context) {
 		// without it, so the reason says which part is missing.
 		payload["reason"] = capacityUsageUnavailableReason
 	}
-	c.JSON(http.StatusOK, payload)
+	listResponse(c, payload)
 }
 
 // capacityUsageUnavailableReason explains the one column that can be absent.
@@ -309,7 +308,7 @@ func (s *server) fetchNodes(c *gin.Context, user *db.User, cluster *db.Cluster,
 	grant db.UserClusterAccess,
 ) ([]nodeRecord, bool) {
 	var list nodeList
-	if !s.fetch(c, user, cluster, grant, "/api/v1/nodes", &list) {
+	if !fetchList(s, c, user, cluster, grant, "/api/v1/nodes", &list.Items) {
 		return nil, false
 	}
 	return list.records(), true
@@ -466,7 +465,7 @@ func (s *server) fetchSchedulablePods(c *gin.Context, user *db.User, cluster *db
 	grant db.UserClusterAccess,
 ) ([]capacityPod, bool) {
 	var list capacityPodList
-	if !s.fetch(c, user, cluster, grant, schedulablePodsPath(), &list) {
+	if !fetchList(s, c, user, cluster, grant, schedulablePodsPath(), &list.Items) {
 		return nil, false
 	}
 	return list.Items, true

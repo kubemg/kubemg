@@ -154,23 +154,21 @@ func (s *server) listNamespaces(c *gin.Context) {
 		return
 	}
 
-	var list struct {
-		Items []struct {
-			Metadata struct {
-				Name              string    `json:"name"`
-				CreationTimestamp time.Time `json:"creationTimestamp"`
-			} `json:"metadata"`
-			Status struct {
-				Phase string `json:"phase"`
-			} `json:"status"`
-		} `json:"items"`
+	var items []struct {
+		Metadata struct {
+			Name              string    `json:"name"`
+			CreationTimestamp time.Time `json:"creationTimestamp"`
+		} `json:"metadata"`
+		Status struct {
+			Phase string `json:"phase"`
+		} `json:"status"`
 	}
-	if !s.fetch(c, user, cluster, grant, "/api/v1/namespaces", &list) {
+	if !fetchList(s, c, user, cluster, grant, "/api/v1/namespaces", &items) {
 		return
 	}
 
-	out := make([]namespaceView, 0, len(list.Items))
-	for _, item := range list.Items {
+	out := make([]namespaceView, 0, len(items))
+	for _, item := range items {
 		out = append(out, namespaceView{
 			Name:    item.Metadata.Name,
 			Status:  item.Status.Phase,
@@ -179,7 +177,7 @@ func (s *server) listNamespaces(c *gin.Context) {
 		})
 	}
 	slices.SortFunc(out, func(a, b namespaceView) int { return strings.Compare(a.Name, b.Name) })
-	c.JSON(http.StatusOK, gin.H{"namespaces": out, "scoped": false})
+	listResponse(c, gin.H{"namespaces": out, "scoped": false})
 }
 
 // workloadKinds are the apps/v1 kinds that share the ready/desired shape. The
@@ -209,7 +207,7 @@ func (s *server) listWorkloads(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"workloads":      out,
 		"namespace":      scope.Namespace,
 		"all_namespaces": scope.All,
@@ -228,37 +226,35 @@ func (s *server) collectWorkloads(c *gin.Context, user *db.User, cluster *db.Clu
 			continue
 		}
 		for _, path := range scope.paths(resourceListPath{"/apis/apps/v1", kind.resource}) {
-			var list struct {
-				Items []struct {
-					Metadata struct {
-						Name              string    `json:"name"`
-						Namespace         string    `json:"namespace"`
-						CreationTimestamp time.Time `json:"creationTimestamp"`
-					} `json:"metadata"`
-					Spec struct {
-						Replicas *int32 `json:"replicas"`
-						Template struct {
-							Spec struct {
-								Containers []struct {
-									Image string `json:"image"`
-								} `json:"containers"`
-							} `json:"spec"`
-						} `json:"template"`
-					} `json:"spec"`
-					Status struct {
-						ReadyReplicas          int32 `json:"readyReplicas"`
-						Replicas               int32 `json:"replicas"`
-						NumberReady            int32 `json:"numberReady"`
-						DesiredNumberScheduled int32 `json:"desiredNumberScheduled"`
-					} `json:"status"`
-				} `json:"items"`
+			var items []struct {
+				Metadata struct {
+					Name              string    `json:"name"`
+					Namespace         string    `json:"namespace"`
+					CreationTimestamp time.Time `json:"creationTimestamp"`
+				} `json:"metadata"`
+				Spec struct {
+					Replicas *int32 `json:"replicas"`
+					Template struct {
+						Spec struct {
+							Containers []struct {
+								Image string `json:"image"`
+							} `json:"containers"`
+						} `json:"spec"`
+					} `json:"template"`
+				} `json:"spec"`
+				Status struct {
+					ReadyReplicas          int32 `json:"readyReplicas"`
+					Replicas               int32 `json:"replicas"`
+					NumberReady            int32 `json:"numberReady"`
+					DesiredNumberScheduled int32 `json:"desiredNumberScheduled"`
+				} `json:"status"`
 			}
 
-			if !s.fetch(c, user, cluster, grant, path, &list) {
+			if !fetchList(s, c, user, cluster, grant, path, &items) {
 				return nil, false
 			}
 
-			for _, item := range list.Items {
+			for _, item := range items {
 				view := workloadView{
 					Kind:      kind.kind,
 					Name:      item.Metadata.Name,
@@ -302,19 +298,17 @@ func (s *server) listPods(c *gin.Context) {
 
 	out := []podView{}
 	for _, path := range scope.paths(resourceListPath{"/api/v1", "pods"}) {
-		var list struct {
-			Items []podObject `json:"items"`
-		}
-		if !s.fetch(c, user, cluster, grant, path, &list) {
+		var items []podObject
+		if !fetchList(s, c, user, cluster, grant, path, &items) {
 			return
 		}
-		for _, item := range list.Items {
+		for _, item := range items {
 			out = append(out, item.view())
 		}
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"pods":           out,
 		"namespace":      scope.Namespace,
 		"all_namespaces": scope.All,
