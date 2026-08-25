@@ -6,6 +6,7 @@ import type { Cluster, NodeMetrics } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { ClusterWorkloadSummary } from '../components/ClusterWorkloadSummary'
 import { ConsolesPanel } from '../components/ConsolesPanel'
+import { CrdVisibilityPanel } from '../components/CrdVisibilityPanel'
 import { DatasourcePanel } from '../components/DatasourcePanel'
 import { MetricComparison } from '../components/MetricComparison'
 import type { ComparisonKind } from '../components/MetricComparison'
@@ -316,6 +317,12 @@ function AdminDashboard({ cluster, username }: { cluster: Cluster; username: str
           of it is derived from — and it is a link rather than an embed on
           purpose: KubeMG stores no session for another tool. */}
       <ConsolesPanel cluster={cluster} />
+
+      {/* And what everybody browsing this cluster is offered when they get
+          there. It only exists for a cluster KubeMG can read the CRDs of,
+          which is the agent path — and it curates the navigation, never the
+          access: the cluster's own RBAC still answers every read. */}
+      {viaAgent ? <CrdVisibilityPanel cluster={cluster} /> : null}
 
       {/* And this is that history, once there is somewhere to read it
           from. It sits directly under the datasource that answers it, so
