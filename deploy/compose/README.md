@@ -73,9 +73,9 @@ Mirror the three images above into an internal registry and point the install at
 them:
 
 ```dotenv
-KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.5.0
+KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.6.0
 KUBEMG_POSTGRES_IMAGE=registry.internal/postgres:16-alpine
-KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.5.0
+KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.6.0
 ```
 
 Nothing else is fetched at runtime: the console's fonts are served out of the
@@ -140,7 +140,13 @@ whether recordings are encrypted, and where the signing key came from.
 
 TLS itself is not optional: client-go refuses to send a bearer token over plain
 HTTP, so a plaintext bastion cannot serve a generated kubeconfig or an `exec`
-session at all.
+session at all. And a plaintext listener reachable from more than the host is now
+refused at boot rather than warned about — this service publishes a port, so
+`KUBEMG_TLS_ENABLED=false` alone stops the container instead of starting one that
+sends every session token in the clear. Behind a proxy that terminates TLS, add
+`KUBEMG_ALLOW_INSECURE=true` to say so deliberately, and set
+`KUBEMG_AGENT_CA_BUNDLE` to the chain **that proxy** presents: agents verify its
+certificate, not one this process can see, so nothing here can infer it.
 
 ## Upgrading
 
