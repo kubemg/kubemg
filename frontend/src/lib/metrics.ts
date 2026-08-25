@@ -18,7 +18,7 @@ import { useTimeRange } from '../state/timerange-context'
 
 /**
  * The plot's dimensions. `left` is the axis gutter and has to fit the widest tick
- * label: at 9px JetBrains Mono a character is ~5.4px, and "1.50 cores" is ten of
+ * label: at 9px Commit Mono a character is ~5.4px, and "1.50 cores" is ten of
  * them — so a 52px gutter would clip it off the left edge. The tick formatter
  * keeps labels short and this leaves room for the longest one it can still
  * produce.
