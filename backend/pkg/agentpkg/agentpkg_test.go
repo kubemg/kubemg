@@ -56,7 +56,7 @@ func TestRenderAppliesDefaultsAndTrimsURL(t *testing.T) {
 	if !strings.Contains(files["deployment.yaml"], `image: "`+DefaultImage+`"`) {
 		t.Fatal("expected the default agent image")
 	}
-	if !strings.Contains(files["namespace.yaml"], "name: "+DefaultNamespace) {
+	if !strings.Contains(files["namespace.yaml"], `name: "`+DefaultNamespace+`"`) {
 		t.Fatal("expected the default agent namespace")
 	}
 }
@@ -70,10 +70,10 @@ func TestRenderHonoursOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if !strings.Contains(files["namespace.yaml"], "name: platform-tools") {
+	if !strings.Contains(files["namespace.yaml"], `name: "platform-tools"`) {
 		t.Fatal("namespace override was ignored")
 	}
-	if !strings.Contains(files["rbac.yaml"], "namespace: platform-tools") {
+	if !strings.Contains(files["rbac.yaml"], `namespace: "platform-tools"`) {
 		t.Fatal("namespace override did not reach the service account")
 	}
 	if !strings.Contains(files["deployment.yaml"], `image: "registry.internal/kubemg-agent:2.1.0"`) {
@@ -92,6 +92,25 @@ func TestRenderRequiresBastionURLAndToken(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Render(opts); err == nil {
 				t.Fatal("expected an error rather than a package with a hole in it")
+			}
+		})
+	}
+}
+
+func TestRenderRejectsAnInvalidNamespace(t *testing.T) {
+	cases := map[string]string{
+		"embedded newline and a second document": "kubemg-system\n---\napiVersion: v1\nkind: Secret",
+		"uppercase":                               "Kubemg-System",
+		"underscore":                              "kubemg_system",
+		"leading hyphen":                          "-kubemg",
+	}
+
+	for name, namespace := range cases {
+		t.Run(name, func(t *testing.T) {
+			opts := testOptions()
+			opts.Namespace = namespace
+			if _, err := Render(opts); err == nil {
+				t.Fatalf("expected %q to be rejected as an invalid namespace", namespace)
 			}
 		})
 	}
