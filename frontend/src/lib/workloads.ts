@@ -14,12 +14,20 @@ import type { ResourceKey } from './resources'
 export interface WorkloadCapability {
   scale: boolean
   restart: boolean
+  /**
+   * Whether the schedule can be turned off. It is the CronJob's alone and it is
+   * the *only* control a CronJob has: it owns Jobs rather than pods, so there
+   * is no replica count to set and no template to roll, and deleting it to stop
+   * tonight's run would lose the object.
+   */
+  suspend: boolean
 }
 
 const WORKLOAD_CAPABILITIES: Partial<Record<ResourceKey, WorkloadCapability>> = {
-  deployments: { scale: true, restart: true },
-  statefulsets: { scale: true, restart: true },
-  daemonsets: { scale: false, restart: true },
+  deployments: { scale: true, restart: true, suspend: false },
+  statefulsets: { scale: true, restart: true, suspend: false },
+  daemonsets: { scale: false, restart: true, suspend: false },
+  cronjobs: { scale: false, restart: false, suspend: true },
 }
 
 /**
@@ -109,3 +117,4 @@ export function workloadKeyFor(kind: string): ResourceKey | undefined {
   const key = `${kind.toLowerCase()}s`
   return workloadCapability(key) ? (key as ResourceKey) : undefined
 }
+

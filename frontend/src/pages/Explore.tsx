@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Boxes, X } from 'lucide-react'
+import { Boxes, CheckSquare, X } from 'lucide-react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import {
   errorMessage,
@@ -36,6 +36,7 @@ import type { ReadReport } from '../api/client'
 import type { Namespace } from '../api/types'
 import { AccessReviewPanel } from '../components/AccessReviewPanel'
 import { AppShell } from '../components/AppShell'
+import { BulkActionSheet } from '../components/BulkActionSheet'
 import { InsightTrend } from '../components/InsightTrend'
 import { LiveRefresh } from '../components/LiveRefresh'
 import { NetworkPolicyCoveragePanel } from '../components/NetworkPolicyCoveragePanel'
@@ -44,8 +45,9 @@ import type { DetailTarget } from '../components/ResourceDetailDrawer'
 import { ResourceInsights } from '../components/ResourceInsights'
 import { ResourceView } from '../components/ResourceTables'
 import { TableSkeleton } from '../components/SkeletonLoader'
-import type { LoadedResource } from '../components/ResourceTables'
+import type { LoadedResource, RowSelection } from '../components/ResourceTables'
 import {
+  Button,
   Chip,
   EmptyState,
   Notice,
@@ -89,6 +91,8 @@ import {
 import { queryKey, useCachedQuery } from '../lib/query'
 import { podUsageIndex } from '../lib/units'
 import { workloadKeyFor } from '../lib/workloads'
+import type { BulkActionName, SelectedRow } from '../lib/selection'
+import { BULK_ACTION_LABEL, bulkActions } from '../lib/selection'
 import { clusterPageHref, resourceHref } from '../lib/navigation'
 import { useClusters } from '../state/clusters-context'
 import { useInventory } from '../state/inventory-context'
@@ -511,6 +515,24 @@ export function Explore() {
   // cluster, the resource and the namespace are.
   const [bucket, setBucket] = useState<InsightBucket | null>(null)
 
+  /*
+   * The checkbox column, and what is ticked in it.
+   *
+   * It is off until it is asked for, which is the rule that keeps the
+   * destructive half of this page from being one stray click away from a read:
+   * a list is browsed far more often than it is acted on, and a column of
+   * checkboxes on every list makes acting the default posture. The selection
+   * lives here rather than in the table because it has to outlive a narrowing —
+   * typing into the filter must not silently drop rows that are already ticked
+   * and about to be acted on.
+   */
+  const [selecting, setSelecting] = useState(false)
+  const [selected, setSelected] = useState<SelectedRow[]>([])
+  // The confirmation, once, over the whole selection. A single row's action from
+  // the row menu opens the same surface with one row in it: there is one place
+  // that says what is about to happen and reports what did.
+  const [bulk, setBulk] = useState<{ action: BulkActionName; rows: SelectedRow[] } | null>(null)
+
   // One drawer for every kind and every action, opened on whichever tab or
   // panel the row asked for. A pod and a Helm release each carry their row
   // along, because the list already holds what their panels need without a
@@ -697,7 +719,39 @@ export function Explore() {
     setDetail(null)
     setObjectFilter('')
     setBucket(null)
+    // A selection belongs to one list in one namespace on one cluster. Carrying
+    // it across would leave rows ticked that are no longer on screen, which is
+    // how somebody deletes something they cannot see.
+    setSelected([])
+    setSelecting(false)
   }, [resource, namespace, clusterId])
+
+  // Membership is a set because the checkbox column asks about every row it
+  // draws: on a two-thousand-row list, scanning an array per row is the
+  // difference between a table and a stall.
+  const selectedKeys = useMemo(() => new Set(selected.map((row) => row.key)), [selected])
+
+  const selectionController: RowSelection = useMemo(
+    () => ({
+      has: (key) => selectedKeys.has(key),
+      toggle: (row) =>
+        setSelected((current) =>
+          current.some((entry) => entry.key === row.key)
+            ? current.filter((entry) => entry.key !== row.key)
+            : [...current, row],
+        ),
+      // The header checkbox acts on the rows the table is drawing, and only on
+      // those: it adds to the selection rather than replacing it, so narrowing
+      // the filter twice and ticking both times selects both sets.
+      setMany: (rows, checked) =>
+        setSelected((current) => {
+          const touched = new Set(rows.map((row) => row.key))
+          const rest = current.filter((entry) => !touched.has(entry.key))
+          return checked ? [...rest, ...rows] : rest
+        }),
+    }),
+    [selectedKeys],
+  )
 
   if (!clustersLoading && reachable.length === 0) {
     return (
@@ -753,6 +807,21 @@ export function Explore() {
   }
 
   const unavailable = (loaded?.kind === 'routes' || loaded?.kind === 'custom') && !loaded.available
+  /*
+   * Which lists offer the checkbox column. It is the four lists whose rows are
+   * *running things* — the ones an operator acts on a set of at once, which is
+   * where the one-row-at-a-time motion actually costs something. A ConfigMap is
+   * deleted about as often as it is created and one at a time is the right
+   * shape for it; adding a fifth list means adding the column to that table in
+   * `ResourceTables`, which is the extension point.
+   */
+  const listSelectable =
+    loaded?.kind === 'pods' ||
+    loaded?.kind === 'workloads' ||
+    loaded?.kind === 'jobs' ||
+    loaded?.kind === 'cronjobs'
+  const selection = selecting && listSelectable ? selectionController : undefined
+  const available = bulkActions(selected)
   const needle = objectFilter.trim().toLowerCase()
   const filtered = loaded ? narrowToBucket(filterLoaded(loaded, needle), bucket) : loaded
   const totalCount = loaded?.rows.length ?? 0
@@ -993,7 +1062,58 @@ export function Explore() {
                 className="ml-auto w-full sm:w-56"
               />
             ) : null}
+            {/* The checkbox column is asked for rather than always there. It
+                sits with the filter because both are ways of getting at a
+                subset, and because this is the row somebody is already in when
+                they have found the rows they mean. */}
+            {listSelectable && totalCount > 0 ? (
+              <Chip
+                active={selecting}
+                onClick={() => {
+                  setSelecting((current) => !current)
+                  setSelected([])
+                }}
+              >
+                <CheckSquare aria-hidden="true" className="size-3.5" />
+                Select
+              </Chip>
+            ) : null}
           </div>
+
+          {/* What can be done to the selection, and nothing that cannot: an
+              action appears only where every ticked row answers for it, because
+              a button that silently skips half a selection is worse than an
+              absent one. */}
+          {selection ? (
+            <div className="flex flex-wrap items-center gap-2 border-b border-line-soft bg-raised/40 px-4 py-2.5">
+              <span className="font-mono text-[12.5px] text-fg">
+                {selected.length} selected
+              </span>
+              {selected.length === 0 ? (
+                <span className="text-[12.5px] text-muted">
+                  Tick the rows you want to act on.
+                </span>
+              ) : null}
+              <span className="ml-auto flex flex-wrap items-center gap-2">
+                {available.map((action) => (
+                  <Button
+                    key={action}
+                    type="button"
+                    size="sm"
+                    variant={action === 'delete' ? 'danger' : 'secondary'}
+                    onClick={() => setBulk({ action, rows: selected })}
+                  >
+                    {BULK_ACTION_LABEL[action]}
+                  </Button>
+                ))}
+                {selected.length > 0 ? (
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setSelected([])}>
+                    Clear
+                  </Button>
+                ) : null}
+              </span>
+            </div>
+          ) : null}
 
           {unavailable ? (
             <div className="p-4">
@@ -1016,6 +1136,14 @@ export function Explore() {
             <ResourceView
               loaded={filtered}
               showNamespace={allNamespaces}
+              selection={selection}
+              // One row's action opens the same confirmation the selection
+              // does, with one row in it. There is one surface that says what
+              // is about to happen and reports what did.
+              onDelete={(row) => setBulk({ action: 'delete', rows: [row] })}
+              onSuspend={(row) =>
+                setBulk({ action: row.suspended ? 'resume' : 'suspend', rows: [row] })
+              }
               // A pod opens the same drawer as everything else, but carrying its
               // row: the list already holds the containers and limits its usage
               // panel needs, so there is nothing to read again.
@@ -1137,6 +1265,22 @@ export function Explore() {
           onClose={() => setDetail(null)}
           onRefresh={load}
           onOpen={setDetail}
+        />
+      ) : null}
+
+      {/* The one confirmation, whether it came from a row's menu or from the
+          selection bar. Closing it clears the selection: the rows it named have
+          just been acted on, and leaving them ticked invites doing it twice. */}
+      {bulk && cluster ? (
+        <BulkActionSheet
+          cluster={cluster}
+          action={bulk.action}
+          rows={bulk.rows}
+          onClose={() => {
+            setBulk(null)
+            setSelected([])
+          }}
+          onDone={load}
         />
       ) : null}
     </AppShell>

@@ -14,8 +14,9 @@ import (
 )
 
 /*
- * The two workload controls an operator reaches for before reaching for a
- * manifest: change how many replicas there are, and roll the pods.
+ * The workload controls an operator reaches for before reaching for a manifest:
+ * change how many replicas there are, roll the pods, and stop a schedule from
+ * firing.
  *
  * Both are already possible through the YAML editor, and that is exactly why
  * they are here. Scaling a Deployment by hand-editing `spec.replicas` in a
@@ -39,7 +40,9 @@ import (
  * that gets written is four fields and a number and there is no way for it to
  * disturb a pod template. Restart has no subresource — the annotation *is* the
  * API — so it writes the object, and strips `managedFields` on the way out for
- * the same reason the manifest editor does.
+ * the same reason the manifest editor does. Suspend is the same shape as
+ * restart: `spec.suspend` is a field on the object, so the object is what is
+ * written back.
  */
 
 const (
@@ -61,6 +64,12 @@ type workloadAction struct {
 	path        resourceListPath
 	scalable    bool
 	restartable bool
+	// suspendable is the CronJob's own control and nothing else's. A schedule
+	// is the one workload property with an off switch that is not a replica
+	// count: scaling a CronJob is meaningless (it has no pods of its own) and
+	// deleting it to stop it loses the object, so `spec.suspend` is what an
+	// operator reaches for when a nightly job has to stop firing tonight.
+	suspendable bool
 }
 
 var workloadActions = map[string]workloadAction{
@@ -68,6 +77,7 @@ var workloadActions = map[string]workloadAction{
 	"statefulsets": {path: resourceListPath{"/apis/apps/v1", "statefulsets"}, scalable: true, restartable: true},
 	"daemonsets":   {path: resourceListPath{"/apis/apps/v1", "daemonsets"}, restartable: true},
 	"replicasets":  {path: resourceListPath{"/apis/apps/v1", "replicasets"}, scalable: true},
+	"cronjobs":     {path: resourceListPath{"/apis/batch/v1", "cronjobs"}, suspendable: true},
 }
 
 // workloadActionRequest is what both routes accept. `kind` is the same key the
@@ -80,6 +90,9 @@ type workloadActionRequest struct {
 	// Replicas is a pointer because zero is a real and deliberate answer —
 	// scaling to none is how a workload is stopped without deleting it.
 	Replicas *int32 `json:"replicas"`
+	// Suspend is a pointer for the same reason: false is the request to resume
+	// a suspended schedule, and an absent field is neither.
+	Suspend *bool `json:"suspend"`
 }
 
 // workloadActionResult is what comes back: enough for the UI to say what it did
@@ -91,7 +104,11 @@ type workloadActionResult struct {
 	Replicas  *int32 `json:"replicas,omitempty"`
 	// RestartedAt is the timestamp written onto the pod template.
 	RestartedAt string `json:"restarted_at,omitempty"`
-	Message     string `json:"message"`
+	// Suspended is the state a schedule was left in — reported rather than
+	// echoed, because a request to suspend something already suspended is
+	// answered by saying so instead of by writing the object again.
+	Suspended *bool  `json:"suspended,omitempty"`
+	Message   string `json:"message"`
 }
 
 // workloadTarget resolves what an action addresses: the kind from the fixed
@@ -307,4 +324,141 @@ func stampRestart(object map[string]any, stamp string) string {
 	}
 	annotations[restartedAtAnnotation] = stamp
 	return ""
+}
+
+// suspendWorkload turns a schedule off or back on. It is the CronJob's own
+// control and the only one it has: a CronJob owns Jobs rather than pods, so
+// there is nothing to scale and nothing to roll, and the way an operator stops
+// tonight's run without losing the object is `spec.suspend`.
+//
+// A request for the state the object is already in is answered rather than
+// written. That matters here more than it would elsewhere because this is the
+// one action reached over a whole selection: resuming eight CronJobs of which
+// six are already running should be two writes and six sentences, not eight
+// writes and eight audit records saying nothing happened.
+func (s *server) suspendWorkload(c *gin.Context) {
+	user, cluster, grant, ok := s.resourceCluster(c)
+	if !ok {
+		return
+	}
+
+	var req workloadActionRequest
+	action, ok := s.workloadTarget(c, grant, &req)
+	if !ok {
+		return
+	}
+	if !action.suspendable {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "a " + strings.TrimSuffix(req.Kind, "s") + " has no schedule to suspend",
+		})
+		return
+	}
+	if req.Suspend == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "say whether to suspend or resume"})
+		return
+	}
+	suspend := *req.Suspend
+
+	path := action.objectPath(req.Namespace, req.Name)
+
+	resp, callOK := s.callResource(c, user, cluster, grant, path)
+	if !callOK {
+		return
+	}
+	var object map[string]any
+	if !s.decodeResource(c, resp, &object) {
+		return
+	}
+
+	if current, reason := suspendState(object); reason != "" {
+		c.JSON(http.StatusConflict, gin.H{"error": reason})
+		return
+	} else if current == suspend {
+		c.JSON(http.StatusOK, workloadActionResult{
+			Kind:      req.Kind,
+			Name:      req.Name,
+			Namespace: req.Namespace,
+			Suspended: &suspend,
+			Message:   req.Name + alreadySuspended(suspend),
+		})
+		return
+	}
+
+	if reason := stampSuspend(object, suspend); reason != "" {
+		c.JSON(http.StatusConflict, gin.H{"error": reason})
+		return
+	}
+	stripManagedFields(object)
+
+	body, err := json.Marshal(object)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "the suspend request could not be encoded"})
+		return
+	}
+
+	resp, callOK = s.callResourceWith(c, user, cluster, grant,
+		http.MethodPut, path, body, "could not write to the cluster")
+	if !callOK {
+		return
+	}
+	if resp.Status < 200 || resp.Status >= 300 {
+		c.JSON(resp.Status, gin.H{"error": kubeErrorMessage(resp.Body, resp.Status)})
+		return
+	}
+
+	c.JSON(http.StatusOK, workloadActionResult{
+		Kind:      req.Kind,
+		Name:      req.Name,
+		Namespace: req.Namespace,
+		Suspended: &suspend,
+		Message:   suspendedMessage(req.Name, suspend),
+	})
+}
+
+// suspendState reads whether a schedule is currently suspended. An absent field
+// is the API server's default and means running; a field of the wrong type is
+// not something to guess about, for the same reason a missing pod template is
+// not — the write that follows replaces the object.
+func suspendState(object map[string]any) (bool, string) {
+	spec, _ := object["spec"].(map[string]any)
+	if spec == nil {
+		return false, "the cluster returned a cronjob with no spec"
+	}
+	switch value := spec["suspend"].(type) {
+	case nil:
+		return false, ""
+	case bool:
+		return value, ""
+	default:
+		return false, "the cluster returned a cronjob whose suspend field is not a boolean"
+	}
+}
+
+// stampSuspend writes the schedule's off switch. It changes one field and
+// nothing else, which is the whole reason this route exists rather than an
+// operator editing the manifest.
+func stampSuspend(object map[string]any, suspend bool) string {
+	spec, _ := object["spec"].(map[string]any)
+	if spec == nil {
+		return "the cluster returned a cronjob with no spec"
+	}
+	spec["suspend"] = suspend
+	return ""
+}
+
+// alreadySuspended is what a no-op answers with. It reads as a sentence about
+// the object rather than as an error, because it is not one.
+func alreadySuspended(suspend bool) string {
+	if suspend {
+		return " is already suspended"
+	}
+	return " is already running its schedule"
+}
+
+// suspendedMessage says what happened in the words an operator would use.
+func suspendedMessage(name string, suspend bool) string {
+	if suspend {
+		return name + " suspended — it will not fire again until it is resumed"
+	}
+	return name + " resumed — its schedule fires again"
 }

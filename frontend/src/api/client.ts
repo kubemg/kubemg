@@ -106,6 +106,7 @@ import type {
   User,
   UserPatch,
   Workload,
+  DeleteResult,
   WorkloadActionResult,
   WorkloadPods,
 } from './types'
@@ -1142,6 +1143,47 @@ export async function scaleWorkload(
     name,
     namespace,
     replicas,
+  })
+  return data
+}
+
+/**
+ * suspendWorkload turns a CronJob's schedule off, or back on. It is the one
+ * control a CronJob has: it owns Jobs rather than pods, so there is nothing to
+ * scale and nothing to roll, and deleting it to stop tonight's run would lose
+ * the object.
+ */
+export async function suspendWorkload(
+  clusterId: number,
+  kind: ResourceKey,
+  name: string,
+  namespace: string | undefined,
+  suspend: boolean,
+): Promise<WorkloadActionResult> {
+  const { data } = await http.post<WorkloadActionResult>(resourceURL(clusterId, 'suspend'), {
+    kind,
+    name,
+    namespace,
+    suspend,
+  })
+  return data
+}
+
+/**
+ * deleteResourceObject removes one object. It is addressed exactly like reading
+ * or writing that object — the sidebar's own kind key, a name, a namespace — and
+ * there is no bulk route on purpose: a selection of eight is eight calls, so
+ * each one is its own audit record and a partial failure is a real answer rather
+ * than a shape a single call would have to invent.
+ */
+export async function deleteResourceObject(
+  clusterId: number,
+  kind: ResourceKey,
+  name: string,
+  namespace: string | undefined,
+): Promise<DeleteResult> {
+  const { data } = await http.delete<DeleteResult>(resourceURL(clusterId, 'object'), {
+    params: { kind, name, namespace: namespace || undefined },
   })
   return data
 }
