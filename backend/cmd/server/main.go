@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -226,10 +227,25 @@ func main() {
 		return
 	}
 
-	// Plaintext still starts, because the console works over it and a dev stack
-	// should not need certificates. kubectl is the part that does not: client-go
-	// refuses to send a bearer token over http, so say so once at boot rather
-	// than letting every generated kubeconfig fail unexplained.
+	// Plaintext still starts on a loopback bind, because the console works over
+	// it and a dev stack should not need certificates to run on one machine.
+	// A listener reachable from anywhere else is a different question: nothing
+	// stops an operator exposing this directly, and every session JWT would
+	// transit unencrypted and replayable by an on-path attacker. Refuse it
+	// rather than let it scroll past as a warning.
+	if !isLoopbackAddr(cfg.ListenAddr) && !cfg.AllowInsecureBind {
+		log.Fatalf(
+			"refusing to serve plaintext HTTP on %s: it is reachable from more than this machine, "+
+				"and every session JWT would transit unencrypted. Set KUBEMG_TLS_ENABLED=true, "+
+				"bind KUBEMG_LISTEN_ADDR to loopback (e.g. 127.0.0.1:8080), "+
+				"or set KUBEMG_ALLOW_INSECURE=true to start anyway",
+			cfg.ListenAddr,
+		)
+	}
+
+	// kubectl is the part a loopback bind still breaks: client-go refuses to
+	// send a bearer token over http, so say so once at boot rather than letting
+	// every generated kubeconfig fail unexplained.
 	logger.Warn("serving http without TLS; generated kubeconfigs and kubectl exec will not work",
 		slog.String("version", version),
 		slog.String("addr", cfg.ListenAddr),
@@ -238,6 +254,25 @@ func main() {
 	if err := router.Run(cfg.ListenAddr); err != nil {
 		log.Fatalf("server exited: %v", err)
 	}
+}
+
+// isLoopbackAddr reports whether a listen address (as passed to
+// http.Server.ListenAndServe — host:port, or :port for every interface) can
+// only ever be reached from this machine. An empty host binds every
+// interface, which is the opposite of loopback-only.
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // recordingSetup is what the HTTP layer needs to serve recordings back: where
