@@ -28,6 +28,7 @@ import type {
   CronJob,
   CustomResource,
   CustomResourceDefinition,
+  CRDVisibility,
   ClusterConsole,
   ClusterConsolesResponse,
   ConsoleInput,
@@ -1671,6 +1672,31 @@ export async function saveClusterConsole(
     input,
   )
   return data.console
+}
+
+/*
+ * Which custom resources this cluster's sidebar offers. Reading is as wide as
+ * the cluster is granted — a developer has to be able to tell "no Istio here"
+ * from "somebody took Istio off the list" — and writing is administrative.
+ *
+ * The write is the whole set, because that is the shape of the decision: an
+ * administrator looks at what the cluster serves and says which of it is worth
+ * showing.
+ */
+
+export async function fetchCRDVisibility(clusterId: number): Promise<CRDVisibility> {
+  const { data } = await http.get<CRDVisibility>(`/clusters/${clusterId}/crd-visibility`)
+  return data
+}
+
+export async function saveCRDVisibility(
+  clusterId: number,
+  hidden: string[],
+): Promise<CRDVisibility> {
+  const { data } = await http.put<CRDVisibility>(`/clusters/${clusterId}/crd-visibility`, {
+    hidden,
+  })
+  return data
 }
 
 export async function deleteClusterConsole(clusterId: number, kind: ConsoleKind): Promise<void> {

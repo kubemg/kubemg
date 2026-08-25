@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useLocation } from 'react-router'
 import { fetchCRDs } from '../api/client'
@@ -36,6 +36,10 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
 
   const cache = useRef(new Map<number, CustomResourceDefinition[]>())
   const [crds, setCrds] = useState<CustomResourceDefinition[] | null>(null)
+  // Bumped by refresh(), which drops the cached answer first: the effect below
+  // keys off it, so an administrator who has just changed what the sidebar
+  // offers re-reads it rather than being shown what this cache remembers.
+  const [reloads, setReloads] = useState(0)
 
   useEffect(() => {
     if (!readable) {
@@ -68,16 +72,28 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
+  }, [readable, reloads])
+
+  const refresh = useCallback(() => {
+    if (readable) cache.current.delete(readable.id)
+    setReloads((count) => count + 1)
   }, [readable])
 
   const value = useMemo<InventoryState>(() => {
-    const discovered = discoverCategories(crds ?? [])
+    // A kind an administrator took off this cluster's list is off it for
+    // everybody, themselves included: the panel that curates the list is where
+    // one is put back, and a tree that quietly differed by role would make
+    // "what does a developer see here" unanswerable from the console. The flag
+    // only ever reaches an administrator — everybody else is served the curated
+    // list and never learns the row exists.
+    const discovered = discoverCategories((crds ?? []).filter((crd) => !crd.hidden))
     return {
       discovered,
       categories: exploreCategories(discovered),
       ready: crds !== null,
+      refresh,
     }
-  }, [crds])
+  }, [crds, refresh])
 
   return <InventoryContext.Provider value={value}>{children}</InventoryContext.Provider>
 }
