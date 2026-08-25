@@ -90,6 +90,9 @@ type Proxy struct {
 	// guard refuses calls and commands a safety policy names. Nil refuses
 	// nothing, which is what a gateway wired without one does — see pkg/guardrails.
 	guard *guardrails.Engine
+	// clientUpgrader accepts the browser terminal's / kubectl's WebSocket, built
+	// once with this server's origin allowlist. See newClientUpgrader.
+	clientUpgrader websocket.Upgrader
 }
 
 // ProxyOptions wires the proxy handler.
@@ -109,6 +112,14 @@ type ProxyOptions struct {
 	// one behaves exactly as it did before guardrails existed, which is the right
 	// failure mode for a control that stops calls RBAC permits.
 	Guard *guardrails.Engine
+	// AllowedOrigins are the browser origins the API's CORS config already
+	// trusts, and PublicURL is this server's own address — together they are
+	// checked against the Origin header on the browser terminal's WebSocket
+	// upgrade. Neither is required: an empty allowlist leaves the upgrader
+	// checking nothing, which is what every caller before this option existed
+	// got.
+	AllowedOrigins []string
+	PublicURL      string
 }
 
 // NewProxy builds the kubectl proxy handler.
@@ -122,13 +133,44 @@ func NewProxy(opts ProxyOptions) *Proxy {
 		registry = NewRegistry()
 	}
 	return &Proxy{
-		store:    opts.Store,
-		registry: registry,
-		auditor:  auditor,
-		recorder: opts.Recorder,
-		policy:   opts.Policy,
-		guard:    opts.Guard,
+		store:          opts.Store,
+		registry:       registry,
+		auditor:        auditor,
+		recorder:       opts.Recorder,
+		policy:         opts.Policy,
+		guard:          opts.Guard,
+		clientUpgrader: newClientUpgrader(buildOriginAllowlist(opts.AllowedOrigins, opts.PublicURL)),
 	}
+}
+
+// buildOriginAllowlist mirrors api.server.consoleOrigins: a wildcard CORS entry
+// contributes nothing here (it is a licence for cross-origin fetches, not for
+// a WebSocket to accept a handshake from anywhere), and the public URL is
+// always added so a console with no explicit CORS origin configured — the
+// common case, since it is same-origin — still has one.
+func buildOriginAllowlist(configured []string, publicURL string) []string {
+	origins := make([]string, 0, len(configured)+1)
+	for _, origin := range configured {
+		if origin = strings.TrimRight(strings.TrimSpace(origin), "/"); origin != "" && origin != "*" {
+			origins = append(origins, origin)
+		}
+	}
+	if trimmed := strings.TrimRight(strings.TrimSpace(publicURL), "/"); trimmed != "" {
+		origins = append(origins, trimmed)
+	}
+	return origins
+}
+
+// originAllowed reports whether an Origin header value names one of the
+// allowlisted origins. Matching is case-insensitive on the whole value, which
+// is what a scheme+host origin string calls for.
+func originAllowed(allowlist []string, origin string) bool {
+	for _, candidate := range allowlist {
+		if strings.EqualFold(candidate, origin) {
+			return true
+		}
+	}
+	return false
 }
 
 // Handle serves one proxied Kubernetes API request. It is mounted behind the
