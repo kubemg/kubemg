@@ -18,7 +18,18 @@ const QueryTokenParam = "access_token"
 
 // RequireAuth validates the Bearer token and stores its claims on the request
 // context.
-func RequireAuth(m *Manager) gin.HandlerFunc {
+//
+// Two credential shapes arrive here. A session JWT is the console's, and a
+// kmg-prefixed opaque token is a machine account's — a CI pipeline holding one
+// credential for months, which is exactly the lifetime a stateless token cannot
+// be withdrawn over. The second is resolved by the verifier, which reads the
+// stored row, so a revoked token stops working on its next call rather than at
+// its own expiry. Everything past this point sees one shape of claims.
+func RequireAuth(m *Manager, service ...MachineTokenVerifier) gin.HandlerFunc {
+	var verifier MachineTokenVerifier
+	if len(service) > 0 {
+		verifier = service[0]
+	}
 	return func(c *gin.Context) {
 		token, ok := bearerToken(c.GetHeader("Authorization"))
 		if !ok {
@@ -35,8 +46,25 @@ func RequireAuth(m *Manager) gin.HandlerFunc {
 			return
 		}
 
-		claims, err := m.Parse(token)
-		if err != nil {
+		var (
+			claims *Claims
+			err    error
+		)
+		if IsMachineToken(token) {
+			// A build without programmatic access wired refuses these rather
+			// than falling through to the JWT parser, which would answer the
+			// same 401 by a route that says nothing about why.
+			if verifier == nil {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+					"error": "programmatic access is not enabled on this server",
+				})
+				return
+			}
+			claims, err = verifier.VerifyMachineToken(c.Request.Context(), token)
+		} else {
+			claims, err = m.Parse(token)
+		}
+		if err != nil || claims == nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 			return
 		}

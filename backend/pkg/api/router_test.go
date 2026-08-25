@@ -41,7 +41,10 @@ type fakeStore struct {
 	audit       []db.AuditEvent
 	// recordings stands in for the terminal_sessions table.
 	recordings []db.TerminalSession
-	settings   map[string]string
+	// machineTokens stands in for the machine_tokens table; see
+	// machine_fake_test.go.
+	machineTokens []*db.MachineToken
+	settings      map[string]string
 	// sources holds the observability datasources, keyed the way the table is:
 	// one per cluster per kind.
 	sources map[uint]map[string]db.ObservabilitySource

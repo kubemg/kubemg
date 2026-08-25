@@ -12,6 +12,7 @@ import { GroupManagement } from './pages/GroupManagement'
 import { Login } from './pages/Login'
 import { NodeCapacity } from './pages/NodeCapacity'
 import { Overview } from './pages/Overview'
+import { MachineAccounts } from './pages/MachineAccounts'
 import { PermissionsMatrix } from './pages/PermissionsMatrix'
 import { SecurityPosture } from './pages/SecurityPosture'
 import { SessionRecordings } from './pages/SessionRecordings'
@@ -416,6 +417,17 @@ export default function App() {
               element={
                 <RequireAuth adminOnly>
                   <GroupManagement />
+                </RequireAuth>
+              }
+            />
+            {/* Programmatic identities. It sits with the other identity pages
+                rather than with clusters, because what it manages is who a
+                pipeline is — the credential is what that identity holds. */}
+            <Route
+              path="/admin/machine-accounts"
+              element={
+                <RequireAuth adminOnly>
+                  <MachineAccounts />
                 </RequireAuth>
               }
             />
