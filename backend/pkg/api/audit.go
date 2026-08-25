@@ -132,9 +132,16 @@ func (s *server) listAudit(c *gin.Context) {
 	})
 }
 
-// auditSummary returns the headline counts for the last day.
+// auditSummary returns the headline counts for the last day. Admin only: the
+// store method has no per-user filter, so the numbers are fleet-wide — the same
+// disclosure listAudit deliberately narrows a non-admin away from.
 func (s *server) auditSummary(c *gin.Context) {
-	if _, ok := s.currentUser(c); !ok {
+	user, ok := s.currentUser(c)
+	if !ok {
+		return
+	}
+	if !user.IsAdmin() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "admin only"})
 		return
 	}
 
