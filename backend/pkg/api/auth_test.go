@@ -81,6 +81,43 @@ func TestLoginRejectsUnknownUser(t *testing.T) {
 	}
 }
 
+// TestLoginDoesNotDistinguishFederatedFromUnknown closes the enumeration
+// oracle: a federated account used to answer 403 "signs in through an
+// identity provider" for any password, with zero attempts, while an unknown
+// username or a wrong local password both answered 401. That let an
+// unauthenticated caller learn which usernames exist and are federated.
+func TestLoginDoesNotDistinguishFederatedFromUnknown(t *testing.T) {
+	env := newTestEnv(t)
+	federated := env.store.addUser("sso-devops", "unusable-local-password", db.RoleUser)
+	federated.AuthSource = "saml"
+	env.store.addUser("devops", "s3cret", db.RoleUser)
+
+	cases := map[string]string{
+		"federated account, any password":     "sso-devops",
+		"unknown username":                    "ghost",
+		"known local account, wrong password": "devops",
+	}
+
+	var bodies []string
+	for name, username := range cases {
+		t.Run(name, func(t *testing.T) {
+			rec := env.do(t, http.MethodPost, "/api/v1/auth/login", "", map[string]string{
+				"username": username,
+				"password": "whatever-was-typed",
+			})
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("expected status %d, got %d (%s)", http.StatusUnauthorized, rec.Code, rec.Body.String())
+			}
+			bodies = append(bodies, rec.Body.String())
+		})
+	}
+	for i := 1; i < len(bodies); i++ {
+		if bodies[i] != bodies[0] {
+			t.Fatalf("responses must be indistinguishable, got %q and %q", bodies[0], bodies[i])
+		}
+	}
+}
+
 func TestLoginRequiresCredentials(t *testing.T) {
 	env := newTestEnv(t)
 

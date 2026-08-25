@@ -478,6 +478,11 @@ func TestMappingRejectsUnknownGroup(t *testing.T) {
 	}
 }
 
+// A federated account has no password here, so password sign-in is refused —
+// but as the same generic 401 an unknown username or a wrong local password
+// gets. It used to be a distinct 403 naming the provider, which let an
+// unauthenticated caller enumerate federated usernames with zero attempts;
+// see TestLoginDoesNotDistinguishFederatedFromUnknown in auth_test.go.
 func TestFederatedAccountCannotUsePasswordLogin(t *testing.T) {
 	env := newTestEnv(t)
 	store := env.store
@@ -486,8 +491,8 @@ func TestFederatedAccountCannotUsePasswordLogin(t *testing.T) {
 
 	res := env.do(t, http.MethodPost, "/api/v1/auth/login", "",
 		map[string]string{"username": "ada", "password": "hunter2"})
-	if res.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403: a federated account has no password here", res.Code)
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401: a federated account has no password here", res.Code)
 	}
 }
 
