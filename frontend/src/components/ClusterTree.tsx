@@ -15,6 +15,7 @@ import {
   Shapes,
   ShieldAlert,
   Siren,
+  Star,
   TriangleAlert,
   Waypoints,
 } from 'lucide-react'
@@ -23,6 +24,7 @@ import { fetchResourceCounts } from '../api/client'
 import type { Cluster, ResourceCount } from '../api/types'
 import type { ClusterPage } from '../lib/navigation'
 import { clusterPageHref, hasTunnel, pageNeedsTunnel, resourceHref } from '../lib/navigation'
+import { useFavorites } from '../lib/favorites'
 import { queryKey, useCachedQuery } from '../lib/query'
 import type {
   CategoryId,
@@ -107,8 +109,29 @@ function pageRow(entry: (typeof PAGE_ROWS)[number]): Row {
   return { kind: 'page', id: `page:${entry.page}`, label: entry.label, page: entry.page, icon: entry.icon }
 }
 
-function resourceRow(item: ResourceItem): Row {
-  return { kind: 'resource', id: `res:${item.key}`, label: item.label, item }
+function resourceRow(item: ResourceItem, prefix = 'res'): Row {
+  return { kind: 'resource', id: `${prefix}:${item.key}`, label: item.label, item }
+}
+
+/**
+ * The pinned rows, drawn from *this* cluster's own inventory rather than from
+ * the stored set. A favourite is a resource key, and a key means nothing on a
+ * cluster that does not serve that kind — so a CRD pinned on the cluster that
+ * has it is simply absent here, which is the same answer `resourceItem` gives.
+ *
+ * They keep the inventory's own order rather than the order they were starred
+ * in: the point is a short column somebody's eye learns the shape of, and one
+ * that reshuffles every time a row is pinned is a column that has to be read.
+ */
+function favoriteRows(
+  categories: ResourceCategory[],
+  favorites: ReadonlySet<ResourceKey>,
+): Row[] {
+  if (favorites.size === 0) return []
+  return categories
+    .flatMap((category) => category.items)
+    .filter((item) => favorites.has(item.key))
+    .map((item) => resourceRow(item, 'fav'))
 }
 
 /**
@@ -121,24 +144,35 @@ function resourceRow(item: ResourceItem): Row {
  * nobody thinks of them as a category of their own next to Workloads: they are
  * how you look at the cluster.
  */
-function buildGroups(categories: ResourceCategory[]): Group[] {
+function buildGroups(
+  categories: ResourceCategory[],
+  favorites: ReadonlySet<ResourceKey>,
+): Group[] {
   const clusterCategory = categories.find((category) => category.id === 'cluster')
   const rest = categories.filter((category) => category.id !== 'cluster')
 
   const clusterRows: Row[] = [
     pageRow(PAGE_ROWS[0]),
-    ...(clusterCategory?.items ?? []).map(resourceRow),
+    ...(clusterCategory?.items ?? []).map((item) => resourceRow(item)),
     ...PAGE_ROWS.slice(1).map(pageRow),
   ]
 
+  const pinned = favoriteRows(categories, favorites)
+
   return [
+    // Above the cluster's own group, and only once something is in it: an empty
+    // heading at the top of the column would be a permanent reminder of a
+    // feature nobody had asked for yet.
+    ...(pinned.length > 0
+      ? [{ id: 'favorites', label: 'Favorites', icon: Star, collapsed: false, rows: pinned }]
+      : []),
     { id: 'cluster', label: 'Cluster', icon: Server, collapsed: false, rows: clusterRows },
     ...rest.map((category) => ({
       id: category.id,
       label: category.label,
       icon: categoryIcon(category.id),
       collapsed: startsCollapsed(category.id),
-      rows: category.items.map(resourceRow),
+      rows: category.items.map((item) => resourceRow(item)),
     })),
   ]
 }
@@ -172,16 +206,19 @@ function buildGroups(categories: ResourceCategory[]): Group[] {
  * refused — the row simply carries no number.
  */
 function countableKeys(groups: Group[], open: (group: Group) => boolean): string[] {
-  const keys: string[] = []
+  // A set, because a pinned row is the same kind as the row it was pinned from:
+  // asking for it twice would spend a second count on an answer already in the
+  // batch, and both rows read the same entry back.
+  const keys = new Set<string>()
   for (const group of groups) {
     if (!open(group)) continue
     for (const row of group.rows) {
       if (row.kind !== 'resource') continue
       if (row.item.key === 'helmreleases') continue
-      keys.push(row.item.key)
+      keys.add(row.item.key)
     }
   }
-  return keys
+  return [...keys]
 }
 
 /**
@@ -234,7 +271,9 @@ export function ClusterTree({
   // it while moving from Pods to Services.
   const search = searchParams.toString()
 
-  const groups = useMemo(() => buildGroups(categories), [categories])
+  const { favorites, toggle } = useFavorites()
+
+  const groups = useMemo(() => buildGroups(categories, favorites), [categories, favorites])
 
   // Filtering hides what does not match and ignores collapse: a search that
   // silently skipped a closed category would be lying about what is here.
@@ -378,6 +417,8 @@ export function ClusterTree({
                         count={
                           row.kind === 'resource' ? countLabel(countOf[row.item.key]) : null
                         }
+                        pinned={row.kind === 'resource' && favorites.has(row.item.key)}
+                        onPin={toggle}
                       />
                     </li>
                   ))}
@@ -412,6 +453,8 @@ function TreeRow({
   selected,
   live,
   count,
+  pinned,
+  onPin,
 }: {
   row: Row
   cluster: Cluster
@@ -420,6 +463,9 @@ function TreeRow({
   live: boolean
   /** How many the cluster holds, or null where that is not known. */
   count: string | null
+  /** Whether this kind is in the operator's favourites. */
+  pinned: boolean
+  onPin: (key: ResourceKey) => void
 }) {
   // A row that cannot be opened is drawn rather than removed, and says so to a
   // screen reader as well as to the eye. A link that only ever answers "this
@@ -455,29 +501,69 @@ function TreeRow({
 
   const active = row.item.key === selected
   return (
-    <Link
-      to={resourceHref(cluster.id, row.item.key, search)}
-      aria-current={active ? 'page' : undefined}
-      title={row.label}
-      className={rowClass(active)}
+    /* The star is a *sibling* of the link, not something inside it: a button
+       nested in an anchor is invalid, and a click on it must pin the row rather
+       than navigate to it. The row is one hover target either way. */
+    <div className="group/row flex items-center gap-px">
+      <Link
+        to={resourceHref(cluster.id, row.item.key, search)}
+        aria-current={active ? 'page' : undefined}
+        title={row.label}
+        className={`${rowClass(active)} min-w-0 flex-1`}
+      >
+        {active ? <Marker /> : null}
+        <span className="min-w-0 flex-1 truncate">{row.label}</span>
+        {/* The count reads before the scope word: it is the thing the eye is
+            scanning the column for, and it is data, so it is mono like every
+            other number in the console. A row with no count draws nothing — the
+            space simply stays empty rather than holding a placeholder that
+            would read as a zero. */}
+        {count === null ? null : (
+          <span className="shrink-0 font-mono text-[11px] text-rail-muted tabular-nums">
+            {count}
+          </span>
+        )}
+        {/* Cluster-scoped lists ignore the namespace picker; saying so here is
+            why it disappears. */}
+        {row.item.scope === 'cluster' ? (
+          <span className="shrink-0 font-mono text-[10px] text-rail-faint">cluster</span>
+        ) : null}
+      </Link>
+      <PinButton item={row.item} pinned={pinned} onPin={onPin} />
+    </div>
+  )
+}
+
+/**
+ * The star. A pinned row wears one at all times — it is why the row is at the
+ * top — while an unpinned one only shows it under the pointer or the keyboard,
+ * because a permanent column of empty stars beside every kind would compete
+ * with the counts for the one thing this column is scanned for.
+ */
+function PinButton({
+  item,
+  pinned,
+  onPin,
+}: {
+  item: ResourceItem
+  pinned: boolean
+  onPin: (key: ResourceKey) => void
+}) {
+  const label = pinned ? `Unpin ${item.label}` : `Pin ${item.label} to Favorites`
+  return (
+    <button
+      type="button"
+      onClick={() => onPin(item.key)}
+      aria-pressed={pinned}
+      aria-label={label}
+      title={label}
+      className={`shrink-0 rounded-control p-1 transition-colors focus-visible:opacity-100 ${
+        pinned
+          ? 'text-accent hover:text-accent'
+          : 'text-rail-faint opacity-0 group-hover/row:opacity-100 hover:text-rail-fg focus-visible:opacity-100'
+      }`}
     >
-      {active ? <Marker /> : null}
-      <span className="min-w-0 flex-1 truncate">{row.label}</span>
-      {/* The count reads before the scope word: it is the thing the eye is
-          scanning the column for, and it is data, so it is mono like every
-          other number in the console. A row with no count draws nothing — the
-          space simply stays empty rather than holding a placeholder that would
-          read as a zero. */}
-      {count === null ? null : (
-        <span className="shrink-0 font-mono text-[11px] text-rail-muted tabular-nums">
-          {count}
-        </span>
-      )}
-      {/* Cluster-scoped lists ignore the namespace picker; saying so here is
-          why it disappears. */}
-      {row.item.scope === 'cluster' ? (
-        <span className="shrink-0 font-mono text-[10px] text-rail-faint">cluster</span>
-      ) : null}
-    </Link>
+      <Star aria-hidden="true" className="size-3.5" fill={pinned ? 'currentColor' : 'none'} />
+    </button>
   )
 }
