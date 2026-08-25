@@ -33,7 +33,7 @@ const (
 	// the default landing on an arm64 node as ImagePullBackOff would read as a
 	// registry fault rather than as a missing platform. Keep it in step with
 	// AGENT_VERSION in the Makefile.
-	DefaultImage = "ghcr.io/kubemg/kubemg-agent:0.5.0"
+	DefaultImage = "ghcr.io/kubemg/kubemg-agent:0.6.0"
 	// PackageDir is the directory name inside the rendered archive. It is also
 	// what the operator types after `kubectl apply -k`.
 	PackageDir = "kubemg-agent"

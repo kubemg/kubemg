@@ -40,7 +40,7 @@ services:
       start_period: 10s
 
   kubemg:
-    image: ${KUBEMG_IMAGE:-ghcr.io/kubemg/kubemg:0.5.0}
+    image: ${KUBEMG_IMAGE:-ghcr.io/kubemg/kubemg:0.6.0}
     restart: unless-stopped
     ports:
       - "${KUBEMG_PORT:-8443}:8443"
@@ -106,6 +106,13 @@ services:
       # put a real one in ./ssl (above) and the pinning stops. Setting
       # KUBEMG_TLS_SELF_SIGNED=false is the stricter version of the same
       # decision: it refuses to start rather than minting one at all.
+      #
+      # Turning TLS off here does not produce a plaintext bastion: this service
+      # publishes a port, so the server refuses to start rather than send every
+      # session token over the wire in the clear. KUBEMG_ALLOW_INSECURE=true is
+      # the override, and it is only ever right behind a proxy that terminates
+      # TLS itself — in which case set KUBEMG_AGENT_CA_BUNDLE to the chain that
+      # proxy presents, since agents verify its certificate and not this one's.
       - KUBEMG_TLS_ENABLED=${KUBEMG_TLS_ENABLED:-true}
       - KUBEMG_TLS_SELF_SIGNED=${KUBEMG_TLS_SELF_SIGNED:-true}
       # Every hostname and IP the certificate must be valid for. A cluster
@@ -114,7 +121,7 @@ services:
 
       # Where clusters pull the agent from. Point this at an internal mirror for
       # an air-gapped install; it is written into the manifests operators apply.
-      - KUBEMG_AGENT_IMAGE=${KUBEMG_AGENT_IMAGE:-ghcr.io/kubemg/kubemg-agent:0.5.0}
+      - KUBEMG_AGENT_IMAGE=${KUBEMG_AGENT_IMAGE:-ghcr.io/kubemg/kubemg-agent:0.6.0}
       - KUBEMG_AGENT_NAMESPACE=${KUBEMG_AGENT_NAMESPACE:-kubemg-system}
 
       # Recordings are encrypted at rest. Without a key they are written in the
