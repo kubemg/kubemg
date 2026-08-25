@@ -706,6 +706,11 @@ func NewRouter(opts Options) *gin.Engine {
 			// the caller may actually change anything.
 			resources.GET("/object", s.showResourceObject)
 			resources.PUT("/object", s.updateResourceObject)
+			// And bringing one into existence: the same kind key, addressed at
+			// the collection rather than at an object, because there is no
+			// object yet. `kubectl create -f` was the one thing the tunnel
+			// carried that the console could not do — see resources_create.go.
+			resources.POST("/object", s.createResourceObject)
 			// And removing it. Same address, same fixed kind table, same
 			// impersonated call — so it reaches nothing the read does not, and
 			// the cluster's RBAC and the command guardrails both still decide.

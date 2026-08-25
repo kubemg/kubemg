@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Boxes, CheckSquare, X } from 'lucide-react'
+import { Boxes, CheckSquare, Plus, X } from 'lucide-react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import {
   errorMessage,
@@ -37,6 +37,7 @@ import type { Namespace } from '../api/types'
 import { AccessReviewPanel } from '../components/AccessReviewPanel'
 import { AppShell } from '../components/AppShell'
 import { BulkActionSheet } from '../components/BulkActionSheet'
+import { CreateResourceSheet } from '../components/CreateResourceSheet'
 import { InsightTrend } from '../components/InsightTrend'
 import { LiveRefresh } from '../components/LiveRefresh'
 import { NetworkPolicyCoveragePanel } from '../components/NetworkPolicyCoveragePanel'
@@ -88,12 +89,13 @@ import {
   volumeInsights,
   workloadInsights,
 } from '../lib/insights'
+import { canCreateResource } from '../lib/manifests'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { podUsageIndex } from '../lib/units'
 import { workloadKeyFor } from '../lib/workloads'
 import type { BulkActionName, SelectedRow } from '../lib/selection'
 import { BULK_ACTION_LABEL, bulkActions } from '../lib/selection'
-import { clusterPageHref, resourceHref } from '../lib/navigation'
+import { clusterPageHref, eventsHref, resourceHref } from '../lib/navigation'
 import { useClusters } from '../state/clusters-context'
 import { useInventory } from '../state/inventory-context'
 
@@ -430,22 +432,6 @@ function alertKind(item: ResourceItem): string {
   return /^[A-Za-z][A-Za-z0-9]*$/.test(singular) ? singular : ''
 }
 
-/** A link into one cluster's events timeline, narrowed to one object. */
-function eventsHref(
-  clusterId: number,
-  namespace: string,
-  kind: string,
-  name: string,
-): string {
-  const params = new URLSearchParams()
-  params.set('ns', namespace || ALL_NAMESPACES)
-  // A kind is only sent with a name, which is the pairing the server accepts:
-  // narrowing to a kind alone is what the namespace scope already does.
-  if (kind && name) params.set('kind', kind)
-  if (name) params.set('name', name)
-  return `/clusters/${clusterId}/events?${params.toString()}`
-}
-
 function readPreferredNamespace(): string {
   try {
     return localStorage.getItem(NAMESPACE_KEY) ?? ''
@@ -532,6 +518,10 @@ export function Explore() {
   // the row menu opens the same surface with one row in it: there is one place
   // that says what is about to happen and reports what did.
   const [bulk, setBulk] = useState<{ action: BulkActionName; rows: SelectedRow[] } | null>(null)
+  // Creating an object of the kind this list is showing. It is its own surface
+  // rather than a tab in the detail drawer because the drawer is about an
+  // object and there is no object yet.
+  const [creating, setCreating] = useState(false)
 
   // One drawer for every kind and every action, opened on whichever tab or
   // panel the row asked for. A pod and a Helm release each carry their row
@@ -724,6 +714,9 @@ export function Explore() {
     // how somebody deletes something they cannot see.
     setSelected([])
     setSelecting(false)
+    // A half-typed manifest belongs to the kind it was opened for; switching
+    // lists closes it rather than posting a Deployment to the Services route.
+    setCreating(false)
   }, [resource, namespace, clusterId])
 
   // Membership is a set because the checkbox column asks about every row it
@@ -1078,6 +1071,27 @@ export function Explore() {
                 Select
               </Chip>
             ) : null}
+            {/* Create sits with the list rather than in the page header for the
+                same reason the filter does: it acts on *this* kind, in this
+                namespace, and the header belongs to the cluster and the scope.
+                It is offered wherever the kind can be created at all — an empty
+                list is exactly when somebody wants it — and never for a kind
+                kubemg does not author, since a button that always answers with a
+                refusal is worse than an absent one. `ml-auto` on the first of
+                the trailing controls, so the group is right-aligned whether or
+                not the filter and the Select chip are drawn. */}
+            {cluster && canCreateResource(item) ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="primary"
+                className={totalCount > 0 ? undefined : 'ml-auto'}
+                onClick={() => setCreating(true)}
+              >
+                <Plus aria-hidden="true" className="size-3.5" />
+                Create {resourceSingular(item)}
+              </Button>
+            ) : null}
           </div>
 
           {/* What can be done to the selection, and nothing that cannot: an
@@ -1281,6 +1295,24 @@ export function Explore() {
             setSelected([])
           }}
           onDone={load}
+        />
+      ) : null}
+
+      {/* The manifest editor with nothing read into it. It refreshes the list
+          behind it on success rather than closing itself: what the cluster
+          filled in is the answer to "did that do what I meant", and it is worth
+          a look before the surface goes away. */}
+      {creating && cluster ? (
+        <CreateResourceSheet
+          cluster={cluster}
+          item={item}
+          // "All namespaces" is a way of reading a list; a create needs one
+          // namespace, so the picker falls back to the first granted one
+          // instead of carrying `*` into the address.
+          namespace={namespaced && !allNamespaces ? namespace : undefined}
+          namespaces={namespaces.map((entry) => entry.name)}
+          onClose={() => setCreating(false)}
+          onCreated={load}
         />
       ) : null}
     </AppShell>

@@ -1,4 +1,5 @@
 import type { Cluster } from '../api/types'
+import { ALL_NAMESPACES } from './resources'
 
 /**
  * The console has two address spaces, and they answer to two different people.
@@ -147,3 +148,26 @@ export function isAdminPath(pathname: string): boolean {
 
 /** The operator's own access — theirs to read whatever their role is. */
 export const ACCESS_HOME = '/me/access'
+
+/**
+ * A link into one cluster's events timeline, narrowed to one object.
+ *
+ * It lives here rather than beside either caller because two surfaces need the
+ * same link for the same reason: a list header and a dashboard both name objects
+ * that are in trouble, and "why" is answered by what the cluster recorded
+ * against that object rather than by the object itself.
+ */
+export function eventsHref(
+  clusterId: number,
+  namespace: string,
+  kind: string,
+  name: string,
+): string {
+  const params = new URLSearchParams()
+  params.set('ns', namespace || ALL_NAMESPACES)
+  // A kind is only sent with a name, which is the pairing the server accepts:
+  // narrowing to a kind alone is what the namespace scope already does.
+  if (kind && name) params.set('kind', kind)
+  if (name) params.set('name', name)
+  return `${clusterPageHref(clusterId, 'events')}?${params.toString()}`
+}
