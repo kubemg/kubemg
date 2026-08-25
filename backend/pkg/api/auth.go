@@ -12,6 +12,15 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
+// dummyPasswordHash is compared against on a login that can never succeed —
+// an unknown username, or a federated account with no local password at all
+// — so that branch spends roughly the same time as a real bcrypt check
+// rather than returning in the time a map lookup takes. It is not a defense
+// against enumeration by itself (see loginErrorAndStatus below, which is
+// the actual fix), but a visibly-faster wrong-form branch would be a second,
+// independent oracle next to the one being closed here.
+const dummyPasswordHash = "$2a$10$65SBH3Wtnxyg/qRrfasRcu7FIZ9EMIHYWAMdJZh5NFfyiuRI4Isqm"
+
 type loginRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
@@ -80,6 +89,9 @@ func (s *server) login(c *gin.Context) {
 
 	user, err := s.store.UserByUsername(c.Request.Context(), req.Username)
 	if errors.Is(err, db.ErrNotFound) {
+		// Spend the time a real check would, so this branch is not a visibly
+		// faster oracle for "no such account" next to the ones below.
+		auth.CheckPassword(dummyPasswordHash, req.Password)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
@@ -88,14 +100,16 @@ func (s *server) login(c *gin.Context) {
 		return
 	}
 
-	// A federated account has no password here at all, so this is not a wrong
-	// one — it is the wrong form. Saying which provider owns the account is what
-	// stops someone trying their directory password against this box until they
-	// are locked out of the directory instead.
+	// A federated account has no password here at all, so a submitted one is
+	// never the right password rather than the wrong one — but saying so up
+	// front, before any password is checked, let an unauthenticated caller
+	// enumerate which usernames exist and are federated (any password gets a
+	// distinct 403 with zero attempts). This answers the same as an unknown
+	// username or a wrong local password: a federated account never signs in
+	// here, so from the caller's side it is exactly that.
 	if user.IsFederated() {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "this account signs in through an identity provider",
-		})
+		auth.CheckPassword(dummyPasswordHash, req.Password)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
 
