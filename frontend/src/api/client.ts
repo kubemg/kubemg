@@ -65,6 +65,7 @@ import type {
   NewUser,
   NodeMetrics,
   OptionalList,
+  ResourceCount,
   MetricKind,
   MetricCompareResponse,
   MetricQueryResponse,
@@ -171,6 +172,54 @@ export async function withFreshReads<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
+/*
+ * What a read could not finish.
+ *
+ * A list is paged and bounded on the server: past its budget the read stops and
+ * the response carries `truncated`, because a table showing 2000 rows of a
+ * cluster's 12000 with nothing to mark the difference is worse than one that
+ * says so. That flag has to reach the surface rendering the rows.
+ *
+ * It is collected around a block rather than returned from each of forty list
+ * functions, for the reason withFreshReads above is written the same way: a
+ * loader often makes several reads for one view — a pod list and its usage, a
+ * list and the CRDs behind it — and threading a second return value through
+ * every signature would be a change to all of them for one field almost none of
+ * them will ever set. The block reports the *largest* bound any read inside it
+ * hit, which is the one the operator needs to know about.
+ */
+let readReport: { truncatedAt?: number } | null = null
+
+export interface ReadReport {
+  /**
+   * The bound a read stopped at, absent when every read inside the block
+   * returned the cluster's whole answer.
+   */
+  truncatedAt?: number
+}
+
+export async function withReadReport<T>(
+  run: () => Promise<T>,
+): Promise<{ value: T; report: ReadReport }> {
+  const previous = readReport
+  const report: { truncatedAt?: number } = {}
+  readReport = report
+  try {
+    return { value: await run(), report }
+  } finally {
+    readReport = previous
+  }
+}
+
+/** noteTruncation folds one response's bound into the block's report. */
+function noteTruncation(body: unknown) {
+  if (readReport === null || typeof body !== 'object' || body === null) return
+  const payload = body as { truncated?: boolean; truncated_at?: number }
+  if (payload.truncated !== true) return
+  const at = typeof payload.truncated_at === 'number' ? payload.truncated_at : 0
+  readReport.truncatedAt = Math.max(readReport.truncatedAt ?? 0, at)
+}
+
 http.interceptors.request.use((config) => {
   const token = readToken()
   if (token) {
@@ -183,7 +232,10 @@ http.interceptors.request.use((config) => {
 })
 
 http.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    noteTruncation(response.data)
+    return response
+  },
   (error: unknown) => {
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       onUnauthorized?.()
@@ -577,6 +629,31 @@ async function fetchOptionalList<T>(
     available: data.available !== false,
     reason: data.reason as string | undefined,
   }
+}
+
+/**
+ * How many objects of each kind the cluster holds.
+ *
+ * One request for every kind the sidebar wants a number for, because a nav
+ * count must not cost what opening the list costs: the server reads each at
+ * `limit=1`, so the price is flat in the size of the cluster rather than
+ * proportional to it, and batching keeps a column of thirty numbers to one round
+ * trip and one cache entry.
+ *
+ * A kind the caller may not list, or one this cluster does not serve, comes back
+ * unavailable with a reason rather than as a failure — the sidebar simply shows
+ * no number there, which is the honest reading of "we cannot know".
+ */
+export async function fetchResourceCounts(
+  clusterId: number,
+  keys: string[],
+  namespace: string,
+): Promise<Record<string, ResourceCount>> {
+  const { data } = await http.get<{ counts?: Record<string, ResourceCount> }>(
+    resourceURL(clusterId, 'counts'),
+    { params: { ...scopeParams(namespace), keys: keys.join(',') } },
+  )
+  return data.counts ?? {}
 }
 
 export function fetchDeployments(clusterId: number, namespace: string): Promise<Workload[]> {

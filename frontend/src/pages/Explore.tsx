@@ -30,7 +30,9 @@ import {
   fetchStatefulSets,
   fetchStorageClasses,
   fetchVirtualServices,
+  withReadReport,
 } from '../api/client'
+import type { ReadReport } from '../api/client'
 import type { Namespace } from '../api/types'
 import { AccessReviewPanel } from '../components/AccessReviewPanel'
 import { AppShell } from '../components/AppShell'
@@ -650,14 +652,19 @@ export function Explore() {
         )
       : null
 
-  const list = useCachedQuery<LoadedResource>(
+  const list = useCachedQuery<{ resource: LoadedResource; report: ReadReport }>(
     readKey,
     async () => {
       // Unreachable while the key is null, which is the only state without a
       // cluster; it is written as a guard rather than an assertion so the two
       // cannot drift apart silently.
       if (!cluster) throw new Error('no cluster is selected')
-      return loadResource(item, cluster.id, namespace, namespaces)
+      // The read is wrapped so a list the server had to bound arrives with the
+      // bound attached rather than presenting itself as the whole cluster.
+      const { value, report } = await withReadReport(() =>
+        loadResource(item, cluster.id, namespace, namespaces),
+      )
+      return { resource: value, report }
     },
     // The list keeps itself true. A rollout, a crash loop or a scale-down is
     // exactly what somebody has this page open to watch, and a table that
@@ -668,7 +675,8 @@ export function Explore() {
     { live: true },
   )
 
-  const loaded = list.data
+  const loaded = list.data?.resource ?? null
+  const truncatedAt = list.data?.report.truncatedAt ?? null
   // Anything in flight counts as loading for the header's live note; only
   // `list.loading` — nothing on screen yet — is what draws a skeleton.
   const loading = list.loading || list.revalidating
@@ -831,6 +839,20 @@ export function Explore() {
     >
       <div className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
+
+        {/* A bounded read says so. Every reading on this page — the pilot
+            header's buckets, the counts, the filter — is derived from the rows
+            that arrived, so a table quietly holding the first two thousand of a
+            cluster's twelve thousand would make all of them wrong without
+            looking wrong. The way out is a narrower question, which is what the
+            note asks for. */}
+        {truncatedAt !== null ? (
+          <Notice tone="warn">
+            This cluster has more {item.label.toLowerCase()} than one read returns, so this is the
+            first {truncatedAt.toLocaleString()} of them and everything on this page describes only
+            those. Pick a single namespace, or filter by name, to see a complete answer.
+          </Notice>
+        ) : null}
 
         {/* The tree survives down to `lg` as the section panel's own content;
             below that all chrome collapses into the mobile sheet, so the

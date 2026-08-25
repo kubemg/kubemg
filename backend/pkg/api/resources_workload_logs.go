@@ -177,7 +177,7 @@ func (s *server) listWorkloadPods(c *gin.Context) {
 	var list struct {
 		Items []podObject `json:"items"`
 	}
-	if !s.fetch(c, user, cluster, grant, listPath, &list) {
+	if !fetchList(s, c, user, cluster, grant, listPath, &list.Items) {
 		return
 	}
 
@@ -273,7 +273,7 @@ func (s *server) listCronJobPods(c *gin.Context, user *db.User, cluster *db.Clus
 	var jobs struct {
 		Items []ownedJob `json:"items"`
 	}
-	if !s.fetch(c, user, cluster, grant, jobListPath.namespaced(namespace), &jobs) {
+	if !fetchList(s, c, user, cluster, grant, jobListPath.namespaced(namespace), &jobs.Items) {
 		return
 	}
 	uids := jobsOwnedByCronJob(object.Metadata.UID, jobs.Items)
@@ -303,7 +303,7 @@ func (s *server) listCronJobPods(c *gin.Context, user *db.User, cluster *db.Clus
 	var list struct {
 		Items []podObject `json:"items"`
 	}
-	if !s.fetch(c, user, cluster, grant, podsPath, &list) {
+	if !fetchList(s, c, user, cluster, grant, podsPath, &list.Items) {
 		return
 	}
 

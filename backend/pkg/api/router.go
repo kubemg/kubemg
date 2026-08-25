@@ -593,6 +593,15 @@ func NewRouter(opts Options) *gin.Engine {
 			// seconds, and every write here drops the cluster's entries so a
 			// scale or a restart is visible in the next list.
 			resources := clusters.Group("/:id/resources", s.cachedRead())
+
+			// How many of each kind the caller can see, read at limit=1 so the
+			// cost is flat in the size of the cluster rather than proportional
+			// to it. One batched route rather than a field on every list: the
+			// sidebar asks about thirty kinds at once and must not pay thirty
+			// round trips, and a number beside a nav entry must never cost what
+			// opening the list costs.
+			resources.GET("/counts", s.countResourceKinds)
+
 			resources.GET("/namespaces", s.listNamespaces)
 			resources.GET("/workloads", s.listWorkloads)
 			resources.GET("/pods", s.listPods)

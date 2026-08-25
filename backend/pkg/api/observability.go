@@ -429,7 +429,7 @@ func (s *server) discoverObservabilitySources(c *gin.Context) {
 			} `json:"spec"`
 		} `json:"items"`
 	}
-	if !s.fetch(c, user, cluster, grant, "/api/v1/services", &list) {
+	if !fetchList(s, c, user, cluster, grant, "/api/v1/services", &list.Items) {
 		return
 	}
 

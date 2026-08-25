@@ -443,6 +443,28 @@ export interface OptionalList<T> {
 }
 
 /**
+ * How many of one kind a cluster holds, as the counts route answers it.
+ *
+ * `count` is absent for two different reasons and both are honest: the kind is
+ * unavailable to this caller — not served by the cluster, or refused by its RBAC
+ * — or the cluster paginated the list without reporting a remainder, which is
+ * `available` with no total. Neither is drawn as a number, because a guess in a
+ * nav column is worse than a blank.
+ */
+export interface ResourceCount {
+  count?: number
+  available: boolean
+  reason?: string
+  /**
+   * Set when the total came from the API server's own remainingItemCount rather
+   * than from a page holding the whole list. Kubernetes documents that number as
+   * an estimate; with no selector on the read it is exact in practice, so the
+   * sidebar prints it plainly and this is here for anyone reading the API.
+   */
+  approximate?: boolean
+}
+
+/**
  * A NetworkPolicy, reduced to what a list row can show. There is no single axis
  * like a Role's verbs-and-resources union — a peer list has no such summary —
  * so the rule counts are what the row states and the reachability view is

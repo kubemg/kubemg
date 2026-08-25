@@ -751,7 +751,7 @@ func (s *server) postureScan(c *gin.Context) {
 		var list struct {
 			Items []postureServiceAccount `json:"items"`
 		}
-		available, reason, callOK := s.fetchDegrading(c, user, cluster, grant, path, &list)
+		available, reason, callOK := fetchDegradingList(s, c, user, cluster, grant, path, &list.Items)
 		if !callOK {
 			return
 		}
@@ -775,7 +775,7 @@ func (s *server) postureScan(c *gin.Context) {
 				Metadata objectMeta `json:"metadata"`
 			} `json:"items"`
 		}
-		available, reason, callOK := s.fetchDegrading(c, user, cluster, grant, path, &list)
+		available, reason, callOK := fetchDegradingList(s, c, user, cluster, grant, path, &list.Items)
 		if !callOK {
 			return
 		}
@@ -801,7 +801,7 @@ func (s *server) postureScan(c *gin.Context) {
 			var list struct {
 				Items []postureWorkload `json:"items"`
 			}
-			available, reason, callOK := s.fetchDegrading(c, user, cluster, grant, path, &list)
+			available, reason, callOK := fetchDegradingList(s, c, user, cluster, grant, path, &list.Items)
 			if !callOK {
 				return
 			}
@@ -833,7 +833,7 @@ func (s *server) postureScan(c *gin.Context) {
 		var list struct {
 			Items []posturePod `json:"items"`
 		}
-		available, reason, callOK := s.fetchDegrading(c, user, cluster, grant, path, &list)
+		available, reason, callOK := fetchDegradingList(s, c, user, cluster, grant, path, &list.Items)
 		if !callOK {
 			return
 		}

@@ -103,29 +103,6 @@ func (s *server) requireClusterScope(c *gin.Context, grant db.UserClusterAccess,
 	return false
 }
 
-// fetchOptional reads the first candidate path that answers. A 404 means the
-// resource is not served by this cluster at all — an uninstalled Gateway API or
-// Istio — which is an answer, not a failure: the caller reports it as an empty
-// list the UI can label. Any other refusal is passed through as itself.
-func (s *server) fetchOptional(c *gin.Context, user *db.User, cluster *db.Cluster,
-	grant db.UserClusterAccess, paths []string, out any,
-) (found bool, ok bool) {
-	for _, path := range paths {
-		resp, callOK := s.callResource(c, user, cluster, grant, path)
-		if !callOK {
-			return false, false
-		}
-		if resp.Status == http.StatusNotFound {
-			continue
-		}
-		if !s.decodeResource(c, resp, out) {
-			return false, false
-		}
-		return true, true
-	}
-	return false, true
-}
-
 /* ------------------------------------------------------------- workloads --- */
 
 type jobView struct {
@@ -173,7 +150,7 @@ func (s *server) listWorkloadsOf(kind string) gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{
+		listResponse(c, gin.H{
 			"workloads":      out,
 			"namespace":      scope.Namespace,
 			"all_namespaces": scope.All,
@@ -218,7 +195,7 @@ func (s *server) listJobs(c *gin.Context) {
 				} `json:"status"`
 			} `json:"items"`
 		}
-		if !s.fetch(c, user, cluster, grant, path, &list) {
+		if !fetchList(s, c, user, cluster, grant, path, &list.Items) {
 			return
 		}
 
@@ -259,7 +236,7 @@ func (s *server) listJobs(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"jobs":           out,
 		"namespace":      scope.Namespace,
 		"all_namespaces": scope.All,
@@ -324,7 +301,7 @@ func (s *server) listCronJobs(c *gin.Context) {
 				} `json:"status"`
 			} `json:"items"`
 		}
-		if !s.fetch(c, user, cluster, grant, path, &list) {
+		if !fetchList(s, c, user, cluster, grant, path, &list.Items) {
 			return
 		}
 
@@ -347,7 +324,7 @@ func (s *server) listCronJobs(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"cronjobs":       out,
 		"namespace":      scope.Namespace,
 		"all_namespaces": scope.All,
@@ -417,7 +394,7 @@ func (s *server) listServices(c *gin.Context) {
 				} `json:"status"`
 			} `json:"items"`
 		}
-		if !s.fetch(c, user, cluster, grant, path, &list) {
+		if !fetchList(s, c, user, cluster, grant, path, &list.Items) {
 			return
 		}
 
@@ -455,7 +432,7 @@ func (s *server) listServices(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"services":       out,
 		"namespace":      scope.Namespace,
 		"all_namespaces": scope.All,
@@ -493,7 +470,7 @@ func (s *server) listIngresses(c *gin.Context) {
 				} `json:"status"`
 			} `json:"items"`
 		}
-		if !s.fetch(c, user, cluster, grant, path, &list) {
+		if !fetchList(s, c, user, cluster, grant, path, &list.Items) {
 			return
 		}
 
@@ -521,7 +498,7 @@ func (s *server) listIngresses(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"ingresses":      out,
 		"namespace":      scope.Namespace,
 		"all_namespaces": scope.All,
@@ -563,14 +540,14 @@ func (s *server) listHTTPRoutes(c *gin.Context) {
 				} `json:"spec"`
 			} `json:"items"`
 		}
-		found, callOK := s.fetchOptional(c, user, cluster, grant, group, &list)
+		found, callOK := fetchOptionalList(s, c, user, cluster, grant, group, &list.Items)
 		if !callOK {
 			return
 		}
 		// The CRD is either installed on the cluster or it is not; one namespace
 		// answering 404 settles it for all of them.
 		if !found {
-			c.JSON(http.StatusOK, gin.H{
+			listResponse(c, gin.H{
 				"httproutes":     []routeView{},
 				"namespace":      scope.Namespace,
 				"all_namespaces": scope.All,
@@ -598,7 +575,7 @@ func (s *server) listHTTPRoutes(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"httproutes":     out,
 		"namespace":      scope.Namespace,
 		"all_namespaces": scope.All,
@@ -637,12 +614,12 @@ func (s *server) listVirtualServices(c *gin.Context) {
 				} `json:"spec"`
 			} `json:"items"`
 		}
-		found, callOK := s.fetchOptional(c, user, cluster, grant, group, &list)
+		found, callOK := fetchOptionalList(s, c, user, cluster, grant, group, &list.Items)
 		if !callOK {
 			return
 		}
 		if !found {
-			c.JSON(http.StatusOK, gin.H{
+			listResponse(c, gin.H{
 				"virtualservices": []routeView{},
 				"namespace":       scope.Namespace,
 				"all_namespaces":  scope.All,
@@ -663,7 +640,7 @@ func (s *server) listVirtualServices(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"virtualservices": out,
 		"namespace":       scope.Namespace,
 		"all_namespaces":  scope.All,
@@ -741,7 +718,7 @@ func (s *server) listPersistentVolumes(c *gin.Context) {
 		} `json:"items"`
 	}
 
-	if !s.fetch(c, user, cluster, grant, resourceListPath{"/api/v1", "persistentvolumes"}.clusterWide(), &list) {
+	if !fetchList(s, c, user, cluster, grant, resourceListPath{"/api/v1", "persistentvolumes"}.clusterWide(), &list.Items) {
 		return
 	}
 
@@ -762,7 +739,7 @@ func (s *server) listPersistentVolumes(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{"persistentvolumes": out})
+	listResponse(c, gin.H{"persistentvolumes": out})
 }
 
 func (s *server) listPersistentVolumeClaims(c *gin.Context) {
@@ -794,7 +771,7 @@ func (s *server) listPersistentVolumeClaims(c *gin.Context) {
 				} `json:"status"`
 			} `json:"items"`
 		}
-		if !s.fetch(c, user, cluster, grant, path, &list) {
+		if !fetchList(s, c, user, cluster, grant, path, &list.Items) {
 			return
 		}
 
@@ -819,7 +796,7 @@ func (s *server) listPersistentVolumeClaims(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"persistentvolumeclaims": out,
 		"namespace":              scope.Namespace,
 		"all_namespaces":         scope.All,
@@ -845,7 +822,7 @@ func (s *server) listStorageClasses(c *gin.Context) {
 	}
 
 	path := resourceListPath{"/apis/storage.k8s.io/v1", "storageclasses"}.clusterWide()
-	if !s.fetch(c, user, cluster, grant, path, &list) {
+	if !fetchList(s, c, user, cluster, grant, path, &list.Items) {
 		return
 	}
 
@@ -863,7 +840,7 @@ func (s *server) listStorageClasses(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{"storageclasses": out})
+	listResponse(c, gin.H{"storageclasses": out})
 }
 
 func (s *server) listConfigMaps(c *gin.Context) {
@@ -886,7 +863,7 @@ func (s *server) listConfigMaps(c *gin.Context) {
 				BinaryData map[string]string `json:"binaryData"`
 			} `json:"items"`
 		}
-		if !s.fetch(c, user, cluster, grant, path, &list) {
+		if !fetchList(s, c, user, cluster, grant, path, &list.Items) {
 			return
 		}
 
@@ -907,7 +884,7 @@ func (s *server) listConfigMaps(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"configmaps":     out,
 		"namespace":      scope.Namespace,
 		"all_namespaces": scope.All,
@@ -937,7 +914,7 @@ func (s *server) listSecrets(c *gin.Context) {
 				Data      map[string]string `json:"data"`
 			} `json:"items"`
 		}
-		if !s.fetch(c, user, cluster, grant, path, &list) {
+		if !fetchList(s, c, user, cluster, grant, path, &list.Items) {
 			return
 		}
 
@@ -959,7 +936,7 @@ func (s *server) listSecrets(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"secrets":        out,
 		"namespace":      scope.Namespace,
 		"all_namespaces": scope.All,
@@ -1018,7 +995,7 @@ func (s *server) listCRDs(c *gin.Context) {
 	}
 
 	path := resourceListPath{"/apis/apiextensions.k8s.io/v1", "customresourcedefinitions"}.clusterWide()
-	if !s.fetch(c, user, cluster, grant, path, &list) {
+	if !fetchList(s, c, user, cluster, grant, path, &list.Items) {
 		return
 	}
 
@@ -1042,7 +1019,7 @@ func (s *server) listCRDs(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{"crds": out})
+	listResponse(c, gin.H{"crds": out})
 }
 
 func (s *server) listNodes(c *gin.Context) {
@@ -1078,7 +1055,7 @@ func (s *server) listNodes(c *gin.Context) {
 		} `json:"items"`
 	}
 
-	if !s.fetch(c, user, cluster, grant, resourceListPath{"/api/v1", "nodes"}.clusterWide(), &list) {
+	if !fetchList(s, c, user, cluster, grant, resourceListPath{"/api/v1", "nodes"}.clusterWide(), &list.Items) {
 		return
 	}
 
@@ -1115,7 +1092,7 @@ func (s *server) listNodes(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{"nodes": out})
+	listResponse(c, gin.H{"nodes": out})
 }
 
 // nodeRoles reads a node's roles the way kubectl does: from the

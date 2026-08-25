@@ -316,7 +316,7 @@ func (s *server) helmRevisions(c *gin.Context, user *db.User, cluster *db.Cluste
 	var list struct {
 		Items []map[string]any `json:"items"`
 	}
-	if !s.fetch(c, user, cluster, grant, helmSecretsPath(namespace, name), &list) {
+	if !fetchList(s, c, user, cluster, grant, helmSecretsPath(namespace, name), &list.Items) {
 		return nil, false
 	}
 
@@ -385,7 +385,7 @@ func (s *server) listHelmReleases(c *gin.Context) {
 		var list struct {
 			Items []map[string]any `json:"items"`
 		}
-		if !s.fetch(c, user, cluster, grant, path, &list) {
+		if !fetchList(s, c, user, cluster, grant, path, &list.Items) {
 			return
 		}
 
@@ -420,7 +420,7 @@ func (s *server) listHelmReleases(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"releases":       out,
 		"namespace":      scope.Namespace,
 		"all_namespaces": scope.All,

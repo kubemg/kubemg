@@ -289,7 +289,7 @@ func (s *server) listRoles(c *gin.Context) {
 		var list struct {
 			Items []rbacRole `json:"items"`
 		}
-		if !s.fetch(c, user, cluster, grant, path, &list) {
+		if !fetchList(s, c, user, cluster, grant, path, &list.Items) {
 			return
 		}
 		for _, item := range list.Items {
@@ -298,7 +298,7 @@ func (s *server) listRoles(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"roles":          out,
 		"namespace":      scope.Namespace,
 		"all_namespaces": scope.All,
@@ -320,7 +320,7 @@ func (s *server) listClusterRoles(c *gin.Context) {
 	var list struct {
 		Items []rbacRole `json:"items"`
 	}
-	if !s.fetch(c, user, cluster, grant, resourceListPath{rbacGroup, "clusterroles"}.clusterWide(), &list) {
+	if !fetchList(s, c, user, cluster, grant, resourceListPath{rbacGroup, "clusterroles"}.clusterWide(), &list.Items) {
 		return
 	}
 
@@ -330,7 +330,7 @@ func (s *server) listClusterRoles(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{"clusterroles": out})
+	listResponse(c, gin.H{"clusterroles": out})
 }
 
 // listRoleBindings reads namespaced RoleBindings.
@@ -349,7 +349,7 @@ func (s *server) listRoleBindings(c *gin.Context) {
 		var list struct {
 			Items []rbacBinding `json:"items"`
 		}
-		if !s.fetch(c, user, cluster, grant, path, &list) {
+		if !fetchList(s, c, user, cluster, grant, path, &list.Items) {
 			return
 		}
 		for _, item := range list.Items {
@@ -358,7 +358,7 @@ func (s *server) listRoleBindings(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"rolebindings":   out,
 		"namespace":      scope.Namespace,
 		"all_namespaces": scope.All,
@@ -379,7 +379,7 @@ func (s *server) listClusterRoleBindings(c *gin.Context) {
 		Items []rbacBinding `json:"items"`
 	}
 	path := resourceListPath{rbacGroup, "clusterrolebindings"}.clusterWide()
-	if !s.fetch(c, user, cluster, grant, path, &list) {
+	if !fetchList(s, c, user, cluster, grant, path, &list.Items) {
 		return
 	}
 
@@ -389,7 +389,7 @@ func (s *server) listClusterRoleBindings(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{"clusterrolebindings": out})
+	listResponse(c, gin.H{"clusterrolebindings": out})
 }
 
 // listServiceAccounts reads the identities workloads run as.
@@ -413,7 +413,7 @@ func (s *server) listServiceAccounts(c *gin.Context) {
 				AutomountServiceAccountToken *bool      `json:"automountServiceAccountToken"`
 			} `json:"items"`
 		}
-		if !s.fetch(c, user, cluster, grant, path, &list) {
+		if !fetchList(s, c, user, cluster, grant, path, &list.Items) {
 			return
 		}
 		for _, item := range list.Items {
@@ -428,7 +428,7 @@ func (s *server) listServiceAccounts(c *gin.Context) {
 	}
 
 	sortResources(out)
-	c.JSON(http.StatusOK, gin.H{
+	listResponse(c, gin.H{
 		"serviceaccounts": out,
 		"namespace":       scope.Namespace,
 		"all_namespaces":  scope.All,
