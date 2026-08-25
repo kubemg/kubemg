@@ -46,6 +46,13 @@ func main() {
 }
 
 func run(logger *slog.Logger, listen, apiURL string, insecure bool) error {
+	if insecure {
+		// tunnel.New already warns this loudly for the bastion leg; this leg was
+		// silent. Both carry a cluster-privileged bearer token on every request,
+		// so a MITM here is the same blast radius as a MITM on the tunnel.
+		logger.Warn("cluster API certificate verification is disabled; " +
+			"the connection to the Kubernetes API server can be intercepted")
+	}
 	client, err := kube.New(kube.Options{APIURL: apiURL, InsecureSkipVerify: insecure})
 	if err != nil {
 		return err

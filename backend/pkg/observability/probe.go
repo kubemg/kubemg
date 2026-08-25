@@ -180,7 +180,10 @@ func directClient(target Target) *http.Client {
 func directClientWithTimeout(target Target, timeout time.Duration) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if target.InsecureSkipVerify {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // operator opt-in
+		transport.TLSClientConfig = &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: true, //nolint:gosec // operator opt-in
+		}
 	}
 	return &http.Client{Transport: transport, Timeout: timeout}
 }
