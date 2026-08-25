@@ -706,6 +706,10 @@ func NewRouter(opts Options) *gin.Engine {
 			// the caller may actually change anything.
 			resources.GET("/object", s.showResourceObject)
 			resources.PUT("/object", s.updateResourceObject)
+			// And removing it. Same address, same fixed kind table, same
+			// impersonated call — so it reaches nothing the read does not, and
+			// the cluster's RBAC and the command guardrails both still decide.
+			resources.DELETE("/object", s.deleteResourceObject)
 			// The confirmation step's diff, computed fresh against whatever the
 			// cluster holds right now rather than against the object the editor
 			// opened on. It is a POST because a manifest of arbitrary size travels
@@ -715,12 +719,15 @@ func NewRouter(opts Options) *gin.Engine {
 			// access-review below.
 			clusters.POST("/:id/resources/object/diff", s.previewResourceObjectDiff)
 
-			// The two workload writes that are not worth hand-editing a
-			// manifest for. Both are read-modify-writes down the same
-			// impersonated tunnel, conditional on the resourceVersion they
-			// read, so they add no reach the manifest editor did not have.
+			// The workload writes that are not worth hand-editing a manifest
+			// for. All three are read-modify-writes down the same impersonated
+			// tunnel, conditional on the resourceVersion they read, so they add
+			// no reach the manifest editor did not have. Suspend is the
+			// CronJob's own control: it owns Jobs rather than pods, so there is
+			// nothing to scale and nothing to roll.
 			resources.POST("/scale", s.scaleWorkload)
 			resources.POST("/restart", s.restartWorkload)
+			resources.POST("/suspend", s.suspendWorkload)
 
 			// `kubectl describe`: the same object, addressed the same way, plus
 			// the events the cluster recorded against it. Those events are the

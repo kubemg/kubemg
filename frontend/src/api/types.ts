@@ -1541,6 +1541,21 @@ export interface WorkloadActionResult {
   namespace: string
   replicas?: number
   restarted_at?: string
+  /** The state a schedule was left in. Absent for every action but suspend. */
+  suspended?: boolean
+  message: string
+}
+
+/**
+ * What a delete did — or rather asked for. A delete is a request for removal,
+ * not the removal itself: a pod with a termination grace period, or anything
+ * carrying a finalizer, is still in the list when this comes back, which is why
+ * `message` says "marked for deletion" rather than "deleted".
+ */
+export interface DeleteResult {
+  kind: string
+  name: string
+  namespace?: string
   message: string
 }
 

@@ -23,11 +23,23 @@ import type {
   StorageClass,
   Workload,
 } from '../api/types'
-import { FileCode2, History, PanelRightOpen, Pencil, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import {
+  FileCode2,
+  History,
+  PanelRightOpen,
+  Pause,
+  Pencil,
+  Play,
+  RotateCcw,
+  SlidersHorizontal,
+  Trash2,
+} from 'lucide-react'
 import { IconButton, Pill, Row, RowMenu, RowMenuItem, SortTh, Table, Td, Th } from './primitives'
 import type { DetailTab } from './ResourceDetailDrawer'
 import type { WorkloadActionName } from './WorkloadActionPanel'
 import { workloadCapability, workloadKeyFor } from '../lib/workloads'
+import type { SelectedRow } from '../lib/selection'
+import { selectionKey } from '../lib/selection'
 import type { Tone } from '../lib/status'
 import { TONE_FILL, podTone, workloadTone } from '../lib/status'
 import { formatCountdown, relativeAge, secondsUntil, useTicker } from '../lib/time'
@@ -111,6 +123,28 @@ export type OpenValues = (
 export type OpenWorkloadAction = (action: WorkloadActionName, workload: Workload) => void
 
 /**
+ * OpenRowAction asks for one of the writes that are not a view of the object at
+ * all. It takes the row rather than a name because the row is where the address
+ * is complete — a workload row carries its own Kind, and a CronJob row is the
+ * only place the schedule's current state is known, which is what decides
+ * whether the word on the control is Suspend or Resume.
+ */
+export type OpenRowAction = (row: SelectedRow) => void
+
+/**
+ * RowSelection is the checkbox column's whole contract: what is selected, and
+ * the two ways of changing it. The selection itself lives on the page, because
+ * it outlives any one table — a filter narrowing the list must not silently
+ * drop rows that are already selected and about to be acted on.
+ */
+export interface RowSelection {
+  has: (key: string) => boolean
+  toggle: (row: SelectedRow) => void
+  /** The header checkbox: every row the table is currently drawing, at once. */
+  setMany: (rows: SelectedRow[], checked: boolean) => void
+}
+
+/**
  * ResourceView renders whichever list is loaded, with the columns it deserves.
  * `showNamespace` is set when the list spans namespaces, and each namespaced
  * table then prefixes the name with where the object lives.
@@ -127,6 +161,9 @@ export function ResourceView({
   onManifest: open,
   onValues,
   onAction,
+  selection,
+  onDelete,
+  onSuspend,
 }: {
   loaded: LoadedResource
   showNamespace?: boolean
@@ -134,6 +171,16 @@ export function ResourceView({
   onManifest?: OpenManifest
   onValues?: OpenValues
   onAction?: OpenWorkloadAction
+  /**
+   * Set while the operator has asked for the checkbox column. It is offered on
+   * the four lists a selection is worth having on — pods, workloads, jobs and
+   * cronjobs — and a table that does not take it simply never draws a column.
+   * Adding a fifth is adding `SelectHead`/`SelectCell` to that table.
+   */
+  selection?: RowSelection
+  onDelete?: OpenRowAction
+  /** Turning a schedule off, or back on. CronJobs and nothing else. */
+  onSuspend?: OpenRowAction
 }) {
   switch (loaded.kind) {
     case 'helmreleases':
@@ -152,6 +199,8 @@ export function ResourceView({
           showNamespace={showNamespace}
           onSelect={onSelectPod}
           onManifest={open}
+          selection={selection}
+          onDelete={onDelete}
         />
       )
     case 'workloads':
@@ -161,13 +210,30 @@ export function ResourceView({
           showNamespace={showNamespace}
           onManifest={open}
           onAction={onAction}
+          selection={selection}
+          onDelete={onDelete}
         />
       )
     case 'jobs':
-      return <JobTable jobs={loaded.rows} showNamespace={showNamespace} onManifest={open} />
+      return (
+        <JobTable
+          jobs={loaded.rows}
+          showNamespace={showNamespace}
+          onManifest={open}
+          selection={selection}
+          onDelete={onDelete}
+        />
+      )
     case 'cronjobs':
       return (
-        <CronJobTable cronjobs={loaded.rows} showNamespace={showNamespace} onManifest={open} />
+        <CronJobTable
+          cronjobs={loaded.rows}
+          showNamespace={showNamespace}
+          onManifest={open}
+          selection={selection}
+          onDelete={onDelete}
+          onSuspend={onSuspend}
+        />
       )
     case 'services':
       return (
@@ -413,6 +479,138 @@ const WORKLOAD_ACTIONS_WIDTH = 'w-10 md:w-[104px]'
 const VALUES_ACTIONS_WIDTH = 'w-[98px] md:w-[132px]'
 
 /**
+ * The checkbox column. It is the *first* column rather than a trailing one
+ * because it is read together with the name it selects, and it is a real
+ * measurement like `ROW_ACTIONS_WIDTH` for the same reason: `table-fixed` hands
+ * a column exactly what it asked for.
+ */
+const SELECT_WIDTH = 'w-9'
+
+/** The one class both checkboxes share, so the column and its header agree. */
+const CHECKBOX = 'size-3.5 accent-[var(--color-accent)]'
+
+/**
+ * SelectHead is the column's heading and the select-all control at once. It
+ * acts on the rows the table is **drawing**, not on the whole list: a filtered
+ * table selecting rows that are not on screen is how somebody deletes something
+ * they never saw.
+ */
+function SelectHead({
+  rows,
+  selection,
+}: {
+  rows: SelectedRow[]
+  selection?: RowSelection
+}) {
+  if (!selection) return null
+
+  const selected = rows.filter((row) => selection.has(row.key)).length
+  const all = rows.length > 0 && selected === rows.length
+
+  return (
+    <Th className={SELECT_WIDTH}>
+      <input
+        type="checkbox"
+        className={CHECKBOX}
+        checked={all}
+        // Some but not all: the box says "part of this list", which is a third
+        // state and not a checked one.
+        ref={(node) => {
+          if (node) node.indeterminate = selected > 0 && !all
+        }}
+        disabled={rows.length === 0}
+        onChange={(event) => selection.setMany(rows, event.target.checked)}
+        aria-label={all ? 'Clear the selection' : 'Select every row shown'}
+      />
+    </Th>
+  )
+}
+
+/**
+ * SelectCell is one row's checkbox. A row with no `SelectedRow` still draws the
+ * cell — a missing `<td>` in a `table-fixed` row shifts every column after it —
+ * it simply has nothing to tick.
+ */
+function SelectCell({ row, selection }: { row?: SelectedRow; selection?: RowSelection }) {
+  if (!selection) return null
+  if (!row) return <Td />
+  return (
+    <Td>
+      <input
+        type="checkbox"
+        className={CHECKBOX}
+        checked={selection.has(row.key)}
+        onChange={() => selection.toggle(row)}
+        aria-label={`Select ${row.name}`}
+      />
+    </Td>
+  )
+}
+
+/*
+ * How each selectable list turns a row into a target. They are functions rather
+ * than inline objects because the same row is built twice — once for the header
+ * checkbox's "everything shown", once in the row itself — and the two must agree
+ * on the key or a select-all would tick boxes that are already ticked.
+ */
+
+function podRow(pod: Pod): SelectedRow {
+  return {
+    key: selectionKey('pods', pod.namespace, pod.name),
+    kind: 'pods',
+    label: 'Pod',
+    name: pod.name,
+    namespace: pod.namespace,
+  }
+}
+
+function jobRow(job: Job): SelectedRow {
+  return {
+    key: selectionKey('jobs', job.namespace, job.name),
+    kind: 'jobs',
+    label: 'Job',
+    name: job.name,
+    namespace: job.namespace,
+  }
+}
+
+function cronJobRow(cronjob: CronJob): SelectedRow {
+  return {
+    key: selectionKey('cronjobs', cronjob.namespace, cronjob.name),
+    kind: 'cronjobs',
+    label: 'CronJob',
+    name: cronjob.name,
+    namespace: cronjob.namespace,
+    // The one row property an action reads: it decides whether the control
+    // offered is Suspend or Resume, and whether a bulk suspend has anything to
+    // do to this row at all.
+    suspended: cronjob.suspended,
+  }
+}
+
+/**
+ * A workload row's kind is its own — the table serves three at once — so a Kind
+ * the resource API cannot address yields nothing rather than a guess.
+ */
+function workloadRow(workload: Workload): SelectedRow | undefined {
+  const kind = workloadKeyFor(workload.kind)
+  if (!kind) return undefined
+  return {
+    key: selectionKey(kind, workload.namespace, workload.name),
+    kind,
+    label: workload.kind,
+    name: workload.name,
+    namespace: workload.namespace,
+  }
+}
+
+/** rowDeleter binds a row to the page's delete, or to nothing if it has neither. */
+function rowDeleter(onDelete: OpenRowAction | undefined, row: SelectedRow | undefined) {
+  if (!onDelete || !row) return undefined
+  return () => onDelete(row)
+}
+
+/**
  * The manifest column. It is the last column of every list and carries no
  * heading — the two icons are titled, and a word above them would be a column
  * name for something that is not data.
@@ -449,6 +647,8 @@ function ManifestCell({
   namespace,
   editable = true,
   actions,
+  menu,
+  onDelete,
 }: {
   onManifest?: OpenManifest
   name: string
@@ -459,6 +659,18 @@ function ManifestCell({
    * has. Kind-specific because they are: only a workload can be scaled.
    */
   actions?: ReactNode
+  /**
+   * Menu items belonging to this kind alone, drawn after the three every row
+   * has and before Delete. A CronJob's schedule switch is the only one today.
+   */
+  menu?: ReactNode
+  /**
+   * Removing the object. It is offered per row as well as over a selection
+   * because deleting one pod should not mean turning the checkbox column on to
+   * do it — and it is last in the menu, after a separator, because it is the
+   * one item there that cannot be undone by choosing another.
+   */
+  onDelete?: () => void
 }) {
   if (!onManifest) return null
 
@@ -479,6 +691,13 @@ function ManifestCell({
             <RowMenuItem onClick={() => onManifest(name, namespace, 'yaml', true)}>
               <Pencil aria-hidden="true" className="size-3.5" />
               Edit
+            </RowMenuItem>
+          ) : null}
+          {menu}
+          {onDelete ? (
+            <RowMenuItem onClick={onDelete} danger>
+              <Trash2 aria-hidden="true" className="size-3.5" />
+              Delete
             </RowMenuItem>
           ) : null}
         </RowMenu>
@@ -739,15 +958,20 @@ function PodTable({
   showNamespace,
   onSelect,
   onManifest,
+  selection,
+  onDelete,
 }: {
   pods: Pod[]
   usage: PodUsageIndex | null
   showNamespace: boolean
   onSelect: (pod: Pod) => void
   onManifest?: OpenManifest
+  selection?: RowSelection
+  onDelete?: OpenRowAction
 }) {
   const [sort, setSort] = useState<PodSort | null>(null)
   const rows = useMemo(() => sortPods(pods, usage, sort), [pods, usage, sort])
+  const selectable = useMemo(() => rows.map(podRow), [rows])
 
   /** Every heading sorts the same way, so the wiring is written once. */
   const column = (key: PodSortKey) => ({
@@ -765,6 +989,7 @@ function PodTable({
     <Table resizeKey="kubemg_cols_pods">
       <thead>
         <tr>
+          <SelectHead rows={selectable} selection={selection} />
           {/* The name column asks for no width: `table-fixed` gives an
               unsized column whatever the sized ones leave, which is exactly what
               a name should have — the readings, the counts and the buttons all
@@ -811,6 +1036,7 @@ function PodTable({
       <tbody>
         {rows.map((pod) => (
           <Row key={`${pod.namespace}/${pod.name}`}>
+            <SelectCell row={podRow(pod)} selection={selection} />
             <Td className="truncate">
               <span className="flex items-center gap-2.5">
                 <span
@@ -859,7 +1085,12 @@ function PodTable({
             </Td>
             <Td className={`hidden xl:table-cell ${MONO}`}>{pod.node || '—'}</Td>
             <Td className={`whitespace-nowrap ${AGE}`}>{relativeAge(pod.created_at)}</Td>
-            <ManifestCell onManifest={onManifest} name={pod.name} namespace={pod.namespace} />
+            <ManifestCell
+              onManifest={onManifest}
+              name={pod.name}
+              namespace={pod.namespace}
+              onDelete={onDelete ? () => onDelete(podRow(pod)) : undefined}
+            />
           </Row>
         ))}
       </tbody>
@@ -945,7 +1176,10 @@ function WorkloadActions({
   // workload list is where a new kind would land — simply offers neither.
   const key = workloadKeyFor(workload.kind)
   const capability = key ? workloadCapability(key) : undefined
-  if (!capability) return null
+  // Neither control, rather than merely no entry: a Kind can be in the
+  // capability table for something else — a CronJob is there for its schedule
+  // switch — and an empty pair of buttons is still a column's worth of nothing.
+  if (!capability || (!capability.scale && !capability.restart)) return null
 
   // Below `md` they fold away with the manifest shortcuts: five buttons need
   // 200px, which a phone-width table cannot give without taking it from the name.
@@ -980,16 +1214,26 @@ function WorkloadTable({
   showNamespace,
   onManifest,
   onAction,
+  selection,
+  onDelete,
 }: {
   workloads: Workload[]
   showNamespace: boolean
   onManifest?: OpenManifest
   onAction?: OpenWorkloadAction
+  selection?: RowSelection
+  onDelete?: OpenRowAction
 }) {
+  // A row whose Kind the resource API does not address is not selectable — the
+  // table serves three Kinds and a fourth would arrive here before it arrived
+  // in the action table.
+  const selectable = workloads.map(workloadRow).filter((row): row is SelectedRow => Boolean(row))
+
   return (
     <Table resizeKey="kubemg_cols_workloads">
       <thead>
         <tr>
+          <SelectHead rows={selectable} selection={selection} />
           {/* No width, on purpose: the sized columns and the five buttons take
               their measurements and the name takes what is left. */}
           <Th columnKey="name">Name</Th>
@@ -1012,6 +1256,7 @@ function WorkloadTable({
       <tbody>
         {workloads.map((workload) => (
           <Row key={`${workload.kind}/${workload.namespace}/${workload.name}`}>
+            <SelectCell row={workloadRow(workload)} selection={selection} />
             <Td className="truncate">
               <Name
                 tone={workloadTone(workload)}
@@ -1040,6 +1285,7 @@ function WorkloadTable({
               name={workload.name}
               namespace={workload.namespace}
               actions={<WorkloadActions workload={workload} onAction={onAction} />}
+              onDelete={rowDeleter(onDelete, workloadRow(workload))}
             />
           </Row>
         ))}
@@ -1052,15 +1298,20 @@ function JobTable({
   jobs,
   showNamespace,
   onManifest,
+  selection,
+  onDelete,
 }: {
   jobs: Job[]
   showNamespace: boolean
   onManifest?: OpenManifest
+  selection?: RowSelection
+  onDelete?: OpenRowAction
 }) {
   return (
     <Table resizeKey="kubemg_cols_jobs">
       <thead>
         <tr>
+          <SelectHead rows={jobs.map(jobRow)} selection={selection} />
           <Th columnKey="name">Job</Th>
           <NamespaceHead show={showNamespace} />
           <Th className="w-[22%] md:w-[min(14%,9rem)]" columnKey="state">
@@ -1084,6 +1335,7 @@ function JobTable({
       <tbody>
         {jobs.map((job) => (
           <Row key={`${job.namespace}/${job.name}`}>
+            <SelectCell row={jobRow(job)} selection={selection} />
             <Td className="truncate">
               <Name
                 tone={jobTone(job.state)}
@@ -1112,7 +1364,12 @@ function JobTable({
               {job.images?.[0] ?? '—'}
             </Td>
             <Td className={AGE}>{relativeAge(job.created_at)}</Td>
-            <ManifestCell onManifest={onManifest} name={job.name} namespace={job.namespace} />
+            <ManifestCell
+              onManifest={onManifest}
+              name={job.name}
+              namespace={job.namespace}
+              onDelete={rowDeleter(onDelete, jobRow(job))}
+            />
           </Row>
         ))}
       </tbody>
@@ -1158,10 +1415,16 @@ function CronJobTable({
   cronjobs,
   showNamespace,
   onManifest,
+  selection,
+  onDelete,
+  onSuspend,
 }: {
   cronjobs: CronJob[]
   showNamespace: boolean
   onManifest?: OpenManifest
+  selection?: RowSelection
+  onDelete?: OpenRowAction
+  onSuspend?: OpenRowAction
 }) {
   // One timer for the whole table, and its cadence follows what is actually
   // being watched: a schedule ten minutes out is counted down by the second, a
@@ -1178,6 +1441,7 @@ function CronJobTable({
     <Table resizeKey="kubemg_cols_cronjobs">
       <thead>
         <tr>
+          <SelectHead rows={cronjobs.map(cronJobRow)} selection={selection} />
           <Th columnKey="name">CronJob</Th>
           <NamespaceHead show={showNamespace} />
           {/*
@@ -1209,6 +1473,7 @@ function CronJobTable({
       <tbody>
         {cronjobs.map((cronjob) => (
           <Row key={`${cronjob.namespace}/${cronjob.name}`}>
+            <SelectCell row={cronJobRow(cronjob)} selection={selection} />
             <Td className="truncate">
               <Name
                 tone={cronjob.suspended ? 'idle' : 'ok'}
@@ -1245,6 +1510,22 @@ function CronJobTable({
               onManifest={onManifest}
               name={cronjob.name}
               namespace={cronjob.namespace}
+              onDelete={rowDeleter(onDelete, cronJobRow(cronjob))}
+              // The schedule's switch reads as the state it moves to, which is
+              // why the row's own `suspended` is what decides the word: an
+              // operator picks the outcome, not the field name.
+              menu={
+                onSuspend ? (
+                  <RowMenuItem onClick={() => onSuspend(cronJobRow(cronjob))}>
+                    {cronjob.suspended ? (
+                      <Play aria-hidden="true" className="size-3.5" />
+                    ) : (
+                      <Pause aria-hidden="true" className="size-3.5" />
+                    )}
+                    {cronjob.suspended ? 'Resume schedule' : 'Suspend schedule'}
+                  </RowMenuItem>
+                ) : null
+              }
             />
           </Row>
         ))}
