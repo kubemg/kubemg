@@ -40,7 +40,10 @@ type userResponse struct {
 	CanViewRecordings bool `json:"can_view_recordings"`
 	// AuthSource says where this account's credentials live. The console reads
 	// it to stop offering a password field for an account that has none.
-	AuthSource  string     `json:"auth_source"`
+	AuthSource string `json:"auth_source"`
+	// AccountType separates a person from a programmatic caller. The console
+	// reads it to stop offering a person's affordances to a machine.
+	AccountType string     `json:"account_type"`
 	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 }
@@ -57,17 +60,27 @@ func toUserResponse(u *db.User) userResponse {
 	normalized := *u
 	normalized.Normalize()
 	return userResponse{
-		ID:          normalized.ID,
-		Username:    normalized.Username,
-		Email:       normalized.Email,
-		Role:        normalized.Role,
-		SystemRole:  normalized.SystemRole,
-		IsActive:    normalized.IsActive,
+		ID:                normalized.ID,
+		Username:          normalized.Username,
+		Email:             normalized.Email,
+		Role:              normalized.Role,
+		SystemRole:        normalized.SystemRole,
+		IsActive:          normalized.IsActive,
 		CanViewRecordings: normalized.MayViewAllRecordings(),
-		AuthSource:  authSourceOf(normalized),
-		LastLoginAt: normalized.LastLoginAt,
-		CreatedAt:   normalized.CreatedAt,
+		AuthSource:        authSourceOf(normalized),
+		AccountType:       accountTypeOf(normalized),
+		LastLoginAt:       normalized.LastLoginAt,
+		CreatedAt:         normalized.CreatedAt,
 	}
+}
+
+// accountTypeOf reads a row written before machine accounts existed as the
+// person it is.
+func accountTypeOf(user db.User) string {
+	if user.AccountType == db.AccountTypeMachine {
+		return db.AccountTypeMachine
+	}
+	return db.AccountTypeUser
 }
 
 // authSourceOf renders an account's credential source, reading a row written
@@ -107,7 +120,11 @@ func (s *server) login(c *gin.Context) {
 	// distinct 403 with zero attempts). This answers the same as an unknown
 	// username or a wrong local password: a federated account never signs in
 	// here, so from the caller's side it is exactly that.
-	if user.IsFederated() {
+	//
+	// A machine account is the same shape of answer for a different reason: it
+	// holds no password at all, and authenticates only with a stored token
+	// against one cluster's proxy.
+	if user.IsMachine() || user.IsFederated() {
 		auth.CheckPassword(dummyPasswordHash, req.Password)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return

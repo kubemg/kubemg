@@ -103,6 +103,13 @@ func (s *Store) DeleteUser(ctx context.Context, id uint) error {
 		if err := tx.Where("user_id = ?", id).Delete(&UserGroup{}).Error; err != nil {
 			return fmt.Errorf("delete user group memberships: %w", err)
 		}
+		// A machine account's tokens go with it. Leaving them would leave rows
+		// whose hash still matches a secret in somebody's CI store, pointing at a
+		// user id nothing resolves — which is a credential nobody can find and
+		// nobody can revoke.
+		if err := tx.Where("user_id = ?", id).Delete(&MachineToken{}).Error; err != nil {
+			return fmt.Errorf("delete service tokens: %w", err)
+		}
 		// Their access requests go too, for the same reason the grants do: what is
 		// left otherwise is a queue holding decisions to make about an account that
 		// no longer exists.
