@@ -14,6 +14,16 @@ export interface InventoryState {
    * "this cluster does not have it" — the first waits, the second falls back.
    */
   ready: boolean
+  /**
+   * Re-read the open cluster's CRDs, dropping the cached answer.
+   *
+   * Discovery is cached for the session because which CRDs a cluster has changes
+   * only when somebody installs an operator — but *which of them the sidebar
+   * offers* is an administrator's own decision, made in this console, and a
+   * curation that does not take effect until a reload reads as one that did not
+   * save.
+   */
+  refresh: () => void
 }
 
 export const InventoryContext = createContext<InventoryState | null>(null)

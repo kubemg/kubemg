@@ -50,6 +50,9 @@ type fakeStore struct {
 	sources map[uint]map[string]db.ObservabilitySource
 	// consoles holds the external console links, keyed the same way.
 	consoles map[uint]map[string]db.ClusterConsole
+	// hiddenCRDs is each cluster's sidebar curation: the resources an admin
+	// took off the list, keyed plural.group.
+	hiddenCRDs map[uint][]string
 	// Federation: the providers and the rules that say what an external group is
 	// worth. Keyed by id like the tables they stand in for.
 	providers   map[uint]*db.SSOProviderConfig
@@ -104,6 +107,7 @@ func newFakeStore() *fakeStore {
 		settings:    map[string]string{},
 		sources:     map[uint]map[string]db.ObservabilitySource{},
 		consoles:    map[uint]map[string]db.ClusterConsole{},
+		hiddenCRDs:  map[uint][]string{},
 		providers:   map[uint]*db.SSOProviderConfig{},
 		mappings:    map[uint]*db.SSOGroupMapping{},
 		syncResults: map[string]*db.SSOSyncResult{},
@@ -834,6 +838,17 @@ func (f *fakeStore) DeleteObservabilitySource(_ context.Context, clusterID uint,
 		return db.ErrNotFound
 	}
 	delete(f.sources[clusterID], kind)
+	return nil
+}
+
+func (f *fakeStore) HiddenCRDs(_ context.Context, clusterID uint) ([]string, error) {
+	return append([]string{}, f.hiddenCRDs[clusterID]...), nil
+}
+
+func (f *fakeStore) SetHiddenCRDs(
+	_ context.Context, clusterID uint, resources []string, _ uint,
+) error {
+	f.hiddenCRDs[clusterID] = append([]string{}, resources...)
 	return nil
 }
 

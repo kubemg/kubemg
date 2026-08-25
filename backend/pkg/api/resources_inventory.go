@@ -952,6 +952,11 @@ type crdView struct {
 	Plural   string   `json:"plural"`
 	Scope    string   `json:"scope"`
 	Versions []string `json:"versions"`
+
+	// Hidden is set only for an administrator, and only on a kind their own
+	// curation leaves out of the sidebar. Everybody else never sees the row at
+	// all, so the field is absent rather than false for them.
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 type nodeView struct {
@@ -1019,6 +1024,11 @@ func (s *server) listCRDs(c *gin.Context) {
 	}
 
 	sortResources(out)
+	// What an administrator curated out of this cluster's sidebar. An admin still
+	// sees those rows, marked — they are the one who has to be able to put a kind
+	// back; everyone else gets the curated list. See crd_visibility.go: this is
+	// navigation and not a permission, and the object routes are unaffected.
+	out = applyCRDVisibility(out, s.hiddenCRDSet(c, cluster.ID), user.IsAdmin())
 	listResponse(c, gin.H{"crds": out})
 }
 

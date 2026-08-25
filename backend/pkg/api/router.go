@@ -159,6 +159,11 @@ type Store interface {
 	UpdateSourceHealth(ctx context.Context, id uint, health db.SourceHealth) error
 	DeleteObservabilitySource(ctx context.Context, clusterID uint, kind string) error
 
+	// Which of a cluster's custom resources its sidebar offers. Rows are the
+	// hidden set, so an install that never curated anything reads as empty.
+	HiddenCRDs(ctx context.Context, clusterID uint) ([]string, error)
+	SetHiddenCRDs(ctx context.Context, clusterID uint, resources []string, by uint) error
+
 	ClusterConsoles(ctx context.Context, clusterID uint) ([]db.ClusterConsole, error)
 	PutClusterConsole(ctx context.Context, console *db.ClusterConsole) error
 	DeleteClusterConsole(ctx context.Context, clusterID uint, kind string) error
@@ -565,6 +570,13 @@ func NewRouter(opts Options) *gin.Engine {
 		// half the workloads in Explore. Same rule as the datasources: readable
 		// by anyone the cluster is granted to, registered by an admin. KubeMG
 		// stores an address and no session, and never proxies either tool.
+		// Which custom resources this cluster's Explore sidebar offers. Read as
+		// wide as the cluster is granted — you have to be able to tell "no Istio
+		// here" from "somebody took it off the list" — and written by an admin.
+		visibility := clusters.Group("/:id/crd-visibility")
+		visibility.GET("", s.showClusterCRDVisibility)
+		visibility.PUT("", requireAdmin, s.putClusterCRDVisibility)
+
 		consoles := clusters.Group("/:id/consoles")
 		consoles.GET("", s.listClusterConsoles)
 		consoles.PUT("/:kind", requireAdmin, s.putClusterConsole)

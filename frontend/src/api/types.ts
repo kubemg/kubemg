@@ -771,6 +771,26 @@ export interface CustomResourceDefinition {
   plural: string
   scope: string
   versions: string[]
+  /**
+   * Whether an administrator has taken this kind off the cluster's sidebar. It
+   * is only ever set for an administrator — everybody else is served the curated
+   * list and never sees the row — so it doubles as "you may put this back".
+   */
+  hidden?: boolean
+}
+
+/**
+ * Which of a cluster's custom resources its Explore sidebar offers.
+ *
+ * `hidden` is keyed `plural.group`, the way kubectl names a resource
+ * unambiguously. It is the *hidden* set rather than the shown one, so a cluster
+ * nobody has curated reads as empty and shows everything it serves — and an
+ * operator installed tomorrow arrives in the sidebar rather than silently
+ * missing from it.
+ */
+export interface CRDVisibility {
+  hidden: string[]
+  editable: boolean
 }
 
 /**
