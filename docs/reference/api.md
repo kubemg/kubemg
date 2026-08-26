@@ -152,6 +152,19 @@ curl -sk -X POST https://localhost:8443/api/v1/clusters/3/kubeconfig/generate \
 | `PUT /clusters/:id/consoles/:kind` | Admin | `kind` is `grafana`, `argocd` or `registry`. Body `{url, ref?}`; `400` on an invalid URL or one carrying userinfo (a credential in a stored link is refused, not stripped). |
 | `DELETE /clusters/:id/consoles/:kind` | Admin | `204`; `404` none registered. |
 
+## Helm repositories
+
+Server-wide, not scoped to a cluster — see [Chart
+repositories](../clusters/helm-repositories.md).
+
+| Method & path | Auth | Notes |
+| --- | --- | --- |
+| `GET /helm/repositories` | Session | Open to any signed-in user; `has_credential` only, never the credential itself. |
+| `GET /helm/repositories/:name/charts` | Session | Query `q?, limit?`. Reads the stored catalogue, not a live fetch. |
+| `PUT /helm/repositories/:name` | Admin | Fetches the index synchronously and reports the result, but stores the row even on failure (`status:"error"`). `oci://` and `file://` are each refused with their own message. Omitting `credential` keeps the stored one; `""` clears it. |
+| `DELETE /helm/repositories/:name` | Admin | `204`. |
+| `POST /helm/repositories/:name/sync` | Admin | Re-runs the fetch on demand, outside the 1-hour schedule. |
+
 ## Resources
 
 Every route below is `/api/v1/clusters/:id/resources/...` and answers `409`
@@ -182,10 +195,12 @@ fan-out limit) rather than listing the whole cluster.
 | `GET /access-review/identity` | `{subject, groups, k8s_role, namespaces, cluster}` — the caller's actual impersonation identity. |
 | `GET /custom` | Query `group,version,plural,scope?`. Anchored-pattern validated; the **core group is refused** (must contain a dot). A 404 from the cluster answers `available:false`. |
 | `GET /helm/releases` | Deduplicated to the highest revision per release. |
+| `POST /helm/releases` | Installs from a registered [chart repository](../clusters/helm-repositories.md), version resolved against the stored catalogue. `409` if a release of that name already exists. Pre-flight refuses a cluster-scoped object or an out-of-grant namespace before the first write. |
+| `POST /helm/releases/:name/upgrade` | Re-renders and three-way merges onto the live cluster. Objects the previous revision wrote and this one drops are deleted last, never fatally. |
 | `GET /helm/releases/:name/values` | |
-| `PUT /helm/releases/:name/values` | Appends a new revision rather than editing in place; response always carries `helmValuesWarning` (nothing is re-rendered). |
+| `PUT /helm/releases/:name/values` | Renders and applies, the same as an upgrade, reading the chart back off the release itself — no repository needs to be reachable. `helmValuesWarning` appears only for a release whose stored object carries no chart, naming that reason. |
 | `GET /helm/releases/:name/history` | Every stored revision, newest first. |
-| `POST /helm/releases/:name/rollback` | Names a target revision. `404` unknown revision, `409` if it's already current. |
+| `POST /helm/releases/:name/rollback` | Applies the target revision's stored manifest, three-way merged like an upgrade. `404` unknown revision, `409` if it's already current or if the target revision recorded no manifest. |
 | `GET /object` | Query `kind,name,namespace?`. |
 | `PUT /object` | Body `{yaml}`. `409` for a kind the editor treats as read-only. Conditional on `resourceVersion`. |
 | `POST /object` | Creates into the collection derived from the manifest's own `apiVersion`+kind. `409` for `notCreatable` kinds (Roles, RoleBindings, ClusterRoles, ClusterRoleBindings, Nodes). `201` on success. |

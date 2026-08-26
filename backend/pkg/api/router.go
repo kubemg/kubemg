@@ -132,6 +132,21 @@ type Store interface {
 	Settings(ctx context.Context) (map[string]string, error)
 	PutSettings(ctx context.Context, values map[string]string, updatedBy uint) error
 
+	// Where charts may be installed from, and what those repositories hold.
+	// Server-wide rather than per-cluster: see pkg/db/helm_models.go. The
+	// credential never leaves the row, so nothing in this interface returns it
+	// separately — a caller that needs it has the whole repository.
+	HelmRepositories(ctx context.Context) ([]db.HelmRepository, error)
+	HelmRepository(ctx context.Context, name string) (*db.HelmRepository, error)
+	PutHelmRepository(ctx context.Context, repository *db.HelmRepository) error
+	DeleteHelmRepository(ctx context.Context, name string) error
+	UpdateHelmRepositoryHealth(
+		ctx context.Context, id uint, status, message string, charts int, syncedAt *time.Time,
+	) error
+	ReplaceHelmCharts(ctx context.Context, repositoryID uint, charts []db.HelmChart) error
+	HelmCharts(ctx context.Context, repositoryID uint, search string, limit int) ([]db.HelmChart, error)
+	HelmChart(ctx context.Context, repositoryID uint, name string) (*db.HelmChart, error)
+
 	// AcquireLease is how a background job that reads a cluster decides whether
 	// *this* replica is the one doing it. See pkg/db/lease.go: a false return
 	// means somebody else holds it, an error means do not run.
@@ -473,6 +488,10 @@ func NewRouter(opts Options) *gin.Engine {
 		if s.events != nil {
 			go s.startEventWatchSweeper(opts.Background)
 		}
+		// Chart repositories go stale on their own. One replica refreshes them;
+		// see helm_index.go for why that is a lease rather than a timer per
+		// process.
+		go s.startHelmIndexSync(opts.Background)
 		// An elevation ends by itself, and the resolver already refuses it the
 		// moment its window passes. This is what closes the rows out and stops the
 		// console counting down something that has finished.
@@ -568,6 +587,19 @@ func NewRouter(opts Options) *gin.Engine {
 		// granted to — you cannot be shown a chart from a source you cannot know
 		// exists — while changing it is administrative, and the credential never
 		// travels back out.
+		// Where charts may be installed from. Deliberately **not** under
+		// /clusters: what this installation is allowed to reach out to and
+		// download templates from is a fact about the installation, not about
+		// any one cluster. Writing is an egress decision and so admin-only;
+		// reading the catalogue is open to anyone signed in, because an install
+		// form cannot discover the list by being refused.
+		repositories := v1.Group("/helm/repositories", requireAuth)
+		repositories.GET("", s.listHelmRepositories)
+		repositories.GET("/:name/charts", s.listHelmCharts)
+		repositories.PUT("/:name", requireAdmin, s.putHelmRepository)
+		repositories.DELETE("/:name", requireAdmin, s.deleteHelmRepository)
+		repositories.POST("/:name/sync", requireAdmin, s.syncHelmRepository)
+
 		sources := clusters.Group("/:id/observability")
 		sources.GET("", s.listObservabilitySources)
 		sources.PUT("/sources/:kind", requireAdmin, s.putObservabilitySource)
@@ -736,6 +768,14 @@ func NewRouter(opts Options) *gin.Engine {
 			// from and renders nothing, which every response says.
 			helm := resources.Group("/helm/releases")
 			helm.GET("", s.listHelmReleases)
+			// Installing is a create on the collection, which is why it is a
+			// POST here rather than a route of its own: a release is an object
+			// this cluster did not have and now does. Nothing about it is
+			// admin-only — the rendered objects go down the impersonated tunnel
+			// one at a time and the cluster's own RBAC decides each of them,
+			// exactly as it does for a manifest an operator types.
+			helm.POST("", s.installHelmRelease)
+			helm.POST("/:name/upgrade", s.upgradeHelmRelease)
 			helm.GET("/:name/values", s.showHelmReleaseValues)
 			helm.PUT("/:name/values", s.updateHelmReleaseValues)
 			// History is the other half of the list: the list dedupes to the

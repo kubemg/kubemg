@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/kubemg/kubemg/backend/pkg/db"
+	"github.com/kubemg/kubemg/backend/pkg/helm"
 )
 
 /*
@@ -109,11 +110,33 @@ type helmReleaseView struct {
 
 func (v helmReleaseView) sortKey() (string, string) { return v.Namespace, v.Name }
 
-// helmValuesWarning is what an operator has to know before editing values here,
-// and it travels with the response rather than living only in the UI: a client
-// that skips it is still told.
-const helmValuesWarning = "Saved as a new Helm revision. This records the values Helm will start " +
-	"from — it does not re-render the chart, so nothing running changes until the next helm upgrade."
+// helmRenderable reports whether a release can be re-rendered from what it
+// stores. Helm keeps the whole chart on the release, so this is true of every
+// release Helm itself wrote; it is false only for one written by something that
+// stripped the chart, which nothing — `helm` included — can re-render.
+//
+// It is checked on the *read* as well as on the write, because a surface
+// offering an action has to state its limit before the click rather than in the
+// receipt.
+func helmRenderable(release map[string]any) bool {
+	chart, ok := release["chart"].(map[string]any)
+	if !ok {
+		return false
+	}
+	metadata, ok := chart["metadata"].(map[string]any)
+	if !ok {
+		return false
+	}
+	name, _ := metadata["name"].(string)
+	return name != ""
+}
+
+// helmUnrollbackableWarning is the values warning's counterpart on the history
+// read: a release that cannot be re-rendered also cannot have a revision
+// re-applied, and the reason is the same missing chart.
+const helmUnrollbackableWarning = "This release does not carry its chart, so a rollback here can " +
+	"only restore an earlier revision's values as a new revision — nothing running would change. " +
+	"A release Helm itself wrote carries its chart and rolls back for real."
 
 /* ------------------------------------------------------------- decoding --- */
 
@@ -451,12 +474,15 @@ func (s *server) showHelmReleaseValues(c *gin.Context) {
 		return
 	}
 
-	view := helmView(release)
-	c.JSON(http.StatusOK, gin.H{
-		"release": view,
-		"yaml":    document,
-		"warning": helmValuesWarning,
-	})
+	// The caveat travels with the *read* rather than only the write, so a
+	// surface offering the action states its limit before the click. It is now
+	// the exception rather than the rule: a release that carries its chart can
+	// be re-rendered and applied, and says nothing.
+	body := gin.H{"release": helmView(release), "yaml": document}
+	if !helmRenderable(release) {
+		body["warning"] = helmUnrenderableWarning
+	}
+	c.JSON(http.StatusOK, body)
 }
 
 // showHelmReleaseHistory returns every revision Helm has stored for one release,
@@ -499,11 +525,11 @@ func (s *server) showHelmReleaseHistory(c *gin.Context) {
 		history = append(history, view)
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"release": history[0],
-		"history": history,
-		"warning": helmRollbackWarning,
-	})
+	body := gin.H{"release": history[0], "history": history}
+	if !helmRenderable(revisions[0].release) {
+		body["warning"] = helmUnrollbackableWarning
+	}
+	c.JSON(http.StatusOK, body)
 }
 
 // helmValuesYAML renders a release's `config` — the supplied values — as YAML. A
@@ -550,15 +576,59 @@ func (s *server) updateHelmReleaseValues(c *gin.Context) {
 		return
 	}
 
-	secret, release, ok := s.latestHelmSecret(c, user, cluster, grant, namespace, name)
+	revisions, ok := s.helmRevisions(c, user, cluster, grant, namespace, name)
+	if !ok {
+		return
+	}
+	current := revisions[0]
+
+	previous, ok := parsedRelease(c, current)
 	if !ok {
 		return
 	}
 
-	s.appendHelmRevision(c, user, cluster, grant, namespace, name,
-		helmStoredRevision{secret: secret, release: release, revision: helmRevision(release)},
-		values, helmUpdateDescription, helmValuesWarning)
+	// The chart is on the release. A release Helm wrote carries its templates,
+	// its files and its subcharts, so this renders and applies with nothing
+	// configured and nothing reachable — which is what removes the caveat this
+	// endpoint used to travel with.
+	loaded, err := previous.LoadedChart()
+	if err != nil {
+		// A release written by something that stripped the chart. Rare, real,
+		// and the one case where the old behaviour is still the honest one:
+		// record the values, change nothing, and say so.
+		s.appendHelmValuesOnly(c, user, cluster, grant, namespace, name, current, values)
+		return
+	}
+
+	chartVersion := ""
+	if loaded.Metadata != nil {
+		chartVersion = loaded.Metadata.Version
+	}
+	s.renderAndApply(c, user, cluster, grant, namespace, name, current, previous,
+		loaded, values, chartVersion, helmUpdateDescription)
 }
+
+// appendHelmValuesOnly is what this endpoint used to do for every release and
+// now does for one case only: a release that does not carry its chart, which
+// cannot be re-rendered by anything, `helm` included.
+//
+// It is kept rather than turned into a refusal because recording values on such
+// a release is still useful — the next `helm upgrade`, run from somewhere that
+// does have the chart, starts from them — and because refusing would make the
+// editor unusable for a class of release nobody can fix from here.
+func (s *server) appendHelmValuesOnly(c *gin.Context, user *db.User, cluster *db.Cluster,
+	grant db.UserClusterAccess, namespace, name string, current helmStoredRevision,
+	values map[string]any,
+) {
+	s.appendHelmRevision(c, user, cluster, grant, namespace, name, current, values,
+		helmUpdateDescription, helmUnrenderableWarning)
+}
+
+// helmUnrenderableWarning states the one remaining case where a values write
+// re-applies nothing, and why.
+const helmUnrenderableWarning = "This release does not carry its chart, so KubeMG could not " +
+	"re-render it: the values are recorded as a new revision and nothing running has changed. " +
+	"The next helm upgrade, run where the chart is available, will render from them."
 
 // rollbackHelmRelease restores an earlier revision's values as a new revision.
 //
@@ -611,15 +681,91 @@ func (s *server) rollbackHelmRelease(c *gin.Context) {
 		return
 	}
 
-	values, _ := revisions[index].release["config"].(map[string]any)
-	if values == nil {
-		// A revision installed with no values at all is a real state, and
-		// restoring it means restoring emptiness rather than refusing.
-		values = map[string]any{}
+	target, ok := parsedRelease(c, revisions[index])
+	if !ok {
+		return
+	}
+	previous, ok := parsedRelease(c, current)
+	if !ok {
+		return
 	}
 
-	s.appendHelmRevision(c, user, cluster, grant, namespace, name, current, values,
-		fmt.Sprintf(helmRollbackDescription, wanted), fmt.Sprintf(helmRollbackWarningFor, wanted))
+	s.applyRollback(c, user, cluster, grant, namespace, name, current, previous, target, wanted)
+}
+
+// applyRollback re-applies a stored revision's manifest.
+//
+// This is `helm rollback`, and it is what the old implementation deliberately
+// was not. Helm's rollback does **not** re-render — it applies the manifest the
+// target revision recorded, because that manifest is a fact about what was
+// running and a re-render would produce today's answer to `.Capabilities` and
+// `lookup` rather than that revision's. So the three documents of the merge are
+// the target's manifest as `modified`, the **current** revision's as `original`
+// — what is Helm's to remove — and the live objects as themselves.
+//
+// The recorded revision carries the target's chart, config and manifest
+// together, which is now correct where before it would not have been: the
+// cluster is being moved to that state rather than merely told about it, so the
+// next upgrade diffs against something that is actually there.
+func (s *server) applyRollback(c *gin.Context, user *db.User, cluster *db.Cluster,
+	grant db.UserClusterAccess, namespace, name string, current helmStoredRevision,
+	previous, target *helm.Release, wanted int,
+) {
+	discovery, ok := s.discoverCluster(c, user, cluster, grant)
+	if !ok {
+		return
+	}
+
+	wantedObjects, err := helm.ManifestObjects(target.Manifest, namespace)
+	if err != nil || len(wantedObjects) == 0 {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": fmt.Sprintf("revision %d recorded no manifest, so there is nothing to "+
+				"re-apply — it was written by something that stripped it", wanted),
+		})
+		return
+	}
+	installed, err := helm.ManifestObjects(previous.Manifest, namespace)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "the current revision's manifest could not be read",
+		})
+		return
+	}
+
+	// A rollback has no render, so it has no hooks and no CRDs of its own: the
+	// manifest is the release proper, which is exactly what Helm re-applies.
+	rendered := &helm.Rendered{Objects: wantedObjects, Manifest: target.Manifest, Notes: target.Info.Notes}
+
+	plan, ok := s.planApply(c, discovery, grant, rendered, installed, name, namespace)
+	if !ok {
+		return
+	}
+	result := s.apply(c, user, cluster, grant, plan, originalOf(installed))
+
+	status := helm.StatusDeployed
+	description := fmt.Sprintf(helmRollbackDescription, wanted)
+	if !result.ok() {
+		status = helm.StatusFailed
+		description = fmt.Sprintf("Rollback to revision %d failed: %s/%s — %s",
+			wanted, result.Failed.Kind, result.Failed.Name, result.Failed.Message)
+	}
+
+	next := helm.NextRelease(previous, nil, target.Config, rendered, status, description)
+	// The chart is the target's, carried across whole: a rollback restores the
+	// chart that produced the manifest it just applied, or the next upgrade
+	// would render a different chart against these objects.
+	next.Chart = target.Chart
+	next.Hooks = target.Hooks
+
+	if !s.writeHelmRevision(c, user, cluster, grant, namespace, name, &current, next, status) {
+		return
+	}
+
+	chartVersion := ""
+	if target.Chart != nil && target.Chart.Metadata != nil {
+		chartVersion = target.Chart.Metadata.Version
+	}
+	c.JSON(http.StatusOK, helmWriteResponse(c, next, result, chartVersion, rendered))
 }
 
 // appendHelmRevision writes the next revision and supersedes the one it
@@ -703,21 +849,6 @@ const helmUpdateDescription = "Values updated through KubeMG"
 // an operator expects even though KubeMG wrote the row.
 const helmRollbackDescription = "Rolled back to revision %d through KubeMG"
 
-// helmRollbackWarningFor is the limit of a rollback here, and it is deliberately
-// blunt: "roll back" is the most load-bearing word in this file, and an operator
-// who reads it as "undo the deployment" has been misled by the name rather than
-// by the product. It travels with the history read as well as with the write, so
-// it is on screen before the click rather than in the receipt.
-const helmRollbackWarningFor = "Restores revision %d's values as a new Helm revision. Unlike helm " +
-	"rollback it re-applies nothing: the chart, the rendered manifest and everything running are " +
-	"unchanged until the next helm upgrade, which will then render from these values."
-
-// helmRollbackWarning is the same statement with no revision to name, for the
-// history read — the surface offering the action has to carry the caveat.
-const helmRollbackWarning = "Rolling back here restores a revision's values as a new Helm revision. " +
-	"Unlike helm rollback it re-applies nothing: the chart, the rendered manifest and everything " +
-	"running are unchanged until the next helm upgrade, which will then render from those values."
-
 // helmValuesFrom reads the submitted values document. Values are a mapping or
 // they are nothing — a bare scalar or a list is not something Helm can merge
 // into a chart, and the API server would only refuse it much later.
@@ -731,31 +862,34 @@ func helmValuesFrom(c *gin.Context) (map[string]any, bool) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "the values could not be read"})
 		return nil, false
 	}
+	return helmValuesDocumentFrom(c, payload.YAML)
+}
 
+// helmValuesOf parses a values document. It is separate from the request read
+// because an install carries its values inside a larger body and has to validate
+// them by exactly the same rules an edit does — two parsers would eventually
+// disagree about what `null` means.
+func helmValuesOf(document string) (map[string]any, error) {
 	// An empty document means a release with no values, which is a real state:
 	// `helm upgrade --reset-values` leaves exactly that.
-	if strings.TrimSpace(payload.YAML) == "" {
-		return map[string]any{}, true
+	if strings.TrimSpace(document) == "" {
+		return map[string]any{}, nil
 	}
 
-	document, err := yaml.YAMLToJSON([]byte(payload.YAML))
+	encoded, err := yaml.YAMLToJSON([]byte(document))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "this is not valid YAML: " + err.Error()})
-		return nil, false
+		return nil, fmt.Errorf("this is not valid YAML: %s", err)
 	}
 
 	var values map[string]any
-	if err := json.Unmarshal(document, &values); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Helm values have to be a mapping of keys to values",
-		})
-		return nil, false
+	if err := json.Unmarshal(encoded, &values); err != nil {
+		return nil, fmt.Errorf("Helm values have to be a mapping of keys to values")
 	}
 	if values == nil {
 		// `null`, or a document that is only comments. Same meaning as empty.
 		values = map[string]any{}
 	}
-	return values, true
+	return values, nil
 }
 
 // helmValuesDocument renders values back for the response, so the editor shows

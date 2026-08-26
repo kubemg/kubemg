@@ -7,6 +7,14 @@ access — it is the ordinary secrets list, read through the same impersonated
 tunnel every other read uses, with the payload decoded server-side because a
 browser has no business gunzipping a release just to render a table.
 
+Reading, deleting values and rendering a chart are all built on
+`helm.sh/helm/v3` used as a **library** — kubemg does not reimplement
+Helm's chart engine — but deliberately **not** on `helm.sh/helm/v3/pkg/kube`,
+Helm's own Kubernetes client. Applying rendered objects goes down the same
+impersonated, audited tunnel every other write uses instead, which is also
+why the server binary pulls in neither `k8s.io/kubectl` nor Helm's OCI
+stack.
+
 ## How releases are read
 
 `GET .../resources/helm/releases` reads every Secret matching
@@ -38,38 +46,106 @@ server:
 
 The release object also carries the chart's **rendered manifest** — for many
 charts that manifest contains generated passwords — and it **never enters a
-response**, from any Helm route. `GET .../helm/releases/:name/values`
-returns exactly what `helm get values` would: the `config` the operator
-supplied, not the chart's own defaults merged in.
+response**, from any Helm route, install and upgrade included. `GET
+.../helm/releases/:name/values` returns exactly what `helm get values`
+would: the `config` the operator supplied, not the chart's own defaults
+merged in.
 
-## Writing values
+## Installing a chart
 
-`PUT .../helm/releases/:name/values` writes the supplied values the way a
-`helm upgrade` writes a new revision — it **appends** a new Secret
-(`sh.helm.release.v1.<name>.v<n+1>`) rather than editing the current one in
-place, because editing in place would rewrite `helm history` and break `helm
-rollback`. The previous revision is marked `superseded` in both the label
-Helm queries by and the payload Helm reads, once the new revision exists —
-if that second write fails, the release is still correct (Helm reads the
-highest revision regardless), but `helm history` would show two rows marked
-`deployed`, and the response's warning says so.
+`POST .../resources/helm/releases` installs a chart from a registered [chart
+repository](helm-repositories.md), resolving the version against the
+**stored catalogue** rather than fetching blind — which is what keeps an
+install from being steered at an arbitrary URL. A published digest is
+verified against the downloaded archive. `409` if a release of that name
+already exists ("upgrade it instead"); `POST
+.../helm/releases/:name/upgrade` for that case.
 
-!!! warning "kubemg renders nothing"
-    Every values write carries this warning, verbatim, because it is the one
-    limitation that matters most about this feature:
+Rendering is Helm's own engine: `.Values` (chart defaults deep-merged with
+subcharts', the operator's values on top, `global` threaded through,
+subcharts switched by `condition`/`tags`), `.Release`, `tpl`, and sprig.
+`.Capabilities.KubeVersion` and `.APIVersions` come from a real discovery
+pass against the **target cluster**, through the tunnel — the same pass
+supplies the Kind→plural mapping every write in this feature is built from,
+because `Ingress` is `ingresses`, `Endpoints` is `endpoints`, and no single
+pluralisation rule gets both right.
 
-    > Saved as a new Helm revision. This records the values Helm will start
-    > from — it does not re-render the chart, so nothing running changes
-    > until the next `helm upgrade`.
+Write order follows Helm's own: CRDs from `crds/` first, then pre-install
+hooks, then the release proper in Helm's own install order (Namespace →
+ServiceAccount/Secret/ConfigMap/PV/PVC/RBAC → workloads), then post-install
+hooks. Each rendered object is its own `get` then `create`-or-`update`, one
+at a time, decided by the **target cluster's own RBAC** and earning its own
+audit record — a forty-object chart is forty audit rows, and installing
+nothing is a code path that emits none.
 
-    kubemg has no chart to template from. The new revision carries the
-    **previous** revision's chart and manifest forward unchanged, and **the
-    cluster keeps running exactly what it was running** the moment before the
-    write. The next real `helm upgrade` is what actually applies the new
-    values. `HelmValuesDrawer` shows this warning before the first keystroke,
-    not after the save — and a client that bypasses the UI entirely and calls
-    the API directly is still told, because the warning travels on the
-    response.
+CRDs written from `crds/` are deliberately **not recorded on the release**
+— the same reason `helm uninstall` leaves CRDs behind.
+
+The manifest editor's deny list on creatable kinds (four RBAC kinds, Node)
+does **not** apply to an install: cert-manager, ingress-nginx and every
+operator worth installing ship a ServiceAccount, a ClusterRole and a
+binding, and refusing those would leave the install button able to install
+nothing anyone actually wants.
+
+A namespace-scoped grant is checked **before the first write**: a chart
+containing a cluster-scoped object, or one that installs into a namespace
+outside the grant, is refused with the object named, and nothing is
+written. Finding out on object nineteen is the failure this pre-flight
+exists to prevent.
+
+!!! warning "A failed install is still recorded, and does not roll back"
+    If a write partway through fails, the run stops there. The release is
+    recorded as `failed`, and the response names exactly which objects were
+    written and which were not — kubemg does not delete the ones that
+    succeeded on the caller's behalf. There is no `--atomic` rollback: that
+    would mean removing objects nobody asked kubemg to remove. The release
+    is written even though it failed, because the objects it created are
+    real, and a release nobody recorded would be a set of orphans with no
+    name attached.
+
+## Upgrading a chart
+
+`POST .../resources/helm/releases/:name/upgrade` re-renders against a new
+version or new values and applies the difference with a **three-way
+merge**: original is what the previous revision rendered, modified is this
+render, live is what the cluster currently holds. A built-in kind gets a
+strategic merge, so a sidecar a mutating webhook injected survives the
+upgrade and an allocated `clusterIP` is not sent back as the chart's
+template value; a custom resource gets a JSON merge patch, Helm's own
+fallback for kinds with no defined merge key. A field the chart stopped
+rendering is removed; a field nothing in the chart ever wrote is left
+alone. The write carries the object's `resourceVersion`, so it stays
+conditional and a concurrent change becomes `409` rather than being
+silently overwritten, and it is a full `PUT` rather than a `PATCH` — the
+tunnel carries one content type.
+
+An object the previous revision wrote and this one no longer renders is
+deleted **last, in reverse order, and never fatally** — a delete that fails
+does not fail the upgrade.
+
+## Writing values only
+
+`PUT .../resources/helm/releases/:name/values` writes the supplied values
+the way `helm upgrade --reuse-values` does, and — this is the change that
+matters most about this feature — it now **renders and applies** them, the
+same way [Upgrading a chart](#upgrading-a-chart) does: read the chart back
+off the release itself, render it against the new values, and three-way
+merge the result onto the cluster.
+
+This needs no repository reachable and no repository configured at all,
+because Helm stores the **whole chart** on the release — a release
+installed from someone's laptop two years ago, from a chart kubemg has
+never heard of, can still be re-rendered here.
+
+!!! note "The one case that still can't be rendered"
+    A release whose Secret was written by something that stripped the
+    chart out of the stored object cannot be re-rendered — there is nothing
+    to render. That case keeps the old append-only behaviour: the values
+    write appends a new revision (`sh.helm.release.v1.<name>.v<n+1>`)
+    carrying the **previous** revision's chart and manifest forward
+    unchanged, and the cluster keeps running exactly what it was running
+    before the write. The response's `helmValuesWarning` names this reason
+    explicitly whenever it applies — it no longer appears on every write.
 
 ## History and rollback
 
@@ -78,26 +154,17 @@ first, read from the same decode path (`latestHelmSecret`/`helmRevisions`)
 the release list uses — there is no second code path that could disagree
 about which revision is current.
 
-`POST .../helm/releases/:name/rollback` restores an earlier revision, and it
-is **deliberately less than `helm rollback`** — this is by design, not an
-oversight:
+`POST .../helm/releases/:name/rollback` is now `helm rollback`: it applies
+the target revision's **stored manifest**, three-way merged against the
+current revision's manifest as the original, the same as an upgrade.
+Helm does not re-render on rollback either — the manifest is a fact about
+what was actually running at that revision, and re-rendering would produce
+today's answer to `.Capabilities` and `lookup`, not that revision's. The new
+revision this creates records the target's chart, config **and** manifest
+together, which is correct because the cluster is actually being moved to
+that state.
 
-- Helm's own rollback restores a revision's values, chart **and** rendered
-  manifest, then applies that manifest to the cluster. The applying is the
-  whole point of it, and it is also the one thing kubemg cannot reimplement
-  without rebuilding Helm's three-way merge and deletion pass against
-  objects it does not own.
-- What kubemg's rollback restores is the target revision's **`config` (its
-  values) and nothing else**. The chart metadata and manifest are carried
-  forward from the **current** revision, because that is what is actually
-  running — recording the target's own chart/manifest instead would leave
-  the *next* `helm upgrade` diffing against a state the cluster was never
-  actually in.
-- It is the exact same append `updateHelmReleaseValues` performs, with its
-  values read out of history instead of off the wire — same impersonated
-  write, same audit record.
-
-Resolution rules, both enforced server-side:
+Resolution rules, all enforced server-side:
 
 - The requested revision is resolved against what the cluster's own history
   actually returned, **never turned directly into a Secret name** — a
@@ -107,10 +174,22 @@ Resolution rules, both enforced server-side:
 - Rolling back to the **current** revision is refused with `409` (*"revision
   `<n>` is already the current one"*) — appending an identical copy is a
   write that changes nothing while hiding that it did nothing.
+- A revision that recorded no stored manifest — an old revision written
+  before this feature existed, or one written through the values-only
+  fallback above — answers `409` naming the reason: there is nothing to
+  three-way merge against.
 
-The caveat travels with both the read and the write: the surface offering
-rollback states its limit before the click, the same way the values editor
-does.
+## Honest limits
+
+!!! warning "What kubemg's Helm engine does not do"
+    - **Hooks are applied in weight order but not waited on.** kubemg does
+      not hold an HTTP request open until a pre-install `Job` finishes, so a
+      chart whose resources depend on a hook completing may briefly be in a
+      state `helm install` would not show you. `hook-delete-policy` is not
+      honoured, and `test` hooks are never run. Any response for a chart
+      that declares hooks carries `hook_notice` saying so.
+    - **OCI registries are not read.** A chart repository is `http(s)` only
+      — see [Chart repositories](helm-repositories.md).
 
 ## Front end
 

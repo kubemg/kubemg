@@ -46,9 +46,14 @@ import type {
   MachineAccount,
   MachineToken,
   NewMachineToken,
+  HelmChartList,
   HelmHistory,
   HelmRelease,
+  HelmRepository,
+  HelmRepositoryInput,
+  HelmRepositoryList,
   HelmValues,
+  HelmWriteResult,
   Ingress,
   JitRequest,
   JitRequestInput,
@@ -1021,6 +1026,12 @@ export function fetchCustomResources(
  * these are the same impersonated reads as everything above — the cluster's RBAC
  * decides, and a grant that may not read Secrets is refused here, which is the
  * right answer rather than a bug.
+ *
+ * A release Helm wrote carries its whole chart — templates, files, subcharts —
+ * which is what lets a values write, an upgrade and a rollback all render and
+ * apply here with nothing configured and nothing reachable. The one case that
+ * cannot render is a release whose stored Secret was written by something that
+ * stripped the chart out of it; see `HelmWriteResult.warning`.
  */
 
 export function fetchHelmReleases(clusterId: number, namespace: string): Promise<HelmRelease[]> {
@@ -1044,18 +1055,20 @@ export async function fetchHelmValues(
 }
 
 /**
- * updateHelmValues appends a Helm revision carrying the new values. It records
- * what the next `helm upgrade` starts from; it does not re-render the chart, so
- * nothing running changes — the response carries that warning and the drawer
- * shows it.
+ * updateHelmValues appends a Helm revision carrying the new values, renders the
+ * release's own chart against them and applies the difference — the same write
+ * an upgrade performs, with the chart already on the release rather than named
+ * by the caller. `HelmWriteResult.objects` is the per-object report; a release
+ * that cannot be rendered falls back to a values-only write and says so through
+ * `warning` instead.
  */
 export async function updateHelmValues(
   clusterId: number,
   name: string,
   namespace: string,
   yaml: string,
-): Promise<HelmValues> {
-  const { data } = await http.put<HelmValues>(
+): Promise<HelmWriteResult> {
+  const { data } = await http.put<HelmWriteResult>(
     helmValuesURL(clusterId, name),
     { yaml },
     { params: { namespace } },
@@ -1081,25 +1094,142 @@ export async function fetchHelmHistory(
 }
 
 /**
- * rollbackHelmRelease restores an earlier revision's values as a new revision.
- *
- * It is deliberately less than `helm rollback`, and the difference is the thing
- * to know before calling it: the values come back, and the chart, the rendered
- * manifest and everything running do not — KubeMG has no chart to render and
- * applying a stored manifest would mean reimplementing Helm's three-way merge.
- * The next `helm upgrade` renders from these values and converges. The response
- * carries that caveat, and so does the history read that offers the action.
+ * rollbackHelmRelease is `helm rollback`: the target revision's manifest is
+ * applied back to the cluster — the current revision's manifest is what is
+ * diffed away, in the same three-way merge an upgrade performs — and the
+ * result is recorded as a new revision carrying the target's chart, values and
+ * manifest. `HelmWriteResult.objects` is the same per-object report an upgrade
+ * answers with.
  */
 export async function rollbackHelmRelease(
   clusterId: number,
   name: string,
   namespace: string,
   revision: number,
-): Promise<HelmValues> {
-  const { data } = await http.post<HelmValues>(
+): Promise<HelmWriteResult> {
+  const { data } = await http.post<HelmWriteResult>(
     `${helmReleaseURL(clusterId, name)}/rollback`,
     { revision },
     { params: { namespace } },
+  )
+  return data
+}
+
+/** What an install submits: the chart, addressed at a repository's catalogue,
+    the release identity, and the values to render it with. */
+export interface HelmInstallInput {
+  repository: string
+  chart: string
+  version: string
+  name: string
+  namespace: string
+  yaml: string
+}
+
+/**
+ * installHelmRelease renders a chart from a repository's catalogue and writes
+ * every object it produces into the cluster, one impersonated call per object —
+ * the same tunnel and the same audit trail as every other write here, so a
+ * `view` grant installs nothing and a namespace-scoped grant is refused before
+ * the first object rather than partway through.
+ */
+export async function installHelmRelease(
+  clusterId: number,
+  input: HelmInstallInput,
+): Promise<HelmWriteResult> {
+  const { data } = await http.post<HelmWriteResult>(resourceURL(clusterId, 'helm/releases'), input)
+  return data
+}
+
+/** What an upgrade submits. Every chart field is optional: omitting them all
+    re-renders the installed chart with `yaml`, which is what a values-only
+    change wants. `reuseValues` renders with the current revision's values
+    rather than `yaml` — the shape a chart version bump wants. */
+export interface HelmUpgradeInput {
+  repository?: string
+  chart?: string
+  version?: string
+  yaml?: string
+  reuseValues?: boolean
+}
+
+/** upgradeHelmRelease re-renders an installed release — from a named chart
+    version, or from the chart already on the release — and applies the
+    difference the same way an install does. */
+export async function upgradeHelmRelease(
+  clusterId: number,
+  name: string,
+  namespace: string,
+  input: HelmUpgradeInput,
+): Promise<HelmWriteResult> {
+  const { data } = await http.post<HelmWriteResult>(
+    `${helmReleaseURL(clusterId, name)}/upgrade`,
+    {
+      repository: input.repository,
+      chart: input.chart,
+      version: input.version,
+      yaml: input.yaml,
+      reuse_values: input.reuseValues,
+    },
+    { params: { namespace } },
+  )
+  return data
+}
+
+/*
+ * Where charts may be installed from — server-wide, not per-cluster, since what
+ * this installation may reach out to and download templates from is a fact
+ * about the installation rather than about any one cluster. Reading the
+ * catalogue is open to anyone signed in; writing a repository is admin-only.
+ */
+
+export async function fetchHelmRepositories(): Promise<HelmRepositoryList> {
+  const { data } = await http.get<HelmRepositoryList>('/helm/repositories')
+  return data
+}
+
+/** fetchHelmCharts searches one repository's catalogue. `query` narrows by
+    name; an unset `limit` gets the server's default page. */
+export async function fetchHelmCharts(
+  repository: string,
+  query?: string,
+  limit?: number,
+): Promise<HelmChartList> {
+  const { data } = await http.get<HelmChartList>(
+    `/helm/repositories/${encodeURIComponent(repository)}/charts`,
+    { params: { ...(query ? { q: query } : {}), ...(limit ? { limit } : {}) } },
+  )
+  return data
+}
+
+/**
+ * putHelmRepository declares a repository, or edits one — the name is the
+ * address, so renaming one means deleting it and adding another. `warning`
+ * comes back when the row was stored but its catalogue could not be read, which
+ * is still a 200: the row is exactly what the operator asked for.
+ */
+export async function putHelmRepository(
+  name: string,
+  input: HelmRepositoryInput,
+): Promise<{ repository: HelmRepository; warning?: string }> {
+  const { data } = await http.put<{ repository: HelmRepository; warning?: string }>(
+    `/helm/repositories/${encodeURIComponent(name)}`,
+    input,
+  )
+  return data
+}
+
+export async function deleteHelmRepository(name: string): Promise<void> {
+  await http.delete(`/helm/repositories/${encodeURIComponent(name)}`)
+}
+
+/** syncHelmRepository re-reads one repository now, rather than waiting out the
+    scheduled sync — what an operator presses after fixing a proxy. */
+export async function syncHelmRepository(
+  name: string,
+): Promise<{ repository: HelmRepository; warning?: string }> {
+  const { data } = await http.post<{ repository: HelmRepository; warning?: string }>(
+    `/helm/repositories/${encodeURIComponent(name)}/sync`,
   )
   return data
 }

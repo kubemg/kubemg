@@ -23,6 +23,7 @@ import { AuditSettings } from './pages/settings/AuditSettings'
 import { DeploymentSettings } from './pages/settings/DeploymentSettings'
 import { GeneralSettings } from './pages/settings/GeneralSettings'
 import { GuardrailsSettings } from './pages/settings/GuardrailsSettings'
+import { HelmSettings } from './pages/settings/HelmSettings'
 import { SsoSettings } from './pages/settings/SsoSettings'
 import { UserManagement } from './pages/UserManagement'
 import type { ClusterPage } from './lib/navigation'
@@ -507,6 +508,14 @@ export default function App() {
               element={
                 <RequireAuth adminOnly>
                   <AlertingSettings />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/settings/helm"
+              element={
+                <RequireAuth adminOnly>
+                  <HelmSettings />
                 </RequireAuth>
               }
             />

@@ -113,6 +113,7 @@ nav:
       - Exploring resources: clusters/explore.md
       - Workload actions: clusters/actions.md
       - Helm releases: clusters/helm.md
+      - Chart repositories: clusters/helm-repositories.md
       - Terminals and logs: clusters/terminals-and-logs.md
       - Events timeline: clusters/events.md
       - Node capacity: clusters/capacity.md

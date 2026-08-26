@@ -10,6 +10,7 @@ const TABS = [
   { to: '/admin/settings/audit', label: 'Audit' },
   { to: '/admin/settings/guardrails', label: 'Guardrails' },
   { to: '/admin/settings/alerting', label: 'Alerting' },
+  { to: '/admin/settings/helm', label: 'Helm' },
   { to: '/admin/settings/sso', label: 'SSO' },
   { to: '/admin/settings/deployment', label: 'Deployment' },
 ] as const
