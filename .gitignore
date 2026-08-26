@@ -30,6 +30,7 @@ pnpm-debug.log*
 # belongs in README.md.
 .claude/*
 /CLAUDE.md
+/ARCHITECTURE.md
 /AGENT_RULES.md
 /PROJECT_KNOWLEDGE.md
 /implementation_plan.md
