@@ -42,7 +42,9 @@ import type {
   EventTimeline,
   GrantIdentity,
   Group,
+  IssuedKubeconfig,
   IssuedMachineToken,
+  KubeconfigRevokeAllResult,
   MachineAccount,
   MachineToken,
   NewMachineToken,
@@ -490,6 +492,44 @@ export async function issueMachineToken(
 export async function revokeMachineToken(accountId: number, tokenId: number): Promise<MachineToken> {
   const { data } = await http.delete<MachineToken>(
     `/machine-accounts/${accountId}/tokens/${tokenId}`,
+  )
+  return data
+}
+
+/* The credential register: every kubeconfig this console handed out, and
+   withdrawing one.
+
+   Reading follows the audit trail's rule — everybody may read, and the server
+   narrows a non-admin to their own rows, so the same call serves the admin page
+   and the operator's own. Revoking your own is never administrative; revoking
+   somebody else's always is, and the server decides that, not this file. */
+
+export async function fetchIssuedKubeconfigs(params?: {
+  userId?: number
+  clusterId?: number
+  activeOnly?: boolean
+}): Promise<IssuedKubeconfig[]> {
+  const query = new URLSearchParams()
+  if (params?.userId) query.set('user_id', String(params.userId))
+  if (params?.clusterId) query.set('cluster_id', String(params.clusterId))
+  if (params?.activeOnly) query.set('status', 'active')
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  const { data } = await http.get<{ kubeconfigs: IssuedKubeconfig[] }>(`/kubeconfigs${suffix}`)
+  return data.kubeconfigs ?? []
+}
+
+export async function revokeIssuedKubeconfig(id: number): Promise<IssuedKubeconfig> {
+  const { data } = await http.post<IssuedKubeconfig>(`/kubeconfigs/${id}/revoke`)
+  return data
+}
+
+/** One action rather than a loop, because it is what an incident calls for. */
+export async function revokeAllIssuedKubeconfigs(
+  userId?: number,
+): Promise<KubeconfigRevokeAllResult> {
+  const { data } = await http.post<KubeconfigRevokeAllResult>(
+    '/kubeconfigs/revoke-all',
+    userId ? { user_id: userId } : {},
   )
   return data
 }

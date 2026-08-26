@@ -16,6 +16,7 @@ import (
 
 	"github.com/kubemg/kubemg/backend/pkg/api"
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
+	"github.com/kubemg/kubemg/backend/pkg/credentials"
 	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/certs"
@@ -92,6 +93,13 @@ func main() {
 	// while one failing closed would be a fleet nobody can reach.
 	guard := guardrails.New()
 
+	// And the register of issued kubeconfigs, by the same handoff. It starts out
+	// knowing of no revocation, which is the direction that has to be safe: an
+	// unread register means "nothing is known to be withdrawn", never "refuse
+	// every credential" — a blip that locks a fleet out of kubectl is worse than
+	// one that briefly honours a file which is expiring on its own clock anyway.
+	issued := credentials.New()
+
 	// The trail goes two places on purpose: structured logs are what a SIEM
 	// already tails, and the table is what the audit page queries. Persisting
 	// is asynchronous so a slow database never becomes a slow kubectl. The verb
@@ -154,6 +162,7 @@ func main() {
 		Recorder:       recorder,
 		Policy:         policy,
 		Guard:          guard,
+		Credentials:    issued,
 		AllowedOrigins: cfg.AllowedOrigins,
 		PublicURL:      cfg.PublicURL,
 	})
@@ -193,6 +202,7 @@ func main() {
 		Auditor:            auditor,
 		AuditPolicy:        policy,
 		Guardrails:         guard,
+		Credentials:        issued,
 		Alarms:             alarms,
 		JIT:                access,
 		JITCallbackSecret:  []byte(signingKey),
