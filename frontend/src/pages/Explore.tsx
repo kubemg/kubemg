@@ -90,6 +90,7 @@ import {
   workloadInsights,
 } from '../lib/insights'
 import { canCreateResource } from '../lib/manifests'
+import { recordRecentCluster } from '../lib/recents'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { podUsageIndex } from '../lib/units'
 import { workloadKeyFor } from '../lib/workloads'
@@ -552,6 +553,14 @@ export function Explore() {
   // A cluster that is registered but cannot be read: the address is honoured and
   // explained rather than quietly swapped for a different cluster's resources.
   const unreadable = cluster ? null : (clusters.find((entry) => entry.id === clusterId) ?? null)
+
+  // Opening a cluster's resources is what "I was working in this cluster" means,
+  // so this is where the fleet page's recents are written. It records the
+  // cluster rather than the resource: the shortcut is back into the cluster, and
+  // which list somebody was on is already the address they can bookmark.
+  useEffect(() => {
+    if (cluster) recordRecentCluster(cluster.id)
+  }, [cluster])
 
   // A `crd:` key belongs to the cluster it was discovered on, so it resolves to
   // nothing both while discovery is still running and on a cluster that does not
