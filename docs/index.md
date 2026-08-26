@@ -75,6 +75,19 @@ setting that install has.
 
 ## Licensing
 
-The management plane (server, console, identity and authorisation) is
-commercial and closed-source. The in-cluster **agent** is open source and lives
-in `agent/` in the repository — see [The agent](reference/agent.md).
+kubemg is **open source in full**. There is no compiled core and no licence key
+— the whole tree is readable, buildable and self-hostable. Two licences, split
+by directory, because only one half runs inside somebody else's cluster.
+
+| Path | Licence | Why |
+|---|---|---|
+| Server, console, identity and authorisation | **AGPL-3.0** | This is a product people host for others, so running a *modified* kubemg as a network service means offering that modified source to its users. |
+| `agent/`, `deploy/kustomize/` | **Apache-2.0** | The only component that runs **inside a customer's cluster**. A SecOps team has to be able to read it, build it and vendor it into their own tooling without copyleft reaching their infrastructure — see [The agent](reference/agent.md). |
+
+The AGPL does not forbid selling or reselling kubemg; what it forbids is keeping
+a modified, network-served fork private. A **commercial licence** is available
+alongside it — copyright is held in full by the author — for embedded or OEM
+deployments the source-offering obligation does not fit. That does not withdraw
+the AGPL grant; it stands for everyone else.
+
+Third-party dependency licences are listed in full in `NOTICE`.

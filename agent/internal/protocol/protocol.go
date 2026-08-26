@@ -1,8 +1,8 @@
 // Package protocol is the KubeMG tunnel wire format.
 //
 // It mirrors backend/pkg/bastion/protocol.go. The duplication is deliberate:
-// the agent is the open-source half of KubeMG and ships as its own Go module,
-// so it cannot import the closed-source server. Both sides speak JSON, so the
+// the agent is the Apache-2.0 half of KubeMG and ships as its own Go module, so
+// it does not import the AGPL server. Both sides speak JSON, so the
 // two copies only have to agree on field names and on ProtocolVersion — which
 // the server checks during the handshake and refuses when it disagrees.
 package protocol

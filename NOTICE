@@ -1,7 +1,9 @@
 KubeMG
 Copyright (c) 2026 Özkan Poyrazoğlu
 
-This product is licensed under two licences, split by directory.
+KubeMG is open source in full: there is no compiled core, no withheld module and
+no licence key. It is licensed under two licences, split by directory, because
+only one half runs inside somebody else's cluster.
 
   Everything except the directories named below
       GNU Affero General Public License, version 3
@@ -18,6 +20,9 @@ audit it, build it themselves and vendor it into their own tooling without the
 copyleft obligation reaching their infrastructure. The server and console —
 where the product is — are AGPL: running a modified KubeMG as a network service
 means offering that modified source to its users.
+
+The AGPL does not forbid selling or reselling KubeMG -- no OSI-approved licence
+can. What it forbids is keeping a modified, network-served fork private.
 
 A COMMERCIAL LICENCE IS AVAILABLE.
 
@@ -55,6 +60,11 @@ dependencies are, in full:
     tailwindcss, vite, typescript, oxlint                        MIT
 
   Bundled assets (frontend/public/fonts, self-hosted woff2)
-    Inter                                                        SIL Open Font License 1.1
+    Archivo                                                      SIL Open Font License 1.1
     Commit Mono                                                  SIL Open Font License 1.1
     Both licence texts sit beside the font files, as the OFL requires.
+
+--------------------------------------------------------------------------------
+
+Documentation for this release is published at https://kubemg.readthedocs.io/
+and is built from the docs/ directory of this repository.

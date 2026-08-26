@@ -1,8 +1,12 @@
 # KubeMG Dumb Agent
 
-The open-source half of KubeMG. It runs in your cluster, opens one **outbound**
+The permissively-licensed half of KubeMG — all of KubeMG is open source, and
+this is the Apache-2.0 part. It runs in your cluster, opens one **outbound**
 tunnel to a KubeMG bastion, and replays the requests that arrive down it against
 your own API server. That is the whole job.
+
+The full manual lives at <https://kubemg.readthedocs.io/>; the agent's own page
+is [The agent](https://kubemg.readthedocs.io/en/latest/reference/agent/).
 
 It is called *dumb* on purpose:
 
@@ -74,7 +78,7 @@ upgrade request; the cluster identity is derived from that token, so an agent
 cannot claim to be a cluster it holds no token for.
 
 `internal/protocol` mirrors the bastion's `pkg/bastion/protocol.go`. The two are
-separate files because the agent is a separate, open-source module — they agree
+separate files because the agent is a separate Apache-2.0 module — they agree
 on JSON field names and on `ProtocolVersion`, which the bastion checks during the
 handshake.
 

@@ -45,8 +45,8 @@ agent will refuse.
 
 The tunnel handshake carries a `ProtocolVersion` that both sides must agree
 on exactly — `backend/pkg/bastion/protocol.go` defines it on the server side
-and `agent/internal/protocol` mirrors it (the agent is a separate open-source
-Go module and cannot import the closed-source server, so the two copies are
+and `agent/internal/protocol` mirrors it (the agent is a separate
+Apache-2.0 Go module and does not import the AGPL server, so the two copies are
 kept in sync by hand and only need to agree on JSON field names and this
 constant):
 
