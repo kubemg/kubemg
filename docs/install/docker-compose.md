@@ -95,9 +95,9 @@ them — nothing else is fetched at runtime; the console's fonts are served
 from the binary, not a CDN:
 
 ```dotenv
-KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.7.0
+KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.7.1
 KUBEMG_POSTGRES_IMAGE=registry.internal/postgres:16-alpine
-KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.7.0
+KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.7.1
 ```
 
 `KUBEMG_AGENT_IMAGE` has to be reachable **from your target clusters**, not
