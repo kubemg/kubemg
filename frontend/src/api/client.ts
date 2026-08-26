@@ -114,7 +114,9 @@ import type {
   Workload,
   DeleteResult,
   WorkloadActionResult,
+  WorkloadHistory,
   WorkloadPods,
+  WorkloadRollbackResult,
 } from './types'
 
 const TOKEN_KEY = 'kubemg.token'
@@ -1281,6 +1283,44 @@ export async function restartWorkload(
     kind,
     name,
     namespace,
+  })
+  return data
+}
+
+/**
+ * fetchWorkloadHistory reads every revision the cluster still has for one
+ * workload — `kubectl rollout history`, addressed by the same sidebar key as
+ * every other resource call.
+ */
+export async function fetchWorkloadHistory(
+  clusterId: number,
+  kind: ResourceKey,
+  name: string,
+  namespace: string,
+): Promise<WorkloadHistory> {
+  const { data } = await http.get<WorkloadHistory>(resourceURL(clusterId, 'workload/history'), {
+    params: { kind, name, namespace },
+  })
+  return data
+}
+
+/**
+ * rollbackWorkload writes an earlier revision's pod template back onto the
+ * live object, with its `resourceVersion` — the controller performs the
+ * rollout from there, exactly as `kubectl rollout undo` leaves it to.
+ */
+export async function rollbackWorkload(
+  clusterId: number,
+  kind: ResourceKey,
+  name: string,
+  namespace: string,
+  revision: number,
+): Promise<WorkloadRollbackResult> {
+  const { data } = await http.post<WorkloadRollbackResult>(resourceURL(clusterId, 'workload/rollback'), {
+    kind,
+    name,
+    namespace,
+    revision,
   })
   return data
 }

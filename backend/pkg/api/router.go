@@ -654,6 +654,12 @@ func NewRouter(opts Options) *gin.Engine {
 			// reads above — one per pod, audited one per pod.
 			resources.GET("/workload/pods", s.listWorkloadPods)
 
+			// A Deployment/StatefulSet/DaemonSet's own rollout history —
+			// `kubectl rollout history` over the ReplicaSets or
+			// ControllerRevisions it owns, resolved the same ownership-first
+			// way workload/pods is. See resources_rollout.go.
+			resources.GET("/workload/history", s.showWorkloadHistory)
+
 			// The rest of the inventory behind the Explore sidebar: one route
 			// per list an operator can be looking at. The cluster-scoped ones
 			// refuse a namespace-scoped grant, since a cluster-wide list would
@@ -772,6 +778,11 @@ func NewRouter(opts Options) *gin.Engine {
 			resources.POST("/scale", s.scaleWorkload)
 			resources.POST("/restart", s.restartWorkload)
 			resources.POST("/suspend", s.suspendWorkload)
+			// Undoing one — `kubectl rollout undo`. The same read-modify-write
+			// shape as the three above, restoring a revision's pod template
+			// from workload/history's own list rather than from anything the
+			// caller sends.
+			resources.POST("/workload/rollback", s.rollbackWorkload)
 
 			// `kubectl describe`: the same object, addressed the same way, plus
 			// the events the cluster recorded against it. Those events are the

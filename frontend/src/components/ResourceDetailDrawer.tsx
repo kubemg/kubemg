@@ -22,7 +22,14 @@ import { ReachabilityTab } from './NetworkPolicyReachability'
 import { PodLogView, PodOverview } from './PodPanels'
 import { WorkloadActionPanel } from './WorkloadActionPanel'
 import type { WorkloadActionName, WorkloadActionTarget } from './WorkloadActionPanel'
-import { hasPodLabels, supportsWorkloadLogs, supportsWorkloadPods, workloadCapability } from '../lib/workloads'
+import {
+  hasPodLabels,
+  supportsRolloutHistory,
+  supportsWorkloadLogs,
+  supportsWorkloadPods,
+  workloadCapability,
+} from '../lib/workloads'
+import { WorkloadHistoryPanel } from './WorkloadHistoryPanel'
 import { WorkloadLogView } from './WorkloadLogView'
 import { WorkloadPodsView } from './WorkloadPodsView'
 import { YamlPanel } from './YamlPanel'
@@ -264,6 +271,13 @@ export function ResourceDetailDrawer({
         },
         { value: 'yaml', label: 'YAML' },
       ]
+  // A Deployment/StatefulSet/DaemonSet keeps its own revision trail in the
+  // cluster — a ReplicaSet or a ControllerRevision per rollout — which is the
+  // native counterpart of the Helm release's History tab above, and needs a
+  // namespace to address for the same reason the pooled log view does.
+  if (!release && target.namespace && supportsRolloutHistory(target.kind)) {
+    tabs.push({ value: 'history', label: 'History' })
+  }
   if (!release && pod) tabs.push({ value: 'logs', label: 'Logs & Terminal' })
   // A workload has no terminal and no history of its own — there is no one pod to
   // attach to, and the history view searches by pod — so the tab is named for
@@ -420,6 +434,22 @@ export function ResourceDetailDrawer({
 
       {tab === 'history' && release ? (
         <HelmHistoryPanel cluster={cluster} release={release} onApplied={onRefresh} />
+      ) : null}
+
+      {tab === 'history' && !release && target.namespace && supportsRolloutHistory(target.kind) ? (
+        <WorkloadHistoryPanel
+          cluster={cluster}
+          kind={target.kind}
+          name={target.name}
+          namespace={target.namespace}
+          label={describe?.kind || target.label}
+          onApplied={async () => {
+            // The object behind this drawer, and the list it was opened from,
+            // are both stale the moment a rollback writes a new revision.
+            await load()
+            await onRefresh?.()
+          }}
+        />
       ) : null}
 
       {tab === 'values' && release ? (
