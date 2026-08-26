@@ -4,8 +4,9 @@
 // of being dialled against the cluster's API server.
 //
 // The wire format lives here rather than in a shared module on purpose: the
-// agent is the open-source half of KubeMG and compiles as its own Go module, so
-// it carries a mirrored copy of these types. Both sides speak JSON, so the two
+// agent is the Apache-2.0 half of KubeMG and compiles as its own Go module, so
+// it carries a mirrored copy of these types rather than importing the AGPL
+// server. Both sides speak JSON, so the two
 // definitions only have to agree on field names, not on Go layout.
 package bastion
 

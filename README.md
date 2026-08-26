@@ -755,7 +755,9 @@ The auto-provisioned VictoriaMetrics/VictoriaLogs stack is still not built; brin
 
 ## Licensing
 
-Two licences, split by directory.
+kubemg is **open source in full** — there is no compiled core, no withheld module and no
+licence key. Two licences, split by directory, because only one half runs inside somebody
+else's cluster.
 
 | Path | Licence | Why |
 |---|---|---|
@@ -764,6 +766,10 @@ Two licences, split by directory.
 
 Third-party dependency licences are listed in full in [`NOTICE`](NOTICE); all of them are permissive
 (MIT, BSD, Apache-2.0, ISC, OFL).
+
+Be clear about what the AGPL does and does not do: it does **not** forbid selling or reselling
+kubemg — no OSI-approved licence can. What it forbids is keeping a *modified*, network-served fork
+private. Anyone who hosts a changed kubemg for others has to offer those changes to its users.
 
 **A commercial licence is available.** Copyright is held in full by the author, so the AGPL is not
 the only terms on which this can be had — if its source-offering obligation does not fit an embedded
