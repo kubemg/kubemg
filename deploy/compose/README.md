@@ -73,9 +73,9 @@ Mirror the three images above into an internal registry and point the install at
 them:
 
 ```dotenv
-KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.6.0
+KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.7.0
 KUBEMG_POSTGRES_IMAGE=registry.internal/postgres:16-alpine
-KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.6.0
+KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.7.0
 ```
 
 Nothing else is fetched at runtime: the console's fonts are served out of the

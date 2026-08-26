@@ -1,7 +1,7 @@
 # Read the Docs build for the kubemg manual.
 #
-# The build is versioned against the release tags: an install running 0.6.0
-# activates the 0.6.0 version on Read the Docs and reads that tag's pages,
+# The build is versioned against the release tags: an install running 0.7.0
+# activates the 0.7.0 version on Read the Docs and reads that tag's pages,
 # rather than whatever `master` happens to say today.
 version: 2
 
