@@ -85,6 +85,24 @@ export function supportsWorkloadPods(key: string): boolean {
 }
 
 /**
+ * The kinds a rollout history can be read for — the three kube-controller-
+ * manager keeps a revision trail for at all. A Deployment's is a chain of
+ * ReplicaSets and a StatefulSet's/DaemonSet's a chain of ControllerRevisions;
+ * a CronJob and a Job have neither, and a bare ReplicaSet is a Deployment's
+ * own bookkeeping rather than something with a history of its own.
+ */
+const WORKLOAD_HISTORY_KINDS: readonly ResourceKey[] = ['deployments', 'statefulsets', 'daemonsets']
+
+/**
+ * supportsRolloutHistory says whether a kind's detail drawer offers the
+ * History tab — the Deployment/StatefulSet/DaemonSet counterpart of the Helm
+ * release's, and gated the same way `supportsWorkloadLogs` is.
+ */
+export function supportsRolloutHistory(key: string): boolean {
+  return WORKLOAD_HISTORY_KINDS.includes(key as ResourceKey)
+}
+
+/**
  * The kinds a NetworkPolicy reachability question can be asked about — the
  * kinds that carry pod labels, which is what a `podSelector` actually matches
  * against. It is `WORKLOAD_LOG_KINDS` plus Pods rather than a copy of it,
