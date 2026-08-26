@@ -145,20 +145,25 @@ export function PodOverview({ cluster, pod }: { cluster: Cluster; pod: Pod }) {
           next. A cluster with no metrics datasource simply says so here. */}
       <div className="flex flex-col gap-3">
         <span className="label">Over time</span>
-        <MetricsChart
-          cluster={cluster}
-          title="CPU per container"
-          metric="pod_cpu"
-          namespace={pod.namespace}
-          pod={pod.name}
-        />
-        <MetricsChart
-          cluster={cluster}
-          title="Memory per container"
-          metric="pod_memory"
-          namespace={pod.namespace}
-          pod={pod.name}
-        />
+        {/* Paired, the way the meters above them are: CPU throttling and a
+            working set climbing are the same investigation, and stacked they
+            were a scroll apart inside a drawer. */}
+        <div className="grid gap-3 xl:grid-cols-2">
+          <MetricsChart
+            cluster={cluster}
+            title="CPU per container"
+            metric="pod_cpu"
+            namespace={pod.namespace}
+            pod={pod.name}
+          />
+          <MetricsChart
+            cluster={cluster}
+            title="Memory per container"
+            metric="pod_memory"
+            namespace={pod.namespace}
+            pod={pod.name}
+          />
+        </div>
       </div>
 
       <div className="flex flex-col gap-2">

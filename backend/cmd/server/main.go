@@ -179,6 +179,8 @@ func main() {
 		AgentImage:     cfg.AgentImage,
 		AgentNamespace: cfg.AgentNamespace,
 		BastionCA:      tlsMaterial.agentCA,
+		// What the console's footer names this install as. See api.Options.Version.
+		Version:        version,
 		// Housekeeping shares the audit writer's lifetime: both are background
 		// work that has to stop when the process is winding down.
 		AuditRetentionDays: cfg.AuditRetentionDays,

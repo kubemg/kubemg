@@ -1359,6 +1359,15 @@ export interface Kubeconfig {
   warning?: string
 }
 
+/** Which release this console is talking to, and the manual that describes it.
+    Both come from the server rather than from the console's own build: an
+    install serves the console out of the same binary, and a link to
+    documentation for a different release is worse than no link. */
+export interface ServerVersion {
+  version: string
+  docs_url: string
+}
+
 /** The window a caller may ask a kubeconfig to live for. Readable by anyone who
     may generate one, so the form offering the choice does not have to discover
     the ceiling by being refused. */
