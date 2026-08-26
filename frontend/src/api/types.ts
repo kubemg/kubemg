@@ -1120,15 +1120,20 @@ export interface HelmRelease {
 
 /**
  * A release's values, as `helm get values` shows them: what the operator
- * supplied, not the chart's defaults merged into it. `warning` is the standing
- * caveat on writing them — a saved revision records what Helm will start from
- * and renders nothing — and it comes from the backend so a client that ignores
- * it is still told.
+ * supplied, not the chart's defaults merged into it. This is what the read-only
+ * `GET .../values` answers with; the write path answers with `HelmWriteResult`
+ * instead, since a write now renders and applies a chart rather than only
+ * recording a document.
  */
 export interface HelmValues {
   release: HelmRelease
   yaml: string
-  warning: string
+  /** Absent for every release that carries its chart, which is every release
+      Helm itself wrote. It is present only for one written by something that
+      stripped the chart, where a values write can still record a revision but
+      cannot re-render — so a surface offering the action states that limit
+      before the click rather than in the receipt. */
+  warning?: string
 }
 
 /**
@@ -1136,15 +1141,119 @@ export interface HelmValues {
  * The list route shows one row per release because that answers "what is
  * installed"; this is the other half of the same Secrets and a different
  * question: what this release has been, and what a rollback would go back to.
- *
- * `warning` is the standing caveat on rolling back, and it arrives with the
- * *read* rather than only with the write so the surface offering the action can
- * state its limit before the click.
  */
 export interface HelmHistory {
   release: HelmRelease
   history: HelmRelease[]
-  warning: string
+  /** The values read's warning, in its rollback wording, and absent for the
+      same reason: a rollback re-applies the target revision's manifest unless
+      the release does not carry its chart. */
+  warning?: string
+}
+
+/**
+ * What Helm actually did to one object during an install, an upgrade or a
+ * rollback — the line `helm install`/`helm upgrade` prints per resource, named
+ * in the cluster's own vocabulary. `message` carries the cluster's refusal when
+ * `action` is `failed`.
+ */
+export interface HelmObjectReport {
+  kind: string
+  name: string
+  namespace?: string
+  source?: string
+  action: 'created' | 'configured' | 'unchanged' | 'deleted' | 'failed' | 'skipped'
+  hook?: boolean
+  message?: string
+}
+
+/**
+ * What an install, an upgrade, a values write or a rollback answers with.
+ *
+ * `objects`/`applied` are present on every write that could render a chart —
+ * which is every install and upgrade, and every values write or rollback for a
+ * release Helm itself wrote, since the chart travels with the release. They are
+ * absent for the one case nothing can render: a release whose stored Secret was
+ * written by something that stripped its chart. That case still records the
+ * values as a new revision, and says so through `warning` instead.
+ */
+export interface HelmWriteResult {
+  release: HelmRelease
+  objects?: HelmObjectReport[]
+  yaml: string
+  applied?: boolean
+  /** The chart's rendered NOTES.txt, when it has one. */
+  notes?: string
+  /** Present when the chart declares hooks — see the note it carries. */
+  hook_notice?: string
+  /** Present when `applied` is false: which object was refused, and why. */
+  error?: string
+  /** Present only on the unrenderable-release fallback described above. */
+  warning?: string
+}
+
+/** One repository charts can be installed from — see `HelmRepositoriesPanel`.
+    Server-wide rather than per-cluster: what this installation may reach out to
+    and download templates from is a fact about the installation, not about any
+    one cluster. */
+export interface HelmRepository {
+  name: string
+  url: string
+  description?: string
+  username?: string
+  has_credential: boolean
+  seeded: boolean
+  status: 'pending' | 'ok' | 'error'
+  status_message?: string
+  chart_count: number
+  synced_at?: string
+}
+
+export interface HelmRepositoryList {
+  repositories: HelmRepository[]
+}
+
+/**
+ * What an admin submits to declare or edit a repository. `credential` follows
+ * the observability-source rule: omitted keeps the stored one, `''` clears it,
+ * anything else replaces it — which is why it is optional rather than always a
+ * string.
+ */
+export interface HelmRepositoryInput {
+  url: string
+  description: string
+  username: string
+  credential?: string
+}
+
+/** One published version of a chart, as the repository's index named it. */
+export interface HelmChartVersion {
+  version: string
+  app_version?: string
+  created?: string
+  digest?: string
+  deprecated?: boolean
+  urls?: string[]
+}
+
+/** One chart in a repository's catalogue. */
+export interface HelmChart {
+  repository: string
+  name: string
+  description?: string
+  icon?: string
+  home?: string
+  deprecated?: boolean
+  latest_version?: string
+  versions: HelmChartVersion[]
+}
+
+export interface HelmChartList {
+  repository: HelmRepository
+  charts: HelmChart[]
+  /** The search was cut off before it reached the end of the catalogue — a
+      narrower query is the way to reach what did not come back. */
+  truncated: boolean
 }
 
 /**

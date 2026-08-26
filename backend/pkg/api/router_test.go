@@ -48,6 +48,11 @@ type fakeStore struct {
 	// sources holds the observability datasources, keyed the way the table is:
 	// one per cluster per kind.
 	sources map[uint]map[string]db.ObservabilitySource
+	// helmRepos stands in for helm_repositories, keyed by name the way the
+	// table's unique index is; helmCharts is that repository's catalogue, keyed
+	// by repository id.
+	helmRepos  map[string]*db.HelmRepository
+	helmCharts map[uint][]db.HelmChart
 	// consoles holds the external console links, keyed the same way.
 	consoles map[uint]map[string]db.ClusterConsole
 	// hiddenCRDs is each cluster's sidebar curation: the resources an admin
@@ -106,6 +111,8 @@ func newFakeStore() *fakeStore {
 		groupAccess: map[uint]map[uint]db.GroupClusterAccess{},
 		settings:    map[string]string{},
 		sources:     map[uint]map[string]db.ObservabilitySource{},
+		helmRepos:   map[string]*db.HelmRepository{},
+		helmCharts:  map[uint][]db.HelmChart{},
 		consoles:    map[uint]map[string]db.ClusterConsole{},
 		hiddenCRDs:  map[uint][]string{},
 		providers:   map[uint]*db.SSOProviderConfig{},
@@ -839,6 +846,98 @@ func (f *fakeStore) DeleteObservabilitySource(_ context.Context, clusterID uint,
 	}
 	delete(f.sources[clusterID], kind)
 	return nil
+}
+
+func (f *fakeStore) HelmRepositories(_ context.Context) ([]db.HelmRepository, error) {
+	out := make([]db.HelmRepository, 0, len(f.helmRepos))
+	for _, repository := range f.helmRepos {
+		out = append(out, *repository)
+	}
+	slices.SortFunc(out, func(a, b db.HelmRepository) int { return strings.Compare(a.Name, b.Name) })
+	return out, nil
+}
+
+func (f *fakeStore) HelmRepository(_ context.Context, name string) (*db.HelmRepository, error) {
+	repository, ok := f.helmRepos[name]
+	if !ok {
+		return nil, db.ErrNotFound
+	}
+	copied := *repository
+	return &copied, nil
+}
+
+func (f *fakeStore) PutHelmRepository(_ context.Context, repository *db.HelmRepository) error {
+	if repository.ID == 0 {
+		repository.ID = f.nextID
+		f.nextID++
+	}
+	repository.UpdatedAt = time.Now()
+	copied := *repository
+	f.helmRepos[repository.Name] = &copied
+	return nil
+}
+
+func (f *fakeStore) DeleteHelmRepository(_ context.Context, name string) error {
+	repository, ok := f.helmRepos[name]
+	if !ok {
+		return db.ErrNotFound
+	}
+	delete(f.helmCharts, repository.ID)
+	delete(f.helmRepos, name)
+	return nil
+}
+
+func (f *fakeStore) UpdateHelmRepositoryHealth(_ context.Context, id uint,
+	status, message string, charts int, syncedAt *time.Time,
+) error {
+	for name, repository := range f.helmRepos {
+		if repository.ID != id {
+			continue
+		}
+		repository.Status = status
+		repository.StatusMessage = message
+		repository.ChartCount = charts
+		repository.SyncedAt = syncedAt
+		f.helmRepos[name] = repository
+		return nil
+	}
+	return db.ErrNotFound
+}
+
+func (f *fakeStore) ReplaceHelmCharts(_ context.Context, repositoryID uint, charts []db.HelmChart) error {
+	f.helmCharts[repositoryID] = slices.Clone(charts)
+	return nil
+}
+
+func (f *fakeStore) HelmCharts(
+	_ context.Context, repositoryID uint, search string, limit int,
+) ([]db.HelmChart, error) {
+	out := []db.HelmChart{}
+	for _, chart := range f.helmCharts[repositoryID] {
+		term := strings.ToLower(strings.TrimSpace(search))
+		if term != "" && !strings.Contains(strings.ToLower(chart.Name), term) &&
+			!strings.Contains(strings.ToLower(chart.Description), term) {
+			continue
+		}
+		out = append(out, chart)
+	}
+	slices.SortFunc(out, func(a, b db.HelmChart) int { return strings.Compare(a.Name, b.Name) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (f *fakeStore) HelmChart(
+	_ context.Context, repositoryID uint, name string,
+) (*db.HelmChart, error) {
+	for _, chart := range f.helmCharts[repositoryID] {
+		if chart.Name == name {
+			copied := chart
+			return &copied, nil
+		}
+	}
+	return nil, db.ErrNotFound
 }
 
 func (f *fakeStore) HiddenCRDs(_ context.Context, clusterID uint) ([]string, error) {

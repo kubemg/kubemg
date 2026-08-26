@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { History, RefreshCw, Undo2, X } from 'lucide-react'
 import { errorMessage, fetchHelmHistory, rollbackHelmRelease } from '../api/client'
-import type { Cluster, HelmHistory, HelmRelease } from '../api/types'
+import type { Cluster, HelmHistory, HelmRelease, HelmWriteResult } from '../api/types'
 import type { Tone } from '../lib/status'
 import { relativeAge } from '../lib/time'
+import { HelmObjectReport } from './HelmObjectReport'
 import { Button, IconButton, Notice, Pill, Row, Table, Td, Th } from './primitives'
 
 /**
@@ -14,19 +15,14 @@ import { Button, IconButton, Notice, Pill, Row, Table, Td, Th } from './primitiv
  * the question the list cannot answer: what changed, when, and what an operator
  * would be going back to.
  *
- * **Roll back here is less than `helm rollback`, and the word is the risk.**
- * Helm's own rollback restores a revision's values, its chart and its rendered
- * manifest, and then applies that manifest — the applying is the point of it,
- * and it is the one thing KubeMG cannot do: there is no chart here to render
- * from, and applying a stored manifest means Helm's three-way merge and its
- * deletion pass, reimplemented against objects KubeMG does not own. So what
- * comes back is the target revision's *values*, recorded as a new revision, and
- * the next `helm upgrade` renders from them and converges on the rolled-back
- * state. That caveat arrives with the history *read* rather than with the write,
- * so it is on screen before the click rather than in the receipt — and the
- * confirmation states it again against the revision being restored, because an
- * operator reading "roll back" as "undo the deployment" has been misled by the
- * name rather than by the product.
+ * **Roll back here is `helm rollback`.** The target revision's rendered
+ * manifest is re-applied to the cluster — the current revision's manifest is
+ * what is diffed away, the same three-way merge an upgrade performs — and the
+ * result is recorded as a new revision carrying the target's chart, values and
+ * manifest, exactly as Helm's own rollback records it. `HelmObjectReport` below
+ * the confirmation is the same per-object report an install or an upgrade
+ * answers with, because this write goes down the same tunnel one object at a
+ * time.
  *
  * The confirmation is a panel above the table rather than an overlay over it,
  * for the reason the workload actions are: nothing in the console opens over
@@ -49,7 +45,7 @@ export function HelmHistoryPanel({
   // The revision a rollback has been asked for but not yet confirmed.
   const [pending, setPending] = useState<HelmRelease | null>(null)
   const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState<string | null>(null)
+  const [written, setWritten] = useState<HelmWriteResult | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -82,11 +78,13 @@ export function HelmHistoryPanel({
         release.namespace,
         target.revision,
       )
-      setDone(result.warning)
+      setWritten(result)
       setPending(null)
-      // The history has a new row in it now, and so does the list behind this.
-      await load()
-      await onApplied?.()
+      if (result.applied !== false) {
+        // The history has a new row in it now, and so does the list behind this.
+        await load()
+        await onApplied?.()
+      }
     } catch (err) {
       setError(errorMessage(err, 'The cluster refused to write the rollback revision.'))
     } finally {
@@ -117,10 +115,11 @@ export function HelmHistoryPanel({
       </div>
 
       {error ? <Notice tone="error">{error}</Notice> : null}
-      {done ? <Notice tone="ok">{done}</Notice> : null}
-      {/* The limit of the action, shown with the rows that offer it rather than
-          only with the revision it writes. */}
-      {history && !done ? <Notice tone="info">{history.warning}</Notice> : null}
+      {/* Present only for a release that does not carry its chart, where a
+          rollback can restore values and nothing more. Every other release
+          rolls back for real, and says nothing here. */}
+      {history?.warning ? <Notice tone="warn">{history.warning}</Notice> : null}
+      {written ? <HelmObjectReport result={written} /> : null}
 
       {pending ? (
         <div className="flex flex-col gap-3 rounded-card border border-accent/40 bg-accent-soft/40 p-3">
@@ -139,16 +138,11 @@ export function HelmHistoryPanel({
           </div>
 
           <p className="text-[13px] leading-relaxed text-muted">
-            Revision {pending.revision}’s values will be written as revision {current.revision + 1},
-            through the agent tunnel under your own identity. The cluster’s RBAC decides whether you
-            may, and the write is in the audit trail.
+            Revision {pending.revision}’s chart and values will be re-applied to the cluster and
+            recorded as revision {current.revision + 1}, through the agent tunnel under your own
+            identity. The cluster’s RBAC decides whether you may, and every object it touches is its
+            own row in the audit trail.
           </p>
-          <Notice tone="warn">
-            Nothing is re-applied. The chart, the rendered manifest and every object running stay
-            exactly as they are — this records what the next{' '}
-            <span className="font-mono">helm upgrade</span> will render from, and that upgrade is
-            what actually rolls the workloads back.
-          </Notice>
 
           <div className="flex items-center justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setPending(null)} disabled={busy}>
@@ -161,7 +155,7 @@ export function HelmHistoryPanel({
               disabled={busy}
             >
               <Undo2 aria-hidden="true" className="size-4" />
-              {busy ? 'Writing…' : `Write revision ${current.revision + 1}`}
+              {busy ? 'Rolling back…' : `Roll back to revision ${pending.revision}`}
             </Button>
           </div>
         </div>
