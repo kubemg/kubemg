@@ -5,6 +5,9 @@ narrow impersonation ClusterRole, the group bindings that make a KubeMG grant
 mean something inside the cluster, a Secret holding the registration token, and
 a single resource-capped Deployment.
 
+Deploying the agent is documented at
+<https://kubemg.readthedocs.io/en/latest/clusters/agent/>.
+
 ## Normal installation
 
 You do not fill this in by hand. Register the cluster in KubeMG

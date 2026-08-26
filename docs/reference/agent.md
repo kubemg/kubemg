@@ -1,7 +1,8 @@
 # The agent
 
-`agent/` is the open-source half of kubemg: a separate Go module, licensed
-Apache-2.0, that runs inside a managed cluster and does exactly one job —
+`agent/` is the permissively-licensed half of kubemg: a separate Go module
+under Apache-2.0 — the rest of the repository is open source too, under
+AGPL-3.0 — that runs inside a managed cluster and does exactly one job —
 hold an outbound tunnel to the bastion and replay whatever arrives down it
 against the cluster's own API server.
 
