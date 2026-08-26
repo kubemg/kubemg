@@ -1137,6 +1137,75 @@ export function Meter({
   )
 }
 
+/**
+ * MiniMeter is one reading on one line: what it is, how full it is, and the
+ * number. It is `Meter` with the label block folded into the row, for a table
+ * cell where the surrounding columns already carry the units and the point is
+ * the shape of the column rather than any one row's figure.
+ *
+ * It keeps `Meter`'s tones and the same `usageTone` thresholds on purpose — two
+ * readings of the same thing on two pages must not disagree about what counts
+ * as hot — and it keeps the hatch for an unbounded reading for the same reason
+ * a full bar would be wrong there: it reads as "at capacity", the opposite of
+ * unknown. It is deliberately not a variant flag on `Meter`: the two differ in
+ * every line of their layout and nothing in either is shared but the tone.
+ */
+export function MiniMeter({
+  label,
+  percent,
+  title,
+  className,
+}: {
+  label: string
+  /** Utilisation 0-100, or undefined when nothing bounds it. */
+  percent?: number
+  /** The full reading, for the cell's tooltip — `390m / 4.00 cores`. */
+  title?: string
+  className?: string
+}) {
+  const bounded = percent !== undefined
+  const tone = bounded ? usageTone(percent) : 'idle'
+  const fill = bounded ? Math.min(100, Math.max(0, percent)) : 0
+
+  return (
+    <div
+      title={title}
+      className={`grid grid-cols-[26px_minmax(0,1fr)_34px] items-center gap-x-2 ${className ?? ''}`}
+    >
+      <span className="font-mono text-[9.5px] tracking-[0.1em] text-faint uppercase">{label}</span>
+      <span
+        role="meter"
+        aria-label={label}
+        aria-valuenow={bounded ? Math.round(percent) : undefined}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuetext={title ?? (bounded ? `${Math.round(percent)}%` : 'not reported')}
+        className="h-[3px] overflow-hidden rounded-full bg-raised"
+      >
+        {bounded ? (
+          <span
+            aria-hidden="true"
+            className={`block h-full rounded-full ${TONE_DOT[tone]}`}
+            style={{ width: `${fill}%` }}
+          />
+        ) : (
+          <span
+            aria-hidden="true"
+            className="block h-full w-full opacity-30"
+            style={{
+              backgroundImage:
+                'repeating-linear-gradient(135deg, currentColor 0 2px, transparent 2px 6px)',
+            }}
+          />
+        )}
+      </span>
+      <span className="text-right font-mono text-[11px] text-muted tabular-nums">
+        {bounded ? `${percent.toFixed(percent < 10 ? 1 : 0)}%` : '—'}
+      </span>
+    </div>
+  )
+}
+
 /** DetailList is the label/value grid used in headers, sheets, and summaries. */
 export function DetailList({
   rows,
