@@ -102,7 +102,7 @@ export function MetricsChart({
   const empty = !loading && series.every((entry) => entry.points.length === 0)
 
   return (
-    <div className="card flex flex-col gap-3 p-4">
+    <div className="card flex min-w-0 flex-col gap-3 p-4">
       <div className="flex flex-wrap items-center gap-3">
         <h3 className="text-[13px] font-semibold text-fg">{title}</h3>
 
@@ -318,7 +318,7 @@ export function Plot({
         viewBox={`0 0 ${width} ${geometry.height}`}
         width={width}
         height={geometry.height}
-        className="block touch-none rounded-control focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        className="block max-w-full touch-none rounded-control focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
         onPointerMove={locate}
         onPointerLeave={() => setCursor(null)}
         onFocus={locate}

@@ -59,6 +59,7 @@ tell the two apart.
 | --- | --- | --- |
 | `POST /auth/login` | — | Body `{username, password}`. `200` `{token, expires_at, user}`. `401` on any bad credential (unknown user, wrong password, a federated or machine-account username) — deliberately identical, to prevent username enumeration; a constant-time dummy bcrypt check runs on every failure path. `403` if the account is disabled. |
 | `GET /auth/me` | Session | Current `user` object. `401` invalid/expired/deleted account, `403` disabled. |
+| `GET /version` | Session | `{version, docs_url}` — the release this process was built as, and the manual for it. Behind a session on purpose: an exact version is what an unauthenticated scanner needs to match a published advisory against the install. A build with no version stamped answers `"unknown"`. |
 
 ```bash
 curl -sk https://localhost:8443/api/v1/auth/login \

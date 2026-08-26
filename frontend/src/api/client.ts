@@ -57,6 +57,7 @@ import type {
   Job,
   Kubeconfig,
   KubeconfigPolicy,
+  ServerVersion,
   LogQueryResponse,
   LoginResponse,
   ManifestDiff,
@@ -1440,6 +1441,25 @@ export async function generateKubeconfig(
     namespace: namespace || undefined,
   })
   return data
+}
+
+/** Which release this is, for the footer. Read once per session and held: the
+    version of a running process does not change under it, so a hook that
+    re-read it on every mount would be a request per navigation for an answer
+    that cannot have moved. */
+let versionRead: Promise<ServerVersion> | null = null
+
+export function fetchServerVersion(): Promise<ServerVersion> {
+  versionRead ??= http
+    .get<ServerVersion>('/version')
+    .then((response) => response.data)
+    .catch((error: unknown) => {
+      // A failed read must not be the answer forever — the next mount asks
+      // again, which is what makes signing in after a cold console work.
+      versionRead = null
+      throw error
+    })
+  return versionRead
 }
 
 /** The window a kubeconfig may be issued for. Not cached: it is read once when

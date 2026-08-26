@@ -47,6 +47,7 @@ import { linkState } from '../lib/status'
 import { ClusterMenu } from './ClusterMenu'
 import { ClusterSwitcher } from './ClusterSwitcher'
 import { ClusterTree } from './ClusterTree'
+import { AppFooter } from './AppFooter'
 import { CommandPalette } from './CommandPalette'
 import type { CommandTarget } from './CommandPalette'
 import { LinkStatus } from './LinkStatus'
@@ -356,17 +357,22 @@ export function AppShell({
           })}
         </div>
 
-        {/* The rest of the fleet. It is the mark's destination too, and says so
-            twice on purpose: this is the button beside the chips, where somebody
-            looking for a cluster that is not on the rail will reach for it. */}
-        <Link
-          to="/"
-          title="All clusters"
-          className="grid size-10 shrink-0 place-items-center rounded-control text-rail-muted transition-colors hover:bg-rail-raised hover:text-rail-fg"
-        >
-          <Plus aria-hidden="true" className="size-4" />
-          <span className="sr-only">All clusters</span>
-        </Link>
+        {/* A plus below a column of clusters reads as "add one to this column",
+            so that is what it does. It used to be a second link to the fleet
+            overview, which the mark above already is — a button whose glyph
+            promises a new thing and delivers the page you are on. Only an
+            administrator may register a cluster, so nobody else is offered it:
+            the rail's rule is that every row in it resolves for whoever sees it. */}
+        {isAdmin ? (
+          <Link
+            to="/admin/clusters/new"
+            title="Register a cluster"
+            className="grid size-10 shrink-0 place-items-center rounded-control text-rail-muted transition-colors hover:bg-rail-raised hover:text-rail-fg"
+          >
+            <Plus aria-hidden="true" className="size-4" />
+            <span className="sr-only">Register a cluster</span>
+          </Link>
+        ) : null}
 
         <span className="flex-1" />
 
@@ -555,6 +561,10 @@ export function AppShell({
         <main className="min-w-0 flex-1 p-4 xl:p-6">
           <div className={`mx-auto min-w-0 ${fullWidth ? '' : 'max-w-[1440px]'}`}>{children}</div>
         </main>
+
+        {/* Below the work rather than beside it, on every page: what release
+            this is and where its manual is. See AppFooter. */}
+        <AppFooter />
       </div>
 
       <CommandPalette

@@ -330,16 +330,22 @@ function AdminDashboard({ cluster, username }: { cluster: Cluster; username: str
           that rather than on some other page. */}
       {viaAgent ? (
         <section className="flex flex-col gap-3">
-          <MetricsChart
-            cluster={cluster}
-            title="Cluster CPU"
-            metric="cluster_cpu"
-          />
-          <MetricsChart
-            cluster={cluster}
-            title="Cluster memory"
-            metric="cluster_memory"
-          />
+          {/* CPU and memory are read together — a spike in one is only worth
+              anything beside the other at the same instant — so where there is
+              room they sit side by side rather than a screen apart. Below xl
+              they stack: half of a narrow column is not a chart. */}
+          <div className="grid gap-3 xl:grid-cols-2">
+            <MetricsChart
+              cluster={cluster}
+              title="Cluster CPU"
+              metric="cluster_cpu"
+            />
+            <MetricsChart
+              cluster={cluster}
+              title="Cluster memory"
+              metric="cluster_memory"
+            />
+          </div>
           {/* The charts say what shape the cluster is in. This says what
               is worst inside it and whether that is new, which is the
               question somebody opening a cluster page arrived with — and

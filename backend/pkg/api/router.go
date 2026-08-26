@@ -272,6 +272,12 @@ type Options struct {
 	// costs on a cluster holding tens of thousands of them; zero takes
 	// maxEventScan.
 	EventScanLimit int
+	// Version is the release this binary was built as, stamped at link time. It
+	// is reported to any signed-in caller so the console can name what it is
+	// talking to: the one fact an operator has to have to hand before reading a
+	// changelog or opening an issue. Empty falls back to unknownVersion rather
+	// than to a number this build cannot vouch for.
+	Version string
 	// Deployment describes the parts of this install that were settled before the
 	// router existed and cannot be changed from inside it — TLS, the signing key's
 	// origin, whether recordings are encrypted. The setup wizard reports them
@@ -350,6 +356,8 @@ type server struct {
 	ssoFlows *flowStore
 	// deployment is what this process was started with; see Options.Deployment.
 	deployment Deployment
+	// version is the release this binary was built as; see Options.Version.
+	version string
 }
 
 // NewRouter builds the KubeMG HTTP router. Authenticated routes are only
@@ -406,6 +414,7 @@ func NewRouter(opts Options) *gin.Engine {
 		allowedOrigins:     opts.AllowedOrigins,
 		ssoFlows:           newFlowStore(),
 		deployment:         opts.Deployment,
+		version:            strings.TrimSpace(opts.Version),
 	}
 	if opts.Bastion != nil {
 		s.tunnels = opts.Bastion.Registry()
@@ -544,6 +553,10 @@ func NewRouter(opts Options) *gin.Engine {
 		// per cluster, so it is not under /clusters/:id — a per-cluster path
 		// would read as a per-cluster policy.
 		v1.GET("/kubeconfig/policy", requireAuth, s.kubeconfigPolicy)
+
+		// Which release this is, for the console's footer. Signed-in rather than
+		// public: see serverVersion.
+		v1.GET("/version", requireAuth, s.serverVersion)
 		if opts.Bastion != nil {
 			clusters.GET("/:id/kustomize", requireAdmin, s.clusterKustomize)
 		}

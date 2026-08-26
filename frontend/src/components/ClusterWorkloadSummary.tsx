@@ -319,18 +319,22 @@ function Trend({ cluster }: { cluster: Cluster }) {
         </div>
       ) : null}
 
-      <MetricsChart
-        cluster={cluster}
-        title={scoped ? `CPU · ${namespace}` : 'Cluster CPU'}
-        metric={scoped ? 'namespace_cpu' : 'cluster_cpu'}
-        namespace={scoped ? namespace : undefined}
-      />
-      <MetricsChart
-        cluster={cluster}
-        title={scoped ? `Memory · ${namespace}` : 'Cluster memory'}
-        metric={scoped ? 'namespace_memory' : 'cluster_memory'}
-        namespace={scoped ? namespace : undefined}
-      />
+      {/* Side by side where there is room, for the administrator body's
+          reason: the two readings are read against each other. */}
+      <div className="grid gap-3 xl:grid-cols-2">
+        <MetricsChart
+          cluster={cluster}
+          title={scoped ? `CPU · ${namespace}` : 'Cluster CPU'}
+          metric={scoped ? 'namespace_cpu' : 'cluster_cpu'}
+          namespace={scoped ? namespace : undefined}
+        />
+        <MetricsChart
+          cluster={cluster}
+          title={scoped ? `Memory · ${namespace}` : 'Cluster memory'}
+          metric={scoped ? 'namespace_memory' : 'cluster_memory'}
+          namespace={scoped ? namespace : undefined}
+        />
+      </div>
     </section>
   )
 }
