@@ -49,6 +49,14 @@ const (
 	// covered cluster per interval — which is what makes it the first job that
 	// had to stop being multiplied by the replica count.
 	LeaseAlarmWatcher = "alarm_watcher"
+
+	// LeaseHelmIndex covers chart-repository index syncing. It is the second
+	// job in the product that reaches a network on its own, and the first that
+	// reaches one *outside* the fleet: N replicas each pulling a sixty-megabyte
+	// index.yaml from a public repository every interval is a bandwidth bill and
+	// a rate limit, neither of which an operator asked for by running two
+	// replicas for availability.
+	LeaseHelmIndex = "helm_index"
 )
 
 // Lease is one held claim on a background job.

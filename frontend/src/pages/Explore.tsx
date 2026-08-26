@@ -38,6 +38,7 @@ import { AccessReviewPanel } from '../components/AccessReviewPanel'
 import { AppShell } from '../components/AppShell'
 import { BulkActionSheet } from '../components/BulkActionSheet'
 import { CreateResourceSheet } from '../components/CreateResourceSheet'
+import { HelmInstallSheet } from '../components/HelmInstallSheet'
 import { InsightTrend } from '../components/InsightTrend'
 import { LiveRefresh } from '../components/LiveRefresh'
 import { NetworkPolicyCoveragePanel } from '../components/NetworkPolicyCoveragePanel'
@@ -523,6 +524,10 @@ export function Explore() {
   // rather than a tab in the detail drawer because the drawer is about an
   // object and there is no object yet.
   const [creating, setCreating] = useState(false)
+  // Installing a Helm chart is the same shape of surface as Create, offered
+  // only over the Helm list: there is no object yet, and what is being written
+  // is a chart's worth of them rather than one.
+  const [installing, setInstalling] = useState(false)
 
   // One drawer for every kind and every action, opened on whichever tab or
   // panel the row asked for. A pod and a Helm release each carry their row
@@ -726,6 +731,7 @@ export function Explore() {
     // A half-typed manifest belongs to the kind it was opened for; switching
     // lists closes it rather than posting a Deployment to the Services route.
     setCreating(false)
+    setInstalling(false)
   }, [resource, namespace, clusterId])
 
   // Membership is a set because the checkbox column asks about every row it
@@ -1101,6 +1107,24 @@ export function Explore() {
                 Create {resourceSingular(item)}
               </Button>
             ) : null}
+            {/* Install sits beside Create for the same reason and in the same
+                place: it acts on this kind, and an empty list is exactly when
+                somebody wants it. A release is not written from a manifest, so
+                it is a surface of its own rather than what Create opens — the
+                cluster's own RBAC decides what a chart may actually create,
+                same as everything else here. */}
+            {cluster && item.key === 'helmreleases' ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="primary"
+                className={totalCount > 0 ? undefined : 'ml-auto'}
+                onClick={() => setInstalling(true)}
+              >
+                <Plus aria-hidden="true" className="size-3.5" />
+                Install chart
+              </Button>
+            ) : null}
           </div>
 
           {/* What can be done to the selection, and nothing that cannot: an
@@ -1328,6 +1352,19 @@ export function Explore() {
           namespaces={namespaces.map((entry) => entry.name)}
           onClose={() => setCreating(false)}
           onCreated={load}
+        />
+      ) : null}
+
+      {/* Same reasoning as Create above: it refreshes the list behind it on
+          success rather than closing itself, so the per-object report is worth
+          a look before the surface goes away. */}
+      {installing && cluster ? (
+        <HelmInstallSheet
+          cluster={cluster}
+          namespace={!allNamespaces ? namespace : ''}
+          namespaces={namespaces.map((entry) => entry.name)}
+          onClose={() => setInstalling(false)}
+          onInstalled={load}
         />
       ) : null}
     </AppShell>

@@ -55,6 +55,8 @@ func Migrate(gdb *gorm.DB) error {
 		&Lease{},
 		&PostureAcknowledgement{},
 		&ClusterCRDVisibility{},
+		&HelmRepository{},
+		&HelmChart{},
 	); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
 	}
@@ -118,6 +120,12 @@ func Migrate(gdb *gorm.DB) error {
 	// The preset guardrails, stored disabled. See SeedGuardrailPolicies: a rule
 	// that refuses what RBAC permits must never arrive armed by way of an upgrade.
 	if err := SeedGuardrailPolicies(gdb); err != nil {
+		return err
+	}
+	// The starter chart repositories, stored as ordinary rows. See
+	// SeedHelmRepositories: a catalogue an operator cannot edit is one that is
+	// wrong the moment they mirror it internally.
+	if err := SeedHelmRepositories(gdb); err != nil {
 		return err
 	}
 	return nil
