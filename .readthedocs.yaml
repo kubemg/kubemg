@@ -1,0 +1,22 @@
+# Read the Docs build for the kubemg manual.
+#
+# The build is versioned against the release tags: an install running 0.6.0
+# activates the 0.6.0 version on Read the Docs and reads that tag's pages,
+# rather than whatever `master` happens to say today.
+version: 2
+
+build:
+  os: ubuntu-24.04
+  tools:
+    python: "3.12"
+
+mkdocs:
+  configuration: mkdocs.yml
+  # A broken link or a page missing from the nav fails the build here exactly
+  # as it fails `make docs-build`, so the published manual and the one in CI
+  # are the same manual.
+  fail_on_warning: true
+
+python:
+  install:
+    - requirements: docs/requirements.txt
