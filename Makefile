@@ -1,5 +1,8 @@
 GO_IMAGE   ?= golang:1.26-alpine
 NODE_IMAGE ?= node:22-alpine
+# Pinned rather than :latest so a theme release cannot change the published
+# manual without a commit. Keep it in step with docs/requirements.txt.
+DOCS_IMAGE ?= squidfunk/mkdocs-material:9.7.7
 
 # Both images are published to GitHub's registry under the same org that owns
 # the source, so the image and the code it was built from have one name and one
@@ -35,6 +38,7 @@ DOCKER_NODE  = docker run --rm -v $(PWD)/frontend:/app -v kubemg-npm:/root/.npm 
         backend-build backend-test backend-vet backend-tidy \
         agent-build agent-test agent-vet agent-tidy agent-image agent-image-check agent-push \
         frontend-install frontend-build frontend-lint frontend-contrast \
+        docs-build docs-serve \
         image image-check image-push \
         up down reset logs ps
 
@@ -44,7 +48,7 @@ help:
 ## ---- aggregate ----
 build: backend-build agent-build frontend-build ## Build backend + agent + frontend in containers
 test: backend-test agent-test ## Run all container-based tests
-verify: manifest-check backend-vet backend-test backend-build agent-vet agent-test agent-build frontend-lint frontend-contrast frontend-build ## Full containerized verification
+verify: manifest-check backend-vet backend-test backend-build agent-vet agent-test agent-build frontend-lint frontend-contrast frontend-build docs-build ## Full containerized verification
 
 # The bastion embeds its own copy of the agent manifests so they ship inside the
 # server binary. Two copies can drift; this makes drift a build failure.
@@ -148,6 +152,20 @@ frontend-lint: ## Lint the frontend
 # so it does not pay for an npm ci.
 frontend-contrast: ## Measure the deck's colour pairings against WCAG
 	docker run --rm -v $(PWD)/frontend:/app -w /app $(NODE_IMAGE) node scripts/contrast.mjs
+
+## ---- documentation ----
+# The manual is built the same way Read the Docs builds it, in a container, and
+# with warnings as errors: a link to a page that has been renamed, or a page
+# left out of the nav, is a build failure here rather than a dead link somebody
+# finds in the published site. `.readthedocs.yaml` sets fail_on_warning for the
+# same reason.
+DOCKER_DOCS = docker run --rm -v $(PWD):/docs -w /docs $(DOCS_IMAGE)
+
+docs-build: ## Build the Read the Docs manual (warnings are errors)
+	$(DOCKER_DOCS) build --strict --site-dir /tmp/site
+
+docs-serve: ## Serve the manual at http://localhost:8000 with live reload
+	docker run --rm -it -v $(PWD):/docs -w /docs -p 8000:8000 $(DOCS_IMAGE) serve --dev-addr 0.0.0.0:8000
 
 ## ---- dev environment ----
 up: ## Start the dev stack (backend :8080, frontend :5173)

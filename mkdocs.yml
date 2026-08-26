@@ -1,0 +1,141 @@
+site_name: kubemg
+site_description: Centralised Kubernetes access, visibility and audit. Clusters dial out; nothing dials in.
+site_url: https://kubemg.readthedocs.io/
+repo_url: https://github.com/kubemg/kubemg
+repo_name: kubemg/kubemg
+edit_uri: edit/master/docs/
+copyright: kubemg
+
+docs_dir: docs
+
+theme:
+  name: material
+  language: en
+  logo: assets/kubemg-icon.svg
+  favicon: assets/kubemg-icon.svg
+  font:
+    text: Archivo
+    code: Roboto Mono
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: lime
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: lime
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark
+
+extra_css:
+  - assets/kubemg.css
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+# A link into a heading that has since been renamed is the failure mode a
+# manual actually has, and mkdocs treats it as informational by default. Here
+# it is a warning, which --strict and Read the Docs' fail_on_warning turn into
+# a failed build.
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: info
+    unrecognized_links: warn
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Introduction:
+      - What kubemg is: introduction/overview.md
+      - How a request flows: introduction/request-flow.md
+      - Security model: introduction/security-model.md
+  - Getting started:
+      - Quickstart: getting-started/quickstart.md
+      - Attach your first cluster: getting-started/first-cluster.md
+      - Give someone access: getting-started/first-access.md
+  - Installation:
+      - Choosing a deployment: install/index.md
+      - Docker Compose: install/docker-compose.md
+      - Kubernetes: install/kubernetes.md
+      - TLS and certificates: install/tls.md
+      - Environment reference: install/environment.md
+      - Database: install/database.md
+      - Upgrading: install/upgrading.md
+      - Production checklist: install/production-checklist.md
+  - Clusters:
+      - Connection modes: clusters/connection-modes.md
+      - Registering a cluster: clusters/registering.md
+      - Deploying the agent: clusters/agent.md
+      - Managing a cluster: clusters/managing.md
+      - Exploring resources: clusters/explore.md
+      - Workload actions: clusters/actions.md
+      - Helm releases: clusters/helm.md
+      - Terminals and logs: clusters/terminals-and-logs.md
+      - Events timeline: clusters/events.md
+      - Node capacity: clusters/capacity.md
+      - Security posture: clusters/security-posture.md
+  - Access control:
+      - The access model: access/model.md
+      - Users and groups: access/users-and-groups.md
+      - Single sign-on: access/sso.md
+      - Kubeconfigs: access/kubeconfigs.md
+      - Machine accounts: access/machine-accounts.md
+      - Just-in-time access: access/jit.md
+      - Command guardrails: access/guardrails.md
+      - Cluster RBAC visibility: access/rbac-visibility.md
+  - Observability:
+      - Datasources: observability/datasources.md
+      - Metrics and logs: observability/metrics-and-logs.md
+      - Linking other consoles: observability/consoles.md
+  - Audit and compliance:
+      - Audit trail: audit/trail.md
+      - Session recording: audit/session-recording.md
+      - Alarms and integrations: audit/alarms.md
+  - Reference:
+      - Runtime settings: reference/settings.md
+      - REST API: reference/api.md
+      - The agent: reference/agent.md
+      - Troubleshooting: reference/troubleshooting.md

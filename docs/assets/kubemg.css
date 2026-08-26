@@ -1,0 +1,14 @@
+/* The manual borrows the console's accent rather than Material's default: an
+   operator moving between the two should not see two products. */
+:root {
+  --md-accent-fg-color: #4c650c;
+  --md-code-hl-number-color: #3b6ea5;
+}
+[data-md-color-scheme="slate"] {
+  --md-accent-fg-color: #bff23c;
+  --md-primary-fg-color: #14161a;
+  --md-default-bg-color: #14161a;
+}
+.md-typeset table:not([class]) th {
+  font-variant-numeric: tabular-nums;
+}

@@ -257,3 +257,26 @@ jobs:
         with:
           sarif_file: trivy-agent-image-results.sarif
           category: trivy-agent-image
+
+  # The manual is a shipped artefact, so a broken build is a broken release
+  # rather than a doc nobody noticed. Warnings are errors: a link to a page
+  # that was renamed fails here instead of going out to Read the Docs.
+  docs-build:
+    name: Documentation build (MkDocs)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+
+      - name: Install documentation toolchain
+        run: pip install -r docs/requirements.txt
+
+      - name: Build the manual with warnings as errors
+        run: mkdocs build --strict --site-dir /tmp/site
