@@ -1147,6 +1147,53 @@ export interface HelmHistory {
   warning: string
 }
 
+/**
+ * One stored revision of a workload's pod template — `kubectl rollout history`.
+ * kube-controller-manager keeps one ReplicaSet per Deployment revision and one
+ * ControllerRevision per StatefulSet/DaemonSet revision; this is that list,
+ * decoded and ordered newest first. `replicas`/`ready` are absent rather than
+ * zero when the cluster has already garbage-collected the object that would
+ * answer them — a revision can outlive the ReplicaSet it counts.
+ */
+export interface WorkloadRevision {
+  revision: number
+  name: string
+  created_at: string
+  images: string[]
+  change_cause: string
+  replicas?: number
+  ready?: number
+  current: boolean
+}
+
+/**
+ * Every revision the cluster still has for one workload, newest first — the
+ * Deployment/StatefulSet/DaemonSet equivalent of `HelmHistory`, and read by the
+ * same tab for the same reason: what this workload has been, and what a
+ * rollback would go back to.
+ */
+export interface WorkloadHistory {
+  kind: string
+  name: string
+  namespace: string
+  revisions: WorkloadRevision[]
+  truncated: boolean
+}
+
+/**
+ * What a rollback did. It is the scale/restart/suspend read-modify-write
+ * again: the target revision's pod template is written back with the live
+ * object's `resourceVersion`, so the controller — not kubemg — performs the
+ * rollout, and a concurrent change is the API server's own 409.
+ */
+export interface WorkloadRollbackResult {
+  message: string
+  revision: number
+  kind?: string
+  name?: string
+  namespace?: string
+}
+
 export interface ClusterNode {
   name: string
   created_at: string
