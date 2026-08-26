@@ -24,6 +24,8 @@ import type {
   Workload,
 } from '../api/types'
 import {
+  Ban,
+  CircleCheck,
   FileCode2,
   History,
   PanelRightOpen,
@@ -164,6 +166,7 @@ export function ResourceView({
   selection,
   onDelete,
   onSuspend,
+  onCordon,
 }: {
   loaded: LoadedResource
   showNamespace?: boolean
@@ -181,6 +184,8 @@ export function ResourceView({
   onDelete?: OpenRowAction
   /** Turning a schedule off, or back on. CronJobs and nothing else. */
   onSuspend?: OpenRowAction
+  /** Cordoning or uncordoning a node. Nodes and nothing else. */
+  onCordon?: OpenRowAction
 }) {
   switch (loaded.kind) {
     case 'helmreleases':
@@ -307,7 +312,7 @@ export function ResourceView({
         />
       )
     case 'nodes':
-      return <NodeTable nodes={loaded.rows} onManifest={open} />
+      return <NodeTable nodes={loaded.rows} onManifest={open} onCordon={onCordon} />
     case 'namespaces':
       return <NamespaceTable namespaces={loaded.rows} onManifest={open} />
   }
@@ -2446,7 +2451,16 @@ function CustomResourceTable({
   )
 }
 
-function NodeTable({ nodes, onManifest }: { nodes: ClusterNode[]; onManifest?: OpenManifest }) {
+function NodeTable({
+  nodes,
+  onManifest,
+  onCordon,
+}: {
+  nodes: ClusterNode[]
+  onManifest?: OpenManifest
+  /** Opens the cordon/uncordon confirmation for one node. */
+  onCordon?: OpenRowAction
+}) {
   return (
     <Table resizeKey="kubemg_cols_nodes">
       <thead>
@@ -2482,9 +2496,14 @@ function NodeTable({ nodes, onManifest }: { nodes: ClusterNode[]; onManifest?: O
               </Name>
             </Td>
             <Td>
-              <Pill tone={node.ready ? (node.unschedulable ? 'warn' : 'ok') : 'bad'}>
-                {node.status}
-              </Pill>
+              <div className="flex flex-wrap items-center gap-1">
+                <Pill tone={node.ready ? 'ok' : 'bad'}>{node.ready ? 'Ready' : 'Not ready'}</Pill>
+                {/* A word plus a form, never colour alone — the same rule
+                    every state pill here follows. "SchedulingDisabled" is
+                    the API's own word for this; an operator reaches for
+                    "Cordoned". */}
+                {node.unschedulable ? <Pill tone="warn">Cordoned</Pill> : null}
+              </div>
             </Td>
             <Td className={`hidden md:table-cell ${MONO}`}>
               <List values={node.roles} />
@@ -2493,12 +2512,38 @@ function NodeTable({ nodes, onManifest }: { nodes: ClusterNode[]; onManifest?: O
             <Td className={`hidden lg:table-cell ${MONO}`}>{node.internal_ip || '—'}</Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>{node.cpu || '—'}</Td>
             <Td className={AGE}>{relativeAge(node.created_at)}</Td>
-            <ManifestCell onManifest={onManifest} name={node.name} />
+            <ManifestCell
+              onManifest={onManifest}
+              name={node.name}
+              menu={
+                onCordon ? (
+                  <RowMenuItem onClick={() => onCordon(nodeRow(node))}>
+                    {node.unschedulable ? (
+                      <CircleCheck aria-hidden="true" className="size-3.5" />
+                    ) : (
+                      <Ban aria-hidden="true" className="size-3.5" />
+                    )}
+                    {node.unschedulable ? 'Uncordon' : 'Cordon'}
+                  </RowMenuItem>
+                ) : null
+              }
+            />
           </Row>
         ))}
       </tbody>
     </Table>
   )
+}
+
+/** nodeRow is one Node addressed the way the cordon action needs it. */
+function nodeRow(node: ClusterNode): SelectedRow {
+  return {
+    key: selectionKey('nodes', undefined, node.name),
+    kind: 'nodes',
+    label: 'Node',
+    name: node.name,
+    unschedulable: node.unschedulable,
+  }
 }
 
 function NamespaceTable({
