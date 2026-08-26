@@ -36,6 +36,8 @@ export interface SelectedRow {
   namespace?: string
   /** Whether a schedule is currently off. Set on CronJob rows and nowhere else. */
   suspended?: boolean
+  /** Whether a node is currently cordoned. Set on Node rows and nowhere else. */
+  unschedulable?: boolean
 }
 
 /** selectionKey is how a row is identified inside a selection. */
@@ -48,7 +50,7 @@ export function selectionKey(kind: string, namespace: string | undefined, name: 
  * it is the same call the manifest editor's address makes — and the rest are
  * the workload controls, each offered only where the whole selection has it.
  */
-export type BulkActionName = 'delete' | 'restart' | 'suspend' | 'resume'
+export type BulkActionName = 'delete' | 'restart' | 'suspend' | 'resume' | 'cordon' | 'uncordon'
 
 /**
  * bulkActions says what a selection can be asked to do. Suspend and resume are
@@ -80,4 +82,6 @@ export const BULK_ACTION_LABEL: Record<BulkActionName, string> = {
   restart: 'Restart',
   suspend: 'Suspend',
   resume: 'Resume',
+  cordon: 'Cordon',
+  uncordon: 'Uncordon',
 }

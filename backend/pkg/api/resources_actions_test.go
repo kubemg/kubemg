@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -143,6 +144,7 @@ func TestRouterRegistersWorkloadActions(t *testing.T) {
 		"POST /api/v1/clusters/:id/resources/scale",
 		"POST /api/v1/clusters/:id/resources/restart",
 		"POST /api/v1/clusters/:id/resources/suspend",
+		"POST /api/v1/clusters/:id/resources/node/schedulable",
 		// Deleting is the same address as reading and writing the object, which
 		// is the point: it reaches nothing the manifest editor does not.
 		"DELETE /api/v1/clusters/:id/resources/object",
@@ -274,4 +276,209 @@ func TestDeletedMessageDoesNotClaimTheObjectIsGone(t *testing.T) {
 	if got := deletedMessage("checkout-7f9"); !strings.Contains(got, "marked for deletion") {
 		t.Fatalf("message = %q", got)
 	}
+}
+
+/* ---------------------------------------------------------- node cordon --- */
+
+// A node's off switch is one field, and cordoning changes that field and no
+// other — the same rule the CronJob's suspend follows.
+func TestStampSchedulableChangesOnlyTheField(t *testing.T) {
+	object := map[string]any{
+		"kind": "Node",
+		"spec": map[string]any{
+			"podCIDR":       "10.244.0.0/24",
+			"unschedulable": false,
+		},
+	}
+
+	stampSchedulable(object, true)
+
+	spec := object["spec"].(map[string]any)
+	if spec["unschedulable"] != true {
+		t.Fatalf("unschedulable = %v, want true", spec["unschedulable"])
+	}
+	if spec["podCIDR"] != "10.244.0.0/24" {
+		t.Fatalf("spec = %v, want everything else left alone", spec)
+	}
+}
+
+// stampSchedulable creates the spec map if the read somehow came back without
+// one, the same defensive shape stampSuspend does not need because a CronJob
+// always has a spec — a Node's is thinner, and this is cheap insurance.
+func TestStampSchedulableCreatesAMissingSpec(t *testing.T) {
+	object := map[string]any{"kind": "Node"}
+	stampSchedulable(object, true)
+	spec, ok := object["spec"].(map[string]any)
+	if !ok {
+		t.Fatal("expected a spec map to be created")
+	}
+	if spec["unschedulable"] != true {
+		t.Fatalf("unschedulable = %v, want true", spec["unschedulable"])
+	}
+}
+
+// An absent `spec.unschedulable` is the API server's default and means
+// schedulable. A node whose spec is missing, or whose switch is not a
+// boolean, is not one to guess about — the write that follows replaces the
+// object.
+func TestNodeSchedulableStateReadsTheDefault(t *testing.T) {
+	cases := []struct {
+		name          string
+		object        map[string]any
+		unschedulable bool
+		refused       bool
+	}{
+		{
+			name:   "absent means schedulable",
+			object: map[string]any{"spec": map[string]any{"podCIDR": "10.244.0.0/24"}},
+		},
+		{
+			name:          "cordoned",
+			object:        map[string]any{"spec": map[string]any{"unschedulable": true}},
+			unschedulable: true,
+		},
+		{
+			name:   "explicitly schedulable",
+			object: map[string]any{"spec": map[string]any{"unschedulable": false}},
+		},
+		{
+			name:    "no spec",
+			object:  map[string]any{"kind": "Node"},
+			refused: true,
+		},
+		{
+			name:    "not a boolean",
+			object:  map[string]any{"spec": map[string]any{"unschedulable": "yes"}},
+			refused: true,
+		},
+	}
+
+	for _, test := range cases {
+		unschedulable, reason := nodeSchedulableState(test.object)
+		if (reason != "") != test.refused {
+			t.Fatalf("%s: reason = %q, refused = %v", test.name, reason, test.refused)
+		}
+		if !test.refused && unschedulable != test.unschedulable {
+			t.Fatalf("%s: unschedulable = %v, want %v", test.name, unschedulable, test.unschedulable)
+		}
+	}
+}
+
+// The words matter here because a no-op has to read as a statement about the
+// node rather than as a failure, and the cordon message must never claim to
+// have moved anything already running.
+func TestNodeSchedulableMessagesNameTheStateReached(t *testing.T) {
+	if got := schedulableMessage("node-1", true); !strings.Contains(got, "cordoned") ||
+		!strings.Contains(got, "not moved") {
+		t.Fatalf("cordon message = %q", got)
+	}
+	if got := schedulableMessage("node-1", false); !strings.Contains(got, "uncordoned") {
+		t.Fatalf("uncordon message = %q", got)
+	}
+	if got := alreadySchedulable(true); !strings.Contains(got, "already") {
+		t.Fatalf("no-op message = %q", got)
+	}
+}
+
+// The write is conditional on the resourceVersion the object was read at, and
+// strips managedFields the way the manifest editor does — the two things
+// setNodeSchedulable does to the object between the read and the write,
+// beyond the one field it means to change.
+func TestNodeSchedulableWritePreservesResourceVersionAndStripsManagedFields(t *testing.T) {
+	object := map[string]any{
+		"kind": "Node",
+		"metadata": map[string]any{
+			"name":            "node-1",
+			"resourceVersion": "12345",
+			"managedFields":   []any{map[string]any{"manager": "kubelet"}},
+		},
+		"spec": map[string]any{"unschedulable": false},
+	}
+
+	stampSchedulable(object, true)
+	stripManagedFields(object)
+
+	metadata := object["metadata"].(map[string]any)
+	if metadata["resourceVersion"] != "12345" {
+		t.Fatalf("resourceVersion = %v, want it left untouched", metadata["resourceVersion"])
+	}
+	if _, ok := metadata["managedFields"]; ok {
+		t.Fatal("expected managedFields to be stripped before the write")
+	}
+	if object["spec"].(map[string]any)["unschedulable"] != true {
+		t.Fatal("expected the requested field to be written")
+	}
+}
+
+func TestNodeObjectPathIsBuiltFromTheFixedTable(t *testing.T) {
+	if got, want := nodeObjectPath("node-1"), "/api/v1/nodes/node-1"; got != want {
+		t.Fatalf("node path = %q, want %q", got, want)
+	}
+	// A name is escaped rather than trusted, the same as every other object
+	// path here.
+	if got, want := nodeObjectPath("a/b"), "/api/v1/nodes/a%2Fb"; got != want {
+		t.Fatalf("escaped node path = %q, want %q", got, want)
+	}
+}
+
+// The route shares the other resource writes' guards: authenticated, agent-
+// only, and — because a Node is cluster-scoped — refused to a namespace-scoped
+// grant before the tunnel is touched.
+func TestNodeSchedulableRouteSharesTheResourceGuards(t *testing.T) {
+	t.Run("a scoped grant is refused", func(t *testing.T) {
+		env := newTestEnv(t)
+		user := env.store.addUser("scoped", "secret123", "user")
+		cluster := env.store.addAgentCluster("edge", "dev", "agent-token")
+		env.store.grant(user.ID, cluster.ID, "view", []string{"team-a"})
+		token := env.tokenFor(t, user)
+
+		rec := env.do(t, http.MethodPost,
+			"/api/v1/clusters/"+itoa(cluster.ID)+"/resources/node/schedulable", token,
+			map[string]any{"name": "node-1", "unschedulable": true})
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected %d for a scoped grant, got %d (%s)",
+				http.StatusForbidden, rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("a missing node name is refused before the tunnel is touched", func(t *testing.T) {
+		env := newTestEnv(t)
+		admin := env.store.addUser("admin", "secret123", "admin")
+		cluster := env.store.addAgentCluster("edge", "dev", "agent-token")
+		token := env.tokenFor(t, admin)
+
+		rec := env.do(t, http.MethodPost,
+			"/api/v1/clusters/"+itoa(cluster.ID)+"/resources/node/schedulable", token,
+			map[string]any{"name": "  ", "unschedulable": true})
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected %d for a blank node name, got %d (%s)",
+				http.StatusBadRequest, rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("direct clusters have no live state", func(t *testing.T) {
+		env := newTestEnv(t)
+		admin := env.store.addUser("admin", "secret123", "admin")
+		cluster := env.store.addCluster("legacy", "dev")
+		token := env.tokenFor(t, admin)
+
+		rec := env.do(t, http.MethodPost,
+			"/api/v1/clusters/"+itoa(cluster.ID)+"/resources/node/schedulable", token,
+			map[string]any{"name": "node-1", "unschedulable": true})
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("expected %d for a direct-mode cluster, got %d (%s)",
+				http.StatusConflict, rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("authentication is required", func(t *testing.T) {
+		env := newTestEnv(t)
+		cluster := env.store.addAgentCluster("edge", "dev", "agent-token")
+
+		rec := env.do(t, http.MethodPost,
+			"/api/v1/clusters/"+itoa(cluster.ID)+"/resources/node/schedulable", "", nil)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected %d without a token, got %d", http.StatusUnauthorized, rec.Code)
+		}
+	})
 }

@@ -778,6 +778,12 @@ func NewRouter(opts Options) *gin.Engine {
 			resources.POST("/scale", s.scaleWorkload)
 			resources.POST("/restart", s.restartWorkload)
 			resources.POST("/suspend", s.suspendWorkload)
+			// A node's own off switch: spec.unschedulable, the same
+			// read-modify-write shape as suspend, refused up front for a
+			// namespace-scoped grant because a Node is cluster-scoped. Drain
+			// is deliberately not this route — it stops new pods landing,
+			// nothing already running is moved.
+			resources.POST("/node/schedulable", s.setNodeSchedulable)
 			// Undoing one — `kubectl rollout undo`. The same read-modify-write
 			// shape as the three above, restoring a revision's pod template
 			// from workload/history's own list rather than from anything the

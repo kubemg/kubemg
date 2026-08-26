@@ -462,3 +462,167 @@ func suspendedMessage(name string, suspend bool) string {
 	}
 	return name + " resumed — its schedule fires again"
 }
+
+// nodePath is the fixed, cluster-scoped API path for a Node. It is not in
+// workloadActions because a Node is not a workload — it has no namespace, no
+// pod template and none of the other three controls — so it gets its own
+// small handler rather than a fourth boolean on that table.
+var nodePath = resourceListPath{"/api/v1", "nodes"}
+
+// nodeObjectPath renders the address of one Node.
+func nodeObjectPath(name string) string {
+	return nodePath.clusterWide() + "/" + url.PathEscape(name)
+}
+
+// nodeSchedulableRequest is what the cordon/uncordon route accepts.
+// Unschedulable is not a pointer: unlike suspend, there is no third
+// "leave it as it is" meaning for this field, so a caller always states
+// which way they mean it.
+type nodeSchedulableRequest struct {
+	Name          string `json:"name"`
+	Unschedulable bool   `json:"unschedulable"`
+}
+
+// nodeSchedulableResult is what comes back: enough for the UI to say what
+// happened without re-reading the list, which it refreshes anyway.
+type nodeSchedulableResult struct {
+	Name          string `json:"name"`
+	Unschedulable bool   `json:"unschedulable"`
+	// Changed is false when the node was already in the requested state and
+	// nothing was written — the suspendWorkload rule, so cordoning a set
+	// where half are already cordoned is two writes and four sentences.
+	Changed bool   `json:"changed"`
+	Message string `json:"message"`
+}
+
+// setNodeSchedulable cordons or uncordons a node by writing spec.unschedulable
+// back through a read-modify-write, exactly as suspendWorkload does for a
+// CronJob's spec.suspend. Nodes are cluster-scoped, so a namespace-scoped
+// grant is refused before the tunnel is touched; nothing here is a new
+// permission — the write goes down the same impersonated, audited tunnel, and
+// a caller without patch/update on nodes is refused by the cluster's own RBAC.
+//
+// Drain is deliberately not implemented here: taking a node out of scheduling
+// is a field write, evicting what is already running on it is a different
+// shape entirely (an eviction loop with PDBs, grace periods and a progress
+// surface of its own), and cordon is the half that is urgent.
+func (s *server) setNodeSchedulable(c *gin.Context) {
+	user, cluster, grant, ok := s.resourceCluster(c)
+	if !ok {
+		return
+	}
+	if !s.requireClusterScope(c, grant, "nodes") {
+		return
+	}
+
+	var req nodeSchedulableRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "the request could not be read"})
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a node name is required"})
+		return
+	}
+
+	path := nodeObjectPath(req.Name)
+
+	resp, callOK := s.callResource(c, user, cluster, grant, path)
+	if !callOK {
+		return
+	}
+	var object map[string]any
+	if !s.decodeResource(c, resp, &object) {
+		return
+	}
+
+	current, reason := nodeSchedulableState(object)
+	if reason != "" {
+		c.JSON(http.StatusConflict, gin.H{"error": reason})
+		return
+	}
+	if current == req.Unschedulable {
+		c.JSON(http.StatusOK, nodeSchedulableResult{
+			Name:          req.Name,
+			Unschedulable: req.Unschedulable,
+			Changed:       false,
+			Message:       req.Name + alreadySchedulable(req.Unschedulable),
+		})
+		return
+	}
+
+	stampSchedulable(object, req.Unschedulable)
+	stripManagedFields(object)
+
+	body, err := json.Marshal(object)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "the request could not be encoded"})
+		return
+	}
+
+	resp, callOK = s.callResourceWith(c, user, cluster, grant,
+		http.MethodPut, path, body, "could not write to the cluster")
+	if !callOK {
+		return
+	}
+	if resp.Status < 200 || resp.Status >= 300 {
+		c.JSON(resp.Status, gin.H{"error": kubeErrorMessage(resp.Body, resp.Status)})
+		return
+	}
+
+	c.JSON(http.StatusOK, nodeSchedulableResult{
+		Name:          req.Name,
+		Unschedulable: req.Unschedulable,
+		Changed:       true,
+		Message:       schedulableMessage(req.Name, req.Unschedulable),
+	})
+}
+
+// nodeSchedulableState reads spec.unschedulable. An absent field is the API
+// server's default and means schedulable; a field of the wrong type is not
+// something to guess about, for the same reason suspendState is not — the
+// write that follows replaces the object.
+func nodeSchedulableState(object map[string]any) (bool, string) {
+	spec, _ := object["spec"].(map[string]any)
+	if spec == nil {
+		return false, "the cluster returned a node with no spec"
+	}
+	switch value := spec["unschedulable"].(type) {
+	case nil:
+		return false, ""
+	case bool:
+		return value, ""
+	default:
+		return false, "the cluster returned a node whose unschedulable field is not a boolean"
+	}
+}
+
+// stampSchedulable writes the node's own off switch. It changes one field and
+// nothing else.
+func stampSchedulable(object map[string]any, unschedulable bool) {
+	spec, _ := object["spec"].(map[string]any)
+	if spec == nil {
+		spec = map[string]any{}
+		object["spec"] = spec
+	}
+	spec["unschedulable"] = unschedulable
+}
+
+// alreadySchedulable is what a no-op answers with.
+func alreadySchedulable(unschedulable bool) string {
+	if unschedulable {
+		return " is already cordoned"
+	}
+	return " is already schedulable"
+}
+
+// schedulableMessage says what happened in the words an operator would use.
+// Cordon never claims to have moved anything: it stops new pods from landing
+// there, and whatever is already running stays exactly where it is.
+func schedulableMessage(name string, unschedulable bool) string {
+	if unschedulable {
+		return name + " cordoned — new pods will not be scheduled there; pods already running are not moved"
+	}
+	return name + " uncordoned — it can be scheduled again"
+}
