@@ -1167,6 +1167,9 @@ export function Explore() {
               onSuspend={(row) =>
                 setBulk({ action: row.suspended ? 'resume' : 'suspend', rows: [row] })
               }
+              onCordon={(row) =>
+                setBulk({ action: row.unschedulable ? 'uncordon' : 'cordon', rows: [row] })
+              }
               // A pod opens the same drawer as everything else, but carrying its
               // row: the list already holds the containers and limits its usage
               // panel needs, so there is nothing to read again.
@@ -1288,6 +1291,9 @@ export function Explore() {
           onClose={() => setDetail(null)}
           onRefresh={load}
           onOpen={setDetail}
+          onCordon={(row) =>
+            setBulk({ action: row.unschedulable ? 'uncordon' : 'cordon', rows: [row] })
+          }
         />
       ) : null}
 

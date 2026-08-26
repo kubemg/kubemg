@@ -1695,6 +1695,18 @@ export interface WorkloadActionResult {
 }
 
 /**
+ * What a cordon or uncordon did. A node already in the requested state is
+ * answered rather than written — `changed: false` — the same rule
+ * `WorkloadActionResult.suspended` follows for a CronJob.
+ */
+export interface NodeSchedulableResult {
+  name: string
+  unschedulable: boolean
+  changed: boolean
+  message: string
+}
+
+/**
  * What a delete did — or rather asked for. A delete is a request for removal,
  * not the removal itself: a pod with a termination grace period, or anything
  * carrying a finalizer, is still in the list when this comes back, which is why

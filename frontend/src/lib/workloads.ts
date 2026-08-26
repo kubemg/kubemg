@@ -136,3 +136,14 @@ export function workloadKeyFor(kind: string): ResourceKey | undefined {
   return workloadCapability(key) ? (key as ResourceKey) : undefined
 }
 
+/**
+ * The one kind a cordon/uncordon applies to. It is not a fourth boolean on
+ * `WorkloadCapability` because a Node answers for none of that table's other
+ * questions — no namespace, no pod template, no schedule — and is not a
+ * workload at all; this is its own small predicate for its own small control,
+ * the way `suspend` is the CronJob's alone.
+ */
+export function supportsCordon(key: string): boolean {
+  return key === 'nodes'
+}
+

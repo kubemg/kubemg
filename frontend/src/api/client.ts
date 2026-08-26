@@ -113,6 +113,7 @@ import type {
   UserPatch,
   Workload,
   DeleteResult,
+  NodeSchedulableResult,
   WorkloadActionResult,
   WorkloadHistory,
   WorkloadPods,
@@ -1246,6 +1247,25 @@ export async function suspendWorkload(
     name,
     namespace,
     suspend,
+  })
+  return data
+}
+
+/**
+ * setNodeSchedulable cordons or uncordons a node — `spec.unschedulable`,
+ * written back through the same read-modify-write shape as scale/restart/
+ * suspend. A node is cluster-scoped, so it takes no namespace, and it is
+ * addressed by name alone rather than through the sidebar's kind key because
+ * there is only ever one kind this can mean.
+ */
+export async function setNodeSchedulable(
+  clusterId: number,
+  name: string,
+  unschedulable: boolean,
+): Promise<NodeSchedulableResult> {
+  const { data } = await http.post<NodeSchedulableResult>(resourceURL(clusterId, 'node/schedulable'), {
+    name,
+    unschedulable,
   })
   return data
 }

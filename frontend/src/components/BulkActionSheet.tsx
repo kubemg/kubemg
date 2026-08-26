@@ -1,6 +1,12 @@
 import { useState } from 'react'
-import { Check, Loader2, Pause, Play, RotateCcw, Trash2, X } from 'lucide-react'
-import { deleteResourceObject, errorMessage, restartWorkload, suspendWorkload } from '../api/client'
+import { Ban, Check, CircleCheck, Loader2, Pause, Play, RotateCcw, Trash2, X } from 'lucide-react'
+import {
+  deleteResourceObject,
+  errorMessage,
+  restartWorkload,
+  setNodeSchedulable,
+  suspendWorkload,
+} from '../api/client'
 import type { Cluster } from '../api/types'
 import type { BulkActionName, SelectedRow } from '../lib/selection'
 import { BULK_ACTION_LABEL } from '../lib/selection'
@@ -39,6 +45,8 @@ const ACTION_ICON: Record<BulkActionName, typeof Trash2> = {
   restart: RotateCcw,
   suspend: Pause,
   resume: Play,
+  cordon: Ban,
+  uncordon: CircleCheck,
 }
 
 /**
@@ -56,6 +64,10 @@ const ACTION_BLURB: Record<BulkActionName, string> = {
     'Nothing about the spec changes.',
   suspend: 'A suspended schedule stops firing. Runs already in flight are left alone.',
   resume: 'A resumed schedule fires again at its next matching time. Missed runs are not made up.',
+  cordon:
+    'Cordoning stops new pods from being scheduled onto this node. Pods already running there ' +
+    'are not moved — that is a drain, which kubemg does not do here.',
+  uncordon: 'Uncordoning lets this node be scheduled onto again.',
 }
 
 export function BulkActionSheet({
@@ -248,6 +260,11 @@ async function runOne(
         row.namespace,
         action === 'suspend',
       )
+      return result.message
+    }
+    case 'cordon':
+    case 'uncordon': {
+      const result = await setNodeSchedulable(clusterId, row.name, action === 'cordon')
       return result.message
     }
   }

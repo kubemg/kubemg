@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
-import { ExternalLink, RefreshCw, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { Ban, CircleCheck, ExternalLink, RefreshCw, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { errorMessage, fetchResourceDescribe } from '../api/client'
 import { useLiveTick } from '../lib/live'
 import type {
@@ -13,6 +13,8 @@ import type {
 } from '../api/types'
 import { ARGO_INSTANCE_LABEL, argoApplicationHref, useClusterConsole } from '../lib/consoles'
 import type { ResourceKey } from '../lib/resources'
+import type { SelectedRow } from '../lib/selection'
+import { selectionKey } from '../lib/selection'
 import type { Tone } from '../lib/status'
 import { relativeAge } from '../lib/time'
 import { HelmHistoryPanel } from './HelmHistoryPanel'
@@ -24,6 +26,7 @@ import { WorkloadActionPanel } from './WorkloadActionPanel'
 import type { WorkloadActionName, WorkloadActionTarget } from './WorkloadActionPanel'
 import {
   hasPodLabels,
+  supportsCordon,
   supportsRolloutHistory,
   supportsWorkloadLogs,
   supportsWorkloadPods,
@@ -136,6 +139,7 @@ export function ResourceDetailDrawer({
   onClose,
   onRefresh,
   onOpen,
+  onCordon,
 }: {
   cluster: Cluster
   target: DetailTarget
@@ -148,6 +152,13 @@ export function ResourceDetailDrawer({
    * opened on.
    */
   onOpen?: (target: DetailTarget) => void
+  /**
+   * Cordoning or uncordoning this object, when it is a Node. It opens the same
+   * confirmation the list's row menu does — one row in it — because a write
+   * this consequential gets one surface that says what is about to happen and
+   * reports what did, whether it was reached from the list or from here.
+   */
+  onCordon?: (row: SelectedRow) => void
 }) {
   const release = target.release
   // A release's two faces are not the object tabs, so an inherited `overview`
@@ -293,6 +304,9 @@ export function ResourceDetailDrawer({
   // What the object says it is running, for the scale dialog's prefill. It comes
   // from the describe already on screen rather than from a read of its own.
   const replicas = numericField(describe?.spec_summary, 'replicas')
+  // A node's own off switch, for the Cordon/Uncordon button's word — same
+  // source, same reason: no second read to learn what the drawer already has.
+  const unschedulable = booleanField(describe?.spec_summary, 'unschedulable')
 
   const argocd = useClusterConsole(cluster.id, 'argocd')
   const argoApp = argocd
@@ -340,6 +354,32 @@ export function ResourceDetailDrawer({
             >
               <RotateCcw aria-hidden="true" className="size-4" />
               Restart
+            </Button>
+          ) : null}
+
+          {/* A node's own control, and the only one it has: there is no
+              replica count to set and no pod template to roll. It opens the
+              same confirmation the Nodes list offers from its row menu. */}
+          {supportsCordon(target.kind) && onCordon ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() =>
+                onCordon({
+                  key: selectionKey('nodes', undefined, target.name),
+                  kind: 'nodes',
+                  label: 'Node',
+                  name: target.name,
+                  unschedulable,
+                })
+              }
+            >
+              {unschedulable ? (
+                <CircleCheck aria-hidden="true" className="size-4" />
+              ) : (
+                <Ban aria-hidden="true" className="size-4" />
+              )}
+              {unschedulable ? 'Uncordon' : 'Cordon'}
             </Button>
           ) : null}
 
@@ -563,6 +603,12 @@ function numericField(fields: ResourceField[] | undefined, path: string): number
   if (!found) return undefined
   const value = Number(found.value)
   return Number.isInteger(value) ? value : undefined
+}
+
+/** The node's own off switch, read off the describe flatten rather than a
+    second call — an absent field is the API server's default, schedulable. */
+function booleanField(fields: ResourceField[] | undefined, path: string): boolean {
+  return fields?.find((field) => field.path === path)?.value === 'true'
 }
 
 /** failing picks out the conditions an operator needs to see before anything else. */
