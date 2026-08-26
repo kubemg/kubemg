@@ -1,0 +1,11 @@
+# Keep in step with DOCS_IMAGE in the Makefile: `make docs-build` uses the
+# mkdocs-material image and Read the Docs installs this file, and a manual that
+# builds in one and not the other is a manual nobody can trust.
+#
+# pymdown-extensions is pinned rather than left to mkdocs-material's own
+# `>=10.2`: 10.14.3 carries CVE-2026-67422 (denial of service), which the
+# repository's Trivy scan gates on, and a floating range is what let a scanned
+# artefact pick it up in the first place.
+mkdocs==1.6.1
+mkdocs-material==9.7.7
+pymdown-extensions==11.0.2

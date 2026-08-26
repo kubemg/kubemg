@@ -121,3 +121,6 @@ coverage.out
 
 # Brand kit — source assets, not shipped from here.
 brand/
+
+# Built documentation (mkdocs build --site-dir)
+site/
