@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { Link } from 'react-router'
 import type {
   ClusterNode,
   ClusterRoleEntry,
@@ -46,11 +47,12 @@ import {
 import { IconButton, Pill, Row, RowMenu, RowMenuItem, SortTh, Table, Td, Th } from './primitives'
 import type { DetailTab } from './ResourceDetailDrawer'
 import type { WorkloadActionName } from './WorkloadActionPanel'
+import { namespaceHref } from '../lib/navigation'
 import { workloadCapability, workloadKeyFor } from '../lib/workloads'
 import type { SelectedRow } from '../lib/selection'
 import { selectionKey } from '../lib/selection'
 import type { Tone } from '../lib/status'
-import { TONE_FILL, podTone, workloadTone } from '../lib/status'
+import { TONE_FILL, phaseTone, podTone, workloadTone } from '../lib/status'
 import { formatCountdown, relativeAge, secondsUntil, useTicker } from '../lib/time'
 import { formatCPU, formatMemory, podLimit, ratio, usageTone } from '../lib/units'
 import type { PodUsageIndex } from '../lib/units'
@@ -187,6 +189,7 @@ export function ResourceView({
   onCordon,
   onRun,
   onUninstall,
+  clusterId,
 }: {
   loaded: LoadedResource
   showNamespace?: boolean
@@ -210,6 +213,12 @@ export function ResourceView({
   onRun?: OpenRowAction
   /** Removing a Helm release, and everything its manifest recorded. */
   onUninstall?: (release: HelmRelease) => void
+  /**
+   * Which cluster these rows came from. Only the namespace list needs it — a
+   * namespace has a page of its own and the row links at it — and a caller that
+   * does not pass it gets the list without the link rather than a broken one.
+   */
+  clusterId?: number
 }) {
   switch (loaded.kind) {
     case 'helmreleases':
@@ -367,7 +376,9 @@ export function ResourceView({
     case 'nodes':
       return <NodeTable nodes={loaded.rows} onManifest={open} onCordon={onCordon} />
     case 'namespaces':
-      return <NamespaceTable namespaces={loaded.rows} onManifest={open} />
+      return (
+        <NamespaceTable namespaces={loaded.rows} onManifest={open} clusterId={clusterId} />
+      )
   }
 }
 
@@ -385,6 +396,7 @@ function Name({
   title,
   namespace,
   onOpen,
+  to,
 }: {
   children: ReactNode
   tone?: Tone
@@ -401,6 +413,12 @@ function Name({
    * every list, because every kind has a detail view to open onto.
    */
   onOpen?: () => void
+  /**
+   * Where the object *is*, when it has a page of its own. A namespace does; the
+   * kinds that only have a drawer take `onOpen` instead. It is a real link
+   * rather than a button so it opens in a new tab like any other address.
+   */
+  to?: string
 }) {
   const full = namespace && title ? `${namespace}/${title}` : title
 
@@ -409,7 +427,15 @@ function Name({
       {tone ? (
         <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${TONE_FILL[tone]}`} />
       ) : null}
-      {onOpen ? (
+      {to ? (
+        <Link
+          to={to}
+          className={`${NAME_BUTTON} truncate font-mono text-fg transition-colors hover:text-accent`}
+          title={full}
+        >
+          {children}
+        </Link>
+      ) : onOpen ? (
         <button
           type="button"
           onClick={onOpen}
@@ -762,26 +788,6 @@ function ManifestCell({
       </span>
     </Td>
   )
-}
-
-function phaseTone(phase: string): Tone {
-  switch (phase) {
-    case 'Bound':
-    case 'Available':
-    case 'Active':
-    case 'Ready':
-      return 'ok'
-    case 'Pending':
-      return 'warn'
-    case 'Failed':
-    case 'Lost':
-      return 'bad'
-    case 'Released':
-    case 'Terminating':
-      return 'idle'
-    default:
-      return 'idle'
-  }
 }
 
 function jobTone(state: string): Tone {
@@ -3037,9 +3043,11 @@ function nodeRow(node: ClusterNode): SelectedRow {
 function NamespaceTable({
   namespaces,
   onManifest,
+  clusterId,
 }: {
   namespaces: Namespace[]
   onManifest?: OpenManifest
+  clusterId?: number
 }) {
   return (
     <Table resizeKey="kubemg_cols_namespaces">
@@ -3061,8 +3069,16 @@ function NamespaceTable({
       <tbody>
         {namespaces.map((namespace) => (
           <Row key={namespace.name}>
+            {/* The name opens the namespace's own page rather than the
+                manifest drawer: a namespace's manifest says almost nothing, and
+                what somebody clicking a namespace wants is what is in it. The
+                manifest is still one row-menu item away. */}
             <Td className="truncate">
-              <Name tone={phaseTone(namespace.status)} title={namespace.name} onOpen={opener(onManifest, namespace)}>
+              <Name
+                tone={phaseTone(namespace.status)}
+                title={namespace.name}
+                to={clusterId ? namespaceHref(clusterId, namespace.name) : undefined}
+              >
                 {namespace.name}
               </Name>
             </Td>
