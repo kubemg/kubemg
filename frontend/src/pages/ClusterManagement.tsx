@@ -12,6 +12,8 @@ import {
   EnvironmentTag,
   IconButton,
   Notice,
+  OBJECT_MARK,
+  OBJECT_NAME,
   Row,
   SearchInput,
   Table,
@@ -115,13 +117,12 @@ export function ClusterManagement() {
             <tbody>
               {visible.map((cluster) => (
                 <Row key={cluster.id}>
-                  <Td className="truncate">
-                    <Link
-                      to={`/clusters/${cluster.id}`}
-                      className="font-mono text-fg transition-colors hover:text-accent"
-                    >
-                      {cluster.name}
-                    </Link>
+                  <Td>
+                    <span className={`flex ${OBJECT_MARK}`}>
+                      <Link to={`/clusters/${cluster.id}`} className={OBJECT_NAME}>
+                        {cluster.name}
+                      </Link>
+                    </span>
                   </Td>
                   <Td>
                     <EnvironmentTag environment={cluster.environment} />

@@ -4,7 +4,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { Meter, Pill } from './primitives'
+import { Meter, OBJECT_MARK, OBJECT_NAME, Pill, Row } from './primitives'
 
 /*
  * The DOM half of the suite, kept deliberately small. What is worth rendering a
@@ -54,5 +54,52 @@ describe('Pill', () => {
     const pill = screen.getByText('Failed')
     expect(pill.className).toContain('bg-danger-soft')
     expect(pill.className).toContain('text-danger')
+  })
+})
+
+describe('an object name', () => {
+  /*
+   * A name in a list is the one string nobody controls the length of, so it
+   * wraps — and the affordance therefore cannot live on the text, where a wrap
+   * either halves it or leaves a stub. It lives on the row's edge instead, and
+   * says the same thing once per row rather than once per line.
+   */
+  it('wraps rather than truncating, and carries no decoration of its own', () => {
+    expect(OBJECT_NAME).toContain('[overflow-wrap:anywhere]')
+    expect(OBJECT_NAME).toContain('cursor-pointer')
+    expect(OBJECT_NAME).not.toContain('truncate')
+    expect(OBJECT_NAME).not.toContain('underline')
+    // At rest the name is `fg`: an accent-coloured name in every row spends the
+    // accent on the one thing already certain to be clicked.
+    expect(OBJECT_NAME.split(' ')).toContain('text-fg')
+    expect(OBJECT_NAME.split(' ')).not.toContain('text-accent')
+  })
+
+  it('marks the row edge at hairline weight, and lights it on hover', () => {
+    expect(OBJECT_MARK).toContain('border-accent-line')
+    expect(OBJECT_MARK).toContain('group-hover/row:border-accent')
+  })
+
+  it('answers for a hover anywhere on its row, not only on the text', () => {
+    render(
+      <table>
+        <tbody>
+          <Row>
+            <td>
+              <span className={OBJECT_MARK}>
+                <button type="button" className={OBJECT_NAME}>
+                  argocd-notifications-controller-7d7c69d4d8-nbttw
+                </button>
+              </span>
+            </td>
+          </Row>
+        </tbody>
+      </table>,
+    )
+    const row = screen.getByRole('row')
+    expect(row.className).toContain('group/row')
+    expect(row.className).toContain('focus-within:bg-raised')
+    // The name and the mark are both the group's subjects, so one hover moves both.
+    expect(screen.getByRole('button').className).toContain('group-hover/row:text-accent')
   })
 })

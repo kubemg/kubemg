@@ -23,6 +23,8 @@ import {
   Field,
   IconButton,
   Notice,
+  OBJECT_MARK,
+  OBJECT_NAME,
   Row,
   SearchInput,
   Select,
@@ -166,14 +168,16 @@ export function MachineAccounts() {
                 const busy = busyRow === row.id
                 return (
                   <Row key={row.id}>
-                    <Td className="truncate font-mono text-fg">
-                      <button
-                        type="button"
-                        className="text-left hover:text-accent"
-                        onClick={() => setOpenAccount(row)}
-                      >
-                        {row.username}
-                      </button>
+                    <Td>
+                      <span className={`flex ${OBJECT_MARK}`}>
+                        <button
+                          type="button"
+                          className={OBJECT_NAME}
+                          onClick={() => setOpenAccount(row)}
+                        >
+                          {row.username}
+                        </button>
+                      </span>
                     </Td>
                     <Td className="hidden md:table-cell">
                       {row.access.length === 0 ? (
