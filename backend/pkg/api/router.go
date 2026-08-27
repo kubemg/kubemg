@@ -167,6 +167,14 @@ type Store interface {
 	HelmCharts(ctx context.Context, repositoryID uint, search string, limit int) ([]db.HelmChart, error)
 	HelmChart(ctx context.Context, repositoryID uint, name string) (*db.HelmChart, error)
 
+	// The application catalogue: named manifest bundles with a declared
+	// parameter set. Server-wide rather than per-cluster, for the same reason
+	// a chart repository is — see pkg/db/app_template_models.go.
+	AppTemplates(ctx context.Context) ([]db.AppTemplate, error)
+	AppTemplate(ctx context.Context, name string) (*db.AppTemplate, error)
+	PutAppTemplate(ctx context.Context, template *db.AppTemplate) error
+	DeleteAppTemplate(ctx context.Context, name string) error
+
 	// AcquireLease is how a background job that reads a cluster decides whether
 	// *this* replica is the one doing it. See pkg/db/lease.go: a false return
 	// means somebody else holds it, an error means do not run.
@@ -661,6 +669,22 @@ func NewRouter(opts Options) *gin.Engine {
 		repositories.PUT("/:name", requireAdmin, s.putHelmRepository)
 		repositories.DELETE("/:name", requireAdmin, s.deleteHelmRepository)
 		repositories.POST("/:name/sync", requireAdmin, s.syncHelmRepository)
+
+		// A template is a fact about the installation, not about a cluster —
+		// the same reasoning that keeps a chart repository out of
+		// /clusters/:id — so it sits beside /helm/repositories rather than
+		// under one. It takes the same read/write split for the same reason:
+		// declaring one is administrative, and an install form that could not
+		// list what is available would be a form nobody could use.
+		templates := v1.Group("/app-templates", requireAuth)
+		templates.GET("", s.listAppTemplates)
+		// Registered before /:name so "draft" can never be mistaken for a
+		// template's own name.
+		templates.POST("/draft", s.draftAppTemplate)
+		templates.GET("/:name", s.showAppTemplate)
+		templates.PUT("/:name", requireAdmin, s.putAppTemplate)
+		templates.DELETE("/:name", requireAdmin, s.deleteAppTemplate)
+		templates.POST("/:name/render", s.renderAppTemplate)
 
 		sources := clusters.Group("/:id/observability")
 		sources.GET("", s.listObservabilitySources)

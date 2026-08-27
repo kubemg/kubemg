@@ -13,6 +13,10 @@ import type {
   AlarmRule,
   AlarmRuleInput,
   AlarmRuleList,
+  AppTemplate,
+  AppTemplateDraft,
+  AppTemplateInput,
+  AppTemplateRenderResult,
   GuardrailPolicy,
   GuardrailPolicyInput,
   GuardrailPolicyList,
@@ -1283,6 +1287,65 @@ export async function syncHelmRepository(
   const { data } = await http.post<{ repository: HelmRepository; warning?: string }>(
     `/helm/repositories/${encodeURIComponent(name)}/sync`,
   )
+  return data
+}
+
+/*
+ * Application templates. Listed to everyone signed in, written by an admin —
+ * the same split as the Helm catalogue above, for the same reason: reading a
+ * list of what could be created cannot itself be a privileged act, but adding
+ * to it is a decision about what the whole fleet is offered.
+ */
+
+export async function listAppTemplates(): Promise<AppTemplate[]> {
+  const { data } = await http.get<{ templates: AppTemplate[] }>('/app-templates')
+  return data.templates ?? []
+}
+
+export async function getAppTemplate(name: string): Promise<AppTemplate> {
+  const { data } = await http.get<{ template: AppTemplate }>(
+    `/app-templates/${encodeURIComponent(name)}`,
+  )
+  return data.template
+}
+
+/** putAppTemplate declares a template, or edits one — the name is the address,
+    so renaming one means writing a new template under the new name. Returns
+    201 on the wire when the name did not exist yet; the body is the same
+    either way. */
+export async function putAppTemplate(name: string, input: AppTemplateInput): Promise<AppTemplate> {
+  const { data } = await http.put<{ template: AppTemplate }>(
+    `/app-templates/${encodeURIComponent(name)}`,
+    input,
+  )
+  return data.template
+}
+
+export async function deleteAppTemplate(name: string): Promise<void> {
+  await http.delete(`/app-templates/${encodeURIComponent(name)}`)
+}
+
+/** renderAppTemplate fills a template's parameters and answers with the
+    manifests it produces — nothing is created yet. `values` carries every
+    declared parameter as a string, `number` included: the substitution is
+    textual, so the type only ever chose the input control. */
+export async function renderAppTemplate(
+  name: string,
+  values: Record<string, string>,
+): Promise<AppTemplateRenderResult> {
+  const { data } = await http.post<AppTemplateRenderResult>(
+    `/app-templates/${encodeURIComponent(name)}/render`,
+    { values },
+  )
+  return data
+}
+
+/** draftAppTemplate turns one object's manifest into a suggested template: the
+    cluster's own bookkeeping stripped, and a parameter set guessed from what
+    looks like a name, an image or a replica count. Nothing is stored until the
+    result — edited or not — is written with `putAppTemplate`. */
+export async function draftAppTemplate(yaml: string): Promise<AppTemplateDraft> {
+  const { data } = await http.post<AppTemplateDraft>('/app-templates/draft', { yaml })
   return data
 }
 

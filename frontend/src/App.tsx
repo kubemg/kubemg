@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router'
 import { AccessRequests } from './pages/AccessRequests'
+import { AppTemplates } from './pages/AppTemplates'
 import { AuditTrail } from './pages/AuditTrail'
 import { AuthCallback } from './pages/AuthCallback'
 import { ClusterManagement } from './pages/ClusterManagement'
@@ -557,6 +558,17 @@ export default function App() {
               element={
                 <RequireAuth adminOnly>
                   <DeploymentSettings />
+                </RequireAuth>
+              }
+            />
+            {/* The application catalogue: a template is a manifest bundle with
+                holes in it. Listed to everyone from Explore's "From template";
+                writing one is admin-only, same as everything else in here. */}
+            <Route
+              path="/admin/templates"
+              element={
+                <RequireAuth adminOnly>
+                  <AppTemplates />
                 </RequireAuth>
               }
             />
