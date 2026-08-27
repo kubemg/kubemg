@@ -58,6 +58,7 @@ tell the two apart.
 | Method & path | Auth | Notes |
 | --- | --- | --- |
 | `POST /auth/login` | — | Body `{username, password}`. `200` `{token, expires_at, user}`. `401` on any bad credential (unknown user, wrong password, a federated or machine-account username) — deliberately identical, to prevent username enumeration; a constant-time dummy bcrypt check runs on every failure path. `403` if the account is disabled. |
+| `POST /auth/password` | Session | Body `{current_password, new_password, revoke_kubeconfigs?}`. Rotates the **caller's own** password; the current one is required, so a stolen session cannot lock the owner out. `400` if the new password is under 8 characters or is the current one, `401` if the current password is wrong, `409` for a federated account (its password lives with the provider) or a machine account (it has none). `revoke_kubeconfigs: true` also runs the register's blanket revoke for the account and returns its summary under `credentials`. Audited as `password-change`. |
 | `GET /auth/me` | Session | Current `user` object. `401` invalid/expired/deleted account, `403` disabled. |
 | `GET /version` | Session | `{version, docs_url}` — the release this process was built as, and the manual for it. Behind a session on purpose: an exact version is what an unauthenticated scanner needs to match a published advisory against the install. A build with no version stamped answers `"unknown"`. |
 

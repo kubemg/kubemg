@@ -35,6 +35,7 @@ import { useInventory } from '../state/inventory-context'
 import { useTheme } from '../lib/theme'
 import {
   ACCESS_HOME,
+  CREDENTIALS_HOME,
   ADMIN_HOME,
   clusterHref,
   clusterIdFromPath,
@@ -271,6 +272,7 @@ export function AppShell({
     const targets: CommandTarget[] = [
       { id: 'page-fleet', label: 'All clusters', hint: 'Fleet', to: '/' },
       { id: 'page-access', label: 'My access', hint: 'You', to: ACCESS_HOME },
+      { id: 'page-credentials', label: 'My credentials', hint: 'You', to: CREDENTIALS_HOME },
     ]
     if (!isAdmin) return targets
     return targets.concat(
@@ -453,6 +455,13 @@ export function AppShell({
                 <NavLink to={ACCESS_HOME} className={footerRow}>
                   <Timer aria-hidden="true" className="size-4 shrink-0" />
                   <span className="min-w-0 flex-1 truncate">My access</span>
+                </NavLink>
+                {/* Beside it rather than under Administration: these are the
+                    credentials this person holds — the kubeconfigs and the
+                    password — and neither is somebody else's to manage. */}
+                <NavLink to={CREDENTIALS_HOME} className={footerRow}>
+                  <FileKey aria-hidden="true" className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">My credentials</span>
                 </NavLink>
                 {/* The one door. Absent, not disabled, for a non-admin: every
                     row behind it would refuse, and a door that never opens is
@@ -926,6 +935,12 @@ function MobileNav({
                 <NavLink to={ACCESS_HOME} className={railLinkClass}>
                   <Timer aria-hidden="true" className="size-4 shrink-0" />
                   My access
+                </NavLink>
+              </li>
+              <li>
+                <NavLink to={CREDENTIALS_HOME} className={railLinkClass}>
+                  <FileKey aria-hidden="true" className="size-4 shrink-0" />
+                  My credentials
                 </NavLink>
               </li>
             </ul>

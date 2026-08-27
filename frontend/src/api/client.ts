@@ -48,6 +48,8 @@ import type {
   MachineAccount,
   MachineToken,
   NewMachineToken,
+  PasswordChange,
+  PasswordChangeResult,
   HelmChartList,
   HelmHistory,
   HelmRelease,
@@ -531,6 +533,16 @@ export async function revokeAllIssuedKubeconfigs(
     '/kubeconfigs/revoke-all',
     userId ? { user_id: userId } : {},
   )
+  return data
+}
+
+/**
+ * Rotate the signed-in account's own password. It is not under /users/:id
+ * because that route is an administrator editing somebody else's account; this
+ * one refuses without the current password, so a live session is not enough.
+ */
+export async function changeOwnPassword(body: PasswordChange): Promise<PasswordChangeResult> {
+  const { data } = await http.post<PasswordChangeResult>('/auth/password', body)
   return data
 }
 

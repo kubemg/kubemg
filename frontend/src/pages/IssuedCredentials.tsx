@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { FileKey, ShieldOff } from 'lucide-react'
+import { FileKey, KeyRound, ShieldOff } from 'lucide-react'
 import {
   errorMessage,
   fetchIssuedKubeconfigs,
@@ -8,6 +8,7 @@ import {
 } from '../api/client'
 import type { IssuedKubeconfig, KubeconfigRevokeAllResult } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { PasswordSheet } from '../components/PasswordSheet'
 import {
   Button,
   EmptyState,
@@ -62,6 +63,7 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
   const [status, setStatus] = useState<StatusFilter>('active')
   const [filter, setFilter] = useState('')
   const [blanket, setBlanket] = useState<KubeconfigRevokeAllResult | null>(null)
+  const [changingPassword, setChangingPassword] = useState(false)
 
   // The fleet reading asks for everything and lets the server decide; the
   // operator's own asks for their id explicitly, so the page reads the same
@@ -131,12 +133,37 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
     <AppShell
       title={mine ? 'My credentials' : 'Issued credentials'}
       actions={
-        <Button variant="danger" onClick={revokeEverything} disabled={loading}>
-          <ShieldOff aria-hidden="true" className="size-4" />
-          {mine ? 'Revoke all of mine' : 'Revoke everything live'}
-        </Button>
+        <>
+          {/* Only on the operator's own reading, and only for an account whose
+              password actually lives here: a federated account's is held by its
+              provider and a machine account has none at all, so the button would
+              open a form that can only refuse. */}
+          {mine && user?.auth_source === 'local' && user?.account_type !== 'service' ? (
+            <Button onClick={() => setChangingPassword(true)}>
+              <KeyRound aria-hidden="true" className="size-4" />
+              Change password
+            </Button>
+          ) : null}
+          <Button variant="danger" onClick={revokeEverything} disabled={loading}>
+            <ShieldOff aria-hidden="true" className="size-4" />
+            {mine ? 'Revoke all of mine' : 'Revoke everything live'}
+          </Button>
+        </>
       }
     >
+      {changingPassword ? (
+        <PasswordSheet
+          onClose={() => setChangingPassword(false)}
+          onRevoked={(result) => {
+            // A rotation that took the kubeconfigs with it changed this very
+            // table, so the register behind the sheet is re-read rather than
+            // left showing rows that are no longer live.
+            if (result.credentials) setBlanket(result.credentials)
+            void load()
+          }}
+        />
+      ) : null}
+
       <div className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
         {rowError ? <Notice tone="error">{rowError}</Notice> : null}

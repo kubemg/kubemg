@@ -170,6 +170,21 @@ Two levers that already existed remain the fastest blunt instruments and are unc
 
 Refusing to disclose that difference would be worse than not shipping the button: an administrator who believes a revoke landed when it did not is in a worse position than one who knows the token has four more hours to run. The failed half is recorded as such in the audit trail too — each withdrawal is its own `kubeconfig-revoke` record, and a direct-mode one carries the reason it did not land.
 
+### Rotating a password can take them with it
+
+`POST /api/v1/auth/password` is where somebody changes their **own** password, and it accepts `revoke_kubeconfigs: true`. That is the same blanket revoke, run for the caller's own account, and it returns the same summary under `credentials`:
+
+```json title="200 OK"
+{
+  "changed": true,
+  "credentials": { "revoked": 2, "still_valid": 0 }
+}
+```
+
+It is offered rather than done. Somebody rotating a password because they think it leaked wants the kubeconfigs gone with it; somebody rotating one on a schedule does not want every laptop on their team to stop working, and doing it silently would be the wrong answer to both. The trail records both acts separately — one `password-change`, and one `kubeconfig-revoke` per credential.
+
+In the console it is **Change password** on `/me/credentials`, beside the register it acts on. The button is absent for an account whose password is not held here: a federated account changes it with its provider, and a machine account has none at all — its credential is a [machine token](machine-accounts.md), with a revoke of its own.
+
 ## Embedded CA rules, summarized
 
 | Mode | `certificate-authority-data` |

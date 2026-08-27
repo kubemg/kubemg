@@ -150,6 +150,14 @@ export function isAdminPath(pathname: string): boolean {
 export const ACCESS_HOME = '/me/access'
 
 /**
+ * The operator's own credentials: the kubeconfigs they hold, and the password
+ * that opens their sessions. Not admin-only for the same reason ACCESS_HOME is
+ * not — revoking a file you know you lost, or rotating a password you think has
+ * leaked, must not require finding an administrator first.
+ */
+export const CREDENTIALS_HOME = '/me/credentials'
+
+/**
  * A link into one cluster's events timeline, narrowed to one object.
  *
  * It lives here rather than beside either caller because two surfaces need the
