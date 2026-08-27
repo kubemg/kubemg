@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -29,9 +30,23 @@ const allowedHosts = process.env.VITE_ALLOWED_HOSTS
   ? process.env.VITE_ALLOWED_HOSTS.split(',').map((host) => host.trim()).filter(Boolean)
   : true
 
+/*
+ * The test runner is Vite's own, so a test resolves a module exactly the way the
+ * bundle does and there is no second build to keep in step.
+ *
+ * The default environment is `node`, not `jsdom`: most of what is worth
+ * asserting here is a pure function (`lib/objectForm.ts` renders a manifest,
+ * `lib/resources.ts` derives the sidebar, `lib/insights.ts` buckets pods), and a
+ * DOM none of them touch is startup cost per run for nothing. A file that does
+ * need one asks for it in its own docblock — `@vitest-environment jsdom`.
+ */
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.{ts,tsx}'],
+  },
   server: {
     host: true,
     allowedHosts,
