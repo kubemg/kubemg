@@ -567,6 +567,11 @@ func NewRouter(opts Options) *gin.Engine {
 	{
 		v1.POST("/auth/login", s.login)
 		v1.GET("/auth/me", requireAuth, s.me)
+		// Rotating your own password is not an administrative act, so it does not
+		// live under /users/:id — that route is an administrator editing somebody
+		// else's account. The handler requires the current password, which is why
+		// a live session is not enough to change it.
+		v1.POST("/auth/password", requireAuth, s.changePassword)
 
 		// First-run setup. The state route is unauthenticated by necessity — the
 		// sign-in page has to know whether this server has been configured before
