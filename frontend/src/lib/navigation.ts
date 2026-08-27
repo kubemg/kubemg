@@ -30,7 +30,7 @@ export function hasTunnel(cluster: Cluster): boolean {
  * are reserved: the resource route is a splat, so a kind called `capacity`
  * would otherwise be unreachable.
  */
-export type ClusterPage = 'dashboard' | 'events' | 'capacity' | 'security' | 'audit'
+export type ClusterPage = 'dashboard' | 'events' | 'capacity' | 'security' | 'audit' | 'shell'
 
 export const CLUSTER_PAGES: readonly ClusterPage[] = [
   'dashboard',
@@ -38,6 +38,7 @@ export const CLUSTER_PAGES: readonly ClusterPage[] = [
   'capacity',
   'security',
   'audit',
+  'shell',
 ]
 
 /**
@@ -46,7 +47,7 @@ export const CLUSTER_PAGES: readonly ClusterPage[] = [
  * — so they survive an agent that has stopped dialling in. The other three are
  * reads through the tunnel and cannot.
  */
-const LIVE_PAGES: readonly ClusterPage[] = ['events', 'capacity', 'security']
+const LIVE_PAGES: readonly ClusterPage[] = ['events', 'capacity', 'security', 'shell']
 
 export function pageNeedsTunnel(page: ClusterPage): boolean {
   return LIVE_PAGES.includes(page)

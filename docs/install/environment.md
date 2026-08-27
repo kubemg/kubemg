@@ -68,7 +68,9 @@ boot-time defaults only — each is overridable at runtime from Settings.*
 |---|---|---|
 | `KUBEMG_PUBLIC_URL` | `http://localhost:8080` | The address agents and operators reach this server on. Baked into every generated agent install command and kubeconfig — must be reachable from a **target cluster**, not this process's own listen address. A non-HTTPS value here surfaces as a warning rather than a kubeconfig that silently fails at first use. |
 | `KUBEMG_AGENT_IMAGE` | pinned release image (`ghcr.io/kubemg/kubemg-agent:<version>`) | The agent container image rendered into every generated install manifest. Point this at an internal mirror for an air-gapped install. |
-| `KUBEMG_AGENT_NAMESPACE` | `kubemg-system` | Namespace the agent is installed into on target clusters. |
+| `KUBEMG_AGENT_NAMESPACE` | `kubemg-system` | Namespace the agent is installed into on target clusters. Browser shell pods run here too. |
+| `KUBEMG_SHELL_ENABLED` | `true` | Offer the [browser shell](../clusters/browser-shell.md) on agent-mode clusters. A settings row can turn this off; it cannot turn it on for a server with no shell image. |
+| `KUBEMG_SHELL_IMAGE` | pinned release image (`ghcr.io/kubemg/kubemg-shell:<version>`) | The image a shell pod runs. Point this at an internal mirror for an air-gapped install; clearing it switches the feature off, since a shell with no image is a button that fails. |
 
 ## TLS
 

@@ -163,8 +163,12 @@ func (p *Proxy) serveBodyStream(c *gin.Context, tunnel *Tunnel, event *Event, he
 // recording reads the same frames the bridge is already carrying rather than
 // re-requesting anything: it is a tee, not a second session, so a recorded shell
 // and an unrecorded one reach the cluster identically.
+//
+// activity, when supplied, is called for every frame the operator sends. It is
+// how the browser shell keeps an idle clock without this package having to know
+// what a shell's lifetime is; every other caller passes nil.
 func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
-	header map[string][]string, offered []string, parsed APIPath,
+	header map[string][]string, offered []string, parsed APIPath, activity func(),
 ) {
 	requested := websocket.Subprotocols(c.Request)
 	if len(requested) == 0 {
@@ -239,6 +243,9 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 			}
 			fromClient += int64(len(payload))
 			recordFromClient(sink, payload)
+			if activity != nil {
+				activity()
+			}
 
 			decision, forward := guard.inspect(payload)
 			if decision != nil {

@@ -5,6 +5,7 @@ import { AppTemplates } from './pages/AppTemplates'
 import { AuditTrail } from './pages/AuditTrail'
 import { AuthCallback } from './pages/AuthCallback'
 import { ClusterManagement } from './pages/ClusterManagement'
+import { ClusterShell } from './pages/ClusterShell'
 import { ClusterSummary } from './pages/ClusterSummary'
 import { ClusterWizard } from './pages/ClusterWizard'
 import { EventsTimeline } from './pages/EventsTimeline'
@@ -303,6 +304,18 @@ export default function App() {
               element={
                 <RequireAuth>
                   <SecurityPosture />
+                </RequireAuth>
+              }
+            />
+            {/* A terminal with kubectl and helm, in a pod KubeMG runs on the
+                cluster. Open to anyone the cluster is granted to: the pod holds
+                no credential of its own, so what a shell reaches is the caller's
+                own grant and the cluster's RBAC is what answers. */}
+            <Route
+              path="/clusters/:id/shell"
+              element={
+                <RequireAuth>
+                  <ClusterShell />
                 </RequireAuth>
               }
             />

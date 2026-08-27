@@ -13,9 +13,15 @@ appears:
   plane, so bumping it here is what changes what a *future* `kubectl apply -k
   …` installs — it does not touch agents already running.
 
-Both images are published as multi-arch (amd64+arm64) manifest indexes by
+- The browser shell image, `KUBEMG_SHELL_IMAGE`
+  (`ghcr.io/kubemg/kubemg-shell:0.7.4`), which a shell pod runs on a target
+  cluster. Like the agent image it is read when a shell is *started*, so
+  bumping it changes the next shell rather than one already open.
+
+All three images are published as multi-arch (amd64+arm64) manifest indexes by
 `.github/workflows/release.yml` on a `v*` tag, after a Trivy vulnerability
-gate, to `ghcr.io/kubemg/kubemg` and `ghcr.io/kubemg/kubemg-agent`.
+gate, to `ghcr.io/kubemg/kubemg`, `ghcr.io/kubemg/kubemg-agent` and
+`ghcr.io/kubemg/kubemg-shell`.
 
 ## Upgrading the management plane
 

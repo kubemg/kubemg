@@ -278,7 +278,7 @@ func (p *Proxy) Handle(c *gin.Context) {
 		// on its recording — that is what makes the trail and the replay one
 		// thing rather than two lists a person has to line up by timestamp.
 		event.SessionID = newSessionID()
-		p.serveUpgradeStream(c, tunnel, &event, header, offeredSubprotocols(parsed), parsed)
+		p.serveUpgradeStream(c, tunnel, &event, header, offeredSubprotocols(parsed), parsed, nil)
 		return
 	case wantsBodyStream(parsed, path):
 		event.Streaming = true

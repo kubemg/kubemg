@@ -17,6 +17,7 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
+	"github.com/kubemg/kubemg/backend/pkg/shell"
 )
 
 // runtimeSettings is the resolved view of the operator-configurable settings:
@@ -56,6 +57,18 @@ type runtimeSettings struct {
 	// to live. Zero in the overrides means "unset", which takes the build's own
 	// default ceiling.
 	KubeconfigMaxTTLHours int `json:"kubeconfig_max_ttl_hours"`
+	// ShellEnabled is the switch on the browser shell. It follows the process the
+	// way recording does: a build started with the shell off cannot be talked
+	// into it by a database row, because the image it would run comes from the
+	// environment.
+	ShellEnabled bool `json:"shell_enabled"`
+	// ShellImage is what a shell pod runs.
+	ShellImage string `json:"shell_image"`
+	// ShellIdleTimeoutMinutes is how long a shell may go unused. Zero in the
+	// overrides means unset.
+	ShellIdleTimeoutMinutes int `json:"shell_idle_timeout_minutes"`
+	// ShellMaxLifetimeHours is the absolute deadline written into the pod.
+	ShellMaxLifetimeHours int `json:"shell_max_lifetime_hours"`
 }
 
 type settingsResponse struct {
@@ -95,6 +108,12 @@ type updateSettingsRequest struct {
 	// KubeconfigMaxTTLHours accepts 0 to clear the override back to the
 	// build's default ceiling.
 	KubeconfigMaxTTLHours *int `json:"kubeconfig_max_ttl_hours"`
+	ShellEnabled          *bool   `json:"shell_enabled"`
+	ShellImage            *string `json:"shell_image"`
+	// ShellIdleTimeoutMinutes and ShellMaxLifetimeHours accept 0 to clear the
+	// override back to the build's defaults.
+	ShellIdleTimeoutMinutes *int `json:"shell_idle_timeout_minutes"`
+	ShellMaxLifetimeHours   *int `json:"shell_max_lifetime_hours"`
 }
 
 // Audit retention bounds. The floor stops an operator from silently emptying
@@ -112,6 +131,17 @@ const (
 var (
 	minKubeconfigMaxTTLHours = 1
 	maxKubeconfigMaxTTLHours = int(k8s.MaxTTL / time.Hour)
+)
+
+// Browser shell bounds, in the units the settings are stored in. They mirror
+// pkg/shell's own, which is what the lifecycle actually enforces — stated here
+// too so a settings form is refused at the edge rather than silently clamped
+// three layers in.
+var (
+	minShellIdleTimeoutMinutes = int(shell.MinIdleTimeout / time.Minute)
+	maxShellIdleTimeoutMinutes = int(shell.MaxIdleTimeout / time.Minute)
+	minShellMaxLifetimeHours   = int(shell.MinMaxLifetime / time.Hour)
+	maxShellMaxLifetimeHours   = int(shell.MaxMaxLifetime / time.Hour)
 )
 
 // settings resolves the effective configuration. A database failure falls back
@@ -132,6 +162,12 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 		// policy decision that belongs in the database where it can be audited
 		// and changed without a redeploy.
 		KubeconfigMaxTTLHours: int(k8s.DefaultMaxTTL / time.Hour),
+		// The shell follows the process for the same reason recording does: the
+		// image and the switch it was started with are what it can run.
+		ShellEnabled:            s.shellEnabled,
+		ShellImage:              s.shellImage,
+		ShellIdleTimeoutMinutes: int(shell.DefaultIdleTimeout / time.Minute),
+		ShellMaxLifetimeHours:   int(shell.DefaultMaxLifetime / time.Hour),
 	}
 	stored, err := s.store.Settings(ctx)
 	if err != nil {
@@ -162,6 +198,24 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 	}
 	if v := storedKubeconfigMaxTTLHours(stored); v > 0 {
 		out.KubeconfigMaxTTLHours = v
+	}
+	if v := strings.TrimSpace(stored[db.SettingShellEnabled]); v != "" {
+		if enabled, err := strconv.ParseBool(v); err == nil {
+			// A row can turn the shell off, never on: an install with no shell
+			// image configured has nothing to run.
+			out.ShellEnabled = out.ShellEnabled && enabled
+		}
+	}
+	if v := strings.TrimSpace(stored[db.SettingShellImage]); v != "" {
+		out.ShellImage = v
+	}
+	if v := storedBounded(stored, db.SettingShellIdleTimeoutMinutes,
+		minShellIdleTimeoutMinutes, maxShellIdleTimeoutMinutes); v > 0 {
+		out.ShellIdleTimeoutMinutes = v
+	}
+	if v := storedBounded(stored, db.SettingShellMaxLifetimeHours,
+		minShellMaxLifetimeHours, maxShellMaxLifetimeHours); v > 0 {
+		out.ShellMaxLifetimeHours = v
 	}
 	out.SessionRecordingRetentionDays = clampRecordingRetention(
 		storedDays(stored, db.SettingSessionRecordingRetentionDays), out.AuditRetentionDays)
@@ -224,6 +278,22 @@ func storedDays(stored map[string]string, key string) int {
 		return 0
 	}
 	return days
+}
+
+// storedBounded reads a stored integer, treating anything outside the bounds as
+// unset — the rule every numeric setting here follows, so a hand-edited row can
+// only ever fall back to a default rather than take effect as something the
+// build would refuse.
+func storedBounded(stored map[string]string, key string, low, high int) int {
+	raw := strings.TrimSpace(stored[key])
+	if raw == "" {
+		return 0
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < low || value > high {
+		return 0
+	}
+	return value
 }
 
 // storedKubeconfigMaxTTLHours reads the kubeconfig ceiling override. A value
@@ -293,6 +363,12 @@ func (s *server) getSettings(c *gin.Context) {
 		RecordingAvailable:            effective.RecordingAvailable,
 		RecordManifestDiffs:           effective.RecordManifestDiffs,
 		KubeconfigMaxTTLHours:         storedKubeconfigMaxTTLHours(stored),
+		ShellEnabled:                  effective.ShellEnabled,
+		ShellImage:                    strings.TrimSpace(stored[db.SettingShellImage]),
+		ShellIdleTimeoutMinutes: storedBounded(stored, db.SettingShellIdleTimeoutMinutes,
+			minShellIdleTimeoutMinutes, maxShellIdleTimeoutMinutes),
+		ShellMaxLifetimeHours: storedBounded(stored, db.SettingShellMaxLifetimeHours,
+			minShellMaxLifetimeHours, maxShellMaxLifetimeHours),
 	}
 
 	c.JSON(http.StatusOK, settingsResponse{
@@ -310,8 +386,12 @@ func (s *server) getSettings(c *gin.Context) {
 			RecordingAvailable:            effective.RecordingAvailable,
 			// Off by default and there is no environment override for it — see
 			// db.SettingRecordManifestDiffs.
-			RecordManifestDiffs:   false,
-			KubeconfigMaxTTLHours: int(k8s.DefaultMaxTTL / time.Hour),
+			RecordManifestDiffs:     false,
+			KubeconfigMaxTTLHours:   int(k8s.DefaultMaxTTL / time.Hour),
+			ShellEnabled:            s.shellEnabled,
+			ShellImage:              s.shellImage,
+			ShellIdleTimeoutMinutes: int(shell.DefaultIdleTimeout / time.Minute),
+			ShellMaxLifetimeHours:   int(shell.DefaultMaxLifetime / time.Hour),
 		},
 		Warnings: settingsWarnings(effective),
 	})
@@ -420,6 +500,47 @@ func (s *server) updateSettings(c *gin.Context) {
 			return
 		default:
 			values[db.SettingKubeconfigMaxTTLHours] = strconv.Itoa(hours)
+		}
+	}
+
+	if req.ShellEnabled != nil {
+		values[db.SettingShellEnabled] = strconv.FormatBool(*req.ShellEnabled)
+	}
+	if req.ShellImage != nil {
+		values[db.SettingShellImage] = strings.TrimSpace(*req.ShellImage)
+	}
+	if req.ShellIdleTimeoutMinutes != nil {
+		minutes := *req.ShellIdleTimeoutMinutes
+		switch {
+		case minutes == 0:
+			values[db.SettingShellIdleTimeoutMinutes] = ""
+		case minutes < minShellIdleTimeoutMinutes || minutes > maxShellIdleTimeoutMinutes:
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf(
+					"the shell idle timeout must be between %d and %d minutes, or 0 to use the default of %d",
+					minShellIdleTimeoutMinutes, maxShellIdleTimeoutMinutes,
+					int(shell.DefaultIdleTimeout/time.Minute)),
+			})
+			return
+		default:
+			values[db.SettingShellIdleTimeoutMinutes] = strconv.Itoa(minutes)
+		}
+	}
+	if req.ShellMaxLifetimeHours != nil {
+		hours := *req.ShellMaxLifetimeHours
+		switch {
+		case hours == 0:
+			values[db.SettingShellMaxLifetimeHours] = ""
+		case hours < minShellMaxLifetimeHours || hours > maxShellMaxLifetimeHours:
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf(
+					"the shell lifetime must be between %d and %d hours, or 0 to use the default of %d",
+					minShellMaxLifetimeHours, maxShellMaxLifetimeHours,
+					int(shell.DefaultMaxLifetime/time.Hour)),
+			})
+			return
+		default:
+			values[db.SettingShellMaxLifetimeHours] = strconv.Itoa(hours)
 		}
 	}
 

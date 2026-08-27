@@ -62,6 +62,13 @@ jobs:
             image: kubemg-agent
             context: ./agent
             platforms: linux/amd64,linux/arm64
+          # The browser shell runs on the operator's own clusters, so it takes
+          # the same platform matrix as the agent and for the same reason: an
+          # amd64-only image reads as ImagePullBackOff on Graviton or Ampere.
+          - name: browser shell
+            image: kubemg-shell
+            context: ./shell
+            platforms: linux/amd64,linux/arm64
 
     steps:
       - uses: actions/checkout@v4
