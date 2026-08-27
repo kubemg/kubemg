@@ -31,6 +31,17 @@ export interface User {
    */
   can_view_recordings: boolean
   /**
+   * Whether this account may reveal one Secret value at a time in the console.
+   * It is a capability of its own for the same reason the one above is: a value
+   * is the thing this product has always kept out of a response, and "may edit
+   * this namespace" is not the same claim as "may read every credential in it".
+   * Unlike recordings it does **not** require the admin role — the impersonated
+   * read is still answered by the cluster's own RBAC, which is the half that
+   * knows which secrets this identity may read at all. A super admin holds it
+   * implicitly, and only a super admin may grant it.
+   */
+  can_reveal_secrets: boolean
+  /**
    * Whether this row is a person or a machine. A machine account — a CI
    * pipeline's release stage, a release bot — is a User because every grant,
    * every namespace scope and the audit trail are keyed on a user id; what
@@ -53,6 +64,7 @@ export interface NewUser {
   system_role: SystemRole
   /** Super-admin-only, like every other way of setting it. */
   can_view_recordings?: boolean
+  can_reveal_secrets?: boolean
 }
 
 export interface UserPatch {
@@ -61,6 +73,7 @@ export interface UserPatch {
   password?: string
   system_role?: SystemRole
   can_view_recordings?: boolean
+  can_reveal_secrets?: boolean
 }
 
 /** A machine account as the console lists it: the account, what it can reach,
@@ -949,6 +962,26 @@ export interface ConfigEntry {
   type?: string
   keys: string[]
   immutable?: boolean
+}
+
+/**
+ * One key of one Secret, in the clear. It is the only shape in this file that
+ * carries a secret value, it is never part of a list, and nothing caches it:
+ * the response says `no-store` and the route sits outside the cached group.
+ *
+ * A value that is not valid UTF-8 arrives as `encoded` with `binary` set rather
+ * than as a mangled string — a TLS key rendered as replacement characters
+ * cannot answer the question a reveal is asked for.
+ */
+export interface SecretValue {
+  namespace: string
+  name: string
+  key: string
+  type?: string
+  value?: string
+  encoded?: string
+  binary: boolean
+  bytes: number
 }
 
 export interface CustomResourceDefinition {

@@ -193,6 +193,7 @@ fan-out limit) rather than listing the whole cluster.
 | `GET /networkpolicies` `/networkpolicies/reachability` `/networkpolicies/coverage` | Derived reachability and coverage; carries a disclaimer that it does not model the CNI. |
 | `GET /persistentvolumes` `/persistentvolumeclaims` `/storageclasses` `/configmaps` | |
 | `GET /secrets` | **Keys only. No value ever enters the response.** |
+| `GET /secret/value` | The one exception, and the only route that returns a secret value. Query `name,key,namespace?` — one key of one Secret. Needs `can_reveal_secrets` on the account (grantable only by a super admin) **and** the cluster's own RBAC on the impersonated read. Refused for a `kubernetes.io/service-account-token` and for KubeMG's own agent registration secret. Audited under `secret-reveal` before the value is written, and `auditpolicy` cannot suppress it. Outside the cached group, answered `Cache-Control: no-store`. A value that is not valid UTF-8 comes back `encoded` with `binary:true` rather than as a mangled string. |
 | `GET /crds` | Curated by [CRD visibility](#crd-visibility) for a non-admin. |
 | `GET /nodes` | |
 | `GET /roles` `/clusterroles` `/rolebindings` `/clusterrolebindings` `/serviceaccounts` | |

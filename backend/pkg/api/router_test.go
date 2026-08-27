@@ -440,6 +440,9 @@ func (f *fakeStore) UpdateUser(_ context.Context, id uint, update db.UserUpdate)
 	if update.CanViewRecordings != nil {
 		user.CanViewRecordings = *update.CanViewRecordings
 	}
+	if update.CanRevealSecrets != nil {
+		user.CanRevealSecrets = *update.CanRevealSecrets
+	}
 	return user, nil
 }
 

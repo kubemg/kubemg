@@ -834,6 +834,14 @@ func NewRouter(opts Options) *gin.Engine {
 			// Secrets are listed as metadata only; no value reaches a response.
 			resources.GET("/secrets", s.listSecrets)
 
+			// One key of one Secret, in the clear. It is deliberately *not* in
+			// the cached group and never will be: the value is the one thing
+			// this product has always kept out of a response, and a cache is a
+			// second copy of it in a second place. It needs a capability of its
+			// own on top of the cluster's RBAC, and it writes its own audit
+			// record before the bytes leave. See resources_secret_value.go.
+			clusters.GET("/:id/resources/secret/value", s.revealSecretValue)
+
 			resources.GET("/crds", s.listCRDs)
 			resources.GET("/nodes", s.listNodes)
 

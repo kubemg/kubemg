@@ -48,6 +48,10 @@ var Verbs = []string{
 //     recording of somebody else's production shell. A surveillance capability
 //     with no trail of its own is the first thing an auditor asks about, so the
 //     capability's own records are not negotiable.
+//   - secret-reveal: a Secret's value leaving the cluster for a browser. It is
+//     the one read that hands out a credential rather than describing one, and a
+//     setting that hides it would turn the capability into a way to read every
+//     password in a namespace with nothing to show for it afterwards.
 //   - jit-*: somebody being granted a stronger role than they hold, and for how
 //     long. These are the *fewest* rows in the table and the ones an auditor opens
 //     first — a suppressible privilege escalation record would make the whole
@@ -60,6 +64,7 @@ var alwaysRecorded = map[string]bool{
 	"replay":           true,
 	"recording-get":    true,
 	"recording-delete": true,
+	"secret-reveal":    true,
 	"jit-request":      true,
 	"jit-approve":      true,
 	"jit-reject":       true,
