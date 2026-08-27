@@ -6,9 +6,9 @@ Pin an explicit tag rather than tracking `latest`, in both places a version
 appears:
 
 - The management plane image, `KUBEMG_IMAGE`/`KUBEMG_VERSION`
-  (`ghcr.io/kubemg/kubemg:0.7.3`) in Compose, or the `image:` field of the
+  (`ghcr.io/kubemg/kubemg:0.7.4`) in Compose, or the `image:` field of the
   Deployment in Kubernetes.
-- The agent image, `KUBEMG_AGENT_IMAGE` (`ghcr.io/kubemg/kubemg-agent:0.7.3`),
+- The agent image, `KUBEMG_AGENT_IMAGE` (`ghcr.io/kubemg/kubemg-agent:0.7.4`),
   written into every rendered agent install manifest by the management
   plane, so bumping it here is what changes what a *future* `kubectl apply -k
   …` installs — it does not touch agents already running.
@@ -126,7 +126,7 @@ Two things a rollback does **not** undo:
 ## Documentation versioning
 
 This manual is versioned against release tags on Read the Docs: an install
-running `0.7.3` corresponds to the `0.7.3` version of these docs, not
+running `0.7.4` corresponds to the `0.7.4` version of these docs, not
 whatever `master` says today. If you're following a procedure here, check
 the version selector matches the version you're actually running.
 
