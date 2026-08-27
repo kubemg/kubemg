@@ -11,6 +11,20 @@ export const TONE_TEXT: Record<Tone, string> = {
   accent: 'text-accent',
 }
 
+/**
+ * The soft pairing: a tinted plate with its own tone written on it. The
+ * contrast pass measures every `tone on tone-soft` pairing at 4.5:1, which is
+ * why text on one of these plates is always the *same* tone and never `fg` —
+ * `fg` on a tint is a pairing nothing checks.
+ */
+export const TONE_SOFT: Record<Tone, string> = {
+  ok: 'bg-ok-soft text-ok',
+  warn: 'bg-warn-soft text-warn',
+  bad: 'bg-danger-soft text-danger',
+  idle: 'bg-raised text-muted',
+  accent: 'bg-accent-soft text-accent',
+}
+
 export const TONE_FILL: Record<Tone, string> = {
   ok: 'bg-ok',
   warn: 'bg-warn',
