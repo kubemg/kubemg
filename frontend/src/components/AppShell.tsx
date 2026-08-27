@@ -324,6 +324,17 @@ export function AppShell({
   const initials = (user?.username ?? '').slice(0, 2).toUpperCase()
   const mode: PanelMode = collapsed ? 'hidden' : 'full'
 
+  // The shell dock is drawn outside this component — above the router, so a
+  // session is not torn down by navigating — and still has to start where the
+  // work surface starts. This is the one fact it needs, published where CSS can
+  // read it rather than through a context that would exist for one number.
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      '--deck-main-inset',
+      mode === 'full' ? '18.75rem' : '3.75rem',
+    )
+  }, [mode])
+
   function togglePanel() {
     const next = !collapsed
     setCollapsed(next)

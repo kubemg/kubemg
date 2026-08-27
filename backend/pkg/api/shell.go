@@ -471,10 +471,30 @@ func (s *server) createShellPod(
 	if resp.Status == http.StatusConflict {
 		return nil
 	}
+	if resp.Status == http.StatusForbidden {
+		return errors.New(staleManifestExplanation(kubeErrorMessage(resp.Body, resp.Status)))
+	}
 	if resp.Status < 200 || resp.Status >= 300 {
 		return errors.New(kubeErrorMessage(resp.Body, resp.Status))
 	}
 	return nil
+}
+
+// staleManifestExplanation names the one thing a refusal here almost always
+// means.
+//
+// The cluster's answer — "pods is forbidden: User kubemg:shell-runner cannot
+// create resource pods" — is correct and completely opaque to somebody who has
+// never heard of that name. It is not a permission an operator granted or can
+// grant from the console: it comes from a Role that ships in the agent's own
+// manifests, so a cluster attached before this feature existed refuses every
+// shell until those manifests are re-applied. Saying so is the difference
+// between a five-minute fix and an afternoon.
+func staleManifestExplanation(message string) string {
+	return message +
+		" — this is the agent's own RBAC, and a cluster attached before the browser shell existed does " +
+		"not have it yet. Re-apply this cluster's agent manifests to install the kubemg-shell service " +
+		"account and the kubemg-shell-runner Role, then try again."
 }
 
 // deleteShellPod removes it. A pod that is already gone is a success: the caller

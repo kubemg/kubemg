@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -388,5 +389,22 @@ func TestShellSettingCanOnlyTurnTheShellOff(t *testing.T) {
 	}
 	if decode[settingsResponse](t, rec).Effective.ShellEnabled {
 		t.Fatal("a server with no shell image must not be talked into offering one")
+	}
+}
+
+// A cluster attached before this feature existed refuses every shell, with an
+// answer that is correct and unreadable: kubemg:shell-runner is not a name any
+// operator has heard of, and not a permission they can grant from the console.
+// The refusal has to name the actual fix.
+func TestAStaleAgentRefusalNamesTheFix(t *testing.T) {
+	message := staleManifestExplanation(
+		`pods is forbidden: User "kubemg:shell-runner" cannot create resource "pods" in API group "" in the namespace "kubemg-system"`)
+
+	// The cluster's own words survive: they are what an operator searches for.
+	if !strings.Contains(message, "pods is forbidden") {
+		t.Fatalf("message = %q, want the cluster's own answer kept", message)
+	}
+	if !strings.Contains(message, "Re-apply") || !strings.Contains(message, "kubemg-shell-runner") {
+		t.Fatalf("message = %q, want it to name re-applying the agent manifests", message)
 	}
 }

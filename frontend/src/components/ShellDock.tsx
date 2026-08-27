@@ -121,7 +121,19 @@ export function ShellDock() {
   return (
     <section
       aria-label="Shell"
-      className={`fixed inset-x-0 bottom-0 z-30 flex flex-col border-t border-line bg-bg shadow-[0_-12px_32px_rgba(0,0,0,0.28)] ${
+      /*
+       * It sits over the *work surface*, not over the whole window: the rail and
+       * the tree stay reachable, which is what makes "open a shell, go look at
+       * something, come back" work at all. `--deck-main-inset` is where that
+       * surface starts, published by AppShell — the dock cannot read the tree's
+       * collapsed state directly, because it is deliberately mounted outside it.
+       *
+       * z-30 puts it over the header and the tree and under a Sheet and the
+       * palette (z-40, z-50), which is the right order: a dock is a place to
+       * work, and a dialog opened on top of it is answering a question about
+       * what is in it.
+       */
+      className={`fixed right-0 bottom-0 left-0 z-30 flex flex-col border-t border-line bg-bg shadow-[0_-12px_32px_rgba(0,0,0,0.28)] lg:left-[var(--deck-main-inset)] ${
         dock.expanded ? 'h-[85vh]' : 'h-[46vh]'
       }`}
     >
