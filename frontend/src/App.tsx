@@ -12,6 +12,7 @@ import { GroupManagement } from './pages/GroupManagement'
 import { Login } from './pages/Login'
 import { NodeCapacity } from './pages/NodeCapacity'
 import { Overview } from './pages/Overview'
+import { IssuedCredentials } from './pages/IssuedCredentials'
 import { MachineAccounts } from './pages/MachineAccounts'
 import { PermissionsMatrix } from './pages/PermissionsMatrix'
 import { SecurityPosture } from './pages/SecurityPosture'
@@ -373,6 +374,19 @@ export default function App() {
                 </RequireAuth>
               }
             />
+            {/* The register, read by whoever holds the credentials. Not
+                adminOnly for the same reason /me/access is not: revoking a
+                kubeconfig you know you lost must not require finding an
+                administrator, and the server narrows the read to the caller's
+                own rows anyway. */}
+            <Route
+              path="/me/credentials"
+              element={
+                <RequireAuth>
+                  <IssuedCredentials reading="mine" />
+                </RequireAuth>
+              }
+            />
             <Route
               path="/access-requests"
               element={
@@ -429,6 +443,17 @@ export default function App() {
               element={
                 <RequireAuth adminOnly>
                   <MachineAccounts />
+                </RequireAuth>
+              }
+            />
+            {/* The same page read fleet-wide. It sits with the identity pages
+                beside Machine accounts because what it manages is the same kind
+                of object: a credential somebody holds, and taking it back. */}
+            <Route
+              path="/admin/credentials"
+              element={
+                <RequireAuth adminOnly>
+                  <IssuedCredentials reading="fleet" />
                 </RequireAuth>
               }
             />

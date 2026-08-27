@@ -126,6 +126,52 @@ export interface IssuedMachineToken {
   warning?: string
 }
 
+/**
+ * IssuedKubeconfig is one row of the credential register: a kubeconfig this
+ * console handed out, and whether it still works.
+ *
+ * Generating a kubeconfig used to write nothing down, which meant nobody could
+ * answer "who holds access to production right now, and since when" — and
+ * revocation was impossible for the same reason, since you cannot withdraw what
+ * was never recorded.
+ */
+export interface IssuedKubeconfig {
+  id: number
+  user_id: number
+  username: string
+  cluster_id: number
+  cluster_name: string
+  connection_mode: ConnectionMode
+  namespace?: string
+  k8s_role?: K8sRole
+  /** The in-cluster identity a direct-mode token authenticates as. Deleting it
+      on the cluster is the only thing that withdraws such a token. */
+  service_account?: string
+  issued_by?: number
+  issued_by_username?: string
+  expires_at: string
+  revoked_at?: string
+  revoked_by_username?: string
+  last_used_at?: string
+  created_at: string
+  status: IssuedKubeconfigStatus
+  /** Whether Revoke on this row actually stops the credential, and why it does
+      not when it cannot. Only agent mode can answer yes: a direct-mode token is
+      the cluster's own and stays valid until it expires. */
+  revocable: boolean
+  explanation?: string
+}
+
+export type IssuedKubeconfigStatus = 'active' | 'expired' | 'revoked'
+
+/** What a blanket revoke actually reached. The second half is the honest half. */
+export interface KubeconfigRevokeAllResult {
+  revoked: number
+  still_valid: number
+  clusters_not_reached?: string[]
+  explanation?: string
+}
+
 export interface Group {
   id: number
   name: string

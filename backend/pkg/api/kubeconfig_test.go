@@ -384,7 +384,7 @@ func TestProxyScopedTokenIsConfinedToItsCluster(t *testing.T) {
 	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
 	cluster := env.store.addAgentCluster("edge-us", db.EnvStaging, "kmg_token")
 
-	token, _, err := env.jwt.GenerateProxyToken(admin.ID, admin.Username, admin.Role, cluster.ID, time.Hour)
+	token, _, _, err := env.jwt.GenerateProxyToken(admin.ID, admin.Username, admin.Role, cluster.ID, time.Hour)
 	if err != nil {
 		t.Fatalf("issue proxy token: %v", err)
 	}

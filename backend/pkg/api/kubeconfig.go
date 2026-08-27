@@ -152,6 +152,19 @@ func (s *server) generateKubeconfig(c *gin.Context) {
 	// have, so what is reported is the window the cluster granted.
 	granted, shortened := grantedTTL(ttl, issued.ExpiresAt)
 
+	// The register row, written by the generator itself. A direct-mode credential
+	// cannot be revoked from here — see db.KubeconfigIssuance.RevocableHere — but
+	// it is recorded all the same, because "who holds access to production right
+	// now, and since when" is a question the register answers and the mode does
+	// not change.
+	expiresAt := issued.ExpiresAt
+	if expiresAt.IsZero() {
+		expiresAt = time.Now().UTC().Add(granted)
+	}
+	s.recordKubeconfigIssuance(c, newIssuance(
+		user, user, cluster, "", db.ModeDirect, namespace, k8sRole, serviceAccount, expiresAt,
+	), user, user, cluster)
+
 	c.JSON(http.StatusOK, generateKubeconfigResponse{
 		Cluster:        cluster.Name,
 		Context:        input.ContextName(),
@@ -257,7 +270,7 @@ func (s *server) agentKubeconfig(
 		return
 	}
 
-	token, expiresAt, err := s.jwt.GenerateProxyToken(
+	token, tokenID, expiresAt, err := s.jwt.GenerateProxyToken(
 		user.ID, user.Username, user.Role, cluster.ID, ttl,
 	)
 	if err != nil {
@@ -285,6 +298,13 @@ func (s *server) agentKubeconfig(
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not render kubeconfig"})
 		return
 	}
+
+	// The register row. tokenID is the `jti` in the credential above, which is
+	// what makes revoking it something the token cannot argue with: the gateway
+	// matches that id against a published set on every call.
+	s.recordKubeconfigIssuance(c, newIssuance(
+		user, user, cluster, tokenID, db.ModeAgent, namespace, k8sRole, "", expiresAt,
+	), user, user, cluster)
 
 	c.JSON(http.StatusOK, generateKubeconfigResponse{
 		Cluster:        cluster.Name,

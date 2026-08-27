@@ -130,10 +130,45 @@ so put TLS in front of kubemg before using this kubeconfig.
 
 See [TLS](../install/tls.md) for terminating TLS at the bastion.
 
+## The register of issued credentials
+
+Every generated kubeconfig writes a row (`kubeconfig_issuances`): who holds it, which cluster, which mode, the namespace and role, when it was issued and by whom, when it expires, and when it was last used. The generator writes it itself, and the same act lands in the audit trail under `kubeconfig-issue` with the identities crossed — the record's user is whoever asked, and the holder is named as the impersonated identity, because an administrator generating a file for somebody else is exactly the row an auditor is looking for and neither half says it alone.
+
+The register exists because **revocation needs it first**: you cannot withdraw what was never recorded, and until this table existed generating a kubeconfig was the one act in kubemg that handed out a credential and wrote nothing down.
+
+```
+GET  /api/v1/kubeconfigs
+POST /api/v1/kubeconfigs/:id/revoke
+POST /api/v1/kubeconfigs/revoke-all
+```
+
+Reading follows the audit trail's rule exactly: everybody may read, a non-admin is narrowed by the handler to their own rows, and the `user_id` query parameter can narrow that further but **never widen it**. Revoking your own credential is never administrative — revoking a file you know you lost must not require finding an administrator — and revoking somebody else's always is. In the console the register is **Admin → Identity → Issued credentials** for the fleet, and `/me/credentials` for an operator's own.
+
+`last_used_at` is written off the request's own path and at most once every five minutes per credential (`pkg/credentials`), the machine token's rule: this read would otherwise sit in front of every proxied call. A credential that was generated and never used is the most useful row on the page.
+
+Retention follows the audit window, and a revoked or expired row is **kept rather than deleted** — "what existed and when did it stop" is the question a register answers.
+
 ## Revocation differs by mode
 
-- **Agent mode**: every call the kubeconfig makes rides the tunnel and is impersonated fresh on each request — the grant is re-read from the database on every call. Revoking access (removing a grant, disabling the account) takes effect **immediately**, on the next call the file makes, regardless of how long the JWT's own expiry still has to run.
-- **Direct mode**: the token is minted *on the cluster* via TokenRequest. kubemg has no way to invalidate it early — it keeps working, exactly as issued, until its own expiry passes, however the grant in kubemg's database changes in the meantime. This is one reason a long TTL matters more in direct mode than in agent mode, and it is disclosed as such wherever the mode is disclosed (cluster detail, permissions page, wizard).
+- **Agent mode**: the credential is a proxy-scoped kubemg JWT, and revoking it is a lookup the token cannot argue with — the `jti` in its claims against the register. That set is a **published immutable snapshot** (`pkg/credentials`, shaped exactly like `pkg/auditpolicy`): the HTTP layer republishes on every revoke, the gateway reads it lock-free in `Proxy`'s authorize step, and the next call the file makes gets `401`. A server whose register cannot be read **fails open on nothing** — an unreadable register means no revocations are known, never that every token is refused, because a blip that locks a whole fleet out of `kubectl` is worse than one that briefly honours a withdrawn file. Replicas agree within 30 seconds; the replica that served the revoke is immediate.
+- **Direct mode**: the token is minted *on the cluster* via TokenRequest. kubemg cannot withdraw what it did not mint — it keeps working, exactly as issued, until its own expiry passes. The per-row Revoke is therefore **offered in agent mode only**, and a direct-mode row says why rather than showing a button that would report success and change nothing. The one real lever is cluster-side: deleting the per-user `kubemg-<username>` ServiceAccount invalidates every token bound to it, and it is inherently **all-or-nothing per cluster**, since every one of that user's direct-mode kubeconfigs on that cluster is bound to the same account. It is also not instant — the API server caches a successful authentication for about ten seconds, so a token keeps working for that long after the account is gone. Verified end-to-end against a real cluster: the call answers `403` (the token authenticates; direct mode provisions no RoleBinding) until the cache expires, and `401` from then on.
+
+Two levers that already existed remain the fastest blunt instruments and are unchanged: **disabling the account** and **revoking the grant** both take effect on the very next call, because the proxy re-reads the user row and the grant every time (`bastion/proxy.go`). What the register adds is the lever for the case those two are wrong for — the laptop was stolen, and the person still works here and still needs their console.
+
+### Revoking everything one person holds
+
+`POST /api/v1/kubeconfigs/revoke-all` is its own action rather than *N* row writes, because it is what an incident calls for. It states what it actually reached:
+
+```json title="200 OK"
+{
+  "revoked": 3,
+  "still_valid": 1,
+  "clusters_not_reached": ["prod-eu"],
+  "explanation": "These clusters are registered for direct API access, so their credentials are tokens the clusters themselves minted…"
+}
+```
+
+Refusing to disclose that difference would be worse than not shipping the button: an administrator who believes a revoke landed when it did not is in a worse position than one who knows the token has four more hours to run. The failed half is recorded as such in the audit trail too — each withdrawal is its own `kubeconfig-revoke` record, and a direct-mode one carries the reason it did not land.
 
 ## Embedded CA rules, summarized
 

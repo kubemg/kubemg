@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 // ErrInvalidToken is returned for malformed, expired, or wrongly signed tokens.
@@ -58,19 +59,35 @@ func (m *Manager) Generate(userID uint, username, role string) (string, time.Tim
 // kubectl proxy, for the given lifetime. This is the token a generated
 // kubeconfig carries when KubeMG reaches the cluster through an agent tunnel
 // and therefore has no API server to mint a service account token on.
+//
+// It returns the token's own id alongside it. A JWT is stateless and cannot be
+// withdrawn by its own means, so the id is what a register row is keyed on and
+// what the gateway matches a revocation against — see pkg/credentials. It is
+// minted here rather than by the caller because it is a property of the token:
+// nothing else can guarantee that what was signed and what was recorded are the
+// same string.
 func (m *Manager) GenerateProxyToken(
 	userID uint, username, role string, clusterID uint, ttl time.Duration,
-) (string, time.Time, error) {
+) (token string, tokenID string, expiresAt time.Time, err error) {
 	if ttl <= 0 {
 		ttl = m.ttl
 	}
-	return m.sign(Claims{
+	tokenID = uuid.NewString()
+	claims := Claims{
 		UserID:    userID,
 		Username:  username,
 		Role:      role,
 		Scope:     ScopeProxy,
 		ClusterID: clusterID,
-	}, ttl)
+	}
+	// A promoted field cannot be set in a composite literal, and sign rebuilds
+	// the registered claims from this one anyway.
+	claims.ID = tokenID
+	token, expiresAt, err = m.sign(claims, ttl)
+	if err != nil {
+		return "", "", time.Time{}, err
+	}
+	return token, tokenID, expiresAt, nil
 }
 
 func (m *Manager) sign(claims Claims, ttl time.Duration) (string, time.Time, error) {
@@ -80,6 +97,10 @@ func (m *Manager) sign(claims Claims, ttl time.Duration) (string, time.Time, err
 	claims.RegisteredClaims = jwt.RegisteredClaims{
 		Issuer:    issuer,
 		Subject:   fmt.Sprint(claims.UserID),
+		// ID carries whatever the caller minted, so a token that is registered
+		// keeps its identity through signing. A session token has none: it is
+		// short-lived, it is not a file on a laptop, and nothing revokes one.
+		ID:        claims.ID,
 		IssuedAt:  jwt.NewNumericDate(now),
 		NotBefore: jwt.NewNumericDate(now),
 		ExpiresAt: jwt.NewNumericDate(expiresAt),

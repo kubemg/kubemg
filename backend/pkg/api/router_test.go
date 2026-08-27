@@ -19,6 +19,7 @@ import (
 
 	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/bastion"
+	"github.com/kubemg/kubemg/backend/pkg/credentials"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/guardrails"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
@@ -44,6 +45,12 @@ type fakeStore struct {
 	// machineTokens stands in for the machine_tokens table; see
 	// machine_fake_test.go.
 	machineTokens []*db.MachineToken
+	// issuances stands in for the kubeconfig_issuances table; see
+	// kubeconfig_fake_test.go. issuanceErr and revokedIDsErr make the register
+	// unreadable, which is the case the fail-open rule is about.
+	issuances     []*db.KubeconfigIssuance
+	issuanceErr   error
+	revokedIDsErr error
 	settings      map[string]string
 	// sources holds the observability datasources, keyed the way the table is:
 	// one per cluster per kind.
@@ -1032,6 +1039,9 @@ type testEnv struct {
 	// guard is the engine both the router and the gateway share, so a test can
 	// assert on what is actually enforced rather than only on what was stored.
 	guard *guardrails.Engine
+	// issued is the credential register both halves share, for the same reason:
+	// a revoke is only real if the gateway refuses the next call made with it.
+	issued *credentials.Register
 }
 
 // recordingAuditor captures the audit records the API writes about itself, which
@@ -1075,10 +1085,14 @@ func newTestEnvWith(t *testing.T, adjust func(*Options)) *testEnv {
 	// server wires it: the router publishes the rules and the gateway enforces
 	// them, and a test that seeds a rule needs both ends to agree.
 	guard := guardrails.New()
+	// The credential register is wired into both halves the same way, so a test
+	// that revokes a kubeconfig can assert the gateway then refuses it.
+	issued := credentials.New()
 	proxy := bastion.NewProxy(bastion.ProxyOptions{
-		Store:    store,
-		Registry: gateway.Registry(),
-		Guard:    guard,
+		Store:       store,
+		Registry:    gateway.Registry(),
+		Guard:       guard,
+		Credentials: issued,
 	})
 
 	opts := Options{
@@ -1093,6 +1107,7 @@ func newTestEnvWith(t *testing.T, adjust func(*Options)) *testEnv {
 		AgentImage:     "ghcr.io/kubemg/kubemg-agent:test",
 		AgentNamespace: "kubemg-system",
 		Guardrails:     guard,
+		Credentials:    issued,
 	}
 	if adjust != nil {
 		adjust(&opts)
@@ -1107,6 +1122,7 @@ func newTestEnvWith(t *testing.T, adjust func(*Options)) *testEnv {
 		gateway:  gateway,
 		registry: gateway.Registry(),
 		guard:    guard,
+		issued:   issued,
 	}
 }
 

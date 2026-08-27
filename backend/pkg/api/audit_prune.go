@@ -98,6 +98,14 @@ func (s *server) pruneAudit(ctx context.Context) {
 	// a failure here must not stop the audit pass below.
 	s.pruneJitRequests(ctx, before)
 
+	// The register of issued kubeconfigs shares the audit window, because a
+	// register row *is* a record of the trail's subject — a credential having
+	// existed — and one that outlived the audit records of the calls that
+	// credential made would be half an answer. Revoked and expired rows go with
+	// the rest: they are kept until the window passes, never deleted on
+	// revocation.
+	s.pruneKubeconfigRegister(ctx, before)
+
 	removed, err := s.store.PruneAuditEvents(ctx, before)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -112,6 +120,24 @@ func (s *server) pruneAudit(ctx context.Context) {
 		s.log().Info("pruned audit events past their retention window",
 			slog.Int64("removed", removed),
 			slog.Int("retention_days", days),
+			slog.Time("before", before))
+	}
+}
+
+// pruneKubeconfigRegister drops issuance rows past the audit window. A failure
+// here must not stop the audit pass below, which is why it reports rather than
+// returns.
+func (s *server) pruneKubeconfigRegister(ctx context.Context, before time.Time) {
+	removed, err := s.store.PruneKubeconfigIssuances(ctx, before)
+	if err != nil {
+		if ctx.Err() == nil {
+			s.log().Warn("credential register retention pass failed", slog.String("error", err.Error()))
+		}
+		return
+	}
+	if removed > 0 {
+		s.log().Info("pruned issued kubeconfigs past their retention window",
+			slog.Int64("removed", removed),
 			slog.Time("before", before))
 	}
 }
