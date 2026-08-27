@@ -11,7 +11,18 @@ import type { Tone } from '../lib/status'
 import { relativeAge } from '../lib/time'
 import { formatCPU, formatMemory, podLimit, podUsageIndex, ratio, usageTone } from '../lib/units'
 import type { PodUsageIndex } from '../lib/units'
-import { Button, EmptyState, Notice, OBJECT_NAME, Pill, Row, Table, Td, Th } from './primitives'
+import {
+  Button,
+  EmptyState,
+  Notice,
+  OBJECT_MARK,
+  OBJECT_NAME,
+  Pill,
+  Row,
+  Table,
+  Td,
+  Th,
+} from './primitives'
 
 /*
  * A workload's health, one pod at a time: what a Deployment/StatefulSet/
@@ -212,8 +223,8 @@ export function WorkloadPodsView({
               const failure = podFailureReason(pod)
               return (
                 <Row key={`${pod.namespace}/${pod.name}`}>
-                  <Td className="truncate">
-                    <span className="flex items-start gap-2.5">
+                  <Td>
+                    <span className={`flex items-start gap-2.5 ${OBJECT_MARK}`}>
                       <span
                         aria-hidden="true"
                         className={`mt-1.5 size-1.5 shrink-0 rounded-full ${TONE_FILL[podTone(pod)]}`}

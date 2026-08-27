@@ -857,24 +857,38 @@ export function Row({
 }
 
 /**
- * OBJECT_NAME is how a name that addresses something is set, everywhere on the
- * deck — a list row, a summary card, a panel.
+ * OBJECT_NAME is how a name that addresses something is *set*; OBJECT_MARK is
+ * how a row *says* it addresses something. They are two constants because the
+ * name is the one thing in a list whose length nobody controls — a pod carries
+ * its ReplicaSet hash and its own suffix — so the name wraps, and an affordance
+ * that lives on the text has to survive being cut in half.
  *
- * The affordance is a *hairline under the name*, not colour. Lime is the deck's
- * only interactive accent, and a list is thirty rows long: painting every name
- * accent would spend the accent on the one thing already guaranteed to be
- * clicked and leave the tone dots and pills arguing with it. So the rest state
- * keeps `fg` for legibility and states the fact underneath, in `accent-line` —
- * the accent at hairline weight, the same weight as the row rules. It is the
- * only underline on the deck, which is what makes it mean something: a name
- * wearing one has somewhere to go, and a name without one is just a value.
+ * An underline does not. Clamped to two lines it decorates only the first (the
+ * `-webkit-box` the clamp needs drops the rest), and unclamped it leaves a stub
+ * under the four characters that spilled — thirty rows of ragged offcuts that
+ * read as damage rather than as structure.
  *
- * Hover and focus then do what the colour would have done, and because `Row`
- * carries `group/row` the underline and the text answer for a hover anywhere on
- * the row, not only on the eleven characters of the name itself.
+ * So the mark moved to the row's edge, where a name's length cannot reach it:
+ * one hairline bar per row, the full height of the cell however many lines the
+ * name takes. It is `accent-line` at rest — the accent at hairline weight, the
+ * same weight as the row rules — because lime is the deck's only interactive
+ * accent and thirty saturated bars is a stripe, not a signal. Row hover brings
+ * it to full accent along with the name.
+ *
+ * It still encodes the same fact the underline did, and now encodes it once per
+ * row instead of once per line: a row wearing a bar opens onto something, and a
+ * row without one holds a value and nothing more.
  */
 export const OBJECT_NAME =
-  'block min-w-0 cursor-pointer truncate text-left font-mono font-medium text-fg underline decoration-accent-line decoration-1 underline-offset-[5px] transition-colors group-hover/row:text-accent group-hover/row:decoration-accent hover:text-accent hover:decoration-accent focus-visible:text-accent focus-visible:decoration-accent'
+  'block min-w-0 cursor-pointer text-left font-mono font-medium text-fg [overflow-wrap:anywhere] transition-colors group-hover/row:text-accent hover:text-accent focus-visible:text-accent'
+
+/**
+ * The bar itself, set on the cell's content wrapper so it takes the height of a
+ * wrapped name. Applied only where the name actually opens something — that is
+ * what makes its absence readable.
+ */
+export const OBJECT_MARK =
+  '-ml-2 border-l-2 border-accent-line pl-2 transition-colors group-hover/row:border-accent'
 
 export function Td({
   children,
