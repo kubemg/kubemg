@@ -74,6 +74,7 @@ import type {
   Job,
   Kubeconfig,
   KubeconfigPolicy,
+  SecretValue,
   ServerVersion,
   LogQueryResponse,
   LoginResponse,
@@ -1024,6 +1025,32 @@ export function fetchConfigMaps(clusterId: number, namespace: string): Promise<C
 
 export function fetchSecrets(clusterId: number, namespace: string): Promise<ConfigEntry[]> {
   return fetchList<ConfigEntry>(clusterId, 'secrets', 'secrets', namespace)
+}
+
+/**
+ * revealSecretValue reads one key of one Secret in the clear.
+ *
+ * It is the only call in this client that returns a secret value, and it is
+ * deliberately not built on any of the helpers above: there is no list to
+ * merge, no cache to consult and nothing to keep. The server needs the
+ * capability *and* the cluster's own RBAC to answer, records the reveal under
+ * its own audit verb before the bytes leave, and marks the response
+ * `no-store` — so the only copy that outlives the request is the one the
+ * operator is looking at.
+ */
+export async function revealSecretValue(
+  clusterId: number,
+  namespace: string,
+  name: string,
+  key: string,
+): Promise<SecretValue> {
+  const { data } = await http.get<SecretValue>(`/clusters/${clusterId}/resources/secret/value`, {
+    params: { namespace, name, key },
+    // Nothing between here and the server is allowed to answer this from a
+    // copy it kept.
+    headers: { 'Cache-Control': 'no-cache' },
+  })
+  return data
 }
 
 export function fetchCRDs(clusterId: number): Promise<CustomResourceDefinition[]> {

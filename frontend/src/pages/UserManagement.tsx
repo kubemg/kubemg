@@ -147,7 +147,10 @@ export function UserManagement() {
                     control for it, so the column is not a row of disabled
                     switches for everyone else. */}
                 {isSuperAdmin ? (
-                  <Th className="hidden lg:table-cell lg:w-[13%]">Recordings</Th>
+                  <>
+                    <Th className="hidden lg:table-cell lg:w-[11%]">Recordings</Th>
+                    <Th className="hidden lg:table-cell lg:w-[11%]">Secrets</Th>
+                  </>
                 ) : null}
                 <Th className="hidden md:table-cell md:w-[16%]">Last sign-in</Th>
                 <Th align="right" className="w-[12%] md:w-[10%]">
@@ -248,6 +251,39 @@ export function UserManagement() {
                             }
                           >
                             {row.can_view_recordings ? 'may replay' : 'own only'}
+                          </Chip>
+                        )}
+                      </Td>
+                    ) : null}
+                    {/* Who may read a Secret's value in the console. Unlike
+                        the column beside it this is offered on every tier,
+                        including a plain user: the object belongs to the
+                        cluster, whose own RBAC still answers the read, and a
+                        developer who may `kubectl get secret` in their
+                        namespace is exactly who it is for — refusing them here
+                        only sends the reveal back to a terminal, where nothing
+                        records it. */}
+                    {isSuperAdmin ? (
+                      <Td className="hidden lg:table-cell">
+                        {row.system_role === 'superadmin' ? (
+                          <span
+                            className="text-[12.5px] text-muted"
+                            title="A super admin holds it implicitly"
+                          >
+                            implicit
+                          </span>
+                        ) : (
+                          <Chip
+                            active={row.can_reveal_secrets}
+                            onClick={() =>
+                              run(row.id, `Could not update ${row.username}.`, () =>
+                                updateUser(row.id, {
+                                  can_reveal_secrets: !row.can_reveal_secrets,
+                                }),
+                              )
+                            }
+                          >
+                            {row.can_reveal_secrets ? 'may reveal' : 'keys only'}
                           </Chip>
                         )}
                       </Td>

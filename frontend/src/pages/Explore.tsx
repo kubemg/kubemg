@@ -38,13 +38,15 @@ import {
   withReadReport,
 } from '../api/client'
 import type { ReadReport } from '../api/client'
-import type { HelmRelease, Namespace } from '../api/types'
+import type { ConfigEntry, HelmRelease, Namespace } from '../api/types'
+import { useAuth } from '../state/auth-context'
 import { AccessReviewPanel } from '../components/AccessReviewPanel'
 import { AppShell } from '../components/AppShell'
 import { BulkActionSheet } from '../components/BulkActionSheet'
 import { CreateResourceSheet } from '../components/CreateResourceSheet'
 import { HelmInstallSheet } from '../components/HelmInstallSheet'
 import { HelmUninstallSheet } from '../components/HelmUninstallSheet'
+import { SecretRevealSheet } from '../components/SecretRevealSheet'
 import { TemplateSheet } from '../components/TemplateSheet'
 import { InsightTrend } from '../components/InsightTrend'
 import { LiveRefresh } from '../components/LiveRefresh'
@@ -536,6 +538,7 @@ function readResourceParam(raw: string | undefined): ResourceKey | null {
 
 export function Explore() {
   const { clusters, loading: clustersLoading } = useClusters()
+  const { user } = useAuth()
   const navigate = useNavigate()
 
   // The cluster, the resource and the namespace being explored are all named
@@ -587,6 +590,14 @@ export function Explore() {
    * behind — before the button.
    */
   const [uninstalling, setUninstalling] = useState<HelmRelease | null>(null)
+  /*
+   * The Secret a value is being read out of. Its own surface for the same
+   * reason the uninstall is: it is the one read in this console that hands a
+   * credential to a browser, and what that costs — one audited record per key,
+   * naming the caller — has to be readable before the click rather than
+   * discovered in the trail afterwards.
+   */
+  const [revealing, setRevealing] = useState<ConfigEntry | null>(null)
   // Creating an object of the kind this list is showing. It is its own surface
   // rather than a tab in the detail drawer because the drawer is about an
   // object and there is no object yet.
@@ -1301,6 +1312,11 @@ export function Explore() {
               }
               onRun={(row) => setBulk({ action: 'run', rows: [row] })}
               onUninstall={setUninstalling}
+              // Offered only to an account the server says holds the
+              // capability. It is authoritative either way — it refuses the
+              // request, not just the button — so this decides whether the
+              // affordance is worth drawing, not whether the read is allowed.
+              onReveal={user?.can_reveal_secrets ? setRevealing : undefined}
               // A pod opens the same drawer as everything else, but carrying its
               // row: the list already holds the containers and limits its usage
               // panel needs, so there is nothing to read again.
@@ -1411,7 +1427,8 @@ export function Explore() {
         <p className="text-[12px] text-muted">
           Read live through the agent tunnel under your own identity — the cluster&rsquo;s RBAC
           decides what comes back, and every read is in the audit trail. Secrets are listed as
-          metadata only: no value leaves the cluster.
+          metadata only: a value leaves the cluster one key at a time, only when asked for, and
+          only for an account a super admin has granted that.
         </p>
       </div>
 
@@ -1453,6 +1470,16 @@ export function Explore() {
           release={uninstalling}
           onClose={() => setUninstalling(null)}
           onDone={load}
+        />
+      ) : null}
+
+      {/* One of a Secret's values, in the clear. Nothing is read until a key
+          is asked for, one key at a time, each its own audited record. */}
+      {revealing && cluster ? (
+        <SecretRevealSheet
+          cluster={cluster}
+          entry={revealing}
+          onClose={() => setRevealing(null)}
         />
       ) : null}
 

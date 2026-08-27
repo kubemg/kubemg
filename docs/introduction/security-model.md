@@ -85,6 +85,18 @@ cluster is in — this is treated as load-bearing, not a decoration.
 - **ConfigMap and Secret listings return keys only.** No value ever enters a
   response, so nothing lands in a browser cache, a browser history entry, or
   a log line just because someone opened a list.
+- **One Secret value can be revealed, and only under its own capability.**
+  `GET .../resources/secret/value?name=&key=` returns one key of one Secret.
+  It exists because the alternative was not "the value stays in the cluster" —
+  it was an operator running `kubectl get secret -o jsonpath`, where the reveal
+  happens with no record at all. It needs `can_reveal_secrets` on the account,
+  which only a super admin may grant (so an administrator cannot grant it to
+  itself), *and* the cluster's own RBAC on the impersonated read. It is
+  recorded under its own audit verb, naming the caller, the Secret and the key,
+  **before the value is written**, and no audit selection can suppress it. A
+  ServiceAccount token and KubeMG's own agent registration secret are refused
+  outright, and nothing caches the response at any layer. An install that does
+  not want this grants the capability to nobody.
 - **Helm's rendered manifest never leaves the server.** A release's stored
   object also carries the chart's fully rendered manifest, which for many
   charts holds generated passwords — only chart metadata and `values` are

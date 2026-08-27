@@ -33,6 +33,7 @@ import type {
 import {
   Ban,
   CircleCheck,
+  Eye,
   FileCode2,
   History,
   PanelRightOpen,
@@ -189,6 +190,7 @@ export function ResourceView({
   onCordon,
   onRun,
   onUninstall,
+  onReveal,
   clusterId,
 }: {
   loaded: LoadedResource
@@ -213,6 +215,8 @@ export function ResourceView({
   onRun?: OpenRowAction
   /** Removing a Helm release, and everything its manifest recorded. */
   onUninstall?: (release: HelmRelease) => void
+  /** Reading one of a Secret's values. Secrets and nothing else. */
+  onReveal?: (entry: ConfigEntry) => void
   /**
    * Which cluster these rows came from. Only the namespace list needs it — a
    * namespace has a page of its own and the row links at it — and a caller that
@@ -333,6 +337,7 @@ export function ResourceView({
           secrets={loaded.secrets}
           showNamespace={showNamespace}
           onManifest={open}
+          onReveal={onReveal}
         />
       )
     case 'crds':
@@ -2484,11 +2489,19 @@ function ConfigTable({
   secrets,
   showNamespace,
   onManifest,
+  onReveal,
 }: {
   entries: ConfigEntry[]
   secrets: boolean
   showNamespace: boolean
   onManifest?: OpenManifest
+  /**
+   * Reading one value. Passed only for Secrets, and only for a caller the
+   * server says holds the capability — the row menu is not the place to learn
+   * you were never allowed, and an item that always answers 403 is worse than
+   * no item.
+   */
+  onReveal?: (entry: ConfigEntry) => void
 }) {
   return (
     <Table resizeKey={secrets ? 'kubemg_cols_secrets' : 'kubemg_cols_configmaps'}>
@@ -2547,6 +2560,14 @@ function ConfigTable({
               name={entry.name}
               namespace={entry.namespace}
               editable={!secrets}
+              menu={
+                secrets && onReveal ? (
+                  <RowMenuItem onClick={() => onReveal(entry)}>
+                    <Eye aria-hidden="true" className="size-3.5" />
+                    Reveal a value
+                  </RowMenuItem>
+                ) : undefined
+              }
             />
           </Row>
         ))}
