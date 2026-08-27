@@ -48,6 +48,7 @@ func TestFloorSurvivesEverySelection(t *testing.T) {
 		{"an interactive session", "exec", 101, false, true},
 		{"watching a recording", "replay", 200, false, false},
 		{"destroying a recording", "recording-delete", 204, false, false},
+		{"revealing a secret value", "secret-reveal", 200, false, false},
 		{"a verb this build does not know", "impersonate", 200, false, false},
 	}
 	for _, tc := range cases {

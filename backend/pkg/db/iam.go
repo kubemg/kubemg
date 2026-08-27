@@ -31,6 +31,8 @@ type UserUpdate struct {
 	// may set it; the handler enforces that, because it is an authorization rule
 	// rather than a storage one.
 	CanViewRecordings *bool
+	// CanRevealSecrets is the secret-reveal capability, on the same terms.
+	CanRevealSecrets *bool
 }
 
 // UpdateUser applies a partial update and returns the stored record.
@@ -49,6 +51,9 @@ func (s *Store) UpdateUser(ctx context.Context, id uint, update UserUpdate) (*Us
 	}
 	if update.CanViewRecordings != nil {
 		fields["can_view_recordings"] = *update.CanViewRecordings
+	}
+	if update.CanRevealSecrets != nil {
+		fields["can_reveal_secrets"] = *update.CanRevealSecrets
 	}
 	if update.PasswordHash != nil {
 		fields["password_hash"] = *update.PasswordHash

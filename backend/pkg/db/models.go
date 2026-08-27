@@ -131,6 +131,27 @@ type User struct {
 	// that can grant it can already take it.
 	CanViewRecordings bool `gorm:"not null;default:false" json:"can_view_recordings"`
 
+	// CanRevealSecrets lets an account read one Secret value through the
+	// console. It is the CanViewRecordings shape for the same reason: a Secret's
+	// value is the one thing this product has always refused to put in a
+	// response, and "may administer KubeMG" is not the same claim as "may read
+	// the database password". An auditor asks who could, and the answer has to
+	// be a short list.
+	//
+	// Two differences from the recording capability, both deliberate. It does
+	// **not** require the admin role, because the object belongs to the cluster
+	// rather than to KubeMG: the impersonated read is still answered by the
+	// cluster's own RBAC, so a developer who may `kubectl get secret` in their
+	// namespace is exactly who this is for, and requiring admin as well would
+	// leave them dropping to a terminal — which is the untraced reveal this
+	// exists to replace. And it is a capability rather than a role because a
+	// role is coarse: granting edit on a namespace should not silently grant
+	// "read every credential in it through a web page".
+	//
+	// A super admin holds it implicitly, because the account that may grant it
+	// can grant it to itself; pretending otherwise would be theatre.
+	CanRevealSecrets bool `gorm:"not null;default:false" json:"can_reveal_secrets"`
+
 	// AuthSource is where this account's credentials live: AuthSourceLocal for a
 	// bcrypt hash in this database, or a federation protocol for an account an
 	// identity provider vouches for. A federated account has no usable password,
@@ -189,6 +210,14 @@ func (u User) MayViewAllRecordings() bool {
 		return false
 	}
 	return u.IsSuperAdmin() || u.CanViewRecordings
+}
+
+// MayRevealSecrets reports whether this account may read a Secret's value
+// through the console. Unlike MayViewAllRecordings this does not require the
+// admin role: the cluster's own RBAC is the other half of the answer, and it is
+// the half that knows which secrets this identity may read at all.
+func (u User) MayRevealSecrets() bool {
+	return u.IsSuperAdmin() || u.CanRevealSecrets
 }
 
 // IsSuperAdmin reports whether the user is protected from administrative edits

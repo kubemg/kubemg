@@ -38,6 +38,10 @@ type userResponse struct {
 	// to decide which affordances to draw, and the server still decides what a
 	// request may see.
 	CanViewRecordings bool `json:"can_view_recordings"`
+	// CanRevealSecrets is the secret-reveal capability, likewise resolved: a
+	// super admin holds it implicitly. The console reads it to decide whether to
+	// draw the reveal control at all; the server still decides every request.
+	CanRevealSecrets bool `json:"can_reveal_secrets"`
 	// AuthSource says where this account's credentials live. The console reads
 	// it to stop offering a password field for an account that has none.
 	AuthSource string `json:"auth_source"`
@@ -67,6 +71,7 @@ func toUserResponse(u *db.User) userResponse {
 		SystemRole:        normalized.SystemRole,
 		IsActive:          normalized.IsActive,
 		CanViewRecordings: normalized.MayViewAllRecordings(),
+		CanRevealSecrets:  normalized.MayRevealSecrets(),
 		AuthSource:        authSourceOf(normalized),
 		AccountType:       accountTypeOf(normalized),
 		LastLoginAt:       normalized.LastLoginAt,

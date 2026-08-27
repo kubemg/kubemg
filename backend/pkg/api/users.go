@@ -25,6 +25,9 @@ type createUserRequest struct {
 	// CanViewRecordings grants the recording-viewer capability at creation.
 	// Super-admin-only, like every other way of setting it.
 	CanViewRecordings *bool `json:"can_view_recordings"`
+	// CanRevealSecrets grants the secret-reveal capability at creation, on the
+	// same super-admin-only terms.
+	CanRevealSecrets *bool `json:"can_reveal_secrets"`
 }
 
 type updateUserRequest struct {
@@ -33,6 +36,7 @@ type updateUserRequest struct {
 	Password          *string `json:"password"`
 	SystemRole        *string `json:"system_role" binding:"omitempty,oneof=superadmin admin user"`
 	CanViewRecordings *bool   `json:"can_view_recordings"`
+	CanRevealSecrets  *bool   `json:"can_reveal_secrets"`
 }
 
 // recordingCapabilityDenied refuses a caller who is not a super admin. Watching
@@ -45,6 +49,20 @@ func recordingCapabilityDenied(c *gin.Context, caller *db.User) bool {
 	}
 	c.JSON(http.StatusForbidden, gin.H{
 		"error": "only a super admin can grant or revoke access to other people's session recordings",
+	})
+	return true
+}
+
+// secretCapabilityDenied refuses a caller who is not a super admin. Reading a
+// Secret's value is the one read this product has always refused, so the account
+// that may hand it out is the same one that may create another super admin —
+// otherwise an admin grants it to itself and the capability is decorative.
+func secretCapabilityDenied(c *gin.Context, caller *db.User) bool {
+	if caller.IsSuperAdmin() {
+		return false
+	}
+	c.JSON(http.StatusForbidden, gin.H{
+		"error": "only a super admin can grant or revoke the ability to reveal secret values",
 	})
 	return true
 }
@@ -117,6 +135,9 @@ func (s *server) createUser(c *gin.Context) {
 	if req.CanViewRecordings != nil && *req.CanViewRecordings && recordingCapabilityDenied(c, caller) {
 		return
 	}
+	if req.CanRevealSecrets != nil && *req.CanRevealSecrets && secretCapabilityDenied(c, caller) {
+		return
+	}
 
 	user := db.User{
 		Username:     username,
@@ -127,6 +148,9 @@ func (s *server) createUser(c *gin.Context) {
 	}
 	if req.CanViewRecordings != nil {
 		user.CanViewRecordings = *req.CanViewRecordings
+	}
+	if req.CanRevealSecrets != nil {
+		user.CanRevealSecrets = *req.CanRevealSecrets
 	}
 	err = s.store.CreateUser(c.Request.Context(), &user)
 	if errors.Is(err, db.ErrConflict) {
@@ -191,6 +215,12 @@ func (s *server) updateUser(c *gin.Context) {
 			return
 		}
 		update.CanViewRecordings = req.CanViewRecordings
+	}
+	if req.CanRevealSecrets != nil && *req.CanRevealSecrets != target.CanRevealSecrets {
+		if secretCapabilityDenied(c, caller) {
+			return
+		}
+		update.CanRevealSecrets = req.CanRevealSecrets
 	}
 
 	user, err := s.store.UpdateUser(c.Request.Context(), target.ID, update)
