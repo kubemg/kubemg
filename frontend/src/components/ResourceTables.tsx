@@ -45,7 +45,18 @@ import {
   Trash2,
   Zap,
 } from 'lucide-react'
-import { IconButton, Pill, Row, RowMenu, RowMenuItem, SortTh, Table, Td, Th } from './primitives'
+import {
+  IconButton,
+  OBJECT_NAME,
+  Pill,
+  Row,
+  RowMenu,
+  RowMenuItem,
+  SortTh,
+  Table,
+  Td,
+  Th,
+} from './primitives'
 import type { DetailTab } from './ResourceDetailDrawer'
 import type { WorkloadActionName } from './WorkloadActionPanel'
 import { namespaceHref } from '../lib/navigation'
@@ -435,7 +446,7 @@ function Name({
       {to ? (
         <Link
           to={to}
-          className={`${NAME_BUTTON} truncate font-mono text-fg transition-colors hover:text-accent`}
+          className={OBJECT_NAME}
           title={full}
         >
           {children}
@@ -444,13 +455,13 @@ function Name({
         <button
           type="button"
           onClick={onOpen}
-          className={`${NAME_BUTTON} truncate font-mono text-fg transition-colors hover:text-accent`}
+          className={OBJECT_NAME}
           title={full}
         >
           {children}
         </button>
       ) : (
-        <span className="block min-w-0 truncate font-mono text-fg" title={full}>
+        <span className="block min-w-0 truncate font-mono font-medium text-fg" title={full}>
           {children}
         </span>
       )}
@@ -458,8 +469,6 @@ function Name({
   )
 }
 
-/** A name button is a block so it can truncate; the text still reads left. */
-const NAME_BUTTON = 'block min-w-0 text-left'
 
 /**
  * The namespace column. It exists only while the list spans namespaces — in a
@@ -1134,7 +1143,7 @@ function PodTable({
                 <button
                   type="button"
                   onClick={() => onSelect(pod)}
-                  className={`${NAME_BUTTON} truncate font-mono text-fg transition-colors hover:text-accent`}
+                  className={OBJECT_NAME}
                   title={`${pod.namespace}/${pod.name}`}
                 >
                   {pod.name}

@@ -147,7 +147,7 @@ export function Button({
   return (
     <button
       {...rest}
-      className={`inline-flex shrink-0 items-center justify-center rounded-control font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${BUTTON_SIZE[size]} ${BUTTON_VARIANT[variant]} ${className ?? ''}`}
+      className={`inline-flex shrink-0 cursor-pointer items-center justify-center rounded-control font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${BUTTON_SIZE[size]} ${BUTTON_VARIANT[variant]} ${className ?? ''}`}
     >
       {children}
     </button>
@@ -172,7 +172,7 @@ export function IconButton({
     <button
       {...rest}
       title={label}
-      className={`inline-grid size-8 shrink-0 place-items-center rounded-control text-muted transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${hover} ${className ?? ''}`}
+      className={`inline-grid size-8 shrink-0 cursor-pointer place-items-center rounded-control text-muted transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${hover} ${className ?? ''}`}
     >
       {children}
       <span className="sr-only">{label}</span>
@@ -277,7 +277,7 @@ export function RowMenuItem({
       type="button"
       role="menuitem"
       onClick={onClick}
-      className={`flex items-center gap-2 rounded-control px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${
+      className={`flex cursor-pointer items-center gap-2 rounded-control px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${
         danger ? 'text-danger hover:bg-danger-soft' : 'text-fg hover:bg-raised'
       }`}
     >
@@ -751,7 +751,7 @@ export function Th({
     <th
       scope="col"
       style={style}
-      className={`label sticky top-0 z-1 bg-surface px-4 py-2.5 ${
+      className={`label sticky top-0 z-1 bg-surface shadow-[inset_0_-1px_0_var(--color-line)] px-4 py-2.5 ${
         handle ? 'relative' : ''
       } ${align === 'right' ? 'text-right' : 'text-left'} ${className ?? ''}`}
     >
@@ -808,14 +808,14 @@ export function SortTh({
       scope="col"
       aria-sort={direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'}
       style={style}
-      className={`label sticky top-0 z-1 bg-surface px-4 py-2.5 ${handle ? 'relative' : ''} ${
+      className={`label sticky top-0 z-1 bg-surface shadow-[inset_0_-1px_0_var(--color-line)] px-4 py-2.5 ${handle ? 'relative' : ''} ${
         align === 'right' ? 'text-right' : 'text-left'
       } ${className ?? ''}`}
     >
       <button
         type="button"
         onClick={onSort}
-        className={`group label flex w-full items-center gap-1 transition-colors hover:text-fg ${
+        className={`group label flex w-full cursor-pointer items-center gap-1 transition-colors hover:text-fg ${
           align === 'right' ? 'justify-end' : ''
         } ${direction ? 'text-fg' : ''}`}
       >
@@ -827,7 +827,16 @@ export function SortTh({
   )
 }
 
-/** Row is the standard table row: a quiet hover, a hairline below. */
+/**
+ * Row is the standard table row: a hairline above, and a hover that lifts the
+ * whole row rather than only the glyph the pointer happens to be over.
+ *
+ * It carries `group/row` so the row's own name can answer for a hover anywhere
+ * along it — a name is a small target in a wide row, and asking an operator to
+ * land on the text itself is what made the lists read as static. `focus-within`
+ * repeats the same lift for the keyboard, so tabbing down a list shows the same
+ * row the pointer would.
+ */
 export function Row({
   children,
   className,
@@ -840,12 +849,32 @@ export function Row({
   return (
     <tr
       title={title}
-      className={`border-t border-line-soft transition-colors hover:bg-raised/70 ${className ?? ''}`}
+      className={`group/row border-t border-line-soft transition-colors hover:bg-raised focus-within:bg-raised ${className ?? ''}`}
     >
       {children}
     </tr>
   )
 }
+
+/**
+ * OBJECT_NAME is how a name that addresses something is set, everywhere on the
+ * deck — a list row, a summary card, a panel.
+ *
+ * The affordance is a *hairline under the name*, not colour. Lime is the deck's
+ * only interactive accent, and a list is thirty rows long: painting every name
+ * accent would spend the accent on the one thing already guaranteed to be
+ * clicked and leave the tone dots and pills arguing with it. So the rest state
+ * keeps `fg` for legibility and states the fact underneath, in `accent-line` —
+ * the accent at hairline weight, the same weight as the row rules. It is the
+ * only underline on the deck, which is what makes it mean something: a name
+ * wearing one has somewhere to go, and a name without one is just a value.
+ *
+ * Hover and focus then do what the colour would have done, and because `Row`
+ * carries `group/row` the underline and the text answer for a hover anywhere on
+ * the row, not only on the eleven characters of the name itself.
+ */
+export const OBJECT_NAME =
+  'block min-w-0 cursor-pointer truncate text-left font-mono font-medium text-fg underline decoration-accent-line decoration-1 underline-offset-[5px] transition-colors group-hover/row:text-accent group-hover/row:decoration-accent hover:text-accent hover:decoration-accent focus-visible:text-accent focus-visible:decoration-accent'
 
 export function Td({
   children,

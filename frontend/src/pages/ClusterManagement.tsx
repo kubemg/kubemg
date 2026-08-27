@@ -12,6 +12,7 @@ import {
   EnvironmentTag,
   IconButton,
   Notice,
+  OBJECT_NAME,
   Row,
   SearchInput,
   Table,
@@ -118,7 +119,7 @@ export function ClusterManagement() {
                   <Td className="truncate">
                     <Link
                       to={`/clusters/${cluster.id}`}
-                      className="font-mono text-fg transition-colors hover:text-accent"
+                      className={OBJECT_NAME}
                     >
                       {cluster.name}
                     </Link>

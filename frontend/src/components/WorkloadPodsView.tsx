@@ -11,7 +11,7 @@ import type { Tone } from '../lib/status'
 import { relativeAge } from '../lib/time'
 import { formatCPU, formatMemory, podLimit, podUsageIndex, ratio, usageTone } from '../lib/units'
 import type { PodUsageIndex } from '../lib/units'
-import { Button, EmptyState, Notice, Pill, Row, Table, Td, Th } from './primitives'
+import { Button, EmptyState, Notice, OBJECT_NAME, Pill, Row, Table, Td, Th } from './primitives'
 
 /*
  * A workload's health, one pod at a time: what a Deployment/StatefulSet/
@@ -222,7 +222,7 @@ export function WorkloadPodsView({
                         <button
                           type="button"
                           onClick={() => onOpenPod(pod)}
-                          className="block min-w-0 truncate text-left font-mono text-[12.5px] text-fg transition-colors hover:text-accent"
+                          className={`${OBJECT_NAME} text-[12.5px]`}
                           title={pod.name}
                         >
                           {pod.name}

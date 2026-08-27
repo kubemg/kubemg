@@ -23,6 +23,7 @@ import {
   Field,
   IconButton,
   Notice,
+  OBJECT_NAME,
   Row,
   SearchInput,
   Select,
@@ -169,7 +170,7 @@ export function MachineAccounts() {
                     <Td className="truncate font-mono text-fg">
                       <button
                         type="button"
-                        className="text-left hover:text-accent"
+                        className={OBJECT_NAME}
                         onClick={() => setOpenAccount(row)}
                       >
                         {row.username}
