@@ -3,6 +3,7 @@ import { Boxes, CheckSquare, LayoutTemplate, Plus, X } from 'lucide-react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import {
   errorMessage,
+  fetchAutoscalers,
   fetchCRDs,
   fetchClusterRoleBindings,
   fetchClusterRoles,
@@ -15,13 +16,17 @@ import {
   fetchHelmReleases,
   fetchIngresses,
   fetchJobs,
+  fetchLimitRanges,
   fetchNamespaces,
   fetchNetworkPolicies,
   fetchNodes,
   fetchPersistentVolumeClaims,
   fetchPersistentVolumes,
+  fetchPodDisruptionBudgets,
   fetchPodListMetrics,
   fetchPods,
+  fetchReplicaSets,
+  fetchResourceQuotas,
   fetchRoleBindings,
   fetchRoles,
   fetchSecrets,
@@ -33,12 +38,13 @@ import {
   withReadReport,
 } from '../api/client'
 import type { ReadReport } from '../api/client'
-import type { Namespace } from '../api/types'
+import type { HelmRelease, Namespace } from '../api/types'
 import { AccessReviewPanel } from '../components/AccessReviewPanel'
 import { AppShell } from '../components/AppShell'
 import { BulkActionSheet } from '../components/BulkActionSheet'
 import { CreateResourceSheet } from '../components/CreateResourceSheet'
 import { HelmInstallSheet } from '../components/HelmInstallSheet'
+import { HelmUninstallSheet } from '../components/HelmUninstallSheet'
 import { TemplateSheet } from '../components/TemplateSheet'
 import { InsightTrend } from '../components/InsightTrend'
 import { LiveRefresh } from '../components/LiveRefresh'
@@ -67,6 +73,7 @@ import {
 } from '../lib/resources'
 import type { InsightBucket, ResourceInsight } from '../lib/insights'
 import {
+  autoscalerInsights,
   bindingInsights,
   bucketLabel as labelForBucket,
   claimInsights,
@@ -74,15 +81,19 @@ import {
   crdInsights,
   cronJobInsights,
   customInsights,
+  disruptionBudgetInsights,
   helmInsights,
   ingressInsights,
   jobInsights,
+  limitRangeInsights,
   matchesPodBucket,
   matchesWorkloadBucket,
   namespaceInsights,
   networkPolicyInsights,
   nodeInsights,
   podInsights,
+  quotaInsights,
+  replicaSetInsights,
   roleInsights,
   routeInsights,
   serviceAccountInsights,
@@ -150,6 +161,29 @@ async function loadResource(
       return { kind: 'jobs', rows: await fetchJobs(clusterId, namespace) }
     case 'cronjobs':
       return { kind: 'cronjobs', rows: await fetchCronJobs(clusterId, namespace) }
+    case 'replicasets':
+      return { kind: 'replicasets', rows: await fetchReplicaSets(clusterId, namespace) }
+    case 'horizontalpodautoscalers': {
+      // Optional-shaped for one reason: this build reads `autoscaling/v2` only,
+      // so a cluster serving just v1 has to say "not served here" rather than
+      // show an empty list that reads as "nothing is autoscaled".
+      const list = await fetchAutoscalers(clusterId, namespace)
+      return {
+        kind: 'autoscalers',
+        rows: list.items,
+        available: list.available,
+        reason: list.reason,
+      }
+    }
+    case 'resourcequotas':
+      return { kind: 'resourcequotas', rows: await fetchResourceQuotas(clusterId, namespace) }
+    case 'limitranges':
+      return { kind: 'limitranges', rows: await fetchLimitRanges(clusterId, namespace) }
+    case 'poddisruptionbudgets':
+      return {
+        kind: 'poddisruptionbudgets',
+        rows: await fetchPodDisruptionBudgets(clusterId, namespace),
+      }
     case 'services':
       return { kind: 'services', rows: await fetchServices(clusterId, namespace) }
     case 'ingresses':
@@ -228,6 +262,11 @@ const SKELETON_COLUMNS: Partial<Record<string, number>> = {
   daemonsets: 5,
   jobs: 5,
   cronjobs: 5,
+  replicasets: 6,
+  horizontalpodautoscalers: 6,
+  resourcequotas: 4,
+  limitranges: 3,
+  poddisruptionbudgets: 6,
   services: 5,
   ingresses: 4,
   networkpolicies: 5,
@@ -283,6 +322,16 @@ function filterLoaded(loaded: LoadedResource, needle: string): LoadedResource {
     case 'jobs':
       return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'cronjobs':
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
+    case 'replicasets':
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
+    case 'autoscalers':
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
+    case 'resourcequotas':
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
+    case 'limitranges':
+      return { ...loaded, rows: loaded.rows.filter(qualified) }
+    case 'poddisruptionbudgets':
       return { ...loaded, rows: loaded.rows.filter(qualified) }
     case 'services':
       return { ...loaded, rows: loaded.rows.filter(qualified) }
@@ -340,6 +389,16 @@ function insightsFor(
       return jobInsights(loaded.rows, label)
     case 'cronjobs':
       return cronJobInsights(loaded.rows, label)
+    case 'replicasets':
+      return replicaSetInsights(loaded.rows, label)
+    case 'autoscalers':
+      return autoscalerInsights(loaded.rows, label)
+    case 'resourcequotas':
+      return quotaInsights(loaded.rows, label)
+    case 'limitranges':
+      return limitRangeInsights(loaded.rows, label)
+    case 'poddisruptionbudgets':
+      return disruptionBudgetInsights(loaded.rows, label)
     case 'services':
       return serviceInsights(loaded.rows, label)
     case 'ingresses':
@@ -521,6 +580,13 @@ export function Explore() {
   // the row menu opens the same surface with one row in it: there is one place
   // that says what is about to happen and reports what did.
   const [bulk, setBulk] = useState<{ action: BulkActionName; rows: SelectedRow[] } | null>(null)
+  /*
+   * The release being uninstalled. It is its own piece of state rather than a
+   * bulk action because it is not one delete: it is every object the release
+   * recorded, and the confirmation has to say so — and say what it will leave
+   * behind — before the button.
+   */
+  const [uninstalling, setUninstalling] = useState<HelmRelease | null>(null)
   // Creating an object of the kind this list is showing. It is its own surface
   // rather than a tab in the detail drawer because the drawer is about an
   // object and there is no object yet.
@@ -1219,6 +1285,8 @@ export function Explore() {
               onCordon={(row) =>
                 setBulk({ action: row.unschedulable ? 'uncordon' : 'cordon', rows: [row] })
               }
+              onRun={(row) => setBulk({ action: 'run', rows: [row] })}
+              onUninstall={setUninstalling}
               // A pod opens the same drawer as everything else, but carrying its
               // row: the list already holds the containers and limits its usage
               // panel needs, so there is nothing to read again.
@@ -1358,6 +1426,18 @@ export function Explore() {
             setBulk(null)
             setSelected([])
           }}
+          onDone={load}
+        />
+      ) : null}
+
+      {/* Uninstalling a release. Its own surface rather than a bulk row: the
+          set it acts on is the release's recorded manifest, and what it will
+          leave behind has to be readable before the button. */}
+      {uninstalling && cluster ? (
+        <HelmUninstallSheet
+          cluster={cluster}
+          release={uninstalling}
+          onClose={() => setUninstalling(null)}
           onDone={load}
         />
       ) : null}

@@ -10,20 +10,59 @@ one is an annotation on the pod template carrying a timestamp nobody reads.
 
 ## Which kinds answer for which action
 
-| Kind | Scale | Restart | Suspend |
-|---|---|---|---|
-| Deployment | yes | yes | — |
-| StatefulSet | yes | yes | — |
-| DaemonSet | — | yes | — |
-| CronJob | — | — | yes |
+| Kind | Scale | Restart | Suspend | Run now |
+|---|---|---|---|---|
+| Deployment | yes | yes | — | — |
+| StatefulSet | yes | yes | — | — |
+| DaemonSet | — | yes | — | — |
+| CronJob | — | — | yes | yes |
 
 A DaemonSet has no replica count — it runs one pod per node, and the node
 list *is* the count. A CronJob owns Jobs, not pods: there is nothing to scale
 and nothing to roll, and deleting it to stop tonight's run would lose the
-object, which is why suspend is its **only** lifecycle control. ReplicaSets
-answer for scale on the backend (the same route works if a list of them ever
-appears in Explore) but are not in the inventory to act on directly — rolling
-one is a Deployment's job.
+object, which is why suspend was for a long time its **only** lifecycle
+control — see [Running a CronJob now](#running-a-cronjob-now) below.
+ReplicaSets answer for scale on the backend and now appear in the inventory
+too, but rolling one is still a Deployment's job.
+
+### An autoscaler owns the replica count
+
+If a `HorizontalPodAutoscaler` targets the workload you are scaling, the
+scale panel says so **before** you write anything — it reads
+`GET .../resources/workload/autoscaler` when it opens and shows the
+autoscaler's name and its min/max bounds.
+
+It is a notice, not a refusal. Setting a count by hand under an HPA is a
+legitimate thing to do — it is how you force a floor while debugging — and
+the manifest editor could always do it anyway. What was missing was being
+told: without the notice, the write succeeds, reports the number it set, and
+is quietly reverted on the autoscaler's next pass.
+
+## Running a CronJob now
+
+`POST .../resources/cronjob/run` fires a schedule immediately. It is a
+**create with no new reach**: kubemg reads the CronJob down the tunnel,
+builds a `batch/v1` Job from that object's own `spec.jobTemplate`, and posts
+it to the Jobs collection through the same impersonated call every other
+write uses — same namespace check, same guardrails, same `create` audit
+record. Nothing about the Job's shape comes from the request; the caller
+names a CronJob and nothing else.
+
+Two properties are deliberate and worth knowing:
+
+- **The Job is not owned by the CronJob.** `kubectl create job --from=cronjob`
+  does the same thing, for the same reason: an owned Job counts against
+  `successfulJobsHistoryLimit` and would be reaped out from under whoever
+  triggered it. It carries `cronjob.kubernetes.io/instantiate: manual`
+  instead, so you can tell a hand-started run from a scheduled one — and it
+  is yours to delete when you are done with it.
+- **The cluster names it**, via `generateName` derived from the CronJob's
+  name (`nightly-report-manual-x7k2p`). A manual run has no natural name, and
+  only the cluster can guarantee one is free.
+
+Running is offered on a **suspended** CronJob too: firing one by hand is
+exactly what you do while a broken schedule is paused. The schedule itself is
+untouched and still fires at its next matching time.
 
 ## Read-modify-write, not a patch
 
@@ -74,6 +113,8 @@ Each write answers in the words an operator would use, not the API's:
 - Suspend: *"`<name>` suspended — it will not fire again until it is
   resumed"* / *"resumed"*, or *"`<name>` is already suspended"* when nothing
   was written.
+- Run now: *"`<generated name>` started from `<cronjob>`"*, naming the Job the
+  cluster created so you can go and watch it.
 
 ## Acting over a selection
 
