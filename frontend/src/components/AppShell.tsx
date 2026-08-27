@@ -22,6 +22,7 @@ import {
   Server,
   Shield,
   SlidersHorizontal,
+  SquareTerminal,
   Sun,
   Timer,
   Users,
@@ -40,8 +41,10 @@ import {
   ADMIN_HOME,
   clusterHref,
   clusterIdFromPath,
+  clusterPageHref,
   clusterSlotHref,
   currentClusterSlot,
+  hasTunnel,
   isAdminPath,
   isClusterPath,
 } from '../lib/navigation'
@@ -577,6 +580,26 @@ export function AppShell({
                 Jump to…
                 <KeyHint>{PALETTE_HINT}</KeyHint>
               </button>
+              {/* A shell is not a page you browse to — it is a thing you reach
+                  for mid-question, from whatever page raised the question. So it
+                  is one icon in the header rather than a row in the tree, drawn
+                  only where there is a cluster to open one on and a tunnel to
+                  reach it through. */}
+              {openCluster && !inAdmin && hasTunnel(openCluster) ? (
+                <Link
+                  to={clusterPageHref(openCluster.id, 'shell')}
+                  title="Shell"
+                  aria-current={pathname === clusterPageHref(openCluster.id, 'shell') ? 'page' : undefined}
+                  className={`inline-grid size-8 shrink-0 place-items-center rounded-control transition-colors ${
+                    pathname === clusterPageHref(openCluster.id, 'shell')
+                      ? 'bg-raised text-fg'
+                      : 'text-muted hover:bg-raised hover:text-fg'
+                  }`}
+                >
+                  <SquareTerminal aria-hidden="true" className="size-4.5" />
+                  <span className="sr-only">Shell</span>
+                </Link>
+              ) : null}
               {scope}
               {scopeAction}
               {timeRange ? <TimeRangeControl /> : null}

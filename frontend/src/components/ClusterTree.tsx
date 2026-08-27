@@ -10,7 +10,6 @@ import {
   Package,
   Puzzle,
   ScrollText,
-  SquareTerminal,
   Search,
   Server,
   Shapes,
@@ -102,9 +101,9 @@ const PAGE_ROWS: readonly { page: ClusterPage; label: string; icon: typeof Gauge
   { page: 'capacity', label: 'Capacity', icon: Cpu },
   { page: 'security', label: 'Security', icon: ShieldAlert },
   { page: 'audit', label: 'Audit trail', icon: ScrollText },
-  // Last, and deliberately: the shell is where a question goes when the pages
-  // above could not answer it.
-  { page: 'shell', label: 'Shell', icon: SquareTerminal },
+  // The shell is deliberately absent: it is not a page somebody browses to, it
+  // is what they reach for mid-question from whatever page raised the question.
+  // It lives as one icon in the header instead — see AppShell.
 ]
 
 type Row =

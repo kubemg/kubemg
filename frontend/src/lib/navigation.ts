@@ -26,9 +26,11 @@ export function hasTunnel(cluster: Cluster): boolean {
 
 /**
  * A page a cluster carries that is not one of its resource lists. Everything
- * else under `/clusters/:id/` is a resource key, which is why these five names
+ * else under `/clusters/:id/` is a resource key, which is why these six names
  * are reserved: the resource route is a splat, so a kind called `capacity`
- * would otherwise be unreachable.
+ * would otherwise be unreachable. `shell` is on this list without being a row in
+ * the tree — it is reached from an icon in the header — because the address
+ * still has to parse as a page rather than as a kind nobody serves.
  */
 export type ClusterPage = 'dashboard' | 'events' | 'capacity' | 'security' | 'audit' | 'shell'
 

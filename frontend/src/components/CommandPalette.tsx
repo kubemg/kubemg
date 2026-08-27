@@ -64,6 +64,15 @@ function clusterViewTargets(cluster: Cluster): CommandTarget[] {
       to: clusterPageHref(cluster.id, 'capacity'),
       cluster,
     })
+    // The shell has no row in the tree — it is an icon in the header — so the
+    // palette is the other way somebody who thinks in names reaches it.
+    views.push({
+      id: `cluster-${cluster.id}-shell`,
+      label: `${cluster.name} — Shell`,
+      hint: 'Cluster · Shell',
+      to: clusterPageHref(cluster.id, 'shell'),
+      cluster,
+    })
     views.push({
       id: `cluster-${cluster.id}-security`,
       label: `${cluster.name} — Security posture`,
