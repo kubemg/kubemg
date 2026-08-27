@@ -33,6 +33,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router'
 import type { Cluster, Environment } from '../api/types'
 import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
+import { useShellDock } from '../state/shell-dock-context'
 import { useInventory } from '../state/inventory-context'
 import { useTheme } from '../lib/theme'
 import {
@@ -41,7 +42,6 @@ import {
   ADMIN_HOME,
   clusterHref,
   clusterIdFromPath,
-  clusterPageHref,
   clusterSlotHref,
   currentClusterSlot,
   hasTunnel,
@@ -59,7 +59,7 @@ import type { CommandTarget } from './CommandPalette'
 import { LinkStatus } from './LinkStatus'
 import { Lockup, MarkChip } from './Mark'
 import { TimeRangeControl } from './TimeRangeControl'
-import { EnvironmentDot, EnvironmentTag, IconButton, KeyHint } from './primitives'
+import { Button, EnvironmentDot, EnvironmentTag, IconButton, KeyHint } from './primitives'
 
 /**
  * The deck has two levels of navigation because the work has two levels: which
@@ -263,6 +263,7 @@ export function AppShell({
 
   const isAdmin = user?.role === 'admin'
   const inAdmin = isAdminPath(pathname)
+  const shellDock = useShellDock()
 
   // A cluster id that does not resolve — unregistered, or the fleet list has
   // not loaded yet — is `undefined` here, which falls the tree back to the
@@ -582,23 +583,22 @@ export function AppShell({
               </button>
               {/* A shell is not a page you browse to — it is a thing you reach
                   for mid-question, from whatever page raised the question. So it
-                  is one icon in the header rather than a row in the tree, drawn
-                  only where there is a cluster to open one on and a tunnel to
-                  reach it through. */}
+                  is one control in the header that opens a dock over the page,
+                  drawn only where there is a cluster to open one on and a tunnel
+                  to reach it through. It takes the header's own button shape:
+                  beside a bordered h-9 control, a bare icon reads as debris. */}
               {openCluster && !inAdmin && hasTunnel(openCluster) ? (
-                <Link
-                  to={clusterPageHref(openCluster.id, 'shell')}
-                  title="Shell"
-                  aria-current={pathname === clusterPageHref(openCluster.id, 'shell') ? 'page' : undefined}
-                  className={`inline-grid size-8 shrink-0 place-items-center rounded-control transition-colors ${
-                    pathname === clusterPageHref(openCluster.id, 'shell')
-                      ? 'bg-raised text-fg'
-                      : 'text-muted hover:bg-raised hover:text-fg'
-                  }`}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  aria-pressed={shellDock.open}
+                  onClick={() => shellDock.toggle(openCluster.id, openCluster.name)}
+                  className={shellDock.open ? 'border-faint/60 bg-raised' : ''}
                 >
-                  <SquareTerminal aria-hidden="true" className="size-4.5" />
-                  <span className="sr-only">Shell</span>
-                </Link>
+                  <SquareTerminal aria-hidden="true" className="size-4" />
+                  <span className="hidden sm:inline">Shell</span>
+                  <span className="sr-only sm:hidden">Shell</span>
+                </Button>
               ) : null}
               {scope}
               {scopeAction}

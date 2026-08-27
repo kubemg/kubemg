@@ -45,32 +45,34 @@ export function shellView(state: ShellState | undefined): ShellView | null {
 }
 
 /**
- * What the shell can reach, in one sentence.
+ * What the shell can reach, short enough to sit on one line of the dock's strip.
  *
  * It says the caller's own grant back to them, because that — not the pod — is
- * what bounds the terminal. Somebody who reads "you have view on two
- * namespaces" before typing does not spend ten minutes wondering why `kubectl
- * get pods -A` is refused.
+ * what bounds the terminal. Somebody who reads "view on payments" before typing
+ * does not spend ten minutes wondering why `kubectl get pods -A` is refused. It
+ * is kept to a phrase rather than a paragraph deliberately: this sits above a
+ * terminal somebody is trying to work in, and a wall of prose over a prompt is
+ * read once and resented afterwards.
  */
 export function shellReach(state: ShellState): string {
   const role = state.k8s_role || 'view'
   const scope =
     state.namespaces && state.namespaces.length > 0
-      ? `the ${state.namespaces.length === 1 ? 'namespace' : 'namespaces'} ${state.namespaces.join(', ')}`
-      : 'every namespace on this cluster'
-  return `Commands run as you, with ${role} on ${scope} — the cluster's own RBAC answers them.`
+      ? state.namespaces.join(', ')
+      : 'every namespace'
+  return `Runs as you — ${role} on ${scope}`
 }
 
 /**
- * The lifetime, said in the two clocks it actually has. Both are stated because
- * they fail in different directions and an operator who knows only the idle one
- * is surprised by the other.
+ * The lifetime, in the two clocks it actually has. Both are stated because they
+ * fail in different directions and an operator who knows only the idle one is
+ * surprised by the other — and "nothing is kept" is here rather than in a notice
+ * because it is the fact that changes what somebody does next.
  */
 export function shellLifetime(state: ShellState): string {
   return (
-    `It is reclaimed after ${formatTTL(state.idle_timeout_seconds)} without a keystroke, ` +
-    `and ends after ${formatTTL(state.max_lifetime_seconds)} regardless. ` +
-    `Nothing written inside it is kept.`
+    `idle ${formatTTL(state.idle_timeout_seconds)} · ` +
+    `max ${formatTTL(state.max_lifetime_seconds)} · nothing is kept`
   )
 }
 

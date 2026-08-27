@@ -8,6 +8,22 @@ and `helm` on the path, one per person per cluster.
 It exists so that the moment a question outgrows a form, the answer still
 happens **inside** kubemg rather than in a terminal nobody can see.
 
+## Opening one
+
+The **Shell** button in the header, on any page of a cluster whose agent is
+attached. It opens a dock along the bottom of the console and starts a session
+straight away — there is no page to navigate to and no second button to press.
+
+The dock is a layer *over* the console, not a page, for a specific reason: a
+terminal is reached for in the middle of a question, and a page would take the
+thing being asked about off the screen to answer it. It also keeps running
+while you navigate — open a shell, go read the failing workload's events, come
+back to the same prompt.
+
+Closing the dock (`×`) hides it and leaves the session running; it is reclaimed
+by its own idle window. Ending it (the power icon) deletes the pod now and
+withdraws the credential that was inside it.
+
 ## What it actually is
 
 A pod, on the target cluster, that kubemg creates when somebody asks for one:

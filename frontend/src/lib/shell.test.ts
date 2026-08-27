@@ -71,7 +71,7 @@ describe('the disclosure', () => {
     expect(scoped).toContain('view')
     expect(scoped).toContain('payments, shop')
 
-    // An unscoped grant is a different sentence, not an empty list.
+    // An unscoped grant is a different phrase, not an empty list.
     expect(shellReach(state({ k8s_role: 'edit' }))).toContain('every namespace')
   })
 
@@ -79,7 +79,7 @@ describe('the disclosure', () => {
     const said = shellLifetime(state())
     expect(said).toContain('1 hour')
     expect(said).toContain('8 hours')
-    expect(said).toContain('Nothing written inside it is kept')
+    expect(said).toContain('nothing is kept')
   })
 })
 

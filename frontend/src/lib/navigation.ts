@@ -26,13 +26,16 @@ export function hasTunnel(cluster: Cluster): boolean {
 
 /**
  * A page a cluster carries that is not one of its resource lists. Everything
- * else under `/clusters/:id/` is a resource key, which is why these six names
+ * else under `/clusters/:id/` is a resource key, which is why these five names
  * are reserved: the resource route is a splat, so a kind called `capacity`
- * would otherwise be unreachable. `shell` is on this list without being a row in
- * the tree — it is reached from an icon in the header — because the address
- * still has to parse as a page rather than as a kind nobody serves.
+ * would otherwise be unreachable.
+ *
+ * The browser shell is deliberately not among them: it has no address at all.
+ * It is a dock over the console rather than a page, so that a session keeps
+ * running while its operator navigates — and a URL for it would be a link that
+ * promises a page and delivers a layer over whichever one you were on.
  */
-export type ClusterPage = 'dashboard' | 'events' | 'capacity' | 'security' | 'audit' | 'shell'
+export type ClusterPage = 'dashboard' | 'events' | 'capacity' | 'security' | 'audit'
 
 export const CLUSTER_PAGES: readonly ClusterPage[] = [
   'dashboard',
@@ -40,7 +43,6 @@ export const CLUSTER_PAGES: readonly ClusterPage[] = [
   'capacity',
   'security',
   'audit',
-  'shell',
 ]
 
 /**
@@ -49,7 +51,7 @@ export const CLUSTER_PAGES: readonly ClusterPage[] = [
  * — so they survive an agent that has stopped dialling in. The other three are
  * reads through the tunnel and cannot.
  */
-const LIVE_PAGES: readonly ClusterPage[] = ['events', 'capacity', 'security', 'shell']
+const LIVE_PAGES: readonly ClusterPage[] = ['events', 'capacity', 'security']
 
 export function pageNeedsTunnel(page: ClusterPage): boolean {
   return LIVE_PAGES.includes(page)
