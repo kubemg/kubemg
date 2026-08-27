@@ -60,6 +60,9 @@ type fakeStore struct {
 	// by repository id.
 	helmRepos  map[string]*db.HelmRepository
 	helmCharts map[uint][]db.HelmChart
+	// appTemplates stands in for app_templates, keyed by name the way the
+	// table's unique index is; see app_templates_fake_test.go.
+	appTemplates map[string]*db.AppTemplate
 	// consoles holds the external console links, keyed the same way.
 	consoles map[uint]map[string]db.ClusterConsole
 	// hiddenCRDs is each cluster's sidebar curation: the resources an admin
@@ -118,8 +121,9 @@ func newFakeStore() *fakeStore {
 		groupAccess: map[uint]map[uint]db.GroupClusterAccess{},
 		settings:    map[string]string{},
 		sources:     map[uint]map[string]db.ObservabilitySource{},
-		helmRepos:   map[string]*db.HelmRepository{},
-		helmCharts:  map[uint][]db.HelmChart{},
+		helmRepos:    map[string]*db.HelmRepository{},
+		helmCharts:   map[uint][]db.HelmChart{},
+		appTemplates: map[string]*db.AppTemplate{},
 		consoles:    map[uint]map[string]db.ClusterConsole{},
 		hiddenCRDs:  map[uint][]string{},
 		providers:   map[uint]*db.SSOProviderConfig{},

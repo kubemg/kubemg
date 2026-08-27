@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Check, Copy, Pencil, RefreshCw, ShieldAlert, Undo2, X } from 'lucide-react'
+import { Check, Copy, LayoutTemplate, Pencil, RefreshCw, ShieldAlert, Undo2, X } from 'lucide-react'
 import type { GuardrailRefusal } from '../api/client'
 import {
   errorMessage,
@@ -10,8 +10,10 @@ import {
 } from '../api/client'
 import type { Cluster, ManifestDiff, ResourceManifest } from '../api/types'
 import type { ResourceKey } from '../lib/resources'
+import { useAuth } from '../state/auth-context'
 import { ManifestDiffView } from './ManifestDiffView'
 import { Button, Notice, Pill, Spinner } from './primitives'
+import { SaveAsTemplateSheet } from './SaveAsTemplateSheet'
 import { YamlView } from './YamlView'
 
 /**
@@ -49,9 +51,16 @@ export function YamlPanel({
   onDirtyChange?: (dirty: boolean) => void
   onApplied?: () => Promise<void> | void
 }) {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+
   const [manifest, setManifest] = useState<ResourceManifest | null>(null)
   const [draft, setDraft] = useState('')
   const [editing, setEditing] = useState(startEditing)
+  // Admin-only, the same class of act as writing to the template catalogue
+  // itself: a template is offered to the whole fleet, so turning one object
+  // into one is not something a `view` grant gets to decide.
+  const [savingTemplate, setSavingTemplate] = useState(false)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -202,6 +211,20 @@ export function YamlPanel({
         ) : null}
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          {/* Absent, not disabled, for anybody who is not an admin — the same
+              rule every other admin-only action in this console follows: a
+              button that always refuses is worse than no button. */}
+          {isAdmin && !editing ? (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setSavingTemplate(true)}
+              disabled={!manifest}
+            >
+              <LayoutTemplate aria-hidden="true" className="size-3.5" />
+              Save as template
+            </Button>
+          ) : null}
           <Button type="button" size="sm" onClick={() => void copy()} disabled={!manifest}>
             {copied ? (
               <Check aria-hidden="true" className="size-3.5 text-ok" />
@@ -336,6 +359,16 @@ export function YamlPanel({
             ? 'Apply reviews the change before writing it — nothing reaches the cluster until you confirm.'
             : 'Read live through the agent tunnel under your own identity. Server-side bookkeeping — managed fields and kubectl’s last-applied copy — is stripped.'}
       </p>
+
+      {savingTemplate && manifest ? (
+        <SaveAsTemplateSheet
+          yaml={draft}
+          kind={manifest.kind}
+          objectName={manifest.name}
+          onClose={() => setSavingTemplate(false)}
+          onSaved={() => setSavingTemplate(false)}
+        />
+      ) : null}
     </div>
   )
 }

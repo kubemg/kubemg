@@ -58,6 +58,7 @@ func Migrate(gdb *gorm.DB) error {
 		&HelmRepository{},
 		&HelmChart{},
 		&KubeconfigIssuance{},
+		&AppTemplate{},
 	); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
 	}
@@ -127,6 +128,13 @@ func Migrate(gdb *gorm.DB) error {
 	// SeedHelmRepositories: a catalogue an operator cannot edit is one that is
 	// wrong the moment they mirror it internally.
 	if err := SeedHelmRepositories(gdb); err != nil {
+		return err
+	}
+	// The starter template catalogue, stored as ordinary rows. See
+	// SeedAppTemplates: the same reasoning as the chart repositories above —
+	// a catalogue an administrator cannot edit is wrong the moment their
+	// fleet's conventions diverge from it.
+	if err := SeedAppTemplates(gdb); err != nil {
 		return err
 	}
 	return nil

@@ -11,6 +11,7 @@ import {
   Gauge,
   KeyRound,
   Layers,
+  LayoutTemplate,
   LogOut,
   Menu,
   Moon,
@@ -92,6 +93,10 @@ const ADMIN_GROUPS: readonly AdminGroup[] = [
     items: [
       { to: '/admin/clusters', label: 'Clusters', icon: Server },
       { to: '/admin/clusters/new', label: 'Register a cluster', icon: Plus },
+      // The application catalogue: what Explore's "From template" offers,
+      // beside the clusters it renders onto rather than under Settings — a
+      // template is a thing the fleet is offered, not a knob on the install.
+      { to: '/admin/templates', label: 'App templates', icon: LayoutTemplate },
     ],
   },
   {

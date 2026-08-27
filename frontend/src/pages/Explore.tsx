@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Boxes, CheckSquare, Plus, X } from 'lucide-react'
+import { Boxes, CheckSquare, LayoutTemplate, Plus, X } from 'lucide-react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import {
   errorMessage,
@@ -39,6 +39,7 @@ import { AppShell } from '../components/AppShell'
 import { BulkActionSheet } from '../components/BulkActionSheet'
 import { CreateResourceSheet } from '../components/CreateResourceSheet'
 import { HelmInstallSheet } from '../components/HelmInstallSheet'
+import { TemplateSheet } from '../components/TemplateSheet'
 import { InsightTrend } from '../components/InsightTrend'
 import { LiveRefresh } from '../components/LiveRefresh'
 import { NetworkPolicyCoveragePanel } from '../components/NetworkPolicyCoveragePanel'
@@ -528,6 +529,10 @@ export function Explore() {
   // only over the Helm list: there is no object yet, and what is being written
   // is a chart's worth of them rather than one.
   const [installing, setInstalling] = useState(false)
+  // Creating from a template is a third way of getting to "no object yet",
+  // offered wherever Create is: a template renders manifests and stops, and
+  // from there it is the same per-object create call Create itself makes.
+  const [templating, setTemplating] = useState(false)
 
   // One drawer for every kind and every action, opened on whichever tab or
   // panel the row asked for. A pod and a Helm release each carry their row
@@ -732,6 +737,7 @@ export function Explore() {
     // lists closes it rather than posting a Deployment to the Services route.
     setCreating(false)
     setInstalling(false)
+    setTemplating(false)
   }, [resource, namespace, clusterId])
 
   // Membership is a set because the checkbox column asks about every row it
@@ -1125,6 +1131,25 @@ export function Explore() {
                 Install chart
               </Button>
             ) : null}
+            {/* A third way of getting to "no object yet", beside Create — it is
+                not narrowed to this kind because a template's bundle is rarely
+                one kind, so it is offered on every list rather than only where
+                Create itself is. */}
+            {cluster ? (
+              <Button
+                type="button"
+                size="sm"
+                className={
+                  totalCount === 0 && !canCreateResource(item) && item.key !== 'helmreleases'
+                    ? 'ml-auto'
+                    : undefined
+                }
+                onClick={() => setTemplating(true)}
+              >
+                <LayoutTemplate aria-hidden="true" className="size-3.5" />
+                From template
+              </Button>
+            ) : null}
           </div>
 
           {/* What can be done to the selection, and nothing that cannot: an
@@ -1365,6 +1390,19 @@ export function Explore() {
           namespaces={namespaces.map((entry) => entry.name)}
           onClose={() => setInstalling(false)}
           onInstalled={load}
+        />
+      ) : null}
+
+      {/* Same reasoning as Create and Install above: it refreshes the list
+          behind it once something has landed, rather than closing itself. */}
+      {templating && cluster ? (
+        <TemplateSheet
+          cluster={cluster}
+          namespace={namespaced && !allNamespaces ? namespace : undefined}
+          namespaces={namespaces.map((entry) => entry.name)}
+          categories={categories}
+          onClose={() => setTemplating(false)}
+          onCreated={load}
         />
       ) : null}
     </AppShell>

@@ -2447,3 +2447,89 @@ export interface JitRequestList {
   /** True when the list was narrowed to the caller's own requests. */
   scoped_to_me: boolean
 }
+
+/*
+ * Application templates — a named bundle of manifests with a small declared
+ * parameter set, standing in for the chart KubeMG deliberately does not have an
+ * opinion about authoring. A template renders to YAML and then stops: filling
+ * its parameters produces manifests, and creating them from there is the same
+ * per-object create call every manifest editor already uses, so impersonation,
+ * the namespace-as-address rule, the audit trail and the cluster's own RBAC are
+ * all exactly what they are everywhere else in this console.
+ */
+
+/**
+ * One value a template's manifests hold a placeholder for — `image` or
+ * `replicas`, not a whole values file. `type` is only ever wide enough to pick
+ * the input control: a `number` parameter still travels as a string in
+ * `values`, the same as everything else, because the substitution is textual.
+ */
+export interface TemplateParameter {
+  name: string
+  label?: string
+  description?: string
+  type: 'string' | 'number'
+  default?: string
+  required: boolean
+}
+
+/**
+ * A stored template. `seeded` marks one KubeMG shipped rather than one an
+ * operator saved from an object already in the cluster — the point of this
+ * feature — and a seeded row deletes like any other; nothing here is
+ * protected.
+ */
+export interface AppTemplate {
+  name: string
+  title?: string
+  description?: string
+  manifests: string
+  parameters: TemplateParameter[]
+  seeded: boolean
+  created_by?: string
+  updated_at: string
+}
+
+export interface AppTemplateList {
+  templates: AppTemplate[]
+}
+
+/** What an admin submits to declare a template, or edit one — the name is the
+    address, so renaming one means writing a new one. */
+export interface AppTemplateInput {
+  name: string
+  title?: string
+  description?: string
+  manifests: string
+  parameters: TemplateParameter[]
+}
+
+/** One object a render produced, before anything has been created — the same
+    shape `ResourceManifest` renders as, so it drops straight into a `YamlView`. */
+export interface RenderedObject {
+  api_version: string
+  kind: string
+  name: string
+  namespace?: string
+  yaml: string
+}
+
+/** What filling in a template's parameters answers with: the objects, each on
+    its own, and the same set rendered as one multi-document file to copy out
+    whole. */
+export interface AppTemplateRenderResult {
+  objects: RenderedObject[]
+  manifests: string
+}
+
+/**
+ * What drafting a template from an object already in the cluster answers
+ * with — the manifest with the cluster's own bookkeeping stripped, and the
+ * parameter set the server suggests standing in for what looks like a name, an
+ * image or a replica count. Both travel back editable: the suggestion is a
+ * starting point, not a verdict.
+ */
+export interface AppTemplateDraft {
+  manifests: string
+  parameters: TemplateParameter[]
+}
