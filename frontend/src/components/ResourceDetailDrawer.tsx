@@ -688,11 +688,14 @@ function OverviewTab({
           has restarted. The list row already carries all of it. */}
       {pod ? <PodOverview cluster={cluster} pod={pod} /> : null}
 
-      {describe.conditions.length > 0 ? <Conditions conditions={describe.conditions} /> : null}
-
       {/* A workload's health is its pods' health — what it owns right now, and
           whether each one is ready, is answered here rather than behind a tab
-          of its own, the way Rancher's own workload page reads. */}
+          of its own, the way Rancher's own workload page reads.
+
+          It sits above the conditions rather than under them because it is the
+          question the drawer was opened with. A workload's conditions restate
+          the same fact in the controller's vocabulary ("MinimumReplicasAvailable"),
+          which is worth having and is not what anybody reads first. */}
       {!pod && workloadPods && namespace ? (
         <div className="flex flex-col gap-2">
           <span className="label">Pods</span>
@@ -706,6 +709,8 @@ function OverviewTab({
           />
         </div>
       ) : null}
+
+      {describe.conditions.length > 0 ? <Conditions conditions={describe.conditions} /> : null}
 
       <KeyValues title="Labels" values={describe.labels} />
       <KeyValues title="Annotations" values={describe.annotations} />
