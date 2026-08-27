@@ -109,7 +109,7 @@ import { podUsageIndex } from '../lib/units'
 import { workloadKeyFor } from '../lib/workloads'
 import type { BulkActionName, SelectedRow } from '../lib/selection'
 import { BULK_ACTION_LABEL, bulkActions } from '../lib/selection'
-import { clusterPageHref, eventsHref, resourceHref } from '../lib/navigation'
+import { clusterPageHref, eventsHref, namespaceHref, resourceHref } from '../lib/navigation'
 import { useClusters } from '../state/clusters-context'
 import { useInventory } from '../state/inventory-context'
 
@@ -984,6 +984,19 @@ export function Explore() {
           </div>
         ) : undefined
       }
+      // Whichever namespace is being read has a page of its own, and this is
+      // the other way to it: somebody already narrowed to it here, which is
+      // exactly the moment "what else is in it" is worth one click.
+      scopeAction={
+        cluster && namespaced && namespace && namespace !== ALL_NAMESPACES ? (
+          <Link
+            to={namespaceHref(cluster.id, namespace)}
+            className="text-[12.5px] text-accent hover:underline"
+          >
+            Open namespace
+          </Link>
+        ) : undefined
+      }
       actions={<LiveRefresh query={list} disabled={namespaced && !namespace} />}
     >
       <div className="flex min-w-0 flex-col gap-4">
@@ -1273,6 +1286,7 @@ export function Explore() {
           {filtered && !unavailable ? (
             <ResourceView
               loaded={filtered}
+              clusterId={cluster?.id}
               showNamespace={allNamespaces}
               selection={selection}
               // One row's action opens the same confirmation the selection

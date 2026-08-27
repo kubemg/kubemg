@@ -60,19 +60,33 @@ type Attention = InsightAlert & { kind: string; resource: string }
 /** How many objects the attention list names before it stops. */
 const MAX_ATTENTION = 8
 
-export function ClusterWorkloadSummary({ cluster }: { cluster: Cluster }) {
+export function ClusterWorkloadSummary({
+  cluster,
+  namespace,
+}: {
+  cluster: Cluster
+  /**
+   * One namespace instead of every namespace the caller may see. The namespace
+   * page passes it, and passing it changes nothing but the scope of the two
+   * reads and where the cards link: the derivations are the same ones, which is
+   * what keeps a count here and a count one click away from disagreeing.
+   */
+  namespace?: string
+}) {
   const live = hasTunnel(cluster)
+  const scope = namespace ?? ALL_NAMESPACES
+  const search = namespace ? `namespace=${encodeURIComponent(namespace)}` : ''
 
   const query = useCachedQuery(
-    live ? queryKey('cluster-summary-workloads', cluster.id) : null,
+    live ? queryKey('cluster-summary-workloads', cluster.id, scope) : null,
     async () => {
       // One report around both reads: either can be bounded, and what the reader
       // needs to know is that the numbers below are a floor — not which of the
       // two lists hit the ceiling first.
       const { value, report } = await withReadReport(async () => {
         const [workloads, pods] = await Promise.all([
-          fetchWorkloads(cluster.id, ALL_NAMESPACES),
-          fetchPods(cluster.id, ALL_NAMESPACES),
+          fetchWorkloads(cluster.id, scope),
+          fetchPods(cluster.id, scope),
         ])
         return { workloads, pods }
       })
@@ -145,13 +159,13 @@ export function ClusterWorkloadSummary({ cluster }: { cluster: Cluster }) {
                 key={card.kind}
                 label={card.label}
                 insight={card.insight}
-                href={resourceHref(cluster.id, card.resource)}
+                href={resourceHref(cluster.id, card.resource, search)}
               />
             ))}
             <SummaryCard
               label="Pods"
               insight={podInsight}
-              href={resourceHref(cluster.id, 'pods')}
+              href={resourceHref(cluster.id, 'pods', search)}
             />
           </div>
 
@@ -159,7 +173,7 @@ export function ClusterWorkloadSummary({ cluster }: { cluster: Cluster }) {
         </>
       ) : null}
 
-      <Trend cluster={cluster} />
+      <Trend cluster={cluster} namespace={namespace} />
     </>
   )
 }
@@ -289,15 +303,18 @@ function AttentionPanel({ cluster, rows }: { cluster: Cluster; rows: Attention[]
  * granted, the picker is how they move between them; with one, there is nothing
  * to pick.
  */
-function Trend({ cluster }: { cluster: Cluster }) {
-  const scoped = cluster.namespaces.length > 0
-  const [namespace, setNamespace] = useState(cluster.namespaces[0] ?? '')
+function Trend({ cluster, namespace: fixed }: { cluster: Cluster; namespace?: string }) {
+  // A namespace page has already answered the question the picker asks, so the
+  // charts are that namespace and there is nothing to pick.
+  const scoped = fixed !== undefined || cluster.namespaces.length > 0
+  const [picked, setPicked] = useState(cluster.namespaces[0] ?? '')
+  const namespace = fixed ?? picked
 
   if (!hasTunnel(cluster)) return null
 
   return (
     <section className="flex flex-col gap-3">
-      {scoped && cluster.namespaces.length > 1 ? (
+      {fixed === undefined && scoped && cluster.namespaces.length > 1 ? (
         <div className="max-w-xs">
           <Field
             htmlFor="summary-namespace"
@@ -307,7 +324,7 @@ function Trend({ cluster }: { cluster: Cluster }) {
             <Select
               id="summary-namespace"
               value={namespace}
-              onChange={(event) => setNamespace(event.target.value)}
+              onChange={(event) => setPicked(event.target.value)}
             >
               {cluster.namespaces.map((entry) => (
                 <option key={entry} value={entry}>

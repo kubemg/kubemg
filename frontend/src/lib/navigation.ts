@@ -64,6 +64,13 @@ function isClusterPage(segment: string): segment is ClusterPage {
  */
 export type ClusterSlot =
   | { kind: 'page'; page: ClusterPage }
+  /**
+   * One namespace's own page. It is a slot of its own rather than a resource
+   * key because `namespaces/payments` is not a kind: the resource route is a
+   * splat, so without this the address reads as a list nobody serves, and the
+   * sidebar would highlight a kind that is not open.
+   */
+  | { kind: 'namespace'; name: string }
   | { kind: 'resource'; key: string }
 
 /** What every cluster opens on when it has nothing to read through. */
@@ -84,6 +91,18 @@ export function clusterPageHref(clusterId: number, page: ClusterPage): string {
 export function resourceHref(clusterId: number, key: string, search = ''): string {
   const qs = search.replace(/^\?/, '')
   return `/clusters/${clusterId}/${key}${qs ? `?${qs}` : ''}`
+}
+
+/**
+ * One namespace's own page.
+ *
+ * A namespace is the unit a scoped developer's whole world is, and until this
+ * existed it was a row in a cluster-scoped list and nothing else. The page is a
+ * composition of reads that already happen — it is addressed under the
+ * namespaces list because that is where it is arrived at from.
+ */
+export function namespaceHref(clusterId: number, name: string): string {
+  return `/clusters/${clusterId}/namespaces/${encodeURIComponent(name)}`
 }
 
 /**
@@ -116,7 +135,13 @@ export function currentClusterSlot(pathname: string, clusterId: number): Cluster
   const tail = pathname.slice(prefix.length)
   if (!tail) return { kind: 'page', page: DEFAULT_PAGE }
   const head = tail.split('/')[0]
-  return isClusterPage(head) ? { kind: 'page', page: head } : { kind: 'resource', key: tail }
+  if (isClusterPage(head)) return { kind: 'page', page: head }
+  // `namespaces` alone is the list, which is a resource like any other; a name
+  // under it is one namespace's page.
+  if (head === 'namespaces' && tail.length > head.length + 1) {
+    return { kind: 'namespace', name: decodeURIComponent(tail.slice(head.length + 1)) }
+  }
+  return { kind: 'resource', key: tail }
 }
 
 /**
@@ -127,6 +152,15 @@ export function currentClusterSlot(pathname: string, clusterId: number): Cluster
  * would not.
  */
 export function clusterSlotHref(target: Cluster, slot: ClusterSlot, search = ''): string {
+  // A namespace page names an object in *this* cluster, and the same name on
+  // another one is a different namespace or none at all. Switching therefore
+  // keeps the question — which namespaces are over there — rather than the
+  // answer, and lands on the target's own namespace list.
+  if (slot.kind === 'namespace') {
+    return hasTunnel(target)
+      ? resourceHref(target.id, 'namespaces')
+      : clusterPageHref(target.id, DEFAULT_PAGE)
+  }
   if (slot.kind === 'resource') {
     return hasTunnel(target)
       ? resourceHref(target.id, slot.key, search)

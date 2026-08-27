@@ -11,6 +11,7 @@ import { EventsTimeline } from './pages/EventsTimeline'
 import { Explore } from './pages/Explore'
 import { GroupManagement } from './pages/GroupManagement'
 import { Login } from './pages/Login'
+import { NamespaceDetail } from './pages/NamespaceDetail'
 import { NodeCapacity } from './pages/NodeCapacity'
 import { Overview } from './pages/Overview'
 import { IssuedCredentials } from './pages/IssuedCredentials'
@@ -331,6 +332,19 @@ export default function App() {
               element={
                 <RequireAuth>
                   <ExploreResourceRedirect />
+                </RequireAuth>
+              }
+            />
+            {/* One namespace, as a page. It is registered above the resource
+                splat because `namespaces/payments` would otherwise be read as a
+                kind — and it sits under the namespaces list deliberately: that
+                is where it is arrived at from, and the address says which
+                cluster's namespace it is. */}
+            <Route
+              path="/clusters/:id/namespaces/:name"
+              element={
+                <RequireAuth>
+                  <NamespaceDetail />
                 </RequireAuth>
               }
             />
