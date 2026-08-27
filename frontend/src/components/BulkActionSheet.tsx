@@ -1,9 +1,21 @@
 import { useState } from 'react'
-import { Ban, Check, CircleCheck, Loader2, Pause, Play, RotateCcw, Trash2, X } from 'lucide-react'
+import {
+  Ban,
+  Check,
+  CircleCheck,
+  Loader2,
+  Pause,
+  Play,
+  RotateCcw,
+  Trash2,
+  X,
+  Zap,
+} from 'lucide-react'
 import {
   deleteResourceObject,
   errorMessage,
   restartWorkload,
+  runCronJob,
   setNodeSchedulable,
   suspendWorkload,
 } from '../api/client'
@@ -47,6 +59,7 @@ const ACTION_ICON: Record<BulkActionName, typeof Trash2> = {
   resume: Play,
   cordon: Ban,
   uncordon: CircleCheck,
+  run: Zap,
 }
 
 /**
@@ -68,6 +81,11 @@ const ACTION_BLURB: Record<BulkActionName, string> = {
     'Cordoning stops new pods from being scheduled onto this node. Pods already running there ' +
     'are not moved — that is a drain, which kubemg does not do here.',
   uncordon: 'Uncordoning lets this node be scheduled onto again.',
+  run:
+    'Running a schedule now creates a Job from the CronJob\u2019s own template, straight away. ' +
+    'It is deliberately not owned by the CronJob, so its history limits will not reap it — ' +
+    'which also means it is yours to delete when you are done with it. The schedule itself is ' +
+    'untouched and still fires at its next matching time.',
 }
 
 export function BulkActionSheet({
@@ -265,6 +283,10 @@ async function runOne(
     case 'cordon':
     case 'uncordon': {
       const result = await setNodeSchedulable(clusterId, row.name, action === 'cordon')
+      return result.message
+    }
+    case 'run': {
+      const result = await runCronJob(clusterId, row.name, row.namespace)
       return result.message
     }
   }

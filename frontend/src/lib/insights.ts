@@ -37,13 +37,18 @@ import type {
   CustomResource,
   CustomResourceDefinition,
   HelmRelease,
+  HorizontalPodAutoscaler,
   Ingress,
   Job,
+  LimitRange,
   Namespace,
   NetworkPolicy,
   PersistentVolume,
   PersistentVolumeClaim,
   Pod,
+  PodDisruptionBudget,
+  ReplicaSet,
+  ResourceQuota,
   RoleBindingEntry,
   Route,
   Service,
@@ -1058,6 +1063,173 @@ export function claimInsights(claims: PersistentVolumeClaim[], label: string): R
 }
 
 /** Which provisioner backs the cluster's storage, and whether one is the default. */
+/**
+ * ReplicaSets. Almost every row is at zero desired — that is what a superseded
+ * ReplicaSet looks like — so the reading worth putting up is the opposite one:
+ * how many are actually carrying pods, and whether any of them wants pods it
+ * has not got. A namespace mid-rollout has exactly one of the latter.
+ */
+export function replicaSetInsights(replicasets: ReplicaSet[], label: string): ResourceInsight {
+  if (replicasets.length === 0) return nothing(label, 'No ReplicaSets here')
+
+  const active = replicasets.filter((entry) => entry.desired > 0)
+  const short = active.filter((entry) => entry.ready < entry.desired).length
+
+  return inventory(
+    label,
+    replicasets.length,
+    [
+      ...(active.length > 0
+        ? [segment('all', 'Active', active.length, replicasets.length, 'ok')]
+        : []),
+      ...(replicasets.length - active.length > 0
+        ? [
+            segment(
+              'all',
+              'Scaled to zero',
+              replicasets.length - active.length,
+              replicasets.length,
+              'idle',
+            ),
+          ]
+        : []),
+    ],
+    short > 0 ? [reading('short of pods', short, undefined, 'warn')] : [],
+    short > 0
+      ? `${plural(short, 'ReplicaSet')} short of the pods it wants`
+      : `${plural(replicasets.length, 'ReplicaSet')}, ${active.length} carrying pods`,
+    short > 0 ? [`${short} short`] : [],
+  )
+}
+
+/**
+ * HorizontalPodAutoscalers. The one thing worth calling out is an autoscaler
+ * that cannot read its metric: it looks exactly like a quiet one on any table
+ * of replica counts, and it means the workload is not being scaled at all. The
+ * second is an autoscaler pinned at its ceiling, which is where the next
+ * traffic spike has nowhere left to go.
+ */
+export function autoscalerInsights(
+  autoscalers: HorizontalPodAutoscaler[],
+  label: string,
+): ResourceInsight {
+  if (autoscalers.length === 0) return nothing(label, 'No autoscalers here')
+
+  const broken = autoscalers.filter((entry) => !!entry.reason).length
+  const atCeiling = autoscalers.filter(
+    (entry) => !entry.reason && entry.current_replicas >= entry.max_replicas,
+  ).length
+
+  return inventory(
+    label,
+    autoscalers.length,
+    [
+      ...(broken > 0 ? [segment('all', 'Not scaling', broken, autoscalers.length, 'bad')] : []),
+      ...(atCeiling > 0
+        ? [segment('all', 'At ceiling', atCeiling, autoscalers.length, 'warn')]
+        : []),
+      ...(autoscalers.length - broken - atCeiling > 0
+        ? [
+            segment(
+              'all',
+              'Scaling',
+              autoscalers.length - broken - atCeiling,
+              autoscalers.length,
+              'ok',
+            ),
+          ]
+        : []),
+    ],
+    [
+      ...(broken > 0 ? [reading('cannot read metrics', broken, undefined, 'bad')] : []),
+      ...(atCeiling > 0 ? [reading('at max replicas', atCeiling, undefined, 'warn')] : []),
+    ],
+    broken > 0
+      ? `${plural(broken, 'autoscaler')} cannot read its metrics`
+      : `${plural(autoscalers.length, 'autoscaler')} here`,
+    broken > 0 ? [`${broken} not scaling`] : [],
+  )
+}
+
+/**
+ * ResourceQuotas. The header answers the question the list is opened with —
+ * "is anything full" — by counting the entries at or over their hard limit.
+ * Quantities are compared as text where they are equal and not otherwise: two
+ * Kubernetes quantities are only reliably comparable through a unit parser this
+ * derivation deliberately does not have, so "full" here means "used equals
+ * hard", which is exact, rather than a percentage that would sometimes be wrong.
+ */
+export function quotaInsights(quotas: ResourceQuota[], label: string): ResourceInsight {
+  if (quotas.length === 0) return nothing(label, 'No quotas here')
+
+  const entries = quotas.flatMap((quota) => quota.entries)
+  const exhausted = entries.filter((entry) => !!entry.used && entry.used === entry.hard).length
+
+  return inventory(
+    label,
+    quotas.length,
+    [],
+    [
+      reading('bounded resources', entries.length),
+      ...(exhausted > 0 ? [reading('at their limit', exhausted, undefined, 'bad')] : []),
+    ],
+    exhausted > 0
+      ? `${plural(exhausted, 'resource')} at its hard limit — nothing more will schedule`
+      : `${plural(quotas.length, 'quota')} bounding ${plural(entries.length, 'resource')}`,
+    exhausted > 0 ? [`${exhausted} exhausted`] : [],
+  )
+}
+
+/** LimitRanges. An inventory kind: what matters is which types are bounded. */
+export function limitRangeInsights(ranges: LimitRange[], label: string): ResourceInsight {
+  if (ranges.length === 0) return nothing(label, 'No LimitRanges here')
+
+  const entries = ranges.flatMap((range) => range.entries)
+  return inventory(
+    label,
+    ranges.length,
+    composition(entries, (entry) => entry.type),
+    [reading('bounds', entries.length)],
+    `${plural(ranges.length, 'LimitRange')} declaring ${plural(entries.length, 'bound')}`,
+    [],
+  )
+}
+
+/**
+ * PodDisruptionBudgets. Two things are worth the eye: a budget allowing no
+ * disruption at all, which is what a drain hangs on, and a budget that selects
+ * nothing, which protects nothing while looking like protection.
+ */
+export function disruptionBudgetInsights(
+  budgets: PodDisruptionBudget[],
+  label: string,
+): ResourceInsight {
+  if (budgets.length === 0) return nothing(label, 'No disruption budgets here')
+
+  const blocking = budgets.filter((entry) => entry.disruptions_allowed === 0).length
+  const selectsNothing = budgets.filter((entry) => !entry.selector).length
+
+  return inventory(
+    label,
+    budgets.length,
+    [
+      ...(blocking > 0
+        ? [segment('all', 'Allowing none', blocking, budgets.length, 'warn')]
+        : []),
+      ...(budgets.length - blocking > 0
+        ? [segment('all', 'Allowing disruption', budgets.length - blocking, budgets.length, 'ok')]
+        : []),
+    ],
+    selectsNothing > 0
+      ? [reading('select no pods', selectsNothing, 'empty selector', 'bad')]
+      : [],
+    blocking > 0
+      ? `${plural(blocking, 'budget')} allowing no disruption — a drain will block here`
+      : `${plural(budgets.length, 'budget')}, all allowing disruption`,
+    blocking > 0 ? [`${blocking} blocking`] : [],
+  )
+}
+
 export function storageClassInsights(classes: StorageClass[], label: string): ResourceInsight {
   if (classes.length === 0) return nothing(label, 'No storage classes here')
 

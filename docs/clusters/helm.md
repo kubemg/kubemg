@@ -179,6 +179,48 @@ Resolution rules, all enforced server-side:
   fallback above — answers `409` naming the reason: there is nothing to
   three-way merge against.
 
+## Uninstalling a release
+
+`DELETE .../resources/helm/releases/:name` removes a release and everything
+it installed. It is **not** deleting the release's Secret: the release record
+carries the rendered manifest of every object it wrote, so an uninstall is
+that manifest parsed server-side and its objects deleted one at a time
+through the same impersonated tunnel — each its own call, its own answer from
+the cluster's RBAC and its own audit record. The response is the same
+per-object report an install or an upgrade carries.
+
+Two rules about order and failure:
+
+- **Objects go in reverse of install order**, so a dependant is removed
+  before whatever it depends on.
+- **The release's own Secrets go last, and only if every object went.** If
+  something cannot be removed, the release is deliberately left in place: it
+  still exists and still describes what is there, which is a state you can
+  retry or finish by hand. Deleting the record first would leave a set of
+  objects nothing accounts for and no way to find out what they were. The
+  response then carries `removed: false` and names the first object left
+  behind, in the cluster's own words.
+
+A namespace-scoped grant is refused **before the first delete**, with the
+object named — a chart is not a manifest you wrote, so being told up front
+that it installed a `ClusterRole` you may not touch is the difference between
+a message you can act on and a half-removed release. A release whose manifest
+kubemg cannot read is refused outright (`409`) rather than reduced to
+deleting its Secrets.
+
+!!! warning "What an uninstall leaves behind"
+    - **`pre-delete` and `post-delete` hooks are not run.** A release records
+      its rendered manifest, not the chart templates behind it, so there is
+      nothing to render them from. The response says so on every uninstall.
+    - **Anything the chart did not render stays.** A `PersistentVolumeClaim`
+      a StatefulSet expanded, anything a controller created, and any
+      `CustomResourceDefinition` from the chart's `crds/` directory — Helm
+      does not record those on the release either, and `helm uninstall`
+      leaves them behind too.
+
+    There is no `--keep-history` mode: a release with no objects and a
+    history is a row nobody can act on.
+
 ## Honest limits
 
 !!! warning "What kubemg's Helm engine does not do"
@@ -197,4 +239,7 @@ Explore gives Helm a section of its own rather than folding it into
 Workloads — a release is what *produced* several workloads, not a workload
 itself. Its rows open the shared detail drawer on two panels,
 `HelmValuesPanel` and `HelmHistoryPanel`, since a release has no manifest for
-the ordinary object route to address.
+the ordinary object route to address. Uninstalling opens `HelmUninstallSheet`
+— its own surface rather than a row in the bulk action sheet, because the set
+it acts on is the release's recorded manifest and both limits above have to
+be readable *before* the button rather than discovered in the report.

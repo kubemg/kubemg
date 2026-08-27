@@ -30,6 +30,7 @@ import type {
   ClusterNode,
   ConfigEntry,
   CronJob,
+  CronJobRunResult,
   CustomResource,
   CustomResourceDefinition,
   CRDVisibility,
@@ -61,8 +62,11 @@ import type {
   HelmRepositoryInput,
   HelmRepositoryList,
   HelmValues,
+  HelmUninstallResult,
   HelmWriteResult,
+  HorizontalPodAutoscaler,
   Ingress,
+  LimitRange,
   JitRequest,
   JitRequestInput,
   JitRequestList,
@@ -94,13 +98,16 @@ import type {
   PersistentVolume,
   PersistentVolumeClaim,
   Pod,
+  PodDisruptionBudget,
   PodListMetrics,
   PodMetrics,
   PostureAcknowledgement,
   PostureRule,
   PostureScan,
+  ReplicaSet,
   ResourceDescribeResult,
   ResourceManifest,
+  ResourceQuota,
   RoleBindingEntry,
   Route,
   ServiceAccountEntry,
@@ -124,6 +131,7 @@ import type {
   TerminalSessionQuery,
   User,
   UserPatch,
+  WorkloadAutoscaler,
   Workload,
   DeleteResult,
   NodeSchedulableResult,
@@ -803,6 +811,91 @@ export function fetchIngresses(clusterId: number, namespace: string): Promise<In
   return fetchList<Ingress>(clusterId, 'ingresses', 'ingresses', namespace)
 }
 
+export function fetchReplicaSets(clusterId: number, namespace: string): Promise<ReplicaSet[]> {
+  return fetchList<ReplicaSet>(clusterId, 'replicasets', 'replicasets', namespace)
+}
+
+export function fetchResourceQuotas(
+  clusterId: number,
+  namespace: string,
+): Promise<ResourceQuota[]> {
+  return fetchList<ResourceQuota>(clusterId, 'resourcequotas', 'resourcequotas', namespace)
+}
+
+export function fetchLimitRanges(clusterId: number, namespace: string): Promise<LimitRange[]> {
+  return fetchList<LimitRange>(clusterId, 'limitranges', 'limitranges', namespace)
+}
+
+export function fetchPodDisruptionBudgets(
+  clusterId: number,
+  namespace: string,
+): Promise<PodDisruptionBudget[]> {
+  return fetchList<PodDisruptionBudget>(
+    clusterId,
+    'poddisruptionbudgets',
+    'poddisruptionbudgets',
+    namespace,
+  )
+}
+
+/**
+ * HorizontalPodAutoscalers. Read through the optional-list shape rather than
+ * the plain one: this build reads `autoscaling/v2` and nothing else, so a
+ * cluster old enough to serve only v1 answers "not available" with a reason
+ * instead of failing — the same answer the Gateway API and Istio lists give.
+ */
+export function fetchAutoscalers(
+  clusterId: number,
+  namespace: string,
+): Promise<OptionalList<HorizontalPodAutoscaler>> {
+  return fetchOptionalList<HorizontalPodAutoscaler>(
+    clusterId,
+    'horizontalpodautoscalers',
+    'horizontalpodautoscalers',
+    namespace,
+  )
+}
+
+/**
+ * Whether an autoscaler owns this workload's replica count.
+ *
+ * The scale control is otherwise a lie by omission: the write succeeds, reports
+ * the number it set, and is reverted on the autoscaler's next pass with nothing
+ * anywhere saying why. `autoscaler: null` is the ordinary answer and is not a
+ * failure.
+ */
+export async function fetchWorkloadAutoscaler(
+  clusterId: number,
+  kind: ResourceKey,
+  name: string,
+  namespace: string | undefined,
+): Promise<WorkloadAutoscaler> {
+  const { data } = await http.get<WorkloadAutoscaler>(
+    resourceURL(clusterId, 'workload/autoscaler'),
+    { params: { kind, name, namespace: namespace || undefined } },
+  )
+  return data
+}
+
+/**
+ * runCronJob fires a schedule now. The Job is built server-side out of the
+ * CronJob's own `spec.jobTemplate` and posted through the create path that
+ * already exists, so nothing about its shape comes off the wire — and it is
+ * deliberately not owned by the CronJob, or its history limits would reap the
+ * one run somebody triggered by hand.
+ */
+export async function runCronJob(
+  clusterId: number,
+  name: string,
+  namespace: string | undefined,
+): Promise<CronJobRunResult> {
+  const { data } = await http.post<CronJobRunResult>(resourceURL(clusterId, 'cronjob/run'), {
+    name,
+    namespace,
+  })
+  return data
+}
+
 export function fetchNetworkPolicies(
   clusterId: number,
   namespace: string,
@@ -1168,6 +1261,26 @@ export async function rollbackHelmRelease(
     { revision },
     { params: { namespace } },
   )
+  return data
+}
+
+/**
+ * uninstallHelmRelease removes a release and the objects it installed.
+ *
+ * The set is the release's own recorded manifest — never something the browser
+ * names — deleted in reverse of install order, one impersonated call each. The
+ * release's Secrets go last and only if everything else went, so a partial
+ * failure leaves a release that still describes what is there rather than an
+ * orphaned set of objects nothing accounts for.
+ */
+export async function uninstallHelmRelease(
+  clusterId: number,
+  name: string,
+  namespace: string,
+): Promise<HelmUninstallResult> {
+  const { data } = await http.delete<HelmUninstallResult>(helmReleaseURL(clusterId, name), {
+    params: { namespace },
+  })
   return data
 }
 

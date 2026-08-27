@@ -8,14 +8,20 @@ import type {
   CustomResource,
   CustomResourceDefinition,
   HelmRelease,
+  HorizontalPodAutoscaler,
   Ingress,
   Job,
+  LimitRange,
+  LimitRangeEntry,
   Namespace,
   NetworkPolicy,
   PersistentVolume,
   PersistentVolumeClaim,
   Pod,
+  PodDisruptionBudget,
   PodUsage,
+  ReplicaSet,
+  ResourceQuota,
   RoleBindingEntry,
   Route,
   Service,
@@ -35,6 +41,7 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Trash2,
+  Zap,
 } from 'lucide-react'
 import { IconButton, Pill, Row, RowMenu, RowMenuItem, SortTh, Table, Td, Th } from './primitives'
 import type { DetailTab } from './ResourceDetailDrawer'
@@ -68,6 +75,17 @@ export type LoadedResource =
   | { kind: 'workloads'; rows: Workload[] }
   | { kind: 'jobs'; rows: Job[] }
   | { kind: 'cronjobs'; rows: CronJob[] }
+  | { kind: 'replicasets'; rows: ReplicaSet[] }
+  /**
+   * HorizontalPodAutoscalers carry `available` for the same reason the route
+   * lists do: this build reads `autoscaling/v2` and nothing else, so a cluster
+   * serving only v1 is told that rather than shown an empty list it would read
+   * as "nothing is autoscaled here".
+   */
+  | { kind: 'autoscalers'; rows: HorizontalPodAutoscaler[]; available: boolean; reason?: string }
+  | { kind: 'resourcequotas'; rows: ResourceQuota[] }
+  | { kind: 'limitranges'; rows: LimitRange[] }
+  | { kind: 'poddisruptionbudgets'; rows: PodDisruptionBudget[] }
   | { kind: 'services'; rows: Service[] }
   | { kind: 'ingresses'; rows: Ingress[] }
   | { kind: 'networkpolicies'; rows: NetworkPolicy[] }
@@ -167,6 +185,8 @@ export function ResourceView({
   onDelete,
   onSuspend,
   onCordon,
+  onRun,
+  onUninstall,
 }: {
   loaded: LoadedResource
   showNamespace?: boolean
@@ -186,6 +206,10 @@ export function ResourceView({
   onSuspend?: OpenRowAction
   /** Cordoning or uncordoning a node. Nodes and nothing else. */
   onCordon?: OpenRowAction
+  /** Firing a schedule now. CronJobs and nothing else. */
+  onRun?: OpenRowAction
+  /** Removing a Helm release, and everything its manifest recorded. */
+  onUninstall?: (release: HelmRelease) => void
 }) {
   switch (loaded.kind) {
     case 'helmreleases':
@@ -194,6 +218,7 @@ export function ResourceView({
           releases={loaded.rows}
           showNamespace={showNamespace}
           onValues={onValues}
+          onUninstall={onUninstall}
         />
       )
     case 'pods':
@@ -238,7 +263,35 @@ export function ResourceView({
           selection={selection}
           onDelete={onDelete}
           onSuspend={onSuspend}
+          onRun={onRun}
         />
+      )
+    case 'replicasets':
+      return (
+        <ReplicaSetTable
+          replicasets={loaded.rows}
+          showNamespace={showNamespace}
+          onManifest={open}
+          onDelete={onDelete}
+        />
+      )
+    case 'autoscalers':
+      return (
+        <AutoscalerTable
+          autoscalers={loaded.rows}
+          showNamespace={showNamespace}
+          onManifest={open}
+        />
+      )
+    case 'resourcequotas':
+      return <QuotaTable quotas={loaded.rows} showNamespace={showNamespace} onManifest={open} />
+    case 'limitranges':
+      return (
+        <LimitRangeTable ranges={loaded.rows} showNamespace={showNamespace} onManifest={open} />
+      )
+    case 'poddisruptionbudgets':
+      return (
+        <DisruptionBudgetTable budgets={loaded.rows} showNamespace={showNamespace} onManifest={open} />
       )
     case 'services':
       return (
@@ -781,10 +834,12 @@ function HelmReleaseTable({
   releases,
   showNamespace,
   onValues,
+  onUninstall,
 }: {
   releases: HelmRelease[]
   showNamespace: boolean
   onValues?: OpenValues
+  onUninstall?: (release: HelmRelease) => void
 }) {
   return (
     <Table resizeKey="kubemg_cols_helmreleases">
@@ -863,6 +918,23 @@ function HelmReleaseTable({
                   >
                     <History aria-hidden="true" className="size-3.5" />
                   </IconButton>
+                  {/*
+                    Uninstall is the one lifecycle verb every other list has and
+                    this one lacked. It is a danger-toned icon rather than a menu
+                    entry for the same reason the row delete is: it is the only
+                    destructive control here, and it opens a confirmation that
+                    names what the release recorded before anything is removed.
+                  */}
+                  {onUninstall ? (
+                    <IconButton
+                      type="button"
+                      tone="danger"
+                      label={`Uninstall ${release.name}`}
+                      onClick={() => onUninstall(release)}
+                    >
+                      <Trash2 aria-hidden="true" className="size-3.5" />
+                    </IconButton>
+                  ) : null}
                 </span>
               </Td>
             ) : null}
@@ -1423,6 +1495,7 @@ function CronJobTable({
   selection,
   onDelete,
   onSuspend,
+  onRun,
 }: {
   cronjobs: CronJob[]
   showNamespace: boolean
@@ -1430,6 +1503,7 @@ function CronJobTable({
   selection?: RowSelection
   onDelete?: OpenRowAction
   onSuspend?: OpenRowAction
+  onRun?: OpenRowAction
 }) {
   // One timer for the whole table, and its cadence follows what is actually
   // being watched: a schedule ten minutes out is counted down by the second, a
@@ -1520,16 +1594,30 @@ function CronJobTable({
               // why the row's own `suspended` is what decides the word: an
               // operator picks the outcome, not the field name.
               menu={
-                onSuspend ? (
-                  <RowMenuItem onClick={() => onSuspend(cronJobRow(cronjob))}>
-                    {cronjob.suspended ? (
-                      <Play aria-hidden="true" className="size-3.5" />
-                    ) : (
-                      <Pause aria-hidden="true" className="size-3.5" />
-                    )}
-                    {cronjob.suspended ? 'Resume schedule' : 'Suspend schedule'}
-                  </RowMenuItem>
-                ) : null
+                <>
+                  {/*
+                    Run now sits above the schedule switch because it is the
+                    thing somebody woken at 2am reaches for, and it is offered
+                    on a suspended CronJob too: firing one by hand is precisely
+                    what an operator does while a broken schedule is paused.
+                  */}
+                  {onRun ? (
+                    <RowMenuItem onClick={() => onRun(cronJobRow(cronjob))}>
+                      <Zap aria-hidden="true" className="size-3.5" />
+                      Run now
+                    </RowMenuItem>
+                  ) : null}
+                  {onSuspend ? (
+                    <RowMenuItem onClick={() => onSuspend(cronJobRow(cronjob))}>
+                      {cronjob.suspended ? (
+                        <Play aria-hidden="true" className="size-3.5" />
+                      ) : (
+                        <Pause aria-hidden="true" className="size-3.5" />
+                      )}
+                      {cronjob.suspended ? 'Resume schedule' : 'Suspend schedule'}
+                    </RowMenuItem>
+                  ) : null}
+                </>
               }
             />
           </Row>
@@ -1537,6 +1625,406 @@ function CronJobTable({
       </tbody>
     </Table>
   )
+}
+
+/**
+ * ReplicaSets. The two columns that earn this list its own place are Owner and
+ * Revision: a namespace mid-rollout holds two ReplicaSets for the same
+ * Deployment, and the revision is the only thing that says which is which.
+ */
+function ReplicaSetTable({
+  replicasets,
+  showNamespace,
+  onManifest,
+  onDelete,
+}: {
+  replicasets: ReplicaSet[]
+  showNamespace: boolean
+  onManifest?: OpenManifest
+  onDelete?: OpenRowAction
+}) {
+  return (
+    <Table resizeKey="kubemg_cols_replicasets">
+      <thead>
+        <tr>
+          <Th columnKey="name">ReplicaSet</Th>
+          <NamespaceHead show={showNamespace} />
+          <Th className="hidden md:table-cell md:w-[min(18%,13rem)]" columnKey="owner">
+            Owner
+          </Th>
+          <Th className="w-[14%] md:w-[min(8%,5rem)]" columnKey="rev">
+            Rev
+          </Th>
+          <Th className="w-[20%] md:w-[min(10%,7rem)]" columnKey="pods">
+            Pods
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(20%,15rem)]" columnKey="image">
+            Image
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
+          <ManifestHead onManifest={onManifest} />
+        </tr>
+      </thead>
+      <tbody>
+        {replicasets.map((replicaset) => (
+          <Row key={`${replicaset.namespace}/${replicaset.name}`}>
+            <Td className="truncate">
+              <Name
+                /*
+                 * A superseded ReplicaSet sits at zero desired, which is the
+                 * ordinary resting state of almost every row in this list — so
+                 * it reads as idle rather than as a fault, and only a
+                 * ReplicaSet that wants pods it does not have is called out.
+                 */
+                tone={replicaSetTone(replicaset)}
+                title={replicaset.name}
+                onOpen={opener(onManifest, replicaset)}
+                namespace={replicaset.namespace}
+              >
+                {replicaset.name}
+              </Name>
+            </Td>
+            <NamespaceCell show={showNamespace} namespace={replicaset.namespace} />
+            <Td className={`hidden md:table-cell ${MONO}`} title={replicaset.owner}>
+              {replicaset.owner || '—'}
+            </Td>
+            <Td className="font-mono text-[12.5px] text-muted">{replicaset.revision || '—'}</Td>
+            <Td className="font-mono text-[12.5px] text-fg">
+              {replicaset.ready}/{replicaset.desired}
+            </Td>
+            <Td className={`hidden lg:table-cell ${MONO}`}>
+              <List values={replicaset.images} />
+            </Td>
+            <Td className={AGE}>{relativeAge(replicaset.created_at)}</Td>
+            <ManifestCell
+              onManifest={onManifest}
+              name={replicaset.name}
+              namespace={replicaset.namespace}
+              onDelete={rowDeleter(onDelete, replicaSetRow(replicaset))}
+            />
+          </Row>
+        ))}
+      </tbody>
+    </Table>
+  )
+}
+
+/**
+ * A ReplicaSet wanting pods it has not got is the only interesting state here.
+ * Zero desired is not a fault — it is what every superseded ReplicaSet looks
+ * like — and colouring it as one would make a healthy namespace read as broken.
+ */
+function replicaSetTone(replicaset: ReplicaSet): Tone {
+  if (replicaset.desired === 0) return 'idle'
+  return replicaset.ready >= replicaset.desired ? 'ok' : 'warn'
+}
+
+function replicaSetRow(replicaset: ReplicaSet): SelectedRow {
+  return {
+    key: selectionKey('replicasets', replicaset.namespace, replicaset.name),
+    kind: 'replicasets',
+    label: 'ReplicaSet',
+    name: replicaset.name,
+    namespace: replicaset.namespace,
+  }
+}
+
+/**
+ * HorizontalPodAutoscalers. The Metrics column is the reason this is not just
+ * another count table: current against target is what says whether an
+ * autoscaler is about to move, and `reason` is what says it cannot move at all
+ * — an HPA that cannot read its metric looks identical to a quiet one on any
+ * table of replica numbers.
+ */
+function AutoscalerTable({
+  autoscalers,
+  showNamespace,
+  onManifest,
+}: {
+  autoscalers: HorizontalPodAutoscaler[]
+  showNamespace: boolean
+  onManifest?: OpenManifest
+}) {
+  return (
+    <Table resizeKey="kubemg_cols_hpas">
+      <thead>
+        <tr>
+          <Th columnKey="name">Autoscaler</Th>
+          <NamespaceHead show={showNamespace} />
+          <Th className="hidden md:table-cell md:w-[min(20%,14rem)]" columnKey="target">
+            Scales
+          </Th>
+          <Th className="w-[18%] md:w-[min(11%,7rem)]" columnKey="replicas">
+            Replicas
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="bounds">
+            Bounds
+          </Th>
+          <Th className="hidden lg:table-cell lg:w-[min(22%,16rem)]" columnKey="metrics">
+            Metrics
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
+          <ManifestHead onManifest={onManifest} />
+        </tr>
+      </thead>
+      <tbody>
+        {autoscalers.map((hpa) => (
+          <Row key={`${hpa.namespace}/${hpa.name}`}>
+            <Td className="truncate">
+              <Name
+                tone={hpa.reason ? 'bad' : 'ok'}
+                title={hpa.reason || hpa.name}
+                onOpen={opener(onManifest, hpa)}
+                namespace={hpa.namespace}
+              >
+                {hpa.name}
+              </Name>
+            </Td>
+            <NamespaceCell show={showNamespace} namespace={hpa.namespace} />
+            <Td className={`hidden md:table-cell ${MONO}`}>
+              {hpa.target_kind}/{hpa.target_name}
+            </Td>
+            <Td className="font-mono text-[12.5px] text-fg">
+              {hpa.current_replicas} → {hpa.desired_replicas}
+            </Td>
+            <Td className="font-mono text-[12.5px] text-muted">
+              {hpa.min_replicas}–{hpa.max_replicas}
+            </Td>
+            <Td className={`hidden lg:table-cell ${MONO}`}>
+              <List values={hpa.metrics.map(metricText)} empty="none declared" />
+            </Td>
+            <Td className={AGE}>{relativeAge(hpa.created_at)}</Td>
+            <ManifestCell onManifest={onManifest} name={hpa.name} namespace={hpa.namespace} />
+          </Row>
+        ))}
+      </tbody>
+    </Table>
+  )
+}
+
+/**
+ * One metric as `cpu 43%/80%`. A metric with no reading yet renders its target
+ * alone rather than `0%/80%`, because the two mean opposite things: one is an
+ * idle workload and the other is an autoscaler that has never scraped.
+ */
+function metricText(metric: { name: string; target: string; current?: string }): string {
+  if (!metric.current) return `${metric.name} —/${metric.target}`
+  return `${metric.name} ${metric.current}/${metric.target}`
+}
+
+/**
+ * ResourceQuotas. The table is one row per quota with its entries listed,
+ * rather than one row per bounded resource: a quota is the object that gets
+ * edited and the object an operator asks the cluster about, and exploding it
+ * into fifteen rows would lose which quota a number belongs to.
+ */
+function QuotaTable({
+  quotas,
+  showNamespace,
+  onManifest,
+}: {
+  quotas: ResourceQuota[]
+  showNamespace: boolean
+  onManifest?: OpenManifest
+}) {
+  return (
+    <Table resizeKey="kubemg_cols_resourcequotas">
+      <thead>
+        <tr>
+          <Th columnKey="name">Quota</Th>
+          <NamespaceHead show={showNamespace} />
+          <Th className="hidden md:table-cell md:w-[min(16%,11rem)]" columnKey="scopes">
+            Scopes
+          </Th>
+          <Th columnKey="usage">Used of hard</Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
+          <ManifestHead onManifest={onManifest} />
+        </tr>
+      </thead>
+      <tbody>
+        {quotas.map((quota) => (
+          <Row key={`${quota.namespace}/${quota.name}`}>
+            <Td className="truncate">
+              <Name
+                title={quota.name}
+                onOpen={opener(onManifest, quota)}
+                namespace={quota.namespace}
+              >
+                {quota.name}
+              </Name>
+            </Td>
+            <NamespaceCell show={showNamespace} namespace={quota.namespace} />
+            <Td className={`hidden md:table-cell ${MONO}`}>
+              <List values={quota.scopes} empty="everything" />
+            </Td>
+            <Td className={MONO}>
+              <List
+                values={quota.entries.map(
+                  (entry) => `${entry.resource} ${entry.used || '—'}/${entry.hard}`,
+                )}
+                empty="nothing bounded"
+              />
+            </Td>
+            <Td className={AGE}>{relativeAge(quota.created_at)}</Td>
+            <ManifestCell onManifest={onManifest} name={quota.name} namespace={quota.namespace} />
+          </Row>
+        ))}
+      </tbody>
+    </Table>
+  )
+}
+
+/** LimitRanges, one row per object with its flattened (type, resource) bounds. */
+function LimitRangeTable({
+  ranges,
+  showNamespace,
+  onManifest,
+}: {
+  ranges: LimitRange[]
+  showNamespace: boolean
+  onManifest?: OpenManifest
+}) {
+  return (
+    <Table resizeKey="kubemg_cols_limitranges">
+      <thead>
+        <tr>
+          <Th columnKey="name">LimitRange</Th>
+          <NamespaceHead show={showNamespace} />
+          <Th columnKey="limits">Limits</Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
+          <ManifestHead onManifest={onManifest} />
+        </tr>
+      </thead>
+      <tbody>
+        {ranges.map((range) => (
+          <Row key={`${range.namespace}/${range.name}`}>
+            <Td className="truncate">
+              <Name
+                title={range.name}
+                onOpen={opener(onManifest, range)}
+                namespace={range.namespace}
+              >
+                {range.name}
+              </Name>
+            </Td>
+            <NamespaceCell show={showNamespace} namespace={range.namespace} />
+            <Td className={MONO}>
+              <List values={range.entries.map(limitText)} empty="nothing declared" />
+            </Td>
+            <Td className={AGE}>{relativeAge(range.created_at)}</Td>
+            <ManifestCell onManifest={onManifest} name={range.name} namespace={range.namespace} />
+          </Row>
+        ))}
+      </tbody>
+    </Table>
+  )
+}
+
+/**
+ * One LimitRange entry as a sentence. Only the bounds that were declared appear
+ * — an undeclared minimum is not zero, and printing it as one would say the
+ * namespace forbids something it does not.
+ */
+function limitText(entry: LimitRangeEntry): string {
+  const parts: string[] = []
+  if (entry.min) parts.push(`min ${entry.min}`)
+  if (entry.max) parts.push(`max ${entry.max}`)
+  if (entry.default) parts.push(`default ${entry.default}`)
+  if (entry.default_request) parts.push(`request ${entry.default_request}`)
+  if (entry.max_limit_request_ratio) parts.push(`ratio ${entry.max_limit_request_ratio}`)
+  return `${entry.type}/${entry.resource} ${parts.join(' ') || '—'}`
+}
+
+/**
+ * PodDisruptionBudgets. Allowed is the column the list exists for: zero is
+ * where a drain hangs forever and every other list still looks healthy.
+ */
+function DisruptionBudgetTable({
+  budgets,
+  showNamespace,
+  onManifest,
+}: {
+  budgets: PodDisruptionBudget[]
+  showNamespace: boolean
+  onManifest?: OpenManifest
+}) {
+  return (
+    <Table resizeKey="kubemg_cols_pdbs">
+      <thead>
+        <tr>
+          <Th columnKey="name">Budget</Th>
+          <NamespaceHead show={showNamespace} />
+          <Th className="hidden lg:table-cell lg:w-[min(22%,16rem)]" columnKey="selector">
+            Selects
+          </Th>
+          <Th className="hidden md:table-cell md:w-[min(14%,9rem)]" columnKey="rule">
+            Rule
+          </Th>
+          <Th className="w-[20%] md:w-[min(11%,7rem)]" columnKey="healthy">
+            Healthy
+          </Th>
+          <Th className="w-[22%] md:w-[min(11%,7rem)]" columnKey="allowed">
+            Allowed
+          </Th>
+          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+            Age
+          </Th>
+          <ManifestHead onManifest={onManifest} />
+        </tr>
+      </thead>
+      <tbody>
+        {budgets.map((budget) => (
+          <Row key={`${budget.namespace}/${budget.name}`}>
+            <Td className="truncate">
+              <Name
+                tone={budget.selector ? 'ok' : 'bad'}
+                title={budget.selector ? budget.name : `${budget.name} selects no pods`}
+                onOpen={opener(onManifest, budget)}
+                namespace={budget.namespace}
+              >
+                {budget.name}
+              </Name>
+            </Td>
+            <NamespaceCell show={showNamespace} namespace={budget.namespace} />
+            <Td className={`hidden lg:table-cell ${MONO}`} title={budget.selector}>
+              {budget.selector || 'nothing'}
+            </Td>
+            <Td className={`hidden md:table-cell ${MONO}`}>{budgetRule(budget)}</Td>
+            <Td className="font-mono text-[12.5px] text-fg">
+              {budget.current_healthy}/{budget.desired_healthy}
+            </Td>
+            <Td>
+              {/*
+                A budget allowing nothing is not an error — it is often exactly
+                what was asked for — but it is what a drain will block on, so it
+                is the one number in this table drawn as a state rather than a
+                figure.
+              */}
+              <Pill tone={budget.disruptions_allowed > 0 ? 'ok' : 'warn'}>
+                {budget.disruptions_allowed}
+              </Pill>
+            </Td>
+            <Td className={AGE}>{relativeAge(budget.created_at)}</Td>
+            <ManifestCell onManifest={onManifest} name={budget.name} namespace={budget.namespace} />
+          </Row>
+        ))}
+      </tbody>
+    </Table>
+  )
+}
+
+function budgetRule(budget: PodDisruptionBudget): string {
+  if (budget.min_available) return `min available ${budget.min_available}`
+  if (budget.max_unavailable) return `max unavailable ${budget.max_unavailable}`
+  return '—'
 }
 
 function ServiceTable({

@@ -184,6 +184,11 @@ fan-out limit) rather than listing the whole cluster.
 | `GET /workload/pods` | Resolves a Deployment/StatefulSet/DaemonSet/ReplicaSet/Job to its pods via a **derived** label selector, never a caller-supplied one — capped at 50 pods. |
 | `GET /deployments` `/statefulsets` `/daemonsets` | |
 | `GET /jobs` `/cronjobs` | CronJob rows carry `next_schedule_at` or `schedule_error`. |
+| `GET /replicasets` | Carries the **controlling** owner reference and the `deployment.kubernetes.io/revision` annotation. |
+| `GET /horizontalpodautoscalers` | `autoscaling/v2` only — a cluster serving just `v1` answers `available:false`+`reason`. Each declared metric is paired with its own reading by type and name; a metric never scraped reports no current value rather than zero. |
+| `GET /workload/autoscaler` | Query `kind,name,namespace?` for `deployments`/`statefulsets`/`replicasets`. `{autoscaler: null}` is the ordinary answer, not a miss; `notice` is the sentence the scale control shows. `400` for a kind no HPA can target. |
+| `GET /resourcequotas` `/limitranges` | Quantities carried as the strings the cluster wrote. A quota's `used` is absent until the controller has counted; an undeclared LimitRange bound is absent, not zero. |
+| `GET /poddisruptionbudgets` | `min_available`/`max_unavailable` are IntOrString and kept as written (`2` and `50%` are different budgets). |
 | `GET /services` `/ingresses` `/httproutes` `/virtualservices` | Gateway API/Istio kinds answer `available:false`+`reason` on a 404 rather than an error. |
 | `GET /networkpolicies` `/networkpolicies/reachability` `/networkpolicies/coverage` | Derived reachability and coverage; carries a disclaimer that it does not model the CNI. |
 | `GET /persistentvolumes` `/persistentvolumeclaims` `/storageclasses` `/configmaps` | |
@@ -202,6 +207,7 @@ fan-out limit) rather than listing the whole cluster.
 | `PUT /helm/releases/:name/values` | Renders and applies, the same as an upgrade, reading the chart back off the release itself — no repository needs to be reachable. `helmValuesWarning` appears only for a release whose stored object carries no chart, naming that reason. |
 | `GET /helm/releases/:name/history` | Every stored revision, newest first. |
 | `POST /helm/releases/:name/rollback` | Applies the target revision's stored manifest, three-way merged like an upgrade. `404` unknown revision, `409` if it's already current or if the target revision recorded no manifest. |
+| `DELETE /helm/releases/:name` | Deletes every object the current revision's recorded manifest names, in reverse of install order, one impersonated call each; the release's own Secrets go last and only if all of them went, so a partial failure answers `removed:false` and keeps the record. Pre-flight refuses a cluster-scoped object or an out-of-grant namespace, naming it, before the first delete. `409` if the manifest cannot be read. `hook_notice` always: delete hooks are not run, and unrendered objects stay. |
 | `GET /object` | Query `kind,name,namespace?`. |
 | `PUT /object` | Body `{yaml}`. `409` for a kind the editor treats as read-only. Conditional on `resourceVersion`. |
 | `POST /object` | Creates into the collection derived from the manifest's own `apiVersion`+kind. `409` for `notCreatable` kinds (Roles, RoleBindings, ClusterRoles, ClusterRoleBindings, Nodes). `201` on success. |
@@ -210,6 +216,7 @@ fan-out limit) rather than listing the whole cluster.
 | `POST /scale` | Body `{kind,name,namespace?,replicas}`. Goes through the `scale` subresource. `409` non-scalable kind, `400` replicas outside `[0,1000]`. |
 | `POST /restart` | Stamps `kubectl.kubernetes.io/restartedAt`. `409` a kind with no pod template. |
 | `POST /suspend` | CronJob only. A request for the state the object is already in is answered without a write. |
+| `POST /cronjob/run` | Body `{name,namespace?}`. Builds a Job from the CronJob's own `spec.jobTemplate` and posts it to the Jobs collection — `generateName`, `cronjob.kubernetes.io/instantiate: manual`, and deliberately **no** `ownerReferences` so the CronJob's history limits cannot reap it. `201` with the name the cluster generated. |
 | `GET /describe` | Metadata, `status.conditions`, a bounded flatten of spec/status, and the object's own events (both legacy and `events.k8s.io` shapes). |
 | `GET /events` | Filters `range/since/until, kind?, name?, type?`. |
 | `GET /posture` | Fixed posture rules per workload; `findings` are never dropped, only acknowledged. |

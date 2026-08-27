@@ -805,6 +805,28 @@ func NewRouter(opts Options) *gin.Engine {
 			resources.GET("/networkpolicies/reachability", s.networkPolicyReachability)
 			resources.GET("/networkpolicies/coverage", s.networkPolicyCoverage)
 
+			// ReplicaSets are what a stuck rollout is actually about — the
+			// Deployment above them only states an intention — and they were
+			// already being read on the rollout-history path without ever
+			// being listable.
+			resources.GET("/replicasets", s.listReplicaSets)
+
+			// The three objects that explain a refusal. A pod a quota rejects
+			// never becomes a pod, so nothing in the workload lists shows it
+			// and the event that said why has scrolled away; a PDB is what a
+			// drain blocks on and what a rollout stalls against. All three are
+			// reads like every other list here.
+			resources.GET("/resourcequotas", s.listResourceQuotas)
+			resources.GET("/limitranges", s.listLimitRanges)
+			resources.GET("/poddisruptionbudgets", s.listPodDisruptionBudgets)
+
+			// HorizontalPodAutoscalers, and the workload one of them owns. The
+			// second route is what keeps the scale control honest: it wrote a
+			// replica count an autoscaler reverts within the minute, and
+			// nothing anywhere said an autoscaler was involved.
+			resources.GET("/horizontalpodautoscalers", s.listAutoscalers)
+			resources.GET("/workload/autoscaler", s.workloadAutoscaler)
+
 			resources.GET("/persistentvolumes", s.listPersistentVolumes)
 			resources.GET("/persistentvolumeclaims", s.listPersistentVolumeClaims)
 			resources.GET("/storageclasses", s.listStorageClasses)
@@ -870,6 +892,12 @@ func NewRouter(opts Options) *gin.Engine {
 			// values read out of that history rather than off the wire.
 			helm.GET("/:name/history", s.showHelmReleaseHistory)
 			helm.POST("/:name/rollback", s.rollbackHelmRelease)
+			// And removing one. The release's own recorded manifest names the
+			// objects it installed; each is deleted on its own call, with its
+			// own RBAC answer and its own audit record, and the release's
+			// Secrets go last so a partial failure leaves a release that still
+			// describes what is there. See resources_helm_uninstall.go.
+			helm.DELETE("/:name", s.uninstallHelmRelease)
 
 			// One object in full, as the YAML an operator already reads. The
 			// PUT is the only write path in the resource API; it goes down the
@@ -904,6 +932,12 @@ func NewRouter(opts Options) *gin.Engine {
 			resources.POST("/scale", s.scaleWorkload)
 			resources.POST("/restart", s.restartWorkload)
 			resources.POST("/suspend", s.suspendWorkload)
+			// Firing a schedule now. It is a create with no new reach — the Job
+			// is built from the CronJob's own jobTemplate and posted to the
+			// Jobs collection down the same impersonated tunnel — which is why
+			// it sits beside the other workload writes rather than beside the
+			// generic create route.
+			resources.POST("/cronjob/run", s.runCronJob)
 			// A node's own off switch: spec.unschedulable, the same
 			// read-modify-write shape as suspend, refused up front for a
 			// namespace-scoped grant because a Node is cluster-scoped. Drain

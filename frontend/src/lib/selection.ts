@@ -50,7 +50,14 @@ export function selectionKey(kind: string, namespace: string | undefined, name: 
  * it is the same call the manifest editor's address makes — and the rest are
  * the workload controls, each offered only where the whole selection has it.
  */
-export type BulkActionName = 'delete' | 'restart' | 'suspend' | 'resume' | 'cordon' | 'uncordon'
+export type BulkActionName =
+  | 'delete'
+  | 'restart'
+  | 'suspend'
+  | 'resume'
+  | 'cordon'
+  | 'uncordon'
+  | 'run'
 
 /**
  * bulkActions says what a selection can be asked to do. Suspend and resume are
@@ -67,6 +74,11 @@ export function bulkActions(rows: SelectedRow[]): BulkActionName[] {
 
   if (capabilities.every((capability) => capability?.restart)) out.push('restart')
   if (capabilities.every((capability) => capability?.suspend)) {
+    // A CronJob is the only kind with a schedule, so it is the only kind with a
+    // schedule to fire early. It is offered on suspended rows too: firing one
+    // by hand is exactly what an operator does while a broken schedule is
+    // paused, and the Job that comes out is not owned by the CronJob anyway.
+    out.push('run')
     if (rows.some((row) => !row.suspended)) out.push('suspend')
     if (rows.some((row) => row.suspended)) out.push('resume')
   }
@@ -84,4 +96,5 @@ export const BULK_ACTION_LABEL: Record<BulkActionName, string> = {
   resume: 'Resume',
   cordon: 'Cordon',
   uncordon: 'Uncordon',
+  run: 'Run now',
 }

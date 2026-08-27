@@ -14,6 +14,7 @@ import {
   Server,
   Shapes,
   ShieldAlert,
+  SlidersHorizontal,
   Siren,
   Star,
   TriangleAlert,
@@ -58,6 +59,7 @@ const CATEGORY_ICON: Record<Exclude<CategoryId, OperatorCategoryId>, typeof Boxe
   helm: Package,
   networking: Network,
   storage: Database,
+  limits: SlidersHorizontal,
   access: KeyRound,
   custom: Puzzle,
   cluster: Server,
@@ -81,7 +83,15 @@ function categoryIcon(id: CategoryId): typeof Boxes {
  * hidden, only folded.
  */
 function startsCollapsed(id: CategoryId): boolean {
-  return id === 'other' || id === 'access' || id === 'custom' || isOperatorCategory(id)
+  return (
+    id === 'other' ||
+    id === 'access' ||
+    id === 'custom' ||
+    // Quotas and limits are what somebody opens when something will not
+    // schedule, not what they browse — the filter still reaches inside.
+    id === 'limits' ||
+    isOperatorCategory(id)
+  )
 }
 
 /** A cluster's own pages, in the order the work reaches for them. */

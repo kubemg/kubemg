@@ -22,6 +22,8 @@ export type ResourceKey =
   | 'daemonsets'
   | 'jobs'
   | 'cronjobs'
+  | 'replicasets'
+  | 'horizontalpodautoscalers'
   | 'services'
   | 'ingresses'
   | 'networkpolicies'
@@ -32,6 +34,9 @@ export type ResourceKey =
   | 'storageclasses'
   | 'configmaps'
   | 'secrets'
+  | 'resourcequotas'
+  | 'limitranges'
+  | 'poddisruptionbudgets'
   | 'crds'
   | 'nodes'
   | 'namespaces'
@@ -55,6 +60,7 @@ export type CategoryId =
   | 'helm'
   | 'networking'
   | 'storage'
+  | 'limits'
   | 'access'
   | 'custom'
   | 'cluster'
@@ -123,6 +129,27 @@ export const RESOURCE_CATEGORIES: ResourceCategory[] = [
       { key: 'daemonsets', label: 'DaemonSets', scope: 'namespaced', aliases: ['ds'] },
       { key: 'jobs', label: 'Jobs', scope: 'namespaced' },
       { key: 'cronjobs', label: 'CronJobs', scope: 'namespaced', aliases: ['cj'] },
+      /*
+       * ReplicaSets sit under the workloads that own them because that is what
+       * they are: a stuck rollout is a fact about a ReplicaSet, and the
+       * Deployment above it only states an intention. They are last in the
+       * section rather than beside Deployments for the reason they are usually
+       * ignored — most of the time the owning workload is the right row to
+       * look at, and this is where you go when it is not.
+       */
+      { key: 'replicasets', label: 'ReplicaSets', scope: 'namespaced', aliases: ['rs'] },
+      /*
+       * The HorizontalPodAutoscaler is a workload row rather than a cluster
+       * one because it is the thing deciding a workload's replica count — the
+       * number the scale control writes and this reverts.
+       */
+      {
+        key: 'horizontalpodautoscalers',
+        label: 'HorizontalPodAutoscalers',
+        singular: 'HorizontalPodAutoscaler',
+        scope: 'namespaced',
+        aliases: ['hpa', 'autoscaler', 'autoscaling', 'scaling'],
+      },
     ],
   },
   {
@@ -199,6 +226,46 @@ export const RESOURCE_CATEGORIES: ResourceCategory[] = [
       },
       { key: 'configmaps', label: 'ConfigMaps', scope: 'namespaced', aliases: ['cm'] },
       { key: 'secrets', label: 'Secrets', scope: 'namespaced', manifestReadOnly: true },
+    ],
+  },
+  {
+    /*
+     * The three objects that explain a refusal, in a section of their own
+     * rather than scattered across Workloads and Storage — because that is how
+     * they are reached. Nobody browses a ResourceQuota; they come looking for
+     * one when something will not schedule and nothing in any other list shows
+     * why, which is exactly the shape of a pod a quota rejected: it never
+     * became a pod, so there is nothing running to look at and the event that
+     * said so has scrolled away.
+     *
+     * PodDisruptionBudgets belong beside them for the same reason at the other
+     * end: a drain that hangs and a rollout that stalls are both a budget
+     * saying no, while every workload list looks healthy.
+     */
+    id: 'limits',
+    label: 'Quotas & Limits',
+    items: [
+      {
+        key: 'resourcequotas',
+        label: 'ResourceQuotas',
+        singular: 'ResourceQuota',
+        scope: 'namespaced',
+        aliases: ['quota', 'quotas'],
+      },
+      {
+        key: 'limitranges',
+        label: 'LimitRanges',
+        singular: 'LimitRange',
+        scope: 'namespaced',
+        aliases: ['limits', 'limit'],
+      },
+      {
+        key: 'poddisruptionbudgets',
+        label: 'PodDisruptionBudgets',
+        singular: 'PodDisruptionBudget',
+        scope: 'namespaced',
+        aliases: ['pdb', 'disruption', 'drain'],
+      },
     ],
   },
   {

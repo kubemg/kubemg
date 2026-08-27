@@ -1,6 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { RotateCcw, SlidersHorizontal, X } from 'lucide-react'
-import { errorMessage, restartWorkload, scaleWorkload } from '../api/client'
+import {
+  errorMessage,
+  fetchWorkloadAutoscaler,
+  restartWorkload,
+  scaleWorkload,
+} from '../api/client'
 import type { Cluster } from '../api/types'
 import type { ResourceKey } from '../lib/resources'
 import { Button, Field, Notice, TextInput } from './primitives'
@@ -43,6 +48,14 @@ export interface WorkloadActionTarget {
 /** The ceiling the backend enforces; repeated here so the field says so first. */
 const MAX_REPLICAS = 1000
 
+/**
+ * The kinds an HorizontalPodAutoscaler can own. Asking about any other kind is
+ * a mistake the backend names rather than an empty answer, so this panel only
+ * asks where the question makes sense — a DaemonSet has no `scale` subresource
+ * for an autoscaler to write.
+ */
+const AUTOSCALABLE: readonly ResourceKey[] = ['deployments', 'statefulsets', 'replicasets']
+
 export function WorkloadActionPanel({
   cluster,
   target,
@@ -61,6 +74,36 @@ export function WorkloadActionPanel({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
+
+  /*
+   * Whether an autoscaler owns this number.
+   *
+   * Without it this control lies by omission: the write succeeds, reports the
+   * count it set, and is reverted on the autoscaler's next pass with nothing
+   * anywhere saying why. It is read when the panel opens rather than reported
+   * after the write, because being told before is the difference between a
+   * decision and a surprise — and it is deliberately not a *refusal*: forcing a
+   * floor by hand while debugging is legitimate, and the manifest editor could
+   * always do it anyway.
+   *
+   * A read that fails leaves the notice absent. It is context, not a
+   * precondition, and failing to open the scale control because an optional
+   * question could not be answered would be the worse trade.
+   */
+  const [autoscaler, setAutoscaler] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!scaling || !AUTOSCALABLE.includes(target.kind)) return
+    let live = true
+    void fetchWorkloadAutoscaler(cluster.id, target.kind, target.name, target.namespace)
+      .then((answer) => {
+        if (live) setAutoscaler(answer.notice ?? null)
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [cluster.id, scaling, target.kind, target.name, target.namespace])
 
   const count = Number(replicas)
   const valid =
@@ -140,6 +183,7 @@ export function WorkloadActionPanel({
               onChange={(event) => setReplicas(event.target.value)}
             />
           </Field>
+          {autoscaler ? <Notice tone="warn">{autoscaler}</Notice> : null}
           {count === 0 && valid ? (
             <Notice tone="warn">
               Scaling to zero stops this workload: every pod is removed, and nothing takes their

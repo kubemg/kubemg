@@ -9,8 +9,9 @@ the highlight, the heading and the reads cannot disagree.
 ## The sidebar inventory
 
 The tree (`ExploreSidebar`/`ClusterTree`) is built from a **fixed** inventory
-— namespaces, workloads, pods, services, ingresses, storage, config, RBAC,
-nodes — plus whatever custom resources a particular cluster actually serves.
+— namespaces, workloads, pods, services, ingresses, storage, config, quotas
+and limits, RBAC, nodes — plus whatever custom resources a particular cluster
+actually serves.
 Every discovered section sits **below** the whole fixed inventory: a mesh or
 a Kafka operator is a layer over the Pods and Services everything else is
 browsed through, so it must never push them down the column.
@@ -49,6 +50,39 @@ per cluster via `fetchCRDs`:
 `crds === null` (discovery still running) is deliberately distinct from `[]`
 (discovery answered: none) — the sidebar waits on the first, and falls back
 to Pods on the second.
+
+### Quotas & Limits
+
+`ResourceQuota`, `LimitRange` and `PodDisruptionBudget` get a section of
+their own, and it **starts collapsed**. Nobody browses a ResourceQuota; you
+come looking for one when something will not schedule and no other list shows
+why — which is exactly the shape of a pod a quota rejected: it never became a
+pod, so there is nothing running to look at and the event that said so has
+scrolled away. A PDB is the other end of the same question: a drain that
+hangs and a rollout that stalls are both a budget saying no while every
+workload list looks healthy, which is why the **Allowed** column (zero
+disruptions permitted) is drawn as a state rather than a figure.
+
+Quantities in these lists are shown **as the cluster wrote them** (`500m`,
+`2Gi`, `50%`). A quota's `used` is blank rather than `0` until the quota
+controller has counted once, and a LimitRange bound that was not declared is
+blank rather than `0` — `min: 0` and "no minimum" are different statements.
+
+### HorizontalPodAutoscalers and ReplicaSets
+
+Both sit under **Workloads**, where the thing they are about is. An HPA is
+what decides a workload's replica count — see
+[the notice the scale control carries](actions.md#an-autoscaler-owns-the-replica-count).
+kubemg reads `autoscaling/v2` and nothing else; a cluster old enough to serve
+only `v1` is told the kind is not served here rather than shown an empty list
+that would read as "nothing is autoscaled". A metric with no reading yet
+shows `—/80%`, not `0%/80%`, because those mean opposite things.
+
+ReplicaSets carry an **Owner** and a **Revision** column, which is what makes
+them worth listing separately: a namespace mid-rollout holds two ReplicaSets
+for the same Deployment, and the revision is the only thing that says which
+is which. Zero desired replicas is the resting state of every superseded
+ReplicaSet and is drawn as idle, not as a fault.
 
 ## Favorites
 
