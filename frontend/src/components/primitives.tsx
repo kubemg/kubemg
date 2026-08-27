@@ -22,19 +22,15 @@ import {
   X,
 } from 'lucide-react'
 import type { Cluster, Environment } from '../api/types'
-import { clusterStateLabel, clusterTone } from '../lib/status'
+import { TONE_SOFT, clusterStateLabel, clusterTone } from '../lib/status'
 import type { Tone } from '../lib/status'
 import { usageTone } from '../lib/units'
 
 /* ------------------------------------------------------------------ state --- */
 
-const TONE_CHIP: Record<Tone, string> = {
-  ok: 'bg-ok-soft text-ok',
-  warn: 'bg-warn-soft text-warn',
-  bad: 'bg-danger-soft text-danger',
-  idle: 'bg-raised text-muted',
-  accent: 'bg-accent-soft text-accent',
-}
+// A Pill is the smallest of the soft plates, and it must not disagree with the
+// larger ones about what a tone looks like — so the pairing lives in one place.
+const TONE_CHIP = TONE_SOFT
 
 const TONE_DOT: Record<Tone, string> = {
   ok: 'bg-ok',
