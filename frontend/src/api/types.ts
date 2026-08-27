@@ -172,6 +172,24 @@ export interface KubeconfigRevokeAllResult {
   explanation?: string
 }
 
+/**
+ * Rotating your own password. The current one is required and is not a
+ * formality: a stolen session is exactly the case the route must not serve, and
+ * re-authenticating is the one thing a session cannot do on its holder's behalf.
+ */
+export interface PasswordChange {
+  current_password: string
+  new_password: string
+  /** Take this account's issued kubeconfigs with the rotation. Offered, never silent. */
+  revoke_kubeconfigs?: boolean
+}
+
+export interface PasswordChangeResult {
+  changed: boolean
+  /** Present only when the rotation was asked to revoke; the register's own summary. */
+  credentials?: KubeconfigRevokeAllResult
+}
+
 export interface Group {
   id: number
   name: string
