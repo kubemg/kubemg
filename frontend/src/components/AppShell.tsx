@@ -208,6 +208,7 @@ export function AppShell({
   actions,
   timeRange = false,
   scope,
+  scopeAction,
   fullWidth = false,
   children,
 }: {
@@ -231,6 +232,13 @@ export function AppShell({
    * the same class as the cluster and the window.
    */
   scope?: ReactNode
+  /**
+   * One link belonging to the scope control rather than to the page — drawn
+   * beside it, not with the actions. Explore uses it for the way into the
+   * namespace it is currently narrowed to: the scope names an object with a
+   * page of its own, and the link belongs next to the thing it is about.
+   */
+  scopeAction?: ReactNode
   /**
    * Drops the 1440px reading-width cap on the content column. Prose and forms
    * read worse stretched to a wide monitor's full span, but a resource table
@@ -570,6 +578,7 @@ export function AppShell({
                 <KeyHint>{PALETTE_HINT}</KeyHint>
               </button>
               {scope}
+              {scopeAction}
               {timeRange ? <TimeRangeControl /> : null}
               {actions}
             </div>

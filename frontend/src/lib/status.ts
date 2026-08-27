@@ -67,3 +67,32 @@ export function workloadTone(workload: Workload): Tone {
   if (workload.ready === 0) return 'bad'
   return 'warn'
 }
+
+/**
+ * The tone of a status word a Kubernetes object reports — a namespace's phase,
+ * a volume's, a claim's. It lives here rather than beside one table because two
+ * surfaces now draw the same word for the same object: a namespace's row in the
+ * list and its own page, and a phase that reads `ok` in one place and `idle` in
+ * the other would be two answers to one question.
+ *
+ * `Granted` is the namespace list's own word for a scoped grant, which answers
+ * from the grant rather than from the cluster — the namespace is there and
+ * reachable, so it reads as an active one.
+ */
+export function phaseTone(phase: string): Tone {
+  switch (phase) {
+    case 'Bound':
+    case 'Available':
+    case 'Active':
+    case 'Ready':
+    case 'Granted':
+      return 'ok'
+    case 'Pending':
+      return 'warn'
+    case 'Failed':
+    case 'Lost':
+      return 'bad'
+    default:
+      return 'idle'
+  }
+}

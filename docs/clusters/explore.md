@@ -111,6 +111,32 @@ CRDs, …) is always read cluster-wide regardless of the namespace selection,
 and is refused outright for a namespace-scoped grant on any list that would
 otherwise reach past its scope.
 
+## A namespace's own page
+
+`/clusters/:id/namespaces/:name` is one namespace as a page rather than as a
+row. It is reached from the namespaces list (the name is a link) and from the
+scope picker while Explore is narrowed to one — both places somebody has
+already said which namespace they mean.
+
+It is a **composition of surfaces that already existed**, not a new read:
+
+- the workload and pod cards are the developer dashboard's own
+  (`ClusterWorkloadSummary`), given a namespace instead of every namespace, so
+  they are the `lib/insights.ts` derivations and a count here cannot disagree
+  with the same count in the list one click away;
+- **Quotas & limits** are the Explore tables, rendered by the same
+  `ResourceView` over the same rows — a namespace's quota is why a pod that
+  never appeared never appeared, and it lived two clicks from the list that
+  does not show it;
+- **NetworkPolicy coverage** is the panel the reachability view already draws,
+  disclaimer included;
+- **Recent events** are the cluster timeline's own grouped rows, narrowed to
+  this namespace and capped, with the way through to the full timeline.
+
+Switching clusters from here lands on the target's **namespace list** rather
+than on the same name: `payments` on another cluster is a different namespace,
+or none at all.
+
 ## The pilot header
 
 Pod and workload lists open on a header derived entirely from rows **already
