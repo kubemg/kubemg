@@ -37,7 +37,7 @@ DOCKER_NODE  = docker run --rm -v $(PWD)/frontend:/app -v kubemg-npm:/root/.npm 
 .PHONY: help build test verify manifest-check \
         backend-build backend-test backend-vet backend-tidy \
         agent-build agent-test agent-vet agent-tidy agent-image agent-image-check agent-push \
-        frontend-install frontend-build frontend-lint frontend-contrast \
+        frontend-install frontend-build frontend-lint frontend-test frontend-contrast \
         docs-build docs-serve \
         image image-check image-push \
         up down reset logs ps
@@ -47,8 +47,8 @@ help:
 
 ## ---- aggregate ----
 build: backend-build agent-build frontend-build ## Build backend + agent + frontend in containers
-test: backend-test agent-test ## Run all container-based tests
-verify: manifest-check backend-vet backend-test backend-build agent-vet agent-test agent-build frontend-lint frontend-contrast frontend-build docs-build ## Full containerized verification
+test: backend-test agent-test frontend-test ## Run all container-based tests
+verify: manifest-check backend-vet backend-test backend-build agent-vet agent-test agent-build frontend-lint frontend-test frontend-contrast frontend-build docs-build ## Full containerized verification
 
 # The bastion embeds its own copy of the agent manifests so they ship inside the
 # server binary. Two copies can drift; this makes drift a build failure.
@@ -144,6 +144,13 @@ frontend-build: ## Type-check and build the frontend
 
 frontend-lint: ## Lint the frontend
 	$(DOCKER_NODE) sh -c "npm ci && npm run lint"
+
+# The console's own tests, in the same container shape as its build. Most of
+# what they assert is a pure function — the manifest a form writes, the sidebar
+# a cluster's CRDs derive, the bucket a pod is in — which is where the logic
+# worth pinning already lives, and which needs no DOM and no cluster.
+frontend-test: ## Run the frontend tests
+	$(DOCKER_NODE) sh -c "npm ci && npm test"
 
 # The deck's quiet text sat below the WCAG AA floor on the light deck for a whole
 # phase, because the dark deck is the default and the numbers lived in a comment.

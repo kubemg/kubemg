@@ -82,6 +82,14 @@ services:
       - npm-cache:/root/.npm
     command: sh -c "npm ci && npm run lint"
 
+  frontend-test:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - npm-cache:/root/.npm
+    command: sh -c "npm ci && npm test"
+
 volumes:
   go-mod-cache:
   go-build-cache:
