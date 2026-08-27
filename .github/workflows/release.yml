@@ -175,3 +175,53 @@ jobs:
           docker buildx build --platform ${{ matrix.platforms }} \
             --build-arg VERSION=${{ steps.version.outputs.version }} \
             ${{ matrix.context }}
+
+  # The notes page, so a tag can never again be published without one.
+  #
+  # It is created as a **draft**, not published: the notes for a release here are
+  # written by hand — what changed, and why it is shaped that way — and a body
+  # generated from commit subjects is not that. What kept going wrong was not the
+  # writing but the remembering: 0.7.2's images and tag went out and the page was
+  # simply never opened, so an install pinned to that tag had nowhere to read what
+  # it carried. A draft turns that from something to remember into something to
+  # finish: it is already there, seeded with the tag's own message, waiting to be
+  # edited and published.
+  #
+  # It needs the images to exist first, because the notes name them.
+  draft-release:
+    name: Draft the release notes
+    needs: publish
+    # A tag is what somebody's cluster pulls; a workflow_dispatch run is a
+    # rebuild of one that already exists, and has no page to open.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # The tag's own message is the seed. It is fetched rather than read from
+      # the event, because the push payload carries the commit's message and not
+      # the annotated tag's.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Already drafted or published by hand: leave it alone. Re-running this
+          # workflow on a tag must never overwrite notes somebody has written.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "A release already exists for $TAG — leaving it untouched."
+            exit 0
+          fi
+          git tag -l --format='%(contents)' "$TAG" > notes.md
+          gh release create "$TAG" \
+            --draft \
+            --title "$TAG" \
+            --notes-file notes.md \
+            --generate-notes \
+            --verify-tag
