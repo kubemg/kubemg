@@ -45,7 +45,19 @@ import {
   Trash2,
   Zap,
 } from 'lucide-react'
-import { IconButton, Pill, Row, RowMenu, RowMenuItem, SortTh, Table, Td, Th } from './primitives'
+import {
+  IconButton,
+  OBJECT_MARK,
+  OBJECT_NAME,
+  Pill,
+  Row,
+  RowMenu,
+  RowMenuItem,
+  SortTh,
+  Table,
+  Td,
+  Th,
+} from './primitives'
 import type { DetailTab } from './ResourceDetailDrawer'
 import type { WorkloadActionName } from './WorkloadActionPanel'
 import { namespaceHref } from '../lib/navigation'
@@ -426,31 +438,36 @@ function Name({
   to?: string
 }) {
   const full = namespace && title ? `${namespace}/${title}` : title
+  // The bar is the affordance, so it is drawn for exactly the two branches that
+  // open something. A name with nowhere to go wears nothing, which is what
+  // makes the bar readable in the rows that do.
+  const addressable = Boolean(to || onOpen)
 
   return (
-    <span className="flex items-center gap-2.5">
+    <span
+      className={`flex items-start gap-2.5 ${addressable ? OBJECT_MARK : 'border-l-2 border-transparent -ml-2 pl-2'}`}
+    >
       {tone ? (
-        <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${TONE_FILL[tone]}`} />
+        // `mt` rather than `items-center`: the dot belongs beside the name's
+        // first line, not floating at the middle of a two-line name.
+        <span
+          aria-hidden="true"
+          className={`mt-[6px] size-1.5 shrink-0 rounded-full ${TONE_FILL[tone]}`}
+        />
       ) : null}
       {to ? (
-        <Link
-          to={to}
-          className={`${NAME_BUTTON} truncate font-mono text-fg transition-colors hover:text-accent`}
-          title={full}
-        >
+        <Link to={to} className={OBJECT_NAME} title={full}>
           {children}
         </Link>
       ) : onOpen ? (
-        <button
-          type="button"
-          onClick={onOpen}
-          className={`${NAME_BUTTON} truncate font-mono text-fg transition-colors hover:text-accent`}
-          title={full}
-        >
+        <button type="button" onClick={onOpen} className={OBJECT_NAME} title={full}>
           {children}
         </button>
       ) : (
-        <span className="block min-w-0 truncate font-mono text-fg" title={full}>
+        <span
+          className="block min-w-0 font-mono font-medium text-fg [overflow-wrap:anywhere]"
+          title={full}
+        >
           {children}
         </span>
       )}
@@ -458,8 +475,6 @@ function Name({
   )
 }
 
-/** A name button is a block so it can truncate; the text still reads left. */
-const NAME_BUTTON = 'block min-w-0 text-left'
 
 /**
  * The namespace column. It exists only while the list spans namespaces — in a
@@ -886,7 +901,7 @@ function HelmReleaseTable({
       <tbody>
         {releases.map((release) => (
           <Row key={`${release.namespace}/${release.name}`}>
-            <Td className="truncate">
+            <Td>
               <Name
                 tone={helmTone(release.status)}
                 title={release.description || release.name}
@@ -1125,21 +1140,17 @@ function PodTable({
         {rows.map((pod) => (
           <Row key={`${pod.namespace}/${pod.name}`}>
             <SelectCell row={podRow(pod)} selection={selection} />
-            <Td className="truncate">
-              <span className="flex items-center gap-2.5">
-                <span
-                  aria-hidden="true"
-                  className={`size-1.5 shrink-0 rounded-full ${TONE_FILL[podTone(pod)]}`}
-                />
-                <button
-                  type="button"
-                  onClick={() => onSelect(pod)}
-                  className={`${NAME_BUTTON} truncate font-mono text-fg transition-colors hover:text-accent`}
-                  title={`${pod.namespace}/${pod.name}`}
-                >
-                  {pod.name}
-                </button>
-              </span>
+            <Td>
+              {/* The pod list used to inline its own copy of this cell; it is
+                  the same cell every other list draws, so it uses the same one. */}
+              <Name
+                tone={podTone(pod)}
+                title={pod.name}
+                namespace={pod.namespace}
+                onOpen={() => onSelect(pod)}
+              >
+                {pod.name}
+              </Name>
             </Td>
             <NamespaceCell show={showNamespace} namespace={pod.namespace} />
             <Td className="whitespace-nowrap">
@@ -1345,7 +1356,7 @@ function WorkloadTable({
         {workloads.map((workload) => (
           <Row key={`${workload.kind}/${workload.namespace}/${workload.name}`}>
             <SelectCell row={workloadRow(workload)} selection={selection} />
-            <Td className="truncate">
+            <Td>
               <Name
                 tone={workloadTone(workload)}
                 title={workload.name}
@@ -1424,7 +1435,7 @@ function JobTable({
         {jobs.map((job) => (
           <Row key={`${job.namespace}/${job.name}`}>
             <SelectCell row={jobRow(job)} selection={selection} />
-            <Td className="truncate">
+            <Td>
               <Name
                 tone={jobTone(job.state)}
                 title={job.name}
@@ -1564,7 +1575,7 @@ function CronJobTable({
         {cronjobs.map((cronjob) => (
           <Row key={`${cronjob.namespace}/${cronjob.name}`}>
             <SelectCell row={cronJobRow(cronjob)} selection={selection} />
-            <Td className="truncate">
+            <Td>
               <Name
                 tone={cronjob.suspended ? 'idle' : 'ok'}
                 title={cronjob.name}
@@ -1681,7 +1692,7 @@ function ReplicaSetTable({
       <tbody>
         {replicasets.map((replicaset) => (
           <Row key={`${replicaset.namespace}/${replicaset.name}`}>
-            <Td className="truncate">
+            <Td>
               <Name
                 /*
                  * A superseded ReplicaSet sits at zero desired, which is the
@@ -1785,7 +1796,7 @@ function AutoscalerTable({
       <tbody>
         {autoscalers.map((hpa) => (
           <Row key={`${hpa.namespace}/${hpa.name}`}>
-            <Td className="truncate">
+            <Td>
               <Name
                 tone={hpa.reason ? 'bad' : 'ok'}
                 title={hpa.reason || hpa.name}
@@ -1861,7 +1872,7 @@ function QuotaTable({
       <tbody>
         {quotas.map((quota) => (
           <Row key={`${quota.namespace}/${quota.name}`}>
-            <Td className="truncate">
+            <Td>
               <Name
                 title={quota.name}
                 onOpen={opener(onManifest, quota)}
@@ -1917,7 +1928,7 @@ function LimitRangeTable({
       <tbody>
         {ranges.map((range) => (
           <Row key={`${range.namespace}/${range.name}`}>
-            <Td className="truncate">
+            <Td>
               <Name
                 title={range.name}
                 onOpen={opener(onManifest, range)}
@@ -1994,7 +2005,7 @@ function DisruptionBudgetTable({
       <tbody>
         {budgets.map((budget) => (
           <Row key={`${budget.namespace}/${budget.name}`}>
-            <Td className="truncate">
+            <Td>
               <Name
                 tone={budget.selector ? 'ok' : 'bad'}
                 title={budget.selector ? budget.name : `${budget.name} selects no pods`}
@@ -2074,7 +2085,7 @@ function ServiceTable({
       <tbody>
         {services.map((service) => (
           <Row key={`${service.namespace}/${service.name}`}>
-            <Td className="truncate">
+            <Td>
               <Name
                 title={service.name}
                 onOpen={opener(onManifest, service)}
@@ -2141,7 +2152,7 @@ function IngressTable({
       <tbody>
         {ingresses.map((ingress) => (
           <Row key={`${ingress.namespace}/${ingress.name}`}>
-            <Td className="truncate">
+            <Td>
               <Name
                 title={ingress.name}
                 onOpen={opener(onManifest, ingress)}
@@ -2213,7 +2224,7 @@ function NetworkPolicyTable({
       <tbody>
         {policies.map((policy) => (
           <Row key={`${policy.namespace}/${policy.name}`}>
-            <Td className="truncate">
+            <Td>
               <Name
                 title={policy.name}
                 namespace={policy.namespace}
@@ -2281,7 +2292,7 @@ function RouteTable({
       <tbody>
         {routes.map((route) => (
           <Row key={`${route.namespace}/${route.name}`}>
-            <Td className="truncate">
+            <Td>
               <Name title={route.name} namespace={route.namespace}>
                 {route.name}
               </Name>
@@ -2341,7 +2352,7 @@ function PersistentVolumeTable({
       <tbody>
         {volumes.map((volume) => (
           <Row key={volume.name}>
-            <Td className="truncate">
+            <Td>
               <Name tone={phaseTone(volume.status)} title={volume.name} onOpen={opener(onManifest, volume)}>
                 {volume.name}
               </Name>
@@ -2403,7 +2414,7 @@ function ClaimTable({
       <tbody>
         {claims.map((claim) => (
           <Row key={`${claim.namespace}/${claim.name}`}>
-            <Td className="truncate">
+            <Td>
               <Name
                 tone={phaseTone(claim.status)}
                 title={claim.name}
@@ -2462,8 +2473,8 @@ function StorageClassTable({
       <tbody>
         {classes.map((entry) => (
           <Row key={entry.name}>
-            <Td className="truncate">
-              <span className="flex items-center gap-2">
+            <Td>
+              <span className="flex items-start gap-2">
                 <Name title={entry.name} onOpen={opener(onManifest, entry)}>{entry.name}</Name>
                 {entry.default ? (
                   <Pill tone="accent" dot={false}>
@@ -2532,8 +2543,8 @@ function ConfigTable({
       <tbody>
         {entries.map((entry) => (
           <Row key={`${entry.namespace}/${entry.name}`}>
-            <Td className="truncate">
-              <span className="flex items-center gap-2">
+            <Td>
+              <span className="flex items-start gap-2">
                 <Name title={entry.name} namespace={entry.namespace}>
                   {entry.name}
                 </Name>
@@ -2606,7 +2617,7 @@ function CRDTable({
       <tbody>
         {crds.map((crd) => (
           <Row key={crd.name}>
-            <Td className="truncate">
+            <Td>
               <Name title={crd.name} onOpen={opener(onManifest, crd)}>{crd.name}</Name>
             </Td>
             <Td className="truncate text-[12.5px] text-fg">{crd.kind}</Td>
@@ -2670,8 +2681,8 @@ function RoleTable({
       <tbody>
         {roles.map((role) => (
           <Row key={`${role.namespace ?? ''}/${role.name}`}>
-            <Td className="truncate">
-              <span className="flex items-center gap-2">
+            <Td>
+              <span className="flex items-start gap-2">
                 <Name
                   title={role.name}
                   namespace={role.namespace}
@@ -2785,7 +2796,7 @@ function BindingTable({
       <tbody>
         {bindings.map((binding) => (
           <Row key={`${binding.namespace ?? ''}/${binding.name}`}>
-            <Td className="truncate">
+            <Td>
               <Name
                 title={binding.name}
                 namespace={binding.namespace}
@@ -2867,8 +2878,8 @@ function ServiceAccountTable({
       <tbody>
         {accounts.map((account) => (
           <Row key={`${account.namespace}/${account.name}`}>
-            <Td className="truncate">
-              <span className="flex items-center gap-2">
+            <Td>
+              <span className="flex items-start gap-2">
                 <Name
                   title={account.name}
                   namespace={account.namespace}
@@ -2947,7 +2958,7 @@ function CustomResourceTable({
       <tbody>
         {rows.map((row) => (
           <Row key={`${row.namespace}/${row.name}`}>
-            <Td className="truncate">
+            <Td>
               <Name title={row.name} namespace={row.namespace}>
                 {row.name}
               </Name>
@@ -3005,7 +3016,7 @@ function NodeTable({
       <tbody>
         {nodes.map((node) => (
           <Row key={node.name}>
-            <Td className="truncate">
+            <Td>
               <Name tone={node.ready ? 'ok' : 'bad'} title={node.name} onOpen={opener(onManifest, node)}>
                 {node.name}
               </Name>
@@ -3094,7 +3105,7 @@ function NamespaceTable({
                 manifest drawer: a namespace's manifest says almost nothing, and
                 what somebody clicking a namespace wants is what is in it. The
                 manifest is still one row-menu item away. */}
-            <Td className="truncate">
+            <Td>
               <Name
                 tone={phaseTone(namespace.status)}
                 title={namespace.name}

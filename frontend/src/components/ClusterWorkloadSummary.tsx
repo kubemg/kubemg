@@ -29,7 +29,7 @@ import { Boxes, Layers } from 'lucide-react'
 import { errorMessage, fetchPods, fetchWorkloads, withReadReport } from '../api/client'
 import type { Cluster, Workload } from '../api/types'
 import { MetricsChart } from './MetricsChart'
-import { EmptyState, Field, Notice, Panel, Pill, Select } from './primitives'
+import { EmptyState, Field, Notice, OBJECT_NAME, Panel, Pill, Select } from './primitives'
 import { CardSkeleton } from './SkeletonLoader'
 import type { InsightAlert, ResourceInsight } from '../lib/insights'
 import { MAX_ALERTS, podInsights, workloadInsights } from '../lib/insights'
@@ -276,7 +276,7 @@ function AttentionPanel({ cluster, rows }: { cluster: Cluster; rows: Attention[]
           >
             <Link
               to={eventsHref(cluster.id, row.namespace, row.kind, row.name)}
-              className="min-w-0 truncate font-mono text-[13.5px] text-fg hover:text-accent hover:underline"
+              className={`${OBJECT_NAME} text-[13.5px]`}
               title={`${row.namespace}/${row.name}`}
             >
               {row.name}
