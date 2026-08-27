@@ -7,6 +7,7 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
+  FileKey,
   Gauge,
   KeyRound,
   Layers,
@@ -99,6 +100,9 @@ const ADMIN_GROUPS: readonly AdminGroup[] = [
       { to: '/admin/users', label: 'Users', icon: Users },
       { to: '/admin/groups', label: 'Groups', icon: UsersRound },
       { to: '/admin/machine-accounts', label: 'Machine accounts', icon: Bot },
+      // Beside machine accounts rather than under Activity: this is a register
+      // of credentials somebody holds, not a record of what they did with them.
+      { to: '/admin/credentials', label: 'Issued credentials', icon: FileKey },
       { to: '/admin/permissions', label: 'Permissions', icon: KeyRound },
     ],
   },

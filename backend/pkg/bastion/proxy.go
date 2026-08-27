@@ -15,6 +15,7 @@ import (
 
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
 	"github.com/kubemg/kubemg/backend/pkg/auth"
+	"github.com/kubemg/kubemg/backend/pkg/credentials"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/guardrails"
 )
@@ -90,6 +91,10 @@ type Proxy struct {
 	// guard refuses calls and commands a safety policy names. Nil refuses
 	// nothing, which is what a gateway wired without one does — see pkg/guardrails.
 	guard *guardrails.Engine
+	// issued is the register of handed-out kubeconfigs, read lock-free. Nil
+	// revokes nothing, which is what a gateway wired without one does — see
+	// pkg/credentials for why an unreadable register must fail open.
+	issued *credentials.Register
 	// clientUpgrader accepts the browser terminal's / kubectl's WebSocket, built
 	// once with this server's origin allowlist. See newClientUpgrader.
 	clientUpgrader websocket.Upgrader
@@ -112,6 +117,10 @@ type ProxyOptions struct {
 	// one behaves exactly as it did before guardrails existed, which is the right
 	// failure mode for a control that stops calls RBAC permits.
 	Guard *guardrails.Engine
+	// Credentials is the published set of withdrawn kubeconfigs. Nil revokes
+	// nothing — the correct failure mode for a control whose unavailability must
+	// not lock a fleet out of kubectl.
+	Credentials *credentials.Register
 	// AllowedOrigins are the browser origins the API's CORS config already
 	// trusts, and PublicURL is this server's own address — together they are
 	// checked against the Origin header on the browser terminal's WebSocket
@@ -139,6 +148,7 @@ func NewProxy(opts ProxyOptions) *Proxy {
 		recorder:       opts.Recorder,
 		policy:         opts.Policy,
 		guard:          opts.Guard,
+		issued:         opts.Credentials,
 		clientUpgrader: newClientUpgrader(buildOriginAllowlist(opts.AllowedOrigins, opts.PublicURL)),
 	}
 }
@@ -557,6 +567,20 @@ func (p *Proxy) resolve(c *gin.Context) (*db.User, *db.Cluster, db.UserClusterAc
 	claims, ok := auth.ClaimsFrom(c)
 	if !ok {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+		return nil, nil, noGrant, false
+	}
+
+	// A generated kubeconfig is a file on somebody's laptop and its token is a
+	// JWT, which cannot be withdrawn by its own means. So the credential's id is
+	// matched against the published register before anything else is read: it is
+	// a lock-free map lookup, and a withdrawn file has no business costing this
+	// server two database reads. A credential that carries no id — a session, a
+	// machine token, or a kubeconfig minted before the register existed — is not
+	// revoked here, because nothing in the register can name it.
+	if p.issued.Observe(claims.ID) {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+			"error": "this kubeconfig has been revoked; generate a new one from the KubeMG console",
+		})
 		return nil, nil, noGrant, false
 	}
 

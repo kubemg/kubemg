@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
+	"github.com/kubemg/kubemg/backend/pkg/credentials"
 	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/cache"
@@ -114,6 +115,25 @@ type Store interface {
 	CreateGuardrailPolicy(ctx context.Context, policy *db.GuardrailPolicy) error
 	UpdateGuardrailPolicy(ctx context.Context, policy *db.GuardrailPolicy) error
 	DeleteGuardrailPolicy(ctx context.Context, id uint) error
+
+	// The register of issued kubeconfigs. Written by the generator, read by the
+	// console, and — through RevokedKubeconfigTokenIDs — resolved into the
+	// snapshot the gateway consults on every proxied call. See
+	// pkg/db/kubeconfig_models.go for why revocation needs a row at all.
+	CreateKubeconfigIssuance(ctx context.Context, issuance *db.KubeconfigIssuance) error
+	ListKubeconfigIssuances(
+		ctx context.Context, filter db.KubeconfigFilter,
+	) ([]db.KubeconfigIssuance, int64, error)
+	KubeconfigIssuanceByID(ctx context.Context, id uint) (*db.KubeconfigIssuance, error)
+	RevokeKubeconfigIssuance(
+		ctx context.Context, id uint, at time.Time, by uint, byName string,
+	) (*db.KubeconfigIssuance, error)
+	RevokeKubeconfigsForUser(
+		ctx context.Context, userID uint, at time.Time, by uint, byName string,
+	) ([]db.KubeconfigIssuance, error)
+	RevokedKubeconfigTokenIDs(ctx context.Context, now time.Time) ([]string, error)
+	TouchKubeconfigIssuance(ctx context.Context, tokenID string, at time.Time) error
+	PruneKubeconfigIssuances(ctx context.Context, before time.Time) (int64, error)
 
 	ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]db.AuditEvent, int64, error)
 	AuditSummary(ctx context.Context, since time.Time) (db.AuditStats, error)
@@ -251,6 +271,13 @@ type Options struct {
 	// publishes it; the gateway reads it. Nil means the gateway records everything,
 	// which is what a server wired without it does.
 	AuditPolicy *auditpolicy.Policy
+	// Credentials is the shared snapshot of which issued kubeconfigs have been
+	// withdrawn. This router resolves it from the register and publishes it; the
+	// gateway reads it lock-free. Nil leaves the register readable and the revoke
+	// routes registered but nothing enforced at the gateway, which is what a
+	// server wired without it does — see pkg/credentials on why that direction is
+	// the safe one.
+	Credentials *credentials.Register
 	// Guardrails is the shared snapshot of which calls and commands the gateway
 	// refuses. This router resolves it from the database and publishes it; the
 	// gateway reads it lock-free. Nil leaves the routes unregistered and nothing
@@ -341,6 +368,9 @@ type server struct {
 	// guardrails is the compiled rule set the gateway enforces; see
 	// Options.Guardrails. Nil means this server does not manage them.
 	guardrails *guardrails.Engine
+	// credentials is the published set of withdrawn kubeconfigs; see
+	// Options.Credentials.
+	credentials *credentials.Register
 	// alarms is the dispatcher, or nil when this server runs without one.
 	alarms *observability.Dispatcher
 	// jit is the elevated-access workflow, or nil when this server runs without
@@ -422,6 +452,7 @@ func NewRouter(opts Options) *gin.Engine {
 		auditRetentionDays: retention,
 		auditPolicy:        opts.AuditPolicy,
 		guardrails:         opts.Guardrails,
+		credentials:        opts.Credentials,
 		alarms:             opts.Alarms,
 		jit:                opts.JIT,
 		jitCallbackSecret:  opts.JITCallbackSecret,
@@ -433,6 +464,12 @@ func NewRouter(opts Options) *gin.Engine {
 	}
 	if opts.Bastion != nil {
 		s.tunnels = opts.Bastion.Registry()
+	}
+	// The register learns that a credential is still in use from the gateway, not
+	// from a route. Installing the writer here keeps pkg/credentials ignorant of
+	// persistence and keeps the write off the proxied call's own goroutine.
+	if s.credentials != nil {
+		s.credentials.SetToucher(s.credentialToucher())
 	}
 	// A repeated read costs a tunnel round trip, an impersonated API call and an
 	// audit record. Holding the answer for a few seconds is what makes the
@@ -475,6 +512,13 @@ func NewRouter(opts Options) *gin.Engine {
 		// request rather than from the first tick.
 		if s.guardrails != nil {
 			go s.startGuardrailRefresher(opts.Background)
+		}
+		// And for the credential register. A revoke republishes on the replica
+		// that served it; this is what carries it to the others, and what makes a
+		// restarted server honour the revocations it already holds from its first
+		// proxied call.
+		if s.credentials != nil {
+			go s.startCredentialRefresher(opts.Background)
 		}
 		// Cluster events only reach an alarm if something goes and reads them.
 		// Nothing is read until a cluster-event rule exists; see alarms_watch.go.
@@ -572,6 +616,19 @@ func NewRouter(opts Options) *gin.Engine {
 		// per cluster, so it is not under /clusters/:id — a per-cluster path
 		// would read as a per-cluster policy.
 		v1.GET("/kubeconfig/policy", requireAuth, s.kubeconfigPolicy)
+
+		// The register of what has actually been handed out. Reading follows the
+		// audit trail's rule — everybody may read, a non-admin sees only their own
+		// rows and the query parameter cannot widen that — because revoking a file
+		// you know you lost must not require finding an administrator, and you
+		// cannot revoke what you cannot see. The handlers enforce the other half:
+		// revoking somebody else's is administrative, revoking your own never is.
+		kubeconfigs := v1.Group("/kubeconfigs", requireAuth)
+		kubeconfigs.GET("", s.listKubeconfigs)
+		// The blanket action is registered before the parameterised route so
+		// "revoke-all" is never read as a credential id.
+		kubeconfigs.POST("/revoke-all", s.revokeAllKubeconfigs)
+		kubeconfigs.POST("/:id/revoke", s.revokeKubeconfig)
 
 		// Which release this is, for the console's footer. Signed-in rather than
 		// public: see serverVersion.
