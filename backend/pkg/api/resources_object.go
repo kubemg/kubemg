@@ -94,6 +94,18 @@ var objectKinds = map[string]objectKind{
 	"services":               {versions: []resourceListPath{{"/api/v1", "services"}}, namespaced: true, writable: true},
 	"ingresses":              {versions: []resourceListPath{{"/apis/networking.k8s.io/v1", "ingresses"}}, namespaced: true, writable: true},
 	"networkpolicies":        {versions: []resourceListPath{{networkPolicyGroup, "networkpolicies"}}, namespaced: true, writable: true},
+	"replicasets":            {versions: []resourceListPath{{"/apis/apps/v1", "replicasets"}}, namespaced: true, writable: true},
+	"resourcequotas":         {versions: []resourceListPath{{"/api/v1", "resourcequotas"}}, namespaced: true, writable: true},
+	"limitranges":            {versions: []resourceListPath{{"/api/v1", "limitranges"}}, namespaced: true, writable: true},
+	"poddisruptionbudgets":   {versions: []resourceListPath{{policyGroup, "poddisruptionbudgets"}}, namespaced: true, writable: true},
+	// One API version, for the reason resources_autoscaling.go states: v2 is
+	// the only one carrying the metric shapes this build reads, and a v1-only
+	// cluster is told the kind is not served rather than shown half of it.
+	"horizontalpodautoscalers": {
+		versions:   []resourceListPath{{autoscalingGroup, "horizontalpodautoscalers"}},
+		namespaced: true,
+		writable:   true,
+	},
 	"persistentvolumeclaims": {versions: []resourceListPath{{"/api/v1", "persistentvolumeclaims"}}, namespaced: true, writable: true},
 	"configmaps":             {versions: []resourceListPath{{"/api/v1", "configmaps"}}, namespaced: true, writable: true},
 

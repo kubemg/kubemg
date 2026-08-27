@@ -517,6 +517,15 @@ export interface Job {
   images: string[]
 }
 
+/** What firing a CronJob by hand answers with: the Job the cluster named, so
+    the console can take the operator straight to it. */
+export interface CronJobRunResult {
+  name: string
+  namespace: string
+  cronjob: string
+  message: string
+}
+
 export interface CronJob {
   name: string
   namespace: string
@@ -606,6 +615,121 @@ export interface ResourceCount {
  * so the rule counts are what the row states and the reachability view is
  * where a rule is actually worth reading.
  */
+/**
+ * One ReplicaSet. It carries two columns the workload list cannot: the
+ * controller that owns it, so a namespace holding forty of them is readable,
+ * and the revision — the number `kubectl rollout undo --to-revision` takes, and
+ * the only thing that orders one ReplicaSet against another.
+ */
+export interface ReplicaSet {
+  name: string
+  namespace: string
+  created_at: string
+  desired: number
+  current: number
+  ready: number
+  /** Absent for a ReplicaSet somebody created directly, which is unusual enough to show as a blank. */
+  owner?: string
+  owner_kind?: string
+  revision?: string
+  images?: string[]
+}
+
+/** One resource a quota bounds, with what has been taken of it. `used` is
+    absent — not zero — until the quota controller has counted once. */
+export interface QuotaEntry {
+  resource: string
+  hard: string
+  used?: string
+}
+
+export interface ResourceQuota {
+  name: string
+  namespace: string
+  created_at: string
+  /** A quota with scopes does not bound everything in the namespace. */
+  scopes?: string[]
+  entries: QuotaEntry[]
+}
+
+/** One (type, resource) pair of a LimitRange. Every bound is optional, and an
+    absent one is absent rather than zero: `min: 0` and "no minimum" are
+    different statements. */
+export interface LimitRangeEntry {
+  type: string
+  resource: string
+  min?: string
+  max?: string
+  default?: string
+  default_request?: string
+  max_limit_request_ratio?: string
+}
+
+export interface LimitRange {
+  name: string
+  namespace: string
+  created_at: string
+  entries: LimitRangeEntry[]
+}
+
+/**
+ * One PodDisruptionBudget. `disruptions_allowed: 0` is the column the list is
+ * for: it is the state a drain hangs on forever while every other list looks
+ * healthy, because the pods are running and simply not allowed to stop.
+ */
+export interface PodDisruptionBudget {
+  name: string
+  namespace: string
+  created_at: string
+  /** Empty for a budget that selects nothing — a real and broken state. */
+  selector: string
+  /** Kept as written: `2` and `50%` are different budgets. */
+  min_available?: string
+  max_unavailable?: string
+  current_healthy: number
+  desired_healthy: number
+  disruptions_allowed: number
+  expected_pods: number
+}
+
+/** One metric an autoscaler scales on. Both sides are strings because a target
+    is a percentage, a quantity or a raw value depending on its type. `current`
+    is absent where the HPA has not scraped once — which is not zero. */
+export interface AutoscalerMetric {
+  name: string
+  target: string
+  current?: string
+}
+
+export interface HorizontalPodAutoscaler {
+  name: string
+  namespace: string
+  created_at: string
+  target_kind: string
+  target_name: string
+  min_replicas: number
+  max_replicas: number
+  current_replicas: number
+  desired_replicas: number
+  metrics: AutoscalerMetric[]
+  /** The autoscaler's own account of itself when `ScalingActive` is false —
+      the state that looks identical to a healthy one on a table of counts. */
+  reason?: string
+}
+
+/**
+ * The answer to "is something else deciding this replica count". `autoscaler`
+ * is null for most workloads, which is a real answer rather than a miss.
+ */
+export interface WorkloadAutoscaler {
+  kind: string
+  name: string
+  namespace: string
+  autoscaler: HorizontalPodAutoscaler | null
+  /** The sentence the scale control carries when an HPA owns the number. */
+  notice?: string
+}
+
 export interface NetworkPolicy {
   name: string
   namespace: string
@@ -1254,6 +1378,24 @@ export interface HelmWriteResult {
   error?: string
   /** Present only on the unrenderable-release fallback described above. */
   warning?: string
+}
+
+/**
+ * What an uninstall answers with. `objects` is the same per-object report an
+ * install and an upgrade carry, walked in reverse of install order; `removed`
+ * is false when something could not be deleted, in which case the release's own
+ * Secrets were deliberately kept so it still describes what is there.
+ */
+export interface HelmUninstallResult {
+  release: string
+  namespace: string
+  objects?: HelmObjectReport[]
+  removed: boolean
+  message: string
+  /** Always present: delete hooks are never run, and what stays behind. */
+  hook_notice: string
+  /** Present when `removed` is false: the first object left behind, and why. */
+  error?: string
 }
 
 /** One repository charts can be installed from — see `HelmRepositoriesPanel`.

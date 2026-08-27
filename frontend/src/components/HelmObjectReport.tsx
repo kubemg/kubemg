@@ -34,7 +34,27 @@ export function HelmObjectReport({ result }: { result: HelmWriteResult }) {
       )}
       {result.hook_notice ? <Notice tone="info">{result.hook_notice}</Notice> : null}
 
-      <Table resizeKey="kubemg_cols_helm_objects">
+      <HelmObjectTable objects={result.objects} />
+
+      {result.notes ? (
+        <div className="flex flex-col gap-1.5">
+          <span className="label">Notes</span>
+          <Slab>{result.notes}</Slab>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * The per-object table itself, shared by every write that produces one. An
+ * uninstall reports in exactly this shape — one line per object, the cluster's
+ * own words where something refused — because it is exactly the same kind of
+ * run: a set of impersonated calls, each answered on its own.
+ */
+export function HelmObjectTable({ objects }: { objects: ObjectReport[] }) {
+  return (
+    <Table resizeKey="kubemg_cols_helm_objects">
         <thead>
           <tr>
             <Th columnKey="kind">Kind</Th>
@@ -46,7 +66,7 @@ export function HelmObjectReport({ result }: { result: HelmWriteResult }) {
           </tr>
         </thead>
         <tbody>
-          {result.objects.map((object, index) => (
+          {objects.map((object, index) => (
             <Row key={`${object.kind}/${object.namespace ?? ''}/${object.name}/${index}`}>
               <Td className="font-mono">
                 {object.kind}
@@ -68,14 +88,6 @@ export function HelmObjectReport({ result }: { result: HelmWriteResult }) {
           ))}
         </tbody>
       </Table>
-
-      {result.notes ? (
-        <div className="flex flex-col gap-1.5">
-          <span className="label">Notes</span>
-          <Slab>{result.notes}</Slab>
-        </div>
-      ) : null}
-    </div>
   )
 }
 
