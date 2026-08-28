@@ -58,29 +58,17 @@ jobs:
             image: kubemg
             context: .
             platforms: linux/amd64,linux/arm64
-            trivyignores: .trivyignore
           - name: agent
             image: kubemg-agent
             context: ./agent
             platforms: linux/amd64,linux/arm64
-            trivyignores: .trivyignore
           # The browser shell runs on the operator's own clusters, so it takes
           # the same platform matrix as the agent and for the same reason: an
           # amd64-only image reads as ImagePullBackOff on Graviton or Ampere.
-          #
-          # It is also the only image that copies in third-party binaries
-          # (kubectl and helm), so it is the only one with accepted findings of
-          # its own. They live in shell/.trivyignore rather than in the root
-          # file precisely so they stay scoped to it: a toolchain gap in
-          # somebody else's release must never excuse the same CVE in a binary
-          # we build. Naming the ignore files per image is what keeps that
-          # true — the input replaces trivy's default rather than adding to it,
-          # so the root file has to be listed explicitly everywhere.
           - name: browser shell
             image: kubemg-shell
             context: ./shell
             platforms: linux/amd64,linux/arm64
-            trivyignores: .trivyignore,shell/.trivyignore
 
     steps:
       - uses: actions/checkout@v4
@@ -135,7 +123,6 @@ jobs:
           scanners: vuln,secret
           severity: CRITICAL,HIGH
           ignore-unfixed: true
-          trivyignores: ${{ matrix.trivyignores }}
           format: table
           exit-code: 1
 
@@ -146,7 +133,6 @@ jobs:
           image-ref: scan-target:ci
           scanners: vuln,secret
           ignore-unfixed: true
-          trivyignores: ${{ matrix.trivyignores }}
           format: sarif
           output: trivy-${{ matrix.image }}.sarif
           exit-code: 0

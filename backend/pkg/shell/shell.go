@@ -2,7 +2,7 @@
  * Package shell describes the browser shell's pod, and nothing else.
  *
  * A KubeMG shell is a pod KubeMG creates in the target cluster, holding a
- * terminal with `kubectl` and `helm` on the path. The load-bearing rule for the
+ * terminal with `kubectl` on the path. The load-bearing rule for the
  * whole feature is in this package's shape rather than in its code: **the pod
  * holds no cluster credential of its own**. It runs with no mounted service
  * account token and under a service account with no bindings, so a shell that
@@ -31,9 +31,10 @@ import (
 )
 
 // DefaultImage is the shell image this build was cut against. It is KubeMG's
-// own, pinned and minimal: busybox, kubectl and helm on a distroless base, with
-// no package manager in it — an operator's shell that can install software is a
-// supply chain rather than a terminal.
+// own, pinned and minimal: busybox and kubectl on a distroless base, with no
+// package manager in it — an operator's shell that can install software is a
+// supply chain rather than a terminal. helm was in it and was removed; see the
+// docblock in shell/Dockerfile for why.
 const DefaultImage = "ghcr.io/kubemg/kubemg-shell:0.8.1"
 
 // RunnerUser is the identity KubeMG impersonates to manage shell pods.
