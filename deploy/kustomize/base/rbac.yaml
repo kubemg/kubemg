@@ -243,7 +243,14 @@ rules:
     verbs: ["get", "list", "create", "delete", "patch"]
   - apiGroups: [""]
     resources: ["pods/exec"]
-    verbs: ["create"]
+    # Both verbs, because an exec is opened over a WebSocket and a WebSocket
+    # begins as a GET: the API server authorizes that as `get` on the
+    # subresource, not as `create`. `create` alone is what SPDY asked for, and it
+    # answers a websocket exec with 403 — which is a shell whose pod starts and
+    # whose kubeconfig can never be written into it. The built-in `edit` role
+    # every operator reaches the cluster through carries both for the same
+    # reason.
+    verbs: ["get", "create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
