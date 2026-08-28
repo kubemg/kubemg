@@ -40,7 +40,7 @@ services:
       start_period: 10s
 
   kubemg:
-    image: ${KUBEMG_IMAGE:-ghcr.io/kubemg/kubemg:0.8.2}
+    image: ${KUBEMG_IMAGE:-ghcr.io/kubemg/kubemg:0.8.3}
     restart: unless-stopped
     ports:
       - "${KUBEMG_PORT:-8443}:8443"
@@ -121,7 +121,7 @@ services:
 
       # Where clusters pull the agent from. Point this at an internal mirror for
       # an air-gapped install; it is written into the manifests operators apply.
-      - KUBEMG_AGENT_IMAGE=${KUBEMG_AGENT_IMAGE:-ghcr.io/kubemg/kubemg-agent:0.8.2}
+      - KUBEMG_AGENT_IMAGE=${KUBEMG_AGENT_IMAGE:-ghcr.io/kubemg/kubemg-agent:0.8.3}
       - KUBEMG_AGENT_NAMESPACE=${KUBEMG_AGENT_NAMESPACE:-kubemg-system}
 
       # Recordings are encrypted at rest. Without a key they are written in the
