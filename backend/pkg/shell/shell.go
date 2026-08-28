@@ -35,7 +35,7 @@ import (
 // package manager in it — an operator's shell that can install software is a
 // supply chain rather than a terminal. helm was in it and was removed; see the
 // docblock in shell/Dockerfile for why.
-const DefaultImage = "ghcr.io/kubemg/kubemg-shell:0.8.1"
+const DefaultImage = "ghcr.io/kubemg/kubemg-shell:0.8.2"
 
 // RunnerUser is the identity KubeMG impersonates to manage shell pods.
 //

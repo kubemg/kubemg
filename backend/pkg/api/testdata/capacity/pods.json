@@ -1722,7 +1722,7 @@
     "containers": [
      {
       "name": "metrics-server",
-      "image": "registry.k8s.io/metrics-server/metrics-server:v0.8.1",
+      "image": "registry.k8s.io/metrics-server/metrics-server:v0.8.2",
       "args": [
        "--secure-port=10250",
        "--cert-dir=/tmp",
