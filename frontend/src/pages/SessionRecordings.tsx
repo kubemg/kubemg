@@ -37,6 +37,8 @@ import { formatDuration, relativeAge } from '../lib/time'
 import { formatMemory } from '../lib/units'
 import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
+import { useConfirm } from '../state/confirm-context'
+import { useResult } from '../state/result-context'
 
 // The player carries the terminal emulator, which is the heaviest thing in the
 // app. Even on the page that exists to replay sessions it is loaded on the first
@@ -94,6 +96,8 @@ function sessionTarget(session: TerminalSession): string {
  * subject of a recording never decides it stops existing.
  */
 export function SessionRecordings() {
+  const confirm = useConfirm()
+  const report = useResult()
   const { user } = useAuth()
   const { clusters } = useClusters()
 
@@ -169,10 +173,12 @@ export function SessionRecordings() {
   }
 
   async function remove(session: TerminalSession) {
-    const confirmed = window.confirm(
-      `Delete the recording of ${session.username}'s session in ${sessionTarget(session)}? ` +
-        'It is audit evidence, and this cannot be undone.',
-    )
+    const confirmed = await confirm({
+      eyebrow: 'Session recording',
+      title: `Delete the recording of ${session.username}'s session in ${sessionTarget(session)}?`,
+      body: 'It is audit evidence and there is no second copy: deleting it cannot be undone. The audit records of the session itself stay.',
+      confirmLabel: 'Delete',
+    })
     if (!confirmed) return
 
     setRemoving(session.id)
@@ -180,6 +186,12 @@ export function SessionRecordings() {
       await deleteTerminalSession(session.id)
       if (replaying?.id === session.id) setReplaying(null)
       await load()
+      report({
+        tone: 'ok',
+        title: 'Recording deleted',
+        body: `${session.username}'s session in ${sessionTarget(session)} is gone. The audit records of the session itself stay.`,
+        link: { to: '/audit', label: 'See it in the audit trail' },
+      })
     } catch (err) {
       setError(errorMessage(err, 'Could not delete this recording.'))
     } finally {

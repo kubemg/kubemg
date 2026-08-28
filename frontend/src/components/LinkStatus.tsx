@@ -1,7 +1,10 @@
 import { Cable, CircleDashed, Unplug, Waypoints } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
-export type LinkState = 'live' | 'direct' | 'down' | 'idle'
+// One definition, in the module that derives it: a component that redeclared
+// the four states could drift from the function that decides between them.
+export type { LinkState } from '../lib/status'
+import type { LinkState } from '../lib/status'
 
 /*
  * The link, said rather than drawn. This used to be a strand — a coloured

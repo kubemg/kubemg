@@ -38,6 +38,8 @@ import {
   TextArea,
   TextInput,
 } from '../primitives'
+import { useConfirm } from '../../state/confirm-context'
+import { useResult } from '../../state/result-context'
 
 /**
  * Alarms: where a cluster event or a refused action goes when somebody has to
@@ -102,6 +104,8 @@ function defaultAuthFor(kind: AlarmChannelKind): AlarmChannelInput['auth_mode'] 
 }
 
 export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
+  const confirm = useConfirm()
+  const report = useResult()
   const [channels, setChannels] = useState<AlarmChannel[]>([])
   const [rules, setRules] = useState<AlarmRuleList | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -157,26 +161,49 @@ export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
     // Deleting a channel takes its rules with it, which is worth saying before
     // it happens rather than after.
     const dependants = (rules?.rules ?? []).filter((rule) => rule.channel_id === channel.id).length
-    const warning = dependants
-      ? `Delete “${channel.name}”? The ${dependants} rule${dependants === 1 ? '' : 's'} delivering to it will be deleted too.`
-      : `Delete “${channel.name}”?`
-    if (!window.confirm(warning)) return
+    const confirmed = await confirm({
+      eyebrow: 'Delivery channel',
+      title: `Delete “${channel.name}”?`,
+      body: dependants
+        ? `The ${dependants} rule${dependants === 1 ? '' : 's'} delivering to it will be deleted too, and nothing they match will be sent anywhere.`
+        : 'Nothing is delivering to it, so nothing else goes with it.',
+      confirmLabel: 'Delete',
+    })
+    if (!confirmed) return
 
     try {
       await deleteAlarmChannel(channel.id)
       await load()
+      report({
+        tone: 'ok',
+        title: `Deleted ${channel.name}`,
+        body: dependants
+          ? 'Its rules went with it, and nothing they matched is delivered any more.'
+          : undefined,
+      })
     } catch (err) {
-      setError(errorMessage(err, 'Could not delete the channel.'))
+      const message = errorMessage(err, 'Could not delete the channel.')
+      setError(message)
+      report({ tone: 'error', title: `${channel.name} was not deleted`, body: message })
     }
   }
 
   async function removeRule(rule: AlarmRule) {
-    if (!window.confirm(`Delete the rule “${rule.name}”?`)) return
+    const confirmed = await confirm({
+      eyebrow: 'Alarm rule',
+      title: `Delete “${rule.name}”?`,
+      body: 'What it matches stops being delivered from the moment it goes. Records already sent are unaffected.',
+      confirmLabel: 'Delete',
+    })
+    if (!confirmed) return
     try {
       await deleteAlarmRule(rule.id)
       await load()
+      report({ tone: 'ok', title: `Deleted ${rule.name}`, body: 'What it matched stops being delivered.' })
     } catch (err) {
-      setError(errorMessage(err, 'Could not delete the rule.'))
+      const message = errorMessage(err, 'Could not delete the rule.')
+      setError(message)
+      report({ tone: 'error', title: `${rule.name} was not deleted`, body: message })
     }
   }
 

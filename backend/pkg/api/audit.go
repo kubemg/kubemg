@@ -46,6 +46,11 @@ type auditEventResponse struct {
 	GuardrailPolicy string `json:"guardrail_policy,omitempty"`
 	GuardrailAction string `json:"guardrail_action,omitempty"`
 	Error           string `json:"error,omitempty"`
+	// Where the call came from. Empty on a record with no caller and on every
+	// row written before the columns existed, which the console states as "not
+	// recorded" rather than drawing a blank cell that reads as an unknown host.
+	SourceAddr string `json:"source_addr,omitempty"`
+	UserAgent  string `json:"user_agent,omitempty"`
 	// Diff is the stored field-level diff of a manifest write (pkg/objdiff's
 	// Result, JSON-encoded on the way in), present only on an `update` row
 	// written while the "record manifest diffs" setting was on for a
@@ -90,6 +95,8 @@ func toAuditResponse(event db.AuditEvent) auditEventResponse {
 		GuardrailAction:    event.GuardrailAction,
 		Error:              event.Error,
 		Diff:               diff,
+		SourceAddr:         event.SourceAddr,
+		UserAgent:          event.UserAgent,
 	}
 }
 

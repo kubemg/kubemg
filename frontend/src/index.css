@@ -125,6 +125,23 @@
   --deck-main-inset: 18.75rem;
 
   /*
+   * How tall the page header is, and where a sticky table heading therefore
+   * pins. The header is `h-14` plus its own bottom border, and it is sticky on
+   * a higher layer than anything under it, so a heading row that pinned at 0
+   * pinned underneath it — on the audit trail's eight hundred rows, the one
+   * table in this console read by scrolling end to end, the column names were
+   * simply gone after the first screen.
+   *
+   * `--table-sticky-top` is the indirection rather than the header height
+   * itself, because not every table scrolls under that header: one inside a
+   * `Sheet` scrolls inside the sheet's own body, where the offset must be zero
+   * or the heading floats 57px below the top of what it heads. The sheet sets it
+   * back to 0 on its body; anything on a page inherits the header's height.
+   */
+  --deck-header-h: calc(3.5rem + 1px);
+  --table-sticky-top: var(--deck-header-h);
+
+  /*
    * The light deck's chrome is a plain grey, and deliberately not bone.
    *
    * Bone (#f2f3ef) is the brand's light surface and it was tried here first,

@@ -50,6 +50,7 @@ import {
   Td,
   Th,
 } from './primitives'
+import { useConfirm } from '../state/confirm-context'
 
 // The terminal emulator is by far the heaviest thing in the app and most
 // sessions never open one, so it is fetched on demand rather than shipped to
@@ -160,6 +161,7 @@ export function ResourceDetailDrawer({
    */
   onCordon?: (row: SelectedRow) => void
 }) {
+  const confirm = useConfirm()
   const release = target.release
   // A release's two faces are not the object tabs, so an inherited `overview`
   // would land on a tab it does not have; anything else the row asked for is
@@ -260,10 +262,19 @@ export function ResourceDetailDrawer({
   // Closing on a half-typed manifest or set of values throws the edit away, so
   // it asks first. Escape reaches the same guard, because the Sheet closes
   // through it too.
-  const close = useCallback(() => {
-    if (dirty && !window.confirm('Discard your unsaved changes?')) return
+  const close = useCallback(async () => {
+    if (
+      dirty &&
+      !(await confirm({
+        title: 'Discard your unsaved changes?',
+        body: 'What you have typed here is not saved anywhere and closing throws it away.',
+        confirmLabel: 'Discard',
+      }))
+    ) {
+      return
+    }
     onClose()
-  }, [dirty, onClose])
+  }, [confirm, dirty, onClose])
 
   const tabs: Array<{ value: DetailTab; label: string; count?: number }> = release
     ? // A release has two faces: what it is set to, and what it has been. The
