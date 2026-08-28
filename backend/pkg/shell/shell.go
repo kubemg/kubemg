@@ -34,7 +34,7 @@ import (
 // own, pinned and minimal: busybox, kubectl and helm on a distroless base, with
 // no package manager in it — an operator's shell that can install software is a
 // supply chain rather than a terminal.
-const DefaultImage = "ghcr.io/kubemg/kubemg-shell:0.8.0"
+const DefaultImage = "ghcr.io/kubemg/kubemg-shell:0.8.1"
 
 // RunnerUser is the identity KubeMG impersonates to manage shell pods.
 //
