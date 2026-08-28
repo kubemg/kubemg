@@ -10,19 +10,19 @@ DOCS_IMAGE ?= squidfunk/mkdocs-material:9.7.7
 # these under its own host and needs to retag them without editing the Makefile.
 REGISTRY ?= ghcr.io/kubemg
 
-AGENT_VERSION ?= 0.7.4
+AGENT_VERSION ?= 0.8.0
 AGENT_REPO    ?= $(REGISTRY)/kubemg-agent
 AGENT_IMAGE   ?= $(AGENT_REPO):$(AGENT_VERSION)
 
 # The browser shell's image. It runs on the operator's own clusters, so it takes
 # the same multi-arch treatment as the agent and for the same reason.
-SHELL_VERSION ?= 0.7.4
+SHELL_VERSION ?= 0.8.0
 SHELL_REPO    ?= $(REGISTRY)/kubemg-shell
 SHELL_IMAGE   ?= $(SHELL_REPO):$(SHELL_VERSION)
 
 # The management plane ships as one image — console embedded in the server
 # binary. See the root Dockerfile for why one rather than two.
-KUBEMG_VERSION ?= 0.7.4
+KUBEMG_VERSION ?= 0.8.0
 KUBEMG_REPO    ?= $(REGISTRY)/kubemg
 KUBEMG_IMAGE   ?= $(KUBEMG_REPO):$(KUBEMG_VERSION)
 
