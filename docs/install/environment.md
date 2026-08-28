@@ -146,9 +146,9 @@ KUBEMG_TLS_SUPPLIED_DIR=/etc/kubemg/ssl
 # KUBEMG_AGENT_CA_BUNDLE=/etc/kubemg/ssl/proxy-ca.crt
 
 # --- air-gapped / internal registry --------------------------------------
-# KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.8.0
+# KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.8.1
 # KUBEMG_POSTGRES_IMAGE=registry.internal/postgres:16-alpine
-# KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.8.0
+# KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.8.1
 KUBEMG_AGENT_NAMESPACE=kubemg-system
 
 # --- audit & recordings ----------------------------------------------------
