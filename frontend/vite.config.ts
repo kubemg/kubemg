@@ -46,6 +46,15 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}'],
+    /*
+     * A CSS import is stubbed out to an empty string in a test run, which is
+     * right for every component here — none of them assert on a stylesheet — but
+     * the deck's tokens are themselves a decision worth pinning (a table heading
+     * pins at `--table-sticky-top`, and its default being 0 is the whole fix for
+     * a heading pushed down into the rows). So the deck, and only the deck, is
+     * really compiled.
+     */
+    css: { include: [/index\.css/] },
   },
   server: {
     host: true,

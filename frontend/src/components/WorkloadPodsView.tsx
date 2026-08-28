@@ -209,13 +209,13 @@ export function WorkloadPodsView({
           <thead>
             <tr>
               <Th>Pod</Th>
-              <Th className="w-[20%]">State</Th>
-              <Th className="hidden w-[18%] lg:table-cell">Image</Th>
-              <Th className="hidden w-[11%] sm:table-cell">CPU</Th>
-              <Th className="hidden w-[11%] sm:table-cell">Memory</Th>
-              <Th className="hidden w-[9%] md:table-cell">Restarts</Th>
-              <Th className="hidden w-[14%] xl:table-cell">Node</Th>
-              <Th className="w-[10%]">Age</Th>
+              <Th className="w-[16%]">State</Th>
+              <Th className="hidden w-[16%] lg:table-cell">Image</Th>
+              <Th className="hidden w-[9%] sm:table-cell">CPU</Th>
+              <Th className="hidden w-[9%] sm:table-cell">Memory</Th>
+              <Th className="hidden w-[10%] md:table-cell">Restarts</Th>
+              <Th className="hidden w-[12%] xl:table-cell">Node</Th>
+              <Th className="w-[8%]">Age</Th>
             </tr>
           </thead>
           <tbody>
