@@ -6,15 +6,15 @@ Pin an explicit tag rather than tracking `latest`, in both places a version
 appears:
 
 - The management plane image, `KUBEMG_IMAGE`/`KUBEMG_VERSION`
-  (`ghcr.io/kubemg/kubemg:0.8.2`) in Compose, or the `image:` field of the
+  (`ghcr.io/kubemg/kubemg:0.8.3`) in Compose, or the `image:` field of the
   Deployment in Kubernetes.
-- The agent image, `KUBEMG_AGENT_IMAGE` (`ghcr.io/kubemg/kubemg-agent:0.8.2`),
+- The agent image, `KUBEMG_AGENT_IMAGE` (`ghcr.io/kubemg/kubemg-agent:0.8.3`),
   written into every rendered agent install manifest by the management
   plane, so bumping it here is what changes what a *future* `kubectl apply -k
   …` installs — it does not touch agents already running.
 
 - The browser shell image, `KUBEMG_SHELL_IMAGE`
-  (`ghcr.io/kubemg/kubemg-shell:0.8.2`), which a shell pod runs on a target
+  (`ghcr.io/kubemg/kubemg-shell:0.8.3`), which a shell pod runs on a target
   cluster. Like the agent image it is read when a shell is *started*, so
   bumping it changes the next shell rather than one already open.
 
@@ -161,7 +161,7 @@ Two things a rollback does **not** undo:
 ## Documentation versioning
 
 This manual is versioned against release tags on Read the Docs: an install
-running `0.8.2` corresponds to the `0.8.2` version of these docs, not
+running `0.8.3` corresponds to the `0.8.3` version of these docs, not
 whatever `master` says today. If you're following a procedure here, check
 the version selector matches the version you're actually running.
 
