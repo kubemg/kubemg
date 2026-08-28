@@ -21,8 +21,8 @@
 
 # Versions are build arguments so an air-gapped site can rebuild this against
 # whatever it has mirrored without editing the file.
-ARG KUBECTL_VERSION=v1.32.1
-ARG HELM_VERSION=v3.16.4
+ARG KUBECTL_VERSION=v1.37.0
+ARG HELM_VERSION=v3.21.4
 ARG BUSYBOX_IMAGE=busybox:1.37.0-musl
 ARG FETCH_IMAGE=alpine:3.21
 ARG BASE_IMAGE=gcr.io/distroless/static-debian12:nonroot
