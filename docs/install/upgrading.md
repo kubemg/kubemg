@@ -89,7 +89,7 @@ do, **existing agent installs must re-apply their manifests** to pick up the
 new grants; until they do, the symptom is silent and specific rather than a
 tunnel that visibly fails.
 
-It has happened twice so far:
+It has happened three times so far:
 
 - **CRD discovery and custom-resource read/write RBAC.** Without it, CRD
   discovery answers `403` and the Explore sidebar simply shows no custom
@@ -101,6 +101,11 @@ It has happened twice so far:
   every existing surface keeps working, but opening a shell fails on the
   cluster's own `403` at pod creation. Everything a KubeMG upgrade brings
   except the shell works on an install that re-applies nothing.
+- **0.8.3, the shell's exec verb.** The same Role granted only `create` on
+  `pods/exec`. An exec is opened over a WebSocket, which begins as a GET, and
+  the API server authorizes that as `get` on the subresource — so on 0.8.1 and
+  0.8.2 the shell pod starts and then fails with `403 Forbidden` while writing
+  its kubeconfig. Re-applying the manifests adds the missing verb.
 
 Re-applying is the same command as installing. The console renders it for a
 cluster that already exists: open the cluster's dashboard and choose **Agent
