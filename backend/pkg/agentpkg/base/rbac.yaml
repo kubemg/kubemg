@@ -226,6 +226,12 @@ automountServiceAccountToken: false
 # It is a Role rather than a ClusterRole, and bound to a *user* rather than to
 # one of the kubemg: groups, so it reaches exactly one namespace and cannot be
 # picked up by anybody's grant level.
+#
+# `pods/exec` here is what a scanner flags (Trivy KSV-0053) and what the feature
+# is: exec into a pod with a privileged service account is a standard path to
+# cluster-admin, and the shell pod deliberately has no service account token at
+# all. See .trivyignore for the full argument and for the residual it does not
+# cover.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

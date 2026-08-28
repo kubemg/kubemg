@@ -19,3 +19,30 @@
 # the enumerated, non-core API groups those ClusterRoles list (Gateway API +
 # Istio) -- never the core group, where Secrets live.
 AVD-KSV-0046
+
+# KSV-0053 flags any Role granting `create` on pods/exec, because exec into a
+# pod carrying a privileged service account token is a standard path to
+# cluster-admin. Here it is the feature rather than an oversight:
+# kubemg-shell-runner exists so that KubeMG can open a terminal in a shell pod
+# it created, which is the whole browser shell.
+#
+# Four things bound it, and they are why this is accepted rather than fixed:
+#
+#   * It is a Role, not a ClusterRole, so it reaches one namespace.
+#   * Its subject is the *user* kubemg:shell-runner -- not a group, not a
+#     service account. Nothing in the cluster authenticates as that name; only
+#     KubeMG can assert it, through the agent's impersonation grant.
+#   * The pod it execs into holds no service account token at all
+#     (automountServiceAccountToken: false, on an account granted nothing), so
+#     the shell it opens carries none of the privilege this rule warns about.
+#   * Every exec KubeMG makes names `kubemg-shell-<user id>`, built server-side
+#     from the session -- no pod name reaches that path from a caller.
+#
+# The residual, stated plainly: RBAC has no pattern match and shell pod names
+# are per-user, so the rule cannot be narrowed with resourceNames and does
+# therefore cover the agent's own pod, which holds a token with cluster-wide
+# impersonate. Nothing addresses that pod today, and the guard is that the name
+# is derived rather than accepted. Running shell pods in a namespace of their
+# own would remove the overlap entirely; the agent's namespace was chosen
+# deliberately instead, and this is the trade that came with that choice.
+AVD-KSV-0053
