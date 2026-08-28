@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { AlertTriangle, ChevronRight, KeyRound, Layers, RefreshCw, Timer } from 'lucide-react'
+import {
+  AlertTriangle,
+  ChevronRight,
+  KeyRound,
+  Layers,
+  PackageOpen,
+  RefreshCw,
+  Timer,
+} from 'lucide-react'
 import { checkCluster, errorMessage, fetchCluster, fetchNodeMetrics } from '../api/client'
 import type { Cluster, NodeMetrics } from '../api/types'
+import { AgentInstallSheet } from '../components/AgentInstallSheet'
 import { AppShell } from '../components/AppShell'
 import { ClusterWorkloadSummary } from '../components/ClusterWorkloadSummary'
 import { ConsolesPanel } from '../components/ConsolesPanel'
@@ -64,6 +73,9 @@ export function ClusterSummary() {
   const [checkError, setCheckError] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // Re-reading the install package is not registering anything, so it is an
+  // action on this cluster rather than a walk back into the wizard.
+  const [installOpen, setInstallOpen] = useState(false)
   // Asking for more access belongs on the cluster it is about: this page is where
   // somebody has just read what their grant is and found it is not enough.
   const [requesting, setRequesting] = useState(false)
@@ -162,6 +174,16 @@ export function ClusterSummary() {
         <Timer aria-hidden="true" className="size-4" />
         Request access
       </Button>
+      {admin && viaAgent ? (
+        /* An agent is upgraded by applying its manifests again, and the wizard
+           that first showed them cannot be walked back into. Offered whether or
+           not the agent is attached: a tunnel that is down is exactly when
+           somebody needs the command again. */
+        <Button onClick={() => setInstallOpen(true)}>
+          <PackageOpen aria-hidden="true" className="size-4" />
+          Agent install
+        </Button>
+      ) : null}
       {admin ? (
         <Button onClick={check} disabled={checking}>
           <RefreshCw aria-hidden="true" className={`size-4 ${checking ? 'animate-spin' : ''}`} />
@@ -207,6 +229,10 @@ export function ClusterSummary() {
 
       {drawerOpen && cluster ? (
         <KubeconfigDrawer cluster={cluster} onClose={() => setDrawerOpen(false)} />
+      ) : null}
+
+      {installOpen && cluster ? (
+        <AgentInstallSheet cluster={cluster} onClose={() => setInstallOpen(false)} />
       ) : null}
 
       {requesting && cluster ? (
