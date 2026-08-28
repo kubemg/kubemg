@@ -9,20 +9,43 @@ import { SettingsLayout } from '../../components/settings/SettingsLayout'
 type Draft = {
   agent_image: string
   agent_namespace: string
+  shell_enabled: boolean
+  shell_image: string
+  shell_idle_timeout_minutes: string
+  shell_max_lifetime_hours: string
 }
 
 function draftOf(settings: SettingsResponse): Draft {
   return {
     agent_image: settings.overrides.agent_image,
     agent_namespace: settings.overrides.agent_namespace,
+    // The switch has no "unset": what the server reports as effective is what
+    // the box is showing, and a server with no image reports it off.
+    shell_enabled: settings.effective.shell_enabled,
+    shell_image: settings.overrides.shell_image,
+    shell_idle_timeout_minutes: numberField(settings.overrides.shell_idle_timeout_minutes),
+    shell_max_lifetime_hours: numberField(settings.overrides.shell_max_lifetime_hours),
   }
+}
+
+/** An unset numeric override is 0 on the wire and an empty box on screen: the
+    field's placeholder is what says which default is in force. */
+function numberField(value: number): string {
+  return value > 0 ? String(value) : ''
 }
 
 /** AgentSettings owns what gets installed into a cluster: the image and the
     namespace every generated manifest carries. */
 export function AgentSettings() {
   const [settings, setSettings] = useState<SettingsResponse | null>(null)
-  const [draft, setDraft] = useState<Draft>({ agent_image: '', agent_namespace: '' })
+  const [draft, setDraft] = useState<Draft>({
+    agent_image: '',
+    agent_namespace: '',
+    shell_enabled: false,
+    shell_image: '',
+    shell_idle_timeout_minutes: '',
+    shell_max_lifetime_hours: '',
+  })
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -54,6 +77,12 @@ export function AgentSettings() {
       const next = await updateSettings({
         agent_image: draft.agent_image.trim(),
         agent_namespace: draft.agent_namespace.trim(),
+        shell_enabled: draft.shell_enabled,
+        shell_image: draft.shell_image.trim(),
+        // 0 clears an override back to the build's default, the rule every
+        // numeric setting here follows.
+        shell_idle_timeout_minutes: Number(draft.shell_idle_timeout_minutes.trim()) || 0,
+        shell_max_lifetime_hours: Number(draft.shell_max_lifetime_hours.trim()) || 0,
       })
       setSettings(next)
       setDraft(draftOf(next))
@@ -65,7 +94,7 @@ export function AgentSettings() {
     }
   }
 
-  function set(key: keyof Draft, value: string) {
+  function set(key: keyof Draft, value: string | boolean) {
     setDraft((current) => ({ ...current, [key]: value }))
     setSaved(false)
   }
@@ -73,7 +102,13 @@ export function AgentSettings() {
   const dirty =
     settings !== null &&
     (draft.agent_image.trim() !== settings.overrides.agent_image ||
-      draft.agent_namespace.trim() !== settings.overrides.agent_namespace)
+      draft.agent_namespace.trim() !== settings.overrides.agent_namespace ||
+      draft.shell_enabled !== settings.effective.shell_enabled ||
+      draft.shell_image.trim() !== settings.overrides.shell_image ||
+      draft.shell_idle_timeout_minutes.trim() !==
+        numberField(settings.overrides.shell_idle_timeout_minutes) ||
+      draft.shell_max_lifetime_hours.trim() !==
+        numberField(settings.overrides.shell_max_lifetime_hours))
 
   return (
     <SettingsLayout
@@ -146,6 +181,82 @@ export function AgentSettings() {
                 />
               </Field>
               <Effective label="In use" value={settings.effective.agent_namespace} />
+            </Panel>
+
+            {/* The browser shell lives on this page rather than beside the
+                audit switches: it is a second thing KubeMG runs on somebody
+                else's cluster, and the questions it raises — which image, how
+                long it lives — are the agent's questions. */}
+            <Panel
+              eyebrow="Browser shell"
+              title="A terminal KubeMG runs on a cluster"
+              bodyClassName="flex flex-col gap-4 p-4"
+            >
+              <label className="flex items-start gap-2.5">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 size-4 accent-[var(--color-accent)]"
+                  checked={draft.shell_enabled}
+                  disabled={!settings.defaults.shell_enabled}
+                  onChange={(event) => set('shell_enabled', event.target.checked)}
+                />
+                <span className="min-w-0">
+                  <span className="text-[13px] text-fg">Offer a browser shell on agent-mode clusters</span>
+                  <span className="mt-0.5 block text-[12px] leading-snug text-muted">
+                    A pod with <code>kubectl</code> and <code>helm</code> in it, started only when
+                    somebody asks. It holds no cluster credential of its own: its kubeconfig points
+                    back at this server, so every command it runs is impersonated as the operator,
+                    answered by the cluster's own RBAC and audited. Turning this off refuses new
+                    shells and leaves running ones alone.
+                    {settings.defaults.shell_enabled
+                      ? ''
+                      : ' This server was started without a shell image, so there is nothing to run.'}
+                  </span>
+                </span>
+              </label>
+
+              <Field
+                label="Shell image"
+                htmlFor="shell_image"
+                hint={`Leave empty for ${settings.defaults.shell_image || 'the build’s own image'}. An air-gapped site points this at its mirror.`}
+              >
+                <TextInput
+                  id="shell_image"
+                  className="font-mono text-[12.5px]"
+                  placeholder={settings.defaults.shell_image}
+                  value={draft.shell_image}
+                  onChange={(event) => set('shell_image', event.target.value)}
+                />
+              </Field>
+
+              <Field
+                label="Idle timeout (minutes)"
+                htmlFor="shell_idle_timeout_minutes"
+                hint={`How long a shell may go without a keystroke before it is reclaimed. Leave empty for ${settings.defaults.shell_idle_timeout_minutes} minutes.`}
+              >
+                <TextInput
+                  id="shell_idle_timeout_minutes"
+                  inputMode="numeric"
+                  placeholder={String(settings.defaults.shell_idle_timeout_minutes)}
+                  value={draft.shell_idle_timeout_minutes}
+                  onChange={(event) => set('shell_idle_timeout_minutes', event.target.value)}
+                />
+              </Field>
+
+              <Field
+                label="Maximum lifetime (hours)"
+                htmlFor="shell_max_lifetime_hours"
+                hint={`Written into the pod itself, so it holds even while this server is down. Capped by the kubeconfig ceiling — a shell must not outlive the credential inside it. Leave empty for ${settings.defaults.shell_max_lifetime_hours} hours.`}
+              >
+                <TextInput
+                  id="shell_max_lifetime_hours"
+                  inputMode="numeric"
+                  placeholder={String(settings.defaults.shell_max_lifetime_hours)}
+                  value={draft.shell_max_lifetime_hours}
+                  onChange={(event) => set('shell_max_lifetime_hours', event.target.value)}
+                />
+              </Field>
+              <Effective label="In use" value={settings.effective.shell_image || 'no shell image'} />
             </Panel>
 
             <Notice tone="info">

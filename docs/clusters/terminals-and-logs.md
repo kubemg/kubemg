@@ -86,6 +86,10 @@ else's.
 A shell selector (`bash`/`sh`) is offered on the pod terminal, since not
 every image ships both.
 
+A terminal that is not *inside* one particular pod — `kubectl` and `helm` in a
+pod kubemg runs for you — is [the browser shell](browser-shell.md). It rides
+this same bridge and is recorded on the same terms.
+
 ## Port-forward through the proxy
 
 `port-forward` rides the same `serveUpgradeStream` bridge as `exec`/`attach`.

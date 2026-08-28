@@ -29,6 +29,11 @@ export function hasTunnel(cluster: Cluster): boolean {
  * else under `/clusters/:id/` is a resource key, which is why these five names
  * are reserved: the resource route is a splat, so a kind called `capacity`
  * would otherwise be unreachable.
+ *
+ * The browser shell is deliberately not among them: it has no address at all.
+ * It is a dock over the console rather than a page, so that a session keeps
+ * running while its operator navigates — and a URL for it would be a link that
+ * promises a page and delivers a layer over whichever one you were on.
  */
 export type ClusterPage = 'dashboard' | 'events' | 'capacity' | 'security' | 'audit'
 

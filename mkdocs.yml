@@ -115,6 +115,7 @@ nav:
       - Helm releases: clusters/helm.md
       - Chart repositories: clusters/helm-repositories.md
       - Terminals and logs: clusters/terminals-and-logs.md
+      - The browser shell: clusters/browser-shell.md
       - Events timeline: clusters/events.md
       - Node capacity: clusters/capacity.md
       - Security posture: clusters/security-posture.md

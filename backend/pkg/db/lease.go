@@ -57,6 +57,12 @@ const (
 	// a rate limit, neither of which an operator asked for by running two
 	// replicas for availability.
 	LeaseHelmIndex = "helm_index"
+
+	// LeaseShellReaper covers reclaiming idle browser shells. It is a lease for
+	// the reason the others are: the work is a fleet-wide sweep that writes into
+	// customer clusters, and every replica running it would mean every replica
+	// deleting the same pods and filing the same audit records for it.
+	LeaseShellReaper = "shell_reaper"
 )
 
 // Lease is one held claim on a background job.

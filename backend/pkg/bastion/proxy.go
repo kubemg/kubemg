@@ -278,7 +278,7 @@ func (p *Proxy) Handle(c *gin.Context) {
 		// on its recording — that is what makes the trail and the replay one
 		// thing rather than two lists a person has to line up by timestamp.
 		event.SessionID = newSessionID()
-		p.serveUpgradeStream(c, tunnel, &event, header, offeredSubprotocols(parsed), parsed)
+		p.serveUpgradeStream(c, tunnel, &event, header, offeredSubprotocols(parsed), parsed, nil)
 		return
 	case wantsBodyStream(parsed, path):
 		event.Streaming = true
@@ -397,7 +397,7 @@ func (p *Proxy) Call(
 		"Impersonate-Group": ImpersonationGroups(grant.K8sRole),
 	}
 	if len(body) > 0 {
-		header["Content-Type"] = []string{"application/json"}
+		header["Content-Type"] = []string{contentTypeFor(method)}
 	}
 
 	resp, err := tunnel.Do(ctx, &Request{Method: method, Path: path, Header: header, Body: body})
@@ -664,6 +664,25 @@ func (p *Proxy) fail(c *gin.Context, event *Event, status int, message string) {
 	p.auditor.Record(c.Request.Context(), *event)
 
 	c.AbortWithStatusJSON(status, gin.H{"error": message})
+}
+
+// contentTypeFor names the media type a body is sent as.
+//
+// Everything here is `application/json` except a PATCH, which the API server
+// refuses outright with a 415 unless the body's *patch strategy* is named in the
+// content type — `application/json` is not one of the four it accepts. A merge
+// patch is what every caller through Call sends: a document naming the fields it
+// changes and leaving the rest of the object alone, which is the whole reason to
+// patch rather than to read-modify-write.
+//
+// This is a one-line rule and it fails silently without it: the two callers that
+// patch are both best-effort, so a 415 reads as an annotation that quietly never
+// lands rather than as an error anybody sees.
+func contentTypeFor(method string) string {
+	if method == http.MethodPatch {
+		return "application/merge-patch+json"
+	}
+	return "application/json"
 }
 
 // ImpersonationGroups renders the Kubernetes groups asserted for a grant. The

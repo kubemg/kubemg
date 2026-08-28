@@ -390,6 +390,48 @@ export interface RecordingPolicy {
   retention_days: number
 }
 
+/*
+ * The browser shell.
+ *
+ * `enabled` is the operator's switch, `available` is whether *this* cluster can
+ * carry one — a directly-connected cluster cannot, since the pod reaches back
+ * through KubeMG's proxy and there is no proxy route to reach. They are two
+ * facts rather than one because a console that collapsed them could only say
+ * "no shell here" and never why.
+ */
+export interface ShellState {
+  enabled: boolean
+  available: boolean
+  reason?: string
+  image?: string
+  /** Where the pod runs: KubeMG's namespace on the cluster, not a working one. */
+  namespace?: string
+  /** The namespace the shell's kubectl defaults to, which is the caller's. */
+  kube_namespace?: string
+  idle_timeout_seconds: number
+  max_lifetime_seconds: number
+  /** What the credential inside the shell can do — the caller's own grant. */
+  k8s_role?: string
+  namespaces?: string[]
+  /** Whether the session is captured for replay. Said before the first keystroke. */
+  recorded: boolean
+  status: ShellPodStatus
+}
+
+export interface ShellPodStatus {
+  exists: boolean
+  name?: string
+  phase?: string
+  ready: boolean
+  image?: string
+  created_at?: string
+  last_activity?: string
+  expires_at?: string
+  credential_expires_at?: string
+  /** Why a pod is not going to become a terminal — ImagePullBackOff and friends. */
+  message?: string
+}
+
 export interface TerminalSessionQuery {
   cluster_id?: number
   user_id?: number
@@ -1809,6 +1851,19 @@ export interface RuntimeSettings {
       install that hands out a quarter and one that refuses anything past a
       shift are the same decision. */
   kubeconfig_max_ttl_hours: number
+  /** Whether the browser shell is offered. A stored value can only ever turn it
+      off: a server with no shell image has nothing to run, and a switch that
+      silently does nothing is worse than one that says why. */
+  shell_enabled: boolean
+  /** The image a shell pod runs — KubeMG's own, pinned and minimal. An
+      air-gapped site points this at its mirror. */
+  shell_image: string
+  /** How long a shell may go without a keystroke before it is reclaimed. */
+  shell_idle_timeout_minutes: number
+  /** The absolute deadline written into the pod itself, capped at the point of
+      use by the kubeconfig ceiling — a shell must not outlive the credential
+      inside it. */
+  shell_max_lifetime_hours: number
 }
 
 export interface SettingsResponse {
