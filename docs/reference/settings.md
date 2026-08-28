@@ -50,7 +50,7 @@ never dial back in.
 | | |
 |---|---|
 | Meaning | The container image installed into a target cluster when it registers in agent mode. |
-| Environment default | `KUBEMG_AGENT_IMAGE` (falls back to the build's `agentpkg.DefaultImage`, currently `ghcr.io/kubemg/kubemg-agent:0.8.1`) |
+| Environment default | `KUBEMG_AGENT_IMAGE` (falls back to the build's `agentpkg.DefaultImage`, currently `ghcr.io/kubemg/kubemg-agent:0.8.2`) |
 | Validation | none beyond trimming |
 
 ### `agent_namespace`
