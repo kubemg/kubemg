@@ -7,8 +7,22 @@
 #   * **No package manager.** An operator's shell that can install software is a
 #     supply chain, not a terminal. There is no apk, no apt, no pip and no curl —
 #     what is in the image at build time is what is in the shell.
-#   * **Two tools, pinned.** kubectl and helm, at versions this build names, both
-#     verified against the checksum their own release publishes.
+#   * **One tool, pinned.** kubectl, at the version this build names, verified
+#     against the checksum its own release publishes.
+#
+#     helm was here and was deliberately removed. Its upstream release binaries
+#     carry the Go standard library they were built against, which runs behind
+#     Go's own security releases for weeks at a time — nine CRITICAL/HIGH at the
+#     last count, none of them reachable by any version bump because the newest
+#     release of every helm line carried the same ones. The three ways out were
+#     to accept them in an ignore file, to build helm from source against a
+#     current toolchain, or not to ship it; the first parks known findings in
+#     the image an operator's shell runs, and the second means shipping a helm
+#     nobody else has. KubeMG's console already installs, upgrades (chart
+#     version included), rolls back and uninstalls releases through the
+#     impersonated tunnel, so what left with the binary is the part the console
+#     deliberately does not do — see docs/clusters/browser-shell.md, which says
+#     what that is rather than leaving it to be discovered at a prompt.
 #   * **A shell, and the coreutils busybox brings.** Enough to edit a values
 #     file, pipe things about and read YAML. Nothing that opens a socket.
 #   * **Non-root, on a distroless base.** No shadow file to write to, no setuid
@@ -22,7 +36,6 @@
 # Versions are build arguments so an air-gapped site can rebuild this against
 # whatever it has mirrored without editing the file.
 ARG KUBECTL_VERSION=v1.37.0
-ARG HELM_VERSION=v3.21.4
 ARG BUSYBOX_IMAGE=busybox:1.37.0-musl
 ARG FETCH_IMAGE=alpine:3.21
 ARG BASE_IMAGE=gcr.io/distroless/static-debian12:nonroot
@@ -41,7 +54,7 @@ RUN mkdir -p /out/bin \
         [ "$applet" = "busybox" ] || ln -s busybox "$applet"; \
     done
 
-# ---- the two tools ----------------------------------------------------------
+# ---- the tool ---------------------------------------------------------------
 #
 # The checksum is fetched from the same release the binary came from, which is
 # what catches a truncated download or a mirror serving the wrong file. It is
@@ -50,10 +63,9 @@ RUN mkdir -p /out/bin \
 # artefacts it has already verified, which is what the ARGs above are for.
 FROM ${FETCH_IMAGE} AS tools
 ARG KUBECTL_VERSION
-ARG HELM_VERSION
 ARG TARGETARCH
 RUN set -eu; \
-    apk add --no-cache curl tar; \
+    apk add --no-cache curl; \
     mkdir -p /out; \
     arch="${TARGETARCH:-amd64}"; \
     curl -fsSL -o /tmp/kubectl \
@@ -61,21 +73,13 @@ RUN set -eu; \
     curl -fsSL -o /tmp/kubectl.sha256 \
         "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${arch}/kubectl.sha256"; \
     echo "$(cat /tmp/kubectl.sha256)  /tmp/kubectl" | sha256sum -c -; \
-    install -m 0755 /tmp/kubectl /out/kubectl; \
-    curl -fsSL -o /tmp/helm.tgz \
-        "https://get.helm.sh/helm-${HELM_VERSION}-linux-${arch}.tar.gz"; \
-    curl -fsSL -o /tmp/helm.sha256 \
-        "https://get.helm.sh/helm-${HELM_VERSION}-linux-${arch}.tar.gz.sha256sum"; \
-    awk '{print $1"  /tmp/helm.tgz"}' /tmp/helm.sha256 | sha256sum -c -; \
-    tar -xzf /tmp/helm.tgz -C /tmp; \
-    install -m 0755 "/tmp/linux-${arch}/helm" /out/helm
+    install -m 0755 /tmp/kubectl /out/kubectl
 
 # ---- the image --------------------------------------------------------------
 FROM ${BASE_IMAGE}
 
 COPY --from=busybox /out/bin/ /bin/
 COPY --from=tools /out/kubectl /usr/local/bin/kubectl
-COPY --from=tools /out/helm /usr/local/bin/helm
 
 # HOME and KUBECONFIG both point into the emptyDir the pod mounts, which is the
 # only writable path in the container and dies with it. KubeMG writes the
