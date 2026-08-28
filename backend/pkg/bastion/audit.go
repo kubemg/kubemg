@@ -121,6 +121,15 @@ func (a *SlogAuditor) Record(ctx context.Context, event Event) {
 		slog.Int("status_code", event.Status),
 		slog.Int64("duration_ms", event.Duration.Milliseconds()),
 	}
+	// The same two facts the stored row carries, from the same place: a SIEM
+	// correlating on source address should not have to join against the table to
+	// get one.
+	if source := SourceFrom(ctx).Truncate(); source.Addr != "" || source.UserAgent != "" {
+		attrs = append(attrs,
+			slog.String("source_addr", source.Addr),
+			slog.String("user_agent", source.UserAgent),
+		)
+	}
 	if event.Namespace != "" {
 		attrs = append(attrs, slog.String("namespace", event.Namespace))
 	}

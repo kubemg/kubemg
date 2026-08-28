@@ -3,6 +3,7 @@ import {
   CalendarClock,
   ChevronLeft,
   ChevronRight,
+  Download,
   FileDiff,
   PlayCircle,
   Radio,
@@ -10,9 +11,16 @@ import {
   ScrollText,
 } from 'lucide-react'
 import { useParams } from 'react-router'
-import { errorMessage, fetchAudit, fetchAuditSummary, fetchUsers } from '../api/client'
+import {
+  errorMessage,
+  exportAudit,
+  fetchAudit,
+  fetchAuditSummary,
+  fetchUsers,
+} from '../api/client'
 import type { AuditEvent, AuditQuery, AuditSummary, User } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { AuditRecordSheet } from '../components/AuditRecordSheet'
 import { ManifestDiffView } from '../components/ManifestDiffView'
 import { timeRangeLabel } from '../lib/timerange'
 import { useTimeRange } from '../state/timerange-context'
@@ -44,6 +52,7 @@ const TerminalSessionPlayer = lazy(() =>
 import type { Tone } from '../lib/status'
 import { formatInstant, relativeAge } from '../lib/time'
 import { useAuth } from '../state/auth-context'
+import { useResult } from '../state/result-context'
 import { useClusters } from '../state/clusters-context'
 
 const PAGE_SIZE = 50
@@ -102,6 +111,7 @@ function statusTone(event: AuditEvent): Tone {
 export function AuditTrail() {
   const { user } = useAuth()
   const { clusters } = useClusters()
+  const report = useResult()
   // Present only at `/clusters/:id/audit`. The trail there is pre-selected and
   // locked to that cluster — the address already answers "which cluster", and
   // an editable picker would let the page disagree with its own URL.
@@ -141,6 +151,10 @@ export function AuditTrail() {
   // while "record manifest diffs" was on for a non-redacted kind carries one
   // at all — see AuditEvent.diff — so most rows never offer this.
   const [viewingDiff, setViewingDiff] = useState<AuditEvent | null>(null)
+  // The record being read. A row carries everything this opens, so it is the row
+  // itself rather than an id to fetch by.
+  const [opened, setOpened] = useState<AuditEvent | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const query = useMemo<AuditQuery>(
     () => ({
@@ -228,6 +242,46 @@ export function AuditTrail() {
     setOffset(0)
   }
 
+  /**
+   * Taking the filtered result away.
+   *
+   * The file is fetched rather than linked because the API is
+   * bearer-authenticated — see `exportAudit` — and handed to the browser through
+   * an object URL that is revoked immediately after: a blob left attached to the
+   * document is a copy of the audit trail sitting in the tab until it is closed.
+   *
+   * A truncated export is reported as a warning rather than as a success,
+   * because the failure mode this feature has is somebody filing a partial file
+   * as the whole story.
+   */
+  async function download() {
+    setExporting(true)
+    try {
+      const { blob, filename, truncated } = await exportAudit(query)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      link.click()
+      URL.revokeObjectURL(url)
+      report({
+        tone: truncated ? 'warn' : 'ok',
+        title: 'Exported',
+        body: truncated
+          ? `The file stops at ${truncated.toLocaleString()} rows. Narrow the filter and export again for the rest.`
+          : `${filename} holds exactly what this page is filtered to.`,
+      })
+    } catch (err) {
+      report({
+        tone: 'error',
+        title: 'Nothing was exported',
+        body: errorMessage(err, 'The audit trail could not be exported.'),
+      })
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const page = Math.floor(offset / PAGE_SIZE) + 1
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
@@ -236,10 +290,19 @@ export function AuditTrail() {
       title="Audit trail"
       timeRange
       actions={
-        <Button onClick={() => void load()} disabled={loading}>
-          <RefreshCw aria-hidden="true" className={`size-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <>
+          {/* Evidence collection was a screenshot. The export answers the query
+              already on screen, so it sits beside Refresh rather than behind a
+              form of its own. */}
+          <Button onClick={() => void download()} disabled={exporting || total === 0}>
+            <Download aria-hidden="true" className="size-4" />
+            {exporting ? 'Exporting…' : 'Export'}
+          </Button>
+          <Button onClick={() => void load()} disabled={loading}>
+            <RefreshCw aria-hidden="true" className={`size-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </>
       }
     >
       <div className="flex min-w-0 flex-col gap-4">
@@ -458,8 +521,26 @@ export function AuditTrail() {
             </thead>
             <tbody>
               {events.map((event) => (
-                <Row key={event.id} title={event.error || event.path}>
-                  <Td className="truncate text-[12.5px] text-muted">{relativeAge(event.at)}</Td>
+                <Row
+                  key={event.id}
+                  title={event.error || event.path}
+                  onOpen={() => setOpened(event)}
+                >
+                  {/* The row opens, and this is the control that opens it: a
+                      `<tr>` cannot be focused or announced, so the click on the
+                      row is the convenience and this is the way in. The time is
+                      relative here and absolute on hover — a list is scanned,
+                      a record is filed. */}
+                  <Td className="truncate text-[12.5px] text-muted">
+                    <button
+                      type="button"
+                      onClick={() => setOpened(event)}
+                      title={formatInstant(event.at, { seconds: true })}
+                      className="cursor-pointer text-left transition-colors hover:text-fg hover:underline"
+                    >
+                      {relativeAge(event.at)}
+                    </button>
+                  </Td>
                   <Td className="truncate font-mono text-[12.5px] text-fg">
                     {event.username || '—'}
                   </Td>
@@ -561,6 +642,35 @@ export function AuditTrail() {
           attach is also recorded in full, and plays back from the row it is on.
         </p>
       </div>
+
+      {/* The record, opened. It carries no fetch of its own — every field is
+          already on the row the table drew — and it hands the two consequences
+          back to the page, so a replay reached from a record and one reached
+          from the row's own button are the same surface. */}
+      {opened ? (
+        <AuditRecordSheet
+          event={opened}
+          onClose={() => setOpened(null)}
+          onReplay={
+            replayable(opened)
+              ? () => {
+                  const event = opened
+                  setOpened(null)
+                  setReplaying(event)
+                }
+              : undefined
+          }
+          onViewDiff={
+            opened.diff
+              ? () => {
+                  const event = opened
+                  setOpened(null)
+                  setViewingDiff(event)
+                }
+              : undefined
+          }
+        />
+      ) : null}
 
       {replaying?.session_id ? (
         <Sheet

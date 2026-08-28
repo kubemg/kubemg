@@ -884,15 +884,40 @@ export function Row({
   children,
   className,
   title,
+  onOpen,
 }: {
   children: ReactNode
   className?: string
   title?: string
+  /**
+   * Opens whatever this row is a row of. It is a convenience on top of a real
+   * control inside the row, never the only way in: a `<tr>` cannot be focused
+   * or announced as something that does anything, so a table whose rows only
+   * opened by click would be a table nobody could read with a keyboard. The
+   * cell that carries the trigger is the accessible path; this is the large
+   * target for a mouse.
+   */
+  onOpen?: () => void
 }) {
   return (
     <tr
       title={title}
-      className={`group/row border-t border-line-soft transition-colors hover:bg-raised focus-within:bg-raised ${className ?? ''}`}
+      onClick={
+        onOpen
+          ? (event) => {
+              // A row full of buttons — replay, diff, a row menu — must not
+              // also open the row when one of them is clicked, and selecting
+              // text out of a cell is not a click on the row either.
+              const target = event.target as HTMLElement
+              if (target.closest('button, a, input, select, textarea')) return
+              if (window.getSelection()?.toString()) return
+              onOpen()
+            }
+          : undefined
+      }
+      className={`group/row border-t border-line-soft transition-colors hover:bg-raised focus-within:bg-raised ${
+        onOpen ? 'cursor-pointer' : ''
+      } ${className ?? ''}`}
     >
       {children}
     </tr>
