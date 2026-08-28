@@ -631,6 +631,47 @@ export async function fetchAudit(query: AuditQuery = {}): Promise<AuditPage> {
   }
 }
 
+/**
+ * The filtered trail as a file.
+ *
+ * It goes through axios rather than a plain link because the API is
+ * bearer-authenticated: an `<a href>` sends no Authorization header, and making
+ * the export readable without one would be a second, weaker way in to the audit
+ * trail. So the file arrives as a blob and the page hands it to the browser.
+ *
+ * `truncated` is the row count the server stopped at, or null. It is read off a
+ * header rather than out of the file, so the console can say the export was cut
+ * *before* somebody files it as the whole story.
+ */
+export async function exportAudit(
+  query: AuditQuery = {},
+): Promise<{ blob: Blob; filename: string; truncated: number | null }> {
+  const params: Record<string, string> = {}
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === '' || value === false) continue
+    if (Array.isArray(value)) {
+      if (value.length === 0) continue
+      params[key] = value.join(',')
+      continue
+    }
+    params[key] = String(value)
+  }
+  // Paging is the page's business, not the file's — the server ignores both, and
+  // sending them would only make the URL misleading.
+  delete params.limit
+  delete params.offset
+
+  const response = await http.get<Blob>('/audit/export', { params, responseType: 'blob' })
+  const disposition = String(response.headers['content-disposition'] ?? '')
+  const named = /filename="([^"]+)"/.exec(disposition)
+  const cut = Number(response.headers['x-kubemg-export-truncated'])
+  return {
+    blob: response.data,
+    filename: named?.[1] ?? 'kubemg-audit.csv',
+    truncated: Number.isFinite(cut) && cut > 0 ? cut : null,
+  }
+}
+
 export async function fetchAuditSummary(): Promise<AuditSummary> {
   const { data } = await http.get<AuditSummary>('/audit/summary')
   return data

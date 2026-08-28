@@ -67,13 +67,13 @@ func NewStoreAuditor(sink AuditSink, logger *slog.Logger, policy *auditpolicy.Po
 
 // Record enqueues an audit event. It is safe from any goroutine and never
 // blocks.
-func (a *StoreAuditor) Record(_ context.Context, event Event) {
+func (a *StoreAuditor) Record(ctx context.Context, event Event) {
 	if !a.policy.Records(event.Verb, event.Status, event.Error != "", event.Streaming) {
 		a.suppressed.Add(1)
 		return
 	}
 	select {
-	case a.queue <- toAuditRow(event):
+	case a.queue <- toAuditRow(ctx, event):
 	default:
 		// Log the first drop and then every thousandth, so a sustained outage
 		// does not turn the log itself into the problem.
@@ -157,7 +157,13 @@ func (a *StoreAuditor) flush(batch []db.AuditEvent) []db.AuditEvent {
 }
 
 // toAuditRow flattens an in-flight event into its stored form.
-func toAuditRow(event Event) db.AuditEvent {
+//
+// The caller's address and user agent come off the **context** rather than off
+// the event: they are the same two facts for every record a request produces,
+// and this is the one place every record passes through. See source.go for why
+// they do not live on Event.
+func toAuditRow(ctx context.Context, event Event) db.AuditEvent {
+	source := SourceFrom(ctx).Truncate()
 	at := event.At
 	if at.IsZero() {
 		at = time.Now().UTC()
@@ -186,6 +192,8 @@ func toAuditRow(event Event) db.AuditEvent {
 		GuardrailAction:    event.GuardrailAction,
 		Error:              event.Error,
 		Diff:               string(event.Diff),
+		SourceAddr:         source.Addr,
+		UserAgent:          source.UserAgent,
 	}
 }
 

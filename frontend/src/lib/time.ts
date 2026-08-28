@@ -71,6 +71,66 @@ export function relativeAge(iso: string | undefined): string {
 }
 
 /**
+ * The deck has one absolute time format, and it is deliberately not the
+ * browser's. `toLocaleString()` prints the host's locale — `8/26/2026, 7:28:22
+ * PM` on a US machine — and in an international enterprise `8/26` and `26/8` are
+ * read off the same screen as two different days, with no zone stated either
+ * way. A console whose whole output is evidence cannot leave the reader to guess
+ * which of the two they are holding.
+ *
+ * So: ISO order, 24-hour, and the zone always said out loud. Relative time
+ * (`relativeAge`) stays the format for a list, with this on hover; this is the
+ * format wherever an instant is the reading itself — a masthead, an expiry, a
+ * filter's stated range — and wherever an audit reads.
+ *
+ * Seconds are opt-in: they matter for an audit record and are noise on an
+ * expiry. The value is in local time rather than UTC, because it is read beside
+ * a wall clock; the offset is what makes that unambiguous.
+ */
+export function formatInstant(
+  value: string | number | Date | undefined,
+  options: { seconds?: boolean } = {},
+): string {
+  const at = value instanceof Date ? value : new Date(value ?? NaN)
+  if (!Number.isFinite(at.getTime())) return 'unknown'
+
+  const pad = (part: number) => String(part).padStart(2, '0')
+  const date = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`
+  const clock = formatClock(at, options)
+  return `${date} ${clock} ${zoneSuffix(at)}`
+}
+
+/**
+ * formatClock is the same rule with the date left off, for a chart axis and a
+ * log line where every reading is from the same day and the date would be
+ * repeated a hundred times. 24-hour for the same reason as above: `7:28 PM` and
+ * `19:28` are the same instant, but only one of them sorts and only one of them
+ * is read the same way everywhere.
+ */
+export function formatClock(
+  value: string | number | Date | undefined,
+  options: { seconds?: boolean } = {},
+): string {
+  const at = value instanceof Date ? value : new Date(value ?? NaN)
+  if (!Number.isFinite(at.getTime())) return 'unknown'
+
+  const pad = (part: number) => String(part).padStart(2, '0')
+  const base = `${pad(at.getHours())}:${pad(at.getMinutes())}`
+  return options.seconds ? `${base}:${pad(at.getSeconds())}` : base
+}
+
+/** The reader's own offset, written the way a timestamp writes it: `UTC+03:00`. */
+function zoneSuffix(at: Date): string {
+  // getTimezoneOffset is minutes *behind* UTC, so its sign is inverted here.
+  const minutes = -at.getTimezoneOffset()
+  if (minutes === 0) return 'UTC'
+  const sign = minutes < 0 ? '-' : '+'
+  const total = Math.abs(minutes)
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `UTC${sign}${pad(Math.floor(total / 60))}:${pad(total % 60)}`
+}
+
+/**
  * useCountdown ticks once a second toward an expiry. Credentials issued here are
  * deliberately short-lived, so the UI shows them running out.
  */

@@ -136,6 +136,7 @@ type Store interface {
 	PruneKubeconfigIssuances(ctx context.Context, before time.Time) (int64, error)
 
 	ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]db.AuditEvent, int64, error)
+	ExportAuditEvents(ctx context.Context, filter db.AuditFilter) ([]db.AuditEvent, bool, error)
 	AuditSummary(ctx context.Context, since time.Time) (db.AuditStats, error)
 	PruneAuditEvents(ctx context.Context, before time.Time) (int64, error)
 
@@ -430,6 +431,9 @@ func NewRouter(opts Options) *gin.Engine {
 	router.Use(gin.Recovery())
 	router.Use(cors.New(corsConfig(opts.AllowedOrigins)))
 	router.Use(securityHeaders(opts.Deployment.TLSEnabled))
+	// Where the caller is, captured once for every route rather than at each of
+	// the dozen places that write an audit record. See pkg/bastion/source.go.
+	router.Use(requestSource())
 
 	router.GET("/health", healthHandler)
 
@@ -1114,6 +1118,10 @@ func NewRouter(opts Options) *gin.Engine {
 		audit := v1.Group("/audit", requireAuth)
 		audit.GET("", s.listAudit)
 		audit.GET("/summary", s.auditSummary)
+		// The same query the page just answered, in a file that can leave the
+		// console — narrowed for a non-admin exactly as the page is. See
+		// audit_export.go for why it is not itself audited.
+		audit.GET("/export", s.exportAudit)
 
 		// Recorded interactive sessions. They live under /audit because that is
 		// what they are — the trail says a shell was opened in production, and
@@ -1274,6 +1282,26 @@ const contentSecurityPolicy = "" +
 // while serving plaintext would tell a browser to require HTTPS for a host
 // that cannot yet serve it, and the header is a no-op anyway when the
 // response that carried it did not arrive over HTTPS.
+// requestSource stamps the caller's address and user agent onto the request
+// context, so whatever this request ends up recording can say where it came
+// from without every handler having to pass it along.
+//
+// The address is Gin's `ClientIP`, which resolves `X-Forwarded-For` /
+// `X-Real-IP` only for proxies the engine has been told to trust — the default
+// being none, so behind an untrusted hop this records the hop rather than a
+// header anybody could have written. An audit column holding a spoofable value
+// presented as fact is worse than one holding the load balancer's address.
+func requestSource() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		source := bastion.RequestSource{
+			Addr:      c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+		}.Truncate()
+		c.Request = c.Request.WithContext(bastion.WithSource(c.Request.Context(), source))
+		c.Next()
+	}
+}
+
 func securityHeaders(tlsEnabled bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		h := c.Writer.Header()

@@ -52,11 +52,12 @@ func (s *Store) AppendAuditEvents(ctx context.Context, events []AuditEvent) erro
 	return nil
 }
 
-// ListAuditEvents returns a page of audit records newest first, along with how
-// many match the filter in total so the UI can page through them.
-func (s *Store) ListAuditEvents(ctx context.Context, filter AuditFilter) ([]AuditEvent, int64, error) {
-	query := s.gdb.WithContext(ctx).Model(&AuditEvent{})
-
+// auditQuery applies a filter's predicates. It is shared by the paged read and
+// by the export rather than being written twice: an export that answered a
+// slightly different question from the table it was taken from would be the
+// worst possible kind of evidence — one nobody can reproduce from the screen it
+// came off.
+func auditQuery(query *gorm.DB, filter AuditFilter) *gorm.DB {
 	if filter.UserID != 0 {
 		query = query.Where("user_id = ?", filter.UserID)
 	}
@@ -96,6 +97,13 @@ func (s *Store) ListAuditEvents(ctx context.Context, filter AuditFilter) ([]Audi
 			like, like, like, like,
 		)
 	}
+	return query
+}
+
+// ListAuditEvents returns a page of audit records newest first, along with how
+// many match the filter in total so the UI can page through them.
+func (s *Store) ListAuditEvents(ctx context.Context, filter AuditFilter) ([]AuditEvent, int64, error) {
+	query := auditQuery(s.gdb.WithContext(ctx).Model(&AuditEvent{}), filter)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -119,6 +127,33 @@ func (s *Store) ListAuditEvents(ctx context.Context, filter AuditFilter) ([]Audi
 		return nil, 0, fmt.Errorf("list audit events: %w", err)
 	}
 	return events, total, nil
+}
+
+// AuditExportLimit bounds one export. It is far above the page size and far
+// below "the whole table": evidence collection wants the filtered result rather
+// than the trail, and a filter that matches half a million rows is a filter
+// nobody narrowed. The response says when it hit the bound rather than handing
+// over a file that quietly stops.
+const AuditExportLimit = 5000
+
+// ExportAuditEvents reads a filtered result for export — the same predicates and
+// the same order as the page, without the page. It reports whether the bound was
+// reached, because a truncated export presented as complete is the one way this
+// feature could do harm.
+func (s *Store) ExportAuditEvents(ctx context.Context, filter AuditFilter) ([]AuditEvent, bool, error) {
+	query := auditQuery(s.gdb.WithContext(ctx).Model(&AuditEvent{}), filter)
+
+	events := []AuditEvent{}
+	// One more than the bound, so "there was more" is a fact rather than an
+	// inference from a full page.
+	err := query.Order("at desc").Order("id desc").Limit(AuditExportLimit + 1).Find(&events).Error
+	if err != nil {
+		return nil, false, fmt.Errorf("export audit events: %w", err)
+	}
+	if len(events) > AuditExportLimit {
+		return events[:AuditExportLimit], true, nil
+	}
+	return events, false, nil
 }
 
 // AuditStats is the headline the audit page opens with.

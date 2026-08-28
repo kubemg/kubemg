@@ -323,6 +323,7 @@ See [Runtime settings](settings.md) for what each field means.
 | --- | --- | --- |
 | `GET /audit` | Session, narrows | Filters `verb[], status, from/to, since/until,` or a fixed range preset. Non-admin forced to their own `user_id`; the query cannot widen it. |
 | `GET /audit/summary` | Admin | 24-hour rollup: `{total, failed, streams, window_hours}`. |
+| `GET /audit/export` | Session, narrows | The same filter as `GET /audit`, as CSV. `limit`/`offset` ignored — paging is the page's, not the file's. Bounded at 5000 rows; past that the file says so and `X-Kubemg-Export-Truncated` carries the bound. Not itself audited. |
 | `GET /audit/recording-policy` | Session | `{enabled, input_recorded, encrypted, retention_days}` — disclosed to anyone, since anyone might be recorded. |
 | `GET /audit/terminal-sessions` | Session, narrows | `recording_enabled: false` is distinct from a genuinely empty list. |
 | `GET /audit/terminal-sessions/:id` | Session, narrows | `404`, not `403`, for someone else's session without the capability — whether it exists is not theirs to learn. |

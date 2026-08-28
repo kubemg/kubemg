@@ -38,7 +38,7 @@ import { useLiveTick } from '../lib/live'
 import { DEFAULT_RESOURCE, resourceHref } from '../lib/navigation'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { linkState } from '../lib/status'
-import { relativeAge } from '../lib/time'
+import { formatInstant, relativeAge } from '../lib/time'
 import { formatCPU, formatMemory } from '../lib/units'
 import { useAuth } from '../state/auth-context'
 
@@ -278,8 +278,13 @@ function AdminDashboard({
           </h2>
           <EnvironmentTag environment={cluster.environment} />
           <ClusterState cluster={cluster} />
-          <span className="ml-auto text-[12.5px] text-muted">
-            checked {relativeAge(cluster.last_checked_at)}
+          {/* What the pill says is the link now; this is when the last probe
+              ran, which is a different fact and is labelled as one. */}
+          <span
+            className="ml-auto text-[12.5px] text-muted"
+            title={formatInstant(cluster.last_checked_at, { seconds: true })}
+          >
+            last probe {relativeAge(cluster.last_checked_at)}
           </span>
         </div>
 
@@ -336,7 +341,7 @@ function AdminDashboard({
               },
               {
                 term: 'Registered',
-                value: new Date(cluster.created_at).toLocaleString(),
+                value: formatInstant(cluster.created_at),
               },
             ]}
           />
@@ -489,8 +494,13 @@ function WorkloadDashboard({
           </h2>
           <EnvironmentTag environment={cluster.environment} />
           <ClusterState cluster={cluster} />
-          <span className="ml-auto text-[12.5px] text-muted">
-            checked {relativeAge(cluster.last_checked_at)}
+          {/* What the pill says is the link now; this is when the last probe
+              ran, which is a different fact and is labelled as one. */}
+          <span
+            className="ml-auto text-[12.5px] text-muted"
+            title={formatInstant(cluster.last_checked_at, { seconds: true })}
+          >
+            last probe {relativeAge(cluster.last_checked_at)}
           </span>
         </div>
 

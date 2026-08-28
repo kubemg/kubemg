@@ -10,6 +10,8 @@ import {
 import type { HelmRepository, HelmRepositoryInput } from '../../api/types'
 import { relativeAge } from '../../lib/time'
 import { Button, Field, IconButton, Notice, Panel, Pill, Sheet, TextInput } from '../primitives'
+import { useConfirm } from '../../state/confirm-context'
+import { useResult } from '../../state/result-context'
 
 /**
  * Where charts may be installed from.
@@ -26,6 +28,8 @@ import { Button, Field, IconButton, Notice, Panel, Pill, Sheet, TextInput } from
  * cannot discover the list by being refused.
  */
 export function HelmRepositoriesPanel() {
+  const confirm = useConfirm()
+  const report = useResult()
   const [repositories, setRepositories] = useState<HelmRepository[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -61,12 +65,25 @@ export function HelmRepositoriesPanel() {
   }
 
   async function remove(repository: HelmRepository) {
-    if (!window.confirm(`Remove “${repository.name}”? Its cached chart list goes with it.`)) return
+    const confirmed = await confirm({
+      eyebrow: 'Chart repository',
+      title: `Remove “${repository.name}”?`,
+      body: 'Its cached chart list goes with it, so nothing from this repository can be installed until it is added again. Releases already installed from it keep working.',
+      confirmLabel: 'Remove',
+    })
+    if (!confirmed) return
     try {
       await deleteHelmRepository(repository.name)
       await load()
+      report({
+        tone: 'ok',
+        title: `Removed ${repository.name}`,
+        body: 'Its cached chart list went with it. Releases installed from it keep working.',
+      })
     } catch (err) {
-      setError(errorMessage(err, 'Could not remove this repository.'))
+      const message = errorMessage(err, 'Could not remove this repository.')
+      setError(message)
+      report({ tone: 'error', title: `${repository.name} was not removed`, body: message })
     }
   }
 

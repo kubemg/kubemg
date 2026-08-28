@@ -51,9 +51,21 @@ describe('Pill', () => {
     // `tone on tone-soft` is the pairing the contrast pass measures; `fg` on a
     // tint is one nothing checks, which is why the pairing lives in one table.
     render(<Pill tone="bad">Failed</Pill>)
-    const pill = screen.getByText('Failed')
-    expect(pill.className).toContain('bg-danger-soft')
-    expect(pill.className).toContain('text-danger')
+    // The label is a truncating span inside the pill, so the plate is the
+    // parent — which is also the element that has to be able to shrink.
+    const pill = screen.getByText('Failed').parentElement
+    expect(pill?.className).toContain('bg-danger-soft')
+    expect(pill?.className).toContain('text-danger')
+  })
+
+  it('shrinks and ellipsises rather than pushing its neighbour out of the cell', () => {
+    // A phase pill sits beside a ready count in one cell. Without `min-w-0` the
+    // pill refuses to shrink and the count lands on the next column's value:
+    // `2/2` beside `55m` rendered as `2/255m`.
+    render(<Pill tone="bad">CrashLoopBackOff</Pill>)
+    const label = screen.getByText('CrashLoopBackOff')
+    expect(label.className).toContain('truncate')
+    expect(label.parentElement?.className).toContain('min-w-0')
   })
 })
 

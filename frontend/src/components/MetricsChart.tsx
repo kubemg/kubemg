@@ -5,6 +5,7 @@ import { formatCPU, formatMemory } from '../lib/units'
 import { PLOT_FULL, useMetricsQuery } from '../lib/metrics'
 import type { PlotGeometry } from '../lib/metrics'
 import { queryRangeLabel } from '../lib/timerange'
+import { formatClock, formatInstant } from '../lib/time'
 import { Button, EmptyState, Notice } from './primitives'
 
 /*
@@ -326,8 +327,8 @@ export function Plot({
         onKeyDown={onKey}
       >
         <title id={titleId}>
-          {result.series.length} series between {new Date(result.start).toLocaleString()} and{' '}
-          {new Date(result.end).toLocaleString()}
+          {result.series.length} series between {formatInstant(result.start)} and{' '}
+          {formatInstant(result.end)}
         </title>
 
         {/* Gridlines: hairline, solid, one step off the surface. */}
@@ -410,7 +411,7 @@ export function Plot({
               y={geometry.height - 6}
               className="fill-faint font-mono text-[9px]"
             >
-              {new Date(times[0]).toLocaleTimeString()}
+              {formatClock(times[0])}
             </text>
             <text
               x={width - geometry.right}
@@ -418,7 +419,7 @@ export function Plot({
               textAnchor="end"
               className="fill-faint font-mono text-[9px]"
             >
-              {new Date(times[times.length - 1]).toLocaleTimeString()}
+              {formatClock(times[times.length - 1])}
             </text>
           </>
         ) : null}
@@ -504,7 +505,7 @@ function Readout({
       }`}
     >
       <p className="mb-1.5 font-mono text-[11px] text-faint">
-        {new Date(at).toLocaleTimeString()}
+        {formatClock(at, { seconds: true })}
       </p>
       <ul className="flex flex-col gap-1">
         {rows.map((row) => (

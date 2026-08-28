@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { Check, Copy, Download } from 'lucide-react'
 import { errorMessage, fetchKubeconfigPolicy, generateKubeconfig } from '../api/client'
 import type { Cluster, Kubeconfig, KubeconfigPolicy } from '../api/types'
-import { formatDuration, formatTTL, useCountdown } from '../lib/time'
+import { formatClock, formatDuration, formatInstant, formatTTL, useCountdown } from '../lib/time'
 import {
   Button,
   DetailList,
@@ -224,8 +224,8 @@ function IssuedCredential({ issued }: { issued: Kubeconfig }) {
           <p className="text-right text-[11.5px] text-muted">
             expires{' '}
             {issued.ttl_seconds > 86400
-              ? new Date(issued.expires_at).toLocaleString()
-              : new Date(issued.expires_at).toLocaleTimeString()}
+              ? formatInstant(issued.expires_at)
+              : formatClock(issued.expires_at, { seconds: true })}
           </p>
         </div>
 

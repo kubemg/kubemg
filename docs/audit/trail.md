@@ -44,8 +44,57 @@ person, and nesting buys nothing:
 | `bytes_out` / `bytes_in` | Filled on the closing record of a stream: what came back from the cluster, and what the user sent into it |
 | `session_id` | Correlates the two records of one interactive session, and is the join to that session's recording (see [Session recording](session-recording.md)) |
 | `guardrail_policy` / `guardrail_action` | Which safety policy matched and what it did (`block` or `warn`) — see [Guardrails](../access/guardrails.md) |
+| `source_addr` / `user_agent` | Where the call came from, as the server saw it — see [Where a call came from](#where-a-call-came-from) below |
 | `error` | Set when the call never reached the API server (a refusal, a tunnel failure) |
 | `diff` | The field-level diff of a manifest write, present only when manifest diff recording is on and the kind is not redacted — see [Manifest diff recording](#manifest-diff-recording) |
+
+## Where a call came from
+
+"From where" is the second question in an access review after "who", and until
+these two columns existed the schema had no answer to it at all.
+
+- `source_addr` is the client address the server resolved, through whatever
+  proxy headers the engine has been told to trust (`X-Forwarded-For`,
+  `X-Real-IP`) — the default being none, so behind an untrusted hop this
+  records the hop rather than a header anybody could have written. It never
+  carries a port: a source port names a socket that closed seconds later.
+- `user_agent` is the client's own claim about what it is — `kubectl`, a
+  browser, a CI runner — truncated to 256 characters. It is untrusted by
+  construction and worth keeping for exactly that reason: a credential being
+  used by something that is not what it was issued to shows up here first.
+
+Both travel on the **request context** rather than on `bastion.Event`, stamped
+once by one middleware (`requestSource`, `pkg/api/router.go`) and read once
+where the row is written (`toAuditRow`). That is why no event site has to
+remember them.
+
+Both are empty in two ordinary cases, and the console says "not recorded"
+rather than drawing a blank:
+
+- a record with no caller — kubemg did it on its own, such as the JIT expirer
+  closing out a grant or the alarm poller reading events;
+- every row written before the columns existed. **They cannot be backfilled**:
+  a call already made has no address left to go and find.
+
+## Taking the trail out of the console
+
+`GET /api/v1/audit/export` answers the query the page is filtered to and
+returns it as CSV, so evidence collection is a file rather than a screenshot.
+
+- It takes **exactly the same parameters** as `GET /api/v1/audit` and applies
+  the same predicates in the same order, so an export is reproducible from the
+  screen it came off. `limit` and `offset` are ignored: paging is the page's
+  business, and an offset carried into a file would silently drop the rows
+  above it.
+- It follows the same narrowing rule as the trail: a non-admin exports their
+  own rows, and a `user_id` naming somebody else does not widen that.
+- It is bounded at 5000 rows. Past that the file stops, says so in a trailing
+  comment row, and sets `X-Kubemg-Export-Truncated` — the console reports a
+  truncated export as a warning rather than as a success, because the failure
+  mode here is somebody filing a partial file as the whole story.
+- It is deliberately **not itself audited**, for the same reason reading the
+  trail and reading the recording index are not: it is a read of kubemg's own
+  records by somebody already entitled to them.
 
 ## Verb naming
 

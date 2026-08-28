@@ -24,6 +24,8 @@ import {
 import type { Tone } from '../lib/status'
 import { relativeAge } from '../lib/time'
 import { useAuth } from '../state/auth-context'
+import { useConfirm } from '../state/confirm-context'
+import { useResult } from '../state/result-context'
 
 /**
  * IssuedCredentials is the register: every kubeconfig this console has handed
@@ -54,6 +56,8 @@ const FILTERS = [
 type StatusFilter = (typeof FILTERS)[number]['value']
 
 export function IssuedCredentials({ reading }: { reading: Reading }) {
+  const confirm = useConfirm()
+  const report = useResult()
   const { user } = useAuth()
   const [rows, setRows] = useState<IssuedKubeconfig[]>([])
   const [loading, setLoading] = useState(true)
@@ -95,8 +99,16 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
     try {
       await revokeIssuedKubeconfig(row.id)
       await load()
+      report({
+        tone: 'ok',
+        title: 'Revoked',
+        body: `${row.username}'s kubeconfig for ${row.cluster_name} stops being accepted at its next call.`,
+        link: { to: '/audit', label: 'See it in the audit trail' },
+      })
     } catch (err) {
-      setRowError(errorMessage(err, 'Could not revoke that credential.'))
+      const message = errorMessage(err, 'Could not revoke that credential.')
+      setRowError(message)
+      report({ tone: 'error', title: 'Nothing was revoked', body: message })
     } finally {
       setBusyRow(null)
     }
@@ -104,19 +116,33 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
 
   async function revokeEverything() {
     const whose = mine ? 'your own' : 'every account’s'
-    const confirmed = window.confirm(
-      `Revoke ${whose} live kubeconfigs? Anything using one starts failing at its next call. ` +
-        'Credentials for clusters registered for direct API access cannot be withdrawn from ' +
-        'here and will be named in the result.',
-    )
+    const confirmed = await confirm({
+      eyebrow: 'Issued credentials',
+      title: `Revoke ${whose} live kubeconfigs?`,
+      body: 'Anything using one starts failing at its next call. Credentials for clusters registered for direct API access cannot be withdrawn from here and will be named in the result.',
+      confirmLabel: 'Revoke all',
+    })
     if (!confirmed) return
     setRowError(null)
     try {
       const result = await revokeAllIssuedKubeconfigs(mine ? user?.id : undefined)
       setBlanket(result)
       await load()
+      // The full summary — what was revoked, what is still valid, which clusters
+      // were not reached — stays on the page, because it is a reading rather
+      // than a sentence. The strip says the act landed and where the rest is.
+      report({
+        tone: result.clusters_not_reached?.length ? 'warn' : 'ok',
+        title: `Revoked ${result.revoked} kubeconfig${result.revoked === 1 ? '' : 's'}`,
+        body: result.clusters_not_reached?.length
+          ? 'Some clusters could not be reached; they are named in the summary on this page.'
+          : undefined,
+        link: { to: '/audit', label: 'See it in the audit trail' },
+      })
     } catch (err) {
-      setRowError(errorMessage(err, 'Could not revoke the credentials.'))
+      const message = errorMessage(err, 'Could not revoke the credentials.')
+      setRowError(message)
+      report({ tone: 'error', title: 'Nothing was revoked', body: message })
     }
   }
 

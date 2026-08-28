@@ -33,20 +33,49 @@ export const TONE_FILL: Record<Tone, string> = {
   accent: 'bg-accent',
 }
 
+/**
+ * A cluster's reachability has **one** derivation, and this is it.
+ *
+ * It used to have two. The pill read `cluster.status` — the last stored check,
+ * which is a fact about some minute in the past — while every glyph read
+ * `linkState`, which for an agent-mode cluster reads the live tunnel. On one
+ * screen the dashboard said `Reachable · checked 9m ago` while the tree's dot
+ * and the rail's chip were red, with the tunnel open at that moment. A console
+ * whose single job is to answer "can this cluster be reached" cannot answer it
+ * twice, and the older answer cannot be the one shown as today's.
+ *
+ * So the tone and the word are derived from the link below rather than from the
+ * stored status, and the stored check keeps its own place: how old the reading
+ * is, said as an age beside it, never as the state itself.
+ */
+const LINK_TONE: Record<LinkState, Tone> = {
+  live: 'ok',
+  direct: 'ok',
+  down: 'bad',
+  idle: 'idle',
+}
+
 export function clusterTone(cluster: Cluster): Tone {
-  if (cluster.status === 'healthy') return 'ok'
-  if (cluster.status === 'unhealthy') return 'bad'
-  return 'idle'
+  return LINK_TONE[linkState(cluster)]
 }
 
 export function clusterStateLabel(cluster: Cluster): string {
-  if (cluster.status === 'healthy') return 'Reachable'
-  if (cluster.status === 'unhealthy') return 'Unreachable'
-  return 'Never checked'
+  const state = linkState(cluster)
+  if (state === 'down') return 'Unreachable'
+  if (state === 'idle') {
+    // Two different nothings: an agent cluster that has not dialled in yet is
+    // waiting on somebody else's terminal, and a direct one has simply never
+    // been checked.
+    return cluster.connection_mode === 'agent' ? 'Waiting to dial in' : 'Never checked'
+  }
+  return 'Reachable'
 }
 
+/** The four ways a link reads, wherever it is drawn. */
+export type LinkState = 'live' | 'direct' | 'down' | 'idle'
+
 /** How a cluster's link should read: is a tunnel carrying traffic right now. */
-export function linkState(cluster: Cluster): 'live' | 'direct' | 'down' | 'idle' {
+export function linkState(cluster: Cluster): LinkState {
   if (cluster.connection_mode === 'agent') {
     if (cluster.agent_attached) return 'live'
     return cluster.status === 'unhealthy' ? 'down' : 'idle'

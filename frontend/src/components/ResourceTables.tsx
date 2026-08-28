@@ -66,7 +66,7 @@ import type { SelectedRow } from '../lib/selection'
 import { selectionKey } from '../lib/selection'
 import type { Tone } from '../lib/status'
 import { TONE_FILL, phaseTone, podTone, workloadTone } from '../lib/status'
-import { formatCountdown, relativeAge, secondsUntil, useTicker } from '../lib/time'
+import { formatCountdown, formatInstant, relativeAge, secondsUntil, useTicker } from '../lib/time'
 import { formatCPU, formatMemory, podLimit, ratio, usageTone } from '../lib/units'
 import type { PodUsageIndex } from '../lib/units'
 
@@ -493,7 +493,7 @@ function Name({
  * keeps a share, because a list that spans namespaces cannot drop the one field
  * that says which of two same-named objects a row is.
  */
-const NAMESPACE_WIDTH = 'w-[26%] md:w-[min(16%,11rem)]'
+const NAMESPACE_WIDTH = 'w-[26%] md:w-[16%]'
 
 function NamespaceHead({ show }: { show: boolean }) {
   if (!show) return null
@@ -557,13 +557,26 @@ const AGE = 'text-[12.5px] text-muted'
  * buttons take their measurement and the name takes the rest. A name column with
  * a percentage of its own is what put the two in competition.
  *
- * The third part of the rule is that every *other* column's width is written
- * `min(percentage, ceiling)`. A percentage alone keeps its share of the table at
- * every width, so on a wide screen an Age column holding "12d" grew to two
- * hundred pixels of whitespace and the name — which is the only column whose
- * content is unbounded — grew by the same proportion rather than by the surplus.
- * The percentage is what a narrow table needs and the ceiling is what the
- * content can actually use, so past that width the extra room is the name's.
+ * The third part of the rule is that every *other* column's width is a **plain
+ * percentage**, and it is written that way because it is the only form the fixed
+ * layout algorithm actually honours. These columns used to ask for
+ * `min(percentage, ceiling)` — the percentage for a narrow table, the ceiling so
+ * that on a wide one the surplus went to the name rather than to an Age column
+ * holding "12d". Chrome **discards a track width that is a math function mixing a
+ * percentage with an absolute length**: measured in a 1000px four-column fixed
+ * table, `min(16%,11rem)` and `clamp(6rem,16%,11rem)` both resolve to 250px,
+ * identical to `width: auto`, while `16%` → 160px, `11rem` → 176px and
+ * `calc(16%)` → 160px all apply. So none of these ceilings had ever been read and
+ * no table had ever rendered at its designed widths: the sized columns fell back
+ * to `auto` and split the leftover evenly, which is how NODE (asking 14rem) and
+ * RESTARTS (asking 3.5rem) came out the same width as each other.
+ *
+ * The ceiling is what was given up, and it is the cheaper half: a plain
+ * percentage is read at every width, and the surplus a very wide table hands an
+ * Age column is whitespace rather than a truncated heading. **Never put a
+ * percentage inside `min()`/`clamp()` on a column width** — it is not a style
+ * choice but a silent no-op, which is why `ResourceTables.test.ts` asserts the
+ * absence of one rather than leaving it to a review.
  */
 const ROW_ACTIONS_WIDTH = 'w-10'
 
@@ -873,22 +886,22 @@ function HelmReleaseTable({
         <tr>
           <Th columnKey="name">Release</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="hidden md:table-cell md:w-[min(18%,14rem)]" columnKey="chart">
+          <Th className="hidden md:table-cell md:w-[18%]" columnKey="chart">
             Chart
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(10%,7rem)]" columnKey="version">
+          <Th className="hidden lg:table-cell lg:w-[10%]" columnKey="version">
             Version
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(10%,7rem)]" columnKey="app">
+          <Th className="hidden lg:table-cell lg:w-[10%]" columnKey="app">
             App
           </Th>
-          <Th className="w-[12%] md:w-[min(7%,5rem)]" columnKey="rev">
+          <Th className="w-[12%] md:w-[7%]" columnKey="rev">
             Rev
           </Th>
-          <Th className="w-[28%] md:w-[min(14%,9rem)]" columnKey="status">
+          <Th className="w-[28%] md:w-[14%]" columnKey="status">
             Status
           </Th>
-          <Th className="w-[22%] md:w-[min(10%,7rem)]" columnKey="updated">
+          <Th className="w-[22%] md:w-[10%]" columnKey="updated">
             Updated
           </Th>
           {onValues ? (
@@ -1108,29 +1121,29 @@ function PodTable({
           {/* Ready rides beside the phase pill rather than a column of its own —
               1/1 only means something once you already know a pod is Running,
               so the two are one reading, not two. */}
-          <SortTh className="w-[28%] sm:w-[20%] md:w-[min(15%,10rem)]" {...column('phase')}>
+          <SortTh className="w-[28%] sm:w-[22%] md:w-[18%]" {...column('phase')}>
             Phase
           </SortTh>
           {/* CPU and memory are the two numbers `kubectl top` answers with, in
               the same order, so they read as the same thing. They are the first
               columns to go on a narrow screen: a phase and a restart count say
               whether a pod is in trouble, a reading says how much. */}
-          <SortTh className="hidden sm:table-cell sm:w-[11%] md:w-[min(8%,5.5rem)]" {...column('cpu')}>
+          <SortTh className="hidden sm:table-cell sm:w-[11%] md:w-[8%]" {...column('cpu')}>
             CPU
           </SortTh>
-          <SortTh className="hidden sm:table-cell sm:w-[11%] md:w-[min(9%,6rem)]" {...column('memory')}>
+          <SortTh className="hidden sm:table-cell sm:w-[11%] md:w-[9%]" {...column('memory')}>
             Memory
           </SortTh>
-          <SortTh className="hidden md:table-cell md:w-[min(5%,3.5rem)]" {...column('restarts')}>
+          <SortTh className="hidden md:table-cell md:w-[5%]" {...column('restarts')}>
             Restarts
           </SortTh>
           {/* A node name is long and this table is the one with the most columns,
               so it waits for the width that can hold it — at `lg` the resource
               tree is on screen too and there is nothing spare. */}
-          <SortTh className="hidden xl:table-cell xl:w-[min(14%,14rem)]" {...column('node')}>
+          <SortTh className="hidden xl:table-cell xl:w-[14%]" {...column('node')}>
             Node
           </SortTh>
-          <SortTh className="w-[14%] sm:w-[10%] md:w-[min(6%,4.5rem)]" {...column('age')}>
+          <SortTh className="w-[14%] sm:w-[10%] md:w-[6%]" {...column('age')}>
             Age
           </SortTh>
           <ManifestHead onManifest={onManifest} />
@@ -1153,10 +1166,19 @@ function PodTable({
               </Name>
             </Td>
             <NamespaceCell show={showNamespace} namespace={pod.namespace} />
-            <Td className="whitespace-nowrap">
+            {/* The cell clips and the count does not shrink: the phase pill is
+                the only part of this reading that can be abbreviated, so when
+                `CrashLoopBackOff` does not fit it is the pill that ellipsises —
+                inside its own column — rather than the pair spilling onto the
+                CPU reading next door. The column is sized against the longest
+                phase name rather than against `Running`, so the clip is the
+                floor and not the normal case. */}
+            <Td className="overflow-hidden whitespace-nowrap">
               <span className="flex items-center gap-1.5">
-                <Pill tone={podTone(pod)}>{pod.phase}</Pill>
-                <span className="font-mono text-[12.5px] text-muted">
+                <Pill tone={podTone(pod)} title={pod.phase}>
+                  {pod.phase}
+                </Pill>
+                <span className="shrink-0 font-mono text-[12.5px] text-muted">
                   {pod.ready}/{pod.total}
                 </span>
               </span>
@@ -1337,16 +1359,16 @@ function WorkloadTable({
               their measurements and the name takes what is left. */}
           <Th columnKey="name">Name</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="w-[22%] md:w-[min(13%,9rem)]" columnKey="kind">
+          <Th className="w-[22%] md:w-[13%]" columnKey="kind">
             Kind
           </Th>
-          <Th className="w-[16%] md:w-[min(9%,6rem)]" columnKey="ready">
+          <Th className="w-[16%] md:w-[9%]" columnKey="ready">
             Ready
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(26%,20rem)]" columnKey="image">
+          <Th className="hidden lg:table-cell lg:w-[26%]" columnKey="image">
             Image
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} width={WORKLOAD_ACTIONS_WIDTH} />
@@ -1413,19 +1435,19 @@ function JobTable({
           <SelectHead rows={jobs.map(jobRow)} selection={selection} />
           <Th columnKey="name">Job</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="w-[22%] md:w-[min(14%,9rem)]" columnKey="state">
+          <Th className="w-[22%] md:w-[14%]" columnKey="state">
             State
           </Th>
-          <Th className="w-[18%] md:w-[min(10%,7rem)]" columnKey="completed">
+          <Th className="w-[18%] md:w-[10%]" columnKey="completed">
             Completed
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(8%,6rem)]" columnKey="failed">
+          <Th className="hidden md:table-cell md:w-[8%]" columnKey="failed">
             Failed
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(28%,20rem)]" columnKey="image">
+          <Th className="hidden lg:table-cell lg:w-[28%]" columnKey="image">
             Image
           </Th>
-          <Th className="w-[18%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[18%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -1504,7 +1526,7 @@ function NextRun({ cronjob }: { cronjob: CronJob }) {
 
   const at = new Date(cronjob.next_schedule_at)
   return (
-    <span className="font-mono text-[12.5px] text-fg" title={at.toLocaleString()}>
+    <span className="font-mono text-[12.5px] text-fg" title={formatInstant(at, { seconds: true })}>
       {formatCountdown(secondsUntil(cronjob.next_schedule_at))}
     </span>
   )
@@ -1550,22 +1572,22 @@ function CronJobTable({
             cron field is the least readable thing in this row on a narrow screen,
             and "in 12m" answers the question the expression is being read for.
           */}
-          <Th className="hidden md:table-cell md:w-[min(15%,11rem)]" columnKey="schedule">
+          <Th className="hidden md:table-cell md:w-[15%]" columnKey="schedule">
             Schedule
           </Th>
-          <Th className="w-[30%] md:w-[min(14%,9rem)]" columnKey="next">
+          <Th className="w-[30%] md:w-[14%]" columnKey="next">
             Next run
           </Th>
-          <Th className="w-[16%] md:w-[min(12%,8rem)]" columnKey="state">
+          <Th className="w-[16%] md:w-[12%]" columnKey="state">
             State
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(8%,6rem)]" columnKey="active">
+          <Th className="hidden md:table-cell md:w-[8%]" columnKey="active">
             Active
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(16%,10rem)]" columnKey="lastrun">
+          <Th className="hidden md:table-cell md:w-[16%]" columnKey="lastrun">
             Last run
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -1671,19 +1693,19 @@ function ReplicaSetTable({
         <tr>
           <Th columnKey="name">ReplicaSet</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="hidden md:table-cell md:w-[min(18%,13rem)]" columnKey="owner">
+          <Th className="hidden md:table-cell md:w-[18%]" columnKey="owner">
             Owner
           </Th>
-          <Th className="w-[14%] md:w-[min(8%,5rem)]" columnKey="rev">
+          <Th className="w-[14%] md:w-[8%]" columnKey="rev">
             Rev
           </Th>
-          <Th className="w-[20%] md:w-[min(10%,7rem)]" columnKey="pods">
+          <Th className="w-[20%] md:w-[10%]" columnKey="pods">
             Pods
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(20%,15rem)]" columnKey="image">
+          <Th className="hidden lg:table-cell lg:w-[20%]" columnKey="image">
             Image
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -1775,19 +1797,19 @@ function AutoscalerTable({
         <tr>
           <Th columnKey="name">Autoscaler</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="hidden md:table-cell md:w-[min(20%,14rem)]" columnKey="target">
+          <Th className="hidden md:table-cell md:w-[20%]" columnKey="target">
             Scales
           </Th>
-          <Th className="w-[18%] md:w-[min(11%,7rem)]" columnKey="replicas">
+          <Th className="w-[18%] md:w-[11%]" columnKey="replicas">
             Replicas
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="bounds">
+          <Th className="w-[16%] md:w-[10%]" columnKey="bounds">
             Bounds
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(22%,16rem)]" columnKey="metrics">
+          <Th className="hidden lg:table-cell lg:w-[22%]" columnKey="metrics">
             Metrics
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -1859,11 +1881,11 @@ function QuotaTable({
         <tr>
           <Th columnKey="name">Quota</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="hidden md:table-cell md:w-[min(16%,11rem)]" columnKey="scopes">
+          <Th className="hidden md:table-cell md:w-[16%]" columnKey="scopes">
             Scopes
           </Th>
           <Th columnKey="usage">Used of hard</Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -1919,7 +1941,7 @@ function LimitRangeTable({
           <Th columnKey="name">LimitRange</Th>
           <NamespaceHead show={showNamespace} />
           <Th columnKey="limits">Limits</Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -1984,19 +2006,19 @@ function DisruptionBudgetTable({
         <tr>
           <Th columnKey="name">Budget</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="hidden lg:table-cell lg:w-[min(22%,16rem)]" columnKey="selector">
+          <Th className="hidden lg:table-cell lg:w-[22%]" columnKey="selector">
             Selects
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(14%,9rem)]" columnKey="rule">
+          <Th className="hidden md:table-cell md:w-[14%]" columnKey="rule">
             Rule
           </Th>
-          <Th className="w-[20%] md:w-[min(11%,7rem)]" columnKey="healthy">
+          <Th className="w-[20%] md:w-[11%]" columnKey="healthy">
             Healthy
           </Th>
-          <Th className="w-[22%] md:w-[min(11%,7rem)]" columnKey="allowed">
+          <Th className="w-[22%] md:w-[11%]" columnKey="allowed">
             Allowed
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -2064,19 +2086,19 @@ function ServiceTable({
         <tr>
           <Th columnKey="name">Service</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="w-[24%] md:w-[min(13%,9rem)]" columnKey="type">
+          <Th className="w-[24%] md:w-[13%]" columnKey="type">
             Type
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(15%,10rem)]" columnKey="clusterip">
+          <Th className="hidden md:table-cell md:w-[15%]" columnKey="clusterip">
             Cluster IP
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(18%,12rem)]" columnKey="external">
+          <Th className="hidden lg:table-cell lg:w-[18%]" columnKey="external">
             External
           </Th>
-          <Th className="w-[20%] md:w-[min(18%,12rem)]" columnKey="ports">
+          <Th className="w-[20%] md:w-[18%]" columnKey="ports">
             Ports
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -2131,19 +2153,19 @@ function IngressTable({
         <tr>
           <Th columnKey="name">Ingress</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="w-[24%] md:w-[min(14%,10rem)]" columnKey="class">
+          <Th className="w-[24%] md:w-[14%]" columnKey="class">
             Class
           </Th>
-          <Th className="w-[24%] md:w-[min(26%,18rem)]" columnKey="hosts">
+          <Th className="w-[24%] md:w-[26%]" columnKey="hosts">
             Hosts
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(18%,12rem)]" columnKey="address">
+          <Th className="hidden lg:table-cell lg:w-[18%]" columnKey="address">
             Address
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(8%,6rem)]" columnKey="rules">
+          <Th className="hidden md:table-cell md:w-[8%]" columnKey="rules">
             Rules
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -2206,16 +2228,16 @@ function NetworkPolicyTable({
         <tr>
           <Th columnKey="name">NetworkPolicy</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="hidden md:table-cell md:w-[min(28%,20rem)]" columnKey="selector">
+          <Th className="hidden md:table-cell md:w-[28%]" columnKey="selector">
             Pod selector
           </Th>
-          <Th className="w-[24%] md:w-[min(16%,11rem)]" columnKey="types">
+          <Th className="w-[24%] md:w-[16%]" columnKey="types">
             Governs
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(14%,9rem)]" columnKey="rules">
+          <Th className="hidden lg:table-cell lg:w-[14%]" columnKey="rules">
             Rules
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -2274,16 +2296,16 @@ function RouteTable({
         <tr>
           <Th columnKey="name">Route</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="w-[32%] md:w-[min(30%,20rem)]" columnKey="hostnames">
+          <Th className="w-[32%] md:w-[30%]" columnKey="hostnames">
             Hostnames
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(24%,16rem)]" columnKey="attached">
+          <Th className="hidden md:table-cell md:w-[24%]" columnKey="attached">
             Attached to
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(8%,6rem)]" columnKey="rules">
+          <Th className="hidden md:table-cell md:w-[8%]" columnKey="rules">
             Rules
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -2328,22 +2350,22 @@ function PersistentVolumeTable({
       <thead>
         <tr>
           <Th columnKey="name">Volume</Th>
-          <Th className="w-[20%] md:w-[min(12%,8rem)]" columnKey="status">
+          <Th className="w-[20%] md:w-[12%]" columnKey="status">
             Status
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,7rem)]" columnKey="capacity">
+          <Th className="w-[16%] md:w-[10%]" columnKey="capacity">
             Capacity
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(12%,9rem)]" columnKey="access">
+          <Th className="hidden md:table-cell md:w-[12%]" columnKey="access">
             Access
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(20%,14rem)]" columnKey="claim">
+          <Th className="hidden lg:table-cell lg:w-[20%]" columnKey="claim">
             Claim
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(12%,10rem)]" columnKey="class">
+          <Th className="hidden lg:table-cell lg:w-[12%]" columnKey="class">
             Class
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -2390,22 +2412,22 @@ function ClaimTable({
         <tr>
           <Th columnKey="name">Claim</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="w-[20%] md:w-[min(12%,8rem)]" columnKey="status">
+          <Th className="w-[20%] md:w-[12%]" columnKey="status">
             Status
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,7rem)]" columnKey="capacity">
+          <Th className="w-[16%] md:w-[10%]" columnKey="capacity">
             Capacity
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(12%,9rem)]" columnKey="access">
+          <Th className="hidden md:table-cell md:w-[12%]" columnKey="access">
             Access
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(14%,10rem)]" columnKey="class">
+          <Th className="hidden lg:table-cell lg:w-[14%]" columnKey="class">
             Class
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(16%,14rem)]" columnKey="volume">
+          <Th className="hidden lg:table-cell lg:w-[16%]" columnKey="volume">
             Volume
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -2455,16 +2477,16 @@ function StorageClassTable({
       <thead>
         <tr>
           <Th columnKey="name">Class</Th>
-          <Th className="w-[34%] md:w-[min(26%,18rem)]" columnKey="provisioner">
+          <Th className="w-[34%] md:w-[26%]" columnKey="provisioner">
             Provisioner
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(14%,9rem)]" columnKey="reclaim">
+          <Th className="hidden md:table-cell md:w-[14%]" columnKey="reclaim">
             Reclaim
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(14%,11rem)]" columnKey="binding">
+          <Th className="hidden lg:table-cell lg:w-[14%]" columnKey="binding">
             Binding
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -2521,20 +2543,20 @@ function ConfigTable({
           <Th columnKey="name">{secrets ? 'Secret' : 'ConfigMap'}</Th>
           <NamespaceHead show={showNamespace} />
           {secrets ? (
-            <Th className="hidden md:table-cell md:w-[min(20%,14rem)]" columnKey="type">
+            <Th className="hidden md:table-cell md:w-[20%]" columnKey="type">
               Type
             </Th>
           ) : null}
-          <Th className="w-[14%] md:w-[min(8%,5rem)]" columnKey="keys">
+          <Th className="w-[14%] md:w-[8%]" columnKey="keys">
             Keys
           </Th>
           <Th
-            className={`hidden lg:table-cell ${secrets ? 'lg:w-[min(26%,20rem)]' : 'lg:w-[min(46%,28rem)]'}`}
+            className={`hidden lg:table-cell ${secrets ? 'lg:w-[26%]' : 'lg:w-[46%]'}`}
             columnKey="keynames"
           >
             Key names
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -2599,16 +2621,16 @@ function CRDTable({
       <thead>
         <tr>
           <Th columnKey="name">Definition</Th>
-          <Th className="w-[24%] md:w-[min(18%,12rem)]" columnKey="kind">
+          <Th className="w-[24%] md:w-[18%]" columnKey="kind">
             Kind
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(20%,14rem)]" columnKey="group">
+          <Th className="hidden md:table-cell md:w-[20%]" columnKey="group">
             Group
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(10%,7rem)]" columnKey="scope">
+          <Th className="hidden lg:table-cell lg:w-[10%]" columnKey="scope">
             Scope
           </Th>
-          <Th className="w-[18%] md:w-[min(12%,8rem)]" columnKey="versions">
+          <Th className="w-[18%] md:w-[12%]" columnKey="versions">
             Versions
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -2663,16 +2685,16 @@ function RoleTable({
         <tr>
           <Th columnKey="name">{clusterScoped ? 'ClusterRole' : 'Role'}</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="w-[14%] md:w-[min(8%,5rem)]" columnKey="rules">
+          <Th className="w-[14%] md:w-[8%]" columnKey="rules">
             Rules
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(26%,18rem)]" columnKey="verbs">
+          <Th className="hidden md:table-cell md:w-[26%]" columnKey="verbs">
             Verbs
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(26%,20rem)]" columnKey="resources">
+          <Th className="hidden lg:table-cell lg:w-[26%]" columnKey="resources">
             Resources
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -2778,16 +2800,16 @@ function BindingTable({
         <tr>
           <Th columnKey="name">{clusterScoped ? 'ClusterRoleBinding' : 'RoleBinding'}</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="w-[30%] md:w-[min(24%,16rem)]" columnKey="role">
+          <Th className="w-[30%] md:w-[24%]" columnKey="role">
             Role
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(30%,22rem)]" columnKey="subjects">
+          <Th className="hidden md:table-cell md:w-[30%]" columnKey="subjects">
             Subjects
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(12%,8rem)]" columnKey="kinds">
+          <Th className="hidden lg:table-cell lg:w-[12%]" columnKey="kinds">
             Kind
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -2860,16 +2882,16 @@ function ServiceAccountTable({
         <tr>
           <Th columnKey="name">ServiceAccount</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="w-[16%] md:w-[min(10%,7rem)]" columnKey="secrets">
+          <Th className="w-[16%] md:w-[10%]" columnKey="secrets">
             Secrets
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(14%,9rem)]" columnKey="pull">
+          <Th className="hidden md:table-cell md:w-[14%]" columnKey="pull">
             Pull secrets
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(16%,11rem)]" columnKey="automount">
+          <Th className="hidden lg:table-cell lg:w-[16%]" columnKey="automount">
             Token
           </Th>
-          <Th className="w-[16%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -2943,13 +2965,13 @@ function CustomResourceTable({
         <tr>
           <Th columnKey="name">Name</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="hidden md:table-cell md:w-[min(22%,14rem)]" columnKey="kind">
+          <Th className="hidden md:table-cell md:w-[22%]" columnKey="kind">
             Kind
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(20%,14rem)]" columnKey="apiversion">
+          <Th className="hidden lg:table-cell lg:w-[20%]" columnKey="apiversion">
             API version
           </Th>
-          <Th className="w-[20%] md:w-[min(14%,6rem)]" columnKey="age">
+          <Th className="w-[20%] md:w-[14%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -2992,22 +3014,22 @@ function NodeTable({
       <thead>
         <tr>
           <Th columnKey="name">Node</Th>
-          <Th className="w-[26%] md:w-[min(16%,10rem)]" columnKey="status">
+          <Th className="w-[26%] md:w-[16%]" columnKey="status">
             Status
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(16%,11rem)]" columnKey="roles">
+          <Th className="hidden md:table-cell md:w-[16%]" columnKey="roles">
             Roles
           </Th>
-          <Th className="w-[22%] md:w-[min(12%,8rem)]" columnKey="version">
+          <Th className="w-[22%] md:w-[12%]" columnKey="version">
             Version
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(14%,10rem)]" columnKey="internalip">
+          <Th className="hidden lg:table-cell lg:w-[14%]" columnKey="internalip">
             Internal IP
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[min(8%,6rem)]" columnKey="cpu">
+          <Th className="hidden lg:table-cell lg:w-[8%]" columnKey="cpu">
             CPU
           </Th>
-          <Th className="w-[18%] md:w-[min(10%,6rem)]" columnKey="age">
+          <Th className="w-[18%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -3086,13 +3108,13 @@ function NamespaceTable({
       <thead>
         <tr>
           <Th columnKey="name">Namespace</Th>
-          <Th className="w-[26%] md:w-[min(20%,12rem)]" columnKey="status">
+          <Th className="w-[26%] md:w-[20%]" columnKey="status">
             Status
           </Th>
-          <Th className="hidden md:table-cell md:w-[min(20%,14rem)]" columnKey="access">
+          <Th className="hidden md:table-cell md:w-[20%]" columnKey="access">
             Your access
           </Th>
-          <Th className="w-[24%] md:w-[min(20%,6rem)]" columnKey="age">
+          <Th className="w-[24%] md:w-[20%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />

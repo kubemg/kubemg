@@ -319,6 +319,21 @@ export interface AuditEvent {
   session_id?: string
   error?: string
   /**
+   * The safety policy this call matched and what the match did — `block` or
+   * `warn`. Both are empty on the overwhelming majority of records; together
+   * they are what makes a rule's warn-only rollout readable.
+   */
+  guardrail_policy?: string
+  guardrail_action?: string
+  /**
+   * Where the call came from, as the server saw it. Both are absent on a record
+   * with no caller (something this server did on its own) and on every row
+   * written before the columns existed — which is a real state and reads as
+   * "not recorded", never as an unknown host.
+   */
+  source_addr?: string
+  user_agent?: string
+  /**
    * The field-level diff of a manifest write (see ManifestDiff), present only
    * on an `update` row written while "record manifest diffs" was on for a
    * non-redacted kind. Its absence is not itself informative: it also means

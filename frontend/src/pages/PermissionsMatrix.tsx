@@ -12,6 +12,7 @@ import {
 } from '../api/client'
 import type { Cluster, Group, K8sRole, Permission, SubjectType, User } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { formatInstant } from '../lib/time'
 import {
   Button,
   DetailList,
@@ -276,7 +277,7 @@ export function PermissionsMatrix() {
                                   className="mt-1 flex items-center gap-1 text-[11px] text-warn"
                                   title={`Temporary ${temporary.k8s_role} until ${
                                     temporary.expires_at
-                                      ? new Date(temporary.expires_at).toLocaleString()
+                                      ? formatInstant(temporary.expires_at)
                                       : 'its window ends'
                                   } — granted by an approved access request.`}
                                 >

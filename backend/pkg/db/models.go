@@ -355,6 +355,17 @@ type AuditEvent struct {
 
 	Error string `gorm:"type:text" json:"error,omitempty"`
 
+	// Where the call came from, as the server saw it: the client address
+	// resolved through whatever proxy headers are trusted, and the client's own
+	// claim about what it is. "From where" is the second question in an access
+	// review after "who", and it is the one part of a record that cannot be
+	// filled in later — a call already made has no address to go back for. Both
+	// are empty on a record with no caller (the JIT expirer, the alarm poller)
+	// and on every row written before these columns existed, which is a real
+	// state and reads as "not recorded" rather than as an unknown address.
+	SourceAddr string `gorm:"size:64;index" json:"source_addr,omitempty"`
+	UserAgent  string `gorm:"type:text" json:"user_agent,omitempty"`
+
 	// Diff is the field-level structural diff of a manifest write (an `update`
 	// row's before/after, from pkg/objdiff), stored as its own JSON encoding —
 	// this table has no JSON column type of its own to reach for without a new

@@ -34,6 +34,8 @@ import { DEFAULT_RESOURCE } from './lib/navigation'
 import { AuthProvider } from './state/AuthProvider'
 import { ClustersProvider } from './state/ClustersProvider'
 import { InventoryProvider } from './state/InventoryProvider'
+import { ConfirmProvider } from './state/ConfirmProvider'
+import { ResultProvider } from './state/ResultProvider'
 import { ShellDockProvider } from './state/ShellDockProvider'
 import { TimeRangeProvider } from './state/TimeRangeProvider'
 import { Lockup } from './components/Mark'
@@ -198,6 +200,12 @@ export default function App() {
         {/* The shell dock's state sits above the routes because the dock does:
             a terminal that was torn down and reconnected on every navigation
             would be a terminal nobody could work in. */}
+        {/* Two surfaces that outlive the page that opened them, mounted for the
+            same reason the dock is: the question asked before a destructive act
+            and the sentence reporting it are both torn down by the navigation
+            the act itself causes. */}
+        <ConfirmProvider>
+        <ResultProvider>
         <ShellDockProvider>
         <TimeRangeProvider>
           <Routes>
@@ -650,6 +658,8 @@ export default function App() {
         </TimeRangeProvider>
         <ShellDock />
         </ShellDockProvider>
+        </ResultProvider>
+        </ConfirmProvider>
       </AuthProvider>
     </BrowserRouter>
   )

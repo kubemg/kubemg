@@ -24,6 +24,8 @@ import {
   TextArea,
   TextInput,
 } from './primitives'
+import { useConfirm } from '../state/confirm-context'
+import { useResult } from '../state/result-context'
 
 /*
  * Configuring who may sign in.
@@ -205,6 +207,8 @@ function toInput(draft: Draft): SSOProviderInput {
 }
 
 export function SsoSettingsPanel() {
+  const confirm = useConfirm()
+  const report = useResult()
   const [providers, setProviders] = useState<SSOProvider[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -242,17 +246,27 @@ export function SsoSettingsPanel() {
 
   async function remove(provider: SSOProvider) {
     if (
-      !window.confirm(
-        `Delete ${provider.name}? Accounts it created keep their access and their audit history, but nobody will be able to sign in through it.`,
-      )
+      !(await confirm({
+        eyebrow: 'Identity provider',
+        title: `Delete ${provider.name}?`,
+        body: 'Accounts it created keep their access and their audit history, but nobody will be able to sign in through it — including anybody who has no local password.',
+        confirmLabel: 'Delete',
+      }))
     ) {
       return
     }
     try {
       await deleteSSOProvider(provider.id)
       await load()
+      report({
+        tone: 'ok',
+        title: `Deleted ${provider.name}`,
+        body: 'Nobody can sign in through it any more. Accounts it created keep their access and their history.',
+      })
     } catch (err) {
-      setError(errorMessage(err, 'Could not delete that provider.'))
+      const message = errorMessage(err, 'Could not delete that provider.')
+      setError(message)
+      report({ tone: 'error', title: `${provider.name} was not deleted`, body: message })
     }
   }
 

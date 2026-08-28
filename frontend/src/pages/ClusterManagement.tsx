@@ -23,8 +23,12 @@ import {
 import { linkState } from '../lib/status'
 import { relativeAge } from '../lib/time'
 import { useClusters } from '../state/clusters-context'
+import { useConfirm } from '../state/confirm-context'
+import { useResult } from '../state/result-context'
 
 export function ClusterManagement() {
+  const confirm = useConfirm()
+  const report = useResult()
   const { clusters, loading, error: listError, reload } = useClusters()
   const [rowError, setRowError] = useState<string | null>(null)
   const [removing, setRemoving] = useState<number | null>(null)
@@ -45,9 +49,12 @@ export function ClusterManagement() {
   }
 
   async function remove(cluster: Cluster) {
-    const confirmed = window.confirm(
-      `Remove ${cluster.name}? Kubeconfigs already issued keep working until they expire.`,
-    )
+    const confirmed = await confirm({
+      eyebrow: 'Cluster',
+      title: `Remove ${cluster.name}?`,
+      body: 'Its grants, its datasources and its console links go with it. Kubeconfigs already issued keep working until they expire — revoke them from Issued credentials if that is not what you want.',
+      confirmLabel: 'Remove',
+    })
     if (!confirmed) return
 
     setRemoving(cluster.id)
@@ -55,8 +62,18 @@ export function ClusterManagement() {
     try {
       await deleteCluster(cluster.id)
       await reload()
+      report({
+        tone: 'ok',
+        title: `Removed ${cluster.name}`,
+        body: 'Its grants and datasources went with it. Kubeconfigs already issued run until they expire.',
+        link: { to: '/audit', label: 'See it in the audit trail' },
+      })
     } catch (err) {
-      setRowError(errorMessage(err, `Could not remove ${cluster.name}.`))
+      // The row error is what somebody still looking at this table reads; the
+      // strip is what reaches them once the act has moved them elsewhere.
+      const message = errorMessage(err, `Could not remove ${cluster.name}.`)
+      setRowError(message)
+      report({ tone: 'error', title: `${cluster.name} was not removed`, body: message })
     } finally {
       setRemoving(null)
     }
