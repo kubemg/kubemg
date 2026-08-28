@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { AlertTriangle, ChevronRight, KeyRound, Layers, RefreshCw, Timer } from 'lucide-react'
 import { checkCluster, errorMessage, fetchCluster, fetchNodeMetrics } from '../api/client'
@@ -125,49 +126,57 @@ export function ClusterSummary() {
    */
   const admin = user?.role === 'admin'
 
+  /*
+   * What can be done to this cluster, drawn on the cluster's own card rather
+   * than in the header.
+   *
+   * The header is the console's chrome — where you are, the ⌘K jump, the shell,
+   * the time window — and it is shared by every page. Four page-specific buttons
+   * in it turned this one into a toolbar with a breadcrumb in it, and pushed the
+   * time range and the shell out to the edge of a crowded row. These are all acts
+   * *on this cluster*, and the cluster's card is where its name, its state and
+   * "checked 2h ago" already are, so that is where they belong: beside the thing
+   * they act on rather than above the page that happens to show it.
+   */
+  const actions = cluster ? (
+    <>
+      {/* The tree beside this page reaches every kind; this is the one the
+          dashboard is a preamble to, named after what it opens. */}
+      {viaAgent && cluster.agent_attached ? (
+        <Button
+          variant="primary"
+          onClick={() => navigate(resourceHref(cluster.id, DEFAULT_RESOURCE))}
+        >
+          <Layers aria-hidden="true" className="size-4" />
+          Pods
+        </Button>
+      ) : null}
+      <Button
+        variant={viaAgent && cluster.agent_attached ? undefined : 'primary'}
+        onClick={() => setDrawerOpen(true)}
+      >
+        <KeyRound aria-hidden="true" className="size-4" />
+        Generate kubeconfig
+      </Button>
+      <Button onClick={() => setRequesting(true)}>
+        <Timer aria-hidden="true" className="size-4" />
+        Request access
+      </Button>
+      {admin ? (
+        <Button onClick={check} disabled={checking}>
+          <RefreshCw aria-hidden="true" className={`size-4 ${checking ? 'animate-spin' : ''}`} />
+          {checking ? 'Checking…' : 'Run check'}
+        </Button>
+      ) : null}
+    </>
+  ) : null
+
   return (
     // The cluster's name is the switcher beside this, so the heading names the
     // view instead — the way every other cluster page's does.
     <AppShell
       title="Dashboard"
       timeRange
-      actions={
-        cluster ? (
-          <>
-            {/* The tree beside this page reaches every kind; this is the one
-                the dashboard is a preamble to, named after what it opens. */}
-            {viaAgent && cluster.agent_attached ? (
-              <Button
-                variant="primary"
-                onClick={() => navigate(resourceHref(cluster.id, DEFAULT_RESOURCE))}
-              >
-                <Layers aria-hidden="true" className="size-4" />
-                Pods
-              </Button>
-            ) : null}
-            <Button onClick={() => setRequesting(true)}>
-              <Timer aria-hidden="true" className="size-4" />
-              Request access
-            </Button>
-            {admin ? (
-              <Button onClick={check} disabled={checking}>
-                <RefreshCw
-                  aria-hidden="true"
-                  className={`size-4 ${checking ? 'animate-spin' : ''}`}
-                />
-                {checking ? 'Checking…' : 'Run check'}
-              </Button>
-            ) : null}
-            <Button
-              variant={viaAgent && cluster.agent_attached ? undefined : 'primary'}
-              onClick={() => setDrawerOpen(true)}
-            >
-              <KeyRound aria-hidden="true" className="size-4" />
-              Generate kubeconfig
-            </Button>
-          </>
-        ) : null
-      }
     >
       <div className="flex flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
@@ -189,9 +198,9 @@ export function ClusterSummary() {
 
         {cluster ? (
           admin ? (
-            <AdminDashboard cluster={cluster} username={username} />
+            <AdminDashboard cluster={cluster} username={username} actions={actions} />
           ) : (
-            <WorkloadDashboard cluster={cluster} username={username} />
+            <WorkloadDashboard cluster={cluster} username={username} actions={actions} />
           )
         ) : null}
       </div>
@@ -223,7 +232,15 @@ export function ClusterSummary() {
  * administrator can act on. That is exactly why it is not what a developer is
  * shown: see WorkloadDashboard below.
  */
-function AdminDashboard({ cluster, username }: { cluster: Cluster; username: string }) {
+function AdminDashboard({
+  cluster,
+  username,
+  actions,
+}: {
+  cluster: Cluster
+  username: string
+  actions: ReactNode
+}) {
   const viaAgent = cluster.connection_mode === 'agent'
 
   return (
@@ -298,6 +315,13 @@ function AdminDashboard({ cluster, username }: { cluster: Cluster; username: str
             ]}
           />
         </div>
+        {/* What can be done to this cluster, at the foot of the cluster it acts
+            on. */}
+        {actions ? (
+          <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line-soft pt-4">
+            {actions}
+          </div>
+        ) : null}
       </section>
 
       {cluster.status === 'unhealthy' && cluster.status_message ? (
@@ -419,7 +443,15 @@ function AdminDashboard({ cluster, username }: { cluster: Cluster; username: str
  * the grant they hold — and the connection's own mechanics are left to the
  * administrator's view rather than repeated here as prose nobody can act on.
  */
-function WorkloadDashboard({ cluster, username }: { cluster: Cluster; username: string }) {
+function WorkloadDashboard({
+  cluster,
+  username,
+  actions,
+}: {
+  cluster: Cluster
+  username: string
+  actions: ReactNode
+}) {
   const viaAgent = cluster.connection_mode === 'agent'
 
   return (
@@ -462,6 +494,13 @@ function WorkloadDashboard({ cluster, username }: { cluster: Cluster; username: 
             ]}
           />
         </div>
+        {/* What can be done to this cluster, at the foot of the cluster it acts
+            on. */}
+        {actions ? (
+          <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line-soft pt-4">
+            {actions}
+          </div>
+        ) : null}
       </section>
 
       {cluster.status === 'unhealthy' && cluster.status_message ? (

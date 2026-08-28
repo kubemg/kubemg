@@ -14,6 +14,12 @@ AGENT_VERSION ?= 0.7.4
 AGENT_REPO    ?= $(REGISTRY)/kubemg-agent
 AGENT_IMAGE   ?= $(AGENT_REPO):$(AGENT_VERSION)
 
+# The browser shell's image. It runs on the operator's own clusters, so it takes
+# the same multi-arch treatment as the agent and for the same reason.
+SHELL_VERSION ?= 0.7.4
+SHELL_REPO    ?= $(REGISTRY)/kubemg-shell
+SHELL_IMAGE   ?= $(SHELL_REPO):$(SHELL_VERSION)
+
 # The management plane ships as one image — console embedded in the server
 # binary. See the root Dockerfile for why one rather than two.
 KUBEMG_VERSION ?= 0.7.4
@@ -37,6 +43,7 @@ DOCKER_NODE  = docker run --rm -v $(PWD)/frontend:/app -v kubemg-npm:/root/.npm 
 .PHONY: help build test verify manifest-check \
         backend-build backend-test backend-vet backend-tidy \
         agent-build agent-test agent-vet agent-tidy agent-image agent-image-check agent-push \
+        shell-image shell-image-check shell-push \
         frontend-install frontend-build frontend-lint frontend-test frontend-contrast \
         docs-build docs-serve \
         image image-check image-push \
@@ -93,6 +100,17 @@ agent-image: ## Build the agent image for the local platform and load it
 	docker buildx build --load $(if $(AGENT_PLATFORM),--platform $(AGENT_PLATFORM),) \
 		-t $(AGENT_IMAGE) -t $(AGENT_REPO):latest \
 		--build-arg VERSION=$(AGENT_VERSION) ./agent
+
+shell-image: ## Build the browser shell image for the local platform and load it
+	docker buildx build --load $(if $(SHELL_PLATFORM),--platform $(SHELL_PLATFORM),) \
+		-t $(SHELL_IMAGE) -t $(SHELL_REPO):latest ./shell
+
+shell-image-check: ## Build the shell image for every published platform (no output)
+	docker buildx build --platform $(AGENT_PLATFORMS) -t $(SHELL_IMAGE) ./shell
+
+shell-push: ## Build and push the multi-arch shell image (requires docker login)
+	docker buildx build --push --platform $(AGENT_PLATFORMS) \
+		-t $(SHELL_IMAGE) -t $(SHELL_REPO):latest ./shell
 
 # The agent is the open-source half and is pulled by clusters we do not control,
 # so both the pinned tag and :latest have to exist in the registry — and both

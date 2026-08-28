@@ -9,6 +9,7 @@ import (
 
 	"github.com/kubemg/kubemg/backend/pkg/agentpkg"
 	"github.com/kubemg/kubemg/backend/pkg/cache"
+	"github.com/kubemg/kubemg/backend/pkg/shell"
 )
 
 // DB holds PostgreSQL connection settings.
@@ -58,6 +59,9 @@ type Config struct {
 	AgentImage string
 	// AgentNamespace is where the agent is installed on target clusters.
 	AgentNamespace string
+	// Shell is the browser shell: a pod KubeMG runs on a target cluster with a
+	// terminal attached to it.
+	Shell Shell
 	// AuditRetentionDays is how long proxied calls are kept before the
 	// background pruner drops them. Like the settings above it is only the
 	// boot-time default; an operator overrides it from the Settings page.
@@ -94,6 +98,19 @@ type Config struct {
 	// allowed without this, because nothing off-box can intercept it.
 	// `KUBEMG_ALLOW_INSECURE`.
 	AllowInsecureBind bool
+}
+
+// Shell configures the browser shell.
+//
+// The image is the load-bearing setting: it is KubeMG's own, pinned and minimal,
+// and an air-gapped site points this at its mirror. Clearing it switches the
+// feature off, because a shell with no image is a button that fails.
+type Shell struct {
+	// Enabled offers the feature at all. On by default: a shell nobody starts
+	// costs nothing, and the pod only exists once somebody asks for one.
+	Enabled bool
+	// Image is what the pod runs. `KUBEMG_SHELL_IMAGE`.
+	Image string
 }
 
 // SessionRecording configures replay capture for exec and attach sessions.
@@ -183,6 +200,10 @@ func Load() Config {
 		PublicURL:      strings.TrimRight(env("KUBEMG_PUBLIC_URL", "http://localhost:8080"), "/"),
 		AgentImage:     env("KUBEMG_AGENT_IMAGE", agentpkg.DefaultImage),
 		AgentNamespace:     env("KUBEMG_AGENT_NAMESPACE", agentpkg.DefaultNamespace),
+		Shell: Shell{
+			Enabled: envBool("KUBEMG_SHELL_ENABLED", true),
+			Image:   env("KUBEMG_SHELL_IMAGE", shell.DefaultImage),
+		},
 		AuditRetentionDays: envInt("KUBEMG_AUDIT_RETENTION_DAYS", 30),
 		ReadCacheTTL:       envDuration("KUBEMG_RESOURCE_CACHE_TTL", cache.DefaultTTL),
 		EventCacheTTL:      envDuration("KUBEMG_EVENT_CACHE_TTL", 30*time.Second),

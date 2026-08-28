@@ -75,6 +75,7 @@ import type {
   Kubeconfig,
   KubeconfigPolicy,
   SecretValue,
+  ShellState,
   ServerVersion,
   LogQueryResponse,
   LoginResponse,
@@ -1874,6 +1875,41 @@ export function proxyURL(clusterId: number, path: string, protocol: 'http' | 'ws
     return base.replace(/^http/, 'ws')
   }
   return base
+}
+
+/*
+ * The browser shell: KubeMG's own pod on the cluster, with kubectl and helm in
+ * it and the caller's proxy kubeconfig written inside.
+ *
+ * Reading is cheap and idempotent; starting is neither, which is why it is a
+ * POST that the page repeats rather than a create that fails when the pod is
+ * already there. The server answers the same shape every time — the pod's state
+ * — so a console that keeps asking eventually gets `ready`, whether the image
+ * was already on the node or is still pulling.
+ */
+export async function fetchShell(clusterId: number): Promise<ShellState> {
+  const { data } = await http.get<ShellState>(`/clusters/${clusterId}/shell`)
+  return data
+}
+
+export async function startShell(clusterId: number): Promise<ShellState> {
+  const { data } = await http.post<ShellState>(`/clusters/${clusterId}/shell`)
+  return data
+}
+
+export async function stopShell(clusterId: number): Promise<{ message: string }> {
+  const { data } = await http.delete<{ message: string }>(`/clusters/${clusterId}/shell`)
+  return data
+}
+
+/** shellSocketURL is the terminal's WebSocket. It carries the session token in
+    the query string for the reason the pod terminal does: a browser cannot set
+    a header when it opens a WebSocket. */
+export function shellSocketURL(clusterId: number): string {
+  const origin = apiOrigin || window.location.origin
+  const token = readToken() ?? ''
+  const query = new URLSearchParams({ access_token: token })
+  return `${origin}/api/v1/clusters/${clusterId}/shell/attach?${query}`.replace(/^http/, 'ws')
 }
 
 export async function generateKubeconfig(

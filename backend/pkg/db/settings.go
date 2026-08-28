@@ -49,6 +49,21 @@ const (
 	// Deployment's env — so this is a new class of retained data that an
 	// operator opts into rather than one that quietly starts happening.
 	SettingRecordManifestDiffs = "record_manifest_diffs"
+	// SettingShellEnabled is the operator's switch on the browser shell. It
+	// defaults on, and turning it off refuses new shells rather than reaping the
+	// ones already open — a session somebody is mid-command in is not a setting.
+	SettingShellEnabled = "shell_enabled"
+	// SettingShellImage is the image a shell pod runs. It shadows
+	// KUBEMG_SHELL_IMAGE, which is what an air-gapped site points at its mirror.
+	SettingShellImage = "shell_image"
+	// SettingShellIdleTimeoutMinutes is how long a shell may go without a
+	// keystroke before it is reclaimed. Minutes rather than hours because the
+	// interesting range is a coffee break to a working day.
+	SettingShellIdleTimeoutMinutes = "shell_idle_timeout_minutes"
+	// SettingShellMaxLifetimeHours is the absolute deadline written into the pod
+	// itself. It is capped by the kubeconfig ceiling at the point of use: a shell
+	// must not outlive the credential inside it.
+	SettingShellMaxLifetimeHours = "shell_max_lifetime_hours"
 	// SettingSetupCompletedAt stamps the moment first-run setup finished, as an
 	// RFC 3339 timestamp. Its presence is the whole signal — the console shows
 	// the install wizard until it is set, and never again afterwards.
@@ -92,6 +107,10 @@ var SettingKeys = []string{
 	SettingRecordExecSessions,
 	SettingRecordManifestDiffs,
 	SettingKubeconfigMaxTTLHours,
+	SettingShellEnabled,
+	SettingShellImage,
+	SettingShellIdleTimeoutMinutes,
+	SettingShellMaxLifetimeHours,
 }
 
 // Setting is one operator-configurable value. An empty Value means "unset" and

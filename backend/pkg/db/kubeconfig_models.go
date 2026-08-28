@@ -49,6 +49,14 @@ type KubeconfigIssuance struct {
 	// deleting that account is the only lever that withdraws the token.
 	ServiceAccount string `gorm:"size:190" json:"service_account,omitempty"`
 
+	// Purpose says what the credential was made for. It is empty for the ordinary
+	// case — somebody downloaded a kubeconfig — and KubeconfigPurposeShell for the
+	// one that is never downloaded: the credential written into a browser shell's
+	// pod. The register would otherwise show a row per shell with nothing to
+	// distinguish it from a file on a laptop, and the two are revoked for very
+	// different reasons.
+	Purpose string `gorm:"size:16" json:"purpose,omitempty"`
+
 	// IssuedBy is whoever asked for the file, which is not always whoever holds
 	// it — an administrator generating a kubeconfig for somebody else is exactly
 	// the row an auditor is looking for.
@@ -68,6 +76,9 @@ type KubeconfigIssuance struct {
 
 	CreatedAt time.Time `gorm:"index" json:"created_at"`
 }
+
+// KubeconfigPurposeShell marks the credential seeded into a browser shell pod.
+const KubeconfigPurposeShell = "shell"
 
 // Revoked reports whether this credential has been withdrawn.
 func (k KubeconfigIssuance) Revoked() bool { return k.RevokedAt != nil }

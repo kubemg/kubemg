@@ -187,6 +187,8 @@ func main() {
 		PublicURL:      cfg.PublicURL,
 		AgentImage:     cfg.AgentImage,
 		AgentNamespace: cfg.AgentNamespace,
+		ShellImage:     cfg.Shell.Image,
+		ShellEnabled:   cfg.Shell.Enabled,
 		BastionCA:      tlsMaterial.agentCA,
 		// What the console's footer names this install as. See api.Options.Version.
 		Version:        version,

@@ -247,6 +247,12 @@ type Options struct {
 	// AgentImage and AgentNamespace parameterise the generated manifests.
 	AgentImage     string
 	AgentNamespace string
+	// ShellImage is the image a browser shell pod runs on a target cluster, and
+	// ShellEnabled is whether this build offers the feature at all. Both follow
+	// the process rather than the database: a settings row can switch the shell
+	// off, and cannot switch on one this server has no image for.
+	ShellImage   string
+	ShellEnabled bool
 	// BastionCA is the certificate an agent has to trust to dial this server,
 	// baked into every rendered install package. Set it when the bastion serves
 	// a certificate the public CAs do not vouch for — a self-signed one — and
@@ -362,7 +368,11 @@ type server struct {
 	publicURL      string
 	agentImage     string
 	agentNamespace string
-	bastionCA      string
+	// shellImage and shellEnabled are what this process was started able to run a
+	// browser shell as; see Options.
+	shellImage   string
+	shellEnabled bool
+	bastionCA    string
 	// recordings is the directory terminal recordings are read back from. Empty
 	// means this server is not recording sessions.
 	recordings     string
@@ -452,6 +462,8 @@ func NewRouter(opts Options) *gin.Engine {
 		publicURL:          publicURL,
 		agentImage:         opts.AgentImage,
 		agentNamespace:     opts.AgentNamespace,
+		shellImage:         strings.TrimSpace(opts.ShellImage),
+		shellEnabled:       opts.ShellEnabled && strings.TrimSpace(opts.ShellImage) != "",
 		bastionCA:          opts.BastionCA,
 		recordings:         strings.TrimSpace(opts.RecordingDir),
 		recordingKey:       opts.RecordingKey,
@@ -539,6 +551,11 @@ func NewRouter(opts Options) *gin.Engine {
 		// about one.
 		if s.events != nil {
 			go s.startEventWatchSweeper(opts.Background)
+		}
+		// A browser shell that nobody is typing into is a pod somebody else's
+		// cluster is paying for. One replica reclaims them; see shell_reaper.go.
+		if s.shellEnabled && opts.Proxy != nil {
+			go s.startShellReaper(opts.Background)
 		}
 		// Chart repositories go stale on their own. One replica refreshes them;
 		// see helm_index.go for why that is a lease rather than a timer per
@@ -739,6 +756,27 @@ func NewRouter(opts Options) *gin.Engine {
 			sources.GET("/discover", requireAdmin, s.discoverObservabilitySources)
 		}
 		if opts.Proxy != nil {
+			/*
+			 * The browser shell: a pod KubeMG runs on the cluster, with a terminal
+			 * attached to it and the caller's own proxy kubeconfig written inside.
+			 *
+			 * Open to anyone the cluster is granted to, deliberately. The pod holds
+			 * no cluster credential of its own, so what a shell can do is exactly
+			 * what its holder's grant can do and the cluster's own RBAC is what
+			 * answers — a read-only operator gets a terminal that can read. Making
+			 * it administrative would gate the surface rather than the reach, which
+			 * is a rule that protects nothing and costs the person with a `view`
+			 * grant the one place they could have run `kubectl describe`.
+			 *
+			 * attach is a WebSocket, so it authenticates on the query parameter the
+			 * same way the pod terminal does — see auth.RequireAuth.
+			 */
+			shellRoutes := clusters.Group("/:id/shell")
+			shellRoutes.GET("", s.showShell)
+			shellRoutes.POST("", s.startShell)
+			shellRoutes.DELETE("", s.stopShell)
+			shellRoutes.GET("/attach", s.attachShell)
+
 			// kubectl's server URL points here, so every verb has to land on
 			// the same handler.
 			clusters.Any("/:id/proxy/*path", opts.Proxy.Handle)

@@ -226,3 +226,18 @@ func TestStrippedQueryKeepsExecParameters(t *testing.T) {
 		t.Fatalf("the exec parameters were mangled: %q", got)
 	}
 }
+
+// A merge patch has to say so in its content type. The API server accepts four
+// patch media types and `application/json` is not one of them, so getting this
+// wrong is a 415 on every patch — and both callers that patch are best-effort,
+// which means it would read as an annotation that quietly never lands.
+func TestPatchIsSentAsAMergePatch(t *testing.T) {
+	if got := contentTypeFor(http.MethodPatch); got != "application/merge-patch+json" {
+		t.Fatalf("PATCH content type = %q, want a patch strategy the API server accepts", got)
+	}
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodGet} {
+		if got := contentTypeFor(method); got != "application/json" {
+			t.Fatalf("%s content type = %q, want application/json", method, got)
+		}
+	}
+}

@@ -114,6 +114,17 @@
   color-scheme: light;
 
   /*
+   * Where the console's work surface starts, past the rail and the tree.
+   *
+   * It is a variable because one thing is drawn outside `AppShell` and still has
+   * to line up with it: the shell dock, which is mounted above the router so a
+   * terminal session survives navigating. AppShell keeps this in step with the
+   * tree's collapsed state; the value here is what a first paint uses, and it is
+   * only consulted at `lg` and above, where the rail and tree exist at all.
+   */
+  --deck-main-inset: 18.75rem;
+
+  /*
    * The light deck's chrome is a plain grey, and deliberately not bone.
    *
    * Bone (#f2f3ef) is the brand's light surface and it was tried here first,

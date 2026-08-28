@@ -2,15 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
-import { fetchRecordingPolicy, proxyURL, readToken } from '../api/client'
+import { fetchRecordingPolicy, shellSocketURL } from '../api/client'
 import type { RecordingPolicy } from '../api/types'
-import { Select } from './primitives'
 import { RecordingNotice } from './terminal/RecordingNotice'
 
 /*
- * The Kubernetes exec channel protocol prefixes every binary frame with the
- * channel it belongs to. KubeMG's proxy pipes these bytes verbatim, so the
- * framing is interpreted here — at the only end that knows what a terminal is.
+ * The browser shell's terminal.
+ *
+ * It is the pod terminal's twin and deliberately not a generalisation of it: the
+ * two differ in exactly the ways that matter — this one addresses a session
+ * rather than a container, and it offers no shell picker, because the image it
+ * attaches to is KubeMG's own and is known to have `sh`. Folding them together
+ * would mean a component whose every branch is "which of the two am I", for the
+ * sake of the fifty lines of channel decoding they share.
+ *
+ * The wire format is the same, because it is the API server's: every frame is a
+ * channel byte followed by its payload.
  */
 const CHANNEL_STDIN = 0
 const CHANNEL_STDOUT = 1
@@ -18,22 +25,7 @@ const CHANNEL_STDERR = 2
 const CHANNEL_ERROR = 3
 const CHANNEL_RESIZE = 4
 
-/* v4 is what every current API server speaks; v5 adds a stdin close signal. */
-const SUBPROTOCOLS = ['v5.channel.k8s.io', 'v4.channel.k8s.io']
-
-/*
- * The shell to exec. Kubernetes takes `command` as an argv, not as a list of
- * candidates — sending both `/bin/bash` and `/bin/sh` does not try one and fall
- * back to the other, it runs bash *with* /bin/sh as its argument. So exactly one
- * is sent, and which one is the operator's choice: bash is the comfortable
- * default, sh is what a distroless or Alpine image actually has.
- */
-const SHELLS = [
-  { value: '/bin/bash', label: 'bash' },
-  { value: '/bin/sh', label: 'sh' },
-]
-
-const DEFAULT_SHELL = SHELLS[0].value
+const SUBPROTOCOLS = ['v4.channel.k8s.io']
 
 type Status = 'connecting' | 'open' | 'closed' | 'error'
 
@@ -52,34 +44,29 @@ function deckTheme() {
 }
 
 /**
- * PodTerminal is an interactive shell in a container, carried over the same
- * audited tunnel as everything else. Every keystroke reaches the cluster under
- * the caller's own impersonated identity — this is not a back door around the
- * permission model, it is the permission model applied to a terminal.
+ * ShellTerminal attaches to the caller's shell pod on a cluster.
+ *
+ * Every command typed here runs as `kubectl` inside that pod, against a
+ * kubeconfig pointing back at KubeMG — so it is impersonated as the caller,
+ * answered by the cluster's own RBAC and audited. The terminal itself is an exec
+ * like any other: recorded, and guarded keystroke by keystroke.
  */
-export function PodTerminal({
+export function ShellTerminal({
   clusterId,
-  namespace,
-  pod,
-  container,
+  onEnded,
 }: {
   clusterId: number
-  namespace: string
-  pod: string
-  container: string
+  /** Called when the session closes, so the page can re-read the pod's state. */
+  onEnded?: () => void
 }) {
   const host = useRef<HTMLDivElement | null>(null)
   const [status, setStatus] = useState<Status>('connecting')
   const [detail, setDetail] = useState<string | null>(null)
-  const [shell, setShell] = useState(DEFAULT_SHELL)
-  // What this server captures. It is read once and shown before the first
-  // keystroke: telling somebody afterwards that everything they typed was kept
-  // is not disclosure, and in several jurisdictions it is not lawful either.
-  // `null` means the answer has not arrived — the notice is drawn only for a
-  // definite answer, because a banner that flickers "recorded" and then
-  // disappears is worse than one that arrives a moment late.
   const [policy, setPolicy] = useState<RecordingPolicy | null>(null)
 
+  // What this server captures, read once and shown before the first keystroke.
+  // A server that will not answer is not a reason to refuse a shell; the notice
+  // is simply not drawn.
   useEffect(() => {
     let cancelled = false
     fetchRecordingPolicy()
@@ -87,8 +74,6 @@ export function PodTerminal({
         if (!cancelled) setPolicy(result)
       })
       .catch(() => {
-        // A server that will not answer is not a reason to refuse a shell; the
-        // notice is simply not drawn.
         if (!cancelled) setPolicy(null)
       })
     return () => {
@@ -96,12 +81,16 @@ export function PodTerminal({
     }
   }, [])
 
+  // onEnded is held in a ref so that a parent re-rendering it does not tear the
+  // session down: a terminal that reconnected whenever its page re-rendered
+  // would lose whatever was on the prompt.
+  const ended = useRef(onEnded)
+  ended.current = onEnded
+
   useEffect(() => {
     const element = host.current
     if (!element) return
 
-    // Reconnecting after a closed session starts from "connecting" again, or
-    // the header would still be reporting the session that just ended.
     setStatus('connecting')
     setDetail(null)
 
@@ -114,8 +103,6 @@ export function PodTerminal({
       theme: deckTheme(),
     })
 
-    // The shell sits on the same slab as every other machine-output surface, so
-    // it follows the deck when the operator switches it.
     const deckWatcher = new MutationObserver(() => {
       term.options.theme = deckTheme()
     })
@@ -123,6 +110,7 @@ export function PodTerminal({
       attributes: true,
       attributeFilter: ['data-theme'],
     })
+
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(element)
@@ -130,15 +118,10 @@ export function PodTerminal({
 
     const encoder = new TextEncoder()
 
-    // A character is not a byte, and a frame boundary does not respect one. "ş"
-    // is two bytes and "€" is three, and the pty on the far side makes no promise
-    // that they arrive in the same write — so a decoder that treats every frame
-    // as a complete string turns the halves into replacement characters, which is
-    // what an operator sees as "I cannot type Turkish". Each channel keeps its own
-    // streaming decoder instead, carrying an incomplete sequence forward to the
-    // frame that finishes it. Per channel rather than one shared decoder, because
-    // stdout and stderr are two byte streams interleaved on one socket: a
-    // remainder from one must never be completed by the other's first byte.
+    // One streaming decoder per channel: a multi-byte character can be split
+    // across two frames, and stdout and stderr are two byte streams interleaved
+    // on one socket — a remainder from one must never be completed by the
+    // other's first byte.
     const decoders = new Map<number, TextDecoder>()
     function decodeChannel(channel: number, bytes: Uint8Array): string {
       let decoder = decoders.get(channel)
@@ -149,29 +132,9 @@ export function PodTerminal({
       return decoder.decode(bytes, { stream: true })
     }
 
-    // The token cannot go in a header on a browser WebSocket, so it rides in
-    // the query string. The proxy accepts either.
-    const token = readToken() ?? ''
-    const query = new URLSearchParams({
-      container,
-      stdin: 'true',
-      stdout: 'true',
-      stderr: 'true',
-      tty: 'true',
-      access_token: token,
-      command: shell,
-    })
-
-    const url = proxyURL(
-      clusterId,
-      `/api/v1/namespaces/${encodeURIComponent(namespace)}/pods/${encodeURIComponent(pod)}/exec?${query}`,
-      'ws',
-    )
-
-    const socket = new WebSocket(url, SUBPROTOCOLS)
+    const socket = new WebSocket(shellSocketURL(clusterId), SUBPROTOCOLS)
     socket.binaryType = 'arraybuffer'
 
-    /** send frames a payload on a channel, as the protocol requires. */
     function send(channel: number, payload: Uint8Array) {
       if (socket.readyState !== WebSocket.OPEN) return
       const frame = new Uint8Array(payload.length + 1)
@@ -181,10 +144,7 @@ export function PodTerminal({
     }
 
     function sendResize() {
-      send(
-        CHANNEL_RESIZE,
-        encoder.encode(JSON.stringify({ Width: term.cols, Height: term.rows })),
-      )
+      send(CHANNEL_RESIZE, encoder.encode(JSON.stringify({ Width: term.cols, Height: term.rows })))
     }
 
     socket.onopen = () => {
@@ -206,22 +166,11 @@ export function PodTerminal({
           term.write(decodeChannel(channel, body))
           break
         case CHANNEL_ERROR: {
-          // The API server reports a failed exec on this channel as a JSON
-          // Status object; show its message rather than raw JSON. It arrives
-          // whole, so it is decoded on its own rather than through a streaming
-          // decoder that would hold a trailing byte back waiting for more.
           const payload = new TextDecoder().decode(body)
           try {
             const parsed = JSON.parse(payload) as { status?: string; message?: string }
             if (parsed.status !== 'Success' && parsed.message) {
               term.write(`\r\n\x1b[31m${parsed.message}\x1b[0m\r\n`)
-              // A slim image often has no bash at all, and "executable file not
-              // found" is the moment to say which control fixes it.
-              if (parsed.message.includes('executable file not found')) {
-                term.write(
-                  `\x1b[90mThis image has no ${shell}. Try another shell from the picker above.\x1b[0m\r\n`,
-                )
-              }
             }
           } catch {
             if (payload.trim()) term.write(`\r\n${payload}\r\n`)
@@ -242,6 +191,7 @@ export function PodTerminal({
       setStatus((current) => (current === 'error' ? current : 'closed'))
       if (event.reason) setDetail(event.reason)
       term.write('\r\n\x1b[90m— session ended —\x1b[0m\r\n')
+      ended.current?.()
     }
 
     const typed = term.onData((data) => send(CHANNEL_STDIN, encoder.encode(data)))
@@ -263,10 +213,7 @@ export function PodTerminal({
       }
       term.dispose()
     }
-    // Changing the shell is a new session: the old one is torn down by the
-    // cleanup above and a fresh exec is opened, which is what an operator means
-    // by picking a different shell.
-  }, [clusterId, namespace, pod, container, shell])
+  }, [clusterId])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
@@ -285,7 +232,7 @@ export function PodTerminal({
         />
         <span className="text-[12px] text-muted">
           {status === 'open'
-            ? `Connected to ${container}`
+            ? 'Connected'
             : status === 'connecting'
               ? 'Opening a session…'
               : status === 'error'
@@ -293,32 +240,13 @@ export function PodTerminal({
                 : 'Session closed'}
         </span>
         {detail ? <span className="truncate text-[12px] text-muted">· {detail}</span> : null}
-
-        {/* Which shell to exec. It is a session parameter, so changing it opens
-            a new session rather than trying to change the running one. */}
-        <div className="ml-auto flex items-center gap-2">
-          <span className="label">Shell</span>
-          <div className="w-28">
-            <Select
-              aria-label="Shell"
-              size="sm"
-              value={shell}
-              onChange={(event) => setShell(event.target.value)}
-            >
-              {SHELLS.map((entry) => (
-                <option key={entry.value} value={entry.value}>
-                  {entry.label}
-                </option>
-              ))}
-            </Select>
-          </div>
-        </div>
       </div>
+
       {policy?.enabled ? <RecordingNotice policy={policy} /> : null}
 
       <div
         ref={host}
-        className="min-h-[280px] flex-1 overflow-hidden rounded-card border border-line bg-sunken p-2"
+        className="min-h-[320px] flex-1 overflow-hidden rounded-card border border-line bg-sunken p-2"
       />
     </div>
   )
