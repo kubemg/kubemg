@@ -167,10 +167,15 @@ To upgrade an attached cluster's agent:
 
 1. Set the new image (either update `KUBEMG_AGENT_IMAGE` and restart, or
    change it in Settings at runtime).
-2. Re-fetch and re-apply the manifest for that cluster —
-   **Admin → Clusters → (cluster) → Kustomize** (`GET
-   /api/v1/clusters/:id/kustomize`, admin-only) renders the current package,
-   or use `?format=yaml` for the flat manifest.
+2. Re-fetch the manifest for that cluster. In the console this is
+   **the cluster's dashboard → Agent install** (admin-only, agent-mode
+   clusters), which re-renders the package from the cluster's existing
+   registration token against the *current* settings — so it picks up the new
+   image without re-registering the cluster and without invalidating anything
+   already issued. It is offered whether or not the agent is attached, since a
+   tunnel that is down is exactly when the command is needed. The same package
+   is available directly as `GET /api/v1/clusters/:id/kustomize` (admin-only),
+   or `?format=yaml` for the flat manifest.
 3. `kubectl apply -f` (or `-k`) the freshly rendered manifest. The Deployment
    updates and, since `strategy: Recreate`, the old pod terminates before the
    new one starts — the tunnel drops and reconnects, which is normal
@@ -247,9 +252,9 @@ so a transient failure is not fatal — but a persistent one needs a fix. Check
     the bastion is self-signed or on an internal CA, but the Secret's
     `bastion-ca` key is empty or wrong — usually because the manifest was
     rendered before the bastion's certificate existed, or the wrong archive
-    was applied. Re-fetch a fresh install package from the wizard or
-    `/api/v1/clusters/:id/kustomize` and re-apply it; the current `bastionCA`
-    is baked in at render time (`s.bastionCA`).
+    was applied. Re-fetch a fresh install package — **the cluster's dashboard →
+    Agent install**, or `/api/v1/clusters/:id/kustomize` — and re-apply it;
+    the current `bastionCA` is baked in at render time (`s.bastionCA`).
 
     A related, deliberately noisy line if verification is disabled by hand:
 
