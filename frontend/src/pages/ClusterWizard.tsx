@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import {
-  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Download,
@@ -34,6 +33,7 @@ import type {
   SubjectType,
   User,
 } from '../api/types'
+import { AgentInstallBody } from '../components/AgentInstallSheet'
 import { AppShell } from '../components/AppShell'
 import { DatasourcePanel } from '../components/DatasourcePanel'
 import { LinkStatus, PathHop, PathNode } from '../components/LinkStatus'
@@ -53,7 +53,6 @@ import {
   TextInput,
 } from '../components/primitives'
 import { StepActions, Stepper } from '../components/WizardChrome'
-import { YamlView } from '../components/YamlView'
 import { useClusters } from '../state/clusters-context'
 
 const ENVIRONMENTS: Environment[] = ['prod', 'staging', 'dev']
@@ -516,8 +515,6 @@ function ModeCard({
  * is about to live in a Kubernetes Secret.
  */
 function AgentInstaller({ install }: { install: AgentInstall }) {
-  const [showManifest, setShowManifest] = useState(false)
-
   return (
     <Panel
       eyebrow="Handoff"
@@ -535,53 +532,9 @@ function AgentInstaller({ install }: { install: AgentInstall }) {
       }
       bodyClassName="flex flex-col gap-4 p-4"
     >
-      <CodeBlock label="Install command" value={install.apply_command} />
-
-      <details className="group">
-        <summary className="cursor-pointer text-[12.5px] text-muted transition-colors hover:text-fg">
-          Prefer Kustomize?
-        </summary>
-        <div className="mt-2.5 flex flex-col gap-2">
-          <p className="text-[12px] leading-snug text-muted">
-            Kustomize only accepts local paths and Git specs as remote targets, so the package is
-            fetched and extracted first.
-          </p>
-          <CodeBlock value={install.kustomize_command} />
-        </div>
-      </details>
-
-      <div className="border-t border-line-soft pt-4">
-        <DetailList
-          columns={2}
-          rows={[
-            { term: 'Bastion', value: install.bastion_url },
-            { term: 'Namespace', value: install.namespace },
-            { term: 'Image', value: install.image },
-          ]}
-        />
-      </div>
-
-      <CodeBlock label="Registration token" value={install.agent_token} secret />
-      <p className="flex items-start gap-1.5 text-[12px] leading-snug text-warn">
-        <AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-        This token authenticates the tunnel for this cluster. It is embedded in the command above —
-        treat both like a credential.
-      </p>
-
-      <div>
-        <button
-          type="button"
-          onClick={() => setShowManifest((current) => !current)}
-          className="text-[12.5px] text-muted transition-colors hover:text-fg"
-        >
-          {showManifest ? 'Hide' : 'Review'} the manifest before applying
-        </button>
-        {/* Reviewing a manifest before applying it to a cluster is reading, so it
-            gets the same painted surface the object editor does. */}
-        {showManifest ? (
-          <YamlView value={install.manifest} className="mt-2.5 h-80" />
-        ) : null}
-      </div>
+      {/* The same handoff a registered cluster can re-open from its dashboard,
+          so the two never drift. */}
+      <AgentInstallBody install={install} />
     </Panel>
   )
 }
