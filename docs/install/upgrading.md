@@ -6,15 +6,15 @@ Pin an explicit tag rather than tracking `latest`, in both places a version
 appears:
 
 - The management plane image, `KUBEMG_IMAGE`/`KUBEMG_VERSION`
-  (`ghcr.io/kubemg/kubemg:0.7.4`) in Compose, or the `image:` field of the
+  (`ghcr.io/kubemg/kubemg:0.8.0`) in Compose, or the `image:` field of the
   Deployment in Kubernetes.
-- The agent image, `KUBEMG_AGENT_IMAGE` (`ghcr.io/kubemg/kubemg-agent:0.7.4`),
+- The agent image, `KUBEMG_AGENT_IMAGE` (`ghcr.io/kubemg/kubemg-agent:0.8.0`),
   written into every rendered agent install manifest by the management
   plane, so bumping it here is what changes what a *future* `kubectl apply -k
   …` installs — it does not touch agents already running.
 
 - The browser shell image, `KUBEMG_SHELL_IMAGE`
-  (`ghcr.io/kubemg/kubemg-shell:0.7.4`), which a shell pod runs on a target
+  (`ghcr.io/kubemg/kubemg-shell:0.8.0`), which a shell pod runs on a target
   cluster. Like the agent image it is read when a shell is *started*, so
   bumping it changes the next shell rather than one already open.
 
@@ -84,20 +84,44 @@ practice this means:
 
 Separately from the wire protocol, the agent's Kubernetes manifests
 (`ClusterRoleBindings`, and the `ClusterRole`s they bind to) can gain new
-permissions between releases without any protocol change at all — this has
-already happened once, for CRD-discovery and custom-resource read/write
-RBAC. When it does, **existing agent installs must re-apply their manifests**
-to pick up the new grants; until they do, the symptom is silent and specific:
-CRD discovery answers `403`, and the Explore sidebar simply shows no custom
-resources, with no error surfaced anywhere obvious.
+permissions between releases without any protocol change at all. When they
+do, **existing agent installs must re-apply their manifests** to pick up the
+new grants; until they do, the symptom is silent and specific rather than a
+tunnel that visibly fails.
 
-Re-applying is the same command as installing:
+It has happened twice so far:
+
+- **CRD discovery and custom-resource read/write RBAC.** Without it, CRD
+  discovery answers `403` and the Explore sidebar simply shows no custom
+  resources, with no error surfaced anywhere obvious.
+- **0.8.0, the browser shell.** The `kubemg-shell-runner` Role and its
+  binding to the `kubemg:shell-runner` user — what lets KubeMG create, seed,
+  stamp and delete shell pods **in the agent namespace only** — arrive with
+  this release. Without them nothing else changes: the tunnel stays up and
+  every existing surface keeps working, but opening a shell fails on the
+  cluster's own `403` at pod creation. Everything a KubeMG upgrade brings
+  except the shell works on an install that re-applies nothing.
+
+Re-applying is the same command as installing. The console renders it for a
+cluster that already exists: open the cluster's dashboard and choose **Agent
+install** (admin-only, agent-mode clusters), which re-renders the package
+from the cluster's stored registration token against the current settings —
+so it carries the new agent image as well as the new RBAC. The Kustomize form
+fetches and extracts the package first, because Kustomize accepts only local
+paths and Git specs as remote targets:
 
 ```bash
-kubectl apply -k https://your-kubemg/install/<token>/kustomize.tar.gz
+curl -sfL https://your-kubemg/install/<token>/kustomize.tar.gz | tar -xz
+kubectl apply -k kubemg-agent
 ```
 
-or, if you manage the manifests yourself rather than through the rendered
+or apply the flat manifest, which is the one-liner the console shows first:
+
+```bash
+kubectl apply -f https://your-kubemg/install/<token>/agent.yaml
+```
+
+If you manage the manifests yourself rather than through the rendered
 package, diff `deploy/kustomize/base/rbac.yaml` at the new version against
 what's applied and reconcile. Both the cluster detail page and the wizard's
 last step in the console call out whether an attached cluster's RBAC is
@@ -132,7 +156,7 @@ Two things a rollback does **not** undo:
 ## Documentation versioning
 
 This manual is versioned against release tags on Read the Docs: an install
-running `0.7.4` corresponds to the `0.7.4` version of these docs, not
+running `0.8.0` corresponds to the `0.8.0` version of these docs, not
 whatever `master` says today. If you're following a procedure here, check
 the version selector matches the version you're actually running.
 

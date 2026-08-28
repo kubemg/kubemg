@@ -32,7 +32,7 @@ function install(over: Partial<AgentInstall> = {}): AgentInstall {
     cluster_id: 7,
     cluster: 'prod',
     namespace: 'kubemg-system',
-    image: 'ghcr.io/kubemg/agent:0.7.4',
+    image: 'ghcr.io/kubemg/kubemg-agent:test',
     bastion_url: 'https://kubemg.example.com',
     package_dir: 'kubemg-agent',
     agent_token: 'tok-secret',
