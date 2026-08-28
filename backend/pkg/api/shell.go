@@ -492,9 +492,25 @@ func (s *server) createShellPod(
 // between a five-minute fix and an afternoon.
 func staleManifestExplanation(message string) string {
 	return message +
-		" — this is the agent's own RBAC, and a cluster attached before the browser shell existed does " +
-		"not have it yet. Re-apply this cluster's agent manifests to install the kubemg-shell service " +
-		"account and the kubemg-shell-runner Role, then try again."
+		" — this is the agent's own RBAC, and this cluster's copy of it is older than the shell needs. " +
+		"Re-apply this cluster's agent manifests to install the current kubemg-shell service account " +
+		"and kubemg-shell-runner Role, then try again."
+}
+
+// seedRefusal explains the one refusal that is not about the operator.
+//
+// An exec is opened over a WebSocket, and a WebSocket begins as a GET — which
+// the API server authorizes as `get` on pods/exec, not as `create`. The Role
+// that ships with the agent granted only `create` for two releases, so a
+// cluster whose manifests predate the fix creates the pod, refuses the seed and
+// reports a bare 403 that names nobody. The answer is the same as every other
+// stale-manifest refusal here, so it is said the same way.
+func seedRefusal(err error) string {
+	message := err.Error()
+	if strings.Contains(message, "403") {
+		return staleManifestExplanation(message)
+	}
+	return message
 }
 
 // deleteShellPod removes it. A pod that is already gone is a success: the caller
@@ -641,7 +657,7 @@ func (s *server) seedShellCredential(
 		Stdin:       kubeconfig,
 	})
 	if err != nil {
-		return fmt.Errorf("could not write the shell's kubeconfig: %w", err)
+		return fmt.Errorf("could not write the shell's kubeconfig: %s", seedRefusal(err))
 	}
 	if result.Failed {
 		return fmt.Errorf("could not write the shell's kubeconfig: %s", result.Status)

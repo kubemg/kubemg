@@ -232,3 +232,33 @@ func TestRenderWithoutCALeavesTheKeyEmpty(t *testing.T) {
 		t.Fatal("placeholder survived rendering")
 	}
 }
+
+// The shell's exec is opened over a WebSocket, which begins as a GET, which the
+// API server authorizes as `get` on pods/exec. A Role that grants only `create`
+// creates the pod and then refuses to seed it — so the grant is pinned here
+// rather than left to be read off a manifest nobody re-reads.
+func TestRenderGrantsShellRunnerBothExecVerbs(t *testing.T) {
+	files, err := Render(testOptions())
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	rbac := files["rbac.yaml"]
+	index := strings.Index(rbac, `resources: ["pods/exec"]`)
+	if index < 0 {
+		t.Fatal("rbac.yaml grants nothing on pods/exec")
+	}
+	rest := rbac[index:]
+	end := strings.Index(rest, "verbs:")
+	if end < 0 {
+		t.Fatal("pods/exec rule has no verbs")
+	}
+	line := rest[end:]
+	if cut := strings.Index(line, "\n"); cut >= 0 {
+		line = line[:cut]
+	}
+	for _, verb := range []string{"get", "create"} {
+		if !strings.Contains(line, `"`+verb+`"`) {
+			t.Errorf("pods/exec verbs %q do not include %q", line, verb)
+		}
+	}
+}
