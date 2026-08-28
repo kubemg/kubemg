@@ -3,6 +3,7 @@ import { ExternalLink, ScrollText, Search } from 'lucide-react'
 import { queryError, queryLogs, unconfigured } from '../api/client'
 import type { Cluster, LogEntry, LogQueryResult } from '../api/types'
 import { queryRangeLabel } from '../lib/timerange'
+import { formatClock } from '../lib/time'
 import { useTimeRange } from '../state/timerange-context'
 import { Button, EmptyState, Notice, TextInput } from './primitives'
 
@@ -273,5 +274,5 @@ function LogLines({
 function clockTime(at: string): string {
   const parsed = new Date(at)
   if (Number.isNaN(parsed.getTime())) return '—'
-  return parsed.toLocaleTimeString()
+  return formatClock(parsed, { seconds: true })
 }

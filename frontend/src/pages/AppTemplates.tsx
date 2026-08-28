@@ -28,6 +28,8 @@ import {
   TextInput,
   Th,
 } from '../components/primitives'
+import { useConfirm } from '../state/confirm-context'
+import { useResult } from '../state/result-context'
 
 /**
  * AppTemplates is where the application catalogue itself lives: every stored
@@ -40,6 +42,8 @@ import {
  * something has to let a seeded one be edited or removed like any other row.
  */
 export function AppTemplates() {
+  const confirm = useConfirm()
+  const report = useResult()
   const [templates, setTemplates] = useState<AppTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -62,16 +66,26 @@ export function AppTemplates() {
   }, [load])
 
   async function remove(template: AppTemplate) {
-    const confirmed = window.confirm(
-      `Delete “${templateDisplayName(template)}”? Anybody opening “From template” in Explore stops seeing it immediately.`,
-    )
+    const confirmed = await confirm({
+      eyebrow: 'Application template',
+      title: `Delete “${templateDisplayName(template)}”?`,
+      body: 'Anybody opening “From template” in Explore stops seeing it immediately. Objects already created from it are unaffected. A seeded template stays deleted.',
+      confirmLabel: 'Delete',
+    })
     if (!confirmed) return
     setBusyName(template.name)
     try {
       await deleteAppTemplate(template.name)
       await load()
+      report({
+        tone: 'ok',
+        title: `Deleted ${templateDisplayName(template)}`,
+        body: 'It is gone from “From template” in Explore. Objects already created from it are unaffected.',
+      })
     } catch (err) {
-      setError(errorMessage(err, `Could not delete ${templateDisplayName(template)}.`))
+      const message = errorMessage(err, `Could not delete ${templateDisplayName(template)}.`)
+      setError(message)
+      report({ tone: 'error', title: `${templateDisplayName(template)} was not deleted`, body: message })
     } finally {
       setBusyName(null)
     }

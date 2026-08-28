@@ -1,5 +1,6 @@
 import { Pause, Radio, RefreshCw } from 'lucide-react'
 import { LIVE_INTERVAL, attentive, useAttention, useLive } from '../lib/live'
+import { formatClock } from '../lib/time'
 import { Button, Chip } from './primitives'
 
 /**
@@ -36,7 +37,7 @@ export function LiveChip({
 
   const state = !live ? 'Paused' : stale ? 'Retrying' : attentive() ? 'Live' : 'Idle'
   const read =
-    updatedAt === null ? '' : `Last read at ${new Date(updatedAt).toLocaleTimeString()}. `
+    updatedAt === null ? '' : `Last read at ${formatClock(updatedAt, { seconds: true })}. `
 
   return (
     <Chip

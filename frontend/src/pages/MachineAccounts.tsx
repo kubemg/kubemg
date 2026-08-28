@@ -35,6 +35,8 @@ import {
   TextInput,
 } from '../components/primitives'
 import { relativeAge } from '../lib/time'
+import { useConfirm } from '../state/confirm-context'
+import { useResult } from '../state/result-context'
 
 const ROLES: K8sRole[] = ['view', 'edit', 'cluster-admin']
 
@@ -51,6 +53,8 @@ const ROLES: K8sRole[] = ['view', 'edit', 'cluster-admin']
  * server refuses to issue one for exactly that reason.
  */
 export function MachineAccounts() {
+  const confirm = useConfirm()
+  const report = useResult()
   const [accounts, setAccounts] = useState<MachineAccount[]>([])
   const [clusters, setClusters] = useState<Cluster[]>([])
   const [loading, setLoading] = useState(true)
@@ -82,27 +86,60 @@ export function MachineAccounts() {
     void load()
   }, [load])
 
-  async function run(id: number, fallback: string, action: () => Promise<unknown>) {
+  /**
+   * run wraps a row action so one failure never leaves the table stale, and so
+   * that every one of them reports the same way: the row error for somebody
+   * still looking at this table, and — when the caller names one — the result
+   * strip, which is what reaches somebody the act has already moved elsewhere.
+   */
+  async function run(
+    id: number,
+    fallback: string,
+    action: () => Promise<unknown>,
+    landed?: { title: string; body?: string },
+  ) {
     setBusyRow(id)
     setRowError(null)
     try {
       await action()
       await load()
+      if (landed) {
+        report({ tone: 'ok', ...landed, link: { to: '/audit', label: 'See it in the audit trail' } })
+      }
     } catch (err) {
-      setRowError(errorMessage(err, fallback))
+      const message = errorMessage(err, fallback)
+      setRowError(message)
+      if (landed) {
+        // The fallback is already this page's own sentence for the failure
+        // ("Could not delete alice."), so the strip says that and adds the
+        // server's own words only when they say something more.
+        report({
+          tone: 'error',
+          title: fallback.replace(/\.$/, ''),
+          body: message === fallback ? undefined : message,
+        })
+      }
     } finally {
       setBusyRow(null)
     }
   }
 
   async function remove(target: MachineAccount) {
-    const confirmed = window.confirm(
-      `Delete ${target.username}? Every credential it holds stops working immediately, ` +
-        'and anything using one starts failing at its next call.',
-    )
+    const confirmed = await confirm({
+      eyebrow: 'Machine account',
+      title: `Delete ${target.username}?`,
+      body: 'Every credential it holds stops working immediately, and anything using one starts failing at its next call. Its audit history stays.',
+      confirmLabel: 'Delete',
+    })
     if (!confirmed) return
-    await run(target.id, `Could not delete ${target.username}.`, () =>
-      deleteMachineAccount(target.id),
+    await run(
+      target.id,
+      `Could not delete ${target.username}.`,
+      () => deleteMachineAccount(target.id),
+      {
+        title: `Deleted ${target.username}`,
+        body: 'Every credential it held stopped working; anything using one starts failing at its next call.',
+      },
     )
   }
 
@@ -205,8 +242,18 @@ export function MachineAccounts() {
                         type="button"
                         disabled={busy}
                         onClick={() =>
-                          run(row.id, `Could not update ${row.username}.`, () =>
-                            setMachineAccountStatus(row.id, !row.is_active),
+                          run(
+                            row.id,
+                            `Could not update ${row.username}.`,
+                            () => setMachineAccountStatus(row.id, !row.is_active),
+                            {
+                              title: row.is_active
+                                ? `Disabled ${row.username}`
+                                : `Activated ${row.username}`,
+                              body: row.is_active
+                                ? 'Its credentials stop being accepted from now.'
+                                : undefined,
+                            },
                           )
                         }
                         title={
@@ -386,6 +433,8 @@ function MachineAccountSheet({
   onChanged: () => Promise<void>
   onIssue: (account: MachineAccount) => void
 }) {
+  const confirm = useConfirm()
+  const report = useResult()
   const [tokens, setTokens] = useState<MachineToken[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -444,9 +493,12 @@ function MachineAccountSheet({
   }
 
   async function revoke(token: MachineToken) {
-    const confirmed = window.confirm(
-      `Revoke “${token.name}” (${token.hint}…)? Whatever holds it starts failing at its next call.`,
-    )
+    const confirmed = await confirm({
+      eyebrow: 'Machine credential',
+      title: `Revoke “${token.name}” (${token.hint}…)?`,
+      body: 'Whatever holds it starts failing at its next call. The row stays, so what it did is still readable.',
+      confirmLabel: 'Revoke',
+    })
     if (!confirmed) return
     setBusy(true)
     setError(null)
@@ -454,8 +506,15 @@ function MachineAccountSheet({
       await revokeMachineToken(account.id, token.id)
       await loadTokens()
       await onChanged()
+      report({
+        tone: 'ok',
+        title: `Revoked “${token.name}”`,
+        body: 'Whatever holds it starts failing at its next call. The row stays, so what it did is still readable.',
+      })
     } catch (err) {
-      setError(errorMessage(err, 'Could not revoke the credential.'))
+      const message = errorMessage(err, 'Could not revoke the credential.')
+      setError(message)
+      report({ tone: 'error', title: `“${token.name}” was not revoked`, body: message })
     } finally {
       setBusy(false)
     }

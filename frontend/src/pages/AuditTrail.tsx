@@ -42,7 +42,7 @@ const TerminalSessionPlayer = lazy(() =>
   })),
 )
 import type { Tone } from '../lib/status'
-import { relativeAge } from '../lib/time'
+import { formatInstant, relativeAge } from '../lib/time'
 import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
 
@@ -360,8 +360,8 @@ export function AuditTrail() {
 
             {from || to ? (
               <span className="font-mono text-[12px] text-accent">
-                {from ? new Date(from).toLocaleString() : 'anything'} →{' '}
-                {to ? new Date(to).toLocaleString() : 'now'}
+                {from ? formatInstant(from, { seconds: true }) : 'anything'} →{' '}
+                {to ? formatInstant(to, { seconds: true }) : 'now'}
               </span>
             ) : null}
           </div>

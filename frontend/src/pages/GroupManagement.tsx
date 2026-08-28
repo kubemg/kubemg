@@ -24,8 +24,12 @@ import {
   TextInput,
 } from '../components/primitives'
 import { relativeAge } from '../lib/time'
+import { useConfirm } from '../state/confirm-context'
+import { useResult } from '../state/result-context'
 
 export function GroupManagement() {
+  const confirm = useConfirm()
+  const report = useResult()
   const [groups, setGroups] = useState<Group[]>([])
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
@@ -51,25 +55,56 @@ export function GroupManagement() {
     void load()
   }, [load])
 
-  async function run(groupId: number, fallback: string, action: () => Promise<unknown>) {
+  /**
+   * run wraps a row action so one failure never leaves the table stale, and so
+   * that every one of them reports the same way: the row error for somebody
+   * still looking at this table, and — when the caller names one — the result
+   * strip, which is what reaches somebody the act has already moved elsewhere.
+   */
+  async function run(
+    groupId: number,
+    fallback: string,
+    action: () => Promise<unknown>,
+    landed?: { title: string; body?: string },
+  ) {
     setBusyGroup(groupId)
     setRowError(null)
     try {
       await action()
       await load()
+      if (landed) {
+        report({ tone: 'ok', ...landed, link: { to: '/audit', label: 'See it in the audit trail' } })
+      }
     } catch (err) {
-      setRowError(errorMessage(err, fallback))
+      const message = errorMessage(err, fallback)
+      setRowError(message)
+      if (landed) {
+        // The fallback is already this page's own sentence for the failure
+        // ("Could not delete alice."), so the strip says that and adds the
+        // server's own words only when they say something more.
+        report({
+          tone: 'error',
+          title: fallback.replace(/\.$/, ''),
+          body: message === fallback ? undefined : message,
+        })
+      }
     } finally {
       setBusyGroup(null)
     }
   }
 
   async function remove(group: Group) {
-    const confirmed = window.confirm(
-      `Delete ${group.name}? Members lose every cluster grant they only held through this group.`,
-    )
+    const confirmed = await confirm({
+      eyebrow: 'Group',
+      title: `Delete ${group.name}?`,
+      body: 'Members lose every cluster grant they only held through this group, at their next call. Grants they hold directly are unaffected.',
+      confirmLabel: 'Delete',
+    })
     if (!confirmed) return
-    await run(group.id, `Could not delete ${group.name}.`, () => deleteGroup(group.id))
+    await run(group.id, `Could not delete ${group.name}.`, () => deleteGroup(group.id), {
+      title: `Deleted ${group.name}`,
+      body: 'Members keep any grant they hold directly; anything they held only through this group is gone at their next call.',
+    })
   }
 
   const usersById = new Map(users.map((user) => [user.id, user]))
@@ -120,13 +155,19 @@ export function GroupManagement() {
                 usersById={usersById}
                 busy={busyGroup === group.id}
                 onAdd={(userId) =>
-                  run(group.id, `Could not add the member to ${group.name}.`, () =>
-                    addGroupMember(group.id, userId),
+                  run(
+                    group.id,
+                    `Could not add the member to ${group.name}.`,
+                    () => addGroupMember(group.id, userId),
+                    { title: `Added a member to ${group.name}` },
                   )
                 }
                 onRemove={(userId) =>
-                  run(group.id, `Could not remove the member from ${group.name}.`, () =>
-                    removeGroupMember(group.id, userId),
+                  run(
+                    group.id,
+                    `Could not remove the member from ${group.name}.`,
+                    () => removeGroupMember(group.id, userId),
+                    { title: `Removed a member from ${group.name}` },
                   )
                 }
                 onDelete={() => remove(group)}

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import type { Cluster, Environment } from '../api/types'
 import { TONE_SOFT, clusterStateLabel, clusterTone } from '../lib/status'
+import { relativeAge } from '../lib/time'
 import type { Tone } from '../lib/status'
 import { usageTone } from '../lib/units'
 
@@ -55,20 +56,44 @@ export function Pill({
   return (
     <span
       title={title}
-      className={`inline-flex items-center gap-1.5 rounded-chip px-2 py-0.5 text-[12px] font-medium whitespace-nowrap ${TONE_CHIP[tone]}`}
+      className={`inline-flex min-w-0 items-center gap-1.5 rounded-chip px-2 py-0.5 text-[12px] font-medium whitespace-nowrap ${TONE_CHIP[tone]}`}
     >
       {dot ? (
         <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${TONE_DOT[tone]}`} />
       ) : null}
-      {children}
+      {/* A pill shrinks and ellipsises rather than growing past whatever holds
+          it. Its own width is its content's, so in a cell narrower than the
+          longest state it names — `CrashLoopBackOff` in a phase column sized for
+          `Running` — an unshrinkable pill pushed whatever sat beside it into the
+          next column, and a ready count landed against a CPU reading as one
+          number: `2/2` beside `55m` read `2/255m`. `min-w-0` is what lets it
+          lose the argument, and the ellipsis is what says it did. */}
+      <span className="truncate">{children}</span>
     </span>
   )
 }
 
-/** ClusterState renders a cluster's last known connection state. */
+/**
+ * ClusterState renders whether a cluster can be reached, from the same
+ * derivation every glyph in the console uses (`lib/status.ts`) rather than from
+ * the stored check — the two disagreeing on one screen is what this replaced.
+ *
+ * The stored check is still worth having and keeps its own place: it is how old
+ * the *last probe* is, and it goes in the title beside whatever the probe said,
+ * so an answer from nine minutes ago is never presented as an answer from now.
+ * For an agent-mode cluster the reading itself is live — the tunnel either has a
+ * connection this second or it does not — and the title says so.
+ */
 export function ClusterState({ cluster }: { cluster: Cluster }) {
+  const provenance =
+    cluster.connection_mode === 'agent'
+      ? 'Read from the tunnel, now.'
+      : `Last checked ${relativeAge(cluster.last_checked_at)}.`
   return (
-    <Pill tone={clusterTone(cluster)} title={cluster.status_message}>
+    <Pill
+      tone={clusterTone(cluster)}
+      title={[provenance, cluster.status_message].filter(Boolean).join(' ')}
+    >
       {clusterStateLabel(cluster)}
     </Pill>
   )
@@ -672,8 +697,26 @@ export function Table({
     </table>
   )
 
+  /*
+   * A scroll container is what a sticky heading pins against, and this wrapper
+   * was one on every table: `overflow-x-auto` forces the other axis to `auto`
+   * too, so `Th`'s `sticky` was resolved against a box that never scrolls
+   * vertically — inert, on all of them, since the day it was written.
+   *
+   * The wrapper is only *needed* when the table is wider than the space, and a
+   * `w-full table-fixed` table is never wider than the space on its own: it
+   * hides columns by breakpoint instead. The one thing that can make it wider is
+   * the reader dragging a column past what is there. So the scroll container is
+   * grown at that moment and not before, which leaves the ordinary case — every
+   * table anybody reads by scrolling — with the page as its scrollport and a
+   * heading row that pins under the header. A resized table trades the pinned
+   * heading for the ability to reach the column it just widened; that is the
+   * reader's own doing and reversible by dragging back.
+   */
+  const resized = Object.keys(widths).length > 0
+
   return (
-    <div className="min-w-0 overflow-x-auto">
+    <div className={`min-w-0 ${resized ? 'overflow-x-auto' : ''}`}>
       {resizeKey ? (
         <ColumnResizeContext.Provider value={{ widths, setWidth }}>
           {table}
@@ -751,7 +794,7 @@ export function Th({
     <th
       scope="col"
       style={style}
-      className={`label sticky top-0 z-1 bg-surface shadow-[inset_0_-1px_0_var(--color-line)] px-4 py-2.5 ${
+      className={`label sticky top-[var(--table-sticky-top)] z-1 bg-surface shadow-[inset_0_-1px_0_var(--color-line)] px-4 py-2.5 ${
         handle ? 'relative' : ''
       } ${align === 'right' ? 'text-right' : 'text-left'} ${className ?? ''}`}
     >
@@ -808,7 +851,7 @@ export function SortTh({
       scope="col"
       aria-sort={direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'}
       style={style}
-      className={`label sticky top-0 z-1 bg-surface shadow-[inset_0_-1px_0_var(--color-line)] px-4 py-2.5 ${handle ? 'relative' : ''} ${
+      className={`label sticky top-[var(--table-sticky-top)] z-1 bg-surface shadow-[inset_0_-1px_0_var(--color-line)] px-4 py-2.5 ${handle ? 'relative' : ''} ${
         align === 'right' ? 'text-right' : 'text-left'
       } ${className ?? ''}`}
     >
@@ -938,6 +981,9 @@ const SHEET_WIDTH: Record<SheetWidth, string> = {
   wide: 'max-w-[85vw]',
 }
 
+/** Which sheets are open, oldest first. Only the last one answers Escape. */
+const SHEET_STACK: object[] = []
+
 export function Sheet({
   title,
   eyebrow,
@@ -958,21 +1004,44 @@ export function Sheet({
 }) {
   const titleId = useId()
 
-  // Exactly one sheet is ever open: a workload action and a Helm release's
-  // values are both panels inside the detail drawer rather than surfaces over
-  // it, so Escape has only one listener to reach and needs no rule about which
-  // instance answers it.
+  /*
+   * Escape closes the **topmost** sheet and only that one.
+   *
+   * One sheet at a time used to be the whole rule — a workload action and a
+   * release's values are panels inside the detail drawer rather than surfaces
+   * over it. A confirmation broke it: the question asked before a destructive
+   * act is itself a `Sheet`, and it opens over the sheet that asked. With every
+   * instance listening on the window, one Escape reached both — and in the
+   * detail drawer, whose own Escape *is* what asks the question, it re-asked it
+   * forever instead of answering it.
+   *
+   * The stack is module-level rather than a context because it is about paint
+   * order, which no provider knows: what should answer Escape is whatever was
+   * mounted last.
+   */
   useEffect(() => {
+    const token = {}
+    SHEET_STACK.push(token)
     function onKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
+      if (event.key !== 'Escape') return
+      if (SHEET_STACK[SHEET_STACK.length - 1] !== token) return
+      onClose()
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    return () => {
+      const at = SHEET_STACK.indexOf(token)
+      if (at >= 0) SHEET_STACK.splice(at, 1)
+      window.removeEventListener('keydown', onKey)
+    }
   }, [onClose])
 
   const body = (
     <>
-      <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">{children}</div>
+      {/* The sheet's body is its own scrollport, so a table in here pins at its
+          top rather than under the page header it cannot see. */}
+      <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 [--table-sticky-top:0px]">
+        {children}
+      </div>
       {footer ? (
         <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-line-soft bg-raised/40 px-4 py-3">
           {footer}

@@ -28,6 +28,8 @@ import {
   TextArea,
   TextInput,
 } from '../primitives'
+import { useConfirm } from '../../state/confirm-context'
+import { useResult } from '../../state/result-context'
 
 /**
  * Command guardrails: the calls this platform refuses to pass on.
@@ -81,6 +83,8 @@ const SAMPLE: Record<GuardrailTarget, string> = {
 }
 
 export function GuardrailSettingsPanel({ clusters }: { clusters: Cluster[] }) {
+  const confirm = useConfirm()
+  const report = useResult()
   const [policies, setPolicies] = useState<GuardrailPolicy[]>([])
   const [enforcing, setEnforcing] = useState(0)
   const [templates, setTemplates] = useState<GuardrailTemplate[]>([])
@@ -139,12 +143,25 @@ export function GuardrailSettingsPanel({ clusters }: { clusters: Cluster[] }) {
   }
 
   async function remove(policy: GuardrailPolicy) {
-    if (!window.confirm(`Delete the guardrail “${policy.name}”?`)) return
+    const confirmed = await confirm({
+      eyebrow: 'Guardrail',
+      title: `Delete “${policy.name}”?`,
+      body: 'Calls it was refusing start being answered by the cluster from the moment it goes.',
+      confirmLabel: 'Delete',
+    })
+    if (!confirmed) return
     try {
       await deleteGuardrailPolicy(policy.id)
       await load()
+      report({
+        tone: 'ok',
+        title: `Deleted ${policy.name}`,
+        body: 'Calls it was refusing are answered by the cluster from now.',
+      })
     } catch (err) {
-      setError(errorMessage(err, 'Could not delete the rule.'))
+      const message = errorMessage(err, 'Could not delete the rule.')
+      setError(message)
+      report({ tone: 'error', title: `${policy.name} was not deleted`, body: message })
     }
   }
 
