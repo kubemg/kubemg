@@ -1878,8 +1878,8 @@ export function proxyURL(clusterId: number, path: string, protocol: 'http' | 'ws
 }
 
 /*
- * The browser shell: KubeMG's own pod on the cluster, with kubectl and helm in
- * it and the caller's proxy kubeconfig written inside.
+ * The browser shell: KubeMG's own pod on the cluster, with kubectl in it and
+ * the caller's proxy kubeconfig written inside.
  *
  * Reading is cheap and idempotent; starting is neither, which is why it is a
  * POST that the page repeats rather than a create that fails when the pod is

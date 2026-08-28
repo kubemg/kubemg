@@ -1,9 +1,9 @@
 # The browser shell
 
 The pod terminal answers what is wrong with **one pod**. The browser shell
-answers everything else: `kubectl get` across a namespace, a manifest diff,
-`helm upgrade` with a chart. It is a terminal in the console with `kubectl`
-and `helm` on the path, one per person per cluster.
+answers everything else: `kubectl get` across a namespace, a `kubectl diff`
+against a manifest, a `describe` of something no form covers. It is a terminal
+in the console with `kubectl` on the path, one per person per cluster.
 
 It exists so that the moment a question outgrows a form, the answer still
 happens **inside** kubemg rather than in a terminal nobody can see.
@@ -28,8 +28,8 @@ withdraws the credential that was inside it.
 
 A pod, on the target cluster, that kubemg creates when somebody asks for one:
 
-* it runs kubemg's own image — busybox, `kubectl` and `helm`, on a distroless
-  base, **with no package manager in it**;
+* it runs kubemg's own image — busybox and `kubectl`, on a distroless base,
+  **with no package manager in it**;
 * it **holds no cluster credential**. No service account token is mounted,
   and the account it runs as is granted nothing anywhere;
 * once it is up, kubemg writes a kubeconfig into its home directory over an
@@ -47,6 +47,44 @@ access model in one feature, which is why it does not have one.
     can write what `edit` can write. Nothing about being inside the cluster
     changes what the shell may do — the pod is powerless by construction, and
     all of its reach arrives as the operator's own credential.
+
+## What it does not have: `helm`
+
+The image shipped with `helm` on the path for one release and no longer does.
+It was removed rather than kept behind an accepted finding.
+
+The reason is what an upstream release binary carries: helm's published
+binaries embed the Go standard library they were built against, and that runs
+behind Go's own security releases for weeks at a time. At the last count that
+was **nine CRITICAL/HIGH in the helm binary alone**, none of them reachable by
+a version bump — the newest release of *every* helm line carried the same set,
+because they were all built with the same toolchain. The three ways out were to
+accept them in an ignore file, to build helm from source against a current
+toolchain, or not to ship it. Accepting them parks known findings inside the
+container an operator's shell runs in; building it ourselves means shipping a
+helm nobody else has, which is a worse thing to hand somebody than a missing
+tool.
+
+**Most of what people reach for `helm` for is in the console already**: install
+from a registered [chart repository](helm-repositories.md), upgrade —
+including to a new chart version — edit values, read history, roll back and
+uninstall, all through the impersonated tunnel with the same RBAC and the same
+audit trail. See [Helm](helm.md).
+
+What genuinely left with the binary is the part the console
+[deliberately does not do](helm.md#honest-limits):
+
+* **`oci://` charts.** kubemg's chart repositories are `http(s)` only.
+* **`helm get manifest`, `helm template`, `helm diff`.** A release's rendered
+  manifest is decoded server-side and never returned to a client, because
+  charts put generated passwords in it.
+* **`helm test`**, and hook waiting — `--wait`/`--atomic` have no equivalent.
+* **`helm lint` / `helm show`** against a chart whose repository nobody has
+  registered.
+
+If your work needs those, run helm from a workstation against a
+[generated kubeconfig](../access/kubeconfigs.md) — which is the same proxied,
+impersonated, audited path the shell used, just not from inside the cluster.
 
 ## Who may open one
 
