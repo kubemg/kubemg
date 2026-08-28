@@ -132,14 +132,34 @@
    * table in this console read by scrolling end to end, the column names were
    * simply gone after the first screen.
    *
-   * `--table-sticky-top` is the indirection rather than the header height
-   * itself, because not every table scrolls under that header: one inside a
-   * `Sheet` scrolls inside the sheet's own body, where the offset must be zero
-   * or the heading floats 57px below the top of what it heads. The sheet sets it
-   * back to 0 on its body; anything on a page inherits the header's height.
+   * The offset therefore has to be the header's height — but **only where the
+   * page is what scrolls**, and in this console it usually is not. Nearly every
+   * table sits in a card that is `overflow-hidden` for its own rounded corners,
+   * and `overflow: hidden` is a scroll container: a heading inside one resolves
+   * `top` against the *card*, so a 57px offset pushed the heading 57px **down
+   * from where it belongs**, at rest, on a page nobody had scrolled — an empty
+   * band where the heading should be and the first row half-swallowed under it.
+   * The same is true of a table the reader has widened, where `Table` grows an
+   * `overflow-x-auto` wrapper of its own.
+   *
+   * So a heading is **not sticky by default** — `--table-heading-position` is
+   * `static`, and pinning is opted into by a surface that has established it
+   * scrolls with the window: the audit trail sets both variables and clips with
+   * `overflow-clip`, which keeps the corners without becoming a scrollport.
+   * Opting in is a choice about one table rather than a property of `Th`, which
+   * is the only shape that cannot regress every other table again. `Table` and
+   * `Sheet` set it back on the box they own, so an opt-in cannot leak into a
+   * scroll container inside it.
+   *
+   * The resting value is `relative` rather than `static` because a heading is
+   * also the containing block for its own resize handle. With the offset at 0 a
+   * relative heading sits exactly where it would anyway, so this costs nothing
+   * and saves `Th` from having to switch between two `position` utilities that
+   * would then race each other in the stylesheet.
    */
   --deck-header-h: calc(3.5rem + 1px);
-  --table-sticky-top: var(--deck-header-h);
+  --table-heading-position: relative;
+  --table-sticky-top: 0px;
 
   /*
    * The light deck's chrome is a plain grey, and deliberately not bone.
