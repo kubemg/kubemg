@@ -662,6 +662,24 @@ func (f *fakeStore) ListAuditEvents(_ context.Context, filter db.AuditFilter) ([
 	return matched, total, nil
 }
 
+// ExportAuditEvents answers the same filter as the page, unpaged — which is the
+// property the handler's test is actually about, so the fake reuses the list
+// rather than reimplementing the predicates beside it.
+func (f *fakeStore) ExportAuditEvents(
+	ctx context.Context, filter db.AuditFilter,
+) ([]db.AuditEvent, bool, error) {
+	filter.Limit = 0
+	filter.Offset = 0
+	events, _, err := f.ListAuditEvents(ctx, filter)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(events) > db.AuditExportLimit {
+		return events[:db.AuditExportLimit], true, nil
+	}
+	return events, false, nil
+}
+
 func (f *fakeStore) AuditSummary(_ context.Context, since time.Time) (db.AuditStats, error) {
 	var stats db.AuditStats
 	for _, event := range f.audit {
@@ -1056,12 +1074,24 @@ type testEnv struct {
 type recordingAuditor struct {
 	mu     sync.Mutex
 	events []bastion.Event
+	// sources is what the *context* carried alongside each record — where the
+	// caller was. It is captured beside the events rather than on them because
+	// that is exactly where the real auditors read it from, so a middleware that
+	// stopped stamping it would fail here rather than in production.
+	sources []bastion.RequestSource
 }
 
-func (a *recordingAuditor) Record(_ context.Context, event bastion.Event) {
+func (a *recordingAuditor) Record(ctx context.Context, event bastion.Event) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.events = append(a.events, event)
+	a.sources = append(a.sources, bastion.SourceFrom(ctx))
+}
+
+func (a *recordingAuditor) allSources() []bastion.RequestSource {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]bastion.RequestSource(nil), a.sources...)
 }
 
 func (a *recordingAuditor) all() []bastion.Event {
