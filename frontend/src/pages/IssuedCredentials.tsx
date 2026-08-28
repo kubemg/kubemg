@@ -242,13 +242,13 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
           <Table>
             <thead>
               <tr>
-                {mine ? null : <Th className="w-[18%]">Holder</Th>}
-                <Th className="w-[20%]">Cluster</Th>
-                <Th className="hidden md:table-cell md:w-[14%]">Scope</Th>
+                {mine ? null : <Th className="w-[16%]">Holder</Th>}
+                <Th className="w-[18%]">Cluster</Th>
+                <Th className="hidden md:table-cell md:w-[13%]">Scope</Th>
                 <Th className="hidden lg:table-cell lg:w-[12%]">Issued</Th>
-                <Th className="hidden lg:table-cell lg:w-[12%]">Last used</Th>
-                <Th className="w-[16%]">Status</Th>
-                <Th className="w-[14%] text-right">
+                <Th className="hidden lg:table-cell lg:w-[13%]">Last used</Th>
+                <Th className="w-[14%]">Status</Th>
+                <Th className="w-[12%] text-right">
                   <span className="sr-only">Actions</span>
                 </Th>
               </tr>
