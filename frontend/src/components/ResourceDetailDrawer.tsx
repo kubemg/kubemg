@@ -871,11 +871,11 @@ function Events({ describe }: { describe: ResourceDescribeResult }) {
         <Table>
           <thead>
             <tr>
-              <Th className="w-[10%]">Type</Th>
-              <Th className="w-[18%]">Reason</Th>
-              <Th className="w-[42%]">Message</Th>
-              <Th className="hidden w-[16%] lg:table-cell">Source</Th>
-              <Th className="w-[7%]">Count</Th>
+              <Th className="w-[9%]">Type</Th>
+              <Th className="w-[17%]">Reason</Th>
+              <Th className="w-[38%]">Message</Th>
+              <Th className="hidden w-[15%] lg:table-cell">Source</Th>
+              <Th className="w-[8%]">Count</Th>
               <Th className="w-[13%]">Last seen</Th>
             </tr>
           </thead>

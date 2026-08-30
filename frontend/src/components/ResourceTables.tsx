@@ -1121,7 +1121,7 @@ function PodTable({
           {/* Ready rides beside the phase pill rather than a column of its own —
               1/1 only means something once you already know a pod is Running,
               so the two are one reading, not two. */}
-          <SortTh className="w-[28%] sm:w-[22%] md:w-[18%]" {...column('phase')}>
+          <SortTh className="w-[28%] sm:w-[22%] md:w-[16%]" {...column('phase')}>
             Phase
           </SortTh>
           {/* CPU and memory are the two numbers `kubectl top` answers with, in
@@ -1134,16 +1134,16 @@ function PodTable({
           <SortTh className="hidden sm:table-cell sm:w-[11%] md:w-[9%]" {...column('memory')}>
             Memory
           </SortTh>
-          <SortTh className="hidden md:table-cell md:w-[5%]" {...column('restarts')}>
+          <SortTh className="hidden md:table-cell md:w-[9%]" {...column('restarts')}>
             Restarts
           </SortTh>
           {/* A node name is long and this table is the one with the most columns,
               so it waits for the width that can hold it — at `lg` the resource
               tree is on screen too and there is nothing spare. */}
-          <SortTh className="hidden xl:table-cell xl:w-[14%]" {...column('node')}>
+          <SortTh className="hidden xl:table-cell xl:w-[13%]" {...column('node')}>
             Node
           </SortTh>
-          <SortTh className="w-[14%] sm:w-[10%] md:w-[6%]" {...column('age')}>
+          <SortTh className="w-[14%] sm:w-[10%] md:w-[8%]" {...column('age')}>
             Age
           </SortTh>
           <ManifestHead onManifest={onManifest} />
@@ -1441,7 +1441,7 @@ function JobTable({
           <Th className="w-[18%] md:w-[10%]" columnKey="completed">
             Completed
           </Th>
-          <Th className="hidden md:table-cell md:w-[8%]" columnKey="failed">
+          <Th className="hidden md:table-cell md:w-[10%]" columnKey="failed">
             Failed
           </Th>
           <Th className="hidden lg:table-cell lg:w-[28%]" columnKey="image">
@@ -1581,7 +1581,7 @@ function CronJobTable({
           <Th className="w-[16%] md:w-[12%]" columnKey="state">
             State
           </Th>
-          <Th className="hidden md:table-cell md:w-[8%]" columnKey="active">
+          <Th className="hidden md:table-cell md:w-[10%]" columnKey="active">
             Active
           </Th>
           <Th className="hidden md:table-cell md:w-[16%]" columnKey="lastrun">
@@ -2162,7 +2162,7 @@ function IngressTable({
           <Th className="hidden lg:table-cell lg:w-[18%]" columnKey="address">
             Address
           </Th>
-          <Th className="hidden md:table-cell md:w-[8%]" columnKey="rules">
+          <Th className="hidden md:table-cell md:w-[10%]" columnKey="rules">
             Rules
           </Th>
           <Th className="w-[16%] md:w-[10%]" columnKey="age">
@@ -2302,7 +2302,7 @@ function RouteTable({
           <Th className="hidden md:table-cell md:w-[24%]" columnKey="attached">
             Attached to
           </Th>
-          <Th className="hidden md:table-cell md:w-[8%]" columnKey="rules">
+          <Th className="hidden md:table-cell md:w-[10%]" columnKey="rules">
             Rules
           </Th>
           <Th className="w-[16%] md:w-[10%]" columnKey="age">
@@ -2547,11 +2547,11 @@ function ConfigTable({
               Type
             </Th>
           ) : null}
-          <Th className="w-[14%] md:w-[8%]" columnKey="keys">
+          <Th className="w-[14%] md:w-[10%]" columnKey="keys">
             Keys
           </Th>
           <Th
-            className={`hidden lg:table-cell ${secrets ? 'lg:w-[26%]' : 'lg:w-[46%]'}`}
+            className={`hidden lg:table-cell ${secrets ? 'lg:w-[24%]' : 'lg:w-[42%]'}`}
             columnKey="keynames"
           >
             Key names
@@ -2685,7 +2685,7 @@ function RoleTable({
         <tr>
           <Th columnKey="name">{clusterScoped ? 'ClusterRole' : 'Role'}</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="w-[14%] md:w-[8%]" columnKey="rules">
+          <Th className="w-[14%] md:w-[10%]" columnKey="rules">
             Rules
           </Th>
           <Th className="hidden md:table-cell md:w-[26%]" columnKey="verbs">

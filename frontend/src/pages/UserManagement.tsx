@@ -217,21 +217,21 @@ export function UserManagement() {
           <Table>
             <thead>
               <tr>
-                <Th className="w-[36%] md:w-[20%]">Username</Th>
-                <Th className="hidden md:table-cell md:w-[24%]">Email</Th>
-                <Th className="w-[28%] md:w-[16%]">System role</Th>
-                <Th className="w-[24%] md:w-[14%]">Status</Th>
+                <Th className="w-[36%] md:w-[18%]">Username</Th>
+                <Th className="hidden md:table-cell md:w-[20%]">Email</Th>
+                <Th className="w-[28%] md:w-[13%]">System role</Th>
+                <Th className="w-[24%] md:w-[11%]">Status</Th>
                 {/* Only the account that may grant the capability is shown the
                     control for it, so the column is not a row of disabled
                     switches for everyone else. */}
                 {isSuperAdmin ? (
                   <>
-                    <Th className="hidden lg:table-cell lg:w-[11%]">Recordings</Th>
-                    <Th className="hidden lg:table-cell lg:w-[11%]">Secrets</Th>
+                    <Th className="hidden lg:table-cell lg:w-[10%]">Recordings</Th>
+                    <Th className="hidden lg:table-cell lg:w-[9%]">Secrets</Th>
                   </>
                 ) : null}
-                <Th className="hidden md:table-cell md:w-[16%]">Last sign-in</Th>
-                <Th align="right" className="w-[12%] md:w-[10%]">
+                <Th className="hidden md:table-cell md:w-[12%]">Last sign-in</Th>
+                <Th align="right" className="w-[12%] md:w-[7%]">
                   <span className="sr-only">Actions</span>
                 </Th>
               </tr>

@@ -322,7 +322,13 @@ export function AuditTrail() {
           </div>
         ) : null}
 
-        <div className="card min-w-0 overflow-hidden">
+        {/* The one table in this console that is read by scrolling the window
+            end to end, and so the one that opts into a heading pinned under the
+            page header. It clips with `overflow-clip` rather than
+            `overflow-hidden`: both keep the corners, but hidden is a scrollport,
+            and a heading pinning against the card instead of the window is
+            pushed down into the rows rather than held above them. */}
+        <div className="card min-w-0 overflow-clip [--table-heading-position:sticky] [--table-sticky-top:var(--deck-header-h)]">
           <div className="flex flex-wrap items-center gap-2.5 border-b border-line-soft px-4 py-3">
             <SearchInput
               value={search}

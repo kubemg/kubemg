@@ -104,10 +104,21 @@ export function ActivityTag({ active }: { active: boolean }) {
   return <Pill tone={active ? 'ok' : 'idle'}>{active ? 'Active' : 'Disabled'}</Pill>
 }
 
+/*
+ * Prod and staging carry a colour, so their hairline only has to agree with the
+ * word inside it. Dev has no colour by design — it is the ordinary case, and the
+ * deck spends colour on states rather than on labels — which leaves the border
+ * as the only thing making it read as a tag at all. `line` is the hairline
+ * between two planes and is a whisper by construction, so on the tree's own
+ * raised surface, where this tag is read most, the chip had no visible edge on
+ * the light deck: a grey word floating beside a version number. `faint` at 60%
+ * is the same neutral one step up, which is enough to draw the chip without
+ * making the quietest environment the loudest mark in the row.
+ */
 const ENVIRONMENT_TAG: Record<Environment, string> = {
   prod: 'border-danger/40 text-danger',
   staging: 'border-warn/40 text-warn',
-  dev: 'border-line text-muted',
+  dev: 'border-faint/60 text-muted',
 }
 
 const ENVIRONMENT_DOT: Record<Environment, string> = {
@@ -707,16 +718,18 @@ export function Table({
    * `w-full table-fixed` table is never wider than the space on its own: it
    * hides columns by breakpoint instead. The one thing that can make it wider is
    * the reader dragging a column past what is there. So the scroll container is
-   * grown at that moment and not before, which leaves the ordinary case — every
-   * table anybody reads by scrolling — with the page as its scrollport and a
-   * heading row that pins under the header. A resized table trades the pinned
-   * heading for the ability to reach the column it just widened; that is the
-   * reader's own doing and reversible by dragging back.
+   * grown at that moment and not before, which leaves the ordinary case with the
+   * page as its scrollport. A resized table trades the pinned heading for the
+   * ability to reach the column it just widened; that is the reader's own doing
+   * and reversible by dragging back — and it puts `--table-sticky-top` back to 0
+   * on the way, because an offset resolved against a box that does not scroll
+   * vertically does not pin a heading, it *pushes it down* by that many pixels
+   * and leaves a blank band where it used to be.
    */
   const resized = Object.keys(widths).length > 0
 
   return (
-    <div className={`min-w-0 ${resized ? 'overflow-x-auto' : ''}`}>
+    <div className={`min-w-0 ${resized ? 'overflow-x-auto [--table-heading-position:relative]' : ''}`}>
       {resizeKey ? (
         <ColumnResizeContext.Provider value={{ widths, setWidth }}>
           {table}
@@ -777,6 +790,18 @@ function useColumnResize(columnKey?: string) {
   }
 }
 
+/**
+ * Th is a column heading, and where it sits vertically is not its own decision:
+ * `--table-heading-position` and `--table-sticky-top` are read off whatever box
+ * this table is in. At rest they are `relative` and `0`, which is a heading
+ * exactly where it falls; a surface that has established the *window* is what
+ * scrolls it — the audit trail — sets them to `sticky` and the page header's
+ * height. Carrying `sticky` here instead was tried and is the reason a heading
+ * turned up 57px below its own row on every table in the console: most of them
+ * sit inside a card that is `overflow-hidden` for its corners, which is a scroll
+ * container, and an offset resolved against one of those is a push rather than
+ * a pin.
+ */
 export function Th({
   children,
   className,
@@ -794,9 +819,9 @@ export function Th({
     <th
       scope="col"
       style={style}
-      className={`label sticky top-[var(--table-sticky-top)] z-1 bg-surface shadow-[inset_0_-1px_0_var(--color-line)] px-4 py-2.5 ${
-        handle ? 'relative' : ''
-      } ${align === 'right' ? 'text-right' : 'text-left'} ${className ?? ''}`}
+      className={`label [position:var(--table-heading-position)] top-[var(--table-sticky-top)] z-1 bg-surface shadow-[inset_0_-1px_0_var(--color-line)] px-4 py-2.5 ${
+        align === 'right' ? 'text-right' : 'text-left'
+      } ${className ?? ''}`}
     >
       {children}
       {handle}
@@ -851,7 +876,7 @@ export function SortTh({
       scope="col"
       aria-sort={direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'}
       style={style}
-      className={`label sticky top-[var(--table-sticky-top)] z-1 bg-surface shadow-[inset_0_-1px_0_var(--color-line)] px-4 py-2.5 ${handle ? 'relative' : ''} ${
+      className={`label [position:var(--table-heading-position)] top-[var(--table-sticky-top)] z-1 bg-surface shadow-[inset_0_-1px_0_var(--color-line)] px-4 py-2.5 ${
         align === 'right' ? 'text-right' : 'text-left'
       } ${className ?? ''}`}
     >
@@ -1064,7 +1089,7 @@ export function Sheet({
     <>
       {/* The sheet's body is its own scrollport, so a table in here pins at its
           top rather than under the page header it cannot see. */}
-      <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 [--table-sticky-top:0px]">
+      <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 [--table-heading-position:relative]">
         {children}
       </div>
       {footer ? (

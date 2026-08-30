@@ -123,9 +123,9 @@ export function ClusterManagement() {
                 <Th className="w-[38%] md:w-[22%]">Cluster</Th>
                 <Th className="w-[26%] md:w-[10%]">Environment</Th>
                 <Th className="hidden md:table-cell md:w-[16%]">Link</Th>
-                <Th className="hidden md:table-cell md:w-[22%]">API server</Th>
+                <Th className="hidden md:table-cell md:w-[21%]">API server</Th>
                 <Th className="w-[24%] md:w-[13%]">State</Th>
-                <Th className="hidden md:table-cell md:w-[9%]">Version</Th>
+                <Th className="hidden md:table-cell md:w-[10%]">Version</Th>
                 <Th align="right" className="w-[12%] md:w-[8%]">
                   <span className="sr-only">Actions</span>
                 </Th>
