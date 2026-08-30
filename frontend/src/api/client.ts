@@ -20,6 +20,7 @@ import type {
   Branding,
   ClusterLabels,
   GuardrailPolicy,
+  UserAccessReview,
   GuardrailPolicyInput,
   GuardrailPolicyList,
   GuardrailTemplate,
@@ -452,6 +453,14 @@ export async function fetchAgentInstall(clusterId: number): Promise<AgentInstall
 export async function fetchUsers(): Promise<User[]> {
   const { data } = await http.get<{ users: User[] }>('/users')
   return data.users ?? []
+}
+
+/** fetchUserAccess reads the access review for one person. Admin only — this is
+    the surface for reading *about* somebody, which is the opposite of the rule
+    the audit trail and the credential register follow. */
+export async function fetchUserAccess(id: number): Promise<UserAccessReview> {
+  const { data } = await http.get<UserAccessReview>(`/users/${id}/access`)
+  return data
 }
 
 export async function createUser(input: NewUser): Promise<User> {

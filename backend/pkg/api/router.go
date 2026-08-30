@@ -13,10 +13,10 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
-	"github.com/kubemg/kubemg/backend/pkg/credentials"
 	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/cache"
+	"github.com/kubemg/kubemg/backend/pkg/credentials"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/guardrails"
 	"github.com/kubemg/kubemg/backend/pkg/jit"
@@ -53,7 +53,7 @@ type Store interface {
 	UpdateUser(ctx context.Context, id uint, update db.UserUpdate) (*db.User, error)
 	SetUserActive(ctx context.Context, id uint, active bool) (*db.User, error)
 	DeleteUser(ctx context.Context, id uint) error
-	TouchLastLogin(ctx context.Context, id uint, at time.Time) error
+	TouchLastLogin(ctx context.Context, id uint, at time.Time, addr string) error
 
 	// Programmatic access. A service account is a User row (see db.User's
 	// AccountType), so it needs no identity methods of its own — only its
@@ -66,6 +66,7 @@ type Store interface {
 	TouchMachineToken(ctx context.Context, id uint, at time.Time) error
 
 	ListGroups(ctx context.Context) ([]db.GroupSummary, error)
+	GroupMembershipsForUser(ctx context.Context, userID uint) ([]db.UserGroup, error)
 	GroupByID(ctx context.Context, id uint) (*db.Group, error)
 	CreateGroup(ctx context.Context, group *db.Group) error
 	DeleteGroup(ctx context.Context, id uint) error
@@ -1077,6 +1078,9 @@ func NewRouter(opts Options) *gin.Engine {
 		users.PUT("/:id", s.updateUser)
 		users.PATCH("/:id/status", s.setUserStatus)
 		users.DELETE("/:id", s.deleteUser)
+		// The access review: what this person can reach, and why. See
+		// user_access.go for why the merge happens on the server.
+		users.GET("/:id/access", s.userAccess)
 
 		groups := v1.Group("/groups", requireAuth, requireAdmin)
 		groups.GET("", s.listGroups)

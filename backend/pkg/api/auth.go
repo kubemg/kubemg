@@ -49,7 +49,11 @@ type userResponse struct {
 	// reads it to stop offering a person's affordances to a machine.
 	AccountType string     `json:"account_type"`
 	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
+	// LastLoginAddr is where the most recent sign-in came from. Empty for an
+	// account that has never signed in and for every sign-in older than the
+	// column — the console says which rather than drawing a blank.
+	LastLoginAddr string    `json:"last_login_addr,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 type loginResponse struct {
@@ -75,6 +79,7 @@ func toUserResponse(u *db.User) userResponse {
 		AuthSource:        authSourceOf(normalized),
 		AccountType:       accountTypeOf(normalized),
 		LastLoginAt:       normalized.LastLoginAt,
+		LastLoginAddr:     normalized.LastLoginAddr,
 		CreatedAt:         normalized.CreatedAt,
 	}
 }
