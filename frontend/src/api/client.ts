@@ -17,6 +17,8 @@ import type {
   AppTemplateDraft,
   AppTemplateInput,
   AppTemplateRenderResult,
+  Branding,
+  ClusterLabels,
   GuardrailPolicy,
   GuardrailPolicyInput,
   GuardrailPolicyList,
@@ -427,6 +429,13 @@ export async function checkCluster(id: number): Promise<Cluster> {
 
 export async function createCluster(input: NewCluster): Promise<Cluster> {
   const { data } = await http.post<Cluster>('/clusters', input)
+  return data
+}
+
+/** updateClusterLabels edits what a cluster is called. There is no route that
+    edits how it is reached: see the backend's patchCluster. */
+export async function updateClusterLabels(id: number, labels: ClusterLabels): Promise<Cluster> {
+  const { data } = await http.patch<Cluster>(`/clusters/${id}`, labels)
   return data
 }
 
@@ -1999,6 +2008,19 @@ export async function fetchSettings(): Promise<SettingsResponse> {
 export async function updateSettings(patch: SettingsPatch): Promise<SettingsResponse> {
   const { data } = await http.put<SettingsResponse>('/settings', patch)
   return { ...data, warnings: data.warnings ?? [] }
+}
+
+/** fetchBranding reads the console's own identity. It is the one read here that
+    works with no session: the sign-in page draws the banner, which is the whole
+    point of having one. */
+export async function fetchBranding(): Promise<Branding> {
+  const { data } = await http.get<Branding>('/branding')
+  return data ?? {}
+}
+
+export async function updateBranding(patch: Branding): Promise<Branding> {
+  const { data } = await http.put<Branding>('/branding', patch)
+  return data ?? {}
 }
 
 /** What this install was started with. Read-only, because every value in it was

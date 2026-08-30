@@ -64,6 +64,26 @@ const (
 	// itself. It is capped by the kubeconfig ceiling at the point of use: a shell
 	// must not outlive the credential inside it.
 	SettingShellMaxLifetimeHours = "shell_max_lifetime_hours"
+	// The console's own identity — see pkg/api/branding.go for what each one is
+	// for and why the mark is stored inline rather than linked.
+	//
+	// These five are deliberately **not** in SettingKeys and not in the settings
+	// API's runtimeSettings. Every setting there is a knob on how this server
+	// behaves, resolved from an environment default the process was started
+	// with, and readable only by an administrator. Branding is none of those: it
+	// has no environment default (there is nothing sensible for a boot flag to
+	// say about a customer's logo), it changes nothing the server does, and it
+	// has to be readable by a stranger on the sign-in page — which is the one
+	// property that makes mixing it into the admin-only shape a mistake waiting
+	// to be made.
+	SettingOrganisationName = "organisation_name"
+	// SettingOrganisationMark holds a bounded base64 data: URI rather than a
+	// URL. An air-gapped console cannot fetch an external image, and one that
+	// can turns its own sign-in page into a beacon for whoever hosts it.
+	SettingOrganisationMark      = "organisation_mark"
+	SettingEnvironmentBannerText = "environment_banner_text"
+	SettingEnvironmentBannerTone = "environment_banner_tone"
+	SettingFooterNotice          = "footer_notice"
 	// SettingSetupCompletedAt stamps the moment first-run setup finished, as an
 	// RFC 3339 timestamp. Its presence is the whole signal — the console shows
 	// the install wizard until it is set, and never again afterwards.

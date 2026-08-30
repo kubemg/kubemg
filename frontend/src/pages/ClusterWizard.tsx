@@ -53,6 +53,7 @@ import {
   TextInput,
 } from '../components/primitives'
 import { StepActions, Stepper } from '../components/WizardChrome'
+import { MAX_SHORT_NAME, deriveChip, normalizeShortName, railChip } from '../lib/branding'
 import { useClusters } from '../state/clusters-context'
 
 const ENVIRONMENTS: Environment[] = ['prod', 'staging', 'dev']
@@ -69,6 +70,11 @@ type StepIndex = 0 | 1 | 2 | 3 | 4
 const BLANK_IDENTITY = {
   name: '',
   environment: 'dev' as Environment,
+  // Empty means "whatever the name derives to", which is what every cluster
+  // registered before this field existed has. The field shows the derivation as
+  // its placeholder and previews the chip beside it, so leaving it alone is an
+  // informed choice rather than a blank.
+  short_name: '',
   description: '',
 }
 
@@ -108,6 +114,7 @@ export function ClusterWizard() {
       const created = await createCluster({
         name: identity.name.trim(),
         environment: identity.environment,
+        short_name: identity.short_name.trim() || undefined,
         description: identity.description.trim() || undefined,
         connection_mode: mode,
         ...(mode === 'direct'
@@ -281,6 +288,37 @@ function IdentityStep({
                   <EnvironmentTag environment={environment} />
                 </button>
               ))}
+            </div>
+          </Field>
+
+          {/* The rail's chip, asked for here because a derived one cannot be
+              relied on: `prod-eu-west-1` and `prod-eu-west-2` both reduce to
+              `PEW`, and a rail whose chips are ambiguous is one nobody can
+              navigate by muscle memory. It is prefilled from the name so this
+              is editing a suggestion rather than inventing a label, and an
+              operator who accepts the suggestion gets exactly what the console
+              would have drawn anyway. */}
+          <Field
+            label="Rail chip"
+            htmlFor="short_name"
+            hint={`Up to ${MAX_SHORT_NAME} characters, letters and digits. This is what the cluster is called on the rail, so make it one you can pick out at a glance.`}
+          >
+            <div className="flex items-center gap-3">
+              <TextInput
+                id="short_name"
+                disabled={locked}
+                maxLength={MAX_SHORT_NAME}
+                placeholder={deriveChip(value.name) || 'EU1'}
+                className="max-w-24 font-mono uppercase"
+                value={value.short_name}
+                onChange={(event) => update('short_name', normalizeShortName(event.target.value))}
+              />
+              <span
+                aria-hidden="true"
+                className="grid size-10 shrink-0 place-items-center rounded-control border border-line bg-rail font-mono text-[10.5px] font-semibold text-rail-fg"
+              >
+                {railChip({ name: value.name, short_name: value.short_name })}
+              </span>
             </div>
           </Field>
 

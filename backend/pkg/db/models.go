@@ -271,6 +271,18 @@ type Cluster struct {
 	ID          uint   `gorm:"primaryKey" json:"id"`
 	Name        string `gorm:"size:120;uniqueIndex;not null" json:"name"`
 	Environment string `gorm:"size:20;not null;default:dev" json:"environment"`
+	// ShortName is what the rail's chip says. It is stored rather than derived
+	// because a derived abbreviation cannot be built into muscle memory: the
+	// rail truncates `prod-eu-west-1` and `prod-eu-west-2` to the same three
+	// letters, and at eleven clusters that is a row of guesses. Empty means "no
+	// operator has chosen one", which the console renders by falling back to the
+	// same derivation it always used — so a fleet registered before this field
+	// existed looks exactly as it did.
+	//
+	// It is deliberately **not** unique. Two clusters sharing a chip is an
+	// operator's mistake to see and fix, and a uniqueness constraint here would
+	// refuse a registration over a label, which is the wrong thing to fail on.
+	ShortName string `gorm:"size:4" json:"short_name,omitempty"`
 	// Description is free text an operator writes at registration time, so the
 	// fleet list can say what a cluster is for.
 	Description         string `gorm:"type:text" json:"description,omitempty"`
@@ -302,6 +314,34 @@ type Cluster struct {
 // UsesAgent reports whether this cluster is reached through a tunnel rather
 // than by dialling its API server.
 func (c Cluster) UsesAgent() bool { return c.ConnectionMode == ModeAgent }
+
+// MaxShortNameLen is how many characters the rail's chip can hold at the size
+// it is drawn. Four is the honest ceiling: `MDE1` fits a 40px square in mono at
+// 10.5px, a fifth character does not, and a chip that overflows is the defect
+// this field exists to fix rather than one to introduce.
+const MaxShortNameLen = 4
+
+// NormalizeShortName folds a chip label to the one shape the rail can draw:
+// upper case, letters and digits only, at most MaxShortNameLen of them.
+//
+// It normalizes rather than refuses, because every input this rejects is one a
+// person meant something reasonable by — `eu-1` is `EU1`, and refusing it over
+// a hyphen would be pedantry about a label. The one thing it cannot do is
+// invent characters, so an input with nothing usable in it comes back empty,
+// and empty means "no chip was chosen" rather than "a blank chip was".
+func NormalizeShortName(raw string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(strings.TrimSpace(raw)) {
+		if b.Len() == MaxShortNameLen {
+			break
+		}
+		switch {
+		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
 
 // AuditEvent is one proxied Kubernetes API call, persisted. The bastion also
 // emits these as structured logs; the table is what makes them queryable, and

@@ -133,3 +133,37 @@ func TestIsAdmin(t *testing.T) {
 		t.Fatal("expected empty role not to report IsAdmin")
 	}
 }
+
+func TestNormalizeShortName(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		// It normalizes rather than refuses: every one of these is an input
+		// somebody meant something reasonable by.
+		{"lower cases are raised", "eu1", "EU1"},
+		{"separators are dropped", "eu-west-1", "EUWE"},
+		{"longer than the chip can draw is folded", "production", "PROD"},
+		{"surrounding space is not a character", "  eu1  ", "EU1"},
+		{"digits are kept", "1234", "1234"},
+		// The one thing it cannot do is invent characters, and empty means "no
+		// chip was chosen" rather than "a blank chip was".
+		{"nothing usable reads as no choice", "—/—", ""},
+		{"empty stays empty", "", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := NormalizeShortName(tc.in); got != tc.want {
+				t.Fatalf("NormalizeShortName(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeShortNameNeverExceedsTheChip(t *testing.T) {
+	if got := NormalizeShortName("abcdefghij"); len(got) != MaxShortNameLen {
+		t.Fatalf("expected %d characters, got %q", MaxShortNameLen, got)
+	}
+}

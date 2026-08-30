@@ -4,6 +4,8 @@ import { ArrowRight, Moon, Sun } from 'lucide-react'
 import { errorMessage } from '../api/client'
 import { Button, Field, Notice, TextInput } from '../components/primitives'
 import { Lockup } from '../components/Mark'
+import { EnvironmentBanner } from '../components/EnvironmentBanner'
+import { useBranding } from '../state/branding-context'
 import { SsoLoginPage } from '../components/SsoLoginPage'
 import { useAuth } from '../state/auth-context'
 import { useTheme } from '../lib/theme'
@@ -29,7 +31,13 @@ export function Login() {
   }
 
   return (
-    <main className="grid min-h-svh lg:grid-cols-[1.1fr_minmax(420px,0.9fr)]">
+    /* The banner is above everything, and it is the reason the branding read
+       happens outside the auth gate: an operator has to be able to tell a
+       production console from a staging one *before* typing a password into
+       it, not after. */
+    <div className="flex min-h-svh flex-col">
+      <EnvironmentBanner />
+      <main className="grid flex-1 lg:grid-cols-[1.1fr_minmax(420px,0.9fr)]">
       <button
         type="button"
         onClick={toggle}
@@ -73,8 +81,13 @@ export function Login() {
           }}
         />
 
-        <div className="relative flex items-center gap-2.5">
+        <div className="relative flex items-center gap-3">
           <Lockup className="text-[22px] text-rail-fg" />
+          {/* Beside the lockup, never instead of it. A console that presents
+              itself wholly as somebody else's product is one nobody can get
+              support for — and the organisation's own mark is what makes it
+              theirs to introduce. */}
+          <OrganisationIdentity tone="rail" />
         </div>
 
         <div className="relative max-w-md">
@@ -98,8 +111,9 @@ export function Login() {
         <div className="card lift w-full max-w-[380px] p-8">
           {/* Below `lg` the brand panel beside this card is gone, so the card
               carries the lockup itself. */}
-          <div className="mb-7 lg:hidden">
+          <div className="mb-7 flex items-center gap-3 lg:hidden">
             <Lockup className="text-[20px] text-fg" />
+            <OrganisationIdentity tone="page" />
           </div>
 
           <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Sign in</h2>
@@ -160,6 +174,32 @@ export function Login() {
           <SsoLoginPage onBusyChange={setBusy} />
         </div>
       </section>
-    </main>
+      </main>
+    </div>
+  )
+}
+
+/**
+ * The organisation's own mark and name, beside the lockup.
+ *
+ * It draws nothing when neither is configured, which is the default: an install
+ * that has not been branded looks exactly as it did. The divider is only ever
+ * drawn between two things that are both there.
+ */
+function OrganisationIdentity({ tone }: { tone: 'rail' | 'page' }) {
+  const { branding } = useBranding()
+  const name = branding?.organisation_name?.trim()
+  const mark = branding?.organisation_mark?.trim()
+  if (!name && !mark) return null
+
+  const rule = tone === 'rail' ? 'bg-rail-line' : 'bg-line'
+  const text = tone === 'rail' ? 'text-rail-muted' : 'text-muted'
+
+  return (
+    <>
+      <span aria-hidden="true" className={`h-5 w-px shrink-0 ${rule}`} />
+      {mark ? <img src={mark} alt="" className="size-6 shrink-0 object-contain" /> : null}
+      {name ? <span className={`min-w-0 truncate text-[13px] ${text}`}>{name}</span> : null}
+    </>
   )
 }

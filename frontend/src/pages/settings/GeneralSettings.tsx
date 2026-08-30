@@ -4,7 +4,8 @@ import { RotateCcw } from 'lucide-react'
 import { errorMessage, fetchSettings, updateSettings } from '../../api/client'
 import type { SettingsResponse } from '../../api/types'
 import { Button, Field, Notice, Panel, TextInput } from '../../components/primitives'
-import { SettingsLayout } from '../../components/settings/SettingsLayout'
+import { settingSource } from '../../lib/settings'
+import { SettingsAside, SettingsLayout } from '../../components/settings/SettingsLayout'
 
 /** The ceiling the build refuses to go past, whatever is typed here. It matches
     k8s.MaxTTL on the server, which enforces it — this copy only keeps the form
@@ -78,6 +79,24 @@ export function GeneralSettings() {
   return (
     <SettingsLayout
       title="General settings"
+      aside={
+        settings ? (
+          <>
+            <SettingsAside
+              label="Server URL in force"
+              value={settings.effective.public_url}
+              source={settingSource(settings.overrides.public_url, settings.defaults.public_url)}
+              reach="Every agent install command rendered from now on, and the address in every kubeconfig issued for an agent-mode cluster. An agent already running keeps the address it was installed with until its manifests are re-applied."
+            />
+            <SettingsAside
+              label="Longest kubeconfig window"
+              value={humanHours(settings.effective.kubeconfig_max_ttl_hours)}
+              source={settingSource(settings.overrides.kubeconfig_max_ttl_hours, 0)}
+              reach="Credentials issued from now on. A kubeconfig already in somebody's hands keeps the window it was signed with — shortening the ceiling does not shorten it, revoking it does."
+            />
+          </>
+        ) : null
+      }
       actions={
         settings ? (
           <>
@@ -109,7 +128,7 @@ export function GeneralSettings() {
       <form
         id="general-settings-form"
         onSubmit={save}
-        className="flex min-w-0 max-w-3xl flex-col gap-4"
+        className="flex min-w-0 flex-col gap-4"
       >
         {error ? <Notice tone="error">{error}</Notice> : null}
         {settings?.warnings.map((warning) => (
@@ -143,7 +162,6 @@ export function GeneralSettings() {
                 }}
               />
             </Field>
-            <Effective label="In use" value={settings.effective.public_url} />
           </Panel>
         ) : null}
 
@@ -176,10 +194,6 @@ export function GeneralSettings() {
                 }}
               />
             </Field>
-            <Effective
-              label="In use"
-              value={humanHours(settings.effective.kubeconfig_max_ttl_hours)}
-            />
           </Panel>
         ) : null}
       </form>
@@ -208,13 +222,4 @@ function humanHours(hours: number): string {
     return days === 1 ? '1 day' : `${days} days`
   }
   return hours === 1 ? '1 hour' : `${hours} hours`
-}
-
-function Effective({ label, value }: { label: string; value: string }) {
-  return (
-    <p className="flex flex-wrap items-baseline gap-2 rounded-control bg-raised px-3 py-2">
-      <span className="label">{label}</span>
-      <span className="min-w-0 truncate font-mono text-[12.5px] text-fg">{value}</span>
-    </p>
-  )
 }

@@ -5,7 +5,8 @@ import { errorMessage, fetchSettings, updateSettings } from '../../api/client'
 import type { SettingsResponse } from '../../api/types'
 import { Button, Notice } from '../../components/primitives'
 import { AuditSettingsPanel } from '../../components/settings/AuditSettingsPanel'
-import { SettingsLayout } from '../../components/settings/SettingsLayout'
+import { settingSource } from '../../lib/settings'
+import { SettingsAside, SettingsLayout } from '../../components/settings/SettingsLayout'
 
 /**
  * Blank means "use the default", so the form state is the override, not the
@@ -143,6 +144,45 @@ export function AuditSettings() {
   return (
     <SettingsLayout
       title="Audit settings"
+      aside={
+        settings ? (
+          <>
+            <SettingsAside
+              label="Trail kept for"
+              value={`${settings.effective.audit_retention_days} days`}
+              source={settingSource(
+                settings.overrides.audit_retention_days,
+                settings.defaults.audit_retention_days,
+              )}
+              reach="The pruner reads this window every pass, so shortening it starts deleting on the next one. Records already pruned do not come back if it is lengthened again."
+            />
+            <SettingsAside
+              label="Recordings kept for"
+              value={`${settings.effective.session_recording_retention_days} days`}
+              source={settingSource(settings.overrides.session_recording_retention_days, 0)}
+              reach="Capped by the trail's own window above, and clamped down with it: a replay must not outlive the record saying the shell was opened."
+            />
+            <SettingsAside
+              label="Verbs recorded"
+              value={
+                settings.effective.audit_verbs_selected
+                  ? settings.effective.audit_verbs.join(', ')
+                  : 'every verb'
+              }
+              reach="A refusal, a streaming call and kubemg's own reads of a recording are recorded whatever is selected here — a trail that could be switched off would not be one."
+            />
+            <SettingsAside
+              label="Session recording"
+              value={settings.effective.record_exec_sessions ? 'on' : 'off'}
+              reach={
+                settings.effective.recording_available
+                  ? 'Every exec and attach from now on. A session already running is not re-decided mid-command.'
+                  : 'This server was started with no recording directory, so the switch can only ever be off.'
+              }
+            />
+          </>
+        ) : null
+      }
       actions={
         settings ? (
           <>
@@ -170,7 +210,7 @@ export function AuditSettings() {
         ) : null
       }
     >
-      <form id="audit-settings-form" onSubmit={save} className="flex min-w-0 max-w-3xl flex-col gap-4">
+      <form id="audit-settings-form" onSubmit={save} className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
         {settings?.warnings.map((warning) => (
           <Notice key={warning} tone="warn">
