@@ -4,7 +4,8 @@ import { RotateCcw } from 'lucide-react'
 import { errorMessage, fetchSettings, updateSettings } from '../../api/client'
 import type { SettingsResponse } from '../../api/types'
 import { Button, Field, Notice, Panel, TextInput } from '../../components/primitives'
-import { SettingsLayout } from '../../components/settings/SettingsLayout'
+import { settingSource } from '../../lib/settings'
+import { SettingsAside, SettingsLayout } from '../../components/settings/SettingsLayout'
 
 type Draft = {
   agent_image: string
@@ -113,6 +114,33 @@ export function AgentSettings() {
   return (
     <SettingsLayout
       title="Agent settings"
+      aside={
+        settings ? (
+          <>
+            <SettingsAside
+              label="Agent image in force"
+              value={settings.effective.agent_image}
+              source={settingSource(settings.overrides.agent_image, settings.defaults.agent_image)}
+              reach="Install packages rendered from now on. An agent already running keeps the image it was installed with until somebody re-applies its manifests — changing this upgrades nothing on its own."
+            />
+            <SettingsAside
+              label="Agent namespace"
+              value={settings.effective.agent_namespace}
+              source={settingSource(settings.overrides.agent_namespace, settings.defaults.agent_namespace)}
+              reach="New installs only. An agent already running lives where it was installed, and the shell runner's Role is bound in that namespace."
+            />
+            <SettingsAside
+              label="Browser shell"
+              value={settings.effective.shell_enabled ? settings.effective.shell_image || 'on' : 'off'}
+              reach={
+                settings.defaults.shell_enabled
+                  ? 'Every agent-mode cluster, on the next shell somebody opens. Turning it off refuses new shells and leaves the ones already open running — a session somebody is mid-command in is not a setting.'
+                  : 'This server was started without a shell image, so a stored value can only ever keep it off.'
+              }
+            />
+          </>
+        ) : null
+      }
       actions={
         settings ? (
           <>
@@ -135,7 +163,7 @@ export function AgentSettings() {
         ) : null
       }
     >
-      <form id="agent-settings-form" onSubmit={save} className="flex min-w-0 max-w-3xl flex-col gap-4">
+      <form id="agent-settings-form" onSubmit={save} className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
         {settings?.warnings.map((warning) => (
           <Notice key={warning} tone="warn">
@@ -165,7 +193,6 @@ export function AgentSettings() {
                   onChange={(event) => set('agent_image', event.target.value)}
                 />
               </Field>
-              <Effective label="In use" value={settings.effective.agent_image} />
 
               <Field
                 label="Agent namespace"
@@ -180,7 +207,6 @@ export function AgentSettings() {
                   onChange={(event) => set('agent_namespace', event.target.value)}
                 />
               </Field>
-              <Effective label="In use" value={settings.effective.agent_namespace} />
             </Panel>
 
             {/* The browser shell lives on this page rather than beside the
@@ -256,7 +282,6 @@ export function AgentSettings() {
                   onChange={(event) => set('shell_max_lifetime_hours', event.target.value)}
                 />
               </Field>
-              <Effective label="In use" value={settings.effective.shell_image || 'no shell image'} />
             </Panel>
 
             <Notice tone="info">
@@ -268,14 +293,5 @@ export function AgentSettings() {
         ) : null}
       </form>
     </SettingsLayout>
-  )
-}
-
-function Effective({ label, value }: { label: string; value: string }) {
-  return (
-    <p className="flex flex-wrap items-baseline gap-2 rounded-control bg-raised px-3 py-2">
-      <span className="label">{label}</span>
-      <span className="min-w-0 truncate font-mono text-[12.5px] text-fg">{value}</span>
-    </p>
   )
 }

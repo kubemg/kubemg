@@ -131,6 +131,45 @@ refusal or error, any streaming call (`exec`/`attach`/`portforward`/`log
 | Clear with | `0` |
 | Stored in | **Hours**, not days — the setting has to move in both directions (an install granting a quarter, and one refusing anything past an eight-hour shift, are the same kind of decision), and only hours can express the second |
 
+## Branding (a separate surface, on purpose)
+
+The console's own identity — your organisation's name and mark, an environment
+banner, and a footer notice — is stored alongside the settings above but is
+**not** part of `GET|PUT /api/v1/settings`. It has its own pair of routes:
+
+| Route | Auth | Purpose |
+|---|---|---|
+| `GET /api/v1/branding` | **none** | What the console should draw. |
+| `PUT /api/v1/branding` | admin | Writes it. |
+
+Three things make it a different kind of thing from a setting, and they are why
+it is not folded into the shape above:
+
+1. **It has no environment default.** There is nothing sensible for a boot flag
+   to say about a customer's logo, so the resolution rule at the top of this page
+   does not apply: a branding value is either stored or absent.
+2. **It changes nothing the server does.** Every setting above is a knob on
+   behaviour; these five are drawn and nothing more.
+3. **The read is unauthenticated, and has to be.** An environment banner exists
+   to be read *before* somebody types a password into a console — one that
+   appeared only after sign-in would be warning people about a console they are
+   already inside. That is a deliberately different judgement from
+   `GET /api/v1/setup/state`, which answers one boolean because a stranger must
+   learn nothing: everything branding serves was typed into a form by an
+   administrator who could see the sign-in page while doing it. It carries no
+   version, no provider, no address and no cluster.
+
+| Field | Bound | Notes |
+|---|---|---|
+| `organisation_name` | 60 characters | Drawn beside the `kubemg` lockup, never instead of it. |
+| `organisation_mark` | 64 KB decoded | A base64 `data:` URI. **A URL is refused** — an air-gapped console cannot fetch a remote image, and one that can turns its own sign-in page into a beacon for whoever hosts it. PNG, JPEG, GIF and WebP only: **SVG is refused** because it can carry script and this is rendered for people who have not signed in yet. |
+| `banner_text` | 120 characters | Empty means no banner, which is the default. Whitespace runs are folded to one space — a pasted newline would push every page's content down. |
+| `banner_tone` | `neutral`, `caution`, `critical` | The deck's semantic colours. Lime is deliberately not offered: it is the interactive accent, and a banner is not something you press. A tone stored without text is not reported as a banner. |
+| `footer_notice` | 160 characters | The classification or handling line, beside the release number in the footer. |
+
+An omitted field is left alone and a field sent empty is cleared — the same
+convention the settings routes use.
+
 ## Deployment posture (read-only, not a setting)
 
 `GET /api/v1/settings/deployment` (admin only) reports facts about *this*

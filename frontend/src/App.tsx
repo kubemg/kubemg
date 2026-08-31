@@ -23,6 +23,7 @@ import { Setup } from './pages/Setup'
 import { AgentSettings } from './pages/settings/AgentSettings'
 import { AlertingSettings } from './pages/settings/AlertingSettings'
 import { AuditSettings } from './pages/settings/AuditSettings'
+import { BrandingSettings } from './pages/settings/BrandingSettings'
 import { DeploymentSettings } from './pages/settings/DeploymentSettings'
 import { GeneralSettings } from './pages/settings/GeneralSettings'
 import { GuardrailsSettings } from './pages/settings/GuardrailsSettings'
@@ -32,6 +33,7 @@ import { UserManagement } from './pages/UserManagement'
 import type { ClusterPage } from './lib/navigation'
 import { DEFAULT_RESOURCE } from './lib/navigation'
 import { AuthProvider } from './state/AuthProvider'
+import { BrandingProvider } from './state/BrandingProvider'
 import { ClustersProvider } from './state/ClustersProvider'
 import { InventoryProvider } from './state/InventoryProvider'
 import { ConfirmProvider } from './state/ConfirmProvider'
@@ -193,6 +195,10 @@ function ExploreLanding() {
 export default function App() {
   return (
     <BrowserRouter>
+      {/* The console's own identity, above the auth gate on purpose: an
+          environment banner exists to be read *before* somebody types a
+          password, so it has to render on the sign-in page too. */}
+      <BrandingProvider>
       <AuthProvider>
         {/* The console's time range. It is inside the router because it lives
             in the address, and outside the routes because it is one window for
@@ -582,6 +588,14 @@ export default function App() {
               }
             />
             <Route
+              path="/admin/settings/branding"
+              element={
+                <RequireAuth adminOnly>
+                  <BrandingSettings />
+                </RequireAuth>
+              }
+            />
+            <Route
               path="/admin/settings/deployment"
               element={
                 <RequireAuth adminOnly>
@@ -661,6 +675,7 @@ export default function App() {
         </ResultProvider>
         </ConfirmProvider>
       </AuthProvider>
+      </BrandingProvider>
     </BrowserRouter>
   )
 }

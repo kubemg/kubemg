@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,9 +16,12 @@ import (
 )
 
 type clusterResponse struct {
-	ID                uint       `json:"id"`
-	Name              string     `json:"name"`
-	Environment       string     `json:"environment"`
+	ID          uint   `json:"id"`
+	Name        string `json:"name"`
+	Environment string `json:"environment"`
+	// ShortName is the chip the rail draws. Empty is a real answer — the console
+	// falls back to its own derivation — so it is omitted rather than sent blank.
+	ShortName         string     `json:"short_name,omitempty"`
 	Description       string     `json:"description,omitempty"`
 	APIURL            string     `json:"api_url"`
 	Status            string     `json:"status"`
@@ -45,6 +49,7 @@ func toClusterResponse(cluster db.Cluster, k8sRole string, namespaces []string) 
 		ID:                cluster.ID,
 		Name:              cluster.Name,
 		Environment:       cluster.Environment,
+		ShortName:         cluster.ShortName,
 		Description:       cluster.Description,
 		APIURL:            cluster.APIURL,
 		Status:            cluster.Status,
@@ -80,6 +85,10 @@ func (s *server) withTunnelState(out clusterResponse) clusterResponse {
 type createClusterRequest struct {
 	Name        string `json:"name" binding:"required"`
 	Environment string `json:"environment" binding:"required,oneof=prod staging dev"`
+	// ShortName is optional at registration: an operator who does not choose one
+	// gets the console's derivation, which is what every cluster had before this
+	// field existed.
+	ShortName   string `json:"short_name"`
 	Description string `json:"description"`
 	// ConnectionMode defaults to direct when omitted, which is what every
 	// pre-Phase-2 client sends.
@@ -261,6 +270,7 @@ func (s *server) createCluster(c *gin.Context) {
 	cluster := db.Cluster{
 		Name:           req.Name,
 		Environment:    req.Environment,
+		ShortName:      db.NormalizeShortName(req.ShortName),
 		Description:    req.Description,
 		ConnectionMode: mode,
 		Status:         db.StatusPending,
@@ -304,6 +314,81 @@ func (s *server) createCluster(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, s.withTunnelState(toClusterResponse(cluster, db.K8sRoleClusterAdmin, nil)))
+}
+
+// patchClusterRequest edits what a cluster is *called*, never how it is
+// reached. Every field is a pointer, so omitting one keeps the stored value and
+// sending it empty clears it — the difference matters for the short name, which
+// an operator has to be able to take back off a chip.
+type patchClusterRequest struct {
+	ShortName   *string `json:"short_name"`
+	Environment *string `json:"environment" binding:"omitempty,oneof=prod staging dev"`
+	Description *string `json:"description"`
+}
+
+// patchCluster updates a registered cluster's labels (admin only).
+//
+// There is deliberately no route that edits a connection. An API URL, a CA or a
+// stored token is the cluster's identity as far as every kubeconfig, grant and
+// audit record already pointing at this row is concerned, and changing one in
+// place would silently re-aim all of them; that is a delete and a registration,
+// and it should look like one. What is left here is the three fields that are
+// only ever drawn — and those had no edit path at all, which meant an operator
+// who mistyped an environment at registration had to delete the cluster and its
+// grants to correct a coloured dot.
+func (s *server) patchCluster(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid cluster id"})
+		return
+	}
+
+	var req patchClusterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx := c.Request.Context()
+	cluster, err := s.store.ClusterByID(ctx, uint(id))
+	if errors.Is(err, db.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "cluster not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load cluster"})
+		return
+	}
+
+	labels := db.ClusterLabels{
+		ShortName:   cluster.ShortName,
+		Environment: cluster.Environment,
+		Description: cluster.Description,
+	}
+	if req.ShortName != nil {
+		labels.ShortName = db.NormalizeShortName(*req.ShortName)
+	}
+	if req.Environment != nil {
+		labels.Environment = *req.Environment
+	}
+	if req.Description != nil {
+		labels.Description = strings.TrimSpace(*req.Description)
+	}
+
+	if err := s.store.UpdateClusterLabels(ctx, cluster.ID, labels); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "cluster not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update the cluster"})
+		return
+	}
+
+	cluster.ShortName = labels.ShortName
+	cluster.Environment = labels.Environment
+	cluster.Description = labels.Description
+
+	c.JSON(http.StatusOK, s.withTunnelState(toClusterResponse(*cluster, db.K8sRoleClusterAdmin, nil)))
 }
 
 // deleteCluster removes a cluster registration (admin only).
