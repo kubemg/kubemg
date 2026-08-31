@@ -69,8 +69,8 @@ open.
 ## Versions
 
 This manual is versioned against the release tags. The version selector at the
-bottom of the sidebar switches between them — an install running 0.8.3 should
-read the 0.8.3 pages, because a setting introduced after that tag is not a
+bottom of the sidebar switches between them — an install running 0.9.0 should
+read the 0.9.0 pages, because a setting introduced after that tag is not a
 setting that install has.
 
 ## Licensing
