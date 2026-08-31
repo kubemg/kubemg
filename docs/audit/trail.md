@@ -259,18 +259,29 @@ memory knows nothing about a change saved through its sibling.
 
 ## Shipping the trail to a SIEM
 
-Two independent paths, and picking one does not disable the other:
+Three independent paths, and picking one does not disable the others:
 
 - **The structured log.** `SlogAuditor` writes every record — with no
   selection ever applied — as a JSON line to the process's own log stream
   (stderr by default). This is the complete trail, always, regardless of
   what `audit_verbs` narrows the database table to. Point your log
   collector at the container's stdout/stderr.
+- **An audit forwarder**, which pushes that same complete trail to a syslog
+  collector rather than waiting to be collected — see
+  [Forwarding the trail](forwarding.md). This is the path for a SIEM that
+  cannot reach into the container's log stream: Logsign, Splunk, QRadar,
+  anything that speaks syslog.
 - **An alarm channel's webhook shape**, if you want specific conditions
   (a denied `delete`, a `CrashLoopBackOff` event) pushed proactively rather
   than pulled by a collector — see [Alarms and integrations](alarms.md),
   particularly the raw webhook payload, which forwards a signal's fields
   unchanged for exactly this purpose.
 
-`MultiAuditor` fans every event out to both the log and the database sink
-in one call, so neither depends on the other being configured.
+An alarm channel is **not** a way to ship the whole trail, and using it as
+one produces a SIEM that looks complete and silently is not: the dispatcher
+deduplicates by fingerprint, holds a per-rule cool-off, and drops signals
+when its queue backs up. Those are the right behaviours for a page and the
+wrong ones for a trail. Use a forwarder.
+
+`MultiAuditor` fans every event out to the log, the database sink and the
+forwarder in one call, so none depends on another being configured.

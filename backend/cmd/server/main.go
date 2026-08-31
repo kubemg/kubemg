@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/kubemg/kubemg/backend/pkg/api"
+	"github.com/kubemg/kubemg/backend/pkg/auditforward"
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
 	"github.com/kubemg/kubemg/backend/pkg/credentials"
 	"github.com/kubemg/kubemg/backend/pkg/auth"
@@ -131,6 +132,19 @@ func main() {
 	// says whether this server is recording at all.
 	recorder, recording := resolveRecorder(cfg, store, logger)
 
+	// And the shipper, which is the only consumer that pushes the *complete*
+	// trail: a SIEM that cannot reach into this container's log stream gets the
+	// records sent to it instead. Like the dispatcher it costs nothing until a
+	// destination exists — with none configured, Record returns on an atomic
+	// read and nothing dials.
+	//
+	// The verb selection is deliberately not handed to it. Narrowing the
+	// queryable table is a storage decision; narrowing what leaves for a SIEM
+	// would be an audit decision, and the structured log does not make it either.
+	forwarder := auditforward.New(auditforward.Options{Store: store, Logger: logger})
+	go forwarder.Run(auditCtx)
+	defer forwarder.Wait()
+
 	// One auditor, two consumers: the proxy records what it forwarded to a
 	// cluster, and the API records the one thing it does that is more sensitive
 	// than most of that — serving somebody a recording of a production shell.
@@ -138,6 +152,7 @@ func main() {
 		bastion.NewAuditor(logger),
 		auditStore,
 		api.NewAlarmAuditor(alarms),
+		forwarder,
 	)
 
 	// Just-in-time elevated access. It shares the audit writer with the proxy, so
@@ -206,6 +221,7 @@ func main() {
 		Guardrails:         guard,
 		Credentials:        issued,
 		Alarms:             alarms,
+		Forwarder:          forwarder,
 		JIT:                access,
 		JITCallbackSecret:  []byte(signingKey),
 		// What this install was started with, for the setup wizard to report
