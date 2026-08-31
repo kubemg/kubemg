@@ -2778,3 +2778,71 @@ export interface AppTemplateDraft {
   manifests: string
   parameters: TemplateParameter[]
 }
+
+/**
+ * Where the complete audit trail is pushed.
+ *
+ * Not an alarm channel, even though both end in "send this somewhere". An alarm
+ * is an alerting path — it deduplicates, holds a cool-off, and drops signals
+ * when it backs up — and every one of those behaviours loses records, which is
+ * exactly what a trail may not do. A forwarder ships every record.
+ *
+ * There is no `has_secret` here: syslog authenticates by network position or by
+ * TLS, and the CA bundle is a public certificate, so the row reads back whole.
+ */
+export type AuditForwarderKind = 'syslog'
+
+export type AuditForwarderProtocol = 'tcp' | 'udp' | 'tls'
+
+export interface AuditForwarder {
+  id: number
+  name: string
+  kind: AuditForwarderKind
+  host: string
+  port: number
+  protocol: AuditForwarderProtocol
+  /** The RFC 5424 facility, 0–23. 16 is local0. */
+  facility: number
+  /** The APP-NAME header field, which is what a SIEM filters this stream on. */
+  app_name: string
+  /** RFC 6587 length-prefix framing rather than a trailing newline. */
+  octet_counting: boolean
+  tls_ca_bundle?: string
+  tls_insecure_skip_verify: boolean
+  enabled: boolean
+  last_status?: string
+  last_message?: string
+  last_attempt_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AuditForwarderInput {
+  name: string
+  kind: AuditForwarderKind
+  host: string
+  /** 0 asks the server for the protocol's default — 515 for tcp/tls, 514 for udp. */
+  port: number
+  protocol: AuditForwarderProtocol
+  facility: number
+  app_name: string
+  octet_counting: boolean
+  tls_ca_bundle?: string
+  tls_insecure_skip_verify: boolean
+  enabled: boolean
+}
+
+export interface AuditForwarderList {
+  forwarders: AuditForwarder[]
+  kinds: AuditForwarderKind[]
+  protocols: AuditForwarderProtocol[]
+}
+
+/** The verdict of one test delivery. `note` carries what the test could not
+    prove — a UDP datagram gets no answer, so a green tick there means only that
+    the address resolved. */
+export interface AuditForwarderTest {
+  ok: boolean
+  message: string
+  note?: string
+}
