@@ -134,6 +134,7 @@ nav:
       - Linking other consoles: observability/consoles.md
   - Audit and compliance:
       - Audit trail: audit/trail.md
+      - Forwarding the trail: audit/forwarding.md
       - Session recording: audit/session-recording.md
       - Alarms and integrations: audit/alarms.md
   - Reference:

@@ -113,6 +113,7 @@ navigation does not hint at sections it cannot open.
 | Guardrails | Refuses destructive commands on kubemg's own authority, including inside an interactive shell | [Command guardrails](../access/guardrails.md) |
 | Audit | A queryable trail with session replay, and a recordings index | [Audit trail](../audit/trail.md), [Session recording](../audit/session-recording.md) |
 | Alarms | Routes cluster events and kubemg's own audit records to Alertmanager, Slack, Teams, PagerDuty, ServiceNow or a SIEM webhook | [Alarms and integrations](../audit/alarms.md) |
+| Audit forwarding | Pushes the complete trail to a syslog collector as RFC 5424 with a JSON message, for a SIEM that cannot tail the container's log stream | [Forwarding the trail](../audit/forwarding.md) |
 
 Continue to [How a request flows](request-flow.md) for the mechanics behind
 all of this, or [Security model](security-model.md) for what is and is not

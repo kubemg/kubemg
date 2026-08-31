@@ -330,6 +330,11 @@ narrow a non-admin to their own activity. On a busy fleet the trail is overwhelm
 `get`, so the table can be **narrowed to the verbs worth keeping** — with a floor nothing
 suppresses: refusals, streaming calls, and kubemg's own replay and delete.
 
+**Audit forwarding** — the complete trail pushed to a syslog collector (Logsign, Splunk, QRadar,
+anything that speaks RFC 5424) as JSON, for a SIEM that cannot come and tail the container's own log
+stream. Every record, no deduplication, and the verb selection above does not narrow it — which is
+what makes it a forwarder rather than an alarm.
+
 **Alarms** — rules route Kubernetes events read down the tunnel *and* kubemg's own audit records to
 Alertmanager, Slack, Teams, PagerDuty, ServiceNow or a raw SIEM webhook. The second stream is the
 one no cluster-side alerting can ever see: a refused `kubectl` never reached the API server, so
@@ -699,6 +704,7 @@ head-of-line blocking, agent sizing and read rate limiting are the open items.
 - [x] Selective audit verb selection &amp; automated retention — with a floor nothing suppresses: refusals, streaming calls, and kubemg's own replay and delete
 - [x] Audit filtering by date, time and verb *set*, exact status, and saved ranges — the question is almost always a set
 - [x] Cluster event alarms, SIEM and Alertmanager/ITSM dispatcher — five payload shapes, deduplicated, never blocking a caller
+- [x] Audit forwarding — the complete trail pushed to a syslog collector as RFC 5424 JSON, with delivery health on the row
 - [x] Just-in-time elevated access &amp; two-party approval — a grant of its own, expiring on read, never approvable by its own requester
 - [x] Command guardrails &amp; safety policies — enforced at the proxied call, at a non-interactive `exec`'s argv, and line-by-line inside an interactive shell
 - [x] Modular settings sub-pages — general, agent, audit, guardrails, alerting, SSO

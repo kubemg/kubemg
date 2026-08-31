@@ -17,6 +17,10 @@ import type {
   AppTemplateDraft,
   AppTemplateInput,
   AppTemplateRenderResult,
+  AuditForwarder,
+  AuditForwarderInput,
+  AuditForwarderList,
+  AuditForwarderTest,
   GuardrailPolicy,
   GuardrailPolicyInput,
   GuardrailPolicyList,
@@ -2443,4 +2447,55 @@ export async function rejectJitRequest(id: string, comment?: string): Promise<Ji
 export async function revokeJitRequest(id: string, comment?: string): Promise<JitRequest> {
   const { data } = await http.post<JitRequest>(`/jit/requests/${id}/revoke`, { comment })
   return data
+}
+
+/* Where the complete audit trail is pushed. See AuditForwarder in types.ts for
+   why this is not an alarm channel. */
+
+export async function fetchAuditForwarders(): Promise<AuditForwarderList> {
+  const { data } = await http.get<AuditForwarderList>('/audit/forwarders')
+  return {
+    forwarders: data.forwarders ?? [],
+    kinds: data.kinds ?? [],
+    protocols: data.protocols ?? [],
+  }
+}
+
+export async function createAuditForwarder(input: AuditForwarderInput): Promise<AuditForwarder> {
+  const { data } = await http.post<AuditForwarder>('/audit/forwarders', input)
+  return data
+}
+
+export async function updateAuditForwarder(
+  id: number,
+  input: AuditForwarderInput,
+): Promise<AuditForwarder> {
+  const { data } = await http.put<AuditForwarder>(`/audit/forwarders/${id}`, input)
+  return data
+}
+
+export async function deleteAuditForwarder(id: number): Promise<void> {
+  await http.delete(`/audit/forwarders/${id}`)
+}
+
+/** testAuditForwarder delivers one synthetic record. A refusal comes back as
+    `ok: false` carrying the dial error rather than as a thrown one — the
+    operator asked whether the collector is reachable, and that is the answer. */
+export async function testAuditForwarder(id: number): Promise<AuditForwarderTest> {
+  try {
+    const { data } = await http.post<{ status: string; note?: string }>(
+      `/audit/forwarders/${id}/test`,
+    )
+    return { ok: true, message: 'The collector accepted a test record.', note: data.note }
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response?.status === 502) {
+      const body = err.response.data as { error?: string; note?: string }
+      return {
+        ok: false,
+        message: body?.error || 'The collector could not be reached.',
+        note: body?.note,
+      }
+    }
+    throw err
+  }
 }
