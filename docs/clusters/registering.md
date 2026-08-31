@@ -13,7 +13,12 @@ five act on the real cluster rather than on a draft.
 |---|---|
 | Name | Required. Must be unique — a duplicate name is refused with a 409 ("cluster name already registered"). |
 | Environment | One of `prod`, `staging`, `dev`. Drives the environment band shown on the fleet overview and the cluster's `EnvironmentTag`. |
+| Rail chip | Optional, up to four characters. What the rail calls this cluster. The field shows the abbreviation the console would derive as its placeholder and previews the chip beside it, so leaving it empty is an informed choice rather than a blank — and an empty chip keeps the derivation, which is what every cluster registered before this field existed has. Letters and digits only, upper-cased: `eu-west-1` is stored as `EUWE`. It is worth choosing past a handful of clusters, because `prod-eu-west-1` and `prod-eu-west-2` derive to the same three letters. |
 | Description | Optional free text. |
+
+All four are editable after registration — see
+[Managing a cluster → Editing a cluster's labels](managing.md#editing-a-clusters-labels).
+The name and the connection are not.
 
 Nothing is written to the server yet — this step only holds local form state.
 

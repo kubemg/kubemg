@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -235,5 +236,171 @@ func TestDeleteClusterRejectsInvalidID(t *testing.T) {
 	rec := env.do(t, http.MethodDelete, "/api/v1/clusters/not-a-number", env.tokenFor(t, admin), nil)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+/* ------------------------------------------------- the chip and its label --- */
+
+func clusterPath(id uint) string {
+	return "/api/v1/clusters/" + strconv.FormatUint(uint64(id), 10)
+}
+
+func TestCreateClusterNormalizesShortName(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+
+	payload := validClusterPayload()
+	payload["short_name"] = "eu-west-1"
+
+	rec := env.do(t, http.MethodPost, "/api/v1/clusters", env.tokenFor(t, admin), payload)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusCreated, rec.Code, rec.Body.String())
+	}
+
+	// Folded to the four characters the chip can draw, not refused: every input
+	// this normalizes is one somebody meant something reasonable by.
+	body := decode[clusterResponse](t, rec)
+	if body.ShortName != "EUWE" {
+		t.Fatalf("expected short name %q, got %q", "EUWE", body.ShortName)
+	}
+	if env.store.clusters[body.ID].ShortName != "EUWE" {
+		t.Fatalf("short name not persisted: %q", env.store.clusters[body.ID].ShortName)
+	}
+}
+
+func TestCreateClusterWithoutShortNameStoresNone(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+
+	rec := env.do(t, http.MethodPost, "/api/v1/clusters", env.tokenFor(t, admin), validClusterPayload())
+
+	// Empty is a real answer rather than a missing one — the console falls back
+	// to the derivation every cluster had before the field existed — so it must
+	// stay empty rather than being invented here.
+	body := decode[clusterResponse](t, rec)
+	if body.ShortName != "" {
+		t.Fatalf("expected no short name, got %q", body.ShortName)
+	}
+}
+
+func TestPatchClusterUpdatesLabels(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addCluster("prod-eu-west-1", db.EnvDev)
+
+	rec := env.do(t, http.MethodPatch, clusterPath(cluster.ID), env.tokenFor(t, admin), map[string]string{
+		"short_name":  "eu1",
+		"environment": db.EnvProd,
+		"description": "  the one that pages  ",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	body := decode[clusterResponse](t, rec)
+	if body.ShortName != "EU1" {
+		t.Fatalf("expected short name %q, got %q", "EU1", body.ShortName)
+	}
+	if body.Environment != db.EnvProd {
+		t.Fatalf("expected environment %q, got %q", db.EnvProd, body.Environment)
+	}
+	if body.Description != "the one that pages" {
+		t.Fatalf("expected a trimmed description, got %q", body.Description)
+	}
+
+	stored := env.store.clusters[cluster.ID]
+	if stored.ShortName != "EU1" || stored.Environment != db.EnvProd {
+		t.Fatalf("labels not persisted: %+v", stored)
+	}
+}
+
+func TestPatchClusterLeavesOmittedFieldsAlone(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addCluster("prod-eu", db.EnvProd)
+	cluster.ShortName = "EU1"
+	cluster.Description = "kept"
+
+	rec := env.do(t, http.MethodPatch, clusterPath(cluster.ID), env.tokenFor(t, admin), map[string]string{
+		"description": "rewritten",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	body := decode[clusterResponse](t, rec)
+	if body.ShortName != "EU1" {
+		t.Fatalf("an omitted short name must be kept, got %q", body.ShortName)
+	}
+	if body.Environment != db.EnvProd {
+		t.Fatalf("an omitted environment must be kept, got %q", body.Environment)
+	}
+	if body.Description != "rewritten" {
+		t.Fatalf("expected the description to change, got %q", body.Description)
+	}
+}
+
+func TestPatchClusterClearsShortNameWhenSentEmpty(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addCluster("prod-eu", db.EnvProd)
+	cluster.ShortName = "EU1"
+
+	rec := env.do(t, http.MethodPatch, clusterPath(cluster.ID), env.tokenFor(t, admin), map[string]string{
+		"short_name": "",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	// Taking a chip back off is how an operator returns to the derivation, so
+	// an explicit empty has to clear rather than read as "no change".
+	if env.store.clusters[cluster.ID].ShortName != "" {
+		t.Fatalf("expected the short name to be cleared, got %q", env.store.clusters[cluster.ID].ShortName)
+	}
+}
+
+func TestPatchClusterRefusesUnknownEnvironment(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addCluster("prod-eu", db.EnvProd)
+
+	rec := env.do(t, http.MethodPatch, clusterPath(cluster.ID), env.tokenFor(t, admin), map[string]string{
+		"environment": "production",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d (%s)", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+	if env.store.clusters[cluster.ID].Environment != db.EnvProd {
+		t.Fatal("a refused patch must not have written anything")
+	}
+}
+
+func TestPatchClusterForbiddenForNonAdmin(t *testing.T) {
+	env := newTestEnv(t)
+	user := env.store.addUser("devops", "pw", db.RoleUser)
+	cluster := env.store.addCluster("prod-eu", db.EnvProd)
+	env.store.grant(user.ID, cluster.ID, db.K8sRoleEdit, nil)
+
+	rec := env.do(t, http.MethodPatch, clusterPath(cluster.ID), env.tokenFor(t, user), map[string]string{
+		"short_name": "OWN",
+	})
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if env.store.clusters[cluster.ID].ShortName != "" {
+		t.Fatal("a forbidden patch must not have written anything")
+	}
+}
+
+func TestPatchClusterUnknownIsNotFound(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+
+	rec := env.do(t, http.MethodPatch, "/api/v1/clusters/404", env.tokenFor(t, admin), map[string]string{
+		"short_name": "X",
+	})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
 	}
 }

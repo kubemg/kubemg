@@ -47,6 +47,7 @@ type Store interface {
 	CreateCluster(ctx context.Context, cluster *db.Cluster) error
 	DeleteCluster(ctx context.Context, id uint) error
 	UpdateClusterHealth(ctx context.Context, id uint, health db.ClusterHealth) error
+	UpdateClusterLabels(ctx context.Context, id uint, labels db.ClusterLabels) error
 
 	ListUsers(ctx context.Context) ([]db.User, error)
 	CreateUser(ctx context.Context, user *db.User) error
@@ -654,6 +655,9 @@ func NewRouter(opts Options) *gin.Engine {
 		clusters.GET("", s.listClusters)
 		clusters.GET("/:id", s.showCluster)
 		clusters.POST("", requireAdmin, s.createCluster)
+		// PATCH edits labels only — see patchCluster for why a connection is not
+		// editable in place.
+		clusters.PATCH("/:id", requireAdmin, s.patchCluster)
 		clusters.DELETE("/:id", requireAdmin, s.deleteCluster)
 		if s.health != nil {
 			clusters.POST("/:id/check", requireAdmin, s.checkCluster)
@@ -1236,6 +1240,15 @@ func NewRouter(opts Options) *gin.Engine {
 		// setup wizard reports, on a page that outlives the wizard. Nothing here
 		// can be written from a browser — see Deployment.
 		settings.GET("/deployment", s.deploymentPosture)
+
+		// The console's own identity. The read is unauthenticated by necessity
+		// and the write is admin-only, so the two halves are registered apart
+		// rather than as a group — an environment banner whose whole job is to
+		// be read before somebody types a password has to render on the sign-in
+		// page. See branding.go for why that is a different judgement from the
+		// setup state's, which answers one boolean and nothing else.
+		v1.GET("/branding", s.getBranding)
+		v1.PUT("/branding", requireAuth, requireAdmin, s.updateBranding)
 	}
 
 	return router

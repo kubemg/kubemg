@@ -206,6 +206,40 @@ func (s *Store) CreateCluster(ctx context.Context, cluster *Cluster) error {
 	return nil
 }
 
+// ClusterLabels are the parts of a registration that say what a cluster *is*
+// rather than how it is reached: what to call it on the rail, which environment
+// it belongs to, and what it is for.
+//
+// They are updatable and the connection is not, on purpose. Changing an API URL
+// or a stored token is registering a different cluster under an old row's name
+// — every kubeconfig issued against it, every audit record and every grant would
+// still point here while addressing somewhere else. A label carries none of
+// that: it is what the console draws, and getting it wrong at registration
+// should not mean deleting the cluster and its grants to fix a chip.
+type ClusterLabels struct {
+	ShortName   string
+	Environment string
+	Description string
+}
+
+// UpdateClusterLabels rewrites a cluster's presentation fields. All three are
+// written on every call, so clearing one is passing it empty rather than
+// omitting it — the handler is what decides "omitted means keep".
+func (s *Store) UpdateClusterLabels(ctx context.Context, id uint, labels ClusterLabels) error {
+	res := s.gdb.WithContext(ctx).Model(&Cluster{}).Where("id = ?", id).Updates(map[string]any{
+		"short_name":  labels.ShortName,
+		"environment": labels.Environment,
+		"description": labels.Description,
+	})
+	if res.Error != nil {
+		return fmt.Errorf("update cluster labels: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // ClusterHealth is the outcome of a reachability check, ready to persist.
 type ClusterHealth struct {
 	Status            string

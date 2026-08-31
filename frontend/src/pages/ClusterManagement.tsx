@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { Plug, Plus, RefreshCw, Server, Trash2 } from 'lucide-react'
+import { Pencil, Plug, Plus, RefreshCw, Server, Trash2 } from 'lucide-react'
 import { checkCluster, deleteCluster, errorMessage } from '../api/client'
 import type { Cluster } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { ClusterLabelsSheet } from '../components/ClusterLabelsSheet'
 import { LinkStatus } from '../components/LinkStatus'
 import {
   Button,
@@ -20,6 +21,7 @@ import {
   Td,
   Th,
 } from '../components/primitives'
+import { railChip } from '../lib/branding'
 import { linkState } from '../lib/status'
 import { relativeAge } from '../lib/time'
 import { useClusters } from '../state/clusters-context'
@@ -34,6 +36,7 @@ export function ClusterManagement() {
   const [removing, setRemoving] = useState<number | null>(null)
   const [filter, setFilter] = useState('')
   const [checking, setChecking] = useState<number | null>(null)
+  const [editing, setEditing] = useState<Cluster | null>(null)
 
   async function check(cluster: Cluster) {
     setChecking(cluster.id)
@@ -120,13 +123,17 @@ export function ClusterManagement() {
           <Table>
             <thead>
               <tr>
-                <Th className="w-[38%] md:w-[22%]">Cluster</Th>
-                <Th className="w-[26%] md:w-[10%]">Environment</Th>
-                <Th className="hidden md:table-cell md:w-[16%]">Link</Th>
-                <Th className="hidden md:table-cell md:w-[21%]">API server</Th>
-                <Th className="w-[24%] md:w-[13%]">State</Th>
-                <Th className="hidden md:table-cell md:w-[10%]">Version</Th>
-                <Th align="right" className="w-[12%] md:w-[8%]">
+                <Th className="w-[38%] md:w-[20%]">Cluster</Th>
+                {/* The chip has a column because the whole reason it is chosen
+                    rather than derived is that two of them must not collide —
+                    and a collision is only visible when they are in a line. */}
+                <Th className="hidden md:table-cell md:w-[6%]">Chip</Th>
+                <Th className="w-[26%] md:w-[9%]">Environment</Th>
+                <Th className="hidden md:table-cell md:w-[14%]">Link</Th>
+                <Th className="hidden md:table-cell md:w-[18%]">API server</Th>
+                <Th className="w-[24%] md:w-[12%]">State</Th>
+                <Th className="hidden md:table-cell md:w-[9%]">Version</Th>
+                <Th align="right" className="w-[12%] md:w-[12%]">
                   <span className="sr-only">Actions</span>
                 </Th>
               </tr>
@@ -139,6 +146,11 @@ export function ClusterManagement() {
                       <Link to={`/clusters/${cluster.id}`} className={OBJECT_NAME}>
                         {cluster.name}
                       </Link>
+                    </span>
+                  </Td>
+                  <Td className="hidden md:table-cell">
+                    <span className="font-mono text-[12px] font-semibold text-muted">
+                      {railChip(cluster)}
                     </span>
                   </Td>
                   <Td>
@@ -186,6 +198,12 @@ export function ClusterManagement() {
                         />
                       </IconButton>
                       <IconButton
+                        label={`Edit ${cluster.name}`}
+                        onClick={() => setEditing(cluster)}
+                      >
+                        <Pencil aria-hidden="true" className="size-3.5" />
+                      </IconButton>
+                      <IconButton
                         label={`Remove ${cluster.name}`}
                         tone="danger"
                         onClick={() => remove(cluster)}
@@ -229,6 +247,14 @@ export function ClusterManagement() {
           ) : null}
         </div>
       </div>
+
+      {editing ? (
+        <ClusterLabelsSheet
+          cluster={editing}
+          onClose={() => setEditing(null)}
+          onSaved={reload}
+        />
+      ) : null}
     </AppShell>
   )
 }

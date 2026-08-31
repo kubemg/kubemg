@@ -7,13 +7,14 @@ inventory table at `/admin/clusters`, and the per-cluster dashboard at
 ## The inventory table
 
 `/admin/clusters` (`ClusterManagement.tsx`), admin-only, lists every
-registered cluster: name, environment, link state, API server (hidden below
-`md` width), status, Kubernetes version (hidden below `md`), and a row of
-actions. A filter box narrows by name. From here:
+registered cluster: name, rail chip, environment, link state, API server
+(hidden below `md` width), status, Kubernetes version (hidden below `md`), and a
+row of actions. A filter box narrows by name. From here:
 
 - **Register cluster** opens the wizard at `/admin/clusters/new` — see
   [Registering a cluster](registering.md).
 - **Run check** (per row) calls `POST /api/v1/clusters/:id/check`.
+- **Edit** (per row) opens the labels sheet — see below.
 - **Remove** calls `DELETE /api/v1/clusters/:id` after a confirmation:
   *"Remove `<name>`? Kubeconfigs already issued keep working until they
   expire."* — deleting the registration does not revoke kubeconfigs already
@@ -22,6 +23,47 @@ actions. A filter box narrows by name. From here:
   is what actually stops them (there is nothing left to route to). Deleting a
   cluster does not uninstall its agent — see
   [Deploying the agent → Uninstalling](agent.md#uninstalling) for that.
+
+## Editing a cluster's labels
+
+`PATCH /api/v1/clusters/:id` (admin only) edits three fields and no others:
+
+| Field | What it is |
+|---|---|
+| `short_name` | The chip the rail draws for this cluster. Up to four characters, folded to upper-case letters and digits — `eu-west-1` is stored as `EUWE`. Sending it **empty** clears it, which returns the cluster to the abbreviation the console derives from its name. |
+| `environment` | `prod`, `staging` or `dev`. Drives the tag in the fleet list, the dot on the rail chip and the tint on the tree's edge. |
+| `description` | Free text: what runs here, or who owns it. |
+
+An omitted field is left alone; a field sent empty is cleared.
+
+**There is deliberately no route that edits a connection.** An API URL, a CA
+or a stored token is the cluster's identity as far as every kubeconfig, grant and
+audit record already pointing at that row is concerned, so changing one in place
+would silently re-aim all of them. Registering a different cluster is a
+registration, and it should look like one — register the new cluster, move the
+grants, and remove the old record.
+
+The labels were frozen too until now, which was the actual defect: an operator
+who mistyped an environment at registration had to delete the cluster — and every
+grant on it — to correct a coloured dot.
+
+### Why the chip is chosen rather than derived
+
+The rail's chip used to be derived from the name: initials across a separated
+name (`minikube-direct-e2e` → `MDE`), or the first three characters of a single
+word (`LocalKube` → `LOC`). That works at three clusters and collapses at eleven,
+where `prod-eu-west-1` and `prod-eu-west-2` both reduce to `PEW` and the rail
+becomes a row of guesses. A rail exists to be built into muscle memory, and an
+ambiguous abbreviation cannot be.
+
+So the chip is now asked for at registration and editable afterwards. It is
+**not unique** — two clusters sharing a chip is a mistake for an operator to see
+and fix, and a uniqueness constraint would refuse a registration over a label.
+The inventory table gives the chip a column of its own precisely so a collision
+is visible in a line.
+
+A cluster with no stored chip still gets the derivation, so a fleet registered
+before this field existed looks exactly as it did.
 
 ## Health check
 

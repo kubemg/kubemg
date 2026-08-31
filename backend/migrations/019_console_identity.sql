@@ -1,0 +1,44 @@
+-- 019 — whose installation this is, and which cluster a chip means.
+--
+-- Reference DDL. The schema is applied by db.Migrate (AutoMigrate); this file
+-- exists because on an on-prem install the database is often owned by a DBA who
+-- will not read struct tags and may pre-apply a change under change control.
+-- Every statement is idempotent. If this and the Go code disagree, the Go code
+-- is what ran.
+--
+-- Two changes, and only one of them is a column.
+--
+-- `clusters.short_name` is what the console's rail draws in a cluster's chip.
+-- The chip used to be derived from the name — first letters, or the first three
+-- characters of a single word — which works at three clusters and collapses at
+-- eleven: `prod-eu-west-1` and `prod-eu-west-2` reduce to the same three letters
+-- and the rail becomes a row of guesses. A rail exists to be built into muscle
+-- memory, and a derived abbreviation cannot be, so the label is now the
+-- operator's to choose and store.
+--
+-- It is nullable and empty by default, and empty is a real answer rather than a
+-- missing one: the console falls back to the same derivation it always used, so
+-- a fleet registered before this migration looks exactly as it did and nothing
+-- has to be backfilled. It is **not** unique — two clusters sharing a chip is a
+-- mistake for an operator to see and fix, and a constraint here would refuse a
+-- registration over a label.
+--
+-- Four characters because that is what the chip can hold at the size it is
+-- drawn; the server folds anything longer, and anything that is not a letter or
+-- a digit, before it is stored.
+ALTER TABLE clusters ADD COLUMN IF NOT EXISTS short_name VARCHAR(4);
+
+-- The second change needs no DDL at all, and is recorded here so that a DBA
+-- reading this file is not left wondering where the console's new branding
+-- fields went. The organisation's name and mark, the environment banner and the
+-- classification footer are rows in the existing `settings` key/value table —
+-- `organisation_name`, `organisation_mark`, `environment_banner_text`,
+-- `environment_banner_tone`, `footer_notice` — written by the same settings API
+-- as every other runtime override and cleared by storing an empty value.
+--
+-- `organisation_mark` is the only one worth a DBA's attention: it holds a bounded
+-- data: URI (a small PNG, JPEG, GIF or WebP, refused above 64 KiB and refused
+-- outright for SVG), so it is the one settings row that can be measured in
+-- kilobytes rather than bytes. It is stored rather than fetched from a URL on
+-- purpose — an air-gapped console cannot reach an external image, and a console
+-- that tries is one that leaks where it is being viewed from.

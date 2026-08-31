@@ -15,6 +15,8 @@ import {
   LogOut,
   Menu,
   Moon,
+  Package,
+  Palette,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -49,12 +51,14 @@ import {
   isClusterPath,
 } from '../lib/navigation'
 import type { ResourceKey } from '../lib/resources'
+import { railChip } from '../lib/branding'
 import { linkState } from '../lib/status'
 import { ClusterMenu } from './ClusterMenu'
 import { ClusterSwitcher } from './ClusterSwitcher'
 import { ClusterTree } from './ClusterTree'
 import { AppFooter } from './AppFooter'
 import { CommandPalette } from './CommandPalette'
+import { EnvironmentBanner } from './EnvironmentBanner'
 import type { CommandTarget } from './CommandPalette'
 import { LinkStatus } from './LinkStatus'
 import { Lockup, MarkChip } from './Mark'
@@ -136,7 +140,13 @@ const ADMIN_GROUPS: readonly AdminGroup[] = [
       { to: '/admin/settings/audit', label: 'Audit & retention', icon: ScrollText },
       { to: '/admin/settings/guardrails', label: 'Guardrails', icon: Shield },
       { to: '/admin/settings/alerting', label: 'Alerting', icon: Bell },
+      // Helm and Branding were reachable only from the settings pages' own tab
+      // strip, which is why that strip could be removed rather than merely
+      // duplicated: the rail is the navigation, so everything it navigates to
+      // has to be in it. See SettingsLayout.
+      { to: '/admin/settings/helm', label: 'Helm', icon: Package },
       { to: '/admin/settings/sso', label: 'SSO', icon: KeyRound },
+      { to: '/admin/settings/branding', label: 'Branding', icon: Palette },
       { to: '/admin/settings/deployment', label: 'Deployment', icon: Server },
     ],
   },
@@ -381,7 +391,7 @@ export function AppShell({
                     : 'border-transparent text-rail-muted hover:bg-rail-raised/60 hover:text-rail-fg'
                 }`}
               >
-                {railCode(cluster.name)}
+                {railChip(cluster)}
                 <span className="absolute top-1 right-1">
                   <EnvironmentDot environment={cluster.environment} />
                 </span>
@@ -527,6 +537,10 @@ export function AppShell({
 
       <div className={`flex min-w-0 flex-col ${MAIN_OFFSET[mode]}`}>
         <header className="sticky top-0 z-10 border-b border-line bg-bg/85 backdrop-blur">
+          {/* Inside the sticky header rather than above it, so the one line
+              saying which installation this is does not scroll away from the
+              operator who is about to act on it. */}
+          <EnvironmentBanner />
           <div className="flex h-14 items-center gap-3 px-4 xl:px-6">
             <IconButton
               label="Open navigation"
@@ -636,18 +650,6 @@ export function AppShell({
       />
     </div>
   )
-}
-
-/** A cluster's chip on the rail: the shortest thing that still reads as its name. */
-function railCode(name: string): string {
-  const parts = name.split(/[^a-zA-Z0-9]+/).filter(Boolean)
-  if (parts.length === 0) return name.slice(0, 3).toUpperCase()
-  if (parts.length === 1) return parts[0].slice(0, 3).toUpperCase()
-  return parts
-    .slice(0, 3)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase()
 }
 
 const FOOTER_ROW_BASE =

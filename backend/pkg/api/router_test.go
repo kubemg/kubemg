@@ -382,6 +382,17 @@ func (f *fakeStore) UpdateClusterHealth(_ context.Context, id uint, health db.Cl
 	return nil
 }
 
+func (f *fakeStore) UpdateClusterLabels(_ context.Context, id uint, labels db.ClusterLabels) error {
+	cluster, ok := f.clusters[id]
+	if !ok {
+		return db.ErrNotFound
+	}
+	cluster.ShortName = labels.ShortName
+	cluster.Environment = labels.Environment
+	cluster.Description = labels.Description
+	return nil
+}
+
 func (f *fakeStore) DeleteCluster(_ context.Context, id uint) error {
 	if _, ok := f.clusters[id]; !ok {
 		return db.ErrNotFound

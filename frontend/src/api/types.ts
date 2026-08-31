@@ -255,6 +255,12 @@ export interface Cluster {
   id: number
   name: string
   environment: Environment
+  /** What the rail's chip says. Absent means no operator has chosen one, which
+      the console answers by deriving an abbreviation from the name the way it
+      always did — so a fleet registered before this field existed looks
+      unchanged. It is not unique: two clusters sharing a chip is a mistake to
+      see and fix, not one to refuse a registration over. */
+  short_name?: string
   description?: string
   api_url: string
   status: ClusterStatus
@@ -286,6 +292,10 @@ export interface ClusterListResponse {
 export interface NewCluster {
   name: string
   environment: Environment
+  /** Optional at registration. The server folds it to the four upper-case
+      characters the chip can draw, so what is typed here need not already be
+      one — `eu-west-1` is stored as `EUWE`. */
+  short_name?: string
   description?: string
   connection_mode: ConnectionMode
   /** Required for a direct connection, omitted for an agent-based one. */
@@ -293,6 +303,38 @@ export interface NewCluster {
   ca_cert_data?: string
   service_account_token?: string
 }
+
+/** What a cluster is *called*, as opposed to how it is reached. A connection is
+    deliberately not editable in place — every kubeconfig, grant and audit record
+    already pointing at the row would be silently re-aimed — so this is the whole
+    of what a registered cluster can be edited into.
+
+    Every field is optional and means "leave it alone"; sending one empty clears
+    it, which is how a chip is taken back off. */
+export interface ClusterLabels {
+  short_name?: string
+  environment?: Environment
+  description?: string
+}
+
+/** The customer's own identity on their console. Read by anybody, including
+    before sign-in: an environment banner that only appears after you have typed
+    your password warns you about a console you are already inside. Written by an
+    administrator. */
+export interface Branding {
+  organisation_name?: string
+  /** A bounded inline data: URI, never a link — an air-gapped console cannot
+      fetch a remote image, and one that can turns its sign-in page into a
+      beacon for whoever hosts it. */
+  organisation_mark?: string
+  banner_text?: string
+  banner_tone?: BannerTone
+  footer_notice?: string
+}
+
+/** How loudly a banner is drawn. The deck's semantic three, never the accent:
+    lime means "you can press this", and a banner is not pressable. */
+export type BannerTone = 'neutral' | 'caution' | 'critical'
 
 export interface AuditEvent {
   id: number

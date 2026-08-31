@@ -3,6 +3,7 @@ import { ExternalLink } from 'lucide-react'
 
 import { fetchServerVersion } from '../api/client'
 import type { ServerVersion } from '../api/types'
+import { useBranding } from '../state/branding-context'
 
 /**
  * The one line under every page: which release this is, and where the manual
@@ -21,6 +22,7 @@ import type { ServerVersion } from '../api/types'
  */
 export function AppFooter() {
   const [info, setInfo] = useState<ServerVersion | null>(null)
+  const { branding } = useBranding()
 
   useEffect(() => {
     let live = true
@@ -36,14 +38,32 @@ export function AppFooter() {
     }
   }, [])
 
-  if (!info) return null
+  // The organisation's own line is drawn whether or not the version read
+  // answered: a handling caveat a site is obliged to state must not be
+  // contingent on an unrelated request having succeeded.
+  const notice = branding?.footer_notice?.trim()
+  const organisation = branding?.organisation_name?.trim()
+  if (!info && !notice && !organisation) return null
 
   return (
     <footer className="mt-2 border-t border-line px-4 py-3 xl:px-6">
       <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-4 gap-y-1">
-        <span className="font-mono text-[11.5px] text-faint">
-          kubemg <span className="text-muted">{info.version}</span>
-        </span>
+        {info ? (
+          <span className="font-mono text-[11.5px] text-faint">
+            kubemg <span className="text-muted">{info.version}</span>
+          </span>
+        ) : null}
+        {organisation ? (
+          <span className="min-w-0 truncate text-[12px] text-muted">{organisation}</span>
+        ) : null}
+        {/* The classification line, in the console's quietest slot. It is not
+            styled as a warning: a caveat that is stated on every page all day is
+            a standing fact about the install, and drawing it as an alert would
+            teach people to stop seeing it. */}
+        {notice ? (
+          <span className="min-w-0 truncate text-[12px] font-medium text-muted">{notice}</span>
+        ) : null}
+        {info ? (
         <a
           href={info.docs_url}
           target="_blank"
@@ -53,6 +73,7 @@ export function AppFooter() {
           Documentation
           <ExternalLink aria-hidden="true" className="size-3.5" />
         </a>
+        ) : null}
       </div>
     </footer>
   )
