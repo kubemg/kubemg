@@ -33,13 +33,14 @@ func TestMain(m *testing.M) {
 // fakeStore is an in-memory Store used to exercise the HTTP layer without a
 // live PostgreSQL instance.
 type fakeStore struct {
-	users       map[uint]*db.User
-	clusters    map[uint]*db.Cluster
-	access      map[uint]map[uint]db.UserClusterAccess // userID -> clusterID -> grant
-	groups      map[uint]*db.Group
-	members     map[uint]map[uint]bool                  // groupID -> userID -> member
-	groupAccess map[uint]map[uint]db.GroupClusterAccess // groupID -> clusterID -> grant
-	audit       []db.AuditEvent
+	users        map[uint]*db.User
+	clusters     map[uint]*db.Cluster
+	access       map[uint]map[uint]db.UserClusterAccess // userID -> clusterID -> grant
+	groups       map[uint]*db.Group
+	members      map[uint]map[uint]bool                  // groupID -> userID -> member
+	memberSource map[uint]map[uint]string                // groupID -> userID -> local|sso
+	groupAccess  map[uint]map[uint]db.GroupClusterAccess // groupID -> clusterID -> grant
+	audit        []db.AuditEvent
 	// recordings stands in for the terminal_sessions table.
 	recordings []db.TerminalSession
 	// machineTokens stands in for the machine_tokens table; see
@@ -116,24 +117,25 @@ type fakeStore struct {
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
-		users:       map[uint]*db.User{},
-		clusters:    map[uint]*db.Cluster{},
-		access:      map[uint]map[uint]db.UserClusterAccess{},
-		groups:      map[uint]*db.Group{},
-		members:     map[uint]map[uint]bool{},
-		groupAccess: map[uint]map[uint]db.GroupClusterAccess{},
-		settings:    map[string]string{},
-		sources:     map[uint]map[string]db.ObservabilitySource{},
+		users:        map[uint]*db.User{},
+		clusters:     map[uint]*db.Cluster{},
+		access:       map[uint]map[uint]db.UserClusterAccess{},
+		groups:       map[uint]*db.Group{},
+		members:      map[uint]map[uint]bool{},
+		memberSource: map[uint]map[uint]string{},
+		groupAccess:  map[uint]map[uint]db.GroupClusterAccess{},
+		settings:     map[string]string{},
+		sources:      map[uint]map[string]db.ObservabilitySource{},
 		helmRepos:    map[string]*db.HelmRepository{},
 		helmCharts:   map[uint][]db.HelmChart{},
 		appTemplates: map[string]*db.AppTemplate{},
-		consoles:    map[uint]map[string]db.ClusterConsole{},
-		hiddenCRDs:  map[uint][]string{},
-		providers:   map[uint]*db.SSOProviderConfig{},
-		mappings:    map[uint]*db.SSOGroupMapping{},
-		syncResults: map[string]*db.SSOSyncResult{},
-		leases:      map[string]string{},
-		nextID:      1,
+		consoles:     map[uint]map[string]db.ClusterConsole{},
+		hiddenCRDs:   map[uint][]string{},
+		providers:    map[uint]*db.SSOProviderConfig{},
+		mappings:     map[uint]*db.SSOGroupMapping{},
+		syncResults:  map[string]*db.SSOSyncResult{},
+		leases:       map[string]string{},
+		nextID:       1,
 	}
 }
 
@@ -481,12 +483,13 @@ func (f *fakeStore) DeleteUser(_ context.Context, id uint) error {
 	return nil
 }
 
-func (f *fakeStore) TouchLastLogin(_ context.Context, id uint, at time.Time) error {
+func (f *fakeStore) TouchLastLogin(_ context.Context, id uint, at time.Time, addr string) error {
 	user, ok := f.users[id]
 	if !ok {
 		return db.ErrNotFound
 	}
 	user.LastLoginAt = &at
+	user.LastLoginAddr = addr
 	return nil
 }
 
@@ -503,6 +506,22 @@ func (f *fakeStore) ListGroups(_ context.Context) ([]db.GroupSummary, error) {
 		out = append(out, db.GroupSummary{Group: *group, MemberIDs: members})
 	}
 	slices.SortFunc(out, func(a, b db.GroupSummary) int { return strings.Compare(a.Name, b.Name) })
+	return out, nil
+}
+
+func (f *fakeStore) GroupMembershipsForUser(_ context.Context, userID uint) ([]db.UserGroup, error) {
+	out := []db.UserGroup{}
+	for groupID, members := range f.members {
+		if !members[userID] {
+			continue
+		}
+		source := f.memberSource[groupID][userID]
+		if source == "" {
+			source = "local"
+		}
+		out = append(out, db.UserGroup{UserID: userID, GroupID: groupID, Source: source})
+	}
+	slices.SortFunc(out, func(a, b db.UserGroup) int { return int(a.GroupID) - int(b.GroupID) })
 	return out, nil
 }
 

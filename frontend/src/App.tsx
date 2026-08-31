@@ -29,6 +29,7 @@ import { GeneralSettings } from './pages/settings/GeneralSettings'
 import { GuardrailsSettings } from './pages/settings/GuardrailsSettings'
 import { HelmSettings } from './pages/settings/HelmSettings'
 import { SsoSettings } from './pages/settings/SsoSettings'
+import { UserDetail } from './pages/UserDetail'
 import { UserManagement } from './pages/UserManagement'
 import type { ClusterPage } from './lib/navigation'
 import { DEFAULT_RESOURCE } from './lib/navigation'
@@ -459,6 +460,16 @@ export default function App() {
               element={
                 <RequireAuth adminOnly>
                   <UserManagement />
+                </RequireAuth>
+              }
+            />
+            {/* The access review for one person. Under /admin/users rather than
+                beside it: it is that list's row, opened. */}
+            <Route
+              path="/admin/users/:id"
+              element={
+                <RequireAuth adminOnly>
+                  <UserDetail />
                 </RequireAuth>
               }
             />

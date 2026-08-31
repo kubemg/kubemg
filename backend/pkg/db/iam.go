@@ -126,9 +126,9 @@ func (s *Store) DeleteUser(ctx context.Context, id uint) error {
 }
 
 // TouchLastLogin records a successful sign-in.
-func (s *Store) TouchLastLogin(ctx context.Context, id uint, at time.Time) error {
+func (s *Store) TouchLastLogin(ctx context.Context, id uint, at time.Time, addr string) error {
 	err := s.gdb.WithContext(ctx).Model(&User{}).Where("id = ?", id).
-		Update("last_login_at", at).Error
+		Updates(map[string]any{"last_login_at": at, "last_login_addr": addr}).Error
 	if err != nil {
 		return fmt.Errorf("touch last login: %w", err)
 	}
@@ -166,6 +166,28 @@ func (s *Store) ListGroups(ctx context.Context) ([]GroupSummary, error) {
 		out = append(out, GroupSummary{Group: g, MemberIDs: members})
 	}
 	return out, nil
+}
+
+// GroupMembershipsForUser returns the memberships one person holds, with the
+// source of each.
+//
+// ListGroups already reads every membership and throws the source away, which is
+// fine for the matrix — a matrix asks who is in what. A review asks something
+// else: whether a membership is a standing decision somebody made, or a mirror
+// of a directory this installation does not control. Only the derived ones are
+// reconciled away when the IdP stops asserting the group, so the two are
+// different facts about how long the access will last, and an access review that
+// showed them identically would be hiding the more perishable one.
+func (s *Store) GroupMembershipsForUser(ctx context.Context, userID uint) ([]UserGroup, error) {
+	memberships := []UserGroup{}
+	err := s.gdb.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("group_id asc").
+		Find(&memberships).Error
+	if err != nil {
+		return nil, fmt.Errorf("group memberships for user: %w", err)
+	}
+	return memberships, nil
 }
 
 // GroupByID loads a single group.

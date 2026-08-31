@@ -49,6 +49,10 @@ export interface User {
    */
   account_type: AccountType
   last_login_at?: string
+  /** Where the most recent sign-in came from. Absent for an account that has
+      never signed in, and for every sign-in older than the column — the console
+      says which rather than drawing a blank that reads as an unknown host. */
+  last_login_addr?: string
   created_at: string
 }
 
@@ -335,6 +339,61 @@ export interface Branding {
 /** How loudly a banner is drawn. The deck's semantic three, never the accent:
     lime means "you can press this", and a banner is not pressable. */
 export type BannerTone = 'neutral' | 'caution' | 'critical'
+
+/** One reason somebody can reach a cluster. Several of these merge into the
+    effective answer; this is not that answer. */
+export interface ContributingGrant {
+  /** `direct` is a row written against the user — by an administrator, by the
+      federation sync, or by an approved elevation. `group` is inherited. */
+  origin: 'direct' | 'group'
+  /** A direct row's own provenance: `local`, `sso` or `jit`. Absent on an
+      inherited row, whose provenance is the group. */
+  source?: string
+  group?: string
+  group_id?: number
+  k8s_role: string
+  /** Empty means cluster-wide, exactly as it does on the grant. */
+  namespaces: string[]
+  expires_at?: string
+}
+
+/** What one person can reach on one cluster, and why. */
+export interface ClusterAccess {
+  cluster_id: number
+  cluster: string
+  environment: Environment
+  short_name?: string
+  /** The *effective* answer — what the proxy will actually allow, resolved
+      server-side with the same merge the gateway uses. It is deliberately not
+      recomputed here: a page that said `view` while the proxy granted `edit`
+      would be worse than no page. */
+  k8s_role: string
+  namespaces: string[]
+  expires_at?: string
+  grants: ContributingGrant[]
+}
+
+export interface GroupMembership {
+  id: number
+  name: string
+  /** `local` for a membership an administrator wrote, `sso` for one the
+      federation sync derived — only the derived ones are reconciled away when
+      the directory stops asserting the group. */
+  source?: string
+}
+
+/** The access review: everything kubemg's own records say about what one person
+    can reach. Issued kubeconfigs and recent sessions are read separately, from
+    the endpoints that already narrow by user. */
+export interface UserAccessReview {
+  user: User
+  /** The identity provider a federated account signs in through. Absent for a
+      local account, and for a federated one whose provider has since been
+      deleted — the account is still exactly as federated either way. */
+  provider?: string
+  groups: GroupMembership[]
+  clusters: ClusterAccess[]
+}
 
 export interface AuditEvent {
   id: number

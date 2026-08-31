@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
+import { Link } from 'react-router'
 import { Plus, Trash2 } from 'lucide-react'
 import {
   createUser,
@@ -217,8 +218,13 @@ export function UserManagement() {
           <Table>
             <thead>
               <tr>
-                <Th className="w-[36%] md:w-[18%]">Username</Th>
-                <Th className="hidden md:table-cell md:w-[20%]">Email</Th>
+                <Th className="w-[36%] md:w-[18%] lg:w-[16%]">Username</Th>
+                <Th className="hidden md:table-cell md:w-[20%] lg:w-[13%]">Email</Th>
+                {/* An account's credentials live somewhere, and which somewhere
+                    decides what disabling it here actually accomplishes: a
+                    federated account is still whatever the directory says it
+                    is. The list said nothing about it at all. */}
+                <Th className="hidden lg:table-cell lg:w-[9%]">Identity</Th>
                 <Th className="w-[28%] md:w-[13%]">System role</Th>
                 <Th className="w-[24%] md:w-[11%]">Status</Th>
                 {/* Only the account that may grant the capability is shown the
@@ -243,7 +249,16 @@ export function UserManagement() {
                 return (
                   <Row key={row.id}>
                     <Td className="truncate font-mono text-fg">
-                      {row.username}
+                      {/* The row opens onto the access review, which is what
+                          this list was previously missing a destination for:
+                          "what can this person reach today" had to be assembled
+                          from the matrix, the group list and the JIT queue. */}
+                      <Link
+                        to={`/admin/users/${row.id}`}
+                        className="text-fg underline-offset-2 hover:underline"
+                      >
+                        {row.username}
+                      </Link>
                       {isSelf ? (
                         <span className="ml-2 rounded-chip bg-accent-soft px-1.5 py-px text-[11px] text-accent">
                           you
@@ -255,6 +270,11 @@ export function UserManagement() {
                       title={row.email}
                     >
                       {row.email || '—'}
+                    </Td>
+                    <Td className="hidden lg:table-cell">
+                      <span className="text-[12.5px] text-muted">
+                        {row.auth_source === 'local' ? 'Local' : 'Federated'}
+                      </span>
                     </Td>
                     <Td>
                       <Select

@@ -165,8 +165,23 @@ type User struct {
 	ExternalID string `gorm:"size:255;index" json:"external_id,omitempty"`
 
 	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	// LastLoginAddr is where the most recent sign-in came from.
+	//
+	// "When did they last sign in" was already recorded and is half an answer:
+	// an access review asks where from, because a dormant account waking up from
+	// an address nobody recognises is the shape of a compromise, and a date
+	// alone cannot show it. Only the most recent is kept — this is a property of
+	// the account, not a log; the audit trail is where a history belongs.
+	//
+	// It is Gin's ClientIP, resolved through proxy headers only for hops the
+	// engine has been told to trust, so behind an untrusted proxy it records the
+	// proxy rather than a header anybody could have written. Empty for an
+	// account that has never signed in, and for every sign-in that happened
+	// before this column existed — which the console says as such rather than
+	// drawing a blank that reads as an unknown host.
+	LastLoginAddr string    `gorm:"size:64" json:"last_login_addr,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // IsFederated reports whether this account is authenticated by an external
