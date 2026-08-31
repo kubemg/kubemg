@@ -4,6 +4,7 @@ import { RotateCcw } from 'lucide-react'
 import { errorMessage, fetchSettings, updateSettings } from '../../api/client'
 import type { SettingsResponse } from '../../api/types'
 import { Button, Notice } from '../../components/primitives'
+import { AuditForwardingPanel } from '../../components/settings/AuditForwardingPanel'
 import { AuditSettingsPanel } from '../../components/settings/AuditSettingsPanel'
 import { settingSource } from '../../lib/settings'
 import { SettingsAside, SettingsLayout } from '../../components/settings/SettingsLayout'
@@ -244,6 +245,14 @@ export function AuditSettings() {
           />
         ) : null}
       </form>
+
+      {/* Outside the form on purpose: a destination is saved the moment it is
+          written, not by the page's Save button, and putting rows that already
+          persisted behind a dirty-state save would be a lie about what is in
+          force. */}
+      <div className="mt-4 flex min-w-0 max-w-3xl flex-col gap-4">
+        <AuditForwardingPanel />
+      </div>
     </SettingsLayout>
   )
 }
