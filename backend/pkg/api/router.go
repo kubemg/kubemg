@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/kubemg/kubemg/backend/pkg/auditforward"
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
 	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/bastion"
@@ -82,6 +83,15 @@ type Store interface {
 
 	// Alarm channels and rules. The dispatcher reads them too, through its own
 	// narrower interface — see observability.AlarmStore.
+	// Where the complete audit trail is pushed. The shipper reads them too,
+	// through its own narrower interface — see auditforward.Store.
+	ListAuditForwarders(ctx context.Context) ([]db.AuditForwarder, error)
+	AuditForwarderByID(ctx context.Context, id uint) (*db.AuditForwarder, error)
+	CreateAuditForwarder(ctx context.Context, forwarder *db.AuditForwarder) error
+	UpdateAuditForwarder(ctx context.Context, forwarder *db.AuditForwarder) error
+	DeleteAuditForwarder(ctx context.Context, id uint) error
+	RecordAuditForwarderAttempt(ctx context.Context, id uint, status, message string) error
+
 	ListAlarmChannels(ctx context.Context) ([]db.AlarmChannel, error)
 	AlarmChannelByID(ctx context.Context, id uint) (*db.AlarmChannel, error)
 	CreateAlarmChannel(ctx context.Context, channel *db.AlarmChannel) error
@@ -316,6 +326,11 @@ type Options struct {
 	// the console then says the dispatcher is not running rather than offering rules
 	// that could never fire.
 	Alarms *observability.Dispatcher
+
+	// Forwarder ships the trail to an external collector. Left nil, saving a
+	// destination still works — the reload is simply a no-op, and the next
+	// server to run one picks the row up on its own tick.
+	Forwarder *auditforward.Forwarder
 	// ReadCacheTTL is how long a live read is served from memory before it is
 	// asked of the cluster again. Zero takes cache.DefaultTTL; a negative value
 	// turns the cache off, so every read is a tunnel call as it was before.
@@ -394,6 +409,9 @@ type server struct {
 	credentials *credentials.Register
 	// alarms is the dispatcher, or nil when this server runs without one.
 	alarms *observability.Dispatcher
+	// forwarder is the audit shipper, or nil. Its methods are nil-safe, so no
+	// handler has to guard the reload.
+	forwarder *auditforward.Forwarder
 	// jit is the elevated-access workflow, or nil when this server runs without
 	// it; see Options.JIT. jitCallbackSecret verifies a decision that arrived from
 	// chat rather than from a session.
@@ -480,6 +498,7 @@ func NewRouter(opts Options) *gin.Engine {
 		guardrails:         opts.Guardrails,
 		credentials:        opts.Credentials,
 		alarms:             opts.Alarms,
+		forwarder:          opts.Forwarder,
 		jit:                opts.JIT,
 		jitCallbackSecret:  opts.JITCallbackSecret,
 		logger:             opts.Logger,
@@ -1152,6 +1171,18 @@ func NewRouter(opts Options) *gin.Engine {
 		// an admin who may not watch a recording has no business destroying one
 		// either, and the handler checks it.
 		audit.DELETE("/terminal-sessions/:id", requireAdmin, s.deleteTerminalSession)
+
+		// Where the trail is shipped. Administrative, and by the stronger of the
+		// two reasons: a forwarder sends every record off the platform, so adding
+		// one is a data-egress decision rather than a preference.
+		forwarders := audit.Group("/forwarders", requireAdmin)
+		forwarders.GET("", s.listAuditForwarders)
+		forwarders.POST("", s.createAuditForwarder)
+		forwarders.PUT("/:id", s.updateAuditForwarder)
+		forwarders.DELETE("/:id", s.deleteAuditForwarder)
+		// Proving the collector is reachable, so an operator finds out here
+		// rather than from the investigation that had no records to run on.
+		forwarders.POST("/:id/test", s.testAuditForwarder)
 
 		// Configuring federation: who may sign in at all, and what an external
 		// group is worth once they have. Both decide platform-wide access, so

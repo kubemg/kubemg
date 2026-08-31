@@ -93,6 +93,9 @@ type fakeStore struct {
 	pruneErr error
 	// alarms holds the channel and rule tables; see alarms_fake_test.go.
 	alarms *alarmTables
+
+	forwarders   map[uint]*db.AuditForwarder
+	forwarderErr error
 	// guardrails stands in for the guardrail_policies table; see
 	// guardrails_fake_test.go.
 	guardrails map[uint]*db.GuardrailPolicy
