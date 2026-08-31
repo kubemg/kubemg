@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Bot, KeyRound, Plus, Trash2 } from 'lucide-react'
+import { Bot, Check, ChevronRight, KeyRound, Plus, Trash2 } from 'lucide-react'
 import {
   assignPermission,
   createMachineAccount,
@@ -25,6 +25,7 @@ import {
   Notice,
   OBJECT_MARK,
   OBJECT_NAME,
+  Panel,
   Row,
   SearchInput,
   Select,
@@ -172,6 +173,8 @@ export function MachineAccounts() {
           have to wait for it to expire.
         </Notice>
 
+        <SetupPath accounts={accounts} />
+
         <div className="card min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
             <SearchInput
@@ -295,7 +298,7 @@ export function MachineAccounts() {
             <p className="flex flex-col items-center gap-2 border-t border-line-soft px-4 py-10 text-center text-[13px] text-muted">
               <Bot aria-hidden="true" className="size-5 text-faint" />
               {accounts.length === 0
-                ? 'No machine accounts yet. Add one for the pipeline that needs a kubeconfig.'
+                ? 'No machine accounts yet. Add one for the pipeline that needs a kubeconfig — you grant it a cluster next, and issue its credential after that.'
                 : 'Nothing matches that filter.'}
             </p>
           ) : null}
@@ -305,9 +308,16 @@ export function MachineAccounts() {
       {createOpen ? (
         <CreateMachineAccountSheet
           onClose={() => setCreateOpen(false)}
-          onCreated={async () => {
+          /*
+           * A new account is opened rather than merely listed. On its own it can
+           * do nothing at all — the credential it exists for is refused until it
+           * holds a cluster grant — so the sheet carrying that grant form is the
+           * next step, not a place the operator has to go looking for.
+           */
+          onCreated={async (created) => {
             setCreateOpen(false)
             await load()
+            setOpenAccount(created)
           }}
         />
       ) : null}
@@ -337,12 +347,71 @@ export function MachineAccounts() {
   )
 }
 
+/**
+ * SetupPath is the order the three surfaces on this page have to be used in.
+ *
+ * Every piece was already here — a create button, a grant form inside the
+ * account sheet, an issue button on the row — and none of them said that a
+ * credential is refused until the grant exists, or that the grant lives one
+ * click inside the account's own name. The steps are drawn from the fleet
+ * rather than from a counter, so the strip reads as where this installation
+ * actually is rather than as a tutorial that never finishes.
+ */
+export function SetupPath({ accounts }: { accounts: MachineAccount[] }) {
+  const steps = [
+    {
+      label: 'Add the account',
+      body: 'The name the cluster sees as the caller. It never signs in and holds no password.',
+      done: accounts.length > 0,
+    },
+    {
+      label: 'Grant it a cluster',
+      body: 'Open its name, then pick a cluster, a role and the namespaces. Until this exists a credential would authenticate and then be refused.',
+      done: accounts.some((account) => account.access.length > 0),
+    },
+    {
+      label: 'Issue a credential',
+      body: 'The key button on the row. It hands back a kubeconfig once — paste it into whatever holds it, and revoke it here when that changes.',
+      done: accounts.some((account) => account.active_tokens > 0),
+    },
+  ]
+
+  return (
+    <Panel title="What a machine account needs, in order" eyebrow="Path">
+      <ol className="flex flex-col md:flex-row">
+        {steps.map((step, index) => (
+          <li
+            key={step.label}
+            className="relative flex min-w-0 flex-1 flex-col gap-1 border-b border-line-soft px-4 py-3 last:border-b-0 md:border-r md:border-b-0 md:last:border-r-0"
+          >
+            <span className="label flex items-center gap-1.5">
+              {step.done ? (
+                <Check aria-hidden="true" className="size-3.5 text-ok" />
+              ) : (
+                <span className="font-mono text-faint">{index + 1}</span>
+              )}
+              {step.label}
+            </span>
+            <span className="text-[12.5px] leading-relaxed text-muted">{step.body}</span>
+            {index < steps.length - 1 ? (
+              <ChevronRight
+                aria-hidden="true"
+                className="absolute top-1/2 right-0 hidden size-4 -translate-y-1/2 translate-x-1/2 rounded-full bg-surface text-faint md:block"
+              />
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </Panel>
+  )
+}
+
 function CreateMachineAccountSheet({
   onClose,
   onCreated,
 }: {
   onClose: () => void
-  onCreated: () => Promise<void>
+  onCreated: (created: MachineAccount) => Promise<void>
 }) {
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
@@ -354,8 +423,8 @@ function CreateMachineAccountSheet({
     setBusy(true)
     setError(null)
     try {
-      await createMachineAccount(username.trim().toLowerCase(), email.trim())
-      await onCreated()
+      const created = await createMachineAccount(username.trim().toLowerCase(), email.trim())
+      await onCreated(created)
     } catch (err) {
       setError(errorMessage(err, 'Could not create the machine account.'))
     } finally {
@@ -410,7 +479,8 @@ function CreateMachineAccountSheet({
 
       <Notice tone="info">
         A machine account never signs in and holds no password. It can never be an administrator:
-        what it may do is decided entirely by the cluster grant you give it next.
+        what it may do is decided entirely by the cluster grant you give it next. Creating it opens
+        that grant, and the credential comes after it.
       </Notice>
 
       {error ? <Notice tone="error">{error}</Notice> : null}
@@ -628,7 +698,11 @@ function MachineAccountSheet({
       <section className="flex flex-col gap-3 border-t border-line-soft pt-4">
         <h3 className="label">Credentials</h3>
         {tokens.length === 0 ? (
-          <p className="text-[13px] text-muted">None issued yet.</p>
+          <p className="text-[13px] text-muted">
+            {account.access.length === 0
+              ? 'None issued yet, and none can be until this account holds a cluster grant above.'
+              : 'None issued yet. “Issue a credential” hands back a kubeconfig once, for whatever is going to hold it.'}
+          </p>
         ) : (
           <ul className="flex flex-col gap-2">
             {tokens.map((token) => (

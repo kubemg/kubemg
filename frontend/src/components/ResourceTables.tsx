@@ -886,22 +886,22 @@ function HelmReleaseTable({
         <tr>
           <Th columnKey="name">Release</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="hidden md:table-cell md:w-[18%]" columnKey="chart">
+          <Th className="hidden md:table-cell md:w-[16%]" columnKey="chart">
             Chart
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[10%]" columnKey="version">
+          <Th className="hidden lg:table-cell lg:w-[9%]" columnKey="version">
             Version
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[10%]" columnKey="app">
+          <Th className="hidden lg:table-cell lg:w-[9%]" columnKey="app">
             App
           </Th>
-          <Th className="w-[12%] md:w-[7%]" columnKey="rev">
+          <Th className="w-[10%] md:w-[7%]" columnKey="rev">
             Rev
           </Th>
-          <Th className="w-[28%] md:w-[14%]" columnKey="status">
+          <Th className="w-[24%] md:w-[14%]" columnKey="status">
             Status
           </Th>
-          <Th className="w-[22%] md:w-[10%]" columnKey="updated">
+          <Th className="w-[18%] md:w-[10%]" columnKey="updated">
             Updated
           </Th>
           {onValues ? (
@@ -1435,19 +1435,19 @@ function JobTable({
           <SelectHead rows={jobs.map(jobRow)} selection={selection} />
           <Th columnKey="name">Job</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="w-[22%] md:w-[14%]" columnKey="state">
+          <Th className="w-[20%] md:w-[12%]" columnKey="state">
             State
           </Th>
-          <Th className="w-[18%] md:w-[10%]" columnKey="completed">
+          <Th className="w-[16%] md:w-[10%]" columnKey="completed">
             Completed
           </Th>
           <Th className="hidden md:table-cell md:w-[10%]" columnKey="failed">
             Failed
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[28%]" columnKey="image">
+          <Th className="hidden lg:table-cell lg:w-[22%]" columnKey="image">
             Image
           </Th>
-          <Th className="w-[18%] md:w-[10%]" columnKey="age">
+          <Th className="w-[16%] md:w-[10%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -1572,22 +1572,22 @@ function CronJobTable({
             cron field is the least readable thing in this row on a narrow screen,
             and "in 12m" answers the question the expression is being read for.
           */}
-          <Th className="hidden md:table-cell md:w-[15%]" columnKey="schedule">
+          <Th className="hidden md:table-cell md:w-[13%]" columnKey="schedule">
             Schedule
           </Th>
-          <Th className="w-[30%] md:w-[14%]" columnKey="next">
+          <Th className="w-[24%] md:w-[12%]" columnKey="next">
             Next run
           </Th>
-          <Th className="w-[16%] md:w-[12%]" columnKey="state">
+          <Th className="w-[16%] md:w-[10%]" columnKey="state">
             State
           </Th>
-          <Th className="hidden md:table-cell md:w-[10%]" columnKey="active">
+          <Th className="hidden md:table-cell md:w-[8%]" columnKey="active">
             Active
           </Th>
-          <Th className="hidden md:table-cell md:w-[16%]" columnKey="lastrun">
+          <Th className="hidden md:table-cell md:w-[10%]" columnKey="lastrun">
             Last run
           </Th>
-          <Th className="w-[16%] md:w-[10%]" columnKey="age">
+          <Th className="w-[14%] md:w-[8%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -1797,16 +1797,16 @@ function AutoscalerTable({
         <tr>
           <Th columnKey="name">Autoscaler</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="hidden md:table-cell md:w-[20%]" columnKey="target">
+          <Th className="hidden md:table-cell md:w-[18%]" columnKey="target">
             Scales
           </Th>
-          <Th className="w-[18%] md:w-[11%]" columnKey="replicas">
+          <Th className="w-[18%] md:w-[10%]" columnKey="replicas">
             Replicas
           </Th>
           <Th className="w-[16%] md:w-[10%]" columnKey="bounds">
             Bounds
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[22%]" columnKey="metrics">
+          <Th className="hidden lg:table-cell lg:w-[18%]" columnKey="metrics">
             Metrics
           </Th>
           <Th className="w-[16%] md:w-[10%]" columnKey="age">
@@ -2086,16 +2086,16 @@ function ServiceTable({
         <tr>
           <Th columnKey="name">Service</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="w-[24%] md:w-[13%]" columnKey="type">
+          <Th className="w-[20%] md:w-[12%]" columnKey="type">
             Type
           </Th>
-          <Th className="hidden md:table-cell md:w-[15%]" columnKey="clusterip">
+          <Th className="hidden md:table-cell md:w-[13%]" columnKey="clusterip">
             Cluster IP
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[18%]" columnKey="external">
+          <Th className="hidden lg:table-cell lg:w-[16%]" columnKey="external">
             External
           </Th>
-          <Th className="w-[20%] md:w-[18%]" columnKey="ports">
+          <Th className="w-[18%] md:w-[16%]" columnKey="ports">
             Ports
           </Th>
           <Th className="w-[16%] md:w-[10%]" columnKey="age">
@@ -2153,16 +2153,16 @@ function IngressTable({
         <tr>
           <Th columnKey="name">Ingress</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="w-[24%] md:w-[14%]" columnKey="class">
+          <Th className="w-[20%] md:w-[12%]" columnKey="class">
             Class
           </Th>
-          <Th className="w-[24%] md:w-[26%]" columnKey="hosts">
+          <Th className="w-[22%] md:w-[22%]" columnKey="hosts">
             Hosts
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[18%]" columnKey="address">
+          <Th className="hidden lg:table-cell lg:w-[16%]" columnKey="address">
             Address
           </Th>
-          <Th className="hidden md:table-cell md:w-[10%]" columnKey="rules">
+          <Th className="hidden md:table-cell md:w-[8%]" columnKey="rules">
             Rules
           </Th>
           <Th className="w-[16%] md:w-[10%]" columnKey="age">
@@ -2296,16 +2296,16 @@ function RouteTable({
         <tr>
           <Th columnKey="name">Route</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="w-[32%] md:w-[30%]" columnKey="hostnames">
+          <Th className="w-[30%] md:w-[24%]" columnKey="hostnames">
             Hostnames
           </Th>
-          <Th className="hidden md:table-cell md:w-[24%]" columnKey="attached">
+          <Th className="hidden md:table-cell md:w-[20%]" columnKey="attached">
             Attached to
           </Th>
-          <Th className="hidden md:table-cell md:w-[10%]" columnKey="rules">
+          <Th className="hidden md:table-cell md:w-[8%]" columnKey="rules">
             Rules
           </Th>
-          <Th className="w-[16%] md:w-[10%]" columnKey="age">
+          <Th className="w-[14%] md:w-[9%]" columnKey="age">
             Age
           </Th>
           <ManifestHead onManifest={onManifest} />
@@ -2412,19 +2412,19 @@ function ClaimTable({
         <tr>
           <Th columnKey="name">Claim</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="w-[20%] md:w-[12%]" columnKey="status">
+          <Th className="w-[18%] md:w-[11%]" columnKey="status">
             Status
           </Th>
-          <Th className="w-[16%] md:w-[10%]" columnKey="capacity">
+          <Th className="w-[16%] md:w-[9%]" columnKey="capacity">
             Capacity
           </Th>
-          <Th className="hidden md:table-cell md:w-[12%]" columnKey="access">
+          <Th className="hidden md:table-cell md:w-[10%]" columnKey="access">
             Access
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[14%]" columnKey="class">
+          <Th className="hidden lg:table-cell lg:w-[12%]" columnKey="class">
             Class
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[16%]" columnKey="volume">
+          <Th className="hidden lg:table-cell lg:w-[14%]" columnKey="volume">
             Volume
           </Th>
           <Th className="w-[16%] md:w-[10%]" columnKey="age">
@@ -2688,10 +2688,10 @@ function RoleTable({
           <Th className="w-[14%] md:w-[10%]" columnKey="rules">
             Rules
           </Th>
-          <Th className="hidden md:table-cell md:w-[26%]" columnKey="verbs">
+          <Th className="hidden md:table-cell md:w-[24%]" columnKey="verbs">
             Verbs
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[26%]" columnKey="resources">
+          <Th className="hidden lg:table-cell lg:w-[22%]" columnKey="resources">
             Resources
           </Th>
           <Th className="w-[16%] md:w-[10%]" columnKey="age">
@@ -2800,13 +2800,13 @@ function BindingTable({
         <tr>
           <Th columnKey="name">{clusterScoped ? 'ClusterRoleBinding' : 'RoleBinding'}</Th>
           <NamespaceHead show={showNamespace} />
-          <Th className="w-[30%] md:w-[24%]" columnKey="role">
+          <Th className="w-[28%] md:w-[22%]" columnKey="role">
             Role
           </Th>
-          <Th className="hidden md:table-cell md:w-[30%]" columnKey="subjects">
+          <Th className="hidden md:table-cell md:w-[26%]" columnKey="subjects">
             Subjects
           </Th>
-          <Th className="hidden lg:table-cell lg:w-[12%]" columnKey="kinds">
+          <Th className="hidden lg:table-cell lg:w-[10%]" columnKey="kinds">
             Kind
           </Th>
           <Th className="w-[16%] md:w-[10%]" columnKey="age">

@@ -180,12 +180,18 @@ export function IssueMachineTokenSheet({
       </Field>
 
       {error ? <Notice tone="error">{error}</Notice> : null}
-      {issued ? <IssuedCredential issued={issued} /> : null}
+      {issued ? <IssuedCredential issued={issued} account={account} /> : null}
     </Sheet>
   )
 }
 
-function IssuedCredential({ issued }: { issued: IssuedMachineToken }) {
+function IssuedCredential({
+  issued,
+  account,
+}: {
+  issued: IssuedMachineToken
+  account: MachineAccount
+}) {
   const [copied, setCopied] = useState<'secret' | 'kubeconfig' | null>(null)
   const [copyError, setCopyError] = useState<string | null>(null)
 
@@ -262,6 +268,30 @@ function IssuedCredential({ issued }: { issued: IssuedMachineToken }) {
           </span>
         </div>
         <YamlView value={issued.kubeconfig} numbered={false} />
+      </div>
+
+      {/*
+        What to do with the file, because a kubeconfig on screen is not yet
+        access: the two lines below are the whole of it, and having them here
+        is what makes this sheet the end of the task rather than the start of a
+        search through the docs.
+      */}
+      <div className="flex flex-col gap-1.5">
+        <span className="label">Use it</span>
+        <YamlView
+          value={[
+            `# save the file above as ${issued.filename}, then:`,
+            `export KUBECONFIG=$PWD/${issued.filename}`,
+            `kubectl --context ${issued.context} get pods`,
+          ].join('\n')}
+          numbered={false}
+        />
+        <p className="text-[12px] text-muted">
+          It acts as <span className="font-mono">{account.username}</span> with the{' '}
+          <span className="font-mono">{issued.k8s_role}</span> role, and every call it makes is in
+          the audit trail under that name. In a pipeline, keep the file in the runner&rsquo;s own
+          secret store — kubemg cannot hand it out a second time.
+        </p>
       </div>
 
       {copyError ? <Notice tone="error">{copyError}</Notice> : null}
