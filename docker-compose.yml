@@ -75,7 +75,7 @@ services:
       # Published as a multi-arch index (linux/amd64 + linux/arm64) by
       # `make agent-push`, because the clusters this is applied to include
       # Graviton and Ampere nodes that an amd64-only tag fails on.
-      - KUBEMG_AGENT_IMAGE=ghcr.io/kubemg/kubemg-agent:0.8.3
+      - KUBEMG_AGENT_IMAGE=ghcr.io/kubemg/kubemg-agent:0.9.0
       - KUBEMG_AGENT_NAMESPACE=kubemg-system
       # Every exec and attach is recorded for replay from the audit trail. Turn
       # it off with KUBEMG_SESSION_RECORDING_ENABLED=false; the directory is the

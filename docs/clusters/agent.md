@@ -158,7 +158,7 @@ no controller, no persistent volume.
 ## Upgrading the agent image
 
 The agent's image is set by `KUBEMG_AGENT_IMAGE` (default
-`ghcr.io/kubemg/kubemg-agent:0.8.3`), overridable at runtime from **Settings →
+`ghcr.io/kubemg/kubemg-agent:0.9.0`), overridable at runtime from **Settings →
 Agent** without restarting the bastion. Changing it affects **future** install
 and re-apply commands; an already-running agent keeps running its current
 image until the manifest is re-applied.
@@ -204,7 +204,7 @@ no route to `ghcr.io`, mirror the image into an internal registry and point
 `KUBEMG_AGENT_IMAGE` at it:
 
 ```dotenv
-KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.8.3
+KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.9.0
 ```
 
 This has to be reachable **from every cluster kubemg manages**, not from the
@@ -218,9 +218,9 @@ shipped.
 Building the agent image yourself:
 
 ```bash
-make agent-image AGENT_VERSION=0.8.3     # builds ghcr.io/kubemg/kubemg-agent:0.8.3 locally
+make agent-image AGENT_VERSION=0.9.0     # builds ghcr.io/kubemg/kubemg-agent:0.9.0 locally
 make agent-image-check                    # proves the amd64+arm64 matrix builds
-make agent-push AGENT_VERSION=0.8.3       # requires docker login; pushes both arches
+make agent-push AGENT_VERSION=0.9.0       # requires docker login; pushes both arches
 ```
 
 `REGISTRY` in the `Makefile` (default `ghcr.io/kubemg`) is what an air-gapped
