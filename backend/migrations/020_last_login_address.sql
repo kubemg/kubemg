@@ -1,0 +1,32 @@
+-- 020 — where a sign-in came from.
+--
+-- Reference DDL. The schema is applied by db.Migrate (AutoMigrate); this file
+-- exists because on an on-prem install the database is often owned by a DBA who
+-- will not read struct tags and may pre-apply a change under change control.
+-- Every statement is idempotent. If this and the Go code disagree, the Go code
+-- is what ran.
+--
+-- `users.last_login_at` recorded *when* somebody last signed in, which is half
+-- an answer. An access review asks where from: a dormant account waking up from
+-- an address nobody recognises is the shape of a compromise, and a date on its
+-- own cannot show it. That question had no answer in the schema at all —
+-- `audit_events.source_addr` (migration 018) records the address of a *proxied
+-- call*, and a sign-in is not one.
+--
+-- Only the most recent is kept. This is a property of the account rather than a
+-- log; a history of sign-ins belongs in the audit trail, and a second table
+-- growing one row per login for a fact that is read once per access review
+-- would be the wrong shape for it.
+--
+-- The value is Gin's ClientIP, resolved through `X-Forwarded-For` / `X-Real-IP`
+-- only for proxies the engine has been told to trust — the default being none.
+-- Behind an untrusted hop this therefore records the hop rather than a header
+-- anybody could have written, which is the same trade `source_addr` makes and
+-- for the same reason: a column holding a spoofable value presented as fact is
+-- worse than one holding the load balancer's address.
+--
+-- Nullable and empty on every row until each account's next sign-in, and the
+-- console states that rather than drawing a blank that reads as an unknown host.
+-- Nothing can be backfilled: a sign-in that already happened has no address left
+-- to go and find.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_addr VARCHAR(64);

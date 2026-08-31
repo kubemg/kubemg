@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
-import { CheckCircle2, RefreshCw, ShieldAlert, ShieldCheck, Undo2 } from 'lucide-react'
+import { CheckCircle2, Download, RefreshCw, ShieldAlert, ShieldCheck, Undo2 } from 'lucide-react'
 import {
   acknowledgePostureFinding,
   errorMessage,
@@ -11,8 +11,29 @@ import {
 } from '../api/client'
 import type { PostureFinding } from '../api/types'
 import { AppShell } from '../components/AppShell'
-import { Button, EmptyState, Field, Notice, Pill, Select, TextArea } from '../components/primitives'
+import { SEVERITY_STYLE, SeverityStrip, SeverityTag } from '../components/SeverityStrip'
+import {
+  Button,
+  EmptyState,
+  Field,
+  Notice,
+  Pill,
+  SearchInput,
+  Segmented,
+  Select,
+  TextArea,
+} from '../components/primitives'
 import { TableSkeleton } from '../components/SkeletonLoader'
+import type { PostureGrouping, PostureSeverity } from '../lib/posture'
+import {
+  NO_POSTURE_FILTER,
+  filterFindings,
+  groupFindings,
+  postureCsv,
+  postureCsvFilename,
+  severityDistribution,
+  severityOf,
+} from '../lib/posture'
 import { ALL_NAMESPACES } from '../lib/resources'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { relativeAge } from '../lib/time'
@@ -88,6 +109,17 @@ export function SecurityPosture() {
   })
 
   const [acking, setAcking] = useState<PostureFinding | null>(null)
+  const [filter, setFilter] = useState(NO_POSTURE_FILTER)
+  const [grouping, setGrouping] = useState<PostureGrouping>('none')
+
+  /* Every derivation below is a hook, so all of them run before the early
+     return for an unreachable cluster — a `useMemo` after a conditional return
+     is a different hook order on the two paths, which React cannot survive. */
+  const loaded = scan.data
+  const findings = useMemo(() => loaded?.findings ?? [], [loaded])
+  const distribution = useMemo(() => severityDistribution(findings), [findings])
+  const visible = useMemo(() => filterFindings(findings, filter), [findings, filter])
+  const groups = useMemo(() => groupFindings(visible, grouping), [visible, grouping])
 
   function setNamespace(value: string) {
     setSearchParams(
@@ -128,10 +160,28 @@ export function SecurityPosture() {
     )
   }
 
-  const loaded = scan.data
   const loading = scan.loading || scan.revalidating
-  const findings = loaded?.findings ?? []
   const unacknowledged = findings.filter((f) => !f.acknowledged).length
+
+  /* The export is built here, in the browser, from the rows in front of the
+     reader — filtering included. That is a deliberate departure from the audit
+     trail's export, which is a server route: the trail is a table this server
+     owns and re-reading it is free, whereas a posture scan is a live read of a
+     cluster across every granted namespace through the tunnel. A server-side
+     export would scan the cluster a second time to produce a file, which costs
+     the customer's API server twice for one answer and could disagree with the
+     screen it came off, because the cluster moves. An export that does not match
+     what was on screen is not evidence. */
+  function exportCsv() {
+    if (!cluster) return
+    const blob = new Blob([postureCsv(visible)], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = postureCsvFilename(cluster.name, namespace, new Date())
+    link.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <AppShell
@@ -171,23 +221,14 @@ export function SecurityPosture() {
           <Notice tone="error">{errorMessage(scan.error, 'Could not read this cluster’s posture.')}</Notice>
         ) : null}
 
-        {/* The non-goal, stated rather than implied — this page must never be
-            mistaken for a scanner it is not. */}
-        {loaded ? <Notice tone="info">{loaded.non_goal_notice}</Notice> : null}
-
-        {/* The PSS coverage gap, stated with the same weight as the non-goal
-            notice above: citing Pod Security Standards for four rules must
-            never read as "this checks baseline/restricted compliance". */}
-        {loaded ? (
-          <Notice tone="info">
-            {loaded.pss_notice}
-            {loaded.pss_unchecked.length > 0 ? (
-              <>
-                {' '}Not checked: {loaded.pss_unchecked.join('; ')}.
-              </>
-            ) : null}
-          </Notice>
-        ) : null}
+        {/* Folded, not cut. Both notices used to open the page: two grey
+            paragraphs, the second of them six lines of semicolon-separated PSS
+            control names with a bare URL in it, before a single finding — so a
+            security team was shown the limits of the scan before the scan.
+            Every word is still here and one click away, because both are real
+            claims about what is and is not being checked; what changed is that
+            the findings now come first. See ScopeDisclosure. */}
+        {loaded ? <ScopeDisclosure view={loaded} /> : null}
 
         {loaded?.unavailable?.length ? (
           <Notice tone="warn">
@@ -206,10 +247,29 @@ export function SecurityPosture() {
           </Notice>
         ) : null}
 
+        {/* What the cluster looks like, before what to do about it. The bands
+            double as the severity filter: a distribution nobody can act on is a
+            decoration, and the row a reader wants after seeing "3 critical" is
+            those three. */}
+        {findings.length > 0 ? (
+          <SeverityStrip
+            distribution={distribution}
+            selected={filter.severity}
+            onSelect={(severity) =>
+              setFilter((current) => ({
+                ...current,
+                severity: current.severity === severity ? null : severity,
+              }))
+            }
+          />
+        ) : null}
+
         <div className="card min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
             <h2 className="text-[14px] font-semibold text-fg">
-              {findings.length} {findings.length === 1 ? 'finding' : 'findings'}
+              {visible.length === findings.length
+                ? `${findings.length} ${findings.length === 1 ? 'finding' : 'findings'}`
+                : `${visible.length} of ${findings.length} findings`}
             </h2>
             {unacknowledged > 0 ? (
               <Pill tone="warn">{unacknowledged} unacknowledged</Pill>
@@ -217,6 +277,45 @@ export function SecurityPosture() {
               <Pill tone="ok">all acknowledged</Pill>
             ) : null}
             {loading ? <span className="text-[12px] text-muted">Reading the cluster…</span> : null}
+
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <SearchInput
+                value={filter.search}
+                onChange={(search) => setFilter((current) => ({ ...current, search }))}
+                label="Filter findings"
+                placeholder="Object, namespace, rule or field"
+              />
+              <Segmented<PostureGrouping>
+                ariaLabel="Group findings"
+                value={grouping}
+                onChange={setGrouping}
+                options={[
+                  { value: 'none', label: 'Ranked' },
+                  { value: 'severity', label: 'Severity' },
+                  { value: 'namespace', label: 'Namespace' },
+                  { value: 'rule', label: 'Rule' },
+                ]}
+              />
+              {/* A filter rather than a deletion: an acknowledged finding is a
+                  decision somebody recorded with a reason, and it stays
+                  reviewable. It is off by default because the work is what is
+                  left. */}
+              <label className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-muted">
+                <input
+                  type="checkbox"
+                  checked={filter.showAcknowledged}
+                  onChange={(event) =>
+                    setFilter((current) => ({ ...current, showAcknowledged: event.target.checked }))
+                  }
+                  className="size-3.5 accent-[var(--deck-accent-fill)]"
+                />
+                Acknowledged
+              </label>
+              <Button size="sm" onClick={exportCsv} disabled={visible.length === 0}>
+                <Download aria-hidden="true" className="size-3.5" />
+                Export
+              </Button>
+            </div>
           </div>
 
           {loading && !loaded ? <TableSkeleton columns={4} rows={8} label="Reading posture" /> : null}
@@ -227,25 +326,44 @@ export function SecurityPosture() {
             </p>
           ) : null}
 
-          {findings.length > 0 ? (
-            <ul className="divide-y divide-line-soft">
-              {findings.map((finding, i) => (
-                <FindingRow
-                  key={`${finding.kind}/${finding.namespace ?? ''}/${finding.name}/${finding.rule}/${finding.container ?? ''}/${i}`}
-                  clusterId={cluster!.id}
-                  finding={finding}
-                  onAcknowledge={() => setAcking(finding)}
-                  onUnacknowledge={async () => {
-                    await unacknowledgePostureFinding(cluster!.id, finding)
-                    await scan.refresh()
-                  }}
-                />
-              ))}
-            </ul>
+          {findings.length > 0 && visible.length === 0 ? (
+            <p className="px-4 py-10 text-center text-[13px] text-muted">
+              Nothing matches this filter. {findings.length} finding
+              {findings.length === 1 ? '' : 's'} {findings.length === 1 ? 'is' : 'are'} hidden by it.
+            </p>
           ) : null}
-        </div>
 
-        <p className="text-[12px] text-muted">{loaded?.disclaimer}</p>
+          {groups.map((group) => (
+            <section key={group.key}>
+              {group.label ? (
+                <h3 className="flex items-center gap-2 border-b border-line-soft bg-raised px-4 py-1.5">
+                  {grouping === 'severity' ? (
+                    <SeverityTag severity={group.key as PostureSeverity} />
+                  ) : (
+                    <span className="min-w-0 truncate font-mono text-[12.5px] text-fg">
+                      {group.label}
+                    </span>
+                  )}
+                  <span className="font-mono text-[11.5px] text-faint">{group.findings.length}</span>
+                </h3>
+              ) : null}
+              <ul className="divide-y divide-line-soft">
+                {group.findings.map((finding, i) => (
+                  <FindingRow
+                    key={`${finding.kind}/${finding.namespace ?? ''}/${finding.name}/${finding.rule}/${finding.container ?? ''}/${i}`}
+                    clusterId={cluster!.id}
+                    finding={finding}
+                    onAcknowledge={() => setAcking(finding)}
+                    onUnacknowledge={async () => {
+                      await unacknowledgePostureFinding(cluster!.id, finding)
+                      await scan.refresh()
+                    }}
+                  />
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
       </div>
 
       {acking ? (
@@ -260,6 +378,45 @@ export function SecurityPosture() {
         />
       ) : null}
     </AppShell>
+  )
+}
+
+/**
+ * What this scan checks, and what it does not — folded.
+ *
+ * Every word that used to open the page is still here: the non-goal notice, the
+ * PSS coverage statement with its full list of unchecked controls, and the
+ * derivation disclaimer. None of it was cut, because all three are claims about
+ * what is *not* being asserted, and dropping any of them would leave the page
+ * quietly overstating itself.
+ *
+ * What changed is the order. A security team is here to read findings; being
+ * shown the limits of the scan before the scan is what made the page feel like
+ * a disclaimer with a list attached. Closed by default, one line, one click.
+ */
+function ScopeDisclosure({
+  view,
+}: {
+  view: { non_goal_notice: string; pss_notice: string; pss_unchecked: string[]; disclaimer: string }
+}) {
+  return (
+    <details className="card px-4 py-3">
+      <summary className="cursor-pointer text-[12.5px] text-muted">
+        What this checks, and what it does not
+      </summary>
+      <div className="mt-3 flex flex-col gap-3 text-[12.5px] leading-relaxed text-muted">
+        <p>{view.non_goal_notice}</p>
+        <p>{view.pss_notice}</p>
+        {view.pss_unchecked.length > 0 ? (
+          <p>
+            <span className="label text-faint">Not checked</span>
+            <br />
+            {view.pss_unchecked.join("; ")}.
+          </p>
+        ) : null}
+        <p>{view.disclaimer}</p>
+      </div>
+    </details>
   )
 }
 
@@ -305,9 +462,18 @@ function FindingRow({
 
   return (
     <li className="flex flex-wrap items-start gap-3 px-4 py-3">
+      {/* The stripe carries the severity, where the old dot carried only
+          "acknowledged or not" — every unacknowledged finding was the same red,
+          which is what made 36 rows read as one undifferentiated wall. An
+          acknowledged row keeps its band and loses its saturation: the finding
+          is no less severe for having been accepted, and drawing it as though it
+          were would hide what somebody signed off on. */}
       <span
         aria-hidden="true"
-        className={`mt-1.5 size-1.5 shrink-0 rounded-full ${finding.acknowledged ? 'bg-muted' : 'bg-danger'}`}
+        title={SEVERITY_STYLE[severityOf(finding)].label}
+        className={`mt-1 h-8 w-1 shrink-0 rounded-full ${SEVERITY_STYLE[severityOf(finding)].bar} ${
+          finding.acknowledged ? 'opacity-30' : ''
+        }`}
       />
 
       <div className="min-w-0 flex-1">

@@ -21,6 +21,7 @@ Managing accounts, group membership, and the permission matrix — the console s
 | `account_type` | no | `user` or `machine`, derived from how the row was created. The `/users` routes never produce or accept a `machine` row. |
 | `auth_source` | no | `local` or a federation provider identifier — see [Federated vs. local accounts](#federated-vs-local-accounts). |
 | `last_login_at` | no | Stamped by `recordLogin` on a successful sign-in; swallowed silently on failure so a logging error never blocks a login. |
+| `last_login_addr` | no | Where that sign-in came from, stamped by the same call. Only the most recent is kept — this is a property of the account, not a log; a history belongs in the audit trail. The value is resolved through proxy headers only for hops the engine trusts, so behind an untrusted proxy it records the proxy rather than a header anybody could have written. Empty for an account that has never signed in, and for every sign-in older than the column: a sign-in that already happened has no address left to find. |
 | `created_at` / `updated_at` | no | Timestamps. |
 
 ```json title="POST /api/v1/users"
@@ -76,6 +77,71 @@ Managing accounts, group membership, and the permission matrix — the console s
 | **Create** | A row with `is_active: true` and no cluster grants. | Sign-in. Nothing else — no grants means no cluster is reachable yet. | — |
 | **Disable** (`is_active: false`) | `currentUser` starts rejecting the account's JWT and its machine-token verifier on every subsequent request (see [Disabled accounts](model.md#disabled-accounts)). | Nothing for this account — a live session's next call is rejected immediately, not at token expiry. Grants, group memberships, and JIT history are untouched and restored the instant the account is re-enabled. | Sign-in, and every already-issued JWT for this account, immediately. |
 | **Delete** | The row and everything that references it by foreign key are removed in one operation: cluster grants (`user_cluster_access`), group memberships, machine tokens if the row happened to be a machine account, and JIT requests the account made. | Nothing involving this account. | Any kubeconfig or machine token this account had issued stops working the next time it is presented — the identity it authenticates as no longer exists. Audit rows referencing the user id are **not** deleted; the trail keeps the numeric id so history is not rewritten. |
+
+## The access review
+
+`GET /api/v1/users/:id/access` (admin only) answers "what can this person reach
+today", which previously meant assembling five screens by hand per person: the
+permission matrix for direct grants, the group list for inherited ones, the JIT
+queue for live elevations, the credential register for issued kubeconfigs, and
+the session index for what was actually done. The console renders it at
+`/admin/users/:id`, reached by clicking a username in the list.
+
+It is **admin-only** rather than "narrowed to your own", which is the opposite of
+the rule the [audit trail](../audit/trail.md) and the credential register follow.
+Those are records of things *you* did and are therefore yours to read; this is
+the surface for reading *about* somebody, and reading your own would tell you
+nothing `/me/access` does not already.
+
+### What it returns, and what it does not compute twice
+
+| Field | Notes |
+| --- | --- |
+| `user` | The account record, including `last_login_addr`. |
+| `provider` | The identity provider a federated account signs in through, by name. `auth_source` already says *that* an account is federated; without the name an auditor has to match an id against the SSO settings page by hand. Absent for a local account, and for a federated one whose provider has since been deleted — the account is still exactly as federated either way, so this reads as absent rather than failing the review. |
+| `groups` | Memberships, each with its `source`: `local` for one an administrator wrote, `sso` for one the federation sync derived. Only the derived ones are reconciled away when the directory stops asserting the group, which is a different fact about how long the access lasts. |
+| `clusters` | Per cluster: the **effective** grant, and every grant that contributed to it. |
+
+The effective grant is resolved **server-side with `db.MergeAccess`** — the same
+function the gateway uses — and this is the reason the route exists at all rather
+than the console composing the permission matrix itself. A second implementation
+in the browser would be free to disagree with what the proxy allows, and a review
+page saying somebody holds `view` while the proxy grants `edit` is worse than no
+page.
+
+Each contributing grant carries where it came from:
+
+- `origin: "direct"` with `source: "local"` — an administrator wrote it.
+- `origin: "direct"` with `source: "sso"` — the directory asserts it.
+- `origin: "direct"` with `source: "jit"` — an approved elevation, with its
+  `expires_at`.
+- `origin: "group"` with the `group` it was inherited through.
+
+That distinction is the half a review actually needs: an effective
+`cluster-admin` on production reads very differently depending on whether
+somebody granted it in 2024, a directory asserts it, or it ends in forty minutes.
+
+### What it deliberately leaves out
+
+- **An expired grant.** Expiry is enforced by the resolver on every read rather
+  than by the sweeper that eventually deletes the row, so a window that has run
+  out is closed whether or not a background pass has run since. A review showing
+  an expired elevation as live is exactly what that rule exists to prevent.
+- **A grant on a cluster that no longer exists**, and a membership of a deleted
+  group. Neither grants anything, and naming a row nobody can act on is noise on
+  a page whose whole job is to be read line by line.
+- **MFA state.** kubemg has none: a federated account's second factor is the
+  identity provider's to assert and this console never sees it, and a local
+  account has none to report. The page states this rather than drawing a column
+  that would read "unknown" for every row.
+
+Issued kubeconfigs and recent sessions are **not** in this response. Both already
+have endpoints that narrow by user (`GET /api/v1/kubeconfigs?user_id=` and
+`GET /api/v1/audit/terminal-sessions?user_id=`), and the console reads them
+directly — restating two whole response shapes here would be a second place for
+them to drift. Clusters are ordered production first: a review is read top-down,
+and the rows that decide whether it is signed are the ones on the clusters that
+matter.
 
 ## Groups
 

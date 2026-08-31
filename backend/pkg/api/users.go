@@ -348,5 +348,8 @@ func (s *server) loadManageableUser(c *gin.Context) (caller *db.User, target *db
 // recordLogin stamps a successful sign-in. A failure here must not block the
 // user from signing in, so it is deliberately swallowed.
 func (s *server) recordLogin(c *gin.Context, userID uint) {
-	_ = s.store.TouchLastLogin(c.Request.Context(), userID, time.Now().UTC())
+	// The address is resolved the same way every audit row's is — Gin's ClientIP
+	// through trusted proxies only — so the two agree about where a caller is,
+	// and neither presents a spoofable header as fact.
+	_ = s.store.TouchLastLogin(c.Request.Context(), userID, time.Now().UTC(), c.ClientIP())
 }

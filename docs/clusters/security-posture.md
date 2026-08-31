@@ -122,6 +122,74 @@ The scan is **entirely read-only** and rides the same impersonated, audited
 tunnel as every other list read — no new permission, no new cluster call
 shape, no write to the target cluster at any point.
 
+## Working through the list
+
+The scan ranks every finding by what it **permits** and returns them in that
+order; the console turns that ranking into something a security team can work
+through rather than only read.
+
+### Severity is the ranking, banded
+
+`permits` is the server's number and the console derives four bands from it
+rather than inventing a second scale — a browser-side severity would be free to
+disagree with the order the response arrives in.
+
+| Band | `permits` | Rules |
+| --- | --- | --- |
+| Critical | ≥ 90 | Privileged container; shares a host namespace. Owns the node, or everything else on it. |
+| High | ≥ 80 | hostPath volume. Arbitrary node filesystem, bounded by the mount rather than by policy. |
+| Medium | ≥ 45 | No NetworkPolicy; automounted default ServiceAccount token. Both widen what a compromise reaches; neither is one. |
+| Low | below | No non-root declaration (genuinely uncertain — the image may already run non-root, the manifest just does not say so); no resource limits (a noisy neighbour, not an escape). |
+
+The distribution sits above the list and carries two numbers per band: the total
+and how many are still unacknowledged. They answer different questions — the
+total is the shape of the cluster, the open count is the work — and a fully
+triaged cluster showing only totals would look permanently alarming, which is how
+a page like this stops being read. Each band is also the filter: pressing one
+narrows the list to it, pressing it again clears it.
+
+Every row carries a severity stripe. An acknowledged row keeps its band and loses
+its saturation: the finding is no less severe for having been accepted, and
+drawing it as though it were would hide what somebody signed off on.
+
+### Grouping, filtering and export
+
+Grouping by **severity**, **namespace** or **rule**; `Ranked` keeps the server's
+own order, so "no grouping" is a real choice rather than the absence of one.
+Within a group the ranking is preserved rather than re-sorted — a group ordered
+alphabetically would bury its worst row. Namespace and rule groups lead with
+whichever carries the worst finding.
+
+The search box matches the object's name, its namespace, the rule title and the
+field the finding names. It deliberately does **not** search the message: a
+substring search over prose matches almost everything and makes the box feel
+broken.
+
+Acknowledged findings are hidden by default and shown with a checkbox. That is a
+filter and never a deletion — an acknowledgement is a decision somebody recorded
+with a reason, and it stays reviewable.
+
+**Export** writes the rows currently on screen, filtering included, as CSV.
+
+Unlike the [audit trail's export](../audit/trail.md), which is a server route,
+this one is built in the browser. The trail is a table this server owns and
+re-reading it is free; a posture scan is a live read of a cluster across every
+granted namespace through the tunnel, so a server-side export would scan the
+cluster a second time to produce a file. That costs the customer's API server
+twice for one answer, and the second scan could disagree with the first, because
+the cluster moves — an export that does not match the screen it came off is not
+evidence.
+
+### The disclaimers are folded, not cut
+
+Both notices — the non-goal statement and the Pod Security Standards coverage
+gap, with its full list of unchecked controls — used to open the page ahead of a
+single finding, so a security team was shown the limits of the scan before the
+scan. Every word is still there, in a "What this checks, and what it does not"
+disclosure that starts closed. None of it could be cut: all three statements are
+claims about what is *not* being asserted, and dropping any of them would leave
+the page quietly overstating itself.
+
 ## Acknowledging a finding
 
 A workload can trip a rule on purpose — a debug pod running privileged to
