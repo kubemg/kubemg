@@ -51,21 +51,49 @@ function widthAt(th: string, bp: Breakpoint): number | 'unsized' | 'hidden' {
   const upTo = BREAKPOINTS.slice(0, BREAKPOINTS.indexOf(bp) + 1)
   if (th.includes('hidden') && !upTo.some((b) => th.includes(`${b}:table-cell`))) return 'hidden'
 
-  let width: number | 'unsized' = 'unsized'
+  // Widths are bucketed by breakpoint rather than read left to right, because a
+  // heading whose width is itself a ternary carries two numbers for the same
+  // breakpoint (`Key names` is 24% beside a Secret's Type column and 42% without
+  // it). The narrower branch is the one that shares the table with everything
+  // else, so it is the one this budget is measured against.
+  const byBreakpoint = new Map<Breakpoint, number>()
   for (const match of th.matchAll(/(?:(sm|md|lg|xl):)?w-\[(\d+)%\]/g)) {
     const at = (match[1] ?? 'base') as Breakpoint
-    if (upTo.includes(at)) width = Number(match[2])
+    if (!upTo.includes(at)) continue
+    const asked = Number(match[2])
+    const seen = byBreakpoint.get(at)
+    byBreakpoint.set(at, seen === undefined ? asked : Math.min(seen, asked))
+  }
+
+  let width: number | 'unsized' = 'unsized'
+  for (const at of upTo) {
+    const asked = byBreakpoint.get(at)
+    if (asked !== undefined) width = asked
   }
   return width
+}
+
+/*
+ * A heading that arrives as a component of its own still spends the budget.
+ * `NamespaceHead` is the one that matters: it is 16% of every list read across
+ * every namespace, and counting only the literal `Th`s is how a CronJob table
+ * asking for 93% read as 77% here and shipped with its name column one
+ * character wide.
+ */
+const COMPONENT_HEADS: Record<string, string> = {
+  NamespaceHead: 'w-[26%] md:w-[16%]',
 }
 
 /** Every `<thead>` in a file, with the line it starts on so a failure names it. */
 function heads(source: string): { line: number; ths: string[] }[] {
   const found: { line: number; ths: string[] }[] = []
   for (const match of source.matchAll(/<thead>([\s\S]*?)<\/thead>/g)) {
+    const ths = [
+      ...match[1].matchAll(/<(?:Sort)?Th\b[^>]*>|<(NamespaceHead)\b[^>]*>/g),
+    ].map((m) => (m[1] ? `<Th className="${COMPONENT_HEADS[m[1]]}">` : m[0]))
     found.push({
       line: source.slice(0, match.index).split('\n').length,
-      ths: [...match[1].matchAll(/<(?:Sort)?Th\b[^>]*>/g)].map((m) => m[0]),
+      ths,
     })
   }
   return found
