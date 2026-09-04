@@ -71,10 +71,9 @@ neither good nor bad), but restarts, not-ready containers, and throttling are
 `worse` — a rise there is what the chart's delta colouring is allowed to
 react to.
 
-Adding a chart means adding a catalogue entry in
-`backend/pkg/observability/metrics_query.go` — a PromQL template written by
-someone who knows the scope it has to respect — never a query field exposed
-to the browser.
+Adding a chart means adding an entry to the server's own catalogue — a PromQL
+template written by someone who knows the scope it has to respect — never a
+query field exposed to the browser.
 
 ### Comparison (top-N)
 
@@ -132,7 +131,7 @@ an absent point on the chart, which is what a gap should look like.
 
 ## What the console draws
 
-`MetricsChart.tsx` is hand-drawn SVG rather than a charting library — the
+Charts are hand-drawn SVG rather than a charting library — the
 smallest one worth having is still heavier than the lazy-loaded terminal.
 Every chart ships with a legend, a crosshair readout, arrow-key navigation,
 and a **table view** so every value a hover would show is reachable without
@@ -163,7 +162,7 @@ here and never a chart. A chart over a longer window needs a registered
 [datasource](datasources.md) — that is the entire reason the query path
 above exists.
 
-Kubernetes quantities (`250m`, `1Gi`, `128974848`) are parsed through
-`k8s.io/apimachinery/pkg/api/resource` rather than a hand-rolled parser —
+Kubernetes quantities (`250m`, `1Gi`, `128974848`) are parsed with Kubernetes'
+own quantity parser rather than a hand-rolled one —
 `1Gi` and `1G` differ by about 7%, and getting that wrong would misdraw
 every meter in the console.

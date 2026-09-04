@@ -79,7 +79,7 @@ feature changes; only which rows are in the table does.
 ### One replica, on a lease
 
 Exactly one replica of a multi-replica installation fetches any given
-repository's index — `db.LeaseHelmIndex`, the same mechanism [the alarm
+repository's index, held by the same lease mechanism [the alarm
 watcher](../audit/alarms.md) uses to poll exactly once. N replicas each
 independently pulling a public repository's `index.yaml` — some of these run
 past 60 MB — is a bandwidth bill and a rate limit nobody asked for by

@@ -7,11 +7,10 @@ work" — for a person looking, or for a SIEM tailing the process's own log.
 
 ## What is recorded
 
-Two things write to the trail, through the same `Auditor` interface
-(`pkg/bastion/audit.go`):
+Two things write to the trail:
 
-- Every call `bastion.Proxy.Call` makes on a user's behalf — list, get,
-  watch, create, update, patch, delete, and the streaming verbs.
+- Every call the bastion proxies on a user's behalf — list, get, watch,
+  create, update, patch, delete, and the streaming verbs.
 - kubemg's own sensitive reads of itself: watching or deleting a session
   recording, and every just-in-time access workflow event
   (`jit-request`/`jit-approve`/`jit-reject`/`jit-revoke`/`jit-expire`). See
@@ -24,10 +23,8 @@ server. There is no separate "denied" table; a denial is just a row whose
 
 ## The record
 
-`bastion.Event` (in-flight) is flattened into `db.AuditEvent` (the stored
-row, `pkg/db/models.go`) by `toAuditRow`. The fields, deliberately kept flat
-rather than nested — a trail is read by a SIEM far more often than by a
-person, and nesting buys nothing:
+A record is deliberately flat rather than nested — a trail is read by a SIEM
+far more often than by a person, and nesting buys nothing:
 
 | Field | Meaning |
 |---|---|
@@ -48,6 +45,9 @@ person, and nesting buys nothing:
 | `error` | Set when the call never reached the API server (a refusal, a tunnel failure) |
 | `diff` | The field-level diff of a manifest write, present only when manifest diff recording is on and the kind is not redacted — see [Manifest diff recording](#manifest-diff-recording) |
 
+!!! info "Screenshot pending — `audit-trail.png`"
+    The trail filtered to one cluster, with a record's detail sheet open.
+
 ## Where a call came from
 
 "From where" is the second question in an access review after "who", and until
@@ -62,11 +62,6 @@ these two columns existed the schema had no answer to it at all.
   browser, a CI runner — truncated to 256 characters. It is untrusted by
   construction and worth keeping for exactly that reason: a credential being
   used by something that is not what it was issued to shows up here first.
-
-Both travel on the **request context** rather than on `bastion.Event`, stamped
-once by one middleware (`requestSource`, `pkg/api/router.go`) and read once
-where the row is written (`toAuditRow`). That is why no event site has to
-remember them.
 
 Both are empty in two ordinary cases, and the console says "not recorded"
 rather than drawing a blank:
@@ -98,8 +93,8 @@ returns it as CSV, so evidence collection is a file rather than a screenshot.
 
 ## Verb naming
 
-`VerbFor` (`pkg/bastion/audit.go`) names a call by the Kubernetes verb it
-performs rather than by its HTTP method, because the same method means very
+A call is named by the Kubernetes verb it performs rather than by its HTTP
+method, because the same method means very
 different things depending on the path:
 
 - A `GET` is `list` when the path addresses a collection and `get` when it
@@ -124,7 +119,7 @@ counts — what the cluster sent back and what the user typed or piped in.
 
 Turning on `record_manifest_diffs` (off by default — see
 [Settings](#selective-audit-audit_verbs) below) stores a field-level diff
-(`pkg/objdiff`) on the `update` row of a manifest write, computed from the
+on the `update` row of a manifest write, computed from the
 object before and after the change. Two things are absolute about it:
 
 - It is **never** computed for a **redacted kind** — a Secret. Redaction
@@ -135,8 +130,8 @@ object before and after the change. Two things are absolute about it:
 - It is **only ever stored on a successful write** — never for a refused
   write, a guardrail block, or a tunnel failure. The one place that can
   honestly tell a refusal from a success is the call that just made the
-  round trip, and `Call` clears the diff before recording anything that is
-  not a clean success.
+  round trip, and the diff is cleared before anything that is not a clean
+  success is recorded.
 
 It defaults **off**, unlike every other audit switch: a manifest body can
 carry values as sensitive as a Secret's without being a Secret — an inlined
@@ -146,7 +141,7 @@ that quietly starts happening on upgrade.
 
 ## Reading the trail
 
-`GET /api/v1/audit` (`pkg/api/audit.go`) takes:
+`GET /api/v1/audit` takes:
 
 | Parameter | Meaning |
 |---|---|
@@ -166,8 +161,8 @@ audit trail means "no lower bound at all" — unlike a chart against a metrics
 backend, where `all` means the widest window that backend's retention
 allows, a trail with no floor is a legitimate thing to ask for.
 
-The presets are a **fixed table resolved on the server**
-(`pkg/api/timerange.go`), shared by every ranged surface in the console —
+The presets are a **fixed table resolved on the server**, shared by every
+ranged surface in the console —
 the audit trail, a chart, a link pasted into a ticket. That matters: if the
 browser computed "the last hour" against its own clock, three surfaces would
 each produce a slightly different window, and a row count that disagrees
@@ -183,11 +178,10 @@ erroring.
 ### The narrowing rule
 
 `GET /api/v1/audit` is readable by everyone, but a non-admin is silently
-narrowed to their own `user_id` — the handler overwrites `filter.UserID`
-with the caller's own id after parsing the query string, so **the query
-parameter cannot widen it**. Do not "fix" this by making the whole endpoint
-admin-only, and do not let a client-supplied `user_id` override the
-narrowing — both would be regressions of a deliberate design.
+narrowed to their own rows: the caller's own id replaces whatever the query
+string asked for, so **the `user_id` parameter cannot widen it**. This is
+deliberate rather than an oversight — the trail is readable by everyone
+precisely because everyone can only see themselves in it.
 
 `GET /api/v1/audit/summary` (the headline totals for the last 24 hours) is
 admin-only outright, because the store method behind it has no per-user
@@ -196,18 +190,13 @@ filter and the numbers are fleet-wide.
 ## Selective audit (`audit_verbs`)
 
 On a busy fleet the trail is overwhelmingly `list`/`get`, the rows nobody
-reads back. `pkg/auditpolicy` is the mechanism that lets an operator narrow
-what a *queryable table* is worth carrying, without ever narrowing what is
-observable:
+reads back. Selective audit lets an operator narrow what the *queryable
+table* is worth carrying, without ever narrowing what is observable:
 
-- The decision is a **published immutable snapshot**
-  (`auditpolicy.Policy`), resolved from the database by the HTTP layer and
-  read lock-free by the gateway's hot path — the hot path must never take a
-  database round trip to decide whether to write a row.
-- It applies only in `StoreAuditor` (the database sink), never in
-  `SlogAuditor` (the structured log): narrowing a queryable table is a
-  storage decision, narrowing the log a SIEM already tails would be an
-  audit decision, and those are not the same thing.
+- It applies **only to the database table**, never to the structured log:
+  narrowing a queryable table is a storage decision, narrowing the log a SIEM
+  already tails would be an audit decision, and those are not the same
+  thing.
 - **Three things no selection suppresses, ever**: a refusal or an error, any
   streaming call, and kubemg's own `replay`/`recording-get`/
   `recording-delete`/`jit-*` verbs. A control that could hide any of those
@@ -219,26 +208,22 @@ observable:
 - **An empty submitted selection means "record every verb again"**, not
   "record nothing" — the floor above would keep recording refusals and
   sessions regardless, so a server claiming to have gone silent about
-  everything else would be lying about itself. This is enforced in
-  `pkg/api/settings.go`: sending `audit_verbs: []` clears the override back
-  to the default rather than storing an empty set.
+  everything else would be lying about itself. Submitting an empty selection
+  clears the override back to the default rather than storing "nothing".
 
-The suppressible vocabulary (`auditpolicy.Verbs`) is `get`, `list`, `watch`,
-`create`, `update`, `patch`, `delete`, `log`, `exec`, `attach`,
-`portforward`. Configure it from Settings → Audit
-(`components/settings/AuditSettingsPanel.tsx`), grouped as reads, writes, and
+The suppressible vocabulary is `get`, `list`, `watch`, `create`, `update`,
+`patch`, `delete`, `log`, `exec`, `attach`, `portforward`. Configure it at
+**Admin → Settings → Audit**, where they are grouped as reads, writes and
 sessions.
 
 ## Retention
 
 `audit_retention_days` (1–3650, default 30) governs how long a row survives.
 It is an operator setting resolved through the same override-then-default
-mechanism as every other runtime setting (`s.settings(ctx)`), so an
-out-of-bounds stored value reads as **unset** rather than as whatever it
-happens to parse to — a retention window read wrong is a trail deleted.
+mechanism as every other runtime setting, so an out-of-bounds stored value
+reads as **unset** rather than as whatever it happens to parse to — a retention window read wrong is a trail deleted.
 
-`startAuditPruner` (`pkg/api/audit_prune.go`) runs every 12 hours, but
-**runs once immediately** on boot: a server that has been down for a week
+The pruner runs every 12 hours, and **runs once immediately** on boot: a server that has been down for a week
 should not wait another twelve hours to honour a retention policy it was
 already meant to be enforcing. It **re-reads the window from settings on
 every pass** rather than capturing it once at start, so shortening retention
@@ -251,18 +236,18 @@ The same pass also prunes decided [JIT](../access/jit.md) requests and
 [session recordings](session-recording.md) past their own (shorter or equal)
 windows — see that page for the recording-specific rule.
 
-`startAuditPolicyRefresher` runs every 30 seconds and republishes the
-resolved `audit_verbs`/session-recording snapshot to the in-memory policy —
-a save from the Settings page republishes immediately, so this tick exists
-purely for the other replica in a multi-instance deployment, whose own
-memory knows nothing about a change saved through its sibling.
+A separate 30-second tick republishes the resolved audit-verb and
+session-recording selection. A save from the Settings page takes effect at
+once on the replica that handled it, so this tick exists purely for the other
+replicas in a multi-instance deployment, which know nothing about a change
+saved through a sibling.
 
 ## Shipping the trail to a SIEM
 
 Three independent paths, and picking one does not disable the others:
 
-- **The structured log.** `SlogAuditor` writes every record — with no
-  selection ever applied — as a JSON line to the process's own log stream
+- **The structured log.** Every record — with no selection ever applied —
+  is written as a JSON line to the process's own log stream
   (stderr by default). This is the complete trail, always, regardless of
   what `audit_verbs` narrows the database table to. Point your log
   collector at the container's stdout/stderr.
@@ -283,5 +268,5 @@ deduplicates by fingerprint, holds a per-rule cool-off, and drops signals
 when its queue backs up. Those are the right behaviours for a page and the
 wrong ones for a trail. Use a forwarder.
 
-`MultiAuditor` fans every event out to the log, the database sink and the
-forwarder in one call, so none depends on another being configured.
+Every event fans out to the log, the table and the forwarder in one pass, so
+none of the three depends on another being configured.

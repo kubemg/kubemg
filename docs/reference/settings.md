@@ -50,7 +50,7 @@ never dial back in.
 | | |
 |---|---|
 | Meaning | The container image installed into a target cluster when it registers in agent mode. |
-| Environment default | `KUBEMG_AGENT_IMAGE` (falls back to the build's `agentpkg.DefaultImage`, currently `ghcr.io/kubemg/kubemg-agent:0.9.0`) |
+| Environment default | `KUBEMG_AGENT_IMAGE` (falls back to the build's own default, currently `ghcr.io/kubemg/kubemg-agent:0.9.0`) |
 | Validation | none beyond trimming |
 
 ### `agent_namespace`
@@ -58,7 +58,7 @@ never dial back in.
 | | |
 |---|---|
 | Meaning | The namespace the agent is installed into on a target cluster. |
-| Environment default | `KUBEMG_AGENT_NAMESPACE` (falls back to `agentpkg.DefaultNamespace`, `kubemg-system`) |
+| Environment default | `KUBEMG_AGENT_NAMESPACE` (falls back to `kubemg-system`) |
 | Validation | Must be a valid Kubernetes name (lowercase letters, digits, dashes; not leading/trailing dash) if non-empty |
 
 ### `audit_retention_days`
@@ -94,7 +94,7 @@ orphaned evidence.
 |---|---|
 | Meaning | The comma-separated set of verbs that reach the audit **table**. Narrows a busy fleet's trail, which is overwhelmingly `list`/`get` calls nobody reads back. |
 | Environment default | none — unset means every verb is recorded |
-| Validation | Each entry must be one of `auditpolicy.Verbs`; an unrecognised verb in a submitted list is refused |
+| Validation | Each entry must be one of the suppressible verbs listed in [Audit trail](../audit/trail.md#selective-audit-audit_verbs); an unrecognised verb in a submitted list is refused |
 | Empty submission | Means **"back to every verb"**, never "record nothing" — the floor below still records regardless of this setting |
 | Applies to | `StoreAuditor` only, never the structured-log auditor — narrowing a queryable table is a storage decision; narrowing what a SIEM tails would be an audit decision |
 

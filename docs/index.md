@@ -27,7 +27,7 @@ without opening a single inbound port on any cluster.
     what differs between the two.
 
     [Connection modes](clusters/connection-modes.md) ·
-    [Deploying the agent](clusters/agent.md)
+    [Installing the agent](clusters/agent.md)
 
 -   **Grant access**
 
@@ -49,7 +49,30 @@ without opening a single inbound port on any cluster.
     [Audit trail](audit/trail.md) ·
     [Alarms and integrations](audit/alarms.md)
 
+-   **Work on kubemg**
+
+    ---
+
+    Build it, test it, understand how it is put together, and send a change
+    back.
+
+    [Developer guide](dev/index.md) ·
+    [Local development](dev/setup.md)
+
 </div>
+
+## Two guides
+
+The manual is split into two, and the tabs at the top of the page switch between
+them.
+
+The **User guide** is for running an install: attaching clusters, granting
+access, reading the audit trail, and everything else you do from the console.
+It names pages, fields and settings, and never a source file.
+
+The **Developer guide** is for working on kubemg itself: the repository layout,
+running a stack locally, how each subsystem is put together, the REST API, and
+how to get a change reviewed. Nothing in it is needed to operate an install.
 
 ## Where to start
 
@@ -65,6 +88,9 @@ If you are **operating an install**, the [Environment reference](install/environ
 [Runtime settings](reference/settings.md) and
 [Troubleshooting](reference/troubleshooting.md) are the three pages you will keep
 open.
+
+If you are **changing the code**, start at [Developer guide](dev/index.md) and
+[Local development](dev/setup.md).
 
 ## Versions
 
@@ -82,7 +108,7 @@ by directory, because only one half runs inside somebody else's cluster.
 | Path | Licence | Why |
 |---|---|---|
 | Server, console, identity and authorisation | **AGPL-3.0** | This is a product people host for others, so running a *modified* kubemg as a network service means offering that modified source to its users. |
-| `agent/`, `deploy/kustomize/` | **Apache-2.0** | The only component that runs **inside a customer's cluster**. A SecOps team has to be able to read it, build it and vendor it into their own tooling without copyleft reaching their infrastructure — see [The agent](reference/agent.md). |
+| `agent/`, `deploy/kustomize/` | **Apache-2.0** | The only component that runs **inside a customer's cluster**. A SecOps team has to be able to read it, build it and vendor it into their own tooling without copyleft reaching their infrastructure — see [The agent](reference/agent.md) and [The agent module](dev/agent.md). |
 
 The AGPL does not forbid selling or reselling kubemg; what it forbids is keeping
 a modified, network-served fork private. A **commercial licence** is available

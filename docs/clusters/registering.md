@@ -1,7 +1,7 @@
-# Registering a cluster
+# Adding a cluster
 
 Registration is a page, not a drawer: `/admin/clusters/new`, a five-step
-wizard (`ClusterWizard.tsx`) rather than a modal form. It is admin-only. The
+wizard rather than a modal form. It is admin-only. The
 five steps are **Identity**, **Connection**, **Handshake**, **Observability**
 and **Access** — the stepper lets you jump back to any completed step, but the
 first two lock once the cluster record exists, because steps three through
@@ -31,9 +31,8 @@ also where the cluster record is **created** — submitting this step calls
 
 === "Agent mode"
 
-    No further fields on this step. The server mints a registration token
-    (`bastion.NewAgentToken()`) and stores it as `Cluster.AgentToken`; no other
-    cluster credential is stored. The response already carries the rendered
+    No further fields on this step. The server mints a registration token and
+    stores it; no other cluster credential is stored. The response already carries the rendered
     install command, since the server renders it as part of creating the
     cluster.
 
@@ -81,7 +80,10 @@ curl -X POST https://your-kubemg/api/v1/clusters \
   }'
 ```
 
-See [reference/api.md](../reference/api.md) for the full cluster surface.
+See [REST API reference](../dev/api.md) for the full cluster surface.
+
+!!! info "Screenshot pending — `cluster-wizard-connection.png`"
+    Step 2 of the wizard, with the agent-based and direct cards side by side.
 
 ## Step 3 — Handshake
 
@@ -103,8 +105,11 @@ You can continue past this step ("Skip for now") before the cluster connects
 — the connection state is visible everywhere else in the console afterward,
 not just here.
 
-See [Deploying the agent](agent.md) for exactly what the install command
+See [Installing the agent](agent.md) for exactly what the install command
 fetches and applies.
+
+!!! info "Screenshot pending — `cluster-wizard-handshake.png`"
+    Step 3 waiting for the agent, and the same step once the tunnel attaches.
 
 ## Step 4 — Observability
 

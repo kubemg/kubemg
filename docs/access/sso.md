@@ -1,35 +1,25 @@
 # Single sign-on
 
-kubemg speaks three federation protocols — OIDC, SAML 2.0, and LDAP — configured at **Admin → Settings → SSO** (`SsoSettings.tsx`, backed by `SsoSettingsPanel.tsx` and `GroupMappingEditor.tsx`). Local accounts keep working exactly as before; federation is additive. Everything a provider is worth in terms of kubemg access is decided by [group mappings](#group-mappings), not by the protocol engine itself — that split is what lets the console and a chat callback agree about authorization without either one re-implementing it.
+kubemg speaks three federation protocols — OIDC, SAML 2.0, and LDAP — configured at **Admin → Settings → SSO**. Local accounts keep working exactly as before; federation is additive. Everything a provider is worth in terms of kubemg access is decided by [group mappings](#group-mappings), not by the protocol engine itself — that split is what lets the console and a chat callback agree about authorization without either one re-implementing it.
 
-All administrative routes are under `/api/v1/admin/sso` and require an admin session:
+## Setting one up
 
-```
-GET    /api/v1/admin/sso/providers
-POST   /api/v1/admin/sso/providers
-PUT    /api/v1/admin/sso/providers/:id
-DELETE /api/v1/admin/sso/providers/:id
-POST   /api/v1/admin/sso/providers/:id/check
-GET    /api/v1/admin/sso/mappings
-POST   /api/v1/admin/sso/mappings
-PUT    /api/v1/admin/sso/mappings/:id
-DELETE /api/v1/admin/sso/mappings/:id
-```
-
-The unauthenticated, public-facing surface — what the login page needs before anyone has signed in — is under `/api/v1/auth/sso/providers`:
-
-```
-GET  /api/v1/auth/sso/providers                 # enabled providers, name + protocol only
-GET  /api/v1/auth/sso/providers/:id/login        # OIDC/SAML: redirects to the IdP
-POST /api/v1/auth/sso/providers/:id/login        # LDAP: username + password, kubemg's own form
-GET  /api/v1/auth/sso/providers/:id/callback      # OIDC callback (GET, ?code=...)
-POST /api/v1/auth/sso/providers/:id/callback      # SAML callback (POST, SAMLResponse)
-GET  /api/v1/auth/sso/providers/:id/metadata      # kubemg's own SAML SP metadata
-```
+1. Sign in as an administrator and open **Admin → Settings → SSO**.
+2. Add a provider and pick its protocol — [OIDC](#oidc), [SAML 2.0](#saml-20)
+   or [LDAP](#ldap). The fields differ per protocol and are listed below.
+3. Register kubemg's **redirect URI** (OIDC) or **SP metadata** (SAML) with the
+   identity provider. Both are shown on the provider's own form.
+4. Run **Check** on the saved provider. It performs a real read against the
+   directory rather than a port check, so a green result means the credentials
+   and the network path both work.
+5. Add at least one [group mapping](#group-mappings). Until one matches,
+   a directory can authenticate somebody perfectly and they will still land
+   with no cluster access at all.
+6. Sign out and confirm the provider's button appears on the login page.
 
 ## Provider kinds
 
-All three protocols share one row (`SSOProviderConfig`) rather than a table each, because they answer the same question — who is this, and what groups are they in — and differ only in how they ask it. Fields irrelevant to a given protocol stay empty.
+All three protocols share one stored configuration shape rather than one per protocol, because they answer the same question — who is this, and what groups are they in — and differ only in how they ask it. Fields irrelevant to a given protocol stay empty.
 
 ### OIDC
 
@@ -113,7 +103,7 @@ The bind order is fixed and matters: (1) bind as the service account (or anonymo
 | `ldap_group_filter` / `ldap_group_base_dn` | The fallback for a directory that keeps membership on the group entry instead (plain OpenLDAP `groupOfNames`) — `%s` is the user's DN. Only used when `ldap_group_attribute` on the user entry comes back empty. |
 | `ldap_group_name_attribute` | What a matched group is called for mapping purposes — `cn` for a readable name, or empty to match on the full DN. |
 
-Usernames and DNs are escaped against LDAP filter injection (`ldap.EscapeFilter`) — nothing typed into the login form reaches the filter unescaped. A filter matching more than one entry is a hard error (`"the user filter matched N entries; it must match one"`) rather than picking the first match. A filter matching zero entries is reported as invalid credentials, not "no such user" — telling an unauthenticated caller which usernames exist is the one thing a login form must not do.
+Usernames and DNs are escaped against LDAP filter injection — nothing typed into the login form reaches the filter unescaped. A filter matching more than one entry is a hard error (`"the user filter matched N entries; it must match one"`) rather than picking the first match. A filter matching zero entries is reported as invalid credentials, not "no such user" — telling an unauthenticated caller which usernames exist is the one thing a login form must not do.
 
 === "Active Directory"
 
@@ -123,9 +113,12 @@ Usernames and DNs are escaped against LDAP filter injection (`ldap.EscapeFilter`
 
     Same shape as AD: `ldap_group_attribute: memberOf` if the overlay is enabled. Without it, leave `ldap_group_attribute` unset (it will find nothing) and configure `ldap_group_filter` such as `(&(objectClass=groupOfNames)(member=%s))` with `ldap_group_base_dn` pointing at the groups subtree, and `ldap_group_name_attribute: cn`.
 
+!!! info "Screenshot pending — `sso-provider-form.png`"
+    An OIDC provider being configured, beside the group-mapping editor.
+
 ## First-login provisioning
 
-`AllowJIT` (on by default) provisions a `db.User` row the first time a directory vouches for someone kubemg has never seen, with `SystemRole` set to the provider's `default_system_role`. With it off, a directory can authenticate someone perfectly and kubemg still refuses — `ErrSSONoAccount` — which is what an install that pre-creates every account via `POST /api/v1/users` wants.
+**Just-in-time provisioning** (on by default) creates an account the first time a directory vouches for someone kubemg has never seen, with the system role set to the provider's `default_system_role`. With it off, a directory can authenticate someone perfectly and kubemg still refuses, which is what an install that pre-creates every account via `POST /api/v1/users` wants.
 
 Matching an existing account: kubemg looks up the identity's `ExternalID` against `(sso_provider_id, external_id)` first, falling back to matching on username. A **local account, or one owned by a different provider, with the same username is never adopted** — `ErrSSOAccountConflict` — because silently attaching a directory to an existing login would let an IdP administrator take over any kubemg account by creating a matching username. Linking the two is a deliberate act done in the user editor, not something that happens implicitly at login.
 
@@ -143,7 +136,7 @@ A rule needs at least one of the three, or it is refused at write time (`"a rule
 
 ### Pattern matching
 
-`external_group_pattern` matches case-insensitively, with `*` standing for any run of characters — a hand-written two-pointer glob, not a regex and not `path.Match`, because a directory's group names arrive as bare words as often as as full distinguished names, and both a regex metacharacter and `path.Match`'s refusal to cross a `/` would make the obvious pattern silently match nothing. `*` alone matches every group the provider asserted, and a rule pattern of exactly `*` also matches someone the directory returned **no** groups for at all — it is treated as "about the provider" rather than "about a group."
+`external_group_pattern` matches case-insensitively, with `*` standing for any run of characters — a plain glob rather than a regular expression, because a directory's group names arrive as bare words as often as as full distinguished names, and a regular expression's metacharacters would make the obvious pattern silently match nothing. `*` alone matches every group the provider asserted, and a rule pattern of exactly `*` also matches someone the directory returned **no** groups for at all — it is treated as "about the provider" rather than "about a group."
 
 ### How mappings are evaluated (the reconcile)
 
@@ -168,23 +161,11 @@ The result (`status`, `message`) is recorded on the provider row (`last_status`,
 
 A federated account has no usable local password at all. `POST /api/v1/auth/login` (the plain username/password endpoint) checks for this **after** looking the username up but **before** checking any password against it, and answers identically to an unknown username or a wrong password on a local account — `401 invalid credentials`, with a dummy bcrypt comparison run regardless so the branch takes the same time either way:
 
-```go
-// A federated account has no password here at all, so a submitted one is
-// never the right password rather than the wrong one — but saying so up
-// front ... would let an unauthenticated caller enumerate which usernames
-// exist and are federated.
-if user.IsMachine() || user.IsFederated() {
-    auth.CheckPassword(dummyPasswordHash, req.Password)
-    c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
-    return
-}
-```
-
 A machine account gets the identical answer for a different reason — it never signs in with a password at all. Both together mean a caller probing `/auth/login` cannot distinguish "no such user" from "that user exists but signs in through SSO" from "that's a machine account."
 
 ## Troubleshooting
 
-**Clock skew.** OIDC's ID token validity window and SAML's assertion `NotBefore`/`NotOnOrAfter` are both checked against wall-clock time. A SAML sign-in that fails with `"the SAML assertion is expired or not yet valid"` (`info.WarningInfo.InvalidTime`) on an otherwise-correct configuration is almost always the bastion host and the IdP disagreeing about the time — check NTP on both sides before touching the provider configuration.
+**Clock skew.** OIDC's ID token validity window and SAML's assertion `NotBefore`/`NotOnOrAfter` are both checked against wall-clock time. A SAML sign-in that fails (`"the SAML assertion is expired or not yet valid"`) on an otherwise-correct configuration is almost always the bastion host and the IdP disagreeing about the time — check NTP on both sides before touching the provider configuration.
 
 **Wrong callback / redirect URI.** The single most common failure. The redirect URI (OIDC) or ACS URL (SAML) registered at the IdP must match what kubemg computes byte-for-byte: `{public_url}/api/v1/auth/sso/providers/{id}/callback`. If `KUBEMG_PUBLIC_URL` (or the runtime override in Settings) changes, every provider's registered URI at its IdP has to be updated to match — kubemg does not tell the IdP anything, it only computes and displays what has to be registered there.
 
@@ -195,3 +176,33 @@ A machine account gets the identical answer for a different reason — it never 
 **Groups claim not present.** Most commonly an OIDC provider that keeps group membership out of the ID token; kubemg already falls back to the UserInfo endpoint when the ID token carries no groups, but if UserInfo does not carry them either (Google Workspace without a directory sync layer, some default Okta/Entra configurations), no client-side retry will produce them — the mapping has to either use a `*` pattern rule for a baseline grant, or the IdP configuration has to be changed to emit the claim (a scope, a claims mapping policy, or a directory sync product).
 
 **TLS to the IdP.** For LDAP, `ldap_skip_verify` is the escape hatch for an internal CA nobody has exported into kubemg's trust store yet — it is surfaced as a standing warning in the console rather than a default, and should be turned off once the CA is trusted properly. For OIDC discovery and SAML metadata fetches over plain HTTP, the failure surfaces as a fetch error at `check` time rather than at someone's sign-in — always run the check after saving a provider.
+
+## The REST routes
+
+??? note "Administrative routes — `/api/v1/admin/sso`, admin session required"
+
+    ```
+    GET    /api/v1/admin/sso/providers
+    POST   /api/v1/admin/sso/providers
+    PUT    /api/v1/admin/sso/providers/:id
+    DELETE /api/v1/admin/sso/providers/:id
+    POST   /api/v1/admin/sso/providers/:id/check
+    GET    /api/v1/admin/sso/mappings
+    POST   /api/v1/admin/sso/mappings
+    PUT    /api/v1/admin/sso/mappings/:id
+    DELETE /api/v1/admin/sso/mappings/:id
+    ```
+
+??? note "Public routes the login page uses — `/api/v1/auth/sso/providers`"
+
+    ```
+    GET  /api/v1/auth/sso/providers              # enabled providers, name + protocol only
+    GET  /api/v1/auth/sso/providers/:id/login    # OIDC/SAML: redirects to the IdP
+    POST /api/v1/auth/sso/providers/:id/login    # LDAP: username + password, kubemg's own form
+    GET  /api/v1/auth/sso/providers/:id/callback # OIDC callback (GET, ?code=...)
+    POST /api/v1/auth/sso/providers/:id/callback # SAML callback (POST, SAMLResponse)
+    GET  /api/v1/auth/sso/providers/:id/metadata # kubemg's own SAML SP metadata
+    ```
+
+The full surface, with payloads, is in the developer guide's
+[REST API reference](../dev/api.md#federated-sign-in-sso).

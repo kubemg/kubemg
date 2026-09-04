@@ -59,10 +59,9 @@ feature: writing a cluster's RBAC from a tool whose own permission model is
 entirely separate is exactly how the two would silently diverge.
 
 That boundary is enforced in the generic manifest editor too, not just by
-the absence of a dedicated write route: `notCreatable` in
-`backend/pkg/api/resources_create.go` refuses to **create** a `roles`,
-`rolebindings`, `clusterroles` or `clusterrolebindings` object from a
-manifest, with the response naming the reason —
+the absence of a dedicated write route. Creating a `roles`, `rolebindings`,
+`clusterroles` or `clusterrolebindings` object from a manifest is refused, with
+the response naming the reason —
 
 > kubemg does not author a cluster's RBAC. Create Roles and bindings with
 > kubectl or whatever manages them, and read them back here.

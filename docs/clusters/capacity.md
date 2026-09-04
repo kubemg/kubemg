@@ -21,7 +21,7 @@ schedule into):
 | **Used** | `metrics.k8s.io`, optional | what is actually being spent right now |
 
 Requested and limited are computed with the **scheduler's own arithmetic**,
-not a sum of containers (`demandOf` in `backend/pkg/api/capacity.go`):
+not a sum of containers:
 
 - every regular container's request/limit, plus every **native sidecar**
   (an init container with `restartPolicy: Always`, which starts during
