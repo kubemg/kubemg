@@ -8,15 +8,15 @@ throughout as the most sensitive artefact kubemg writes.
 
 ## What is captured
 
-`pkg/terminal` writes recordings as **asciinema v2**: a JSON header line
+Recordings are written as **asciinema v2**: a JSON header line
 followed by one JSON array per event (`[offset, code, data]`), gzip
 compressed, stored as `.cast.gz`. That format is deliberate — a recording
 plays in the `asciinema` player itself, not only in kubemg's own, and being
 a text stream it compresses to a fraction of its size and needs no index to
 start playing from the beginning.
 
-A recording is a **tee**, not a second session: `pkg/bastion/exec.go`
-already carries the Kubernetes exec/attach channel protocol
+A recording is a **tee**, not a second session: the exec stream already
+carries the Kubernetes exec/attach channel protocol
 (stdin/stdout/stderr/error/resize, channel-prefixed) verbatim between the
 client and the cluster, and `recordFromCluster`/`recordFromClient` read the
 channel prefix off the same bytes without disturbing them:
@@ -41,6 +41,9 @@ that killed a production shell because a volume filled up would be a worse
 product than one with a gap in its recordings and a line in the log saying
 so.
 
+!!! info "Screenshot pending — `recording-replay.png`"
+    A recording replaying mid-session.
+
 ## Where files go
 
 `KUBEMG_SESSION_RECORDING_DIR` (default `/var/lib/kubemg/recordings`) is
@@ -55,8 +58,8 @@ unencrypted recording in the clear. See [Encryption at rest](#encryption-at-rest
 
 ## Sizing and truncation
 
-`KUBEMG_SESSION_RECORDING_MAX_BYTES` caps one recording (default 32 MiB,
-`terminal.DefaultMaxBytes`). Past the cap, the recorder writes one visible
+`KUBEMG_SESSION_RECORDING_MAX_BYTES` caps one recording, 32 MiB by default.
+Past the cap, the recorder writes one visible
 truncation frame — `[kubemg] recording truncated: this session exceeded the
 per-recording limit` — and drops the rest silently rather than growing an
 unbounded file. A shell that printed a gigabyte is almost always a `cat` of
@@ -97,8 +100,8 @@ typed into a production shell for the life of the recording window.
 openssl rand -base64 32
 ```
 
-Set the result as `KUBEMG_SESSION_RECORDING_KEY`. `terminal.ParseKey`
-accepts exactly 32 raw bytes as hex or base64 (any of standard, raw
+Set the result as `KUBEMG_SESSION_RECORDING_KEY`. kubemg accepts exactly 32
+raw bytes as hex or base64 (any of standard, raw
 standard, URL, or raw URL base64) and refuses anything else — including a
 passphrase, which would need a KDF and a stored salt, and would invite a key
 with only a few bits of real entropy protecting the most sensitive file on
@@ -193,9 +196,7 @@ recordings index can say so per session rather than assuming.
 ## Who may watch a recording
 
 Everyone may always replay their **own** sessions. Watching **someone
-else's** needs the recording-viewer capability
-(`db.User.CanViewRecordings`, surfaced as `MayViewAllRecordings()`) on top
-of the admin role — being able to administer kubemg is not the same claim
+else's** needs the recording-viewer capability on top of the admin role — being able to administer kubemg is not the same claim
 as being able to watch what a colleague typed into production. The
 capability is:
 
@@ -236,8 +237,7 @@ replay — among a hundred ordinary list requests.
 
 ## The runtime switch
 
-`record_exec_sessions` (surfaced from `pkg/auditpolicy`) can turn session
-recording **off** at runtime, from Settings. It can only ever turn it off:
+`record_exec_sessions` can turn session recording **off** at runtime, from Settings. It can only ever turn it off:
 a process started with no recording directory or no working recorder
 configured has nowhere to write, and no database row changes that. Flipping
 it stops the **next** shell that opens from being recorded and leaves any
@@ -258,8 +258,8 @@ audit window itself is editable, so shortening it has to pull the
 recording window in with it, and a value that was legal when it was saved
 must not turn into a validation error nobody can see later.
 
-The same background pass that prunes the audit trail
-(`pkg/api/audit_prune.go`) removes recordings past their window, **rows and
+The same background pass that prunes the audit trail removes recordings past
+their window, **rows and
 files together, in one pass** — a row deleted with its file left behind, or
 a file deleted with its row left behind, is exactly the orphaned state
 nothing will ever clean up on a later pass.

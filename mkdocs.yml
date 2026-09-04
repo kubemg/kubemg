@@ -17,6 +17,8 @@ theme:
     text: Archivo
     code: Roboto Mono
   features:
+    - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.instant
     - navigation.tracking
     - navigation.sections
@@ -88,57 +90,71 @@ plugins:
 
 nav:
   - Home: index.md
-  - Introduction:
-      - What kubemg is: introduction/overview.md
-      - How a request flows: introduction/request-flow.md
-      - Security model: introduction/security-model.md
-  - Getting started:
-      - Quickstart: getting-started/quickstart.md
-      - Attach your first cluster: getting-started/first-cluster.md
-      - Give someone access: getting-started/first-access.md
-  - Installation:
-      - Choosing a deployment: install/index.md
-      - Docker Compose: install/docker-compose.md
-      - Kubernetes: install/kubernetes.md
-      - TLS and certificates: install/tls.md
-      - Environment reference: install/environment.md
-      - Database: install/database.md
-      - Upgrading: install/upgrading.md
-      - Production checklist: install/production-checklist.md
-  - Clusters:
-      - Connection modes: clusters/connection-modes.md
-      - Registering a cluster: clusters/registering.md
-      - Deploying the agent: clusters/agent.md
-      - Managing a cluster: clusters/managing.md
-      - Exploring resources: clusters/explore.md
-      - Workload actions: clusters/actions.md
-      - Helm releases: clusters/helm.md
-      - Chart repositories: clusters/helm-repositories.md
-      - Terminals and logs: clusters/terminals-and-logs.md
-      - The browser shell: clusters/browser-shell.md
-      - Events timeline: clusters/events.md
-      - Node capacity: clusters/capacity.md
-      - Security posture: clusters/security-posture.md
-  - Access control:
-      - The access model: access/model.md
-      - Users and groups: access/users-and-groups.md
-      - Single sign-on: access/sso.md
-      - Kubeconfigs: access/kubeconfigs.md
-      - Machine accounts: access/machine-accounts.md
-      - Just-in-time access: access/jit.md
-      - Command guardrails: access/guardrails.md
-      - Cluster RBAC visibility: access/rbac-visibility.md
-  - Observability:
-      - Datasources: observability/datasources.md
-      - Metrics and logs: observability/metrics-and-logs.md
-      - Linking other consoles: observability/consoles.md
-  - Audit and compliance:
-      - Audit trail: audit/trail.md
-      - Forwarding the trail: audit/forwarding.md
-      - Session recording: audit/session-recording.md
-      - Alarms and integrations: audit/alarms.md
-  - Reference:
-      - Runtime settings: reference/settings.md
-      - REST API: reference/api.md
-      - The agent: reference/agent.md
-      - Troubleshooting: reference/troubleshooting.md
+  - User guide:
+      - Introduction:
+          - What kubemg is: introduction/overview.md
+          - Security model: introduction/security-model.md
+      - Getting started:
+          - Quickstart: getting-started/quickstart.md
+          - Attach your first cluster: getting-started/first-cluster.md
+          - Give someone access: getting-started/first-access.md
+      - Installing kubemg:
+          - Choosing a deployment: install/index.md
+          - Docker Compose: install/docker-compose.md
+          - Kubernetes: install/kubernetes.md
+          - TLS and certificates: install/tls.md
+          - Database: install/database.md
+          - Environment reference: install/environment.md
+          - Upgrading: install/upgrading.md
+          - Production checklist: install/production-checklist.md
+      - Managing clusters:
+          - Connection modes: clusters/connection-modes.md
+          - Adding a cluster: clusters/registering.md
+          - Installing the agent: clusters/agent.md
+          - Managing a cluster: clusters/managing.md
+          - The agent in your cluster: reference/agent.md
+      - Working in a cluster:
+          - Browsing resources: clusters/explore.md
+          - Workload actions: clusters/actions.md
+          - Terminals and logs: clusters/terminals-and-logs.md
+          - The browser shell: clusters/browser-shell.md
+          - Helm releases: clusters/helm.md
+          - Chart repositories: clusters/helm-repositories.md
+          - Events timeline: clusters/events.md
+          - Node capacity: clusters/capacity.md
+          - Security posture: clusters/security-posture.md
+      - Users and access:
+          - The access model: access/model.md
+          - Users and groups: access/users-and-groups.md
+          - Single sign-on: access/sso.md
+          - Kubeconfigs: access/kubeconfigs.md
+          - Machine accounts: access/machine-accounts.md
+          - Just-in-time access: access/jit.md
+          - Command guardrails: access/guardrails.md
+          - Cluster RBAC visibility: access/rbac-visibility.md
+      - Metrics and logs:
+          - Datasources: observability/datasources.md
+          - Metrics and logs: observability/metrics-and-logs.md
+          - Linking other consoles: observability/consoles.md
+      - Audit and compliance:
+          - Audit trail: audit/trail.md
+          - Forwarding the trail: audit/forwarding.md
+          - Session recording: audit/session-recording.md
+          - Alarms and integrations: audit/alarms.md
+      - Reference:
+          - Runtime settings: reference/settings.md
+          - Troubleshooting: reference/troubleshooting.md
+  - Developer guide:
+      - Start here: dev/index.md
+      - Local development: dev/setup.md
+      - Building and testing: dev/verify.md
+      - Internals:
+          - System architecture: dev/architecture.md
+          - How a request flows: dev/request-flow.md
+          - Backend: dev/backend.md
+          - Tunnel and proxy: dev/bastion.md
+          - Console: dev/frontend.md
+          - The agent module: dev/agent.md
+      - REST API: dev/api.md
+      - Writing documentation: dev/docs.md
+      - Contributing: dev/contributing.md

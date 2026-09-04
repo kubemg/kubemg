@@ -6,13 +6,13 @@ inventory table at `/admin/clusters`, and the per-cluster dashboard at
 
 ## The inventory table
 
-`/admin/clusters` (`ClusterManagement.tsx`), admin-only, lists every
+`/admin/clusters`, admin-only, lists every
 registered cluster: name, rail chip, environment, link state, API server
 (hidden below `md` width), status, Kubernetes version (hidden below `md`), and a
 row of actions. A filter box narrows by name. From here:
 
 - **Register cluster** opens the wizard at `/admin/clusters/new` — see
-  [Registering a cluster](registering.md).
+  [Adding a cluster](registering.md).
 - **Run check** (per row) calls `POST /api/v1/clusters/:id/check`.
 - **Edit** (per row) opens the labels sheet — see below.
 - **Remove** calls `DELETE /api/v1/clusters/:id` after a confirmation:
@@ -70,8 +70,8 @@ before this field existed looks exactly as it did.
 `POST /api/v1/clusters/:id/check` is mode-aware:
 
 - **Agent mode**: the check does not touch the network at all — it asks the
-  tunnel registry whether this cluster's agent is currently connected
-  (`s.tunnels.Connected(cluster.ID)`). There is nothing for kubemg to dial;
+  tunnel registry whether this cluster's agent is currently connected. There is
+  nothing for kubemg to dial;
   the whole point of agent mode is that kubemg has no route to the cluster.
   An unconnected cluster reports either *"no agent has connected from this
   cluster yet"* (never seen an agent) or *"the in-cluster agent is not
@@ -85,7 +85,7 @@ subsequent read of the cluster.
 
 ## The cluster dashboard
 
-`/clusters/:id/dashboard` (`ClusterSummary.tsx`) renders one of two bodies
+`/clusters/:id/dashboard` renders one of two bodies
 depending on the caller's coarse role (`user.role === 'admin'` — a super
 admin counts as an administrator here too). The shell around both — the
 header actions (Pods, Request access, Run check for admins only, Generate
@@ -120,13 +120,16 @@ namespaces, whether calls are proxied), four summary cards — Deployments,
 StatefulSets, DaemonSets, Pods — a **needs attention** list, and CPU/memory
 history. Every number on this body is derived from the same resource-list
 insight logic Explore's own pilot header uses (see
-[Exploring resources](explore.md#the-pilot-header)), so a count here and a
+[Browsing resources](explore.md#the-pilot-header)), so a count here and a
 count one click away in Explore cannot disagree; each card links to the list
 it summarises rather than duplicating a table of its own.
 
+!!! info "Screenshot pending — `cluster-dashboard.png`"
+    A healthy cluster dashboard.
+
 ## Node capacity
 
-`/clusters/:id/capacity` (`NodeCapacity.tsx`) is its own address rather than a
+`/clusters/:id/capacity` is its own address rather than a
 tab on the dashboard, because it answers a different question than the
 Capacity panel above: not "how much is this node using" but "what has the
 scheduler already promised away". It shows, per node, three numbers against

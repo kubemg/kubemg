@@ -1,4 +1,4 @@
-# Deploying the agent
+# Installing the agent
 
 This page is the detailed reference for what the agent install actually does.
 For the shortest path from zero to an attached cluster, see
@@ -30,7 +30,7 @@ be one way to leak it.
 - `agent.yaml` is the flat, fully-rendered manifest — a single YAML stream
   with every `__PLACEHOLDER__` filled in — for `kubectl apply -f`.
 - `kustomize.tar.gz` is the same content as a Kustomize package rooted at a
-  `kubemg-agent/` directory (`agentpkg.PackageDir`), for operators who want the
+  `kubemg-agent/` directory, for operators who want the
   files on disk before applying:
 
   ```bash
@@ -42,10 +42,13 @@ be one way to leak it.
   package has to be fetched and extracted first — it cannot be applied
   straight from the URL the way the flat manifest can.)
 
-Both are rendered from the **effective** settings (`s.settings(ctx)`), not the
-boot-time environment — if an administrator changes the public URL or the
+Both are rendered from the **effective** settings, not the boot-time
+environment — if an administrator changes the public URL or the
 agent image in **Settings → Agent**, every install command issued afterward
 reflects the change immediately, with no redeploy of the bastion.
+
+!!! info "Screenshot pending — `agent-install-sheet.png`"
+    The install package sheet, with the rendered apply command.
 
 ## What lands in the cluster
 
@@ -254,7 +257,7 @@ so a transient failure is not fatal — but a persistent one needs a fix. Check
     rendered before the bastion's certificate existed, or the wrong archive
     was applied. Re-fetch a fresh install package — **the cluster's dashboard →
     Agent install**, or `/api/v1/clusters/:id/kustomize` — and re-apply it;
-    the current `bastionCA` is baked in at render time (`s.bastionCA`).
+    the bastion's current CA is baked in at render time.
 
     A related, deliberately noisy line if verification is disabled by hand:
 
@@ -267,8 +270,8 @@ so a transient failure is not fatal — but a persistent one needs a fix. Check
 
 === "agent speaks an unsupported tunnel protocol version"
 
-    The bastion refused the handshake because the agent's
-    `protocol.ProtocolVersion` does not match the server's. This means the
+    The bastion refused the handshake because the agent's tunnel protocol
+    version does not match the server's. This means the
     agent image is far out of date relative to the bastion (the protocol
     version is bumped only on a breaking wire change). Re-apply the manifest
     with the current `KUBEMG_AGENT_IMAGE` to pick up a matching agent build.

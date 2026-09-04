@@ -34,7 +34,7 @@ docker compose up -d
 kubectl set image deployment/kubemg kubemg=ghcr.io/kubemg/kubemg:<new-version> -n kubemg
 ```
 
-Schema migrations run automatically at boot via `db.Migrate` (AutoMigrate) —
+Schema migrations run automatically at boot —
 there is no separate migration step to run before or after the image swap.
 See [Database](database.md) for what that does and how the reference DDL in
 `backend/migrations/` fits in if a DBA wants to review or pre-apply a change
@@ -50,17 +50,11 @@ agent will refuse.
 ## Agent and server version compatibility
 
 The tunnel handshake carries a `ProtocolVersion` that both sides must agree
-on exactly — `backend/pkg/bastion/protocol.go` defines it on the server side
-and `agent/internal/protocol` mirrors it (the agent is a separate
-Apache-2.0 Go module and does not import the AGPL server, so the two copies are
-kept in sync by hand and only need to agree on JSON field names and this
-constant):
-
-```go
-// ProtocolVersion is bumped when a frame's meaning changes. The server refuses
-// a handshake it does not recognise rather than guessing...
-const ProtocolVersion = 2
-```
+on exactly. The server and the agent each carry their own copy of it (the agent
+is a separate Apache-2.0 module and does not import the AGPL server, so the two
+copies are kept in sync by hand and only need to agree on JSON field names and
+this
+version number).
 
 The bastion **refuses a handshake at any other version** rather than
 attempting to guess compatibility — an agent whose protocol version doesn't

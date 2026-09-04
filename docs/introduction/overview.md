@@ -75,7 +75,7 @@ It is **not**:
 No inbound firewall rule on any cluster. In **agent mode** kubemg stores no
 cluster credential at all — only the registration token the agent presented
 when it dialled in. See [Connection modes](../clusters/connection-modes.md)
-and [How a request flows](request-flow.md) for the mechanics.
+and [How a request flows](../dev/request-flow.md) for the mechanics.
 
 **Postgres** is the one piece of state kubemg itself owns: users, groups,
 grants, cluster registrations, settings, audit records and session-recording
@@ -91,7 +91,10 @@ requests, their own audit trail, their own session recordings). Everything in
 both resolves for everyone; there is nothing to be an administrator to reach a
 row that isn't there. A cluster's dashboard for a non-admin is a slim identity
 card plus the counts and alerts drawn from the resource lists they can already
-read — see [Exploring resources](../clusters/explore.md).
+read — see [Browsing resources](../clusters/explore.md).
+
+!!! info "Screenshot pending — `fleet-overview.png`"
+    The fleet overview, signed in as an administrator: every cluster, its environment band, and the state of its tunnel.
 
 ## What an administrator sees
 
@@ -105,8 +108,8 @@ navigation does not hint at sections it cannot open.
 
 | Area | What it does | Read more |
 | --- | --- | --- |
-| Fleet | Environment-banded cluster cards, an inventory table, a five-step registration wizard | [Registering a cluster](../clusters/registering.md) |
-| Explore | A resource browser over live cluster state, including CRDs a cluster actually serves | [Exploring resources](../clusters/explore.md) |
+| Fleet | Environment-banded cluster cards, an inventory table, a five-step registration wizard | [Adding a cluster](../clusters/registering.md) |
+| Explore | A resource browser over live cluster state, including CRDs a cluster actually serves | [Browsing resources](../clusters/explore.md) |
 | Operate | Scale, restart, YAML edit, `port-forward`, Helm values, in-browser terminal and pooled logs | [Workload actions](../clusters/actions.md), [Terminals and logs](../clusters/terminals-and-logs.md) |
 | Observability | Live utilisation plus history from a registered datasource, without the browser ever sending a query | [Metrics and logs](../observability/metrics-and-logs.md) |
 | Access | Users, groups, effective-permission merging, SSO federation, machine accounts, just-in-time elevation | [The access model](../access/model.md) |
@@ -115,6 +118,6 @@ navigation does not hint at sections it cannot open.
 | Alarms | Routes cluster events and kubemg's own audit records to Alertmanager, Slack, Teams, PagerDuty, ServiceNow or a SIEM webhook | [Alarms and integrations](../audit/alarms.md) |
 | Audit forwarding | Pushes the complete trail to a syslog collector as RFC 5424 with a JSON message, for a SIEM that cannot tail the container's log stream | [Forwarding the trail](../audit/forwarding.md) |
 
-Continue to [How a request flows](request-flow.md) for the mechanics behind
+Continue to [How a request flows](../dev/request-flow.md) for the mechanics behind
 all of this, or [Security model](security-model.md) for what is and is not
 trusted where.

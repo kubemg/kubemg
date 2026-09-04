@@ -10,7 +10,7 @@ preference.
 
 ## Channels and rules
 
-Two tables, split the way the responsibility splits (`pkg/db/alarm_models.go`):
+Two tables, split the way the responsibility splits:
 
 - **`AlarmChannel`** is a destination — a URL, an auth mode, a credential.
   Configured once.
@@ -191,10 +191,9 @@ trigger event.
 ```
 
 **The routing key rides in the body, not a header** — PagerDuty's Events
-API has no header for it, which is why `key` exists as its own auth mode
-(`db.AuthKey`): the channel's stored `Secret` is written straight into
-`routing_key`. **`dedup_key` is the signal's fingerprint**
-(`fingerprintOf`), so repeats of the same underlying problem — a crash loop
+API has no header for it, which is why `key` exists as its own auth mode: the
+channel's stored secret is written straight into `routing_key`.
+**`dedup_key` is the signal's fingerprint**, so repeats of the same underlying problem — a crash loop
 re-emitting its event every few seconds — collapse into one PagerDuty
 incident instead of opening a new one per occurrence, even across different
 kubemg replicas whose in-memory cool-offs know nothing about each other.
@@ -309,10 +308,9 @@ wants:
   cluster emits, which is thousands of `Normal` events an hour, and
   discovering that on a pager is a worse way to find out than a 400 at save
   time.
-- An `audit` rule naming a verb that is not one the trail actually records
-  (`auditVerbVocabulary` — every `auditpolicy.Verbs` entry plus the
-  recording-access verbs `replay`/`recording-get`/`recording-delete`) is
-  refused, because a rule that can never fire looks identical to one that
+- An `audit` rule naming a verb that is not one the trail actually records —
+  every suppressible verb plus the recording-access verbs
+  `replay`/`recording-get`/`recording-delete` — is refused, because a rule that can never fire looks identical to one that
   does.
 
 ## Testing a channel
@@ -334,7 +332,7 @@ Every delivery attempt — real or test — records `last_status` (`ok`/
 response body), and `last_attempt_at` on the channel row
 (`RecordAlarmDelivery`). Nobody notices a page that was never sent, so this
 is the only place a silently-broken integration becomes visible; the
-Settings UI (`AlarmSettingsPanel.tsx`) surfaces it per channel.
+Settings UI surfaces it per channel.
 
 A real delivery gets up to 2 attempts, 2 seconds apart (`alarmAttempts`,
 `alarmRetryDelay`) — a page is worth one retry; a third attempt against an
@@ -349,13 +347,12 @@ producer, `fingerprintOf` falls back to `source/cluster/namespace/object/
 reason`, so deduplication degrades to "the same object and reason" rather
 than to none at all.
 
-## `Observe` never blocks, never fails a caller
+## The dispatcher never blocks, and never fails a caller
 
-`Dispatcher.Observe` is called from the audit path itself (via
-`alarmAuditor`, the `bastion.Auditor` adapter that feeds every non-closing
-audit event into the dispatcher as a `Signal`) and from the cluster-event
-poller. Neither caller has anything useful to do with a delivery failure,
-so `Observe`:
+Signals arrive from two places: the audit path itself, which feeds every
+non-closing audit event into the dispatcher, and the cluster-event poller.
+Neither caller has anything useful to do with a delivery failure, so the
+dispatcher:
 
 - Returns immediately if no *enabled* rule exists at all (`armed()`) — a
   fleet with no alarms configured pays nothing per proxied call.
@@ -370,10 +367,9 @@ so `Observe`:
 ## The cluster-event poller
 
 Cluster Events are not pushed to kubemg; something has to go and read them.
-`pkg/api/alarms_watch.go` polls once a minute (`alarmPollInterval`), and
-only where it actually needs to:
+kubemg polls once a minute, and only where it actually needs to:
 
-- **Only clusters some enabled `cluster_event` rule covers** (`watched`) —
+- **Only clusters some enabled `cluster_event` rule covers** —
   a rule scoped to cluster 4 is not a reason to poll cluster 7.
 - **Only where an agent is attached** — a direct-mode cluster, or an agent
   cluster with no live tunnel, is skipped (and its watermark forgotten, so
@@ -403,8 +399,7 @@ rule would misrepresent the trail.
 
 Polling is the one background job in the product whose cost multiplies
 with the replica count and lands on someone else's production API server,
-so it is guarded by a **lease** (`pkg/db/lease.go`,
-`db.LeaseAlarmWatcher`) rather than left to run in every process:
+so it is guarded by a **lease** rather than left to run in every process:
 
 - The lease is a single row taken by a **conditional upsert** — `ON
   CONFLICT ... DO UPDATE ... WHERE expires_at < now() OR holder = mine` —
@@ -428,8 +423,7 @@ so it is guarded by a **lease** (`pkg/db/lease.go`,
 
 Slack and Teams channels also carry [just-in-time access](../access/jit.md)
 approval workflow notices — a request pending approval, and the decision
-once one is made — through the same dispatcher (`NotifyAccessRequest`/
-`NotifyAccessDecision` in `pkg/observability/alarm_approvals.go`). These are
+once one is made — through the same dispatcher. These are
 questions waiting for a person rather than facts being reported, so their
 payloads carry controls: Slack Block Kit buttons, a Teams Adaptive Card with
 an `Action.OpenUrl` to the console. Only chat-shaped channels

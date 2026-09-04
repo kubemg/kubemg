@@ -10,7 +10,7 @@ it expects, how agents decide what to trust, and how to verify all of it.
 
 ## Why the server refuses to start without it
 
-`backend/cmd/server/main.go` enforces this at boot, not just in documentation:
+kubemg enforces this at boot, not just in documentation:
 
 - If `KUBEMG_TLS_ENABLED=true`, the server serves HTTPS on `KUBEMG_LISTEN_ADDR`
   and that's the end of it.
@@ -84,9 +84,8 @@ The self-signed pair kubemg mints is:
 A **supplied** certificate has the same two requirements — PEM, unencrypted
 private key — plus one more: if it's a chain rather than a single leaf
 certificate, `tls.crt` must contain the **full chain in order, leaf first**,
-followed by any intermediates. kubemg loads it with `tls.LoadX509KeyPair`,
-the same mechanism any standard TLS server uses, so the ordering rule is the
-usual one: leaf, then intermediate(s), never the root CA.
+followed by any intermediates. kubemg loads the pair the same way any standard
+TLS server does, so the ordering rule is the usual one: leaf, then intermediate(s), never the root CA.
 
 ### Recognised filenames
 

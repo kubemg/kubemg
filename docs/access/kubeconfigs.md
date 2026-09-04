@@ -29,36 +29,26 @@ The response:
 }
 ```
 
+!!! info "Screenshot pending — `kubeconfig-sheet.png`"
+    The generate sheet, with the TTL ladder open.
+
 ## The TTL ladder and the two ceilings
 
-There are deliberately **two** ceilings, defined in `pkg/k8s`:
+There are deliberately **two** ceilings:
 
-```go
-const (
-    MinTTL        = 10 * time.Minute
-    DefaultMaxTTL = 24 * time.Hour
-    MaxTTL        = 90 * 24 * time.Hour
-    DefaultTTL    = time.Hour
-)
-```
+| Bound | Value | Meaning |
+| --- | --- | --- |
+| Shortest window | 10 minutes | The floor a request may ask for |
+| Default window | 1 hour | What a request that names no window gets |
+| Default ceiling | 24 hours | What an install allows when nobody has said otherwise — a credential sitting on a laptop for longer than a day is the exposure kubemg cannot see being used |
+| Absolute ceiling | 90 days | No administrator setting can push past it: beyond a quarter, a bearer token stops being access control and becomes a permanent key |
 
-- **`DefaultMaxTTL` (24 hours)** is what an install allows when nobody has said otherwise — a credential sitting on a laptop for longer than a day is the exposure kubemg cannot see being used.
-- **`MaxTTL` (90 days / one quarter)** is the *absolute* bound. No administrator setting can push past it: beyond a quarter, a bearer token stops being access control and becomes a permanent key. `pkg/k8s` enforces only this absolute bound — it is the minting layer, not the policy layer.
+The effective ceiling in between is a runtime setting,
+`kubeconfig_max_ttl_hours`. A stored value below an hour or above the absolute
+ceiling reads as **unset**, falling back to the 24-hour default rather than to
+whatever it happens to parse to.
 
-The effective ceiling in between is a runtime setting, `kubeconfig_max_ttl_hours`, resolved in the API layer (`s.kubeconfigMaxTTL`):
-
-```go
-func (s *server) kubeconfigMaxTTL(ctx context.Context) time.Duration {
-    hours := s.settings(ctx).KubeconfigMaxTTLHours
-    ceiling := time.Duration(hours) * time.Hour
-    if ceiling < time.Hour || ceiling > k8s.MaxTTL {
-        return k8s.DefaultMaxTTL
-    }
-    return ceiling
-}
-```
-
-Stored in **hours**, deliberately — a value that has to move both directions (an install handing out a quarter, and one refusing anything past an eight-hour shift) cannot be expressed in whole days. An out-of-bounds stored value — including `0` — reads as unset and falls back to `DefaultMaxTTL`, the same rule the audit retention window follows: a ceiling read wrong is either every request refused or a credential longer than this build will ever sign for, so an ambiguous value defaults to the safer failure.
+Stored in **hours**, deliberately — a value that has to move both directions (an install handing out a quarter, and one refusing anything past an eight-hour shift) cannot be expressed in whole days. An out-of-bounds stored value — including `0` — reads as unset and falls back to the 24-hour default, the same rule the audit retention window follows: a ceiling read wrong is either every request refused or a credential longer than this build will ever sign for, so an ambiguous value defaults to the safer failure.
 
 `kubeconfig_max_ttl_hours` is set from **Admin → Settings**, as a plain number field rather than a preset ladder — a ceiling is an administrator's one-time decision, not a per-request choice.
 
@@ -83,8 +73,8 @@ The console's own generator sheet filters a fixed preset ladder (1h → 90d) aga
 The target cluster has no route kubemg can dial directly, and no cluster credential is stored at all — so the kubeconfig cannot point at the cluster. Instead:
 
 - `server` is `{public_url}/api/v1/clusters/:id/proxy` — kubemg's own proxy.
-- The bearer token is a **kubemg-issued JWT minted with `auth.ScopeProxy` and the cluster's id** (`GenerateProxyToken`), not a Kubernetes credential at all.
-- `RequireAuth` confines a proxy-scoped token to exactly that cluster's `/proxy` route — a kubeconfig lives on a laptop, so it must never double as a session key for the rest of the kubemg API.
+- The bearer token is a **kubemg-issued JWT, scoped to the proxy and to that one cluster**, not a Kubernetes credential at all.
+- kubemg confines a proxy-scoped token to exactly that cluster's `/proxy` route — a kubeconfig lives on a laptop, so it must never double as a session key for the rest of the kubemg API.
 - `certificate-authority-data` carries **the bastion's own CA**, when the bastion has one pinned (self-signed or an operator-supplied `KUBEMG_AGENT_CA_BUNDLE`) — because the "cluster" kubectl is dialing is kubemg itself, so the CA it has to trust is kubemg's, not the target cluster's. A publicly-trusted bastion certificate embeds nothing, because pinning it would break the file at the next certificate renewal.
 
 ### Direct mode
@@ -99,14 +89,6 @@ kubemg holds a stored API URL and service account token for the cluster and dial
 ## The granted-vs-requested TTL warning
 
 A cluster's own API server may enforce `--service-account-max-token-expiration`, and it answers a request for a longer window with an **earlier expiry rather than an error** — silently, from kubemg's point of view. Reporting the TTL that was *asked for* would have the console counting down from time the token was never actually issued for, so the response reports what the cluster **granted**:
-
-```go
-// The cluster's own API server caps service account tokens ... and answers a
-// longer request with an earlier expiry rather than an error. Reporting the
-// TTL that was asked for would make the console count down from a window the
-// token does not have, so what is reported is the window the cluster granted.
-granted, shortened := grantedTTL(ttl, issued.ExpiresAt)
-```
 
 When the cluster shortened the window, `warning` names the specific mechanism:
 
@@ -144,16 +126,16 @@ POST /api/v1/kubeconfigs/revoke-all
 
 Reading follows the audit trail's rule exactly: everybody may read, a non-admin is narrowed by the handler to their own rows, and the `user_id` query parameter can narrow that further but **never widen it**. Revoking your own credential is never administrative — revoking a file you know you lost must not require finding an administrator — and revoking somebody else's always is. In the console the register is **Admin → Identity → Issued credentials** for the fleet, and `/me/credentials` for an operator's own.
 
-`last_used_at` is written off the request's own path and at most once every five minutes per credential (`pkg/credentials`), the machine token's rule: this read would otherwise sit in front of every proxied call. A credential that was generated and never used is the most useful row on the page.
+`last_used_at` is written off the request's own path and at most once every five minutes per credential, the machine token's rule: this read would otherwise sit in front of every proxied call. A credential that was generated and never used is the most useful row on the page.
 
 Retention follows the audit window, and a revoked or expired row is **kept rather than deleted** — "what existed and when did it stop" is the question a register answers.
 
 ## Revocation differs by mode
 
-- **Agent mode**: the credential is a proxy-scoped kubemg JWT, and revoking it is a lookup the token cannot argue with — the `jti` in its claims against the register. That set is a **published immutable snapshot** (`pkg/credentials`, shaped exactly like `pkg/auditpolicy`): the HTTP layer republishes on every revoke, the gateway reads it lock-free in `Proxy`'s authorize step, and the next call the file makes gets `401`. A server whose register cannot be read **fails open on nothing** — an unreadable register means no revocations are known, never that every token is refused, because a blip that locks a whole fleet out of `kubectl` is worse than one that briefly honours a withdrawn file. Replicas agree within 30 seconds; the replica that served the revoke is immediate.
+- **Agent mode**: the credential is a proxy-scoped kubemg JWT, and revoking it is a lookup the token cannot argue with — the `jti` in its claims against the register. That set is a **published immutable snapshot**: it is republished on every revoke, the gateway reads it as the first check on any proxied call, and the next call the file makes gets `401`. A server whose register cannot be read **fails open on nothing** — an unreadable register means no revocations are known, never that every token is refused, because a blip that locks a whole fleet out of `kubectl` is worse than one that briefly honours a withdrawn file. Replicas agree within 30 seconds; the replica that served the revoke is immediate.
 - **Direct mode**: the token is minted *on the cluster* via TokenRequest. kubemg cannot withdraw what it did not mint — it keeps working, exactly as issued, until its own expiry passes. The per-row Revoke is therefore **offered in agent mode only**, and a direct-mode row says why rather than showing a button that would report success and change nothing. The one real lever is cluster-side: deleting the per-user `kubemg-<username>` ServiceAccount invalidates every token bound to it, and it is inherently **all-or-nothing per cluster**, since every one of that user's direct-mode kubeconfigs on that cluster is bound to the same account. It is also not instant — the API server caches a successful authentication for about ten seconds, so a token keeps working for that long after the account is gone. Verified end-to-end against a real cluster: the call answers `403` (the token authenticates; direct mode provisions no RoleBinding) until the cache expires, and `401` from then on.
 
-Two levers that already existed remain the fastest blunt instruments and are unchanged: **disabling the account** and **revoking the grant** both take effect on the very next call, because the proxy re-reads the user row and the grant every time (`bastion/proxy.go`). What the register adds is the lever for the case those two are wrong for — the laptop was stolen, and the person still works here and still needs their console.
+Two levers that already existed remain the fastest blunt instruments and are unchanged: **disabling the account** and **revoking the grant** both take effect on the very next call, because the proxy re-reads the user row and the grant every time. What the register adds is the lever for the case those two are wrong for — the laptop was stolen, and the person still works here and still needs their console.
 
 ### Revoking everything one person holds
 
@@ -193,4 +175,4 @@ In the console it is **Change password** on `/me/credentials`, beside the regist
 | Agent, bastion publicly trusted | Empty — the system trust store already covers it, and pinning would break the file at renewal |
 | Direct | The target cluster's own stored CA certificate |
 
-See [Registering a cluster](../clusters/registering.md) and [Machine accounts](machine-accounts.md) for the equivalent kubeconfig rendered for a programmatic caller rather than a person's session.
+See [Adding a cluster](../clusters/registering.md) and [Machine accounts](machine-accounts.md) for the equivalent kubeconfig rendered for a programmatic caller rather than a person's session.

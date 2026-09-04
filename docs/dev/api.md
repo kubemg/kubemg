@@ -18,7 +18,7 @@ Two credential shapes arrive at the same middleware (`RequireAuth`):
 A JWT with `scope: "proxy"` (what a generated kubeconfig carries) is confined
 to exactly one route — `/api/v1/clusters/:id/proxy/*path` for the cluster ID
 in its claims — and is refused with `403` anywhere else. See
-[How a request flows](../introduction/request-flow.md).
+[How a request flows](request-flow.md).
 
 `?access_token=<token>` is accepted **only** on a WebSocket upgrade request
 (the in-browser terminal), because a browser cannot set headers when opening
@@ -37,7 +37,7 @@ Every error response is a flat JSON object:
 There is one deliberate exception on the proxy route: an error the *target
 cluster's* API server returned is forwarded byte for byte, as Kubernetes'
 own `Status` object, not reshaped into kubemg's envelope — see
-[Troubleshooting](troubleshooting.md#kubectl-through-the-proxy) for how to
+[Troubleshooting](../reference/troubleshooting.md#kubectl-through-the-proxy) for how to
 tell the two apart.
 
 ## Conventions used in the tables below
@@ -283,9 +283,9 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | --- | --- | --- |
 | `GET /settings` | Admin | `{effective, overrides, defaults, warnings}` — three-tier resolution. |
 | `PUT /settings` | Admin | An empty string or `0` clears an override back to the default. `public_url`, `agent_namespace`, and the TTL/retention fields are each validated on the way in. |
-| `GET /settings/deployment` | Admin | `{checks[], attention}` — deployment posture; see [Troubleshooting](troubleshooting.md). |
+| `GET /settings/deployment` | Admin | `{checks[], attention}` — deployment posture; see [Troubleshooting](../reference/troubleshooting.md). |
 
-See [Runtime settings](settings.md) for what each field means.
+See [Runtime settings](../reference/settings.md) for what each field means.
 
 ## Guardrails
 
@@ -338,7 +338,7 @@ See [Runtime settings](settings.md) for what each field means.
 | `GET /agent/v1/tunnel` | Agent registration token | The tunnel's WebSocket upgrade. Outside the JWT middleware entirely — an agent authenticates on its own registration token as a bearer token on the upgrade. |
 | `GET /install/:token/agent.yaml` | Registration token in the path | Unauthenticated by necessity — `kubectl` cannot carry a kubemg session; the token in the URL *is* the credential. Renders the flat install manifest. |
 | `GET /install/:token/kustomize.tar.gz` | Registration token in the path | Same route family, the Kustomize archive instead. |
-| `ANY /api/v1/clusters/:id/proxy/*path` | Session or `ScopeProxy` JWT or machine token | The `kubectl` server URL. Every verb — get, watch, exec, port-forward — lands on this one route; see [How a request flows](../introduction/request-flow.md). |
+| `ANY /api/v1/clusters/:id/proxy/*path` | Session or `ScopeProxy` JWT or machine token | The `kubectl` server URL. Every verb — get, watch, exec, port-forward — lands on this one route; see [How a request flows](request-flow.md). |
 
 ```bash
 # Read the audit trail, narrowed to your own activity unless you're an admin

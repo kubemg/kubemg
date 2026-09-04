@@ -2,7 +2,7 @@
 
 Everywhere else in kubemg, "may this person do this?" is answered by the target cluster's own RBAC through impersonation — see [The access model](model.md). A guardrail is the one control that is deliberately **not** that. It is not about privilege: the people a guardrail stops are usually the ones who genuinely hold it, which is exactly why `kubectl delete ns prod` succeeds against RBAC. RBAC has no way to express "an admin may do this, but not by typing it into a terminal at 03:00" — that is the whole of what a guardrail says.
 
-Administered at **Admin → Settings → Guardrails** (`GuardrailSettingsPanel.tsx`), API under `/api/v1/guardrails`, all admin-only:
+Administered at **Admin → Settings → Guardrails**, API under `/api/v1/guardrails`, all admin-only:
 
 ```
 GET    /api/v1/guardrails              # ?cluster_id=0 asks for only the fleet-wide rules
@@ -33,15 +33,15 @@ A `GuardrailPolicy` is a regular expression matched against one of two subjects,
 | `description` | Optional, at most 1000 characters (`maxGuardrailDescriptionLength`). Free text shown to whoever administers the rule later — it is never shown to the caller a rule refuses. |
 | `cluster_id` | `0` (or omitted) is **fleet-wide** — it applies to every registered cluster, including one registered *after* the rule was written, which no per-cluster rule can keep up with. A non-zero id scopes the rule to one cluster, which is what lets production be stricter than a sandbox. A `cluster_id` naming a cluster that does not exist is refused with `400 {"error": "that cluster does not exist"}` at write time, rather than being stored as a rule that enforces nothing while still reading as active. |
 | `pattern` | Required. A regular expression (RE2 syntax, since it compiles with Go's `regexp` package), at most 512 characters, validated by `ValidatePattern` — see [Matching rules](#matching-rules). |
-| `target` | `api_request`, `terminal_exec`, or `both` (`db.GuardrailTargets`). Empty defaults to `both` on write. See [Matching rules](#matching-rules) below. |
-| `action` | `block` refuses the call outright; `warn` lets it through and records that the rule matched, without stopping anything (`db.GuardrailActions`). Empty defaults to `block` on write. |
+| `target` | `api_request`, `terminal_exec`, or `both`. Empty defaults to `both` on write. See [Matching rules](#matching-rules) below. |
+| `action` | `block` refuses the call outright; `warn` lets it through and records that the rule matched, without stopping anything. Empty defaults to `block` on write. |
 | `enabled` | Defaults to `true` on create; honored as sent on update. A disabled rule is skipped at compile time — it does not slow anything down and does not appear as enforced. |
 
 `GET /api/v1/guardrails` also returns `targets` and `actions` (the two enums above, so a client never hard-codes them) and `enforcing` — the rule count the gateway's own compiled snapshot is actually running, which can legitimately be lower than the stored count if a pattern stopped compiling (see [Rule freshness across replicas](#rule-freshness-across-replicas)).
 
 ### The preset catalogue
 
-`GET /api/v1/guardrails/templates` returns a fixed set of pre-written rules an administrator can apply as-is or edit before saving — the empty rule list with a blank pattern box is a feature nobody turns on, since a guardrail pattern is a regular expression matched against a subject most operators have never had to write down. Each template (`db.GuardrailTemplate`) carries a stable `key`, plus the same `name`/`description`/`pattern`/`target`/`action` fields a stored policy does, so applying one is filling a form from the response rather than a second write shape. The full catalogue (`db.GuardrailTemplates`), in the order the endpoint returns them:
+`GET /api/v1/guardrails/templates` returns a fixed set of pre-written rules an administrator can apply as-is or edit before saving — the empty rule list with a blank pattern box is a feature nobody turns on, since a guardrail pattern is a regular expression matched against a subject most operators have never had to write down. Each template carries a stable `key`, plus the same `name`/`description`/`pattern`/`target`/`action` fields a stored policy does, so applying one is filling a form from the response rather than a second write shape. The full catalogue, in the order the endpoint returns them:
 
 | `key` | Name | Target | Action | Pattern |
 | --- | --- | --- | --- | --- |
@@ -154,4 +154,4 @@ A keystroke guard is not a sandbox, and is not sold as one here. Anyone who can 
 
 ## Rule freshness across replicas
 
-Guardrail rules are compiled from the database into an in-memory snapshot (`guardrails.Compile`) and published to the gateway; the hot path reads that snapshot lock-free rather than taking a database round trip per call. The snapshot is republished at boot, after every write through the admin API, and on a 30-second timer — the timer is what lets a second replica pick up a rule change made through its sibling. A policy whose pattern fails to compile is skipped and logged rather than failing the whole publish, and a database read failure during a scheduled refresh leaves the **previous** rule set in force rather than clearing it — a transient outage must never turn into an unguarded fleet.
+Guardrail rules are compiled from the database into an in-memory snapshot and published to the gateway; the hot path reads that snapshot lock-free rather than taking a database round trip per call. The snapshot is republished at boot, after every write through the admin API, and on a 30-second timer — the timer is what lets a second replica pick up a rule change made through its sibling. A policy whose pattern fails to compile is skipped and logged rather than failing the whole publish, and a database read failure during a scheduled refresh leaves the **previous** rule set in force rather than clearing it — a transient outage must never turn into an unguarded fleet.

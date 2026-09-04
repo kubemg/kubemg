@@ -65,10 +65,10 @@ Managing accounts, group membership, and the permission matrix — the console s
 
 ### Federated vs. local accounts
 
-`auth_source` (`db.User.AuthSource`) says where a row's credentials actually live:
+`auth_source` says where an account's credentials actually live:
 
 - **`local`** — the account has a bcrypt password hash in this database. Created here, edited here, and the `password` field on `PUT` is meaningful.
-- **A federation provider value** (see [Single sign-on](sso.md)) — the account is vouched for by an external identity provider. `IsFederated()` (`db.IsFederatedSource`) is true, the row carries an `sso_provider_id` and an `external_id` (the directory's own stable identifier — an OIDC subject, a SAML NameID, an LDAP DN — used to match the account rather than its display name, because a directory is entitled to rename someone without kubemg losing track of who they are), and it has **no usable password**: password sign-in is refused for it outright rather than merely failing, and the console does not offer a password field for it (it reads `auth_source` precisely to know not to). A federated account is still provisioned as, and manageable as, an ordinary row in the same `users` table and the same `/api/v1/users` surface — the difference is entirely in how it authenticates, not in how it is granted access. Its group memberships can additionally be reconciled automatically on every login by that provider's [group mappings](sso.md#group-mappings), which a local account's memberships never are.
+- **A federation provider value** (see [Single sign-on](sso.md)) — the account is vouched for by an external identity provider. `IsFederated()` is true, the row carries an `sso_provider_id` and an `external_id` (the directory's own stable identifier — an OIDC subject, a SAML NameID, an LDAP DN — used to match the account rather than its display name, because a directory is entitled to rename someone without kubemg losing track of who they are), and it has **no usable password**: password sign-in is refused for it outright rather than merely failing, and the console does not offer a password field for it (it reads `auth_source` precisely to know not to). A federated account is still provisioned as, and manageable as, an ordinary row in the same `users` table and the same `/api/v1/users` surface — the difference is entirely in how it authenticates, not in how it is granted access. Its group memberships can additionally be reconciled automatically on every login by that provider's [group mappings](sso.md#group-mappings), which a local account's memberships never are.
 
 ### Account lifecycle: create → disable → delete
 
@@ -77,6 +77,9 @@ Managing accounts, group membership, and the permission matrix — the console s
 | **Create** | A row with `is_active: true` and no cluster grants. | Sign-in. Nothing else — no grants means no cluster is reachable yet. | — |
 | **Disable** (`is_active: false`) | `currentUser` starts rejecting the account's JWT and its machine-token verifier on every subsequent request (see [Disabled accounts](model.md#disabled-accounts)). | Nothing for this account — a live session's next call is rejected immediately, not at token expiry. Grants, group memberships, and JIT history are untouched and restored the instant the account is re-enabled. | Sign-in, and every already-issued JWT for this account, immediately. |
 | **Delete** | The row and everything that references it by foreign key are removed in one operation: cluster grants (`user_cluster_access`), group memberships, machine tokens if the row happened to be a machine account, and JIT requests the account made. | Nothing involving this account. | Any kubeconfig or machine token this account had issued stops working the next time it is presented — the identity it authenticates as no longer exists. Audit rows referencing the user id are **not** deleted; the trail keeps the numeric id so history is not rewritten. |
+
+!!! info "Screenshot pending — `users-table.png`"
+    The user list, with the grant editor open on one account.
 
 ## The access review
 
@@ -102,8 +105,8 @@ nothing `/me/access` does not already.
 | `groups` | Memberships, each with its `source`: `local` for one an administrator wrote, `sso` for one the federation sync derived. Only the derived ones are reconciled away when the directory stops asserting the group, which is a different fact about how long the access lasts. |
 | `clusters` | Per cluster: the **effective** grant, and every grant that contributed to it. |
 
-The effective grant is resolved **server-side with `db.MergeAccess`** — the same
-function the gateway uses — and this is the reason the route exists at all rather
+The effective grant is resolved **server-side**, by the same merge the gateway
+itself performs — and this is the reason the route exists at all rather
 than the console composing the permission matrix itself. A second implementation
 in the browser would be free to disagree with what the proxy allows, and a review
 page saying somebody holds `view` while the proxy grants `edit` is worse than no
@@ -147,7 +150,7 @@ matter.
 
 `GET|POST /api/v1/groups`, `DELETE /api/v1/groups/:id`, `POST /api/v1/groups/:id/members`, `DELETE /api/v1/groups/:id/members/:userId`.
 
-A group is a name and a set of members; a cluster grant made against the group (via the permission matrix, below) is inherited by every current member. `GroupManagement.tsx` is the console page.
+A group is a name and a set of members; a cluster grant made against the group (via the permission matrix, below) is inherited by every current member.
 
 ```json title="POST /api/v1/groups"
 { "name": "platform-devs", "description": "Everyone on the platform team" }
@@ -175,23 +178,9 @@ Deleting a group removes its memberships and its own cluster grants in one trans
 
 A membership row carries a `source` the same way a cluster grant does: `local` for one an administrator added by hand, `sso` for one a federation mapping derived. A federation-derived membership is reconciled — added and removed — on every login by that provider's sync; a hand-written one is never touched by it. See [Single sign-on](sso.md#group-mappings).
 
-## Groups
-
-`GET|POST /api/v1/groups`, `DELETE /api/v1/groups/:id`, `POST /api/v1/groups/:id/members`, `DELETE /api/v1/groups/:id/members/:userId`.
-
-A group is a name and a set of members; a cluster grant made against the group (via the permission matrix, below) is inherited by every current member. `GroupManagement.tsx` is the console page.
-
-```json title="POST /api/v1/groups"
-{ "name": "platform-devs" }
-```
-
-Deleting a group removes its memberships and its own cluster grants in one transaction — a membership or grant referencing a deleted group would otherwise be an orphan nothing can clean up through the API.
-
-A membership row carries a `source` the same way a cluster grant does: `local` for one an administrator added by hand, `sso` for one a federation mapping derived. A federation-derived membership is reconciled — added and removed — on every login by that provider's sync; a hand-written one is never touched by it. See [Single sign-on](sso.md#group-mappings).
-
 ## The permission matrix
 
-`GET /api/v1/permissions`, `POST /api/v1/permissions/assign`, `POST /api/v1/permissions/revoke`. `PermissionsMatrix.tsx` renders it.
+`GET /api/v1/permissions`, `POST /api/v1/permissions/assign`, `POST /api/v1/permissions/revoke`.
 
 The read returns every direct user grant and every group grant, denormalized with subject and cluster names so the console does not need three separate lookups to draw a cell:
 
@@ -265,7 +254,7 @@ A row carries `source` and, when it ends, `expires_at`. The console never merges
 
 ## The recording-viewing capability
 
-`CanViewRecordings` (`db.User.CanViewRecordings`, surfaced as `MayViewAllRecordings()`) is a capability, not a role: it lets an **admin** additionally replay and delete *other people's* terminal session recordings (see [Session recording](../audit/session-recording.md)). It is:
+**Recording visibility** is a capability, not a role: it lets an **admin** additionally replay and delete *other people's* terminal session recordings (see [Session recording](../audit/session-recording.md)). It is:
 
 - **Admin-plus-capability** — it does nothing for a non-admin account, and a super admin holds it implicitly regardless of the stored flag.
 - **Grantable only by a super admin.** The check is `recordingCapabilityDenied`, called whenever a request tries to set `can_view_recordings: true` on a create or an update. If an ordinary admin could grant it, an admin could grant it to itself, and the control would be theatre.
@@ -273,12 +262,6 @@ A row carries `source` and, when it ends, `expires_at`. The console never merges
 
 ### The one-time grandfather backfill
 
-The capability was introduced after installs already had administrators relying on being able to see every recording. `backfillRecordingAccess` runs once, at migration time, and sets `can_view_recordings = true` on every existing `admin`/`superadmin` account — an upgrade must not quietly take away access somebody had yesterday. It is guarded by a `recording_access_backfilled` setting row:
-
-```go
-// backfillRecordingAccess grandfathers existing administrators into the
-// recording-viewer capability. ... New accounts start without it, so the
-// default for anything created from here on is the restrictive one.
-```
+The capability was introduced after installs already had administrators relying on being able to see every recording. A one-time backfill runs at migration time and sets `can_view_recordings = true` on every existing `admin`/`superadmin` account — an upgrade must not quietly take away access somebody had yesterday. It is guarded by a stored marker.
 
 Without that marker the backfill would re-run on every boot and re-grant what an administrator had deliberately revoked from someone. It runs exactly once, ever, per installation; every account created afterwards — including a newly promoted admin — starts without the capability and must be granted it explicitly by a super admin.

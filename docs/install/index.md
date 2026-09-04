@@ -57,8 +57,8 @@ means you can run more than one replica behind a load balancer for
 availability, with two things to get right:
 
 - **`JWT_SECRET`** is optional even with several replicas: left unset, each
-  one mints a key on first boot and stores it via a conflict-safe upsert
-  (`db.EnsureServerSecret`), so several replicas booting against the same
+  one mints a key on first boot and stores it via a conflict-safe upsert, so
+  several replicas booting against the same
   database at once still converge on one shared key rather than each using
   its own. Set it explicitly only if you want a specific, known key you
   control the rotation of — see
@@ -67,9 +67,9 @@ availability, with two things to get right:
   conditions on attached clusters is the one piece of background work in
   kubemg whose cost scales with the number of replicas rather than with the
   number of callers — polling N times would put N times the read load on
-  every target cluster's API server for no benefit. `pkg/db/lease.go`
-  resolves this with a database-backed lease (`AcquireLease`, one row with an
-  expiry, taken by one conditional `UPSERT`): every replica ticks, exactly one
+  every target cluster's API server for no benefit. kubemg resolves this with a
+  database-backed lease — one row with an expiry, taken by a single
+  conditional upsert: every replica ticks, exactly one
   wins the lease and actually polls, and a killed replica's lease simply
   expires rather than needing to be released. This requires no
   configuration — it works the same whether you run one replica or ten.
