@@ -7,13 +7,10 @@ access — it is the ordinary secrets list, read through the same impersonated
 tunnel every other read uses, with the payload decoded server-side because a
 browser has no business gunzipping a release just to render a table.
 
-Reading, deleting values and rendering a chart are all built on
-`helm.sh/helm/v3` used as a **library** — kubemg does not reimplement
-Helm's chart engine — but deliberately **not** on `helm.sh/helm/v3/pkg/kube`,
-Helm's own Kubernetes client. Applying rendered objects goes down the same
-impersonated, audited tunnel every other write uses instead, which is also
-why the server binary pulls in neither `k8s.io/kubectl` nor Helm's OCI
-stack.
+Reading, deleting values and rendering a chart are all built on Helm itself,
+used as a **library** — kubemg does not reimplement Helm's chart engine. What
+it deliberately does not use is Helm's own Kubernetes client: applying rendered
+objects goes down the same impersonated, audited tunnel every other write uses.
 
 ## How releases are read
 

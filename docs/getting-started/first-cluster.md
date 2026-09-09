@@ -69,7 +69,7 @@ access):
    on the new cluster, optionally scoped to namespaces.
 
 Details on each field and the underlying REST calls are in
-[Registering a cluster](../clusters/registering.md).
+[Adding a cluster](../clusters/registering.md).
 
 ## 3. Run the install command against the target cluster
 
@@ -100,7 +100,7 @@ clusterrole/clusterrolebinding # impersonation, kubemg:view/:edit/:cluster-admin
 ```
 
 The full manifest contents and every RBAC object it creates are covered in
-[Deploying the agent](../clusters/agent.md).
+[Installing the agent](../clusters/agent.md).
 
 ## 4. Watch the handshake step attach
 
@@ -132,4 +132,4 @@ open — and **Pods** in the header now opens Explore on live cluster state.
 
 From here, give someone access — see
 [Give someone access](first-access.md) — or continue straight to
-[Exploring resources](../clusters/explore.md).
+[Browsing resources](../clusters/explore.md).

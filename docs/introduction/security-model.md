@@ -11,7 +11,7 @@ picture that motivates them.
 | Held by | What | Notes |
 | --- | --- | --- |
 | kubemg's Postgres | Users, groups, grants, cluster registrations, settings, audit records, session-recording metadata | Direct-mode clusters additionally have their `service_account_token` here — a real, standing cluster credential. Agent-mode clusters have only a registration token. |
-| A generated kubeconfig (agent mode) | A kubemg-issued JWT scoped to one cluster's proxy route (`auth.ScopeProxy`), plus the bastion's CA if it is self-signed | Never a cluster-native credential. |
+| A generated kubeconfig (agent mode) | A kubemg-issued JWT scoped to one cluster's proxy route, plus the bastion's CA if it is self-signed | Never a cluster-native credential. |
 | A generated kubeconfig (direct mode) | A short-lived token minted straight from the target cluster's own TokenRequest API | A real cluster credential, on a laptop. |
 | A machine account | A `kmgm_`-prefixed opaque secret; only its SHA-256 hash is stored | Revocation is a database write, effective on the token's next use — not a wait for expiry. |
 | The agent | Its cluster registration token (`kmg_`-prefixed) and, if the bastion is self-signed, the bastion's CA certificate | Nothing else; it holds no session, no user identity, no long-lived cluster credential of its own beyond the service account it already runs as. |
