@@ -1,0 +1,16 @@
+# Fingerprints gitleaks is told to pass over, one per line, each with the
+# reason it is here. Nothing goes in this file to make a check quiet: a live
+# credential is rotated, not ignored.
+#
+# Both entries below are values that were committed to a development stack
+# early in the project and have since been taken out of the tree — the
+# recording key is read from the environment now, and the agent Secret is
+# rendered by the install package rather than checked in. They stay in
+# published history, where removing them would mean rewriting master, so they
+# are recorded here and must be replaced at their source instead.
+
+# docker-compose.yml: a local session-recording key for the dev stack.
+3260a527fb5fd60d17e3741eaba1c38353e3394f:docker-compose.yml:generic-api-key:84
+
+# kubemg-agent/secret.yaml: a registration token for a throwaway dev cluster.
+f60dc38da6acd1ba7cbcc76c43e05dafe3479eae:kubemg-agent/secret.yaml:generic-api-key:12
