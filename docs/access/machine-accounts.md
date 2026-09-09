@@ -1,18 +1,18 @@
 # Machine accounts
 
-A release pipeline needs a kubeconfig too, and neither existing credential fit it: a person's session is tied to someone logging in, and a generated kubeconfig's proxy-scoped JWT is right for a file that lives on a laptop for a day, not for a secret sitting in a CI store for months. A **machine account** is the third shape — issued at **Admin → Identity → Machine Accounts** (`MachineAccounts.tsx`, `/admin/machine-accounts`).
+A release pipeline needs a kubeconfig too, and neither existing credential fit it: a person's session is tied to someone logging in, and a generated kubeconfig's proxy-scoped JWT is right for a file that lives on a laptop for a day, not for a secret sitting in a CI store for months. A **machine account** is the third shape — issued at **Admin → Identity → Machine Accounts** (`/admin/machine-accounts`).
 
 ## What it is
 
-A machine account is an ordinary `db.User` row with `AccountType = "machine"`. That is the load-bearing design choice: every grant, every namespace scope, the permission matrix, the audit trail, and the proxy's impersonation are all keyed on a user id, so a machine account needs the exact same access model a person does rather than a second shape bolted alongside it. Two things differ, and both are enforced in the model itself rather than in a handler:
+A machine account is an ordinary user row with its account type set to `machine`. That is the load-bearing design choice: every grant, every namespace scope, the permission matrix, the audit trail, and the proxy's impersonation are all keyed on a user id, so a machine account needs the exact same access model a person does rather than a second shape bolted alongside it. Two things differ, and both are enforced in the model itself rather than in a handler:
 
 - **It holds no password**, and login refuses it the same way a federated account is refused — as an unknown username, so accounts cannot be enumerated by probing `/auth/login`. See [Single sign-on: account enumeration](sso.md#account-enumeration).
-- **`Normalize()` pins it to `SystemRoleUser`.** A row edited by hand in the database cannot smuggle admin access onto a credential that lives in a CI secret store.
+- **It is pinned to the `user` system role.** A row edited by hand in the database cannot smuggle admin access onto a credential that lives in a CI secret store.
 
 The name is validated more strictly than a person's username, because it is sent to the target cluster as `Impersonate-User` and has to be something a Kubernetes RoleBinding can name and an operator reading `kubectl auth can-i --as` output recognizes:
 
-```go
-var machineAccountName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$`)
+```
+^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$
 ```
 
 ```
@@ -48,14 +48,12 @@ The secret is 256 bits of CSPRNG output, prefixed `kmgm_`. Only its SHA-256 hash
 
 ### The TTL ladder and `never_expires`
 
-```go
-const (
-    defaultMachineTokenTTL = 90 * 24 * time.Hour     // a quarter, if nothing is said
-    maxMachineTokenTTL     = 10 * 365 * 24 * time.Hour // a guard against a typo, not a policy
-)
-```
+| Bound | Value |
+| --- | --- |
+| Default, when nothing is said | 90 days |
+| Longest a token may be asked for | 10 years — a guard against a typo, not a policy |
 
-The ladder in `MachineTokenSheet.tsx` runs longer than the human kubeconfig ladder — starting at a day and going past a year — because a credential meant to sit in a secret store for the life of a pipeline is a different object than one meant to sit on a laptop for a shift.
+The ladder runs longer than the human kubeconfig ladder — starting at a day and going past a year — because a credential meant to sit in a secret store for the life of a pipeline is a different object than one meant to sit on a laptop for a shift.
 
 A credential with **no expiry at all** is allowed — a release pipeline that stops working at 3am on a quarter boundary is an outage nobody scheduled — but it must be asked for explicitly:
 
@@ -86,7 +84,7 @@ Issuing a token is refused outright in four cases, each because the alternative 
 1. **Direct mode is refused.** `"programmatic access needs a cluster registered in agent mode. In direct mode the credential is minted on the cluster itself, so kubemg cannot revoke it and the cluster's RBAC has nothing bound to it."` There, revoking a machine token here does nothing to the actual credential a pipeline holds.
 2. **No grant on the cluster is refused.** `"this machine account has no access to that cluster yet — grant it a role first, otherwise the credential authenticates and is then refused by the cluster."` Grant the account a role via the permission matrix before issuing its first token.
 3. **A namespace outside the account's grant is refused** rather than silently substituted — the same `resolveNamespace` check every namespace-scoped kubeconfig and permission read goes through.
-4. **A token for a human account is refused at verification** (`machineTokenVerifier.VerifyMachineToken` checks `user.IsMachine()`), even though nothing about the token format itself distinguishes the two — this closes the case of a database row edited by hand into looking like a machine token.
+4. **A token for a human account is refused at verification**, even though nothing about the token format itself distinguishes the two — this closes the case of a database row edited by hand into looking like a machine token.
 
 ## How a pipeline uses it
 

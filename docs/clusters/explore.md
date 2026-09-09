@@ -1,4 +1,4 @@
-# Exploring resources
+# Browsing resources
 
 Explore is kubemg's resource browser: live cluster state, read the same way
 `kubectl` would, with no privileged shortcut for the UI. Which cluster you are
@@ -83,6 +83,11 @@ them worth listing separately: a namespace mid-rollout holds two ReplicaSets
 for the same Deployment, and the revision is the only thing that says which
 is which. Zero desired replicas is the resting state of every superseded
 ReplicaSet and is drawn as idle, not as a fault.
+
+<figure markdown>
+  ![The cluster tree](../assets/screenshots/explore-sidebar.png)
+  <figcaption>The cluster tree. The fixed inventory comes first, then the sections discovered from the CRDs this cluster actually serves, which start collapsed.</figcaption>
+</figure>
 
 ## Favorites
 

@@ -17,13 +17,12 @@ initiates a connection to the cluster.
 - **What dials what**: the agent dials the bastion. No inbound firewall rule,
   no exposed API server, no route from kubemg into the cluster's network is
   required.
-- **How health is checked**: `checkCluster` asks the tunnel pool whether this
-  cluster's agent is currently connected (`s.tunnels.Connected(cluster.ID)`).
-  There is nothing to probe over the network — the whole point of agent mode
+- **How health is checked**: kubemg asks the tunnel pool whether this cluster's
+  agent is currently connected. There is nothing to probe over the network — the whole point of agent mode
   is that kubemg has no route to dial.
 - **Kubeconfig**: `generateKubeconfig` points the file at kubemg's own proxy
   (`{public URL}/api/v1/clusters/:id/proxy`) and embeds a kubemg-issued JWT
-  scoped to that one cluster's proxy route (`auth.ScopeProxy`), never a
+  scoped to that one cluster's proxy route, never a
   cluster-native token. The bastion's own CA is pinned into the file
   whenever the bastion is self-signed, because in this mode the "cluster"
   `kubectl` is dialling is kubemg, not the target API server.
@@ -47,10 +46,9 @@ would.
 - **What dials what**: kubemg dials the cluster's API server directly. This
   needs a network path from the bastion to the cluster and, in most
   deployments, an exposed API server.
-- **How health is checked**: `checkCluster` runs an actual probe
-  (`s.health.CheckHealth`) against the stored `api_url`, since there is a real
-  connection to test.
-- **Kubeconfig**: `generateKubeconfig` mints a short-lived token straight from
+- **How health is checked**: kubemg runs an actual probe against the stored
+  `api_url`, since there is a real connection to test.
+- **Kubeconfig**: kubemg mints a short-lived token straight from
   the cluster's own TokenRequest API, using the stored service account. The
   file points directly at the cluster's `api_url`.
 - **RBAC — the known gap**: kubemg mints tokens here but provisions **no
@@ -80,17 +78,11 @@ would.
 ## Full capability matrix
 
 The row above about Explore, streaming and recording understates how far the
-split actually goes: in this codebase, **every** `/api/v1/clusters/:id/resources/*`,
-`/metrics/*` and `/observability/*/query` read is served through
-`bastion.Proxy.Call`, and `Proxy.Call` itself refuses a direct-mode cluster
-outright —
+split actually goes: **every** `/api/v1/clusters/:id/resources/*`, `/metrics/*`
+and `/observability/*/query` read is served through the tunnel, and a
+direct-mode cluster is refused outright with
 
-```go
-if !cluster.UsesAgent() {
-    c.AbortWithStatusJSON(http.StatusConflict, gin.H{
-        "error": "this cluster is registered for direct API access; generate a kubeconfig instead",
-    })
-```
+> this cluster is registered for direct API access; generate a kubeconfig instead
 
 — so a direct-mode cluster has **no** Explore, no live metrics tab, no
 resource list, no describe, no events, and no in-console query path at all.
@@ -102,16 +94,16 @@ surface.
 
 | Capability | Agent | Direct |
 |---|---|---|
-| Health check | `s.tunnels.Connected(cluster.ID)` — tunnel presence | `s.health.CheckHealth` — a live probe against `api_url` |
-| Kubeconfig issuance | Always available (`agentKubeconfig`) | Available, but needs `s.tokens` (a `TokenRequestClient`) configured for the cluster |
+| Health check | Tunnel presence — is the agent connected right now | A live probe against `api_url` |
+| Kubeconfig issuance | Always available | Available, but the stored service account token must be able to issue one |
 | RBAC enforcement | The cluster's own RBAC, via `Impersonate-User`/`Impersonate-Group` and the bound `kubemg:view`/`kubemg:edit`/`kubemg:cluster-admin` ClusterRoles | None provisioned by kubemg — a `view` grant does not make anything read-only inside the cluster |
 | Revocation latency | Immediate — the proxy re-reads the grant on every call | Bounded only by the token's TTL, which the cluster's own `--service-account-max-token-expiration` may shorten further |
 | Explore (resource lists, describe, events, YAML editor, custom resources) | Available | Refused with `409 this cluster is registered for direct API access; generate a kubeconfig instead` — there is no tunnel to carry the call |
 | `exec` / `attach` / `logs -f` / `port-forward` | Available, multiplexed over the tunnel | Not reachable through kubemg at all; falls entirely to the kubeconfig and your own `kubectl` |
 | Session recording | Every `exec`/`attach` through the proxy is teed into a cast | Nothing to record — the shell never passes through kubemg |
-| Machine accounts / programmatic tokens | Supported | Refused with `409`: *"programmatic access needs a cluster registered in agent mode. In direct mode the credential is minted on the cluster itself, so kubemg cannot revoke it and the cluster's RBAC has nothing bound to it."* (`pkg/api/machine_tokens.go`) |
-| In-cluster observability source (Prometheus/Loki/VictoriaMetrics reached via the API server's Service proxy) | Supported | Refused with `409`: *"an in-cluster datasource is reached through the agent tunnel, which a direct-mode cluster does not have — give its external address instead"* (`pkg/api/observability.go`). A `direct`-access datasource (a URL the bastion can dial itself) still works. |
-| Alarm event polling (`alarms_watch.go`) | Available — reads cluster Events down the tunnel | Not available — there is no tunnel to read from |
+| Machine accounts / programmatic tokens | Supported | Refused with `409`: *"programmatic access needs a cluster registered in agent mode. In direct mode the credential is minted on the cluster itself, so kubemg cannot revoke it and the cluster's RBAC has nothing bound to it."* |
+| In-cluster observability source (Prometheus/Loki/VictoriaMetrics reached via the API server's Service proxy) | Supported | Refused with `409`: *"an in-cluster datasource is reached through the agent tunnel, which a direct-mode cluster does not have — give its external address instead"*. A `direct`-access datasource (a URL the bastion can dial itself) still works. |
+| Alarm event polling | Available — reads cluster Events down the tunnel | Not available — there is no tunnel to read from |
 | Network requirement | Outbound HTTPS from the cluster to the bastion's public URL; nothing inbound | A route from the bastion to `api_url`, and in most deployments an exposed API server reachable from wherever the bastion runs |
 | What kubemg stores for this cluster | `Cluster.AgentToken` (registration token only) | `api_url`, `ca_cert_data`, and `service_account_token` — a standing, usable credential for the cluster, held in kubemg's own database |
 
@@ -129,8 +121,8 @@ quick look at a cluster's health and its resources under kubemg's own
 authorization model. It is not a fit for anything where "kubemg's `view` grant
 must really be read-only inside the cluster" matters, because it is not.
 
-See [Deploying the agent](agent.md) for what agent mode actually installs, and
-[Registering a cluster](registering.md) for the step-by-step wizard flow in
+See [Installing the agent](agent.md) for what agent mode actually installs, and
+[Adding a cluster](registering.md) for the step-by-step wizard flow in
 both modes.
 
 ## Moving a cluster from direct mode to agent mode

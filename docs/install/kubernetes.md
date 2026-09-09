@@ -12,12 +12,12 @@ start from.
     (`deploy/kustomize/`, `kubectl apply -k https://.../install/<token>/kustomize.tar.gz`),
     which you apply to every cluster kubemg is going to manage — including,
     if you like, the same cluster the management plane runs in. See
-    [Registering a cluster](../clusters/registering.md) and
+    [Adding a cluster](../clusters/registering.md) and
     [The agent](../clusters/agent.md).
 
 ## What the container needs
 
-From the repository root `Dockerfile` and `backend/pkg/config/config.go`:
+What the published image expects:
 
 - Listens on **`:8443`** with TLS enabled by default (`KUBEMG_LISTEN_ADDR`,
   `KUBEMG_TLS_ENABLED=true` are baked in as image defaults).

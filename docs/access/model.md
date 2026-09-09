@@ -4,7 +4,7 @@ Every read and write kubemg makes on a target cluster passes through the same qu
 
 ## System roles
 
-Every account (`db.User`) carries a `SystemRole`, one of:
+Every account carries a `SystemRole`, one of:
 
 | Role | Meaning |
 | --- | --- |
@@ -12,22 +12,9 @@ Every account (`db.User`) carries a `SystemRole`, one of:
 | `admin` | Administers kubemg itself: users, groups, permissions, clusters, settings, guardrails. |
 | `user` | An ordinary account. What it can reach on any given cluster is entirely a function of its grants. |
 
-`Role` is the coarse value carried in the JWT and checked by `RequireRole` middleware — it is **derived from `SystemRole`**, never written independently:
+A coarser role — `admin` or `user` — is carried in the session token and checked wherever a page or a route only needs to know "administrator or not". The coarse role is derived from the system role rather than stored beside it, so the two can never disagree. A super admin counts as an "administrator" everywhere the coarse role is checked — which version of a page is drawn, and whether **Run check** is offered.
 
-```go
-func LegacyRoleFor(systemRole string) string {
-    switch systemRole {
-    case SystemRoleSuperAdmin, SystemRoleAdmin:
-        return RoleAdmin
-    default:
-        return RoleUser
-    }
-}
-```
-
-`User.Normalize()` is what fills `Role` in from `SystemRole` on every read and write. Nothing in the codebase sets `Role` by hand; a super admin is an "administrator" (`user.IsAdmin()`) everywhere the coarse role is checked, including which body `ClusterSummary` renders and whether `Run check` is offered.
-
-A machine account (`AccountType: "machine"`) is pinned to `SystemRoleUser` by `Normalize` — a row edited directly in the database cannot smuggle admin onto a credential that lives in a CI secret store. See [Machine accounts](machine-accounts.md).
+A machine account is pinned to the `user` system role — a row edited directly in the database cannot smuggle admin onto a credential that lives in a CI secret store. See [Machine accounts](machine-accounts.md).
 
 ## Cluster grants
 
@@ -42,19 +29,12 @@ A user can hold several rows for the same cluster at once — a standing grant, 
 
 ## Effective access
 
-`Store.AccessForUser` is the one function that answers "what can this person do, right now, on every cluster" — direct grants merged with everything inherited from the caller's groups:
-
-```go
-// AccessForUser returns the user's effective cluster grants keyed by cluster
-// ID: direct grants merged with everything inherited from their groups. The
-// more permissive grant wins, so adding someone to a group can never take
-// access away.
-```
+One resolution answers "what can this person do, right now, on every cluster": direct grants merged with everything inherited from the caller's groups, the more permissive grant winning, so adding someone to a group can never take access away.
 
 Two things happen inside it that matter everywhere downstream:
 
 1. **An expired grant is dropped on read.** The query filters on `expires_at IS NULL OR expires_at > now()`. A JIT elevation stops counting the second its window ends — not when a background sweeper gets around to deleting the row — because this is the read every proxied call, kubeconfig generation, and permission check goes through.
-2. **Multiple rows for one cluster are merged, not overwritten**, by `MergeAccess`:
+2. **Multiple rows for one cluster are merged, not overwritten**:
     - The stronger role wins (`cluster-admin` > `edit` > `view`).
     - If either side is unscoped (`namespaces == ""`), the merged result is unscoped — a standing view grant plus a bounded cluster-admin elevation is access that does not end when the elevation does.
     - Otherwise the namespace lists union.
@@ -83,15 +63,6 @@ Ada has three rows that all resolve against the same cluster, `prod-eu`:
 ## How a grant becomes access on the wire
 
 kubemg never manages per-user credentials on target clusters. Every proxied call is impersonated: the bastion sets `Impersonate-User` to the caller's own username and `Impersonate-Group` to a pair of groups derived from the resolved role:
-
-```go
-func ImpersonationGroups(k8sRole string) []string {
-    if k8sRole == "" {
-        k8sRole = db.K8sRoleView
-    }
-    return []string{GroupPrefix + k8sRole, GroupAllUsers}
-}
-```
 
 That is `kubemg:view` / `kubemg:edit` / `kubemg:cluster-admin`, plus `kubemg:users` on every call regardless of role, giving the cluster one subject to hang baseline access off. Client-supplied credentials and impersonation headers on the incoming request are stripped before kubemg's own are set — nothing a caller sends can widen what it is impersonated as.
 
@@ -124,7 +95,7 @@ kubemg resolves *which* role applies and sets the impersonation header according
 
 ### What each role can actually do, on the wire
 
-The bindings in `deploy/kustomize/base/rbac.yaml` (and its embedded copy under `backend/pkg/agentpkg/base/`, which `make manifest-check` keeps in lockstep) are what give the three roles their meaning inside an agent-mode cluster:
+The ClusterRoles and bindings in the agent's install manifests are what give the three roles their meaning inside an agent-mode cluster:
 
 | Group | Bound to | What it grants |
 | --- | --- | --- |
@@ -145,14 +116,7 @@ The cluster detail page, the permissions page, and the registration wizard's las
 
 ## Disabled accounts
 
-Disabling an account (`is_active: false`) takes effect immediately, not when an already-issued JWT happens to expire. `currentUser` — the resolver behind every authenticated request — re-reads the account on every call and rejects it:
-
-```go
-if !user.IsActive {
-    c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "this account is disabled"})
-    ...
-}
-```
+Disabling an account (`is_active: false`) takes effect immediately, not when an already-issued session token happens to expire. Every authenticated request re-reads the account and rejects a disabled one with `403 this account is disabled`.
 
 The same check applies to a machine token's verifier, so disabling the machine account behind a credential stops it at the next call too.
 

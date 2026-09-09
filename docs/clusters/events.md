@@ -80,7 +80,7 @@ presenting a slice as the whole cluster.
 An **empty page carrying a `continue` token is not the end of the list** — the
 API server returns one whenever its scan skipped a page's worth after a
 `fieldSelector` narrowed it — and `walkEventPages` is written to that rule
-explicitly (`resources_events.go`).
+explicitly.
 
 Events with their own RBAC can be refused independently of the object list: a
 refusal narrows the answer (`events_available: false` with the cluster's
@@ -91,9 +91,9 @@ reason) rather than failing the whole request, and on an all-namespaces read
 
 Whenever it can, the timeline answers from a **watch-fed ring buffer** instead
 of a paginated list — one per cluster, started lazily by the first person who
-opens a timeline on it (`eventRingFor`, `events_watch.go`). The ring:
+opens a timeline on it. The ring:
 
-- holds up to `eventBufferSize` (5000) distinct events, deduplicated by UID
+- holds up to 5000 distinct events, deduplicated by UID
   (a repeating event is a `MODIFIED` on the same object, not a new one), and
   discards anything older than `eventBufferAge` (one hour — the same window
   Kubernetes itself keeps events for by default)

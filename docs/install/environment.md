@@ -1,7 +1,6 @@
 # Environment reference
 
-Every variable the management plane reads at boot, from
-`backend/pkg/config/config.go`. All of them are optional — the process starts
+Every variable the management plane reads at boot. All of them are optional — the process starts
 with defaults if none are set, though several of those defaults are wrong for
 a real install (see [Production checklist](production-checklist.md)).
 
@@ -18,10 +17,9 @@ a real install (see [Production checklist](production-checklist.md)).
 These matter because a typo in an environment variable never fails the boot —
 it silently falls back to the default instead:
 
-- **Booleans** (`envBool`): anything `strconv.ParseBool` doesn't accept (so,
-  anything other than `1`/`t`/`T`/`TRUE`/`true`/`True`/`0`/`f`/`F`/`FALSE`/
-  `false`/`False`) falls back to the default rather than failing the boot.
-- **Integers** (`envInt`): must parse as a positive integer; anything else,
+- **Booleans**: anything other than `1`/`t`/`T`/`TRUE`/`true`/`True`/`0`/`f`/`F`/`FALSE`/
+  `false`/`False` falls back to the default rather than failing the boot.
+- **Integers**: must parse as a positive integer; anything else,
   including zero or negative, falls back to the default.
 - **Durations** (`envDuration`): accepts a Go duration string (`30s`, `5m`,
   `12h`) **or** a bare integer, which is interpreted as a number of seconds.
@@ -53,7 +51,7 @@ See [Database](database.md) for AutoMigrate behavior and the reference DDL.
 
 | Variable | Default | What it is |
 |---|---|---|
-| `JWT_SECRET` | generated, kept in the database | Signs sessions, generated kubeconfigs and JIT approval callback tokens. Unset, the server mints a 32-byte random key on first boot and stores it (`db.EnsureServerSecret`, an `ON CONFLICT DO NOTHING` insert followed by a read-back, so several replicas booting at once still converge on the same key rather than racing). Set it explicitly to supply your own key, or to be able to rotate it deliberately — which invalidates every issued token at once. |
+| `JWT_SECRET` | generated, kept in the database | Signs sessions, generated kubeconfigs and JIT approval callback tokens. Unset, the server mints a 32-byte random key on first boot and stores it with a conflict-safe insert, so several replicas booting at once converge on the same key rather than racing. Set it explicitly to supply your own key, or to be able to rotate it deliberately — which invalidates every issued token at once. |
 | `JWT_TTL` | `12h` | Session token lifetime. |
 | `KUBEMG_ADMIN_USERNAME` | `admin` | Bootstrap administrator's username, created only when the users table is empty. |
 | `KUBEMG_ADMIN_PASSWORD` | generated, printed once to the log | Bootstrap administrator's password. Left unset, a random 20-character password (drawn from an alphabet with no visually-ambiguous characters) is generated and logged exactly once. Setup will not let you finish until it's changed either way. |

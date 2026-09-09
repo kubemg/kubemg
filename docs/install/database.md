@@ -16,7 +16,7 @@ the TLS material on disk.
 | `DB_NAME` | `kubemg` | Database name. |
 | `DB_SSLMODE` | `disable` | libpq `sslmode`. |
 
-`Open` (`backend/pkg/db/db.go`) builds a standard `lib/pq` DSN from these and
+`Open` builds a standard `lib/pq` DSN from these and
 connects through GORM's Postgres driver. Set `DB_SSLMODE=require` (or
 `verify-full` if you're running a managed Postgres that supports it) against
 anything that isn't a loopback or otherwise trusted private network — the
@@ -24,8 +24,8 @@ default of `disable` is a development convenience, not a production setting.
 
 ## What runs at boot: `AutoMigrate`
 
-The schema is applied by `db.Migrate`, which is a plain
-`gdb.AutoMigrate(...)` call over every model kubemg defines:
+The schema is applied at boot by GORM's `AutoMigrate` over every model kubemg
+defines:
 
 ```
 User, Cluster, UserClusterAccess, Group, UserGroup, GroupClusterAccess,
@@ -59,7 +59,7 @@ Two rules keep them trustworthy:
 - Every statement is **idempotent** (`IF NOT EXISTS`/`IF EXISTS`), because
   `AutoMigrate` may already have applied it by the time anyone runs the file
   by hand — running it again must be a no-op, never an error.
-- A file is written **from** what `db.Migrate` actually does, never the
+- A file is written **from** what the boot migration actually does, never the
   other way around. If a numbered file and the Go code ever disagree, the Go
   code is what ran, and the file is a bug to fix — not a spec to make the
   code match.
@@ -99,8 +99,8 @@ Postgres the way you back up any Postgres database that matters:
 
 - `pg_dump`/`pg_restore` (or your managed Postgres provider's snapshot
   mechanism) on a regular schedule.
-- Restore into a database at the same major version (16) that `db.Migrate`
-  can then run against on the next boot — a restore from an older schema is
+- Restore into a database at the same major version (16) that the boot
+  migration can then run against — a restore from an older schema is
   exactly the case `AutoMigrate` and the reference DDL exist to make safe:
   bring the restored database up, boot kubemg against it, and `AutoMigrate`
   brings the schema forward to whatever this build expects.

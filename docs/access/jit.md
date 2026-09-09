@@ -1,6 +1,6 @@
 # Just-in-time access
 
-A standing grant is the right shape for the access someone needs daily and the wrong shape for what they need twice a quarter. Just-in-time (JIT) access is a request for a stronger role on a cluster, for a bounded window, that somebody else has to approve. Console: `JitRequestModal.tsx` (requesting) and `JitApprovalsPanel.tsx` at `/access-requests` (deciding) — the one page in the Access section that is **not** admin-only.
+A standing grant is the right shape for the access someone needs daily and the wrong shape for what they need twice a quarter. Just-in-time (JIT) access is a request for a stronger role on a cluster, for a bounded window, that somebody else has to approve. Requests are made from the cluster you want, and decided at `/access-requests` — the one page in the Access section that is **not** admin-only.
 
 ## Requesting
 
@@ -19,12 +19,12 @@ POST /api/v1/jit/requests
 ```
 
 - `requested_role` is one of `view`, `edit`, `cluster-admin`.
-- `duration_minutes` must be between `db.MinJitDurationMinutes` (5) and `db.MaxJitDurationMinutes` (1440, i.e. 24 hours). The console does not offer a free-typed number — it offers a fixed ladder the server also publishes, `JitDurationChoices = [30, 60, 120, 240, 480]` (minutes), returned on `GET /api/v1/jit/requests` as `durations` so the form can never offer a window the server would refuse on submit.
+- `duration_minutes` must be between 5 and 1440 (24 hours). The console does not offer a free-typed number — it offers a fixed ladder of 30, 60, 120, 240 and 480 minutes, which the server publishes on `GET /api/v1/jit/requests` as `durations`, so the form can never offer a window the server would refuse on submit.
 - `reason` is **mandatory** and must be at least 10 characters — a mandatory field people can satisfy with one character is a field that has been switched off by convention. It is stored with the request and shown to the approver.
 
 A request is refused before it is even stored, in three cases: another **pending** request already exists for the same cluster (one open ask per cluster — otherwise the queue fills with duplicates from a double-click and an approver cannot tell which one to act on); a **live** elevation already exists for that cluster (re-requesting would either extend a window an approver already bounded, or replace a role with a weaker one — neither is what anyone means by clicking the button twice); or the requester's **standing** access already covers what is being asked for (asking for what you already have permanently is a no-op that spends an approver's time for nothing).
 
-`GET /api/v1/jit/requests` also carries what the requesting form needs: `durations` (the fixed ladder above), `statuses` (`db.JitStatuses`), `roles` (`view`, `edit`, `cluster-admin`), and two booleans about the caller — `can_approve` (`user.IsAdmin()`) and `scoped_to_me` (the inverse), so the console knows whether to draw the approvals inbox at all without a second round trip.
+`GET /api/v1/jit/requests` also carries what the requesting form needs: `durations` (the fixed ladder above), `statuses`, `roles` (`view`, `edit`, `cluster-admin`), and two booleans about the caller — `can_approve` and `scoped_to_me`, so the console knows whether to draw the approvals inbox at all without a second round trip.
 
 ```json title="GET /api/v1/jit/requests (excerpt)"
 {
@@ -60,7 +60,7 @@ A request is refused before it is even stored, in three cases: another **pending
 }
 ```
 
-`active` and `remaining_seconds` are resolved server-side from `request.Live(now)` and `request.RemainingSeconds(now)` — the same clock and the same liveness rule `AccessForUser` uses — so a countdown drawn from this response cannot disagree with what the server will actually enforce.
+`active` and `remaining_seconds` are resolved server-side, against the same clock and the same liveness rule the gateway uses on every call — so a countdown drawn from this response cannot disagree with what the server will actually enforce.
 
 ## Approval is a two-party act
 
@@ -95,7 +95,7 @@ POST /api/v1/jit/requests/:id/approve
 
 `POST /api/v1/jit/requests/:id/reject` and `POST /api/v1/jit/requests/:id/revoke` take the identical body shape (`{"comment": "..."}` — the comment is optional on all three) and return the same `jitRequestResponse` shape, with `status` set to `rejected` or `revoked` respectively.
 
-This is the entire control, and it lives in `pkg/jit` rather than in the HTTP handler specifically so the console and the chat callback cannot disagree about it:
+This is the entire control, and it lives below the HTTP layer specifically so the console and the chat callback cannot disagree about it:
 
 > A requester cannot approve their own request, whatever their role.
 
@@ -105,7 +105,7 @@ A super admin is not exempt — the rule is not about trust in one person, it is
 
 ### What an approver sees
 
-`JitApprovalsPanel.tsx` at `/access-requests` is open to every signed-in account, not only admins — `scoped_to_me` from the list response is what tells it whether to draw a decision inbox or just "your own requests". For an admin it lists every pending request with the requester's username, the cluster, the requested role and namespaces, the duration, and the **reason in full** — the same text the requester typed, never truncated, because deciding whether to grant `cluster-admin` on production is exactly the moment that sentence matters. Approve and Reject act on one request at a time; a live (`approved`/`active`) row additionally offers Revoke. Countdowns are drawn from the server's own `remaining_seconds` on a slow re-read of the list, rather than a per-second local timer racing the server's clock.
+`/access-requests` is open to every signed-in account, not only admins — `scoped_to_me` from the list response is what tells it whether to draw a decision inbox or just "your own requests". For an admin it lists every pending request with the requester's username, the cluster, the requested role and namespaces, the duration, and the **reason in full** — the same text the requester typed, never truncated, because deciding whether to grant `cluster-admin` on production is exactly the moment that sentence matters. Approve and Reject act on one request at a time; a live (`approved`/`active`) row additionally offers Revoke. Countdowns are drawn from the server's own `remaining_seconds` on a slow re-read of the list, rather than a per-second local timer racing the server's clock.
 
 ## Expiry is enforced on read
 
@@ -118,7 +118,7 @@ A super admin is not exempt — the rule is not about trust in one person, it is
 
 ## Statuses and transitions
 
-`approved` and `active` are treated identically everywhere that matters (`db.JitLiveStatuses`) because activation happens inside the same transaction as the approval — there is no gap between "approved" and "the grant exists." A request is **live** (`request.Live(now)`) when its status is in `JitLiveStatuses` **and** its window has not passed, which is the same check `AccessForUser` makes.
+`approved` and `active` are treated identically everywhere that matters because activation happens inside the same transaction as the approval — there is no gap between "approved" and "the grant exists." A request is **live** when its status is one of those two **and** its window has not passed, which is the same check the gateway makes on every call.
 
 | Status | Meaning | Reached from | Reached by | Terminal? |
 | --- | --- | --- | --- | --- |
@@ -143,10 +143,10 @@ POST /api/v1/jit/webhooks/callback     (unauthenticated route — necessarily)
 A Slack or Teams app carries no kubemg session, so this route sits outside the JWT middleware entirely — and because of that, it authenticates on **three separate things**, and needs all three:
 
 1. **A valid Slack request signature** over the raw body (`X-Slack-Request-Timestamp` / `X-Slack-Signature` headers), checked against every enabled Slack channel's configured signing secret (any one matching is accepted, since a fleet may run several channels and the callback does not say which one it came from; a channel with no signing secret configured is skipped rather than treated as a pass). This is what proves the HTTP call actually came from Slack — and, through Slack, from whoever clicked the button — rather than from anyone who happened to read the notification. No signature headers at all is an immediate refusal.
-2. **A signed, expiring action token** (`jit.ParseAction`, HMAC-SHA256 over `v1|{request_id}|{action}|{expires_unix}`, `callbackTTL` = 48 hours) minted into the original notification. It proves the decision is about a request kubemg itself published and that the link has not gone stale — a request made Friday is still approvable Monday morning, but a token sitting in chat history for months is a standing approval capability nobody meant to leave lying around. An expired token answers `403 {"error": "that approval link has expired; decide it in kubemg instead"}`; a forged or otherwise unparseable one answers the deliberately identical-looking `403 {"error": "that approval token is not valid"}` — which of the two happened is not the caller's business to learn.
+2. **A signed, expiring action token** (HMAC-SHA256, valid for 48 hours) minted into the original notification. It proves the decision is about a request kubemg itself published and that the link has not gone stale — a request made Friday is still approvable Monday morning, but a token sitting in chat history for months is a standing approval capability nobody meant to leave lying around. An expired token answers `403 {"error": "that approval link has expired; decide it in kubemg instead"}`; a forged or otherwise unparseable one answers the deliberately identical-looking `403 {"error": "that approval token is not valid"}` — which of the two happened is not the caller's business to learn.
 3. **An `approver_username` resolving to an active kubemg administrator who is not the requester.** The token alone authorizes an action on a request but names no approver — a chat webhook has no identity of its own — so the audit record for who approved a production elevation would otherwise say "webhook" where a name belongs. An unknown username answers `403 {"error": "no kubemg account matches that user; decide this request in kubemg"}`; a disabled one answers `403 {"error": "that account is disabled"}`.
 
-None of the three is sufficient alone: the token is broadcast to everyone in the channel, so possessing it proves nothing about who clicked; the username is a claim typed into the payload, so it proves nothing about who typed it. Only the Slack signature ties the HTTP request back to Slack itself, and through Slack to whoever actually pressed the button. The self-approval rule from `pkg/jit` applies here unchanged — a signed token naming the requester as approver is still refused.
+None of the three is sufficient alone: the token is broadcast to everyone in the channel, so possessing it proves nothing about who clicked; the username is a claim typed into the payload, so it proves nothing about who typed it. Only the Slack signature ties the HTTP request back to Slack itself, and through Slack to whoever actually pressed the button. The self-approval rule applies here unchanged — a signed token naming the requester as approver is still refused.
 
 ### The payload shape
 
@@ -171,7 +171,7 @@ The status in that confirmation text is `active`, not `approved` — `ApproveReq
 
 ## Delivery through chat channels
 
-Requests and decisions are announced through the [alarm dispatcher](../audit/alarms.md#observe-never-blocks-never-fails-a-caller)'s existing Slack/Teams channel configuration — a new request goes out as Slack Block Kit (with the reason in full) or a Teams Adaptive Card, both leading with a console link, because that is the path that always works regardless of whether the one-click callback is wired up. See [Alarms](../audit/alarms.md) for how a channel is configured and tested.
+Requests and decisions are announced through the [alarm dispatcher](../audit/alarms.md#the-dispatcher-never-blocks-and-never-fails-a-caller)'s existing Slack/Teams channel configuration — a new request goes out as Slack Block Kit (with the reason in full) or a Teams Adaptive Card, both leading with a console link, because that is the path that always works regardless of whether the one-click callback is wired up. See [Alarms](../audit/alarms.md) for how a channel is configured and tested.
 
 ## Operator FAQ
 

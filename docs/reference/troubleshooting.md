@@ -9,7 +9,7 @@ under a second and rule out half of this page.
 
 **Server exits immediately on a fresh install, with no obvious error.**
 Check the container logs for `database connection failed` or `database
-migration failed` (`cmd/server/main.go`) — the process refuses to serve
+migration failed` — the process refuses to serve
 anything without a reachable, migratable Postgres. Confirm `DB_HOST`/
 `DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` and that Postgres is actually
 up before the backend container starts (a compose `depends_on` without a
@@ -17,7 +17,7 @@ health check races this).
 
 **No `JWT_SECRET` was set, and I'm worried sessions won't survive a
 restart.** They will. With `JWT_SECRET` unset, the server generates a key
-once and stores it in the database (`db.ServerSecretJWTSigningKey`); it is
+once and stores it in the database; it is
 read back on every subsequent boot, so it does not change under you. It
 only changes if the database is wiped, which invalidates every session and
 every previously generated kubeconfig at once. Set `JWT_SECRET` explicitly
@@ -123,9 +123,8 @@ message shape, not just the status code:
 against the same endpoint works.** `CORS_ALLOWED_ORIGINS` does not include
 the origin the browser is actually loading from, or a reverse proxy in
 front of kubemg is stripping the `Authorization` or `Cache-Control`
-response/request headers. `cors.Default()` from `gin-contrib/cors` does
-**not** allow the `Authorization` header by itself — this server's CORS
-middleware explicitly adds it, along with `Cache-Control` and `Pragma` (the
+response/request headers. A stock CORS configuration does **not** allow the
+`Authorization` header by itself — kubemg's own CORS middleware adds it, along with `Cache-Control` and `Pragma` (the
 headers the console's read cache uses); a proxy or CDN in front that
 strips or rewrites headers can reintroduce the same symptom kubemg's own
 config already avoids.
