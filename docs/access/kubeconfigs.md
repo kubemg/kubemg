@@ -29,8 +29,10 @@ The response:
 }
 ```
 
-!!! info "Screenshot pending — `kubeconfig-sheet.png`"
-    The generate sheet, with the TTL ladder open.
+<figure markdown>
+  ![The kubeconfig sheet](../assets/screenshots/kubeconfig-sheet.png)
+  <figcaption>The generate sheet. The ladder offers only the windows this install's ceiling allows, and the countdown runs against the window the cluster granted.</figcaption>
+</figure>
 
 ## The TTL ladder and the two ceilings
 

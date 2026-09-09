@@ -93,8 +93,10 @@ row that isn't there. A cluster's dashboard for a non-admin is a slim identity
 card plus the counts and alerts drawn from the resource lists they can already
 read — see [Browsing resources](../clusters/explore.md).
 
-!!! info "Screenshot pending — `fleet-overview.png`"
-    The fleet overview, signed in as an administrator: every cluster, its environment band, and the state of its tunnel.
+<figure markdown>
+  ![The fleet overview](../assets/screenshots/fleet-overview.png)
+  <figcaption>The fleet overview. One row per cluster, banded by environment, with the queue at the top naming what is waiting for an administrator.</figcaption>
+</figure>
 
 ## What an administrator sees
 

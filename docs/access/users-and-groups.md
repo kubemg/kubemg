@@ -78,9 +78,6 @@ Managing accounts, group membership, and the permission matrix — the console s
 | **Disable** (`is_active: false`) | `currentUser` starts rejecting the account's JWT and its machine-token verifier on every subsequent request (see [Disabled accounts](model.md#disabled-accounts)). | Nothing for this account — a live session's next call is rejected immediately, not at token expiry. Grants, group memberships, and JIT history are untouched and restored the instant the account is re-enabled. | Sign-in, and every already-issued JWT for this account, immediately. |
 | **Delete** | The row and everything that references it by foreign key are removed in one operation: cluster grants (`user_cluster_access`), group memberships, machine tokens if the row happened to be a machine account, and JIT requests the account made. | Nothing involving this account. | Any kubeconfig or machine token this account had issued stops working the next time it is presented — the identity it authenticates as no longer exists. Audit rows referencing the user id are **not** deleted; the trail keeps the numeric id so history is not rewritten. |
 
-!!! info "Screenshot pending — `users-table.png`"
-    The user list, with the grant editor open on one account.
-
 ## The access review
 
 `GET /api/v1/users/:id/access` (admin only) answers "what can this person reach

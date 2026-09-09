@@ -45,8 +45,10 @@ far more often than by a person, and nesting buys nothing:
 | `error` | Set when the call never reached the API server (a refusal, a tunnel failure) |
 | `diff` | The field-level diff of a manifest write, present only when manifest diff recording is on and the kind is not redacted — see [Manifest diff recording](#manifest-diff-recording) |
 
-!!! info "Screenshot pending — `audit-trail.png`"
-    The trail filtered to one cluster, with a record's detail sheet open.
+<figure markdown>
+  ![One record from the audit trail](../assets/screenshots/audit-trail.png)
+  <figcaption>One record from the trail. The identities crossed — the kubemg account and the subject it was impersonated as — are what joins a person to what the cluster saw.</figcaption>
+</figure>
 
 ## Where a call came from
 

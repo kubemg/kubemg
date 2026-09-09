@@ -82,30 +82,21 @@ A page that wants an image it does not have yet carries a placeholder rather
 than a broken link, because a missing image file fails the strict build:
 
 ```markdown
-!!! info "Screenshot pending — `cluster-wizard-connection.png`"
-    Step 2 of the cluster wizard, with the two connection-mode cards visible.
+!!! info "Screenshot pending — `agent-install-sheet.png`"
+    The install package sheet, with the rendered apply command.
 ```
 
 ### The shots this manual is waiting for
 
-Each row is a placeholder that exists in a page today. Capture it, drop the file
-in `docs/assets/screenshots/` under that name, replace the placeholder with the
-figure, and delete the row.
+Two slots have no image yet. Their placeholders were removed rather than left in
+the page, so the pages read cleanly until the pictures exist. Capture one, drop
+the file in `docs/assets/screenshots/` under that name, and add the figure where
+the row says.
 
-| File | Placeholder lives in | What to capture |
+| File | Goes in | What to capture |
 |---|---|---|
-| `fleet-overview.png` | `docs/introduction/overview.md` — above `## What an administrator sees` | The fleet overview signed in as an admin, three or four clusters, at least one with a down tunnel |
-| `cluster-wizard-connection.png` | `docs/clusters/registering.md` — above `## Step 3 — Handshake` | Step 2 of the wizard, both connection-mode cards visible |
-| `cluster-wizard-handshake.png` | `docs/clusters/registering.md` — above `## Step 4 — Observability` | Step 3 waiting for the agent, and the same step once it attaches |
-| `agent-install-sheet.png` | `docs/clusters/agent.md` — above `## What lands in the cluster` | The install package sheet with the rendered apply command |
-| `cluster-dashboard.png` | `docs/clusters/managing.md` — above `## Node capacity` | A healthy cluster dashboard |
-| `explore-sidebar.png` | `docs/clusters/explore.md` — above `## Favorites` | The cluster tree with a discovered operator section expanded |
-| `users-table.png` | `docs/access/users-and-groups.md` — above `## The access review` | The user list, with the grant editor sheet open on one account |
-| `sso-provider-form.png` | `docs/access/sso.md` — above `## First-login provisioning` | An OIDC provider being configured, and the group-mapping editor |
-| `kubeconfig-sheet.png` | `docs/access/kubeconfigs.md` — above `## The TTL ladder and the two ceilings` | The generate sheet with the TTL ladder open |
-| `audit-trail.png` | `docs/audit/trail.md` — above `## Where a call came from` | The trail filtered to one cluster, with one record's detail sheet open |
-| `recording-replay.png` | `docs/audit/session-recording.md` — above `## Where files go` | A replay mid-session |
+| `agent-install-sheet.png` | `docs/clusters/agent.md`, above `## What lands in the cluster` | The install package sheet with the rendered apply command |
+| `users-table.png` | `docs/access/users-and-groups.md`, above `## The access review` | The user list, with the grant editor sheet open on one account |
 
-Every one of those pages sits one directory below `docs/`, so the path in the
-figure is always `../assets/screenshots/<file>`. Search the page for
-`Screenshot pending` to find the exact block to replace.
+Both pages sit one directory below `docs/`, so the path in the figure is
+`../assets/screenshots/<file>`, the same as every figure already in the manual.

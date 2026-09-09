@@ -113,8 +113,10 @@ Usernames and DNs are escaped against LDAP filter injection — nothing typed in
 
     Same shape as AD: `ldap_group_attribute: memberOf` if the overlay is enabled. Without it, leave `ldap_group_attribute` unset (it will find nothing) and configure `ldap_group_filter` such as `(&(objectClass=groupOfNames)(member=%s))` with `ldap_group_base_dn` pointing at the groups subtree, and `ldap_group_name_attribute: cn`.
 
-!!! info "Screenshot pending — `sso-provider-form.png`"
-    An OIDC provider being configured, beside the group-mapping editor.
+<figure markdown>
+  ![Adding an OIDC provider](../assets/screenshots/sso-provider-form.png)
+  <figcaption>Adding an OIDC provider. The issuer URL is discovered rather than configured endpoint by endpoint.</figcaption>
+</figure>
 
 ## First-login provisioning
 

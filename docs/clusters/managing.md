@@ -124,8 +124,10 @@ insight logic Explore's own pilot header uses (see
 count one click away in Explore cannot disagree; each card links to the list
 it summarises rather than duplicating a table of its own.
 
-!!! info "Screenshot pending — `cluster-dashboard.png`"
-    A healthy cluster dashboard.
+<figure markdown>
+  ![A cluster dashboard](../assets/screenshots/cluster-dashboard.png)
+  <figcaption>A cluster dashboard. The path a call takes runs across the top, and the capacity below it is read live from the cluster's own Metrics API.</figcaption>
+</figure>
 
 ## Node capacity
 

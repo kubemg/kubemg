@@ -47,9 +47,6 @@ environment — if an administrator changes the public URL or the
 agent image in **Settings → Agent**, every install command issued afterward
 reflects the change immediately, with no redeploy of the bastion.
 
-!!! info "Screenshot pending — `agent-install-sheet.png`"
-    The install package sheet, with the rendered apply command.
-
 ## What lands in the cluster
 
 ```

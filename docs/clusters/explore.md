@@ -84,8 +84,10 @@ for the same Deployment, and the revision is the only thing that says which
 is which. Zero desired replicas is the resting state of every superseded
 ReplicaSet and is drawn as idle, not as a fault.
 
-!!! info "Screenshot pending — `explore-sidebar.png`"
-    The cluster tree with a discovered operator section expanded.
+<figure markdown>
+  ![The cluster tree](../assets/screenshots/explore-sidebar.png)
+  <figcaption>The cluster tree. The fixed inventory comes first, then the sections discovered from the CRDs this cluster actually serves, which start collapsed.</figcaption>
+</figure>
 
 ## Favorites
 

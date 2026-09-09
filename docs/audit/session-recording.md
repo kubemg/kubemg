@@ -41,8 +41,10 @@ that killed a production shell because a volume filled up would be a worse
 product than one with a gap in its recordings and a line in the log saying
 so.
 
-!!! info "Screenshot pending — `recording-replay.png`"
-    A recording replaying mid-session.
+<figure markdown>
+  ![A session recording replaying](../assets/screenshots/recording-replay.png)
+  <figcaption>A replay. Output is drawn here; keystrokes, when they are captured, are a tab of their own.</figcaption>
+</figure>
 
 ## Where files go
 

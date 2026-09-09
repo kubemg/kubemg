@@ -82,8 +82,10 @@ curl -X POST https://your-kubemg/api/v1/clusters \
 
 See [REST API reference](../dev/api.md) for the full cluster surface.
 
-!!! info "Screenshot pending — `cluster-wizard-connection.png`"
-    Step 2 of the wizard, with the agent-based and direct cards side by side.
+<figure markdown>
+  ![Step 2 of the wizard](../assets/screenshots/cluster-wizard-connection.png)
+  <figcaption>Step 2 picks the connection mode, and submitting it is what creates the cluster record. Steps 1 and 2 lock once it does.</figcaption>
+</figure>
 
 ## Step 3 — Handshake
 
@@ -108,8 +110,10 @@ not just here.
 See [Installing the agent](agent.md) for exactly what the install command
 fetches and applies.
 
-!!! info "Screenshot pending — `cluster-wizard-handshake.png`"
-    Step 3 waiting for the agent, and the same step once the tunnel attaches.
+<figure markdown>
+  ![Step 3 after the agent attaches](../assets/screenshots/cluster-wizard-handshake.png)
+  <figcaption>Step 3 once the agent has dialled in: the tunnel is open, and the cluster reports its own Kubernetes and agent versions.</figcaption>
+</figure>
 
 ## Step 4 — Observability
 
