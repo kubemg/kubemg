@@ -18,7 +18,7 @@ no CRDs, and no cluster credential stored anywhere.
 There are three ways to give a developer access to a production cluster today.
 
 **Hand out a kubeconfig, and hope.** It is long-lived, it gets copied into somebody's `~/.kube`, it
-outlives the project it was issued for, and revoking it means first remembering that it exists..
+outlives the project it was issued for, and revoking it means first remembering that it exists.
 
 **Put a desktop tool in front of it.** Lens is very good at being one person's console, and it has
 never heard of your team. There is nowhere in it to say who may reach production, and no record
