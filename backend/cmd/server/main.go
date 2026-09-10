@@ -26,6 +26,7 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/guardrails"
 	"github.com/kubemg/kubemg/backend/pkg/jit"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
+	"github.com/kubemg/kubemg/backend/pkg/metrics"
 	"github.com/kubemg/kubemg/backend/pkg/observability"
 	"github.com/kubemg/kubemg/backend/pkg/terminal"
 	"github.com/kubemg/kubemg/backend/pkg/webui"
@@ -48,6 +49,10 @@ func main() {
 	if err := db.Migrate(gdb); err != nil {
 		log.Fatalf("database migration failed: %v", err)
 	}
+
+	met := metrics.Default()
+	met.RegisterBuildInfo(version)
+	met.RegisterGORMCallbacks(gdb)
 
 	store := db.NewStore(gdb)
 
@@ -207,6 +212,7 @@ func main() {
 		BastionCA:      tlsMaterial.agentCA,
 		// What the console's footer names this install as. See api.Options.Version.
 		Version:        version,
+		Metrics:        met,
 		// Housekeeping shares the audit writer's lifetime: both are background
 		// work that has to stop when the process is winding down.
 		AuditRetentionDays: cfg.AuditRetentionDays,
