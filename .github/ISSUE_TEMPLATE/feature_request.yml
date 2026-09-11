@@ -1,0 +1,98 @@
+name: Feature request
+description: Propose a change, with enough detail that somebody else — or their agent — can implement it without asking you a question
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        KubeMG is built by people working alongside coding agents, so an issue here is read as
+        a work order rather than a wish. The fields below are the ones an implementer has to
+        guess at when they are missing: what the change *is*, how anyone will know it is done,
+        and what it must deliberately not turn into.
+
+        Before filing, check [`roadmap.md`](../blob/master/roadmap.md) for open work and
+        [`roadmap-shipped.md`](../blob/master/roadmap-shipped.md) for what already shipped —
+        a shipped entry records **why** it was built that way and what was rejected.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong today
+      description: The current behaviour, from the console or the API, not the fix you have in mind.
+      placeholder: Opening X shows Y; an operator who needs Z has no way to get it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should happen instead
+      description: >
+        The behaviour you want, described so it could be demonstrated. Name the surface — a page,
+        a sheet, a route, a setting — and say what the user sees.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: >
+        One checkbox per assertion, each with the verification level it is provable at:
+        **(a)** `make verify`, **(b)** a test in the suite (Go under `backend/pkg/...`, vitest
+        beside the frontend module), **(c)** an end-to-end run against a real cluster — reserved
+        for the tunnel, streaming, TLS, agent install, and stack configuration. A criterion that
+        a test can assert must not ask for a running cluster.
+      value: |
+        - [ ] (b) …
+        - [ ] (b) …
+        - [ ] (c) … — only if a test genuinely cannot reach it
+    validations:
+      required: true
+
+  - type: textarea
+    id: surface
+    attributes:
+      label: Areas this touches
+      description: >
+        Packages, routes, pages and settings you expect to change, as far as you know them.
+        A guess that turns out wrong is more useful than a blank field.
+      placeholder: |
+        backend/pkg/api/…, route GET /api/v1/…
+        frontend/src/pages/…, frontend/src/components/…
+        setting: …
+        docs: docs/… (user guide) and/or docs/dev/… (developer guide)
+    validations:
+      required: true
+
+  - type: textarea
+    id: nongoals
+    attributes:
+      label: Explicitly out of scope
+      description: >
+        What this change must **not** do — adjacent work it should not absorb, and any existing
+        decision it must not undo. This field is why an implementation comes back the size it
+        was asked for.
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Rules it has to respect
+      description: >
+        Existing invariants that bear on it — impersonation, namespace scoping, the audit trail,
+        the visual language (lime is the only interactive accent, every text tone clears 4.5:1),
+        the two connection modes, the read cache. `ARCHITECTURE.md` carries the reasoning for each.
+    validations:
+      required: false
+
+  - type: input
+    id: roadmap
+    attributes:
+      label: Roadmap entry
+      description: The heading in `roadmap.md` this belongs under, if it is already tracked there.
+      placeholder: Phase 7 — FinOps, Advanced Visualization & AI SRE Intelligence
+    validations:
+      required: false
