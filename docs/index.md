@@ -1,6 +1,6 @@
 # kubemg
 
-**Centralised Kubernetes access, visibility and audit. Clusters dial out; nothing dials in.**
+**Centralised Kubernetes access, visibility and audit. No inbound ports; every call on the record.**
 
 kubemg is a management plane for a fleet of Kubernetes clusters. It gives an
 operator one console over every cluster, gives a developer exactly the access

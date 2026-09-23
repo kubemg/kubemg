@@ -1,10 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/kubemg-icon.svg" width="76" height="76" alt="">
-
-# kubemg
-
-### Clusters dial out. Nothing dials in.
+<img src="docs/assets/readme-hero.png" width="100%" alt="kubemg. No inbound ports. Every call on the record. One agent that connects out, and an audit trail for every kubectl call.">
 
 Central, audited access to every Kubernetes cluster — no inbound firewall rule,
 no CRDs, and no cluster credential stored anywhere.

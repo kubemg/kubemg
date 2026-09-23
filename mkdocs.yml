@@ -1,5 +1,5 @@
 site_name: kubemg
-site_description: Centralised Kubernetes access, visibility and audit. Clusters dial out; nothing dials in.
+site_description: Centralised Kubernetes access, visibility and audit. No inbound ports; every call on the record.
 site_url: https://kubemg.readthedocs.io/
 repo_url: https://github.com/kubemg/kubemg
 repo_name: kubemg/kubemg

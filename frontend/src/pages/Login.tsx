@@ -54,8 +54,9 @@ export function Login() {
         </span>
       </button>
 
-      {/* The left half is the product's own words: clusters dial out, and
-          nothing here needs to prove that with a diagram. */}
+      {/* The left half is the product's own words: no inbound ports, every
+          call on the record, and nothing here needs to prove that with a
+          diagram. */}
       <section className="relative hidden flex-col justify-between overflow-hidden bg-rail p-10 lg:flex">
         {/* Texture, not signal — a static field standing in for the fleet, and
             a soft accent glow anchoring the corner. Nothing here animates: the
@@ -92,13 +93,13 @@ export function Login() {
 
         <div className="relative max-w-md">
           <h1 className="text-[34px] leading-[1.1] font-semibold tracking-[-0.03em] text-rail-fg">
-            Clusters dial out.
+            No inbound ports.
             <br />
-            Nothing dials in.
+            Every call on the record.
           </h1>
           <p className="mt-4 text-[14px] leading-relaxed text-rail-muted">
-            Every cluster holds an outbound tunnel to kubemg. Access is issued here, kubectl traffic
-            is proxied under your own identity, and every call lands in the audit trail.
+            Every cluster holds an outbound tunnel to kubemg. Access is issued here, and kubectl
+            traffic is proxied under your own identity.
           </p>
         </div>
 
