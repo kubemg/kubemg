@@ -103,17 +103,20 @@ func (m *Metrics) RegisterBuildInfo(version string) {
 // It uses c.FullPath() for the path label so wildcard route patterns
 // (e.g. /api/v1/clusters/:id) do not cause unbounded label cardinality.
 //
-// WebSocket upgrades (the agent tunnel, shell attach, exec/port-forward via
-// the proxy) are excluded from the in-flight gauge and latency histogram:
-// those connections hold c.Next() open for the lifetime of the session —
-// hours in the case of agent tunnels — so including them would make the
-// gauge permanently non-zero and bury every real request in the +Inf bucket.
-// They are still counted in kubemg_http_requests_total once the upgrade
-// completes or fails.
+// Long-lived connections are excluded from the in-flight gauge and latency
+// histogram; they are still counted in kubemg_http_requests_total when the
+// connection closes. Two shapes are detected:
+//   - WebSocket upgrades (agent tunnel, shell attach, exec, port-forward):
+//     Upgrade: websocket header.
+//   - Streaming plain GETs (kubectl logs -f, kubectl get -w, informer watches
+//     through the proxy): watch=true or follow=true query parameters, which are
+//     the Kubernetes API streaming flags.
 func (m *Metrics) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
-		isUpgrade := strings.EqualFold(c.Request.Header.Get("Upgrade"), "websocket")
+		isUpgrade := strings.EqualFold(c.Request.Header.Get("Upgrade"), "websocket") ||
+			c.Query("watch") == "true" ||
+			c.Query("follow") == "true"
 
 		if !isUpgrade {
 			m.httpRequestsInFlight.Inc()

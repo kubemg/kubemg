@@ -192,6 +192,44 @@ func TestMiddlewareSkipsInFlightForWebSocketUpgrade(t *testing.T) {
 	}
 }
 
+func TestMiddlewareSkipsHistogramForWatchParam(t *testing.T) {
+	m, reg := NewStandalone()
+	r := gin.New()
+	r.Use(m.Middleware())
+	r.GET("/proxy", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	req := httptest.NewRequest(http.MethodGet, "/proxy?watch=true", nil)
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	families := gatherMetric(t, reg, "kubemg_http_request_duration_seconds")
+	for _, f := range families {
+		for _, metric := range f.GetMetric() {
+			if metric.GetHistogram().GetSampleCount() > 0 {
+				t.Fatal("latency histogram must not record watch=true requests")
+			}
+		}
+	}
+}
+
+func TestMiddlewareSkipsHistogramForFollowParam(t *testing.T) {
+	m, reg := NewStandalone()
+	r := gin.New()
+	r.Use(m.Middleware())
+	r.GET("/logs", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	req := httptest.NewRequest(http.MethodGet, "/logs?follow=true", nil)
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	families := gatherMetric(t, reg, "kubemg_http_request_duration_seconds")
+	for _, f := range families {
+		for _, metric := range f.GetMetric() {
+			if metric.GetHistogram().GetSampleCount() > 0 {
+				t.Fatal("latency histogram must not record follow=true requests")
+			}
+		}
+	}
+}
+
 func TestDBAfterDoesNotCountRecordNotFoundAsError(t *testing.T) {
 	m, reg := NewStandalone()
 	afterFn := m.dbAfter("query")
