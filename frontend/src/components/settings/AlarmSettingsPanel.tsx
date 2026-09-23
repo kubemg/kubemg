@@ -26,6 +26,7 @@ import type {
 import type { Tone } from '../../lib/status'
 import { relativeAge } from '../../lib/time'
 import {
+  Age,
   Button,
   Chip,
   Field,
@@ -270,7 +271,7 @@ export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
                         channel.last_status === 'ok' ? 'text-muted' : 'text-danger'
                       }`}
                     >
-                      Last attempt {relativeAge(channel.last_attempt_at)} ·{' '}
+                      Last attempt <Age iso={channel.last_attempt_at} /> ·{' '}
                       {channel.last_status === 'ok'
                         ? 'accepted'
                         : channel.last_message || 'failed'}
@@ -360,7 +361,7 @@ export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
                 ) : null}
                 {rule.fire_count > 0 ? (
                   <p className="mt-1 font-mono text-[11.5px] text-faint">
-                    fired {rule.fire_count}× · last {relativeAge(rule.last_fired_at)}
+                    fired {rule.fire_count}× · last <Age iso={rule.last_fired_at} />
                   </p>
                 ) : null}
               </div>

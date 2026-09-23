@@ -17,6 +17,7 @@ import type { Cluster, K8sRole, MachineAccount, MachineToken } from '../api/type
 import { AppShell } from '../components/AppShell'
 import { IssueMachineTokenSheet } from '../components/MachineTokenSheet'
 import {
+  Age,
   ActivityTag,
   Button,
   Pill,
@@ -238,7 +239,7 @@ export function MachineAccounts() {
                         : `${row.active_tokens} live / ${row.token_count}`}
                     </Td>
                     <Td className="hidden text-[12.5px] text-muted lg:table-cell">
-                      {row.last_used_at ? relativeAge(row.last_used_at) : 'never'}
+                      <Age iso={row.last_used_at} />
                     </Td>
                     <Td>
                       <button

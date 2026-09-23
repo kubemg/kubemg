@@ -13,6 +13,7 @@ import {
 import type { SystemRole, User } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import {
+  Age,
   ActivityTag,
   Button,
   Chip,
@@ -403,7 +404,7 @@ export function UserManagement() {
                       </Td>
                     ) : null}
                     <Td className="hidden truncate text-[12.5px] text-muted md:table-cell">
-                      {relativeAge(row.last_login_at)}
+                      <Age iso={row.last_login_at} />
                     </Td>
                     <Td>
                       <div className="flex items-center justify-end">

@@ -7,6 +7,7 @@ import { AppShell } from '../components/AppShell'
 import { ClusterLabelsSheet } from '../components/ClusterLabelsSheet'
 import { LinkStatus } from '../components/LinkStatus'
 import {
+  Age,
   Button,
   ClusterState,
   EmptyState,
@@ -178,7 +179,7 @@ export function ClusterManagement() {
                     <span className="flex flex-col items-start gap-0.5">
                       <ClusterState cluster={cluster} />
                       <span className="text-[11.5px] text-faint">
-                        {cluster.status === 'pending' ? '' : relativeAge(cluster.last_checked_at)}
+                        {cluster.status === 'pending' ? '' : <Age iso={cluster.last_checked_at} />}
                       </span>
                     </span>
                   </Td>

@@ -12,6 +12,7 @@ import { relativeAge } from '../lib/time'
 import { formatCPU, formatMemory, podLimit, podUsageIndex, ratio, usageTone } from '../lib/units'
 import type { PodUsageIndex } from '../lib/units'
 import {
+  Age,
   Button,
   EmptyState,
   Notice,
@@ -288,7 +289,7 @@ export function WorkloadPodsView({
                     {pod.node || '—'}
                   </Td>
                   <Td className="whitespace-nowrap font-mono text-[12px] text-muted">
-                    {relativeAge(pod.created_at)}
+                    <Age iso={pod.created_at} />
                   </Td>
                 </Row>
               )

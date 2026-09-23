@@ -46,6 +46,7 @@ import {
   Zap,
 } from 'lucide-react'
 import {
+  Age,
   IconButton,
   OBJECT_MARK,
   OBJECT_NAME,
@@ -931,7 +932,7 @@ function HelmReleaseTable({
             <Td>
               <Pill tone={helmTone(release.status)}>{release.status || 'unknown'}</Pill>
             </Td>
-            <Td className={AGE}>{release.updated_at ? relativeAge(release.updated_at) : '—'}</Td>
+            <Td className={AGE}>{release.updated_at ? <Age iso={release.updated_at} /> : '—'}</Td>
             {onValues ? (
               <Td className="whitespace-nowrap">
                 <span className="flex items-center justify-end gap-0.5">
@@ -1205,7 +1206,7 @@ function PodTable({
               {pod.restarts}
             </Td>
             <Td className={`hidden xl:table-cell ${MONO}`}>{pod.node || '—'}</Td>
-            <Td className={`whitespace-nowrap ${AGE}`}>{relativeAge(pod.created_at)}</Td>
+            <Td className={`whitespace-nowrap ${AGE}`}><Age iso={pod.created_at} /></Td>
             <ManifestCell
               onManifest={onManifest}
               name={pod.name}
@@ -1400,7 +1401,7 @@ function WorkloadTable({
             <Td className={`hidden lg:table-cell ${MONO}`} title={workload.images?.join(', ')}>
               {workload.images?.[0] ?? '—'}
             </Td>
-            <Td className={AGE}>{relativeAge(workload.created_at)}</Td>
+            <Td className={AGE}><Age iso={workload.created_at} /></Td>
             <ManifestCell
               onManifest={onManifest}
               name={workload.name}
@@ -1484,7 +1485,7 @@ function JobTable({
             <Td className={`hidden lg:table-cell ${MONO}`} title={job.images?.join(', ')}>
               {job.images?.[0] ?? '—'}
             </Td>
-            <Td className={AGE}>{relativeAge(job.created_at)}</Td>
+            <Td className={AGE}><Age iso={job.created_at} /></Td>
             <ManifestCell
               onManifest={onManifest}
               name={job.name}
@@ -1626,9 +1627,9 @@ function CronJobTable({
               {cronjob.active}
             </Td>
             <Td className={`hidden md:table-cell ${AGE}`}>
-              {cronjob.last_schedule_at ? relativeAge(cronjob.last_schedule_at) : 'never'}
+              <Age iso={cronjob.last_schedule_at} />
             </Td>
-            <Td className={AGE}>{relativeAge(cronjob.created_at)}</Td>
+            <Td className={AGE}><Age iso={cronjob.created_at} /></Td>
             <ManifestCell
               onManifest={onManifest}
               name={cronjob.name}
@@ -1741,7 +1742,7 @@ function ReplicaSetTable({
             <Td className={`hidden lg:table-cell ${MONO}`}>
               <List values={replicaset.images} />
             </Td>
-            <Td className={AGE}>{relativeAge(replicaset.created_at)}</Td>
+            <Td className={AGE}><Age iso={replicaset.created_at} /></Td>
             <ManifestCell
               onManifest={onManifest}
               name={replicaset.name}
@@ -1841,7 +1842,7 @@ function AutoscalerTable({
             <Td className={`hidden lg:table-cell ${MONO}`}>
               <List values={hpa.metrics.map(metricText)} empty="none declared" />
             </Td>
-            <Td className={AGE}>{relativeAge(hpa.created_at)}</Td>
+            <Td className={AGE}><Age iso={hpa.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={hpa.name} namespace={hpa.namespace} />
           </Row>
         ))}
@@ -1915,7 +1916,7 @@ function QuotaTable({
                 empty="nothing bounded"
               />
             </Td>
-            <Td className={AGE}>{relativeAge(quota.created_at)}</Td>
+            <Td className={AGE}><Age iso={quota.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={quota.name} namespace={quota.namespace} />
           </Row>
         ))}
@@ -1963,7 +1964,7 @@ function LimitRangeTable({
             <Td className={MONO}>
               <List values={range.entries.map(limitText)} empty="nothing declared" />
             </Td>
-            <Td className={AGE}>{relativeAge(range.created_at)}</Td>
+            <Td className={AGE}><Age iso={range.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={range.name} namespace={range.namespace} />
           </Row>
         ))}
@@ -2056,7 +2057,7 @@ function DisruptionBudgetTable({
                 {budget.disruptions_allowed}
               </Pill>
             </Td>
-            <Td className={AGE}>{relativeAge(budget.created_at)}</Td>
+            <Td className={AGE}><Age iso={budget.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={budget.name} namespace={budget.namespace} />
           </Row>
         ))}
@@ -2125,7 +2126,7 @@ function ServiceTable({
             <Td className={MONO}>
               <List values={service.ports} />
             </Td>
-            <Td className={AGE}>{relativeAge(service.created_at)}</Td>
+            <Td className={AGE}><Age iso={service.created_at} /></Td>
             <ManifestCell
               onManifest={onManifest}
               name={service.name}
@@ -2194,7 +2195,7 @@ function IngressTable({
             <Td className="hidden font-mono text-[12.5px] text-muted md:table-cell">
               {ingress.rules}
             </Td>
-            <Td className={AGE}>{relativeAge(ingress.created_at)}</Td>
+            <Td className={AGE}><Age iso={ingress.created_at} /></Td>
             <ManifestCell
               onManifest={onManifest}
               name={ingress.name}
@@ -2268,7 +2269,7 @@ function NetworkPolicyTable({
             <Td className="hidden font-mono text-[12.5px] text-muted lg:table-cell">
               {policy.ingress_rules} in / {policy.egress_rules} out
             </Td>
-            <Td className={AGE}>{relativeAge(policy.created_at)}</Td>
+            <Td className={AGE}><Age iso={policy.created_at} /></Td>
             <ManifestCell
               onManifest={onManifest}
               name={policy.name}
@@ -2329,7 +2330,7 @@ function RouteTable({
             <Td className="hidden font-mono text-[12.5px] text-muted md:table-cell">
               {route.rules}
             </Td>
-            <Td className={AGE}>{relativeAge(route.created_at)}</Td>
+            <Td className={AGE}><Age iso={route.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={route.name} namespace={route.namespace} />
           </Row>
         ))}
@@ -2388,7 +2389,7 @@ function PersistentVolumeTable({
             </Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>{volume.claim || '—'}</Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>{volume.storage_class || '—'}</Td>
-            <Td className={AGE}>{relativeAge(volume.created_at)}</Td>
+            <Td className={AGE}><Age iso={volume.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={volume.name} />
           </Row>
         ))}
@@ -2456,7 +2457,7 @@ function ClaimTable({
             </Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>{claim.storage_class || '—'}</Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>{claim.volume || '—'}</Td>
-            <Td className={AGE}>{relativeAge(claim.created_at)}</Td>
+            <Td className={AGE}><Age iso={claim.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={claim.name} namespace={claim.namespace} />
           </Row>
         ))}
@@ -2508,7 +2509,7 @@ function StorageClassTable({
             <Td className={MONO}>{entry.provisioner}</Td>
             <Td className={`hidden md:table-cell ${MONO}`}>{entry.reclaim_policy || '—'}</Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>{entry.binding_mode || '—'}</Td>
-            <Td className={AGE}>{relativeAge(entry.created_at)}</Td>
+            <Td className={AGE}><Age iso={entry.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={entry.name} />
           </Row>
         ))}
@@ -2584,7 +2585,7 @@ function ConfigTable({
             <Td className={`hidden lg:table-cell ${MONO}`}>
               <List values={entry.keys} empty="none" />
             </Td>
-            <Td className={AGE}>{relativeAge(entry.created_at)}</Td>
+            <Td className={AGE}><Age iso={entry.created_at} /></Td>
             {/* A Secret's values are redacted on the way out, so the manifest
                 is not the whole object and there is nothing honest to write
                 back — it is offered to read and not to edit. */}
@@ -2735,7 +2736,7 @@ function RoleTable({
             <Td className={`hidden lg:table-cell ${MONO}`}>
               <List values={role.resources} empty="none" />
             </Td>
-            <Td className={AGE}>{relativeAge(role.created_at)}</Td>
+            <Td className={AGE}><Age iso={role.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={role.name} namespace={role.namespace} />
           </Row>
         ))}
@@ -2848,7 +2849,7 @@ function BindingTable({
             <Td className={`hidden lg:table-cell ${MONO}`}>
               <List values={binding.kinds} empty="none" />
             </Td>
-            <Td className={AGE}>{relativeAge(binding.created_at)}</Td>
+            <Td className={AGE}><Age iso={binding.created_at} /></Td>
             <ManifestCell
               onManifest={onManifest}
               name={binding.name}
@@ -2930,7 +2931,7 @@ function ServiceAccountTable({
                   ? 'automounted'
                   : 'not mounted'}
             </Td>
-            <Td className={AGE}>{relativeAge(account.created_at)}</Td>
+            <Td className={AGE}><Age iso={account.created_at} /></Td>
             <ManifestCell
               onManifest={onManifest}
               name={account.name}
@@ -2990,7 +2991,7 @@ function CustomResourceTable({
               {row.kind || '—'}
             </Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>{row.api_version || '—'}</Td>
-            <Td className={AGE}>{relativeAge(row.created_at)}</Td>
+            <Td className={AGE}><Age iso={row.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={row.name} namespace={row.namespace} />
           </Row>
         ))}
@@ -3059,7 +3060,7 @@ function NodeTable({
             <Td className={MONO}>{node.version}</Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>{node.internal_ip || '—'}</Td>
             <Td className={`hidden lg:table-cell ${MONO}`}>{node.cpu || '—'}</Td>
-            <Td className={AGE}>{relativeAge(node.created_at)}</Td>
+            <Td className={AGE}><Age iso={node.created_at} /></Td>
             <ManifestCell
               onManifest={onManifest}
               name={node.name}
@@ -3147,7 +3148,7 @@ function NamespaceTable({
               )}
             </Td>
             <Td className={AGE}>
-              {namespace.created_at ? relativeAge(namespace.created_at) : '—'}
+              {namespace.created_at ? <Age iso={namespace.created_at} /> : '—'}
             </Td>
             <ManifestCell onManifest={onManifest} name={namespace.name} />
           </Row>

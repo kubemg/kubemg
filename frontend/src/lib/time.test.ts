@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatClock, formatInstant } from './time'
+import { formatClock, formatInstant, relativeAge } from './time'
 
 /*
  * The one rule these hold to is that the reading does not depend on where the
@@ -40,5 +40,60 @@ describe('formatClock', () => {
   it('is the same clock without the date', () => {
     expect(formatClock(at)).toBe('19:28')
     expect(formatClock(at, { seconds: true })).toBe('19:28:22')
+  })
+})
+
+describe('relativeAge', () => {
+  it('says never for undefined', () => {
+    expect(relativeAge(undefined)).toBe('never')
+  })
+
+  it('says never for an unparseable string', () => {
+    expect(relativeAge('not a date')).toBe('never')
+  })
+
+  it('says just now for a very recent past timestamp', () => {
+    const iso = new Date(Date.now() - 10_000).toISOString()
+    expect(relativeAge(iso)).toBe('just now')
+  })
+
+  it('says just now for a timestamp a few seconds ahead', () => {
+    const iso = new Date(Date.now() + 10_000).toISOString()
+    expect(relativeAge(iso)).toBe('just now')
+  })
+
+  it('rounds to minutes for past timestamps under an hour', () => {
+    const iso = new Date(Date.now() - 5 * 60_000).toISOString()
+    expect(relativeAge(iso)).toBe('5m ago')
+  })
+
+  it('rounds to hours for past timestamps under a day', () => {
+    const iso = new Date(Date.now() - 3 * 3_600_000).toISOString()
+    expect(relativeAge(iso)).toBe('3h ago')
+  })
+
+  it('rounds to days for older past timestamps', () => {
+    const iso = new Date(Date.now() - 12 * 86_400_000).toISOString()
+    expect(relativeAge(iso)).toBe('12d ago')
+  })
+
+  it('says "in Xm" for a timestamp 12 minutes in the future', () => {
+    const iso = new Date(Date.now() + 12 * 60_000).toISOString()
+    expect(relativeAge(iso)).toBe('in 12m')
+  })
+
+  it('says "in Xh" for a timestamp 20 hours in the future', () => {
+    const iso = new Date(Date.now() + 20 * 3_600_000).toISOString()
+    expect(relativeAge(iso)).toBe('in 20h')
+  })
+
+  it('says "in Xd" for a timestamp 3 days in the future', () => {
+    const iso = new Date(Date.now() + 3 * 86_400_000).toISOString()
+    expect(relativeAge(iso)).toBe('in 3d')
+  })
+
+  it('composes into "Expires in 20h" for a future kubeconfig expiry', () => {
+    const iso = new Date(Date.now() + 20 * 3_600_000).toISOString()
+    expect(`Expires ${relativeAge(iso)}`).toBe('Expires in 20h')
   })
 })

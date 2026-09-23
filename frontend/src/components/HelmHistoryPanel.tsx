@@ -5,7 +5,7 @@ import type { Cluster, HelmHistory, HelmRelease, HelmWriteResult } from '../api/
 import type { Tone } from '../lib/status'
 import { relativeAge } from '../lib/time'
 import { HelmObjectReport } from './HelmObjectReport'
-import { Button, IconButton, Notice, Pill, Row, Table, Td, Th } from './primitives'
+import { Age, Button, IconButton, Notice, Pill, Row, Table, Td, Th } from './primitives'
 
 /**
  * What a release has been, and going back to one of those states.
@@ -198,7 +198,7 @@ export function HelmHistoryPanel({
                     {entry.chart_version || '—'}
                   </Td>
                   <Td className="font-mono text-muted" title={entry.updated_at}>
-                    {entry.updated_at ? relativeAge(entry.updated_at) : '—'}
+                    {entry.updated_at ? <Age iso={entry.updated_at} /> : '—'}
                   </Td>
                   <Td className="truncate text-muted" title={entry.description}>
                     {entry.description || '—'}

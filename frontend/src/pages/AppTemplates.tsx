@@ -13,6 +13,7 @@ import { YamlView } from '../components/YamlView'
 import { TEMPLATE_NAME, templateDisplayName } from '../lib/templates'
 import { relativeAge } from '../lib/time'
 import {
+  Age,
   Button,
   EmptyState,
   Field,
@@ -148,7 +149,7 @@ export function AppTemplates() {
                       {template.description ?? '—'}
                     </Td>
                     <Td className="font-mono text-[12.5px] text-muted">{template.parameters.length}</Td>
-                    <Td className="text-[12.5px] text-muted">{relativeAge(template.updated_at)}</Td>
+                    <Td className="text-[12.5px] text-muted"><Age iso={template.updated_at} /></Td>
                     <Td className="text-right">
                       <span className="flex justify-end gap-1">
                         <IconButton

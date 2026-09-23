@@ -9,7 +9,7 @@ import {
 } from '../../api/client'
 import type { TerminalSession } from '../../api/types'
 import { relativeAge } from '../../lib/time'
-import { Chip, DetailList, IconButton, Notice, Pill, Segmented, Select, Slab } from '../primitives'
+import { Age, Chip, DetailList, IconButton, Notice, Pill, Segmented, Select, Slab } from '../primitives'
 import { clock, parseCast, type Cast } from './cast'
 
 /** Playback speeds. Faster than 8x stops being watchable and starts being a diff. */
@@ -291,7 +291,7 @@ export function TerminalSessionPlayer({
           },
           { term: 'Container', value: session.container_name || '—' },
           { term: 'Command', value: session.shell || (session.verb === 'attach' ? 'attach' : '—') },
-          { term: 'Started', value: relativeAge(session.started_at) },
+          { term: 'Started', value: <Age iso={session.started_at} /> },
           {
             term: 'Ran for',
             value: session.open ? 'still open' : `${session.duration_seconds}s`,

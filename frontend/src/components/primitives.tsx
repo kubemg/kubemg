@@ -23,7 +23,7 @@ import {
 } from 'lucide-react'
 import type { Cluster, Environment } from '../api/types'
 import { TONE_SOFT, clusterStateLabel, clusterTone } from '../lib/status'
-import { relativeAge } from '../lib/time'
+import { formatInstant, relativeAge } from '../lib/time'
 import type { Tone } from '../lib/status'
 import { usageTone } from '../lib/units'
 
@@ -70,6 +70,21 @@ export function Pill({
           lose the argument, and the ellipsis is what says it did. */}
       <span className="truncate">{children}</span>
     </span>
+  )
+}
+
+/**
+ * Age renders a relative timestamp with the exact instant on hover. The text is
+ * the relative form ("5m ago", "in 20h"); hovering shows the full ISO-ordered
+ * absolute time with zone, as stated in the `formatInstant` contract. `never` is
+ * plain text — there is no useful `<time>` element to wrap around nothing.
+ */
+export function Age({ iso }: { iso: string | undefined }) {
+  if (!iso) return <span className="whitespace-nowrap tabular-nums text-muted">never</span>
+  return (
+    <time dateTime={iso} title={formatInstant(iso)} className="whitespace-nowrap tabular-nums">
+      {relativeAge(iso)}
+    </time>
   )
 }
 

@@ -58,13 +58,23 @@ export function formatWindow(minutes: number): string {
   return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`
 }
 
-/** relativeAge renders how long ago something happened, in operator shorthand. */
+/**
+ * relativeAge renders how long ago or how far ahead something is, in operator
+ * shorthand. Past: "5m ago", "3h ago", "12d ago". Future: "in 12m", "in 20h",
+ * "in 3d". Anything within ~44 seconds of now: "just now".
+ */
 export function relativeAge(iso: string | undefined): string {
   if (!iso) return 'never'
 
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
   if (!Number.isFinite(seconds)) return 'never'
+  // future
+  if (seconds < -86400) return `in ${Math.round(-seconds / 86400)}d`
+  if (seconds < -3600) return `in ${Math.round(-seconds / 3600)}h`
+  if (seconds < -44) return `in ${Math.round(-seconds / 60)}m`
+  // present / near-present
   if (seconds < 45) return 'just now'
+  // past
   if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`
   if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`
   return `${Math.round(seconds / 86400)}d ago`

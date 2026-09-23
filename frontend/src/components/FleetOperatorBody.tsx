@@ -34,7 +34,7 @@ import { AlertTriangle, ChevronRight, Timer } from 'lucide-react'
 import { fetchNodeMetrics } from '../api/client'
 import type { Cluster, Environment, UsageSummary } from '../api/types'
 import { LinkStatus } from './LinkStatus'
-import { EnvironmentTag, MiniMeter, Table, Td, Th } from './primitives'
+import { Age, EnvironmentTag, MiniMeter, Table, Td, Th } from './primitives'
 import { fleetQueue, isBehind, newestAgentVersion } from '../lib/fleet'
 import type { QueueItem } from '../lib/fleet'
 import { clusterHref } from '../lib/navigation'
@@ -360,7 +360,7 @@ function ClusterRow({
         {cluster.agent_version ?? '—'}
       </Td>
       <Td className="py-3.5 font-mono text-[12px] text-muted">
-        {cluster.status === 'pending' ? 'never' : relativeAge(cluster.last_checked_at)}
+        <Age iso={cluster.status === 'pending' ? undefined : cluster.last_checked_at} />
       </Td>
     </tr>
   )

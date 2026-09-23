@@ -9,7 +9,7 @@ import {
 } from '../api/client'
 import type { Cluster, ContainerUsage, Pod, PodContainer, PodUsage } from '../api/types'
 import { MetricsChart } from './MetricsChart'
-import { Button, Chip, DetailList, Meter, Notice, Pill, SearchInput } from './primitives'
+import { Age, Button, Chip, DetailList, Meter, Notice, Pill, SearchInput } from './primitives'
 import { useLiveTick } from '../lib/live'
 import { relativeAge } from '../lib/time'
 import { formatCPU, formatMemory, podLimit, ratio } from '../lib/units'
@@ -94,7 +94,7 @@ export function PodOverview({ cluster, pod }: { cluster: Cluster; pod: Pod }) {
           { term: 'Namespace', value: pod.namespace },
           { term: 'Node', value: pod.node || 'unscheduled' },
           { term: 'Pod IP', value: pod.pod_ip || '—' },
-          { term: 'Age', value: relativeAge(pod.created_at) },
+          { term: 'Age', value: <Age iso={pod.created_at} /> },
           { term: 'Ready', value: `${pod.ready}/${pod.total}` },
           {
             term: 'Restarts',

@@ -18,6 +18,7 @@ import {
 import type { TerminalSession, TerminalSessionQuery, User } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import {
+  Age,
   Button,
   Chip,
   EmptyState,
@@ -307,7 +308,7 @@ export function SessionRecordings() {
               {sessions.map((session) => (
                 <Row key={session.id} title={session.error || sessionTarget(session)}>
                   <Td className="truncate text-[12.5px] text-muted">
-                    {relativeAge(session.started_at)}
+                    <Age iso={session.started_at} />
                   </Td>
                   <Td className="truncate font-mono text-[12.5px] text-fg">
                     {session.username || '—'}

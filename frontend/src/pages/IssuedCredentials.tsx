@@ -10,6 +10,7 @@ import type { IssuedKubeconfig, KubeconfigRevokeAllResult } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { PasswordSheet } from '../components/PasswordSheet'
 import {
+  Age,
   Button,
   EmptyState,
   Notice,
@@ -266,12 +267,12 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
                     {row.k8s_role ? ` · ${row.k8s_role}` : ''}
                   </Td>
                   <Td className="hidden text-[12.5px] text-muted lg:table-cell">
-                    {relativeAge(row.created_at)}
+                    <Age iso={row.created_at} />
                   </Td>
                   {/* "never" is the reading that matters here: a credential that
                       was generated and never used is one nobody will miss. */}
                   <Td className="hidden text-[12.5px] text-muted lg:table-cell">
-                    {row.last_used_at ? relativeAge(row.last_used_at) : 'never'}
+                    <Age iso={row.last_used_at} />
                   </Td>
                   <Td>
                     <Pill tone={statusTone(row.status)} title={expiryTitle(row)}>

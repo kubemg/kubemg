@@ -10,6 +10,7 @@ import {
 import type { IssuedKubeconfig, TerminalSession, UserAccessReview } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import {
+  Age,
   EmptyState,
   EnvironmentTag,
   Notice,
@@ -271,7 +272,7 @@ function Reach({ review }: { review: UserAccessReview }) {
                 {entry.expires_at ? (
                   <Pill tone="warn">
                     <Timer aria-hidden="true" className="size-3" />
-                    until {relativeAge(entry.expires_at)}
+                    until <Age iso={entry.expires_at} />
                   </Pill>
                 ) : null}
               </div>
@@ -293,7 +294,7 @@ function Reach({ review }: { review: UserAccessReview }) {
                         : grant.namespaces.join(', ')}
                     </span>
                     {grant.expires_at ? (
-                      <span className="text-warn">ends {relativeAge(grant.expires_at)}</span>
+                      <span className="text-warn">ends <Age iso={grant.expires_at} /></span>
                     ) : null}
                   </li>
                 ))}
@@ -370,12 +371,12 @@ function Credentials({ rows, live }: { rows: IssuedKubeconfig[]; live: number })
                   <Pill tone={row.status === 'active' ? 'ok' : 'idle'}>{row.status}</Pill>
                 </Td>
                 <Td className="text-[12.5px] text-muted" title={formatInstant(row.expires_at)}>
-                  {relativeAge(row.expires_at)}
+                  <Age iso={row.expires_at} />
                 </Td>
                 <Td className="text-[12.5px] text-muted">
                   {/* Never used is a different fact from used long ago, and the
                       one an auditor asks about first. */}
-                  {row.last_used_at ? relativeAge(row.last_used_at) : 'Never used'}
+                  {row.last_used_at ? <Age iso={row.last_used_at} /> : 'Never used'}
                 </Td>
               </Row>
             ))}
@@ -427,10 +428,10 @@ function Sessions({ rows }: { rows: TerminalSession[] }) {
                   {row.container_name ? ` · ${row.container_name}` : ''}
                 </Td>
                 <Td className="text-[12.5px] text-muted" title={formatInstant(row.started_at)}>
-                  {relativeAge(row.started_at)}
+                  <Age iso={row.started_at} />
                 </Td>
                 <Td className="text-[12.5px] text-muted">
-                  {row.ended_at ? relativeAge(row.ended_at) : <Pill tone="ok">open</Pill>}
+                  {row.ended_at ? <Age iso={row.ended_at} /> : <Pill tone="ok">open</Pill>}
                 </Td>
               </Row>
             ))}

@@ -13,6 +13,7 @@ import { useAuth } from '../../state/auth-context'
 import { useLiveTick } from '../../lib/live'
 import { formatDuration, formatWindow, relativeAge } from '../../lib/time'
 import {
+  Age,
   Button,
   EmptyState,
   IconButton,
@@ -223,7 +224,7 @@ export function JitApprovalsPanel({
                     {formatWindow(request.duration_minutes)}
                   </span>
                   <span className="ml-auto text-[12.5px] text-muted">
-                    asked {relativeAge(request.created_at)}
+                    asked <Age iso={request.created_at} />
                   </span>
                 </div>
 
@@ -392,7 +393,7 @@ export function JitApprovalsPanel({
                   <Td className="hidden truncate text-[13px] text-muted md:table-cell">
                     {request.approver_username ?? '—'}
                   </Td>
-                  <Td className="text-[12.5px] text-muted">{relativeAge(request.updated_at)}</Td>
+                  <Td className="text-[12.5px] text-muted"><Age iso={request.updated_at} /></Td>
                 </Row>
               ))}
             </tbody>

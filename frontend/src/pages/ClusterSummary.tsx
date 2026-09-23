@@ -25,6 +25,7 @@ import { JitRequestModal } from '../components/jit/JitRequestModal'
 import { KubeconfigDrawer } from '../components/KubeconfigDrawer'
 import { PathHop, PathNode } from '../components/LinkStatus'
 import {
+  Age,
   Button,
   ClusterState,
   DetailList,
@@ -284,7 +285,7 @@ function AdminDashboard({
             className="ml-auto text-[12.5px] text-muted"
             title={formatInstant(cluster.last_checked_at, { seconds: true })}
           >
-            last probe {relativeAge(cluster.last_checked_at)}
+            last probe <Age iso={cluster.last_checked_at} />
           </span>
         </div>
 
@@ -500,7 +501,7 @@ function WorkloadDashboard({
             className="ml-auto text-[12.5px] text-muted"
             title={formatInstant(cluster.last_checked_at, { seconds: true })}
           >
-            last probe {relativeAge(cluster.last_checked_at)}
+            last probe <Age iso={cluster.last_checked_at} />
           </span>
         </div>
 

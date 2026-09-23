@@ -1,6 +1,6 @@
 import { ChevronRight } from 'lucide-react'
 import type { EventGroup } from '../api/types'
-import { Button } from './primitives'
+import { Age, Button } from './primitives'
 import { relativeAge } from '../lib/time'
 
 /*
@@ -69,7 +69,7 @@ export function EventGroupRow({
         {group.count > 1 ? (
           <span className="shrink-0 font-mono text-[12px] text-faint">×{group.count}</span>
         ) : null}
-        <span className="shrink-0 text-[12px] text-muted">{relativeAge(group.last_seen)}</span>
+        <span className="shrink-0 text-[12px] text-muted"><Age iso={group.last_seen} /></span>
       </button>
 
       {open ? (

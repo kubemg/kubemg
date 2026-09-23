@@ -25,6 +25,7 @@ import { ManifestDiffView } from '../components/ManifestDiffView'
 import { timeRangeLabel } from '../lib/timerange'
 import { useTimeRange } from '../state/timerange-context'
 import {
+  Age,
   Button,
   Chip,
   EmptyState,
@@ -544,7 +545,7 @@ export function AuditTrail() {
                       title={formatInstant(event.at, { seconds: true })}
                       className="cursor-pointer text-left transition-colors hover:text-fg hover:underline"
                     >
-                      {relativeAge(event.at)}
+                      <Age iso={event.at} />
                     </button>
                   </Td>
                   <Td className="truncate font-mono text-[12.5px] text-fg">

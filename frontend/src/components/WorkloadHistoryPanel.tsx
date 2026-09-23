@@ -4,7 +4,7 @@ import { errorMessage, fetchWorkloadHistory, rollbackWorkload } from '../api/cli
 import type { Cluster, WorkloadRevision } from '../api/types'
 import type { ResourceKey } from '../lib/resources'
 import { relativeAge } from '../lib/time'
-import { Button, IconButton, Notice, Pill, Row, Table, Td, Th } from './primitives'
+import { Age, Button, IconButton, Notice, Pill, Row, Table, Td, Th } from './primitives'
 
 /**
  * A native workload's rollout history — `kubectl rollout history` and
@@ -188,7 +188,7 @@ export function WorkloadHistoryPanel({
                     {isCurrent ? <span className="ml-2 text-[12px] text-muted">current</span> : null}
                   </Td>
                   <Td className="font-mono text-muted" title={entry.created_at}>
-                    {entry.created_at ? relativeAge(entry.created_at) : '—'}
+                    {entry.created_at ? <Age iso={entry.created_at} /> : '—'}
                   </Td>
                   <Td className="truncate font-mono text-[12.5px]" title={entry.images.join(', ')}>
                     {entry.images.length > 0 ? entry.images.join(', ') : '—'}

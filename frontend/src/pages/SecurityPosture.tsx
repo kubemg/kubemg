@@ -13,6 +13,7 @@ import type { PostureFinding } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { SEVERITY_STYLE, SeverityStrip, SeverityTag } from '../components/SeverityStrip'
 import {
+  Age,
   Button,
   EmptyState,
   Field,
@@ -497,7 +498,7 @@ function FindingRow({
         {finding.acknowledged ? (
           <p className="mt-1 text-[12px] text-muted">
             {finding.ack_by} — {finding.ack_reason}
-            {finding.ack_at ? <> · {relativeAge(finding.ack_at)}</> : null}
+            {finding.ack_at ? <> · <Age iso={finding.ack_at} /></> : null}
           </p>
         ) : null}
 

@@ -8,7 +8,7 @@ import { ClusterWorkloadSummary } from '../components/ClusterWorkloadSummary'
 import { EventGroupRow } from '../components/EventGroupRow'
 import { NetworkPolicyCoveragePanel } from '../components/NetworkPolicyCoveragePanel'
 import { ResourceView } from '../components/ResourceTables'
-import { EmptyState, Notice, Panel, Pill } from '../components/primitives'
+import { Age, EmptyState, Notice, Panel, Pill } from '../components/primitives'
 import { CardSkeleton } from '../components/SkeletonLoader'
 import { clusterPageHref, hasTunnel, resourceHref } from '../lib/navigation'
 import { queryKey, useCachedQuery } from '../lib/query'
@@ -240,7 +240,7 @@ function NamespaceIdentity({ entry, loading }: { entry?: Namespace; loading: boo
         <span className="text-[12.5px] text-faint">not granted to you</span>
       )}
       {entry.created_at ? (
-        <span className="text-[12.5px] text-faint">created {relativeAge(entry.created_at)}</span>
+        <span className="text-[12.5px] text-faint">created <Age iso={entry.created_at} /></span>
       ) : null}
     </div>
   )

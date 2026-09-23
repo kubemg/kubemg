@@ -3,7 +3,7 @@ import { FileDiff, PlayCircle } from 'lucide-react'
 
 import type { AuditEvent } from '../api/types'
 import { formatInstant, relativeAge } from '../lib/time'
-import { Button, CodeBlock, DetailList, Pill, Sheet } from './primitives'
+import { Age, Button, CodeBlock, DetailList, Pill, Sheet } from './primitives'
 import type { Tone } from '../lib/status'
 
 /*
@@ -106,7 +106,7 @@ export function AuditRecordSheet({
                 <span title={relativeAge(event.at)}>{formatInstant(event.at, { seconds: true })}</span>
               ),
             },
-            { term: 'Age', value: relativeAge(event.at) },
+            { term: 'Age', value: <Age iso={event.at} /> },
             { term: 'Account', value: event.username || <Absent /> },
             { term: 'Duration', value: `${event.duration_ms} ms` },
           ]}
