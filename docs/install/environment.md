@@ -111,6 +111,12 @@ also validated on the way in (1–3650 days) and on the way out.*
 |---|---|---|
 | `KUBEMG_AUDIT_RETENTION_DAYS` | `30` | How long proxied calls (and, by default, session recordings) are kept before the background pruner drops them. |
 
+## Prometheus metrics
+
+| Variable | Default | What it is |
+|---|---|---|
+| `KUBEMG_METRICS_ENABLED` | `false` | Expose `GET /metrics` for Prometheus scraping. Off by default because the endpoint discloses version, route inventory, and process details on the same port agents dial into. Enable only when that port is network-restricted to your scraper. See [Prometheus metrics](metrics.md). |
+
 ## CORS
 
 | Variable | Default | What it is |

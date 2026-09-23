@@ -98,6 +98,11 @@ type Config struct {
 	// allowed without this, because nothing off-box can intercept it.
 	// `KUBEMG_ALLOW_INSECURE`.
 	AllowInsecureBind bool
+	// MetricsEnabled exposes GET /metrics for Prometheus scraping. Off by
+	// default because the endpoint discloses version, route inventory, and
+	// process details — sensitive on a port reachable from agent clusters.
+	// `KUBEMG_METRICS_ENABLED`.
+	MetricsEnabled bool
 }
 
 // Shell configures the browser shell.
@@ -231,6 +236,7 @@ func Load() Config {
 			AgentCABundle: env("KUBEMG_AGENT_CA_BUNDLE", ""),
 		},
 		AllowInsecureBind: envBool("KUBEMG_ALLOW_INSECURE", false),
+		MetricsEnabled:    envBool("KUBEMG_METRICS_ENABLED", false),
 	}
 }
 

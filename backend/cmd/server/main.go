@@ -50,9 +50,12 @@ func main() {
 		log.Fatalf("database migration failed: %v", err)
 	}
 
-	met := metrics.Default()
-	met.RegisterBuildInfo(version)
-	met.RegisterGORMCallbacks(gdb)
+	var met *metrics.Metrics
+	if cfg.MetricsEnabled {
+		met = metrics.Default()
+		met.RegisterBuildInfo(version)
+		met.RegisterGORMCallbacks(gdb)
+	}
 
 	store := db.NewStore(gdb)
 

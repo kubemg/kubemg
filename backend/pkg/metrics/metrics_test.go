@@ -6,10 +6,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	"gorm.io/gorm"
 )
 
 func init() {
@@ -117,6 +119,90 @@ func TestRegisterBuildInfoSetsGaugeToOne(t *testing.T) {
 		for _, metric := range f.GetMetric() {
 			if metric.GetGauge().GetValue() != 1 {
 				t.Fatalf("kubemg_build_info = %v; want 1", metric.GetGauge().GetValue())
+			}
+		}
+	}
+}
+
+func TestMiddlewarePanicDoesNotLeakInFlightGauge(t *testing.T) {
+	m, reg := NewStandalone()
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.Use(m.Middleware())
+	r.GET("/boom", func(c *gin.Context) { panic("boom") })
+
+	for range 3 {
+		r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/boom", nil))
+	}
+
+	families := gatherMetric(t, reg, "kubemg_http_requests_in_flight")
+	for _, f := range families {
+		for _, metric := range f.GetMetric() {
+			if v := metric.GetGauge().GetValue(); v != 0 {
+				t.Fatalf("kubemg_http_requests_in_flight = %v after panics; want 0", v)
+			}
+		}
+	}
+}
+
+func TestMiddlewarePanicStillCountsRequest(t *testing.T) {
+	m, reg := NewStandalone()
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.Use(m.Middleware())
+	r.GET("/boom", func(c *gin.Context) { panic("boom") })
+
+	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/boom", nil))
+
+	families := gatherMetric(t, reg, "kubemg_http_requests_total")
+	if sumCounterFamily(families) == 0 {
+		t.Fatal("kubemg_http_requests_total should be non-zero after a panicking handler")
+	}
+}
+
+func TestMiddlewareSkipsInFlightForWebSocketUpgrade(t *testing.T) {
+	m, reg := NewStandalone()
+	r := gin.New()
+	r.Use(m.Middleware())
+	// Simulate a WebSocket upgrade: handler blocks until the "connection" closes.
+	r.GET("/ws", func(c *gin.Context) { c.Status(http.StatusSwitchingProtocols) })
+
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	req.Header.Set("Upgrade", "websocket")
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	families := gatherMetric(t, reg, "kubemg_http_requests_in_flight")
+	for _, f := range families {
+		for _, metric := range f.GetMetric() {
+			if v := metric.GetGauge().GetValue(); v != 0 {
+				t.Fatalf("in-flight gauge = %v after WebSocket upgrade; want 0", v)
+			}
+		}
+	}
+}
+
+func TestDBAfterDoesNotCountRecordNotFoundAsError(t *testing.T) {
+	m, reg := NewStandalone()
+	afterFn := m.dbAfter("query")
+
+	// Build a minimal gorm.DB with a Statement so InstanceGet works, a start
+	// time so the callback does not return early, and ErrRecordNotFound as the
+	// error — which is normal flow and must not increment error="true".
+	stmt := &gorm.Statement{}
+	stmt.Settings.Store(startTimeKey, time.Now())
+	db := &gorm.DB{
+		Error:     gorm.ErrRecordNotFound,
+		Statement: stmt,
+	}
+	afterFn(db)
+
+	families := gatherMetric(t, reg, "kubemg_db_queries_total")
+	for _, f := range families {
+		for _, metric := range f.GetMetric() {
+			for _, label := range metric.GetLabel() {
+				if label.GetName() == "error" && label.GetValue() == "true" {
+					t.Fatal("ErrRecordNotFound must not be counted as error=true")
+				}
 			}
 		}
 	}

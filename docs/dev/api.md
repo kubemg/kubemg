@@ -335,6 +335,7 @@ See [Runtime settings](../reference/settings.md) for what each field means.
 | Method & path | Auth | Notes |
 | --- | --- | --- |
 | `GET /health` | — | `{"status":"ok"}`. Process liveness only — nothing about TLS, the database or the tunnel. |
+| `GET /metrics` | — | Prometheus scrape endpoint. Registered only when `KUBEMG_METRICS_ENABLED=true`. Returns metrics for HTTP requests, DB queries, and build info. **Do not expose on a public port** — it discloses version, route inventory, and process details. See [Prometheus metrics](../install/metrics.md). |
 | `GET /agent/v1/tunnel` | Agent registration token | The tunnel's WebSocket upgrade. Outside the JWT middleware entirely — an agent authenticates on its own registration token as a bearer token on the upgrade. |
 | `GET /install/:token/agent.yaml` | Registration token in the path | Unauthenticated by necessity — `kubectl` cannot carry a kubemg session; the token in the URL *is* the credential. Renders the flat install manifest. |
 | `GET /install/:token/kustomize.tar.gz` | Registration token in the path | Same route family, the Kustomize archive instead. |
