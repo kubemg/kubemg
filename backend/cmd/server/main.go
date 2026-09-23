@@ -10,6 +10,7 @@ import (
 	"log"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -51,10 +52,21 @@ func main() {
 	}
 
 	var met *metrics.Metrics
-	if cfg.MetricsEnabled {
+	if cfg.MetricsAddr != "" {
 		met = metrics.Default()
 		met.RegisterBuildInfo(version)
 		met.RegisterGORMCallbacks(gdb)
+		go func() {
+			mux := http.NewServeMux()
+			mux.Handle("/metrics", met.Handler())
+			logger.Info("serving prometheus metrics",
+				slog.String("addr", cfg.MetricsAddr),
+				slog.String("note", "bind to loopback or a private interface — not the public agent port"),
+			)
+			if err := http.ListenAndServe(cfg.MetricsAddr, mux); err != nil {
+				logger.Error("metrics listener exited", slog.String("error", err.Error()))
+			}
+		}()
 	}
 
 	store := db.NewStore(gdb)

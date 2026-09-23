@@ -115,7 +115,7 @@ also validated on the way in (1–3650 days) and on the way out.*
 
 | Variable | Default | What it is |
 |---|---|---|
-| `KUBEMG_METRICS_ENABLED` | `false` | Expose `GET /metrics` for Prometheus scraping. Off by default because the endpoint discloses version, route inventory, and process details on the same port agents dial into. Enable only when that port is network-restricted to your scraper. See [Prometheus metrics](metrics.md). |
+| `KUBEMG_METRICS_ADDR` | — | `host:port` for a separate internal listener that serves only `GET /metrics` for Prometheus scraping. Unset, the endpoint is not exposed at all. Bind to a loopback or private address (e.g. `127.0.0.1:9090`) — **never** to the same address as `KUBEMG_LISTEN_ADDR`, which is reachable from agent clusters. See [Prometheus metrics](metrics.md). |
 
 ## CORS
 
