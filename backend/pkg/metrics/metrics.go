@@ -120,6 +120,17 @@ func (m *Metrics) Middleware() gin.HandlerFunc {
 		}
 
 		defer func() {
+			// Detect a panic in flight. gin.Recovery() is registered before this
+			// middleware, so it has not yet had a chance to write the 500 — capture
+			// the panic here, record the correct status, then re-panic so Recovery
+			// still handles the HTTP response.
+			panicVal := recover()
+
+			status := c.Writer.Status()
+			if panicVal != nil {
+				status = http.StatusInternalServerError
+			}
+
 			path := c.FullPath()
 			if path == "" {
 				// Requests that did not match any route (404s from the SPA fallback
@@ -127,13 +138,17 @@ func (m *Metrics) Middleware() gin.HandlerFunc {
 				path = "unmatched"
 			}
 			m.httpRequestsTotal.
-				WithLabelValues(c.Request.Method, path, strconv.Itoa(c.Writer.Status())).
+				WithLabelValues(c.Request.Method, path, strconv.Itoa(status)).
 				Inc()
 			if !isUpgrade {
 				m.httpRequestsInFlight.Dec()
 				m.httpRequestDuration.
 					WithLabelValues(c.Request.Method, path).
 					Observe(time.Since(start).Seconds())
+			}
+
+			if panicVal != nil {
+				panic(panicVal)
 			}
 		}()
 

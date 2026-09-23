@@ -461,8 +461,10 @@ func NewRouter(opts Options) *gin.Engine {
 	router.Use(requestSource())
 
 	if opts.Metrics != nil {
+		// Middleware only — the scrape endpoint lives on a separate internal
+		// listener started in main.go (KUBEMG_METRICS_ADDR), never on this
+		// public-facing router.
 		router.Use(opts.Metrics.Middleware())
-		router.GET("/metrics", gin.WrapH(opts.Metrics.Handler()))
 	}
 
 	router.GET("/health", healthHandler)

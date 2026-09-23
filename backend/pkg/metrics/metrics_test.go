@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
@@ -155,8 +154,18 @@ func TestMiddlewarePanicStillCountsRequest(t *testing.T) {
 	r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/boom", nil))
 
 	families := gatherMetric(t, reg, "kubemg_http_requests_total")
-	if sumCounterFamily(families) == 0 {
-		t.Fatal("kubemg_http_requests_total should be non-zero after a panicking handler")
+	found500 := false
+	for _, f := range families {
+		for _, metric := range f.GetMetric() {
+			for _, label := range metric.GetLabel() {
+				if label.GetName() == "status" && label.GetValue() == "500" {
+					found500 = true
+				}
+			}
+		}
+	}
+	if !found500 {
+		t.Fatal("panicking handler must be recorded as status=500, not 200")
 	}
 }
 
@@ -164,18 +173,20 @@ func TestMiddlewareSkipsInFlightForWebSocketUpgrade(t *testing.T) {
 	m, reg := NewStandalone()
 	r := gin.New()
 	r.Use(m.Middleware())
-	// Simulate a WebSocket upgrade: handler blocks until the "connection" closes.
 	r.GET("/ws", func(c *gin.Context) { c.Status(http.StatusSwitchingProtocols) })
 
 	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	req.Header.Set("Upgrade", "websocket")
 	r.ServeHTTP(httptest.NewRecorder(), req)
 
-	families := gatherMetric(t, reg, "kubemg_http_requests_in_flight")
+	// The latency histogram must have no samples for WebSocket upgrades.
+	// (The in-flight gauge nets to 0 even without the exclusion since the
+	// handler returns immediately in tests, so the histogram is the real signal.)
+	families := gatherMetric(t, reg, "kubemg_http_request_duration_seconds")
 	for _, f := range families {
 		for _, metric := range f.GetMetric() {
-			if v := metric.GetGauge().GetValue(); v != 0 {
-				t.Fatalf("in-flight gauge = %v after WebSocket upgrade; want 0", v)
+			if metric.GetHistogram().GetSampleCount() > 0 {
+				t.Fatal("latency histogram must not record WebSocket upgrades")
 			}
 		}
 	}
@@ -185,26 +196,36 @@ func TestDBAfterDoesNotCountRecordNotFoundAsError(t *testing.T) {
 	m, reg := NewStandalone()
 	afterFn := m.dbAfter("query")
 
-	// Build a minimal gorm.DB with a Statement so InstanceGet works, a start
-	// time so the callback does not return early, and ErrRecordNotFound as the
-	// error — which is normal flow and must not increment error="true".
+	// Build a minimal gorm.DB with a Statement, then use dbBefore (which calls
+	// db.InstanceSet internally) to store the start time under the exact key
+	// format InstanceGet expects. Store the start time directly would use a
+	// different key format and cause the callback to return early.
 	stmt := &gorm.Statement{}
-	stmt.Settings.Store(startTimeKey, time.Now())
 	db := &gorm.DB{
 		Error:     gorm.ErrRecordNotFound,
 		Statement: stmt,
 	}
+	dbBefore(db)
 	afterFn(db)
 
 	families := gatherMetric(t, reg, "kubemg_db_queries_total")
+	foundFalse := false
 	for _, f := range families {
 		for _, metric := range f.GetMetric() {
 			for _, label := range metric.GetLabel() {
-				if label.GetName() == "error" && label.GetValue() == "true" {
-					t.Fatal("ErrRecordNotFound must not be counted as error=true")
+				if label.GetName() == "error" {
+					if label.GetValue() == "true" {
+						t.Fatal("ErrRecordNotFound must not be counted as error=true")
+					}
+					if label.GetValue() == "false" {
+						foundFalse = true
+					}
 				}
 			}
 		}
+	}
+	if !foundFalse {
+		t.Fatal("expected a db_queries_total sample with error=false; callback may have returned early")
 	}
 }
 

@@ -105,6 +105,7 @@ nav:
           - TLS and certificates: install/tls.md
           - Database: install/database.md
           - Environment reference: install/environment.md
+          - Prometheus metrics: install/metrics.md
           - Upgrading: install/upgrading.md
           - Production checklist: install/production-checklist.md
       - Managing clusters:
