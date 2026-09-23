@@ -5,8 +5,10 @@
 package metrics
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -100,28 +102,42 @@ func (m *Metrics) RegisterBuildInfo(version string) {
 // Middleware returns a Gin handler that records per-request HTTP metrics.
 // It uses c.FullPath() for the path label so wildcard route patterns
 // (e.g. /api/v1/clusters/:id) do not cause unbounded label cardinality.
+//
+// WebSocket upgrades (the agent tunnel, shell attach, exec/port-forward via
+// the proxy) are excluded from the in-flight gauge and latency histogram:
+// those connections hold c.Next() open for the lifetime of the session —
+// hours in the case of agent tunnels — so including them would make the
+// gauge permanently non-zero and bury every real request in the +Inf bucket.
+// They are still counted in kubemg_http_requests_total once the upgrade
+// completes or fails.
 func (m *Metrics) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
-		m.httpRequestsInFlight.Inc()
+		isUpgrade := strings.EqualFold(c.Request.Header.Get("Upgrade"), "websocket")
 
-		c.Next()
-
-		m.httpRequestsInFlight.Dec()
-
-		path := c.FullPath()
-		if path == "" {
-			// Requests that did not match any route (404s from the SPA fallback
-			// or unknown API paths) are grouped rather than exploding cardinality.
-			path = "unmatched"
+		if !isUpgrade {
+			m.httpRequestsInFlight.Inc()
 		}
 
-		m.httpRequestsTotal.
-			WithLabelValues(c.Request.Method, path, strconv.Itoa(c.Writer.Status())).
-			Inc()
-		m.httpRequestDuration.
-			WithLabelValues(c.Request.Method, path).
-			Observe(time.Since(start).Seconds())
+		defer func() {
+			path := c.FullPath()
+			if path == "" {
+				// Requests that did not match any route (404s from the SPA fallback
+				// or unknown API paths) are grouped rather than exploding cardinality.
+				path = "unmatched"
+			}
+			m.httpRequestsTotal.
+				WithLabelValues(c.Request.Method, path, strconv.Itoa(c.Writer.Status())).
+				Inc()
+			if !isUpgrade {
+				m.httpRequestsInFlight.Dec()
+				m.httpRequestDuration.
+					WithLabelValues(c.Request.Method, path).
+					Observe(time.Since(start).Seconds())
+			}
+		}()
+
+		c.Next()
 	}
 }
 
@@ -183,7 +199,7 @@ func (m *Metrics) dbAfter(op string) func(*gorm.DB) {
 		}
 
 		errLabel := "false"
-		if db.Error != nil {
+		if db.Error != nil && !errors.Is(db.Error, gorm.ErrRecordNotFound) {
 			errLabel = "true"
 		}
 

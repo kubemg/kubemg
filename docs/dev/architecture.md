@@ -35,6 +35,7 @@ and in agent mode the plane stores no cluster credential at all.
 | Bastion / gateway | `backend/pkg/bastion` | Holds the tunnel registry, proxies every Kubernetes call, multiplexes streams, records the trail. |
 | HTTP surface | `backend/pkg/api` | Clusters, IAM, resources, Helm, observability, audit, JIT, templates. Where authorisation is decided. |
 | Store | `backend/pkg/db` | Models and queries. AutoMigrate at boot. |
+| Prometheus metrics | `backend/pkg/metrics` | Per-request HTTP metrics, DB query metrics, and build-info gauge. Exposed at `GET /metrics` when `KUBEMG_METRICS_ENABLED=true`. WebSocket connections (tunnels, shell attach, exec) are excluded from the latency histogram. |
 | Console | `frontend/` | Vite + React + TypeScript, embedded into the binary for production. |
 | Agent | `agent/` | A separate Go module with one dependency. Dials out, forwards, does nothing else. |
 
