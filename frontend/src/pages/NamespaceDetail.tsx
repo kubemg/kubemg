@@ -13,7 +13,6 @@ import { CardSkeleton } from '../components/SkeletonLoader'
 import { clusterPageHref, hasTunnel, resourceHref } from '../lib/navigation'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { phaseTone } from '../lib/status'
-import { relativeAge } from '../lib/time'
 import { useTimeRange } from '../state/timerange-context'
 import { useClusters } from '../state/clusters-context'
 

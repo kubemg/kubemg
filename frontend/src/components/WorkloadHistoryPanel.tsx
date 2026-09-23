@@ -3,7 +3,6 @@ import { History, RefreshCw, Undo2, X } from 'lucide-react'
 import { errorMessage, fetchWorkloadHistory, rollbackWorkload } from '../api/client'
 import type { Cluster, WorkloadRevision } from '../api/types'
 import type { ResourceKey } from '../lib/resources'
-import { relativeAge } from '../lib/time'
 import { Age, Button, IconButton, Notice, Pill, Row, Table, Td, Th } from './primitives'
 
 /**

@@ -13,7 +13,6 @@ import type {
   AuditForwarderInput,
   AuditForwarderProtocol,
 } from '../../api/types'
-import { relativeAge } from '../../lib/time'
 import {
   Age,
   Button,

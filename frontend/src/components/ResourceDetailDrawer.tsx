@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
+import { type ReactNode, Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { Ban, CircleCheck, ExternalLink, RefreshCw, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { errorMessage, fetchResourceDescribe } from '../api/client'
 import { useLiveTick } from '../lib/live'
@@ -16,7 +16,6 @@ import type { ResourceKey } from '../lib/resources'
 import type { SelectedRow } from '../lib/selection'
 import { selectionKey } from '../lib/selection'
 import type { Tone } from '../lib/status'
-import { relativeAge } from '../lib/time'
 import { HelmHistoryPanel } from './HelmHistoryPanel'
 import { HelmValuesPanel } from './HelmValuesPanel'
 import { LogExplorer } from './LogExplorer'
@@ -680,7 +679,7 @@ function OverviewTab({
    * identity list when there is a pod, rather than being printed twice a few
    * pixels apart.
    */
-  const identity = [
+  const identity: Array<{ term: string; value: ReactNode }> = [
     { term: 'Kind', value: describe.kind || '—' },
     { term: 'API version', value: describe.api_version || '—' },
   ]

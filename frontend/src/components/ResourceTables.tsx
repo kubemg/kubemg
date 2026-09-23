@@ -67,7 +67,7 @@ import type { SelectedRow } from '../lib/selection'
 import { selectionKey } from '../lib/selection'
 import type { Tone } from '../lib/status'
 import { TONE_FILL, phaseTone, podTone, workloadTone } from '../lib/status'
-import { formatCountdown, formatInstant, relativeAge, secondsUntil, useTicker } from '../lib/time'
+import { formatCountdown, formatInstant, secondsUntil, useTicker } from '../lib/time'
 import { formatCPU, formatMemory, podLimit, ratio, usageTone } from '../lib/units'
 import type { PodUsageIndex } from '../lib/units'
 

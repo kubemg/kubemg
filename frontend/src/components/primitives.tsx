@@ -80,7 +80,7 @@ export function Pill({
  * plain text — there is no useful `<time>` element to wrap around nothing.
  */
 export function Age({ iso }: { iso: string | undefined }) {
-  if (!iso) return <span className="whitespace-nowrap tabular-nums text-muted">never</span>
+  if (!iso) return <span className="whitespace-nowrap tabular-nums">never</span>
   return (
     <time dateTime={iso} title={formatInstant(iso)} className="whitespace-nowrap tabular-nums">
       {relativeAge(iso)}

@@ -24,7 +24,6 @@ import type {
   Cluster,
 } from '../../api/types'
 import type { Tone } from '../../lib/status'
-import { relativeAge } from '../../lib/time'
 import {
   Age,
   Button,

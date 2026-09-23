@@ -8,7 +8,6 @@ import { useLiveTick } from '../lib/live'
 import type { ResourceKey } from '../lib/resources'
 import { TONE_FILL, TONE_SOFT, podTone } from '../lib/status'
 import type { Tone } from '../lib/status'
-import { relativeAge } from '../lib/time'
 import { formatCPU, formatMemory, podLimit, podUsageIndex, ratio, usageTone } from '../lib/units'
 import type { PodUsageIndex } from '../lib/units'
 import {

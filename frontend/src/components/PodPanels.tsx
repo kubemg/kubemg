@@ -11,7 +11,6 @@ import type { Cluster, ContainerUsage, Pod, PodContainer, PodUsage } from '../ap
 import { MetricsChart } from './MetricsChart'
 import { Age, Button, Chip, DetailList, Meter, Notice, Pill, SearchInput } from './primitives'
 import { useLiveTick } from '../lib/live'
-import { relativeAge } from '../lib/time'
 import { formatCPU, formatMemory, podLimit, ratio } from '../lib/units'
 
 /*

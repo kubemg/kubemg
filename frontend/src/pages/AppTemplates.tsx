@@ -11,7 +11,6 @@ import { AppShell } from '../components/AppShell'
 import { TemplateParameterEditor } from '../components/TemplateParameterEditor'
 import { YamlView } from '../components/YamlView'
 import { TEMPLATE_NAME, templateDisplayName } from '../lib/templates'
-import { relativeAge } from '../lib/time'
 import {
   Age,
   Button,

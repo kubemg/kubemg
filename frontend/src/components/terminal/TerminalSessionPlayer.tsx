@@ -8,7 +8,6 @@ import {
   fetchTerminalSessions,
 } from '../../api/client'
 import type { TerminalSession } from '../../api/types'
-import { relativeAge } from '../../lib/time'
 import { Age, Chip, DetailList, IconButton, Notice, Pill, Segmented, Select, Slab } from '../primitives'
 import { clock, parseCast, type Cast } from './cast'
 

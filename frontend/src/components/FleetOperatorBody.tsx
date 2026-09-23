@@ -39,7 +39,6 @@ import { fleetQueue, isBehind, newestAgentVersion } from '../lib/fleet'
 import type { QueueItem } from '../lib/fleet'
 import { clusterHref } from '../lib/navigation'
 import { linkState } from '../lib/status'
-import { relativeAge } from '../lib/time'
 import { formatCPU, formatMemory, ratio } from '../lib/units'
 
 /* Bands run prod first: the fleet is read top-down by how much a cluster matters. */

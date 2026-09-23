@@ -29,7 +29,6 @@ import {
   Th,
   TextInput,
 } from '../components/primitives'
-import { relativeAge } from '../lib/time'
 import { useAuth } from '../state/auth-context'
 import { useConfirm } from '../state/confirm-context'
 import { useResult } from '../state/result-context'

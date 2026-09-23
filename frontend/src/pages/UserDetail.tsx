@@ -272,7 +272,7 @@ function Reach({ review }: { review: UserAccessReview }) {
                 {entry.expires_at ? (
                   <Pill tone="warn">
                     <Timer aria-hidden="true" className="size-3" />
-                    until <Age iso={entry.expires_at} />
+                    ends <Age iso={entry.expires_at} />
                   </Pill>
                 ) : null}
               </div>

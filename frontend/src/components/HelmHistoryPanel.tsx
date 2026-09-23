@@ -3,7 +3,6 @@ import { History, RefreshCw, Undo2, X } from 'lucide-react'
 import { errorMessage, fetchHelmHistory, rollbackHelmRelease } from '../api/client'
 import type { Cluster, HelmHistory, HelmRelease, HelmWriteResult } from '../api/types'
 import type { Tone } from '../lib/status'
-import { relativeAge } from '../lib/time'
 import { HelmObjectReport } from './HelmObjectReport'
 import { Age, Button, IconButton, Notice, Pill, Row, Table, Td, Th } from './primitives'
 

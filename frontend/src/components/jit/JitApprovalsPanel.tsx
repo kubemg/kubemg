@@ -11,7 +11,7 @@ import type { Cluster, JitRequest, JitRequestList, JitStatus } from '../../api/t
 import type { Tone } from '../../lib/status'
 import { useAuth } from '../../state/auth-context'
 import { useLiveTick } from '../../lib/live'
-import { formatDuration, formatWindow, relativeAge } from '../../lib/time'
+import { formatDuration, formatWindow } from '../../lib/time'
 import {
   Age,
   Button,

@@ -37,7 +37,6 @@ import {
 } from '../lib/posture'
 import { ALL_NAMESPACES } from '../lib/resources'
 import { queryKey, useCachedQuery } from '../lib/query'
-import { relativeAge } from '../lib/time'
 import { useClusters } from '../state/clusters-context'
 
 /**

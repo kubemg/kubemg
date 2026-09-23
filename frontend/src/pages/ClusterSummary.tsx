@@ -39,7 +39,7 @@ import { useLiveTick } from '../lib/live'
 import { DEFAULT_RESOURCE, resourceHref } from '../lib/navigation'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { linkState } from '../lib/status'
-import { formatInstant, relativeAge } from '../lib/time'
+import { formatInstant } from '../lib/time'
 import { formatCPU, formatMemory } from '../lib/units'
 import { useAuth } from '../state/auth-context'
 
