@@ -194,7 +194,7 @@ func (s *server) mintWSTicket(c *gin.Context) {
 		return
 	}
 
-	ticket, err := s.jwt.IssueWSTicket(claims)
+	ticket, err := s.jwt.IssueWSTicket(c.Request.Context(), claims)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not issue websocket ticket"})
 		return

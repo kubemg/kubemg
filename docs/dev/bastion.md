@@ -84,9 +84,16 @@ one slow `logs -f` would otherwise take every other cluster call with it.
 that names `KUBECTL_PORT_FORWARD_WEBSOCKETS=true`, so the error tells the
 operator the fix rather than just failing.
 
-A browser terminal authenticates with `?access_token=`, accepted **only on an
-upgrade request**, and the query is stripped before the request reaches the
-cluster or the audit trail.
+A browser terminal authenticates with `?access_token=<ticket>`, accepted **only
+on an upgrade request**, and the query is stripped before the request reaches
+the cluster or the audit trail. The value is never the session JWT: the console
+mints a ticket with `POST /auth/ws-ticket` just before opening the socket —
+32 random bytes, single-use, twenty seconds (`pkg/auth/wsticket.go`). Tickets
+live in the `ws_tickets` table, keyed on their SHA-256, and are redeemed with one
+`DELETE … RETURNING`: the mint and the upgrade are two requests a load balancer
+owes no affinity, so a ticket held in process memory was refused by every
+replica but the one that minted it. A store that cannot be read refuses the
+upgrade.
 
 ## Recording
 

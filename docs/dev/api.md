@@ -20,11 +20,12 @@ to exactly one route — `/api/v1/clusters/:id/proxy/*path` for the cluster ID
 in its claims — and is refused with `403` anywhere else. See
 [How a request flows](request-flow.md).
 
-`?access_token=<token>` is accepted **only** on a WebSocket upgrade request
-(the in-browser terminal), because a browser cannot set headers when opening
-a WebSocket. On an ordinary request it is ignored — a token in the URL would
-otherwise end up in proxy logs and browser history for no reason, since a
-header works there.
+`?access_token=<ticket>` is accepted **only** on a WebSocket upgrade request
+(the in-browser terminal and the browser shell), because a browser cannot set
+headers when opening a WebSocket. It carries a one-time ticket from
+`POST /auth/ws-ticket`, never a session JWT — a raw JWT there is `401`. On an
+ordinary request it is ignored — a credential in the URL would otherwise end up
+in proxy logs and browser history for no reason, since a header works there.
 
 ## Error shape
 
@@ -59,6 +60,7 @@ tell the two apart.
 | --- | --- | --- |
 | `POST /auth/login` | — | Body `{username, password}`. `200` `{token, expires_at, user}`. `401` on any bad credential (unknown user, wrong password, a federated or machine-account username) — deliberately identical, to prevent username enumeration; a constant-time dummy bcrypt check runs on every failure path. `403` if the account is disabled. |
 | `POST /auth/password` | Session | Body `{current_password, new_password, revoke_kubeconfigs?}`. Rotates the **caller's own** password; the current one is required, so a stolen session cannot lock the owner out. `400` if the new password is under 8 characters or is the current one, `401` if the current password is wrong, `409` for a federated account (its password lives with the provider) or a machine account (it has none). `revoke_kubeconfigs: true` also runs the register's blanket revoke for the account and returns its summary under `credentials`. Audited as `password-change`. |
+| `POST /auth/ws-ticket` | Session | Returns `{ticket}`: a single-use credential for the next WebSocket upgrade's `?access_token=`, valid 20 seconds, redeemable on any replica. |
 | `GET /auth/me` | Session | Current `user` object. `401` invalid/expired/deleted account, `403` disabled. |
 | `GET /version` | Session | `{version, docs_url}` — the release this process was built as, and the manual for it. Behind a session on purpose: an exact version is what an unauthenticated scanner needs to match a published advisory against the install. A build with no version stamped answers `"unknown"`. |
 

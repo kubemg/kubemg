@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -244,7 +245,7 @@ func TestIssueAndRedeemWSTicket(t *testing.T) {
 	m := NewManager("secret", time.Hour)
 	claims := &Claims{UserID: 9, Username: "operator", Role: "admin"}
 
-	ticket, err := m.IssueWSTicket(claims)
+	ticket, err := m.IssueWSTicket(context.Background(), claims)
 	if err != nil {
 		t.Fatalf("issue: %v", err)
 	}
@@ -252,7 +253,7 @@ func TestIssueAndRedeemWSTicket(t *testing.T) {
 		t.Fatal("expected a non-empty ticket")
 	}
 
-	redeemed, ok := m.redeemWSTicket(ticket)
+	redeemed, ok := m.redeemWSTicket(context.Background(), ticket)
 	if !ok {
 		t.Fatal("expected the ticket to redeem")
 	}
@@ -263,23 +264,95 @@ func TestIssueAndRedeemWSTicket(t *testing.T) {
 
 func TestRedeemWSTicketIsSingleUse(t *testing.T) {
 	m := NewManager("secret", time.Hour)
-	ticket, err := m.IssueWSTicket(&Claims{UserID: 1, Username: "devops"})
+	ticket, err := m.IssueWSTicket(context.Background(), &Claims{UserID: 1, Username: "devops"})
 	if err != nil {
 		t.Fatalf("issue: %v", err)
 	}
 
-	if _, ok := m.redeemWSTicket(ticket); !ok {
+	if _, ok := m.redeemWSTicket(context.Background(), ticket); !ok {
 		t.Fatal("expected the first redemption to succeed")
 	}
-	if _, ok := m.redeemWSTicket(ticket); ok {
+	if _, ok := m.redeemWSTicket(context.Background(), ticket); ok {
 		t.Fatal("expected a replayed ticket to be refused")
 	}
 }
 
 func TestRedeemWSTicketRejectsUnknownValue(t *testing.T) {
 	m := NewManager("secret", time.Hour)
-	if _, ok := m.redeemWSTicket("not-a-real-ticket"); ok {
+	if _, ok := m.redeemWSTicket(context.Background(), "not-a-real-ticket"); ok {
 		t.Fatal("expected an unminted ticket to be refused")
+	}
+}
+
+// recordingTicketStore is a shared store two managers can point at, standing
+// in for the database two replicas share.
+type recordingTicketStore struct {
+	*memoryWSTickets
+	keys    []string
+	failing bool
+}
+
+func (s *recordingTicketStore) PutWSTicket(ctx context.Context, hash string, payload []byte, expiresAt time.Time) error {
+	s.keys = append(s.keys, hash)
+	return s.memoryWSTickets.PutWSTicket(ctx, hash, payload, expiresAt)
+}
+
+func (s *recordingTicketStore) TakeWSTicket(ctx context.Context, hash string) ([]byte, bool, error) {
+	if s.failing {
+		return nil, false, errors.New("database unreachable")
+	}
+	return s.memoryWSTickets.TakeWSTicket(ctx, hash)
+}
+
+// TestWSTicketRedeemsOnAnotherReplica is the reason the store is shared: the
+// ticket is minted by one request and the upgrade is the next, and a load
+// balancer owes the two no affinity.
+func TestWSTicketRedeemsOnAnotherReplica(t *testing.T) {
+	shared := &recordingTicketStore{memoryWSTickets: newMemoryWSTickets()}
+	minter := NewManager("secret", time.Hour)
+	minter.UseWSTicketStore(shared)
+	receiver := NewManager("secret", time.Hour)
+	receiver.UseWSTicketStore(shared)
+
+	ticket, err := minter.IssueWSTicket(context.Background(), &Claims{UserID: 4, Username: "devops", Role: "user"})
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	claims, ok := receiver.redeemWSTicket(context.Background(), ticket)
+	if !ok || claims.UserID != 4 || claims.Username != "devops" {
+		t.Fatalf("expected the other replica to redeem the ticket, got %+v, %v", claims, ok)
+	}
+	if _, ok := minter.redeemWSTicket(context.Background(), ticket); ok {
+		t.Fatal("expected a ticket redeemed on one replica to be refused on another")
+	}
+}
+
+func TestWSTicketStoreNeverSeesTheTicket(t *testing.T) {
+	shared := &recordingTicketStore{memoryWSTickets: newMemoryWSTickets()}
+	m := NewManager("secret", time.Hour)
+	m.UseWSTicketStore(shared)
+
+	ticket, err := m.IssueWSTicket(context.Background(), &Claims{UserID: 1})
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	if len(shared.keys) != 1 || shared.keys[0] == ticket || shared.keys[0] != hashWSTicket(ticket) {
+		t.Fatalf("expected the store to be keyed on the ticket's hash, got %v", shared.keys)
+	}
+}
+
+func TestWSTicketUnreadableStoreRefuses(t *testing.T) {
+	shared := &recordingTicketStore{memoryWSTickets: newMemoryWSTickets()}
+	m := NewManager("secret", time.Hour)
+	m.UseWSTicketStore(shared)
+
+	ticket, err := m.IssueWSTicket(context.Background(), &Claims{UserID: 1})
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	shared.failing = true
+	if _, ok := m.redeemWSTicket(context.Background(), ticket); ok {
+		t.Fatal("expected a store error to refuse the upgrade")
 	}
 }
 
@@ -292,7 +365,7 @@ func TestRequireAuthWebSocketUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	ticket, err := m.IssueWSTicket(&Claims{UserID: 3, Username: "devops", Role: "user"})
+	ticket, err := m.IssueWSTicket(context.Background(), &Claims{UserID: 3, Username: "devops", Role: "user"})
 	if err != nil {
 		t.Fatalf("issue ticket: %v", err)
 	}
@@ -334,7 +407,7 @@ func TestRequireAuthWebSocketUpgrade(t *testing.T) {
 	})
 
 	t.Run("query fallback is refused on a non-upgrade request", func(t *testing.T) {
-		ticket, err := m.IssueWSTicket(&Claims{UserID: 3, Username: "devops", Role: "user"})
+		ticket, err := m.IssueWSTicket(context.Background(), &Claims{UserID: 3, Username: "devops", Role: "user"})
 		if err != nil {
 			t.Fatalf("issue ticket: %v", err)
 		}

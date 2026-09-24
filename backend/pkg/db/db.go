@@ -60,6 +60,7 @@ func Migrate(gdb *gorm.DB) error {
 		&KubeconfigIssuance{},
 		&AppTemplate{},
 		&AuditForwarder{},
+		&WSTicket{},
 	); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
 	}

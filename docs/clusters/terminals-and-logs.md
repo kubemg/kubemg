@@ -68,9 +68,14 @@ already multiplexes stdin/stdout/stderr/resize inside those bytes, so the
 bastion does not have to understand them to carry them.
 
 Because a browser cannot set a header on a WebSocket handshake, the terminal
-authenticates with `?access_token=` in the URL instead of an `Authorization`
-header; that query parameter is accepted **only** on an upgrade request and
-is stripped from the URL before it reaches the audit trail or the cluster.
+authenticates with a credential in the URL instead of an `Authorization`
+header. That credential is never your session: the console first exchanges
+the session for a **one-time ticket**, good for twenty seconds and a single
+use, so a copy left in a proxy or load-balancer access log opens nothing. The
+ticket is accepted **only** on an upgrade request and is stripped from the URL
+before it reaches the audit trail or the cluster. Tickets are kept in the
+database, so with several replicas behind a load balancer the upgrade may land
+on any of them — no session affinity is needed.
 
 **A shell is recorded.** Every `exec`/`attach` through the proxy is teed into
 a gzipped [asciinema v2](https://asciinema.org) cast as it happens — not a

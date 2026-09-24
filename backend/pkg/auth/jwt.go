@@ -7,8 +7,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-
-	"github.com/kubemg/kubemg/backend/pkg/cache"
 )
 
 // ErrInvalidToken is returned for malformed, expired, or wrongly signed tokens.
@@ -39,7 +37,7 @@ type Manager struct {
 	secret []byte
 	ttl    time.Duration
 	// wsTickets backs IssueWSTicket / redeemWSTicket. See wsticket.go.
-	wsTickets *cache.Cache[*Claims]
+	wsTickets WSTicketStore
 }
 
 // NewManager builds a token manager with an HMAC secret and token lifetime.
@@ -47,7 +45,7 @@ func NewManager(secret string, ttl time.Duration) *Manager {
 	if ttl <= 0 {
 		ttl = 12 * time.Hour
 	}
-	return &Manager{secret: []byte(secret), ttl: ttl, wsTickets: cache.New[*Claims](wsTicketTTL)}
+	return &Manager{secret: []byte(secret), ttl: ttl, wsTickets: newMemoryWSTickets()}
 }
 
 // TTL is the configured token lifetime.

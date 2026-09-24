@@ -210,9 +210,15 @@ func main() {
 		log.Fatalf("tls setup failed: %v", err)
 	}
 
+	// WebSocket tickets live in the database, not in this process: the ticket
+	// is minted by one request and redeemed by the next, and behind a load
+	// balancer the two need not reach the same replica.
+	tokens := auth.NewManager(signingKey, cfg.JWTTTL)
+	tokens.UseWSTicketStore(store)
+
 	router := api.NewRouter(api.Options{
 		Store:          store,
-		JWT:            auth.NewManager(signingKey, cfg.JWTTTL),
+		JWT:            tokens,
 		Tokens:         clusters,
 		Health:         clusters,
 		SANamespace:    cfg.SANamespace,

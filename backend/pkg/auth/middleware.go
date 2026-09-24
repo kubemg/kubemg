@@ -66,7 +66,7 @@ func RequireAuth(m *Manager, service ...MachineTokenVerifier) gin.HandlerFunc {
 				return
 			}
 			var redeemed bool
-			claims, redeemed = m.redeemWSTicket(ticket)
+			claims, redeemed = m.redeemWSTicket(c.Request.Context(), ticket)
 			if !redeemed {
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired ticket"})
 				return
