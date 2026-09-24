@@ -6,6 +6,7 @@ import type {
   AccessReviewQuestion,
   AccessReviewResult,
   AgentInstall,
+  AgentTokenRotation,
   AlarmChannel,
   AlarmChannelInput,
   AlarmChannelList,
@@ -448,9 +449,17 @@ export async function deleteCluster(id: number): Promise<void> {
   await http.delete(`/clusters/${id}`)
 }
 
-/** fetchAgentInstall returns the rendered agent installation package. */
+/** fetchAgentInstall returns the rendered agent installation package. Every
+    call mints a fresh single-use download URL; none rotates the credential. */
 export async function fetchAgentInstall(clusterId: number): Promise<AgentInstall> {
   const { data } = await http.get<AgentInstall>(`/clusters/${clusterId}/kustomize`)
+  return data
+}
+
+/** rotateAgentToken replaces a cluster's tunnel credential and cuts the attached
+    agent off until the returned package is applied. */
+export async function rotateAgentToken(clusterId: number): Promise<AgentTokenRotation> {
+  const { data } = await http.post<AgentTokenRotation>(`/clusters/${clusterId}/agent-token/rotate`)
   return data
 }
 

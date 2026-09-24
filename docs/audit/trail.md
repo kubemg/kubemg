@@ -15,6 +15,13 @@ Two things write to the trail:
   recording, and every just-in-time access workflow event
   (`jit-request`/`jit-approve`/`jit-reject`/`jit-revoke`/`jit-expire`). See
   [Session recording](session-recording.md) and [JIT elevated access](../access/jit.md).
+- The agent's credential: an administrator rotating a cluster's registration
+  token (`agent-token-rotate`, recorded with its reason if the new token could
+  not be stored), and a new connection taking over a cluster's tunnel
+  (`agent-displaced`, recorded under the user `kubemg:agent` with the new
+  connection's source address; the path's query names both agents' versions,
+  both connection times and the previous address). See
+  [Installing the agent](../clusters/agent.md#when-a-connection-displaces-the-agent).
 
 A refusal is recorded exactly like a success — a guardrail block, a
 namespace-scope violation, a tunnel failure that never reached the API
@@ -201,7 +208,7 @@ table* is worth carrying, without ever narrowing what is observable:
   thing.
 - **Three things no selection suppresses, ever**: a refusal or an error, any
   streaming call, and kubemg's own `replay`/`recording-get`/
-  `recording-delete`/`jit-*` verbs. A control that could hide any of those
+  `recording-delete`/`jit-*`/`agent-token-rotate`/`agent-displaced` verbs. A control that could hide any of those
   would not be an audit control — it would be a way to act with no trail at
   all.
 - **A verb this build does not recognise is always recorded.** An unknown

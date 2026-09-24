@@ -15,6 +15,7 @@ picture that motivates them.
 | A generated kubeconfig (direct mode) | A short-lived token minted straight from the target cluster's own TokenRequest API | A real cluster credential, on a laptop. |
 | A machine account | A `kmgm_`-prefixed opaque secret; only its SHA-256 hash is stored | Revocation is a database write, effective on the token's next use — not a wait for expiry. |
 | The agent | Its cluster registration token (`kmg_`-prefixed) and, if the bastion is self-signed, the bastion's CA certificate | Nothing else; it holds no session, no user identity, no long-lived cluster credential of its own beyond the service account it already runs as. |
+| An install URL | A `kmgi_`-prefixed single-use download ticket; only its SHA-256 hash is stored | Spent by the first download, expired after 15 minutes unused. It is **not** the registration token — the package it downloads is what carries that. |
 
 ## Agent mode stores no cluster credential
 
@@ -25,6 +26,29 @@ holding a Kubernetes service account token, and it only ever uses it to talk
 to its own local API server. Compare direct mode, where kubemg stores a real
 service account token for the target cluster in its own database — a
 strictly larger blast radius if that database is ever read.
+
+## The agent's registration token
+
+The registration token is what the agent presents on every tunnel handshake,
+so whoever holds it can be that cluster's agent: receive the traffic the
+bastion sends down the tunnel and answer it. It cannot reach the cluster's API
+server, but it would see request bodies and exec keystrokes. Three things
+bound that:
+
+- **The install URL is not the token.** The URL an administrator pastes
+  carries a single-use download ticket that dies after the first download or
+  15 minutes; a URL left in shell history or a CI log is not a credential.
+  URLs from before this change answer `410 Gone` whatever they carry.
+- **The token can be rotated** from the cluster's dashboard. There is no
+  grace window: the attached agent is disconnected at once, the old token is
+  refused at every handshake after, and the agent stays down until the new
+  package is applied. The rotation is audited as `agent-token-rotate`.
+- **A takeover is recorded.** A cluster has one tunnel and the newest
+  connection wins — which is what a rolling agent Deployment needs, and also
+  what an impostor holding the token would do. Every takeover is audited as
+  `agent-displaced`, with the new connection's address and agent version and
+  the previous connection's, and can drive an alarm. See
+  [When a connection displaces the agent](../clusters/agent.md#when-a-connection-displaces-the-agent).
 
 ## Impersonation instead of per-user service accounts
 

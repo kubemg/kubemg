@@ -986,6 +986,8 @@ const AUDIT_VERBS = [
   'portforward',
   'replay',
   'recording-delete',
+  'agent-displaced',
+  'agent-token-rotate',
 ]
 
 function splitList(raw: string | undefined): string[] {

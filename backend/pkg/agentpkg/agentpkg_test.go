@@ -30,6 +30,7 @@ func TestRenderSubstitutesEveryPlaceholder(t *testing.T) {
 	// whole point is that none can.
 	placeholders := []string{
 		placeholderNamespace, placeholderBastion, placeholderToken, placeholderImage,
+		placeholderCA, placeholderChecksum,
 	}
 	for name, body := range files {
 		for _, placeholder := range placeholders {
@@ -37,6 +38,44 @@ func TestRenderSubstitutesEveryPlaceholder(t *testing.T) {
 				t.Errorf("%s still contains %s", name, placeholder)
 			}
 		}
+	}
+}
+
+// The agent reads its Secret as environment variables, fixed at container
+// start, so a re-applied package whose Secret changed must also change the pod
+// template — otherwise the running agent keeps presenting a rotated token.
+func TestPodTemplateChangesWithTheSecret(t *testing.T) {
+	checksum := func(opts Options) string {
+		t.Helper()
+		files, err := Render(opts)
+		if err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		deployment := files["deployment.yaml"]
+		_, rest, found := strings.Cut(deployment, "kubemg.io/secret-checksum: ")
+		if !found {
+			t.Fatal("the pod template carries no secret checksum")
+		}
+		value, _, _ := strings.Cut(rest, "\n")
+		return value
+	}
+
+	base := checksum(testOptions())
+	if base != checksum(testOptions()) {
+		t.Fatal("the checksum must be stable for the same Secret, or every re-apply restarts the agent")
+	}
+	rotated := testOptions()
+	rotated.ClusterToken = "kmg_rotated"
+	if checksum(rotated) == base {
+		t.Fatal("a rotated token must change the pod template")
+	}
+	moved := testOptions()
+	moved.BastionURL = "https://elsewhere.example.com"
+	if checksum(moved) == base {
+		t.Fatal("a moved bastion must change the pod template")
+	}
+	if strings.Contains(base, "kmg_test-token") {
+		t.Fatal("the checksum must not carry the token")
 	}
 }
 

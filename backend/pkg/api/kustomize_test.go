@@ -115,8 +115,11 @@ func TestClusterKustomizeRendersAnInstallPackage(t *testing.T) {
 	if body.AgentToken != "kmg_install-token" {
 		t.Fatalf("expected the cluster's registration token, got %q", body.AgentToken)
 	}
-	if !strings.HasPrefix(body.ManifestURL, "https://kubemg.example.com/install/kmg_install-token/") {
-		t.Fatalf("install URL is not built from the public URL: %q", body.ManifestURL)
+	if !strings.HasPrefix(body.ManifestURL, "https://kubemg.example.com/install/kmgi_") {
+		t.Fatalf("install URL is not built from the public URL and a download ticket: %q", body.ManifestURL)
+	}
+	if strings.Contains(body.ManifestURL, "kmg_install-token") || strings.Contains(body.ArchiveURL, "kmg_install-token") {
+		t.Fatalf("the install URL must never carry the tunnel credential: %q", body.ManifestURL)
 	}
 	if !strings.Contains(body.ApplyCommand, "kubectl apply -f "+body.ManifestURL) {
 		t.Fatalf("unexpected apply command: %q", body.ApplyCommand)
@@ -174,13 +177,15 @@ func TestClusterKustomizeRejectsADirectCluster(t *testing.T) {
 	}
 }
 
-func TestInstallManifestIsFetchableWithTheTokenAlone(t *testing.T) {
+func TestInstallManifestIsFetchableWithTheTicketAlone(t *testing.T) {
 	env := newTestEnv(t)
-	env.store.addAgentCluster("edge-us", db.EnvStaging, "kmg_install-token")
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addAgentCluster("edge-us", db.EnvStaging, "kmg_install-token")
+	install := mintInstall(t, env, admin, cluster.ID)
 
-	// kubectl cannot carry a KubeMG session; the token in the path is the
+	// kubectl cannot carry a KubeMG session; the ticket in the path is the
 	// credential.
-	rec := env.do(t, http.MethodGet, "/install/kmg_install-token/agent.yaml", "", nil)
+	rec := env.do(t, http.MethodGet, pathOf(install.ManifestURL), "", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
 	}
@@ -204,9 +209,11 @@ func TestInstallManifestIsFetchableWithTheTokenAlone(t *testing.T) {
 
 func TestInstallArchiveIsATarball(t *testing.T) {
 	env := newTestEnv(t)
-	env.store.addAgentCluster("edge-us", db.EnvStaging, "kmg_install-token")
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	cluster := env.store.addAgentCluster("edge-us", db.EnvStaging, "kmg_install-token")
+	install := mintInstall(t, env, admin, cluster.ID)
 
-	rec := env.do(t, http.MethodGet, "/install/kmg_install-token/kustomize.tar.gz", "", nil)
+	rec := env.do(t, http.MethodGet, pathOf(install.ArchiveURL), "", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
@@ -219,11 +226,11 @@ func TestInstallArchiveIsATarball(t *testing.T) {
 	}
 }
 
-func TestInstallEndpointsRejectAnUnknownToken(t *testing.T) {
+func TestInstallEndpointsRejectAnUnknownTicket(t *testing.T) {
 	env := newTestEnv(t)
 	env.store.addAgentCluster("edge-us", db.EnvStaging, "kmg_install-token")
 
-	for _, path := range []string{"/install/kmg_wrong/agent.yaml", "/install/kmg_wrong/kustomize.tar.gz"} {
+	for _, path := range []string{"/install/kmgi_wrong/agent.yaml", "/install/kmgi_wrong/kustomize.tar.gz"} {
 		rec := env.do(t, http.MethodGet, path, "", nil)
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("%s: expected status %d, got %d", path, http.StatusNotFound, rec.Code)

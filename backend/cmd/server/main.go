@@ -174,6 +174,11 @@ func main() {
 		api.NewAlarmAuditor(alarms),
 		forwarder,
 	)
+	// The tunnel listener writes records of its own — an agent being displaced
+	// by a newer connection — and re-checks every live tunnel's credential, so a
+	// token rotated on another replica stops working here too.
+	gateway.UseAuditor(auditor)
+	go gateway.RunCredentialSweep(auditCtx)
 
 	// Just-in-time elevated access. It shares the audit writer with the proxy, so
 	// "who was given production and why" lands in the same trail as the calls they

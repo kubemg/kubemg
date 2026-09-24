@@ -11,8 +11,10 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
 	"embed"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"path"
@@ -47,6 +49,7 @@ const (
 	placeholderToken     = "__CLUSTER_TOKEN__"
 	placeholderImage     = "__AGENT_IMAGE__"
 	placeholderCA        = "__BASTION_CA__"
+	placeholderChecksum  = "__SECRET_CHECKSUM__"
 )
 
 // applyOrder is the order resources are concatenated into the flat manifest.
@@ -137,6 +140,7 @@ func Render(opts Options) (map[string]string, error) {
 		// The CA lands in the Secret's `data`, which is base64 by definition,
 		// so it needs no quoting: an empty CA renders as an empty value.
 		placeholderCA, base64.StdEncoding.EncodeToString([]byte(opts.BastionCA)),
+		placeholderChecksum, quote(secretChecksum(opts)),
 	)
 
 	out := make(map[string]string, len(entries))
@@ -240,4 +244,20 @@ func fileOrder(files map[string]string) []string {
 func quote(value string) string {
 	escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(value)
 	return `"` + escaped + `"`
+}
+
+// secretChecksum fingerprints what the agent Secret carries, for an annotation
+// on the Deployment's pod template.
+//
+// The agent reads its Secret as environment variables, which Kubernetes fixes
+// when the container starts. Without this, re-applying a package whose Secret
+// changed — a rotated registration token above all, but also a moved public
+// URL or a new pinned CA — updated the Secret and left the running pod
+// presenting the old values forever, refused at every reconnect. A pod
+// template that changes with the Secret is what makes the re-apply restart it.
+// It is a truncated SHA-256 of a 256-bit secret: it identifies a generation
+// and reveals nothing about the token.
+func secretChecksum(opts Options) string {
+	sum := sha256.Sum256([]byte(opts.BastionURL + "\n" + opts.ClusterToken + "\n" + opts.BastionCA))
+	return hex.EncodeToString(sum[:8])
 }

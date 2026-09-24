@@ -62,7 +62,9 @@ const PAGE_SIZE = 50
    the shortlist an auditor actually reaches for. */
 /* `replay` and `recording-delete` are not Kubernetes verbs — nothing about them
    touches a cluster — but they belong in this filter: they are how the trail
-   answers who watched, or destroyed, a recording of somebody else's shell. */
+   answers who watched, or destroyed, a recording of somebody else's shell. The
+   agent verbs are here for the same reason: they answer who is, or became,
+   a cluster's agent. */
 const VERBS = [
   'get',
   'list',
@@ -75,6 +77,8 @@ const VERBS = [
   'log',
   'replay',
   'recording-delete',
+  'agent-displaced',
+  'agent-token-rotate',
 ]
 
 const MUTATING = new Set(['create', 'update', 'patch', 'delete'])

@@ -45,6 +45,11 @@ type Store interface {
 	Clusters(ctx context.Context) ([]db.Cluster, error)
 	ClusterByID(ctx context.Context, id uint) (*db.Cluster, error)
 	ClusterByAgentToken(ctx context.Context, token string) (*db.Cluster, error)
+	// Agent install downloads and tunnel credential rotation — see
+	// agent_install.go.
+	PutAgentInstallTicket(ctx context.Context, hash string, clusterID uint, expiresAt time.Time) error
+	TakeAgentInstallTicket(ctx context.Context, hash string) (uint, bool, error)
+	RotateClusterAgentToken(ctx context.Context, clusterID uint, token string) error
 	CreateCluster(ctx context.Context, cluster *db.Cluster) error
 	DeleteCluster(ctx context.Context, id uint) error
 	UpdateClusterHealth(ctx context.Context, id uint, health db.ClusterHealth) error
@@ -376,6 +381,12 @@ type tunnels interface {
 	Connected(clusterID uint) bool
 }
 
+// agentRetirer closes the tunnel attached for a cluster — what makes a rotated
+// credential stop working now rather than at the agent's next reconnect.
+type agentRetirer interface {
+	Retire(clusterID uint) bool
+}
+
 type server struct {
 	store Store
 	// instanceID identifies this process for the duration of its life. It is what
@@ -386,6 +397,7 @@ type server struct {
 	tokens         k8s.Issuer
 	health         k8s.Checker
 	tunnels        tunnels
+	agents         agentRetirer
 	proxy          *bastion.Proxy
 	saNamespace    string
 	publicURL      string
@@ -521,6 +533,7 @@ func NewRouter(opts Options) *gin.Engine {
 	}
 	if opts.Bastion != nil {
 		s.tunnels = opts.Bastion.Registry()
+		s.agents = opts.Bastion
 	}
 	// The register learns that a credential is still in use from the gateway, not
 	// from a route. Installing the writer here keeps pkg/credentials ignorant of
@@ -619,7 +632,8 @@ func NewRouter(opts Options) *gin.Engine {
 		router.GET("/agent/v1/tunnel", opts.Bastion.HandleAgent)
 
 		// The installer is fetched by kubectl, which cannot carry a KubeMG
-		// session; the registration token in the path is the credential.
+		// session; a single-use download ticket in the path is the credential —
+		// never the tunnel credential itself. See agent_install.go.
 		install := router.Group("/install/:token")
 		install.GET("/agent.yaml", s.installManifest)
 		install.GET("/kustomize.tar.gz", s.installArchive)
@@ -708,6 +722,9 @@ func NewRouter(opts Options) *gin.Engine {
 		v1.GET("/version", requireAuth, s.serverVersion)
 		if opts.Bastion != nil {
 			clusters.GET("/:id/kustomize", requireAdmin, s.clusterKustomize)
+			// Replaces the tunnel credential and cuts the attached agent off. No
+			// grace window: the point is that the old token stops working.
+			clusters.POST("/:id/agent-token/rotate", requireAdmin, s.rotateAgentToken)
 		}
 
 		// Where this cluster's metrics and logs actually come from. The Metrics

@@ -61,6 +61,7 @@ func Migrate(gdb *gorm.DB) error {
 		&AppTemplate{},
 		&AuditForwarder{},
 		&WSTicket{},
+		&AgentInstallTicket{},
 	); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -25,6 +26,38 @@ const handshakeTimeout = 15 * time.Second
 // no longer meaningful.
 const stateTimeout = 5 * time.Second
 
+// credentialSweepInterval is how often every live tunnel's credential is
+// re-checked against the database. A rotation closes the tunnel it can see at
+// once; this is what closes one held by another replica, or one whose cluster
+// was deleted, without waiting for the agent to reconnect of its own accord.
+const credentialSweepInterval = 30 * time.Second
+
+// Verbs KubeMG records about an agent's own connection. Neither is a Kubernetes
+// verb and neither is suppressible — see auditpolicy.
+const (
+	// VerbAgentDisplaced is a live tunnel being replaced by a newer connection
+	// presenting the same credential. A rolling agent Deployment does this for a
+	// moment on every upgrade; somebody holding a leaked token does it too, and
+	// the record's addresses and versions are what tell the two apart.
+	VerbAgentDisplaced = "agent-displaced"
+	// VerbAgentTokenRotate is an administrator replacing a cluster's tunnel
+	// credential. It is written by the API, and named here beside its sibling.
+	VerbAgentTokenRotate = "agent-token-rotate"
+)
+
+// AgentActor is the user named on a record the agent's own connection caused.
+// The colon makes it a name no stored account can hold (db.CheckUsername
+// refuses one), so it cannot be mistaken for a person.
+const AgentActor = "kubemg:agent"
+
+// ErrCredentialRetired closes a tunnel whose registration token no longer
+// resolves to its cluster: rotated, or the cluster removed.
+var ErrCredentialRetired = errors.New("the agent's registration token was rotated or withdrawn")
+
+// retiredReason is what the agent is told on the way out, in its own logs.
+// WebSocket close reasons are capped at 123 bytes.
+const retiredReason = "registration token rotated: re-apply the agent install package"
+
 // Store is the persistence the bastion needs: enough to authenticate an agent
 // and to record the tunnel coming and going.
 type Store interface {
@@ -40,6 +73,9 @@ type Server struct {
 	registry *Registry
 	logger   *slog.Logger
 	upgrader websocket.Upgrader
+	// auditor receives the records the tunnel listener writes about itself —
+	// today a displacement. Nil records nothing, which is what most tests want.
+	auditor Auditor
 }
 
 // ServerOptions wires the tunnel listener.
@@ -75,6 +111,11 @@ func NewServer(opts ServerOptions) *Server {
 		},
 	}
 }
+
+// UseAuditor installs the audit writer. The gateway is built before the
+// writer in main (the writer's consumers need the gateway's registry), so it is
+// handed over afterwards; call it before the router serves anything.
+func (s *Server) UseAuditor(auditor Auditor) { s.auditor = auditor }
 
 // Registry exposes the connection pool so the proxy and the API can ask which
 // clusters are attached.
@@ -130,22 +171,37 @@ func (s *Server) HandleAgent(c *gin.Context) {
 		return
 	}
 
-	s.serveTunnel(conn, cluster, hello)
+	source := RequestSource{Addr: c.ClientIP(), UserAgent: c.Request.UserAgent()}.Truncate()
+	s.serveTunnel(conn, cluster, hello, source, token)
 }
 
 // serveTunnel registers the tunnel, marks the cluster reachable, and blocks
 // until the agent goes away.
-func (s *Server) serveTunnel(conn *websocket.Conn, cluster *db.Cluster, hello Hello) {
+func (s *Server) serveTunnel(
+	conn *websocket.Conn, cluster *db.Cluster, hello Hello, source RequestSource, credential string,
+) {
 	tunnel := newTunnel(conn, cluster.ID, cluster.Name, hello)
+	tunnel.SourceAddr = source.Addr
+	tunnel.credential = credential
 
 	if displaced := s.registry.Add(tunnel); displaced != nil {
-		// A rolling agent deployment: the new pod takes over and the old one is
-		// hung up on. No health write here — the cluster stays connected.
-		s.logger.Info("replacing agent tunnel",
+		// Newest wins: a rolling agent deployment briefly has two pods dialling
+		// in, and the new one must take over. No health write here — the cluster
+		// stays connected. But it is recorded, every time: a second party holding
+		// this cluster's token takes the tunnel exactly the same way, and "the
+		// agent reconnected" and "somebody else is now the agent" must be
+		// distinguishable afterwards. Suppressing the rollover case would need a
+		// way to tell the two apart, and there is none that an impostor cannot
+		// imitate — so both are recorded truthfully and the reader decides.
+		s.logger.Warn("agent tunnel displaced by a newer connection",
 			slog.String("cluster", cluster.Name),
 			slog.String("agent_version", hello.AgentVersion),
+			slog.String("source", source.Addr),
+			slog.String("previous_source", displaced.SourceAddr),
+			slog.String("previous_agent_version", displaced.AgentVersion),
 		)
 		displaced.Close()
+		s.recordDisplacement(cluster, displaced, tunnel, source)
 	}
 
 	s.recordState(cluster, db.AgentState{
@@ -186,7 +242,9 @@ func (s *Server) dropTunnel(tunnel *Tunnel, cluster *db.Cluster, cause error) {
 	}
 
 	message := "the in-cluster agent disconnected"
-	if cause != nil && !websocket.IsCloseError(cause, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+	if errors.Is(tunnel.closeErr, ErrCredentialRetired) {
+		message = "the agent's registration token was rotated; re-apply the install package to reconnect"
+	} else if cause != nil && !websocket.IsCloseError(cause, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 		message = "the in-cluster agent tunnel dropped unexpectedly"
 	}
 
@@ -199,6 +257,104 @@ func (s *Server) dropTunnel(tunnel *Tunnel, cluster *db.Cluster, cause error) {
 		slog.String("cluster", cluster.Name),
 		slog.Uint64("cluster_id", uint64(cluster.ID)),
 	)
+}
+
+// recordDisplacement writes the audit record for a tunnel being replaced. The
+// new connection's address and user agent ride on the context the way every
+// other record's do; what has no column of its own — both agents' versions,
+// both connection times, the previous address — goes in the path's query, which
+// is what the trail, the SIEM forward and an alarm all already carry.
+func (s *Server) recordDisplacement(cluster *db.Cluster, previous, next *Tunnel, source RequestSource) {
+	if s.auditor == nil {
+		return
+	}
+	query := url.Values{}
+	query.Set("agent_version", next.AgentVersion)
+	query.Set("connected_at", next.ConnectedAt.Format(time.RFC3339))
+	// Also in the source_addr column; repeated here so an alarm, which carries
+	// the path but not the column, names who took the tunnel.
+	query.Set("source", source.Addr)
+	query.Set("previous_source", previous.SourceAddr)
+	query.Set("previous_agent_version", previous.AgentVersion)
+	query.Set("previous_connected_at", previous.ConnectedAt.Format(time.RFC3339))
+
+	s.auditor.Record(WithSource(context.Background(), source), Event{
+		At:        next.ConnectedAt,
+		Username:  AgentActor,
+		ClusterID: cluster.ID,
+		Cluster:   cluster.Name,
+		Verb:      VerbAgentDisplaced,
+		Method:    http.MethodGet,
+		Path:      "/agent/v1/tunnel?" + query.Encode(),
+		Resource:  "agent",
+		Status:    http.StatusOK,
+		// How long the connection that lost had been up. A pod rolled by its own
+		// Deployment has usually been up for days; a displacement seconds after
+		// a reconnect is worth a second look.
+		Duration: next.ConnectedAt.Sub(previous.ConnectedAt),
+	})
+}
+
+// Retire closes the tunnel attached for a cluster, telling the agent why. It is
+// what makes a rotation take effect now rather than at the agent's next
+// reconnect: the handshake already refuses the old token, but a tunnel that is
+// already up never handshakes again. It reports whether a tunnel was attached
+// here — another replica's is closed by RunCredentialSweep.
+func (s *Server) Retire(clusterID uint) bool {
+	tunnel, ok := s.registry.Get(clusterID)
+	if !ok {
+		return false
+	}
+	s.retire(tunnel)
+	return true
+}
+
+func (s *Server) retire(tunnel *Tunnel) {
+	frame := websocket.FormatCloseMessage(websocket.ClosePolicyViolation, retiredReason)
+	_ = tunnel.conn.WriteControl(websocket.CloseMessage, frame, time.Now().Add(writeTimeout))
+	tunnel.closeWith(ErrCredentialRetired)
+}
+
+// RunCredentialSweep re-checks every live tunnel's credential on a tick until
+// ctx is done, closing any whose token no longer resolves to its cluster.
+func (s *Server) RunCredentialSweep(ctx context.Context) {
+	ticker := time.NewTicker(credentialSweepInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.SweepCredentials(ctx)
+		}
+	}
+}
+
+// SweepCredentials is one pass of RunCredentialSweep. A store that cannot be
+// read closes nothing: a database blip must not take the whole fleet's tunnels
+// down, and the handshake still refuses a retired token on every reconnect.
+func (s *Server) SweepCredentials(ctx context.Context) {
+	for _, tunnel := range s.registry.Snapshot() {
+		lookup, cancel := context.WithTimeout(ctx, stateTimeout)
+		cluster, err := s.store.ClusterByAgentToken(lookup, tunnel.credential)
+		cancel()
+		if err != nil && !errors.Is(err, db.ErrNotFound) {
+			s.logger.Error("could not re-check an agent tunnel's credential",
+				slog.String("cluster", tunnel.ClusterName),
+				slog.String("error", err.Error()),
+			)
+			continue
+		}
+		if err == nil && cluster.ID == tunnel.ClusterID && cluster.UsesAgent() &&
+			SameToken(cluster.AgentToken, tunnel.credential) {
+			continue
+		}
+		s.logger.Warn("closing an agent tunnel whose registration token was retired",
+			slog.String("cluster", tunnel.ClusterName),
+			slog.Uint64("cluster_id", uint64(tunnel.ClusterID)),
+		)
+		s.retire(tunnel)
+	}
 }
 
 func (s *Server) recordState(cluster *db.Cluster, state db.AgentState) {

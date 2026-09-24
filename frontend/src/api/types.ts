@@ -1885,12 +1885,22 @@ export interface AgentInstall {
   bastion_url: string
   package_dir: string
   agent_token: string
+  /** Both URLs carry one single-use download ticket; the first fetch spends it. */
   manifest_url: string
   archive_url: string
+  /** When that ticket dies if neither URL has been fetched. */
+  download_expires_at: string
   apply_command: string
   kustomize_command: string
   manifest: string
   files: Record<string, string>
+}
+
+/** A rotated agent credential: the package the agent now needs, and whether
+    the tunnel attached to this replica was cut off. */
+export interface AgentTokenRotation {
+  install: AgentInstall
+  disconnected: boolean
 }
 
 export interface Kubeconfig {

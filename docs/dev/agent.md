@@ -104,7 +104,7 @@ architecture for nothing. The published image carries both **amd64** and
 `deploy/kustomize/base/*.yaml` is the human-facing copy an operator reads or
 adapts for GitOps; `backend/pkg/agentpkg/base/*.yaml` is the copy embedded
 into the bastion binary via `go:embed` and served from the install wizard
-(`GET /install/:token/{agent.yaml,kustomize.tar.gz}`). They exist twice on
+(`GET /install/:ticket/{agent.yaml,kustomize.tar.gz}`). They exist twice on
 purpose — one has to be readable outside a running kubemg install, the other
 has to travel inside the binary — and `make manifest-check` (part of `make
 verify`) diffs them so the two cannot silently drift. Edit both, or neither.

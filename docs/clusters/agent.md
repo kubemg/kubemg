@@ -6,26 +6,48 @@ For the shortest path from zero to an attached cluster, see
 
 ## What the install command fetches
 
-The registration wizard's step 3 renders one of two forms:
+The registration wizard's step 3 — and the cluster dashboard's **Agent
+install** afterwards — renders one of two forms:
 
 ```bash
 # Publicly-trusted bastion certificate
-kubectl apply -f https://your-kubemg/install/<token>/agent.yaml
+kubectl apply -f https://your-kubemg/install/<download-ticket>/agent.yaml
 
 # Self-signed bastion certificate
-curl -sfLk https://your-kubemg/install/<token>/agent.yaml | kubectl apply -f -
+curl -sfLk https://your-kubemg/install/<download-ticket>/agent.yaml | kubectl apply -f -
 ```
 
-Both routes are **unauthenticated by necessity** — `kubectl apply -f` cannot
-carry a kubemg session, so the registration token in the path *is* the
-credential (`GET /install/:token/agent.yaml`, `GET
-/install/:token/kustomize.tar.gz`, mounted outside the JWT middleware). The
-token resolves to exactly one cluster (`ClusterByAgentToken`); if the cluster
-is not registered in agent mode the route answers 404 as if the token did not
-exist, rather than a mode-mismatch error that would confirm a token's
-existence to someone probing it. Every response carries `Cache-Control:
-no-store`, since caching a URL keyed on a secret through a shared proxy would
-be one way to leak it.
+The routes are **unauthenticated by necessity** — `kubectl apply -f` cannot
+carry a kubemg session — so the path carries a credential of its own. That
+credential is a **single-use download ticket**, not the agent's registration
+token:
+
+- A fresh ticket is minted **every time** the install package is rendered —
+  each opening of **Agent install**, each pass through the wizard's step 3,
+  each **New URL** click. Opening it never changes the registration token.
+- The ticket is **spent by the first download** of either form (the flat
+  manifest or the Kustomize archive — both URLs carry the same ticket). A
+  second fetch of the same URL answers `404`. If an apply fails after the
+  download, click **New URL** (or re-open **Agent install**) and run the new
+  command.
+- An unused ticket **expires after 15 minutes**. The sheet states the expiry
+  under the command.
+- Rotating the cluster's registration token (below) withdraws every ticket
+  still outstanding for that cluster.
+
+The package the ticket downloads still carries the registration token — the
+agent has to present something when it dials in — so treat the downloaded
+YAML like a credential. What changes is the URL: one that lands in shell
+history, a CI log or a chat message is dead after the install it was made
+for. Every response carries `Cache-Control: no-store`.
+
+!!! warning "Install URLs from before single-use downloads no longer work"
+    Until single-use downloads, the install URL carried the registration token itself
+    (`/install/kmg_…/agent.yaml`). Every such URL now answers `410 Gone`,
+    whether or not the token in it is still valid, and names where a fresh one
+    comes from. Already-installed agents are unaffected — they present the
+    token from their Secret, not the URL. If an old URL may have leaked,
+    [rotate the token](#rotating-the-registration-token).
 
 - `agent.yaml` is the flat, fully-rendered manifest — a single YAML stream
   with every `__PLACEHOLDER__` filled in — for `kubectl apply -f`.
@@ -169,13 +191,12 @@ To upgrade an attached cluster's agent:
    change it in Settings at runtime).
 2. Re-fetch the manifest for that cluster. In the console this is
    **the cluster's dashboard → Agent install** (admin-only, agent-mode
-   clusters), which re-renders the package from the cluster's existing
+   clusters), which re-renders the package from the cluster's current
    registration token against the *current* settings — so it picks up the new
    image without re-registering the cluster and without invalidating anything
-   already issued. It is offered whether or not the agent is attached, since a
-   tunnel that is down is exactly when the command is needed. The same package
-   is available directly as `GET /api/v1/clusters/:id/kustomize` (admin-only),
-   or `?format=yaml` for the flat manifest.
+   already issued. Opening it mints a new single-use install URL and nothing
+   else. It is offered whether or not the agent is attached, since a
+   tunnel that is down is exactly when the command is needed.
 3. `kubectl apply -f` (or `-k`) the freshly rendered manifest. The Deployment
    updates and, since `strategy: Recreate`, the old pod terminates before the
    new one starts — the tunnel drops and reconnects, which is normal
@@ -194,6 +215,59 @@ To upgrade an attached cluster's agent:
     in the console calls this out as broken. If Explore's custom-resource
     sections are unexpectedly empty on an existing cluster, re-applying the
     manifest is the first thing to try.
+
+## Rotating the registration token
+
+The registration token is the agent's only credential: whoever presents it
+can hold that cluster's tunnel. Rotate it when it may have leaked — an old
+install URL in a log, a copied Secret, a departing administrator — or on a
+schedule.
+
+**The cluster's dashboard → Rotate agent token** (admin-only, agent-mode
+clusters; a direct-mode cluster answers `409`). The confirmation says what
+happens, because there is **no grace window**:
+
+1. A new token replaces the old one, and every install URL still
+   outstanding for the cluster stops working.
+2. The agent currently attached is **disconnected immediately** — its log
+   shows `registration token rotated: re-apply the agent install package`.
+   Its reconnects with the old token are refused (`unknown agent
+   registration token`). On a multi-replica install, a tunnel held by
+   another replica is closed within 30 seconds.
+3. The **Agent install** sheet opens with the package for the new token.
+   Every console session, `kubectl` call and browser shell on the cluster is
+   down until that package is applied:
+
+   ```bash
+   kubectl apply -f https://your-kubemg/install/<download-ticket>/agent.yaml
+   ```
+
+   The Deployment restarts with the new Secret and the agent attaches again.
+
+The rotation is recorded in the audit trail as `agent-token-rotate`, and
+issued kubeconfigs are **not** affected — they authenticate to kubemg, not to
+the agent.
+
+## When a connection displaces the agent
+
+A cluster has one tunnel at a time, and the newest connection wins: a rolling
+agent Deployment briefly runs two pods, and the new one has to take over.
+Anybody else holding the registration token takes the tunnel exactly the same
+way — so every takeover is written to the audit trail as **`agent-displaced`**,
+rollover or not. The record carries:
+
+| Field | What it says |
+| --- | --- |
+| Source address | Where the **new** connection came from |
+| Path | `/agent/v1/tunnel?` followed by the new agent's version and connection time, and the **previous** connection's address, agent version and connection time |
+| Duration | How long the displaced connection had been up |
+
+A pod your own Deployment rolled usually shares a node network with its
+predecessor, runs the same agent version, and replaced a connection that had
+been up for hours or days. A new address, a different version, or a
+displacement seconds after a reconnect is worth a look. To be paged on it,
+create an [alarm rule](../audit/alarms.md) on the audit trail with the verb
+`agent-displaced`.
 
 ## Air-gapped / mirrored registries
 
@@ -253,7 +327,7 @@ so a transient failure is not fatal — but a persistent one needs a fix. Check
     `bastion-ca` key is empty or wrong — usually because the manifest was
     rendered before the bastion's certificate existed, or the wrong archive
     was applied. Re-fetch a fresh install package — **the cluster's dashboard →
-    Agent install**, or `/api/v1/clusters/:id/kustomize` — and re-apply it;
+    Agent install** — and re-apply it;
     the bastion's current CA is baked in at render time.
 
     A related, deliberately noisy line if verification is disabled by hand:
@@ -276,10 +350,16 @@ so a transient failure is not fatal — but a persistent one needs a fix. Check
 === "dial bastion: … (401 Unauthorized)" or "unknown agent registration token"
 
     The bearer token the agent presented does not match any cluster's stored
-    `AgentToken` — a stale Secret from a re-registered cluster, a typo in a
-    hand-edited manifest, or a cluster that was deleted and re-created (which
-    mints a new token). Re-fetch the install package for the *current*
-    cluster record and re-apply.
+    registration token — the token was [rotated](#rotating-the-registration-token),
+    a stale Secret from a re-registered cluster, a typo in a hand-edited
+    manifest, or a cluster that was deleted and re-created (which mints a new
+    token). Re-fetch the install package for the *current* cluster record and
+    re-apply.
+
+=== "registration token rotated: re-apply the agent install package"
+
+    An administrator rotated the cluster's registration token and the bastion
+    closed this tunnel. Apply the package **Agent install** now renders.
 
 === "this cluster is registered for direct API access, not for an agent"
 

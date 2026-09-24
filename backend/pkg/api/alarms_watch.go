@@ -503,6 +503,17 @@ func deniedLabel(denied bool) string {
 // why, because on an audit alarm that is the entire content.
 func auditMessage(event bastion.Event, denied bool) string {
 	var b strings.Builder
+	// The agent's credential events were not proxied anywhere, so the generic
+	// "KubeMG proxied GET …" sentence would misdescribe them.
+	switch event.Verb {
+	case bastion.VerbAgentDisplaced:
+		fmt.Fprintf(&b, "The agent tunnel for %s was taken over by a newer connection (%s)",
+			event.Cluster, strings.TrimPrefix(event.Path, "/agent/v1/tunnel?"))
+		return b.String()
+	case bastion.VerbAgentTokenRotate:
+		fmt.Fprintf(&b, "%s rotated the agent registration token for %s", event.Username, event.Cluster)
+		return b.String()
+	}
 	if denied {
 		b.WriteString("KubeMG refused ")
 	} else {

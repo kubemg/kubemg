@@ -92,8 +92,11 @@ See [REST API reference](../dev/api.md) for the full cluster surface.
 What this step shows depends on the mode:
 
 - **Agent mode**: the one-line install command (`kubectl apply -f
-  https://…/install/<token>/agent.yaml`), a Kustomize alternative, a
+  https://…/install/<download-ticket>/agent.yaml`), a Kustomize alternative, a
   downloadable YAML, and the raw manifest to review before applying it. The
+  URL in the commands is **single-use** and expires after 15 minutes unused;
+  **New URL** under the command mints another (see
+  [Installing the agent](agent.md#what-the-install-command-fetches)). The
   step polls `GET /api/v1/clusters/:id` every three seconds and stops the
   moment `agent_attached` becomes `true`. This poll is deliberately **not**
   gated on the tab being visible — unlike every other live read in the

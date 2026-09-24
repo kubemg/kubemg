@@ -289,6 +289,13 @@ namespace). Beyond that, the two triggers diverge:
 | `cluster_event` | `event_type` (`Normal` or `Warning`); `event_reasons` (comma-separated list, e.g. `OOMKilled,BackOff`) |
 | `audit` | `verbs` (comma-separated audit verbs); `denied_only` (keep only refusals — a 4xx/5xx or a call that never reached the API server); `min_status` (keep records at or above an HTTP status) |
 
+An `audit` rule with the verb `agent-displaced` fires whenever a new
+connection takes over a cluster's agent tunnel. Every agent rollout does this
+once per cluster, so expect it after each re-apply; outside a rollout it is
+the signal that somebody else holding the registration token has become the
+agent. The alarm's message names the new and previous source addresses and
+agent versions. `agent-token-rotate` fires on each rotation.
+
 `GET /api/v1/alarms/rules` returns `suggested_reasons` — a starter list
 (`OOMKilled`, `FailedScheduling`, `BackOff`, `CrashLoopBackOff`, `Failed`,
 `FailedMount`, `FailedCreatePodSandBox`, `Evicted`, `NodeNotReady`,
@@ -309,8 +316,9 @@ wants:
   discovering that on a pager is a worse way to find out than a 400 at save
   time.
 - An `audit` rule naming a verb that is not one the trail actually records —
-  every suppressible verb plus the recording-access verbs
-  `replay`/`recording-get`/`recording-delete` — is refused, because a rule that can never fire looks identical to one that
+  every suppressible verb, the recording-access verbs
+  `replay`/`recording-get`/`recording-delete`, and the agent-credential verbs
+  `agent-displaced`/`agent-token-rotate` — is refused, because a rule that can never fire looks identical to one that
   does.
 
 ## Testing a channel

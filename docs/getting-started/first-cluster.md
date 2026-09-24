@@ -76,17 +76,19 @@ Details on each field and the underlying REST calls are in
 Step 3 of the wizard renders a command like:
 
 ```bash
-kubectl apply -f https://your-kubemg/install/<token>/agent.yaml
+kubectl apply -f https://your-kubemg/install/<download-ticket>/agent.yaml
 ```
 
 (or, over a self-signed bastion, the `curl -k … | kubectl apply -f -` form).
 That URL is unauthenticated on purpose — `kubectl apply -f` cannot carry a
-kubemg session, so the registration **token in the path is the credential**.
-Run it with a kubeconfig context pointed at the target cluster:
+kubemg session — so the path carries a **single-use download ticket**: the
+first fetch spends it, and an unused one expires after 15 minutes. If it has
+expired, or an apply failed after the download, click **New URL** under the
+command. Run it with a kubeconfig context pointed at the target cluster:
 
 ```bash
 kubectl config use-context my-target-cluster
-kubectl apply -f https://your-kubemg/install/kmg_xxxxxxxx/agent.yaml
+kubectl apply -f https://your-kubemg/install/kmgi_xxxxxxxx/agent.yaml
 ```
 
 What lands in the cluster:

@@ -49,10 +49,14 @@ type fakeStore struct {
 	// issuances stands in for the kubeconfig_issuances table; see
 	// kubeconfig_fake_test.go. issuanceErr and revokedIDsErr make the register
 	// unreadable, which is the case the fail-open rule is about.
-	issuances     []*db.KubeconfigIssuance
-	issuanceErr   error
-	revokedIDsErr error
-	settings      map[string]string
+	issuances []*db.KubeconfigIssuance
+	// installTickets stands in for agent_install_tickets, keyed by hash; see
+	// agent_install_test.go. installTicketErr makes it unreadable.
+	installTickets   map[string]fakeInstallTicket
+	installTicketErr error
+	issuanceErr      error
+	revokedIDsErr    error
+	settings         map[string]string
 	// sources holds the observability datasources, keyed the way the table is:
 	// one per cluster per kind.
 	sources map[uint]map[string]db.ObservabilitySource
