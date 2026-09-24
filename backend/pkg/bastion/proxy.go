@@ -29,6 +29,33 @@ const GroupPrefix = "kubemg:"
 // subject to hang baseline access off.
 const GroupAllUsers = GroupPrefix + "users"
 
+// UserPrefix namespaces the Kubernetes user a KubeMG account is impersonated
+// as. It is Kubernetes' own `usernamePrefix` rule, for the same reason: a
+// username is chosen by a person or an identity provider, and the agent may
+// impersonate any user. Without it an account named
+// `system:serviceaccount:kube-system:<something>` would be shown to the API
+// server as that ServiceAccount and inherit every binding it holds.
+//
+// It sits under GroupPrefix but never collides with KubeMG's own fixed
+// identities (`kubemg:shell-runner` and friends): those carry no `u:` segment,
+// and no account name may contain a colon at all.
+const UserPrefix = GroupPrefix + "u:"
+
+// ImpersonationUser is the one place the Kubernetes identity for a caller is
+// decided — the header, the audit row and the identity page all read it.
+//
+// A persisted account is always prefixed. The only unprefixed names are
+// KubeMG's own service identities, which exist solely as unsaved rows (ID 0)
+// built in code with a `kubemg:` name — a shape no stored account can take, so
+// a username cannot talk its way into it.
+func ImpersonationUser(user *db.User) string {
+	if user.ID == 0 && strings.HasPrefix(user.Username, GroupPrefix) &&
+		!strings.HasPrefix(user.Username, UserPrefix) {
+		return user.Username
+	}
+	return UserPrefix + user.Username
+}
+
 // maxRequestBody caps what a client may push through the tunnel in one call.
 const maxRequestBody = 8 << 20
 
@@ -58,6 +85,18 @@ var impersonationHeaders = []string{
 	"Impersonate-Group",
 	"Impersonate-Uid",
 	"Authorization",
+}
+
+// impersonateExtraPrefix is the family of `Impersonate-Extra-<key>` headers.
+// The agent holds no `userextras` grant, so one arriving today fails closed at
+// the API server — but that is a property of somebody else's manifest, and a
+// client-chosen identity attribute has no business reaching it in the first
+// place.
+const impersonateExtraPrefix = "Impersonate-Extra-"
+
+func isImpersonateExtra(name string) bool {
+	return len(name) >= len(impersonateExtraPrefix) &&
+		strings.EqualFold(name[:len(impersonateExtraPrefix)], impersonateExtraPrefix)
 }
 
 // discoveryPrefixes are the paths kubectl must reach before it can do anything
@@ -214,7 +253,7 @@ func (p *Proxy) Handle(c *gin.Context) {
 		Verb:               VerbFor(c.Request.Method, path),
 		Method:             c.Request.Method,
 		Path:               path,
-		ImpersonatedUser:   user.Username,
+		ImpersonatedUser:   ImpersonationUser(user),
 		ImpersonatedGroups: ImpersonationGroups(grant.K8sRole),
 	}
 	parsed := ParsePath(path)
@@ -351,7 +390,7 @@ func (p *Proxy) Call(
 		Path:               path,
 		Namespace:          parsed.Namespace,
 		Resource:           parsed.Resource,
-		ImpersonatedUser:   user.Username,
+		ImpersonatedUser:   ImpersonationUser(user),
 		ImpersonatedGroups: ImpersonationGroups(grant.K8sRole),
 	}
 
@@ -393,7 +432,7 @@ func (p *Proxy) Call(
 
 	header := map[string][]string{
 		"Accept":            {"application/json"},
-		"Impersonate-User":  {user.Username},
+		"Impersonate-User":  {ImpersonationUser(user)},
 		"Impersonate-Group": ImpersonationGroups(grant.K8sRole),
 	}
 	if len(body) > 0 {
@@ -464,7 +503,7 @@ func (p *Proxy) Watch(
 		Path:               path,
 		Namespace:          parsed.Namespace,
 		Resource:           parsed.Resource,
-		ImpersonatedUser:   user.Username,
+		ImpersonatedUser:   ImpersonationUser(user),
 		ImpersonatedGroups: ImpersonationGroups(grant.K8sRole),
 	}
 
@@ -504,7 +543,7 @@ func (p *Proxy) Watch(
 		Path:   path,
 		Header: map[string][]string{
 			"Accept":            {"application/json"},
-			"Impersonate-User":  {user.Username},
+			"Impersonate-User":  {ImpersonationUser(user)},
 			"Impersonate-Group": ImpersonationGroups(grant.K8sRole),
 		},
 	})
@@ -708,13 +747,13 @@ func forwardHeaders(src http.Header, user *db.User, grant db.UserClusterAccess) 
 		}
 		if slices.ContainsFunc(impersonationHeaders, func(h string) bool {
 			return strings.EqualFold(h, name)
-		}) {
+		}) || isImpersonateExtra(name) {
 			continue
 		}
 		out[http.CanonicalHeaderKey(name)] = slices.Clone(values)
 	}
 
-	out["Impersonate-User"] = []string{user.Username}
+	out["Impersonate-User"] = []string{ImpersonationUser(user)}
 	out["Impersonate-Group"] = ImpersonationGroups(grant.K8sRole)
 	return out
 }

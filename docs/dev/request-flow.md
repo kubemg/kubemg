@@ -70,7 +70,9 @@ The steps that matter:
    stripped** before kubemg's own are set, so nothing a caller sends can
    widen what it is impersonated as.
 6. **Impersonation, not a stored credential.** The proxy sets
-   `Impersonate-User` to the caller's own username and `Impersonate-Group` to
+   `Impersonate-User` to the caller's own username behind the `kubemg:u:`
+   prefix (`bastion.ImpersonationUser`, the one function every writer of the
+   header reads) and `Impersonate-Group` to
    `kubemg:<role>` plus `kubemg:users`. The agent forwards the call to the
    local API server exactly as received; **the cluster's own RBAC makes the
    authorization decision**, not kubemg.

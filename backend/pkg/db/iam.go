@@ -39,6 +39,9 @@ type UserUpdate struct {
 func (s *Store) UpdateUser(ctx context.Context, id uint, update UserUpdate) (*User, error) {
 	fields := map[string]any{}
 	if update.Username != nil {
+		if err := CheckUsername(*update.Username); err != nil {
+			return nil, err
+		}
 		fields["username"] = *update.Username
 	}
 	if update.Email != nil {

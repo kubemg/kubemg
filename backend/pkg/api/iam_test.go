@@ -556,3 +556,46 @@ func TestPermissionRoutesRequireAdmin(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
 	}
 }
+
+// A username becomes the impersonated identity's suffix on every cluster, so a
+// name Kubernetes reads as one of its own identities is refused at the door —
+// on create and on rename, with the rule stated rather than a bare 400.
+func TestUsernamesKubernetesReadsAsItsOwnAreRefused(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	target := env.store.addUser("ada", "pw", db.RoleUser)
+
+	for _, name := range []string{
+		"system:serviceaccount:kube-system:backup-operator",
+		"system:masters",
+		"kubemg:shell-runner",
+		"ada\nsystem:masters",
+	} {
+		payload := validUserPayload()
+		payload["username"] = name
+		rec := env.do(t, http.MethodPost, "/api/v1/users", env.tokenFor(t, admin), payload)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("create %q: expected status %d, got %d (%s)", name, http.StatusBadRequest, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "':'") {
+			t.Fatalf("create %q: the refusal should state the rule, got %s", name, rec.Body.String())
+		}
+
+		rec = env.do(t, http.MethodPut, "/api/v1/users/"+itoa(target.ID), env.tokenFor(t, admin),
+			map[string]any{"username": name})
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("rename to %q: expected status %d, got %d (%s)", name, http.StatusBadRequest, rec.Code, rec.Body.String())
+		}
+	}
+	if got := env.store.users[target.ID].Username; got != "ada" {
+		t.Fatalf("a refused rename must not land, username is now %q", got)
+	}
+
+	// An email-shaped name is the common federated case and stays allowed.
+	payload := validUserPayload()
+	payload["username"] = "ada.lovelace@example.com"
+	rec := env.do(t, http.MethodPost, "/api/v1/users", env.tokenFor(t, admin), payload)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("an email-shaped username should be accepted, got %d (%s)", rec.Code, rec.Body.String())
+	}
+}

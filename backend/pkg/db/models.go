@@ -383,7 +383,9 @@ type AuditEvent struct {
 
 	// The identity KubeMG asserted to the API server. This is the crux of the
 	// record: it ties a KubeMG account to the Kubernetes subject that acted.
-	ImpersonatedUser   string `gorm:"size:120" json:"impersonated_user,omitempty"`
+	// Wider than Username because the asserted identity carries a prefix
+	// (`kubemg:u:`) on top of a name that may already use all 120.
+	ImpersonatedUser   string `gorm:"size:190" json:"impersonated_user,omitempty"`
 	ImpersonatedGroups string `gorm:"type:text" json:"impersonated_groups,omitempty"`
 
 	Status     int   `gorm:"index" json:"status"`

@@ -407,7 +407,7 @@ func (s *server) recordMachineTokenEvent(
 	// same column a proxied call fills, which is what lets an auditor follow one
 	// name from "who was given this" through to every call it then made.
 	if account != nil {
-		event.ImpersonatedUser = account.Username
+		event.ImpersonatedUser = bastion.ImpersonationUser(account)
 	}
 	if cluster != nil {
 		event.Cluster = cluster.Name

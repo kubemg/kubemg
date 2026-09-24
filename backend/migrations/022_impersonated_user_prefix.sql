@@ -1,0 +1,15 @@
+-- 022 — room for the prefixed impersonated identity.
+--
+-- Reference DDL. The schema is applied by db.Migrate (AutoMigrate); this file
+-- exists because on an on-prem install the database is often owned by a DBA who
+-- will not read struct tags and may pre-apply a change under change control.
+-- Every statement is idempotent. If this and the Go code disagree, the Go code
+-- is what ran.
+--
+-- A KubeMG account is now impersonated as `kubemg:u:<username>` rather than as
+-- the bare username, so no name an account can take is also the name of a
+-- ServiceAccount or a `system:` identity the cluster already trusts. Usernames
+-- may be 120 characters; the recorded identity is that plus the prefix, so the
+-- column widens to 190. Widening a VARCHAR only rewrites catalogue metadata in
+-- PostgreSQL; rows written before the upgrade keep the bare name they had.
+ALTER TABLE audit_events ALTER COLUMN impersonated_user TYPE VARCHAR(190);

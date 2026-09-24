@@ -29,7 +29,7 @@ strictly larger blast radius if that database is ever read.
 ## Impersonation instead of per-user service accounts
 
 The proxy never creates or manages a Kubernetes credential per user. Every
-call is forwarded with `Impersonate-User: <username>` and
+call is forwarded with `Impersonate-User: kubemg:u:<username>` and
 `Impersonate-Group: kubemg:<role>, kubemg:users`, and the cluster's own RBAC
 — through the `kubemg:view`/`kubemg:edit`/`kubemg:cluster-admin`
 ClusterRoleBindings the agent manifests install — decides what that identity
@@ -38,6 +38,12 @@ because kubemg remembered to check on every code path. Client-supplied
 `Authorization` and `Impersonate-*` headers on the incoming request are
 stripped before kubemg's own are set, so nothing a caller sends can widen
 what it is impersonated as.
+
+The `kubemg:u:` prefix is what stops a *username* from widening it instead: an
+account named like a ServiceAccount or a `system:` identity would otherwise be
+that identity to the cluster. Usernames containing `:` are refused, and the
+agent may impersonate only kubemg's own four groups and no ServiceAccount — see
+[Why the username is prefixed](../access/model.md#why-the-username-is-prefixed).
 
 ## The confined proxy-scoped JWT
 
