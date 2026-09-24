@@ -1,4 +1,4 @@
--- 022 — Single-use agent install downloads.
+-- 023 — Single-use agent install downloads.
 --
 -- Reference DDL. The schema is applied by db.Migrate (AutoMigrate); this file
 -- exists because on an on-prem install the database is often owned by a DBA who
