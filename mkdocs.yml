@@ -94,6 +94,7 @@ nav:
       - Introduction:
           - What kubemg is: introduction/overview.md
           - Security model: introduction/security-model.md
+          - Threat model: introduction/threat-model.md
       - Getting started:
           - Quickstart: getting-started/quickstart.md
           - Attach your first cluster: getting-started/first-cluster.md
