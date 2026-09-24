@@ -156,6 +156,26 @@ What that means for an upgrade:
   `agent-displaced` in the audit trail — expect one record per cluster on
   every agent rollout, including this upgrade's re-apply.
 
+## Credentials encrypted at rest
+
+This release can encrypt the credentials stored in the database. Nothing
+changes until you set `KUBEMG_SECRET_KEY`; the server then logs a warning at
+every boot and the posture page flags it. To turn it on:
+
+1. Generate a key (`openssl rand -base64 32`) and store it somewhere that is
+   backed up **separately** from the database.
+2. Set `KUBEMG_SECRET_KEY` and restart. The first boot encrypts every stored
+   credential in place; restarts after that find nothing left to do.
+3. Attached agents reconnect with their unchanged tokens — nothing needs
+   re-applying, and sessions and kubeconfigs stay valid.
+
+**Rolling back to a release without this change after the key was set does
+not work**: the older server would read the ciphertext as the credentials
+themselves. Roll back the database from a backup taken before the upgrade,
+or stay on this release. And from now on, a server started with a different
+key — or none — over an encrypted database refuses to boot; see
+[Database](database.md#credentials-encrypted-at-rest).
+
 ## Rollback
 
 There is no destructive migration to roll back — `AutoMigrate` only adds

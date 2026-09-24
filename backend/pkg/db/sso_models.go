@@ -81,7 +81,7 @@ type SSOProviderConfig struct {
 	// operator pastes the issuer URL and KubeMG reads its well-known document.
 	IssuerURL    string `gorm:"size:512" json:"issuer_url,omitempty"`
 	ClientID     string `gorm:"size:255" json:"client_id,omitempty"`
-	ClientSecret string `gorm:"type:text" json:"-"`
+	ClientSecret string `gorm:"type:text;serializer:secret" json:"-"`
 	// Scopes is the space-separated set requested on top of "openid". Directories
 	// disagree about where groups live, so this is configurable.
 	Scopes string `gorm:"size:255" json:"scopes,omitempty"`
@@ -107,7 +107,7 @@ type SSOProviderConfig struct {
 	// The service account KubeMG searches as. A directory that allows anonymous
 	// search can leave it empty.
 	LDAPBindDN       string `gorm:"column:ldap_bind_dn;size:512" json:"ldap_bind_dn,omitempty"`
-	LDAPBindPassword string `gorm:"column:ldap_bind_password;type:text" json:"-"`
+	LDAPBindPassword string `gorm:"column:ldap_bind_password;type:text;serializer:secret" json:"-"`
 	LDAPBaseDN       string `gorm:"column:ldap_base_dn;size:512" json:"ldap_base_dn,omitempty"`
 	// LDAPUserFilter locates the account being signed in. "%s" is replaced with
 	// the escaped username; a filter without it is ANDed with the username

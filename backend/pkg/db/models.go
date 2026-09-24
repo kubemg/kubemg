@@ -303,7 +303,7 @@ type Cluster struct {
 	Description         string `gorm:"type:text" json:"description,omitempty"`
 	APIURL              string `gorm:"column:api_url;size:255" json:"api_url"`
 	CACertData          string `gorm:"column:ca_cert_data;type:text" json:"-"`
-	ServiceAccountToken string `gorm:"column:service_account_token;type:text" json:"-"`
+	ServiceAccountToken string `gorm:"column:service_account_token;type:text;serializer:secret" json:"-"`
 	Status              string `gorm:"size:20;not null;default:pending" json:"status"`
 	// StatusMessage explains a non-healthy status, so operators do not have to
 	// guess why a cluster is unreachable.
@@ -318,7 +318,17 @@ type Cluster struct {
 	// AgentToken is the registration secret the in-cluster agent presents when
 	// it dials the bastion. It is the only credential the agent ever holds, so
 	// it is treated like the service account token: stored, never serialized.
-	AgentToken string `gorm:"column:agent_token;size:120;index" json:"-"`
+	//
+	// It is encrypted at rest, not hashed, although the handshake only ever
+	// verifies it: the install sheet re-renders the agent package from it
+	// without rotating the tunnel credential, so the value has to be readable
+	// back. The handshake finds the row by AgentTokenHash and then compares the
+	// decrypted token in constant time.
+	AgentToken string `gorm:"column:agent_token;type:text;serializer:secret" json:"-"`
+	// AgentTokenHash is the SHA-256 of AgentToken (HashAgentToken): the lookup
+	// key a tunnel handshake is resolved by, since ciphertext under a random
+	// nonce cannot be searched for. Kept in step on every write of the token.
+	AgentTokenHash string `gorm:"column:agent_token_hash;size:64;index" json:"-"`
 	// AgentVersion is what the agent reported in its last handshake.
 	AgentVersion string `gorm:"size:40" json:"agent_version,omitempty"`
 	// AgentConnectedAt is when the current tunnel was established. It is cleared

@@ -10,7 +10,7 @@ picture that motivates them.
 
 | Held by | What | Notes |
 | --- | --- | --- |
-| kubemg's Postgres | Users, groups, grants, cluster registrations, settings, audit records, session-recording metadata | Direct-mode clusters additionally have their `service_account_token` here — a real, standing cluster credential. Agent-mode clusters have only a registration token. |
+| kubemg's Postgres | Users, groups, grants, cluster registrations, settings, audit records, session-recording metadata | Direct-mode clusters additionally have their `service_account_token` here — a real, standing cluster credential. Agent-mode clusters have only a registration token. Every stored credential — these, the generated signing key, and datasource, Helm, alarm and SSO secrets — is encrypted under `KUBEMG_SECRET_KEY` when one is set; see [the database is the crown jewel](#the-database-is-the-crown-jewel). |
 | A generated kubeconfig (agent mode) | A kubemg-issued JWT scoped to one cluster's proxy route, plus the bastion's CA if it is self-signed | Never a cluster-native credential. |
 | A generated kubeconfig (direct mode) | A short-lived token minted straight from the target cluster's own TokenRequest API | A real cluster credential, on a laptop. |
 | A machine account | A `kmgm_`-prefixed opaque secret; only its SHA-256 hash is stored | Revocation is a database write, effective on the token's next use — not a wait for expiry. |
@@ -26,6 +26,21 @@ holding a Kubernetes service account token, and it only ever uses it to talk
 to its own local API server. Compare direct mode, where kubemg stores a real
 service account token for the target cluster in its own database — a
 strictly larger blast radius if that database is ever read.
+
+## The database is the crown jewel
+
+The generated signing key signs every session and every agent-mode
+kubeconfig, so anyone who can read it can mint a super-admin token — and,
+through the tunnel, that is cluster-admin on every agent-mode cluster. The
+agent registration tokens beside it are every agent's identity. With
+`KUBEMG_SECRET_KEY` set, both, and every other stored credential, are
+AES-256-GCM ciphertext under a key that lives in the server's environment,
+not in the database: a stolen dump, replica or backup is no longer the keys
+to the fleet on its own. The server refuses to start over ciphertext it
+cannot open rather than guess. Setting `JWT_SECRET` as well keeps the signing
+key out of the database entirely. What is encrypted, and what losing the key
+costs, is on the [Database](../install/database.md#credentials-encrypted-at-rest)
+page.
 
 ## The agent's registration token
 

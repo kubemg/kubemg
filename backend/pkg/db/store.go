@@ -185,7 +185,10 @@ func (s *Store) ClusterByAgentToken(ctx context.Context, token string) (*Cluster
 	}
 
 	var cluster Cluster
-	err := s.gdb.WithContext(ctx).Where("agent_token = ?", token).First(&cluster).Error
+	// Found by the token's hash, because the stored token is ciphertext under a
+	// random nonce; the caller then compares the decrypted token in constant
+	// time (bastion.SameToken), so a hash collision alone admits nothing.
+	err := s.gdb.WithContext(ctx).Where("agent_token_hash = ?", HashAgentToken(token)).First(&cluster).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotFound
 	}
@@ -197,6 +200,7 @@ func (s *Store) ClusterByAgentToken(ctx context.Context, token string) (*Cluster
 
 // CreateCluster registers a new target cluster.
 func (s *Store) CreateCluster(ctx context.Context, cluster *Cluster) error {
+	cluster.AgentTokenHash = HashAgentToken(cluster.AgentToken)
 	if err := s.gdb.WithContext(ctx).Create(cluster).Error; err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			return ErrConflict

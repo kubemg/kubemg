@@ -26,6 +26,16 @@ read the full detail.
       session and kubeconfig at once, by rotating it yourself. See
       [Choosing a deployment](index.md#sizing-and-high-availability).
 
+- [ ] **`KUBEMG_SECRET_KEY` generated per install**, and backed up
+      separately from the database. Without it, a copy of the database —
+      a backup, a replica, a support bundle — holds the session signing key
+      and every agent's tunnel credential in the clear, which is super-admin
+      on the console and cluster-admin through every tunnel. With it, that
+      copy is useless alone; but a restored database will not boot without
+      the key either, so it is now as important as the backup itself. Set
+      `JWT_SECRET` too, so the signing key is not stored in the database at
+      all. See [Database](database.md#credentials-encrypted-at-rest).
+
 - [ ] **`KUBEMG_SESSION_RECORDING_KEY` generated per install**, and kept
       *out of* whatever backs up the recordings volume. Every interactive
       `exec`/`attach` session is recorded for replay, and what a recording

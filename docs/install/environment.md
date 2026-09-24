@@ -53,6 +53,7 @@ See [Database](database.md) for AutoMigrate behavior and the reference DDL.
 |---|---|---|
 | `JWT_SECRET` | generated, kept in the database | Signs sessions, generated kubeconfigs and JIT approval callback tokens. Unset, the server mints a 32-byte random key on first boot and stores it with a conflict-safe insert, so several replicas booting at once converge on the same key rather than racing. Set it explicitly to supply your own key, or to be able to rotate it deliberately — which invalidates every issued token at once. |
 | `JWT_TTL` | `12h` | Session token lifetime. |
+| `KUBEMG_SECRET_KEY` | — | 32 bytes, hex or base64 (`openssl rand -base64 32`). Encrypts the credentials stored in the database — the generated signing key, agent tunnel tokens, direct-mode ServiceAccount tokens, and datasource, Helm repository, alarm channel and SSO credentials — with AES-256-GCM. Unset, they are stored in plaintext and the server warns at boot. With a key set, every plaintext value is encrypted in place on the next boot. A key that is not exactly 32 bytes **refuses to boot**; so does a database holding values encrypted under a different key, or under a key that has since been removed. **Back it up separately from the database** — see [Database](database.md#credentials-encrypted-at-rest). |
 | `KUBEMG_ADMIN_USERNAME` | `admin` | Bootstrap administrator's username, created only when the users table is empty. |
 | `KUBEMG_ADMIN_PASSWORD` | generated, printed once to the log | Bootstrap administrator's password. Left unset, a random 20-character password (drawn from an alphabet with no visually-ambiguous characters) is generated and logged exactly once. Setup will not let you finish until it's changed either way. |
 | `KUBEMG_SA_NAMESPACE` | `kubemg-system` | The namespace on a **direct-mode** target cluster that holds the per-user service accounts kubemg's TokenRequest calls create. Irrelevant to agent-mode clusters. |
@@ -132,6 +133,7 @@ For the Docker Compose deployment at `deploy/compose/` (see
 # --- credentials --------------------------------------------------------
 DB_PASSWORD=CHANGE_ME                         # openssl rand -base64 24
 JWT_SECRET=CHANGE_ME                          # openssl rand -base64 48 — required if >1 replica
+KUBEMG_SECRET_KEY=CHANGE_ME                   # openssl rand -base64 32 — back up separately from the database
 KUBEMG_ADMIN_USERNAME=admin
 KUBEMG_ADMIN_PASSWORD=                        # leave empty: generated + logged once on first boot
 

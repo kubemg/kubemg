@@ -66,7 +66,7 @@ backend/            Go server: Gin + GORM + PostgreSQL 16
   pkg/apptemplate/    manifest bundles with declared parameters
   pkg/shell/          the browser shell's pod lifecycle
   pkg/agentpkg/       renders the agent install package (embedded manifests)
-  pkg/cache/ certs/ config/ credentials/ cronsched/ objdiff/
+  pkg/cache/ certs/ config/ credentials/ cronsched/ objdiff/ secretbox/
   pkg/webui/          the built console, embedded and served on NoRoute
   migrations/         reference DDL only — nothing executes it
 frontend/           Vite + React + TypeScript + Tailwind v4

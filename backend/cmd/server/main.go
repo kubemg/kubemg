@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -14,6 +15,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"gorm.io/gorm"
 
 	"github.com/kubemg/kubemg/backend/pkg/api"
 	"github.com/kubemg/kubemg/backend/pkg/auditforward"
@@ -29,6 +32,7 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
 	"github.com/kubemg/kubemg/backend/pkg/metrics"
 	"github.com/kubemg/kubemg/backend/pkg/observability"
+	"github.com/kubemg/kubemg/backend/pkg/secretbox"
 	"github.com/kubemg/kubemg/backend/pkg/terminal"
 	"github.com/kubemg/kubemg/backend/pkg/webui"
 )
@@ -43,12 +47,25 @@ func main() {
 	cfg := config.Load()
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
+	// The credential key is settled before the database is touched: a key that
+	// is set but malformed is an operator who believes the credentials are
+	// encrypted, and a server that quietly stored them in the clear instead
+	// would be worse than one that refuses to start.
+	secretKey, err := secretbox.Parse(cfg.SecretKey)
+	if err != nil {
+		log.Fatalf("KUBEMG_SECRET_KEY is unusable: %v", err)
+	}
+	db.UseSecretBox(secretKey)
+
 	gdb, err := db.Open(cfg.DB)
 	if err != nil {
 		log.Fatalf("database connection failed: %v", err)
 	}
 	if err := db.Migrate(gdb); err != nil {
 		log.Fatalf("database migration failed: %v", err)
+	}
+	if err := sealStoredSecrets(context.Background(), gdb, secretKey, logger); err != nil {
+		log.Fatalf("%v", err)
 	}
 
 	var met *metrics.Metrics
@@ -260,6 +277,7 @@ func main() {
 		// rather than pretend to own. See api.Deployment.
 		Deployment: api.Deployment{
 			SigningKeyFromEnv: strings.TrimSpace(cfg.JWTSecret) != "",
+			SecretKeySet:      secretKey.Enabled(),
 			TLSEnabled:        cfg.TLS.Enabled,
 			TLSSelfSigned:     tlsMaterial.selfSigned,
 			TLSCertFile:       tlsMaterial.certFile,
@@ -318,6 +336,37 @@ func main() {
 	if err := router.Run(cfg.ListenAddr); err != nil {
 		log.Fatalf("server exited: %v", err)
 	}
+}
+
+// sealStoredSecrets checks every stored credential against the configured key
+// and encrypts, in place, whatever is still in the clear. It refuses to let the
+// server start over ciphertext it cannot open — encrypted under another key, or
+// with the key removed — because every path past this point would otherwise
+// fail one credential at a time, far from the cause.
+func sealStoredSecrets(ctx context.Context, gdb *gorm.DB, box *secretbox.Box, logger *slog.Logger) error {
+	report, err := db.MigrateSecrets(ctx, db.NewSecretRows(gdb), box)
+	if err != nil {
+		if errors.Is(err, db.ErrSecretKeyMismatch) {
+			return fmt.Errorf("refusing to start: %v. The database holds credentials encrypted under a "+
+				"KUBEMG_SECRET_KEY this server does not have. Restore the key the database was "+
+				"encrypted with; a different or missing key cannot read them, and nothing here will "+
+				"treat ciphertext as a credential", err)
+		}
+		return fmt.Errorf("stored credential migration failed: %v", err)
+	}
+	if !box.Enabled() {
+		// Loud, once, at boot: a copy of this database is the signing key for every
+		// session and the tunnel credential of every agent.
+		logger.Warn("credentials are stored in the database unencrypted; "+
+			"a copy of the database is the session signing key and every agent's tunnel credential",
+			slog.Int("plaintext_values", report.Plaintext),
+			slog.String("fix", "set KUBEMG_SECRET_KEY (openssl rand -base64 32) and keep it with your backups, not in them"))
+		return nil
+	}
+	logger.Info("stored credentials are encrypted at rest",
+		slog.Int("encrypted_now", report.Sealed),
+		slog.Int("already_encrypted", report.Encrypted))
+	return nil
 }
 
 // isLoopbackAddr reports whether a listen address (as passed to

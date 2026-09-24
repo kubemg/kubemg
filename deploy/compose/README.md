@@ -99,6 +99,11 @@ are written in plaintext — the server warns about this at boot. Keep the key
 somewhere other than this host; a key stored beside the ciphertext protects
 nobody.
 
+Set `KUBEMG_SECRET_KEY` too: it encrypts the credentials KubeMG keeps in
+`postgres-data` (the session signing key, every agent's tunnel token, stored
+passwords). It is now as important as the database backup — a restored database
+does not start without the key it was encrypted with — so back it up, separately.
+
 ## Using a real certificate
 
 Copy it into the `ssl` directory next to `docker-compose.yml` and restart. There

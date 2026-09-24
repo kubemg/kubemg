@@ -143,7 +143,7 @@ type ObservabilitySource struct {
 	AuthMode string `gorm:"size:20;not null;default:none" json:"auth_mode"`
 	Username string `gorm:"size:190" json:"username,omitempty"`
 	// Credential is the bearer token or the basic-auth password.
-	Credential string `gorm:"type:text" json:"-"`
+	Credential string `gorm:"type:text;serializer:secret" json:"-"`
 
 	// InsecureSkipVerify applies to direct mode only; an in-cluster call rides
 	// the tunnel and never terminates TLS here.
