@@ -17,15 +17,25 @@ picture that motivates them.
 | The agent | Its cluster registration token (`kmg_`-prefixed) and, if the bastion is self-signed, the bastion's CA certificate | Nothing else; it holds no session, no user identity, no long-lived cluster credential of its own beyond the service account it already runs as. |
 | An install URL | A `kmgi_`-prefixed single-use download ticket; only its SHA-256 hash is stored | Spent by the first download, expired after 15 minutes unused. It is **not** the registration token — the package it downloads is what carries that. |
 
-## Agent mode stores no cluster credential
+## Agent mode stores no Kubernetes credential — and what that does not mean
 
 In agent mode, kubemg's database holds only the registration token the agent
-presented when it dialled in — nothing that would let kubemg (or anyone who
-stole kubemg's database) reach the cluster directly. The agent is the one
-holding a Kubernetes service account token, and it only ever uses it to talk
-to its own local API server. Compare direct mode, where kubemg stores a real
+presents when it dials in — no Kubernetes credential that would let anyone
+who stole the database call the cluster's API server directly. The agent is
+the one holding a service account token, and it only ever uses it to talk to
+its own local API server. Compare direct mode, where kubemg stores a real
 service account token for the target cluster in its own database — a
 strictly larger blast radius if that database is ever read.
+
+That is true, and on its own it is misleading. The agent's service account
+may **impersonate**, and the agent forwards whatever the bastion sends. Its
+grant is narrowed to kubemg's own four groups, so it cannot claim
+`system:masters` by name — but one of those groups is bound to
+`cluster-admin`, and the user name it asserts can be any name. **The bastion
+plus the tunnel is, in effect, `system:masters` on every agent-mode
+cluster.** That is the same trust model as any central access product with
+an in-cluster agent; the [threat model](threat-model.md) says what bounds it,
+and what each other leaked part reaches.
 
 ## The database is the crown jewel
 
@@ -216,21 +226,25 @@ the account holds no grant on, and against any namespace outside that grant.
 
 ### A compromised agent
 
-The agent holds no cluster-admin credential of its
-own beyond whatever service account it runs as, and that service account's
-ClusterRole grants exactly one privilege: `impersonate` on users and groups.
-It makes no authorization decisions — a compromised agent can forward
-whatever the bastion sends it, but the bastion only sends what a caller's
-grant, namespace scope and guardrails already allowed, and the *cluster's*
-RBAC is still the one deciding what the impersonated identity may do once
-the call lands.
+An attacker running code as the agent holds its service account, and so its
+impersonation grant. The grant is named group by group — it cannot claim
+`system:masters` or impersonate a ServiceAccount — but it includes
+`kubemg:cluster-admin`, which the install binds to `cluster-admin`. Treat a
+compromised agent as cluster-admin **on that one cluster**. It reaches no
+other cluster, no other agent and nothing in kubemg's database.
 
 ### A compromised bastion
 
-This is the highest-value target, by design and
-without disguising it: the bastion holds every grant, mints every
-impersonation header, and terminates the tunnel every agent trusts. A
-compromise here is a compromise of the fleet's access model, which is why
-the manual's install guidance treats the bastion's own host, database and
-TLS material as the thing to harden hardest — see the
+This is the highest-value target, by design and without disguising it: the
+bastion holds every grant, mints every impersonation header, and terminates
+the tunnel every agent trusts — in effect `system:masters` on every
+agent-mode cluster. Nothing inside a cluster bounds it; what does is outside
+it — records already [forwarded off the host](../audit/forwarding.md), the
+cluster's own API server audit log, and removing the agent. That is why the
+manual's install guidance treats the bastion's own host, database and TLS
+material as the thing to harden hardest — see the
 [production checklist](../install/production-checklist.md).
+
+The [threat model](threat-model.md) takes each of these scenarios, and a
+leaked install URL and a renamed identity-provider account besides, from
+the incident's side.
