@@ -140,7 +140,7 @@ Six ClusterRoles/ClusterRoleBindings, in `deploy/kustomize/base/rbac.yaml`:
 
 | Object | What it grants | Bound to |
 |---|---|---|
-| `kubemg-agent-impersonator` | `impersonate` on `users`/`groups`/`serviceaccounts`; `get` on `/version` | the agent's own ServiceAccount |
+| `kubemg-agent-impersonator` | `impersonate` on `users`, and on the four groups `kubemg:view`/`kubemg:edit`/`kubemg:cluster-admin`/`kubemg:users` only; `get` on `/version` | the agent's own ServiceAccount |
 | `kubemg-view` → built-in `view` | read-only cluster access | group `kubemg:view` |
 | `kubemg-edit` → built-in `edit` | read/write, no RBAC/quota | group `kubemg:edit` |
 | `kubemg-cluster-admin` → built-in `cluster-admin` | full control | group `kubemg:cluster-admin` |
@@ -153,6 +153,14 @@ The agent itself holds almost nothing — its only privilege is the right to
 *impersonate*. What an impersonated caller may actually do is decided by these
 bindings and by the cluster's own RBAC, never by a standing grant the agent
 holds over your workloads.
+
+The impersonation grant is as narrow as Kubernetes lets it be. Groups are
+named one by one, so the agent cannot be made to claim `system:masters` or any
+group your cluster already trusts, and ServiceAccounts are absent entirely.
+Users cannot be listed the same way — `resourceNames` has no prefix match and
+usernames are not known in advance — so kubemg impersonates every account as
+`kubemg:u:<username>`, which no ServiceAccount or `system:` identity can be.
+See [Why the username is prefixed](../access/model.md#why-the-username-is-prefixed).
 
 **Why CRD discovery and the custom-resource ClusterRoles exist as extras**:
 the built-in `view`/`edit`/`cluster-admin` roles cover only the API groups

@@ -137,7 +137,7 @@ sequenceDiagram
     Note over B: strips client Authorization<br/>and Impersonate-* headers
     B->>B: audit record (open)
     B->>A: over the existing outbound tunnel
-    A->>K: Impersonate-User: dev@corp<br/>Impersonate-Group: kubemg:view
+    A->>K: Impersonate-User: kubemg:u:dev@corp<br/>Impersonate-Group: kubemg:view
     K-->>A: RBAC decides — allow / deny
     A-->>B: response
     B->>B: audit record (close: status, bytes, duration)

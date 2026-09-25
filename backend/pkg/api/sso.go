@@ -464,7 +464,8 @@ func (s *server) completeSSOLogin(
 // deliberate answers rather than failures, so none of them is a 500.
 func ssoStatusFor(err error) int {
 	switch {
-	case errors.Is(err, db.ErrSSONoAccount), errors.Is(err, db.ErrSSOAccountDisabled):
+	case errors.Is(err, db.ErrSSONoAccount), errors.Is(err, db.ErrSSOAccountDisabled),
+		errors.Is(err, db.ErrSSOUnsafeUsername):
 		return http.StatusForbidden
 	case errors.Is(err, db.ErrSSOAccountConflict):
 		return http.StatusConflict

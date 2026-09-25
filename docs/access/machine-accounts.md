@@ -9,7 +9,7 @@ A machine account is an ordinary user row with its account type set to `machine`
 - **It holds no password**, and login refuses it the same way a federated account is refused — as an unknown username, so accounts cannot be enumerated by probing `/auth/login`. See [Single sign-on: account enumeration](sso.md#account-enumeration).
 - **It is pinned to the `user` system role.** A row edited by hand in the database cannot smuggle admin access onto a credential that lives in a CI secret store.
 
-The name is validated more strictly than a person's username, because it is sent to the target cluster as `Impersonate-User` and has to be something a Kubernetes RoleBinding can name and an operator reading `kubectl auth can-i --as` output recognizes:
+The name is validated more strictly than a person's username, because it is sent to the target cluster as `Impersonate-User` — as `kubemg:u:<name>`, like every account (see [Why the username is prefixed](model.md#why-the-username-is-prefixed)) — and has to be something a Kubernetes RoleBinding can name and an operator reading `kubectl auth can-i --as` output recognizes:
 
 ```
 ^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$

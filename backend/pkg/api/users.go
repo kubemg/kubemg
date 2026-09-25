@@ -110,6 +110,13 @@ func (s *server) createUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "username is required"})
 		return
 	}
+	// A username is the impersonated identity's suffix on every cluster. The
+	// store refuses an unsafe one too; saying so here keeps it a 400 rather than
+	// a failed write.
+	if err := db.CheckUsername(username); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if len(req.Password) < minPasswordLength {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "password must be at least 8 characters",
@@ -183,6 +190,10 @@ func (s *server) updateUser(c *gin.Context) {
 		username := strings.TrimSpace(*req.Username)
 		if username == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "username cannot be empty"})
+			return
+		}
+		if err := db.CheckUsername(username); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		update.Username = &username

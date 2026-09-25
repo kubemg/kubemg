@@ -104,6 +104,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("admin bootstrap failed: %v", err)
 	}
+	reportUnsafeUsernames(boot, store, logger)
 	// Whether this database has ever been offered the wizard — which is not the
 	// same question as whether it has users. See api.ResolveSetupStamp.
 	if err := api.ResolveSetupStamp(boot, store, seeded, 0); err != nil {
@@ -617,6 +618,24 @@ func resolveSigningKey(
 		slog.String("source", "database"),
 		slog.String("note", "set JWT_SECRET to supply your own; it takes precedence"))
 	return key, nil
+}
+
+// reportUnsafeUsernames names the accounts stored before usernames were
+// checked whose name a colon or a control character now disqualifies. Each is
+// harmless on the wire — the gateway prefixes every impersonated user — but an
+// administrator should rename it, and nothing else would ever say so.
+func reportUnsafeUsernames(ctx context.Context, store *db.Store, logger *slog.Logger) {
+	names, err := store.UnsafeUsernames(ctx)
+	if err != nil {
+		logger.Warn("could not check stored usernames", slog.String("error", err.Error()))
+		return
+	}
+	if len(names) == 0 {
+		return
+	}
+	logger.Warn("accounts carry a username new accounts may no longer take; rename them in the user editor",
+		slog.Any("usernames", names),
+		slog.String("rule", "no ':' and no control characters"))
 }
 
 // seedAdmin creates the bootstrap admin account on a fresh database so the

@@ -11,6 +11,7 @@ import {
 } from '../api/client'
 import type { SSOProtocol, SSOProvider, SSOProviderInput } from '../api/types'
 import { GroupMappingEditor } from './GroupMappingEditor'
+import { usernameClaimIsEditable } from '../lib/sso'
 import {
   Button,
   EmptyState,
@@ -817,6 +818,19 @@ function ProviderSheet({
             />
           </Field>
         </div>
+      ) : null}
+      {usernameClaimIsEditable(draft.protocol, draft.username_claim) ? (
+        <Notice tone="warn">
+          {draft.username_claim.trim() ? (
+            <span className="font-mono">{draft.username_claim.trim()}</span>
+          ) : (
+            'The default username claim'
+          )}{' '}
+          is one many providers let a person edit. The first sign-in makes it the account's name for good, and a
+          person who renames themselves at the provider to somebody else's name is refused rather than let in —
+          but only once that account has signed in and recorded its provider ID. Use{' '}
+          <span className="font-mono">sub</span> or an attribute only a directory administrator writes.
+        </Notice>
       ) : null}
 
       <Toggle

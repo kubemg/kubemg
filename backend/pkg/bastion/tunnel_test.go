@@ -498,7 +498,7 @@ func TestProxyForwardsWithImpersonation(t *testing.T) {
 	if seen[0].Path != "/api/v1/namespaces/team-a/pods" {
 		t.Fatalf("the API path was not preserved: %q", seen[0].Path)
 	}
-	if got := seen[0].Header["Impersonate-User"]; len(got) != 1 || got[0] != "devops" {
+	if got := seen[0].Header["Impersonate-User"]; len(got) != 1 || got[0] != "kubemg:u:devops" {
 		t.Fatalf("Impersonate-User = %v", got)
 	}
 	groups := seen[0].Header["Impersonate-Group"]
@@ -704,7 +704,7 @@ func TestProxyStreamCarriesImpersonation(t *testing.T) {
 	}
 	// A stream must be identified exactly as a plain call is; anything less
 	// would be a hole in the audit and impersonation story.
-	if got := opens[0].Header["Impersonate-User"]; len(got) != 1 || got[0] != "devops" {
+	if got := opens[0].Header["Impersonate-User"]; len(got) != 1 || got[0] != "kubemg:u:devops" {
 		t.Fatalf("Impersonate-User on the stream = %v", got)
 	}
 	if got := opens[0].Header["Impersonate-Group"]; len(got) == 0 || got[0] != "kubemg:view" {
