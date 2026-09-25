@@ -71,6 +71,11 @@ type Config struct {
 	// Shell is the browser shell: a pod KubeMG runs on a target cluster with a
 	// terminal attached to it.
 	Shell Shell
+	// DebugImage is what an ephemeral debug container runs when a pod has no
+	// shell of its own to exec into. Unlike the shell there is no enable
+	// switch: any grant that can already exec into a pod can ask for one, and
+	// the cluster's own RBAC decides whether the write lands. `KUBEMG_DEBUG_IMAGE`.
+	DebugImage string
 	// AuditRetentionDays is how long proxied calls are kept before the
 	// background pruner drops them. Like the settings above it is only the
 	// boot-time default; an operator overrides it from the Settings page.
@@ -191,6 +196,13 @@ type TLS struct {
 	AgentCABundle string
 }
 
+// defaultDebugImage is what a fresh install offers before an operator points
+// it anywhere else. busybox is small, widely mirrored, and has enough of a
+// shell to poke at a pod's filesystem and process list — exactly what
+// `kubectl debug` reaches for by default. An air-gapped site has no path to
+// Docker Hub, which is precisely why this is a setting and not a constant.
+const defaultDebugImage = "busybox:1.36"
+
 // Load reads configuration from the environment, applying development defaults.
 func Load() Config {
 	return Config{
@@ -215,11 +227,12 @@ func Load() Config {
 		),
 		PublicURL:      strings.TrimRight(env("KUBEMG_PUBLIC_URL", "http://localhost:8080"), "/"),
 		AgentImage:     env("KUBEMG_AGENT_IMAGE", agentpkg.DefaultImage),
-		AgentNamespace:     env("KUBEMG_AGENT_NAMESPACE", agentpkg.DefaultNamespace),
+		AgentNamespace: env("KUBEMG_AGENT_NAMESPACE", agentpkg.DefaultNamespace),
 		Shell: Shell{
 			Enabled: envBool("KUBEMG_SHELL_ENABLED", true),
 			Image:   env("KUBEMG_SHELL_IMAGE", shell.DefaultImage),
 		},
+		DebugImage:         env("KUBEMG_DEBUG_IMAGE", defaultDebugImage),
 		AuditRetentionDays: envInt("KUBEMG_AUDIT_RETENTION_DAYS", 30),
 		ReadCacheTTL:       envDuration("KUBEMG_RESOURCE_CACHE_TTL", cache.DefaultTTL),
 		EventCacheTTL:      envDuration("KUBEMG_EVENT_CACHE_TTL", 30*time.Second),
@@ -247,7 +260,7 @@ func Load() Config {
 			AgentCABundle: env("KUBEMG_AGENT_CA_BUNDLE", ""),
 		},
 		AllowInsecureBind: envBool("KUBEMG_ALLOW_INSECURE", false),
-		MetricsAddr: env("KUBEMG_METRICS_ADDR", ""),
+		MetricsAddr:       env("KUBEMG_METRICS_ADDR", ""),
 	}
 }
 

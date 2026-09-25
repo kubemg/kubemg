@@ -14,6 +14,7 @@ type Draft = {
   shell_image: string
   shell_idle_timeout_minutes: string
   shell_max_lifetime_hours: string
+  debug_image: string
 }
 
 function draftOf(settings: SettingsResponse): Draft {
@@ -26,6 +27,7 @@ function draftOf(settings: SettingsResponse): Draft {
     shell_image: settings.overrides.shell_image,
     shell_idle_timeout_minutes: numberField(settings.overrides.shell_idle_timeout_minutes),
     shell_max_lifetime_hours: numberField(settings.overrides.shell_max_lifetime_hours),
+    debug_image: settings.overrides.debug_image,
   }
 }
 
@@ -46,6 +48,7 @@ export function AgentSettings() {
     shell_image: '',
     shell_idle_timeout_minutes: '',
     shell_max_lifetime_hours: '',
+    debug_image: '',
   })
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -84,6 +87,7 @@ export function AgentSettings() {
         // numeric setting here follows.
         shell_idle_timeout_minutes: Number(draft.shell_idle_timeout_minutes.trim()) || 0,
         shell_max_lifetime_hours: Number(draft.shell_max_lifetime_hours.trim()) || 0,
+        debug_image: draft.debug_image.trim(),
       })
       setSettings(next)
       setDraft(draftOf(next))
@@ -109,7 +113,8 @@ export function AgentSettings() {
       draft.shell_idle_timeout_minutes.trim() !==
         numberField(settings.overrides.shell_idle_timeout_minutes) ||
       draft.shell_max_lifetime_hours.trim() !==
-        numberField(settings.overrides.shell_max_lifetime_hours))
+        numberField(settings.overrides.shell_max_lifetime_hours) ||
+      draft.debug_image.trim() !== settings.overrides.debug_image)
 
   return (
     <SettingsLayout
@@ -137,6 +142,12 @@ export function AgentSettings() {
                   ? 'Every agent-mode cluster, on the next shell somebody opens. Turning it off refuses new shells and leaves the ones already open running — a session somebody is mid-command in is not a setting.'
                   : 'This server was started without a shell image, so a stored value can only ever keep it off.'
               }
+            />
+            <SettingsAside
+              label="Debug image"
+              value={settings.effective.debug_image}
+              source={settingSource(settings.overrides.debug_image, settings.defaults.debug_image)}
+              reach="The next debug container anyone adds to a pod, on any agent-mode cluster. There is no switch to turn the feature off — any grant that can already exec into a pod can already ask for one."
             />
           </>
         ) : null
@@ -280,6 +291,37 @@ export function AgentSettings() {
                   placeholder={String(settings.defaults.shell_max_lifetime_hours)}
                   value={draft.shell_max_lifetime_hours}
                   onChange={(event) => set('shell_max_lifetime_hours', event.target.value)}
+                />
+              </Field>
+            </Panel>
+
+            {/* Its own panel rather than a field on the shell one: a debug
+                container is not the browser shell, has no enable switch of its
+                own, and applies to a cluster's pods rather than to a session
+                KubeMG runs on its behalf. */}
+            <Panel
+              eyebrow="Debug containers"
+              title="The pod that has no shell"
+              bodyClassName="flex flex-col gap-4 p-4"
+            >
+              <p className="text-[12px] leading-snug text-muted">
+                An ephemeral container an operator can add to a running pod, sharing an existing
+                container's process namespace, for exec into an image with no shell of its own —{' '}
+                <code>kubectl debug</code>'s trick. It cannot be removed once added, and any grant
+                that can already exec into a pod can already ask for one.
+              </p>
+
+              <Field
+                label="Debug image"
+                htmlFor="debug_image"
+                hint={`Leave empty for ${settings.defaults.debug_image || "the build's own default"}. An air-gapped site points this at its mirror.`}
+              >
+                <TextInput
+                  id="debug_image"
+                  className="font-mono text-[12.5px]"
+                  placeholder={settings.defaults.debug_image}
+                  value={draft.debug_image}
+                  onChange={(event) => set('debug_image', event.target.value)}
                 />
               </Field>
             </Panel>

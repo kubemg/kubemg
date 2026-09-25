@@ -638,6 +638,20 @@ export interface PodContainer {
   memory_limit_bytes: number
 }
 
+/**
+ * One debug container's state — see DebugContainerSheet, which polls this
+ * after adding one rather than exec'ing in before it can answer. Kubernetes
+ * carries at most one of running/waiting/terminated at a time; `reason` and
+ * `message` come off the waiting state, which is where "still pulling the
+ * image" and "no such image" both show up.
+ */
+export interface EphemeralContainerStatus {
+  name: string
+  running: boolean
+  reason?: string
+  message?: string
+}
+
 export interface Pod {
   name: string
   namespace: string
@@ -649,6 +663,9 @@ export interface Pod {
   restarts: number
   created_at: string
   containers: PodContainer[]
+  /** Every debug container ever added to this pod, in whatever state it is
+      currently in. Always present, empty for a pod with none. */
+  ephemeral_containers: EphemeralContainerStatus[]
 }
 
 /**
@@ -1990,6 +2007,11 @@ export interface RuntimeSettings {
       use by the kubeconfig ceiling — a shell must not outlive the credential
       inside it. */
   shell_max_lifetime_hours: number
+  /** The image an ephemeral debug container runs, for a pod whose own
+      containers have no shell to exec into. Unlike the shell there is no
+      matching enable switch — any grant that can already exec into a pod can
+      already ask for one. */
+  debug_image: string
 }
 
 export interface SettingsResponse {
@@ -2232,6 +2254,21 @@ export interface NodeSchedulableResult {
   name: string
   unschedulable: boolean
   changed: boolean
+  message: string
+}
+
+/**
+ * What the Debug action did: an ephemeral container written onto a pod
+ * that had none of its own to exec into. `container` is the ephemeral
+ * container's own generated name — what a terminal addresses next — never
+ * `target_container`, the existing one whose process namespace it shares.
+ */
+export interface DebugContainerResult {
+  pod: string
+  namespace: string
+  container: string
+  target_container: string
+  image: string
   message: string
 }
 

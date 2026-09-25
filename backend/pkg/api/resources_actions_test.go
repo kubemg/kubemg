@@ -145,6 +145,7 @@ func TestRouterRegistersWorkloadActions(t *testing.T) {
 		"POST /api/v1/clusters/:id/resources/restart",
 		"POST /api/v1/clusters/:id/resources/suspend",
 		"POST /api/v1/clusters/:id/resources/node/schedulable",
+		"POST /api/v1/clusters/:id/resources/pods/debug",
 		// Deleting is the same address as reading and writing the object, which
 		// is the point: it reaches nothing the manifest editor does not.
 		"DELETE /api/v1/clusters/:id/resources/object",

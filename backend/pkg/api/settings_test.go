@@ -130,6 +130,39 @@ func TestClearedSettingFallsBackToTheDefault(t *testing.T) {
 	}
 }
 
+// The debug image is a plain string setting like AgentImage: no separate
+// enable switch, an unset override falls back to the boot default, and
+// clearing a stored override reads as unset rather than as an empty image.
+func TestDebugImageOverrideRoundTripsAndClears(t *testing.T) {
+	env := newTestEnvWith(t, func(o *Options) { o.DebugImage = "busybox:1.36" })
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+
+	body := decode[settingsResponse](t,
+		env.do(t, http.MethodGet, "/api/v1/settings", token, nil))
+	if body.Effective.DebugImage != "busybox:1.36" {
+		t.Fatalf("expected the boot default, got %q", body.Effective.DebugImage)
+	}
+	if body.Overrides.DebugImage != "" {
+		t.Fatalf("expected no stored override, got %q", body.Overrides.DebugImage)
+	}
+
+	rec := env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]string{
+		"debug_image": "registry.internal/debug-tools:1.0",
+	})
+	body = decode[settingsResponse](t, rec)
+	if body.Effective.DebugImage != "registry.internal/debug-tools:1.0" {
+		t.Fatalf("expected the stored override, got %q", body.Effective.DebugImage)
+	}
+
+	rec = env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]string{"debug_image": ""})
+	body = decode[settingsResponse](t, rec)
+	if body.Effective.DebugImage != "busybox:1.36" {
+		t.Fatalf("expected clearing the override to fall back to the boot default, got %q",
+			body.Effective.DebugImage)
+	}
+}
+
 func TestInvalidPublicURLIsRefused(t *testing.T) {
 	env := newTestEnv(t)
 	admin := env.store.addUser("admin", "pw", db.RoleAdmin)

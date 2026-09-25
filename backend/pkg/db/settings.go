@@ -64,6 +64,10 @@ const (
 	// itself. It is capped by the kubeconfig ceiling at the point of use: a shell
 	// must not outlive the credential inside it.
 	SettingShellMaxLifetimeHours = "shell_max_lifetime_hours"
+	// SettingDebugImage is the image an ephemeral debug container runs. It
+	// shadows KUBEMG_DEBUG_IMAGE, which is what an air-gapped site points at
+	// its mirror — the same reason SettingShellImage exists.
+	SettingDebugImage = "debug_image"
 	// The console's own identity — see pkg/api/branding.go for what each one is
 	// for and why the mark is stored inline rather than linked.
 	//
@@ -131,6 +135,7 @@ var SettingKeys = []string{
 	SettingShellImage,
 	SettingShellIdleTimeoutMinutes,
 	SettingShellMaxLifetimeHours,
+	SettingDebugImage,
 }
 
 // Setting is one operator-configurable value. An empty Value means "unset" and

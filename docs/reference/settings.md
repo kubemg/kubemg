@@ -61,6 +61,15 @@ never dial back in.
 | Environment default | `KUBEMG_AGENT_NAMESPACE` (falls back to `kubemg-system`) |
 | Validation | Must be a valid Kubernetes name (lowercase letters, digits, dashes; not leading/trailing dash) if non-empty |
 
+### `debug_image`
+
+| | |
+|---|---|
+| Meaning | The image an [ephemeral debug container](../clusters/terminals-and-logs.md#debugging-a-pod-with-no-shell) runs — `kubectl debug`'s trick for a pod whose own containers have no shell to exec into. |
+| Environment default | `KUBEMG_DEBUG_IMAGE` (falls back to `busybox:1.36`) |
+| Validation | none beyond trimming |
+| Unlike `shell_image` | there is no matching enable switch — any grant that can already exec into a pod can already ask for a debug container, and the cluster's own RBAC decides whether the write lands |
+
 ### `audit_retention_days`
 
 | | |

@@ -130,6 +130,17 @@ Deletes carry `propagationPolicy=Background` and the response says "marked for
 deletion", not "deleted". There is deliberately **no bulk route**: a selection of
 eight objects is eight sequential calls, each with its own audit record.
 
+`debugPodContainer` (`pkg/api/resources_debug.go`) is the same shape for a
+pod: the pod is read, an ephemeral container is appended to
+`spec.ephemeralContainers`, and the object is written back to the
+`ephemeralcontainers` subresource — still a PUT of the whole object, because
+that subresource takes a `Pod`, not a smaller shape the way `scale` does. The
+image is resolved from settings (`debug_image` / `KUBEMG_DEBUG_IMAGE`),
+following the same boot-default-then-override pattern as the browser shell's
+image, minus the shell's separate enable switch. The exec that follows
+addresses the ephemeral container's own generated name, never the target
+container it shares a process namespace with.
+
 ## The observability query path
 
 `pkg/observability/query.go` is the one read where authorisation cannot be

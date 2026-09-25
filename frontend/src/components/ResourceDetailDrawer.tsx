@@ -1,9 +1,10 @@
 import { type ReactNode, Suspense, lazy, useCallback, useEffect, useState } from 'react'
-import { Ban, CircleCheck, ExternalLink, RefreshCw, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import { Ban, Bug, CircleCheck, ExternalLink, RefreshCw, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { errorMessage, fetchResourceDescribe } from '../api/client'
 import { useLiveTick } from '../lib/live'
 import type {
   Cluster,
+  DebugContainerResult,
   HelmRelease,
   K8sEvent,
   Pod,
@@ -16,6 +17,7 @@ import type { ResourceKey } from '../lib/resources'
 import type { SelectedRow } from '../lib/selection'
 import { selectionKey } from '../lib/selection'
 import type { Tone } from '../lib/status'
+import { DebugContainerSheet } from './DebugContainerSheet'
 import { HelmHistoryPanel } from './HelmHistoryPanel'
 import { HelmValuesPanel } from './HelmValuesPanel'
 import { LogExplorer } from './LogExplorer'
@@ -184,6 +186,20 @@ export function ResourceDetailDrawer({
   // `history` searches what the cluster's aggregator kept, which is the only one
   // of the three that still answers after the pod is gone.
   const [shell, setShell] = useState<StreamView>('logs')
+  // The pod that has no shell of its own: a debug container is written first,
+  // and only once it exists does the container picker and the terminal below
+  // address it — see DebugContainerSheet.
+  const [debugging, setDebugging] = useState(false)
+  // Which container, if any, is a debug one this drawer just started — its
+  // default image has no bash, so the terminal opens with sh instead. Cleared
+  // whenever the operator picks a different container by hand.
+  const [debugContainer, setDebugContainer] = useState<string | null>(null)
+  // A container the pod's own list has not caught up to yet — the debug
+  // container this drawer just added — is still worth addressing, so it is
+  // appended rather than left off the picker entirely.
+  const containerNames = pod?.containers.map((entry) => entry.name) ?? []
+  const containerOptions =
+    container && !containerNames.includes(container) ? [...containerNames, container] : containerNames
 
   // The two workload writes, offered where the object is being read — as a
   // panel at the top of this drawer's body rather than a surface over it.
@@ -445,18 +461,24 @@ export function ResourceDetailDrawer({
         ))}
 
         {/* The container picker only applies to the streams, and only where
-            there is more than one container to pick between. */}
-        {pod && pod.containers.length > 1 && tab === 'logs' ? (
+            there is more than one container to pick between. A debug
+            container the pod's own list does not know about yet — the
+            drawer opened before the read that would show it — stays
+            addressable all the same, appended rather than lost. */}
+        {pod && containerOptions.length > 1 && tab === 'logs' ? (
           <div className="ml-auto w-44">
             <Select
               aria-label="Container"
               size="sm"
               value={container}
-              onChange={(event) => setContainer(event.target.value)}
+              onChange={(event) => {
+                setContainer(event.target.value)
+                setDebugContainer(null)
+              }}
             >
-              {pod.containers.map((entry) => (
-                <option key={entry.name} value={entry.name}>
-                  {entry.name}
+              {containerOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
                 </option>
               ))}
             </Select>
@@ -557,16 +579,30 @@ export function ResourceDetailDrawer({
 
       {tab === 'logs' && pod ? (
         <div className="flex min-h-0 flex-1 flex-col gap-3">
-          <Segmented<StreamView>
-            ariaLabel="Stream"
-            value={shell}
-            onChange={setShell}
-            options={[
-              { value: 'logs', label: 'Live' },
-              { value: 'history', label: 'History' },
-              { value: 'terminal', label: 'Terminal' },
-            ]}
-          />
+          <div className="flex items-center gap-2">
+            <Segmented<StreamView>
+              ariaLabel="Stream"
+              value={shell}
+              onChange={setShell}
+              options={[
+                { value: 'logs', label: 'Live' },
+                { value: 'history', label: 'History' },
+                { value: 'terminal', label: 'Terminal' },
+              ]}
+            />
+            {shell === 'terminal' ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto"
+                onClick={() => setDebugging(true)}
+                title="Add a throwaway container sharing this pod's process namespace, for an image with no shell of its own"
+              >
+                <Bug aria-hidden="true" className="size-3.5" />
+                Debug
+              </Button>
+            ) : null}
+          </div>
           {shell === 'logs' ? (
             <PodLogView cluster={cluster} pod={pod} container={container} />
           ) : null}
@@ -580,15 +616,37 @@ export function ResourceDetailDrawer({
           ) : null}
           {shell === 'terminal' ? (
             <Suspense fallback={<p className="text-[13px] text-muted">Loading the terminal…</p>}>
+              {/* Keyed on the container so switching to (or away from) a debug
+                  one is a fresh terminal instance, not a socket reopened on top
+                  of state — including the shell picker's own default, which a
+                  busybox debug image needs to be sh rather than bash. */}
               <PodTerminal
+                key={container}
                 clusterId={cluster.id}
                 namespace={pod.namespace}
                 pod={pod.name}
                 container={container}
+                defaultShell={container === debugContainer ? '/bin/sh' : undefined}
               />
             </Suspense>
           ) : null}
         </div>
+      ) : null}
+
+      {debugging && pod ? (
+        <DebugContainerSheet
+          cluster={cluster}
+          pod={pod}
+          onClose={() => setDebugging(false)}
+          onStarted={(result: DebugContainerResult) => {
+            // The exec half addresses the container that was just created,
+            // never the one the session was asked against — that is the
+            // whole point of an ephemeral container by name.
+            setContainer(result.container)
+            setDebugContainer(result.container)
+            setDebugging(false)
+          }}
+        />
       ) : null}
 
       {tab === 'logs' && !pod && workloadLogs && target.namespace ? (
