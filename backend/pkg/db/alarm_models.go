@@ -110,7 +110,7 @@ type AlarmChannel struct {
 	// is never serialized, for the same reason a cluster's service account token
 	// is not: an admin console that reads credentials back out turns one
 	// compromised session into every integration KubeMG holds.
-	Secret string `gorm:"type:text" json:"-"`
+	Secret string `gorm:"type:text;serializer:secret" json:"-"`
 	// Headers are extra headers as a JSON object, for the destinations that want
 	// one — a SIEM's tenant id, ServiceNow's API version. Stored as text because
 	// this is the only place that reads it and a second table would buy nothing.

@@ -91,6 +91,11 @@ services:
       # set means losing the recordings, which is the trade every at-rest
       # encryption makes.
       - KUBEMG_SESSION_RECORDING_KEY=${KUBEMG_SESSION_RECORDING_KEY:-}
+      # Credentials in the database (signing key, agent tokens, stored passwords)
+      # are encrypted at rest under this key; same rules as the recording key —
+      # never committed, set it in the untracked `.env`. Once a database has
+      # been encrypted the server refuses to start without the same key.
+      - KUBEMG_SECRET_KEY=${KUBEMG_SECRET_KEY:-}
       # Keystrokes are recorded as well as output. Set this to false where
       # operators type credentials into interactive tools: what is lost is exactly
       # what a prompt does not echo.

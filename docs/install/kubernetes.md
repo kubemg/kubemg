@@ -63,6 +63,10 @@ stringData:
   # Encrypts session recordings at rest. Unset, recordings are written in
   # plaintext and the server warns at boot. Generate with: openssl rand -base64 32
   KUBEMG_SESSION_RECORDING_KEY: "change-me"
+  # Encrypts the credentials stored in the database. Unset, they are stored in
+  # plaintext and the server warns at boot; once set, the server refuses to
+  # start without it. Generate with: openssl rand -base64 32
+  KUBEMG_SECRET_KEY: "change-me"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -154,6 +158,9 @@ spec:
             - name: KUBEMG_SESSION_RECORDING_KEY
               valueFrom:
                 secretKeyRef: { name: kubemg-secrets, key: KUBEMG_SESSION_RECORDING_KEY }
+            - name: KUBEMG_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: kubemg-secrets, key: KUBEMG_SECRET_KEY }
             # The address TARGET CLUSTERS dial — not this Service's ClusterIP.
             # See "Exposing it" below.
             - name: KUBEMG_PUBLIC_URL

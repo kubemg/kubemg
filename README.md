@@ -401,6 +401,7 @@ same host. Put it in `.env`:
 KUBEMG_PUBLIC_URL=https://192.0.2.10:8443
 KUBEMG_TLS_HOSTS=kubemg-backend,backend,192.0.2.10
 KUBEMG_SESSION_RECORDING_KEY=$(openssl rand -base64 32)
+KUBEMG_SECRET_KEY=$(openssl rand -base64 32)
 ```
 
 Then `make down && make up`. It is also editable at runtime from **Settings** without a restart.
@@ -492,6 +493,7 @@ and `privkey.pem` are recognised too) and it is served on the next restart, with
 | `KUBEMG_SESSION_RECORDING_DIR` | `/var/lib/kubemg/recordings` | Where casts are written. **Mount it** — recordings must outlive the container |
 | `KUBEMG_SESSION_RECORDING_MAX_BYTES` | 32 MiB | Per-recording cap |
 | `KUBEMG_SESSION_RECORDING_KEY` | — | 32 bytes, hex or base64 (`openssl rand -base64 32`): encrypts recordings at rest. **Set it.** Keep it out of the backup that holds the recordings volume; losing it loses the recordings |
+| `KUBEMG_SECRET_KEY` | — | 32 bytes, hex or base64: encrypts the credentials stored in the database (signing key, agent tokens, stored passwords). **Set it**, and back it up separately — the server will not start on an encrypted database without it |
 | `KUBEMG_SESSION_RECORDING_INPUT` | `true` | Record keystrokes as well as output. `false` keeps only what the container printed |
 
 </details>
@@ -506,6 +508,7 @@ bastion. The rendered manifests set all of these for you.
 - [ ] Bootstrap admin password changed — setup refuses to finish until it is, so this is ticked by getting through the wizard
 - [ ] `JWT_SECRET` set explicitly if more than one replica serves the same address
 - [ ] `KUBEMG_SESSION_RECORDING_KEY` generated per install and kept out of the recordings backup
+- [ ] `KUBEMG_SECRET_KEY` generated per install and backed up separately from the database
 - [ ] `KUBEMG_SESSION_RECORDING_DIR` on a persistent volume
 - [ ] `KUBEMG_PUBLIC_URL` = the address your clusters dial, over HTTPS
 - [ ] Managed PostgreSQL with `DB_SSLMODE=require`

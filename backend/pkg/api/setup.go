@@ -50,6 +50,9 @@ type Deployment struct {
 	// AgentCABundleSet reports that an operator supplied the chain agents must
 	// trust explicitly, which is the case an ingress in front of KubeMG creates.
 	AgentCABundleSet bool
+	// SecretKeySet reports that KUBEMG_SECRET_KEY is in force, so the
+	// credentials stored in the database are encrypted at rest.
+	SecretKeySet bool
 }
 
 // SetupStore is the slice of persistence the boot-time decision below needs.
@@ -303,6 +306,28 @@ func (s *server) deploymentChecks() []setupCheck {
 			Title:    "Recordings are encrypted at rest",
 			Severity: checkOK,
 			Detail:   "Chunked AES-256-GCM, so a truncated file fails to authenticate rather than replaying short.",
+		})
+	}
+
+	if s.deployment.SecretKeySet {
+		checks = append(checks, setupCheck{
+			Key:      "secret-key",
+			Title:    "Stored credentials are encrypted at rest",
+			Severity: checkOK,
+			Detail: "The signing key, agent tunnel tokens and every stored password and token are " +
+				"AES-256-GCM under KUBEMG_SECRET_KEY. The key is as important as the database backup: " +
+				"without it the backup cannot be restored into a working install.",
+		})
+	} else {
+		checks = append(checks, setupCheck{
+			Key:      "secret-key",
+			Title:    "Stored credentials are in the clear",
+			Severity: checkWarn,
+			Detail: "The database holds the key that signs every session and the tunnel credential of " +
+				"every agent, so a copy of it — a backup, a replica, a support bundle — is super-admin " +
+				"on the console and cluster-admin through every tunnel. With a key set they are " +
+				"encrypted in place on the next boot. Keep the key with your backups, never in them.",
+			Fix: "KUBEMG_SECRET_KEY=$(openssl rand -base64 32)",
 		})
 	}
 

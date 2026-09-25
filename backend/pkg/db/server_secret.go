@@ -32,7 +32,7 @@ const (
 // a setting is a decision somebody makes, and this is a fact about the install.
 type ServerSecret struct {
 	Name      string    `gorm:"primaryKey;size:64" json:"name"`
-	Value     string    `gorm:"type:text" json:"-"`
+	Value     string    `gorm:"type:text;serializer:secret" json:"-"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

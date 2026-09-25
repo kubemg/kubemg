@@ -27,6 +27,9 @@ func Open(cfg config.DB) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect postgres: %w", err)
 	}
+	if err := registerSecretCallbacks(gdb); err != nil {
+		return nil, fmt.Errorf("register secret callbacks: %w", err)
+	}
 	return gdb, nil
 }
 
@@ -68,6 +71,13 @@ func Migrate(gdb *gorm.DB) error {
 
 	if err := widenUserAccessUniqueness(gdb); err != nil {
 		return err
+	}
+
+	// The tunnel credential used to be looked up by its own value through this
+	// index. It is ciphertext now and found by agent_token_hash, so an index over
+	// it serves nothing.
+	if err := gdb.Exec(`DROP INDEX IF EXISTS idx_clusters_agent_token`).Error; err != nil {
+		return fmt.Errorf("drop agent token index: %w", err)
 	}
 
 	// Every account predating federation is a local one, and every grant and

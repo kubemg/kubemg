@@ -38,6 +38,15 @@ type Config struct {
 	// is a signing key everybody has, and the boot path now mints a real one and
 	// keeps it in the database instead. See db.ServerSecretJWTSigningKey.
 	JWTSecret string
+	// SecretKey encrypts the credentials stored in the database (the generated
+	// signing key, agent tunnel tokens, direct-mode ServiceAccount tokens, and
+	// datasource, Helm repository, alarm and SSO credentials): 32 bytes as hex
+	// or base64, from KUBEMG_SECRET_KEY. Empty stores them in the clear and warns
+	// at boot; a malformed key refuses to boot.
+	//
+	// Like the recording key it is read from the environment and never stored:
+	// a key kept in the database beside its ciphertext protects nothing.
+	SecretKey string
 	JWTTTL    time.Duration
 	DB        DB
 	// AdminUsername names the bootstrap administrator.
@@ -187,6 +196,7 @@ func Load() Config {
 	return Config{
 		ListenAddr: env("KUBEMG_LISTEN_ADDR", ":8080"),
 		JWTSecret:  env("JWT_SECRET", ""),
+		SecretKey:  env("KUBEMG_SECRET_KEY", ""),
 		JWTTTL:     envDuration("JWT_TTL", 12*time.Hour),
 		DB: DB{
 			Host:     env("DB_HOST", "localhost"),
