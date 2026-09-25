@@ -155,8 +155,9 @@ cluster is in — this is treated as load-bearing, not a decoration.
 - **Helm's rendered manifest never leaves the server.** A release's stored
   object also carries the chart's fully rendered manifest, which for many
   charts holds generated passwords — only chart metadata and `values` are
-  returned. Writing new values appends a revision rather than templating a
-  new manifest, and that caveat travels with both the read and the write.
+  returned. Writing new values renders the chart stored on the release and
+  applies the result, and the manifest that produces is recorded on the new
+  revision, never returned.
 - **The core Kubernetes API group is refused on the custom-resource route.**
   `GET .../resources/custom` lets a caller name any `group/version/plural`
   to read a CRD kubemg does not know about first-class — but the core group
