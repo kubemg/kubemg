@@ -42,7 +42,7 @@ services:
       - DB_PASSWORD=kubemg_secret
       - DB_NAME=kubemg
       - DB_SSLMODE=disable
-      - JWT_SECRET=kubemg_dev_secret_change_me
+      - JWT_SECRET=${JWT_SECRET:-kubemg_dev_secret_change_me}
       - KUBEMG_ADMIN_USERNAME=admin
       - KUBEMG_ADMIN_PASSWORD=admin
       - KUBEMG_SA_NAMESPACE=kubemg-system

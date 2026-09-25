@@ -107,7 +107,10 @@ nav:
           - Database: install/database.md
           - Environment reference: install/environment.md
           - Prometheus metrics: install/metrics.md
-          - Upgrading: install/upgrading.md
+          - Upgrading:
+              - Upgrading: install/upgrading.md
+              - Upgrading to 0.11.0: install/upgrading-0.11.md
+              - Upgrading a git checkout: install/upgrading-from-source.md
           - Production checklist: install/production-checklist.md
       - Managing clusters:
           - Connection modes: clusters/connection-modes.md

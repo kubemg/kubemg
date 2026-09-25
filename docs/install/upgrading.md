@@ -136,83 +136,18 @@ what's applied and reconcile. Both the cluster detail page and the wizard's
 last step in the console call out whether an attached cluster's RBAC is
 current.
 
-## 0.11.0: kubemg accounts reach the cluster as `kubemg:u:<username>`
+## Upgrade notes by release
 
-From this release every kubemg account is impersonated as
-`kubemg:u:<username>` rather than as the bare username — `ada` becomes
-`kubemg:u:ada` in the API server's audit log, in `kubectl auth can-i --as`,
-and in the **Impersonated as** field of kubemg's own trail. It closes a
-privilege escalation: without the prefix, an account named like a
-ServiceAccount or a `system:` identity was that identity to the cluster (see
-[Why the username is prefixed](../access/model.md#why-the-username-is-prefixed)).
+A release that asks something of you beyond pulling the new image has its own
+page, written as the steps to take, in order:
 
-What to check before upgrading:
+- [Upgrading to 0.11.0](upgrading-0.11.md), from 0.10.x. Read it before you pull:
+  the identity every cluster sees changes, old install URLs stop working, and
+  credential encryption, once turned on, cannot be rolled back past.
 
-- **RoleBindings or ClusterRoleBindings you wrote against a kubemg username.**
-  A subject `kind: User, name: ada` no longer matches anybody; rebind it to
-  `kubemg:u:ada`. Find them with
-  `kubectl get rolebindings,clusterrolebindings -A -o json | jq -r '.items[] | select(any(.subjects[]?; .kind=="User")) | .metadata.name'`
-  and look for names that are kubemg usernames. Bindings to the `kubemg:`
-  groups — which is how kubemg's own manifests grant everything — are
-  unaffected, and so are kubemg's fixed identities (`kubemg:alarm-watcher`,
-  `kubemg:event-watcher`, `kubemg:shell-runner`).
-- **Usernames containing `:`.** New and renamed accounts may no longer carry
-  one, and a federated sign-in whose username claim contains one is refused
-  on first sign-in. Existing accounts keep working and are listed in a
-  warning in the server log at startup
-  (`accounts carry a username new accounts may no longer take`); rename them
-  in the user editor at your convenience.
-- **Audit filters or SIEM rules** matching `impersonate_user` against a bare
-  username. Records written before the upgrade keep the bare name; records
-  after it carry the prefix.
-
-## 0.11.0: install URLs are single-use, and old ones stop working
-
-Install URLs used to carry the cluster's registration token in the path
-(`/install/kmg_…/agent.yaml`), and that token is the agent's permanent
-credential. From this release the URL carries a **single-use download
-ticket** instead — see
-[What the install command fetches](../clusters/agent.md#what-the-install-command-fetches).
-What that means for an upgrade:
-
-- **Every old install URL answers `410 Gone`**, including ones still sitting
-  in runbooks, CI jobs, GitOps bootstrap scripts or wiki pages. Replace any
-  automation that fetched a stored URL with a fresh one from **Agent install**
-  at the time of use — or apply manifests you manage yourself.
-- **Attached agents keep running.** The agent authenticates with the token in
-  its own Secret, not with the URL; nothing needs re-applying for this change.
-- **If an old URL may have been copied somewhere you do not control**, the
-  token inside it is still valid. Rotate it from the cluster's dashboard →
-  **Rotate agent token**, then apply the package the console shows. The agent
-  is down between the two steps — see
-  [Rotating the registration token](../clusters/agent.md#rotating-the-registration-token).
-- The agent Deployment's pod template now carries a fingerprint of the
-  agent Secret (`kubemg.io/secret-checksum`), so re-applying a package whose
-  Secret changed — after a rotation above all — restarts the agent pod. The
-  first re-apply after this upgrade restarts the agent once for that reason.
-- A connection that takes over a cluster's tunnel is now recorded as
-  `agent-displaced` in the audit trail — expect one record per cluster on
-  every agent rollout, including this upgrade's re-apply.
-
-## 0.11.0: credentials encrypted at rest
-
-This release can encrypt the credentials stored in the database. Nothing
-changes until you set `KUBEMG_SECRET_KEY`; the server then logs a warning at
-every boot and the posture page flags it. To turn it on:
-
-1. Generate a key (`openssl rand -base64 32`) and store it somewhere that is
-   backed up **separately** from the database.
-2. Set `KUBEMG_SECRET_KEY` and restart. The first boot encrypts every stored
-   credential in place; restarts after that find nothing left to do.
-3. Attached agents reconnect with their unchanged tokens — nothing needs
-   re-applying, and sessions and kubeconfigs stay valid.
-
-**Rolling back to a release without this change after the key was set does
-not work**: the older server would read the ciphertext as the credentials
-themselves. Roll back the database from a backup taken before the upgrade,
-or stay on this release. And from now on, a server started with a different
-key — or none — over an encrypted database refuses to boot; see
-[Database](database.md#credentials-encrypted-at-rest).
+An install that runs from a clone of the repository rather than from the
+published images has one more thing to get right. See
+[Upgrading a git checkout](upgrading-from-source.md).
 
 ## Rollback
 
