@@ -1,7 +1,6 @@
 # Kubernetes
 
-There is no published Helm chart yet (`roadmap.md` lists it as planned, not
-shipped), so a Kubernetes install of the management plane means applying
+There is no published Helm chart yet (it is planned, not shipped), so a Kubernetes install of the management plane means applying
 plain manifests against the image at the repository root's `Dockerfile`,
 published as `ghcr.io/kubemg/kubemg`. This page is a complete, working set to
 start from.
