@@ -267,8 +267,8 @@ generic "not ready". Empty buckets are not drawn at all, so a healthy namespace 
 one line. Every reading is also a **narrowing**: clicking *Failed* filters the list to those rows.
 
 **Operate** — in-browser terminal and logs (pooled across a workload's pods), scale and restart as
-conditional read-modify-writes, a YAML editor, `port-forward` over the tunnel, and Helm release
-values.
+conditional read-modify-writes, a YAML editor, `port-forward` over the tunnel, and Helm releases —
+install, upgrade, values, rollback and uninstall, all down the same tunnel.
 
 **Observability** — live utilisation from the cluster's own Metrics API, and history from the
 datasource each cluster registers. **The browser never sends a query**: a caller names a chart from
@@ -612,7 +612,8 @@ timeline
         Phase 7 : FinOps : Capacity heatmap : Topology graph : AI RCA : GitOps drift
 ```
 
-**Phases 1–6.5 are shipped.** Phase 6 was scheduled ahead of Phase 7 deliberately: a capacity
+**Phases 1–6 are shipped, and 6.5 is all but one item** (an ephemeral debug container). Phase 6.6,
+enterprise console readiness, has four presentation items left. Phase 6 was scheduled ahead of Phase 7 deliberately: a capacity
 heatmap, a topology graph and an RCA panel are all *per-cluster* views, and building them into a
 global shell would have meant building each one twice — once where it fits today and once where it
 belongs. So the shell went first. Phase 6.5 followed as a survey against a competing tool's feature
@@ -724,7 +725,7 @@ head-of-line blocking, agent sizing and read rate limiting are the open items.
 <details>
 <summary><b>Phase 6.5 · Security visibility &amp; release lifecycle</b></summary>
 
-- [x] Helm release history and rollback — restores a revision's `config` only, never applies a manifest, and says so on the write and the confirmation
+- [x] Helm release history and rollback — `helm rollback`'s own rule: re-applies the target revision's stored manifest, three-way merged against the current one, never a re-render
 - [x] Grafana, Argo CD and a datasource's own UI reachable from the cluster page — outbound links only, never an embed or a proxied application
 - [x] The target cluster's own RBAC, read — a Role/Binding inventory plus a `SubjectAccessReview`-backed access check, both read-only
 - [x] A cluster-wide events timeline — grouped by object and reason, backed by a lazy per-cluster watch rather than a poll
@@ -732,6 +733,14 @@ head-of-line blocking, agent sizing and read rate limiting are the open items.
 - [x] NetworkPolicies as an Explore resource, plus a reachability check per workload — a derivation from policy objects, not a live trace
 - [x] Workload security posture findings tied to Pod Security Standards, with an auditable acknowledgement for an accepted risk
 - [x] Node capacity and oversubscription — reserved vs used vs limits per node, pod slots, and the pods the scheduler could not place
+- [x] A register of every issued kubeconfig, and revoking one — per file or everything one person holds, stating what could not be revoked
+- [x] Changing your own password, with the current one required and the person's kubeconfigs optionally revoked with it
+- [x] Helm as a source — chart repositories, install, upgrade and values written by rendering and applying, from the chart stored on the release
+- [x] Removing a Helm release — its recorded manifest deleted object by object, the release record last and only if every object went
+- [x] Firing a CronJob now, a namespace page, and the inventory kinds that explain a refusal — HPAs, quotas, limit ranges, disruption budgets, ReplicaSets
+- [x] Revealing one Secret value, under a capability of its own and audited before the value is written
+- [x] Application templates and a form for seven kinds — both of which only write YAML the existing create path posts
+- [x] A browser shell — a `kubectl` terminal in a pod kubemg runs, holding no cluster credential of its own
 
 </details>
 
@@ -751,7 +760,6 @@ The auto-provisioned VictoriaMetrics/VictoriaLogs stack is still not built; brin
 - **Direct mode provisions no RoleBinding.** A kubeconfig generated there authenticates without authorizing, and the permission matrix governs kubemg's own authorization rather than the cluster's. Agent mode is where the RBAC story closes — and the UI says which of the two applies, on the cluster page, the permissions page and the wizard's last step.
 - **Existing agent installs must re-apply their manifests** to pick up the CRD-discovery and custom-resource ClusterRoles. Until they do, discovery 403s and the Explore sidebar shows no custom resources.
 - **Browsing a new operator's CRDs means adding its API group** to that ClusterRole and re-applying. The groups are enumerated rather than wildcarded on purpose: `apiGroups: ["*"]` includes the core group, and the core group is where Secrets live.
-- **No frontend test framework yet.** The backend has tests; `make verify` runs `oxlint`, the contrast gate and `tsc` on the frontend and nothing else.
 - **The setup wizard cannot configure four things**, and says so on its last step rather than quietly omitting them: the database credentials, the recording encryption key, the TLS certificate files and the listen address. Each is read once at boot from an environment the process cannot rewrite, so a form collecting them would be collecting values that vanish at the next restart — and in the recording key's case, storing it beside the ciphertext it protects would defeat the point of encrypting anything. **Settings → Deployment** reports the same set afterwards, but it reports only: none of it is writable from a browser, and a change to any of it takes a restart.
 - **A supplied certificate is picked up on restart, not on change.** The `ssl` directory is read once at boot, so a renewal that lands in it is served the next time the container starts — a certbot deploy hook has to restart kubemg, and nothing here watches the directory for it.
 
