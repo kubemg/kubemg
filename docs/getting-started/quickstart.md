@@ -24,6 +24,13 @@ make logs                 # follow the logs
 this is the dev stack, not the image a real install runs. `docker-compose.yml`
 at the repository root is what it drives.
 
+!!! warning "Not for anything anyone else can reach"
+    The dev stack signs sessions with a key published in this repository unless
+    `.env` sets `JWT_SECRET`, and updating it means `git pull` on a checkout. If
+    an evaluation has become something people rely on, see
+    [Upgrading a git checkout](../install/upgrading-from-source.md), which also
+    covers moving it to the image-based install without losing anything.
+
 | Service | Address |
 |---|---|
 | Console | <http://localhost:5173> |

@@ -12,3 +12,64 @@
 .md-typeset table:not([class]) th {
   font-variant-numeric: tabular-nums;
 }
+
+/* The guide switch lives at the top of the sidebar (overrides/partials/nav.html),
+   so the header's tab strip is not drawn. navigation.tabs stays enabled: it is
+   what scopes the sidebar to the guide being read. */
+:root {
+  --kmg-lime: #bff23c;
+  --kmg-ink: #14161a;
+}
+.md-tabs {
+  display: none;
+}
+.kmg-guides {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0 0.6rem 0.6rem;
+  padding-bottom: 0.4rem;
+}
+/* On a wide screen the sidebar scrolls to the page being read; the switch stays
+   pinned above that, and replaces the lifted section title Material would
+   otherwise pin there ("User guide"), which would only repeat it. */
+@media screen and (min-width: 76.25em) {
+  .kmg-guides {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--md-default-bg-color);
+    padding-top: 0.2rem;
+  }
+  .md-nav--lifted > .md-nav__list > .md-nav__item--active > .md-nav__link {
+    display: none;
+  }
+}
+.kmg-guides__link {
+  display: block;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--md-default-fg-color--lighter);
+  border-radius: 0.4rem;
+  color: var(--md-default-fg-color);
+  font-weight: 600;
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+.kmg-guides__link:hover,
+.kmg-guides__link:focus-visible {
+  border-color: var(--md-accent-fg-color);
+  color: var(--md-default-fg-color);
+}
+/* Text on lime is always ink, in both schemes. */
+.kmg-guides__link--active,
+.kmg-guides__link--active:hover,
+.kmg-guides__link--active:focus-visible {
+  background: var(--kmg-lime);
+  border-color: var(--kmg-lime);
+  color: var(--kmg-ink);
+}
+@media screen and (max-width: 76.2344em) {
+  .kmg-guides {
+    margin-top: 0.6rem;
+  }
+}

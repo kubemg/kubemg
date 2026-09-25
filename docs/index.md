@@ -63,8 +63,8 @@ without opening a single inbound port on any cluster.
 
 ## Two guides
 
-The manual is split into two, and the tabs at the top of the page switch between
-them.
+The manual is split into two, and the two buttons at the top of the sidebar
+switch between them.
 
 The **User guide** is for running an install: attaching clusters, granting
 access, reading the audit trail, and everything else you do from the console.

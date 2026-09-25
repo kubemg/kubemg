@@ -10,7 +10,11 @@ make docs-build   # warnings are errors — this is what runs inside make verify
 
 ## Which half a page belongs in
 
-The site has two tabs and they have different readers.
+The site has two guides and they have different readers. The switch between
+them is the pair of buttons at the top of the sidebar, drawn by
+`overrides/partials/nav.html`; Material's header tab strip is hidden in
+`docs/assets/kubemg.css`, but `navigation.tabs` stays on because it is what
+keeps the sidebar to one guide at a time.
 
 | | **User guide** | **Developer guide** |
 |---|---|---|
