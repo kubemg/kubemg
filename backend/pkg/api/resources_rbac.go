@@ -720,7 +720,7 @@ func (s *server) grantIdentity(c *gin.Context) {
 	// an identity page that disagrees with what is actually impersonated would be
 	// worse than no identity page.
 	c.JSON(http.StatusOK, gin.H{
-		"subject":    user.Username,
+		"subject":    bastion.ImpersonationUser(user),
 		"groups":     bastion.ImpersonationGroups(grant.K8sRole),
 		"k8s_role":   string(grant.K8sRole),
 		"namespaces": grant.NamespaceList(),

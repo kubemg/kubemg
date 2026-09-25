@@ -28,6 +28,8 @@ func TestForwardHeadersStripsClientCredentials(t *testing.T) {
 		"Authorization":     []string{"Bearer the-callers-kubemg-token"},
 		"Impersonate-User":  []string{"root"},
 		"Impersonate-Group": []string{"system:masters"},
+		"Impersonate-Extra-Scopes": []string{"cluster-admin"},
+		"impersonate-extra-reason": []string{"lowercase too"},
 		"Connection":        []string{"keep-alive"},
 		"User-Agent":        []string{"kubectl/v1.31.4"},
 	}
@@ -35,8 +37,13 @@ func TestForwardHeadersStripsClientCredentials(t *testing.T) {
 	out := forwardHeaders(src, &db.User{Username: "devops"}, db.UserClusterAccess{K8sRole: db.K8sRoleView})
 
 	// A client that could pick its own identity would defeat the gateway.
-	if got := out["Impersonate-User"]; !slices.Equal(got, []string{"devops"}) {
-		t.Fatalf("Impersonate-User = %v, want the authenticated user", got)
+	if got := out["Impersonate-User"]; !slices.Equal(got, []string{"kubemg:u:devops"}) {
+		t.Fatalf("Impersonate-User = %v, want the authenticated user, prefixed", got)
+	}
+	for name := range out {
+		if isImpersonateExtra(name) {
+			t.Fatalf("a client-supplied %s survived", name)
+		}
 	}
 	if got := out["Impersonate-Group"]; slices.Contains(got, "system:masters") {
 		t.Fatalf("a client-supplied group survived: %v", got)
@@ -239,5 +246,35 @@ func TestPatchIsSentAsAMergePatch(t *testing.T) {
 		if got := contentTypeFor(method); got != "application/json" {
 			t.Fatalf("%s content type = %q, want application/json", method, got)
 		}
+	}
+}
+
+// The reviewer's reproduction, turned around: whatever an account is called,
+// the API server must never see a name it already trusts.
+func TestImpersonationUserPrefixesEveryAccount(t *testing.T) {
+	cases := []struct {
+		name string
+		user db.User
+		want string
+	}{
+		{"a person", db.User{ID: 7, Username: "ada"}, "kubemg:u:ada"},
+		{"an email-shaped name", db.User{ID: 7, Username: "ada@example.com"}, "kubemg:u:ada@example.com"},
+		{"a service account's name", db.User{ID: 7, Username: "system:serviceaccount:kube-system:backup-operator"},
+			"kubemg:u:system:serviceaccount:kube-system:backup-operator"},
+		{"a stored row named like an internal identity", db.User{ID: 7, Username: "kubemg:alarm-watcher"},
+			"kubemg:u:kubemg:alarm-watcher"},
+		{"an unsaved row without the kubemg: prefix", db.User{Username: "system:masters"}, "kubemg:u:system:masters"},
+		{"an unsaved row already in the user space", db.User{Username: "kubemg:u:ada"}, "kubemg:u:kubemg:u:ada"},
+		// KubeMG's own identities are built in code, never stored, and are bound
+		// by name in the agent's manifests — they must reach the cluster as-is.
+		{"the alarm watcher", db.User{Username: "kubemg:alarm-watcher"}, "kubemg:alarm-watcher"},
+		{"the shell runner", db.User{Username: "kubemg:shell-runner"}, "kubemg:shell-runner"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ImpersonationUser(&tc.user); got != tc.want {
+				t.Fatalf("ImpersonationUser(%q, id %d) = %q, want %q", tc.user.Username, tc.user.ID, got, tc.want)
+			}
+		})
 	}
 }
