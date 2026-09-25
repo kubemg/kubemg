@@ -48,6 +48,9 @@ func (s *Store) UserByID(ctx context.Context, id uint) (*User, error) {
 
 // CreateUser inserts a new user record.
 func (s *Store) CreateUser(ctx context.Context, user *User) error {
+	if err := CheckUsername(user.Username); err != nil {
+		return err
+	}
 	user.Normalize()
 	if err := s.gdb.WithContext(ctx).Create(user).Error; err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {

@@ -27,6 +27,14 @@ var (
 	// ErrSSOAccountDisabled is returned when the matched account is disabled
 	// here, whatever the directory thinks of it.
 	ErrSSOAccountDisabled = errors.New("this account is disabled")
+	// ErrSSOUnsafeUsername is returned when the claim an identity provider
+	// asserted as the username is one no account may carry. It is refused by
+	// name rather than rewritten: a silently mangled username would be a second
+	// identity nobody chose, and the fix — pinning the provider to an immutable
+	// claim such as `sub` — belongs to the administrator.
+	ErrSSOUnsafeUsername = errors.New("the identity provider asserted a username containing ':' or " +
+		"control characters, which no KubeMG account may carry — configure the provider's " +
+		"username claim to one without them")
 )
 
 // SSOIdentity is what a federation engine resolved about the person signing in.
@@ -267,6 +275,9 @@ func (s *Store) SyncSSOUserAndGroups(
 			if !provider.AllowJIT {
 				return ErrSSONoAccount
 			}
+			if CheckUsername(identity.Username) != nil {
+				return ErrSSOUnsafeUsername
+			}
 			user = &User{
 				Username:      identity.Username,
 				Email:         identity.Email,
@@ -368,7 +379,22 @@ func resolveFederatedUser(
 	if !user.IsFederated() || (user.SSOProviderID != 0 && user.SSOProviderID != provider.ID) {
 		return nil, ErrSSOAccountConflict
 	}
+	// The name matched but the stable identifier did not: this is a different
+	// person asserting the same username, which is what a user-editable claim
+	// such as preferred_username allows. Matching on the name here would hand
+	// them the account and then overwrite its external id with their own.
+	if externalIDConflict(user, identity) {
+		return nil, ErrSSOAccountConflict
+	}
 	return &user, nil
+}
+
+// externalIDConflict reports whether an account found by username belongs to a
+// different directory identity than the one signing in. An account that never
+// recorded an id, or a provider that sends none, cannot be told apart and is
+// not a conflict.
+func externalIDConflict(user User, identity SSOIdentity) bool {
+	return user.ExternalID != "" && identity.ExternalID != "" && user.ExternalID != identity.ExternalID
 }
 
 // applyMappings evaluates the provider's rules against the asserted groups and

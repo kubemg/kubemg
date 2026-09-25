@@ -27,7 +27,7 @@ Its `go.mod` depends on exactly one third-party package,
 binary small and its dependency surface auditable at a glance. Everything it
 is permitted to do inside the cluster is bounded by the ClusterRole in
 `deploy/kustomize/base/rbac.yaml`, which grants exactly one privilege:
-`impersonate` on users and groups.
+`impersonate` on users and on kubemg's own four groups.
 
 ## Size
 
