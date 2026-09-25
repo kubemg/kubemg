@@ -6,15 +6,15 @@ Pin an explicit tag rather than tracking `latest`, in both places a version
 appears:
 
 - The management plane image, `KUBEMG_IMAGE`/`KUBEMG_VERSION`
-  (`ghcr.io/kubemg/kubemg:0.10.0`) in Compose, or the `image:` field of the
+  (`ghcr.io/kubemg/kubemg:0.11.0`) in Compose, or the `image:` field of the
   Deployment in Kubernetes.
-- The agent image, `KUBEMG_AGENT_IMAGE` (`ghcr.io/kubemg/kubemg-agent:0.10.0`),
+- The agent image, `KUBEMG_AGENT_IMAGE` (`ghcr.io/kubemg/kubemg-agent:0.11.0`),
   written into every rendered agent install manifest by the management
   plane, so bumping it here is what changes what a *future* `kubectl apply -k
   …` installs — it does not touch agents already running.
 
 - The browser shell image, `KUBEMG_SHELL_IMAGE`
-  (`ghcr.io/kubemg/kubemg-shell:0.10.0`), which a shell pod runs on a target
+  (`ghcr.io/kubemg/kubemg-shell:0.11.0`), which a shell pod runs on a target
   cluster. Like the agent image it is read when a shell is *started*, so
   bumping it changes the next shell rather than one already open.
 
@@ -100,7 +100,7 @@ It has happened four times so far:
   the API server authorizes that as `get` on the subresource — so on 0.8.1 and
   0.8.2 the shell pod starts and then fails with `403 Forbidden` while writing
   its kubeconfig. Re-applying the manifests adds the missing verb.
-- **After 0.10.0, the narrowed impersonation grant.** The only change so far
+- **0.11.0, the narrowed impersonation grant.** The only change so far
   that *removes* a permission: the agent may now impersonate only kubemg's
   four `kubemg:` groups and no ServiceAccount, where it could previously
   impersonate any group or ServiceAccount. Nothing breaks if you do not
@@ -136,7 +136,7 @@ what's applied and reconcile. Both the cluster detail page and the wizard's
 last step in the console call out whether an attached cluster's RBAC is
 current.
 
-## After 0.10.0: kubemg accounts reach the cluster as `kubemg:u:<username>`
+## 0.11.0: kubemg accounts reach the cluster as `kubemg:u:<username>`
 
 From this release every kubemg account is impersonated as
 `kubemg:u:<username>` rather than as the bare username — `ada` becomes
@@ -166,7 +166,7 @@ What to check before upgrading:
   username. Records written before the upgrade keep the bare name; records
   after it carry the prefix.
 
-## After 0.10.0: install URLs are single-use, and old ones stop working
+## 0.11.0: install URLs are single-use, and old ones stop working
 
 Install URLs used to carry the cluster's registration token in the path
 (`/install/kmg_…/agent.yaml`), and that token is the agent's permanent
@@ -194,7 +194,7 @@ What that means for an upgrade:
   `agent-displaced` in the audit trail — expect one record per cluster on
   every agent rollout, including this upgrade's re-apply.
 
-## Credentials encrypted at rest
+## 0.11.0: credentials encrypted at rest
 
 This release can encrypt the credentials stored in the database. Nothing
 changes until you set `KUBEMG_SECRET_KEY`; the server then logs a warning at
@@ -243,7 +243,7 @@ Two things a rollback does **not** undo:
 ## Documentation versioning
 
 This manual is versioned against release tags on Read the Docs: an install
-running `0.10.0` corresponds to the `0.10.0` version of these docs, not
+running `0.11.0` corresponds to the `0.11.0` version of these docs, not
 whatever `master` says today. If you're following a procedure here, check
 the version selector matches the version you're actually running.
 
