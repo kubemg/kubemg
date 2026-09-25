@@ -113,19 +113,21 @@ Re-applying is the same command as installing. The console renders it for a
 cluster that already exists: open the cluster's dashboard and choose **Agent
 install** (admin-only, agent-mode clusters), which re-renders the package
 from the cluster's stored registration token against the current settings —
-so it carries the new agent image as well as the new RBAC. The Kustomize form
+so it carries the new agent image as well as the new RBAC — and mints a
+**single-use** download URL for it: the first fetch of either form spends it,
+and an unused one expires after 15 minutes. The Kustomize form
 fetches and extracts the package first, because Kustomize accepts only local
 paths and Git specs as remote targets:
 
 ```bash
-curl -sfL https://your-kubemg/install/<token>/kustomize.tar.gz | tar -xz
+curl -sfL https://your-kubemg/install/<download-ticket>/kustomize.tar.gz | tar -xz
 kubectl apply -k kubemg-agent
 ```
 
 or apply the flat manifest, which is the one-liner the console shows first:
 
 ```bash
-kubectl apply -f https://your-kubemg/install/<token>/agent.yaml
+kubectl apply -f https://your-kubemg/install/<download-ticket>/agent.yaml
 ```
 
 If you manage the manifests yourself rather than through the rendered
@@ -163,6 +165,34 @@ What to check before upgrading:
 - **Audit filters or SIEM rules** matching `impersonate_user` against a bare
   username. Records written before the upgrade keep the bare name; records
   after it carry the prefix.
+
+## After 0.10.0: install URLs are single-use, and old ones stop working
+
+Install URLs used to carry the cluster's registration token in the path
+(`/install/kmg_…/agent.yaml`), and that token is the agent's permanent
+credential. From this release the URL carries a **single-use download
+ticket** instead — see
+[What the install command fetches](../clusters/agent.md#what-the-install-command-fetches).
+What that means for an upgrade:
+
+- **Every old install URL answers `410 Gone`**, including ones still sitting
+  in runbooks, CI jobs, GitOps bootstrap scripts or wiki pages. Replace any
+  automation that fetched a stored URL with a fresh one from **Agent install**
+  at the time of use — or apply manifests you manage yourself.
+- **Attached agents keep running.** The agent authenticates with the token in
+  its own Secret, not with the URL; nothing needs re-applying for this change.
+- **If an old URL may have been copied somewhere you do not control**, the
+  token inside it is still valid. Rotate it from the cluster's dashboard →
+  **Rotate agent token**, then apply the package the console shows. The agent
+  is down between the two steps — see
+  [Rotating the registration token](../clusters/agent.md#rotating-the-registration-token).
+- The agent Deployment's pod template now carries a fingerprint of the
+  agent Secret (`kubemg.io/secret-checksum`), so re-applying a package whose
+  Secret changed — after a rotation above all — restarts the agent pod. The
+  first re-apply after this upgrade restarts the agent once for that reason.
+- A connection that takes over a cluster's tunnel is now recorded as
+  `agent-displaced` in the audit trail — expect one record per cluster on
+  every agent rollout, including this upgrade's re-apply.
 
 ## Rollback
 

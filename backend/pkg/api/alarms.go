@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
+	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/observability"
 )
@@ -618,10 +619,13 @@ func (s *server) ruleFrom(c *gin.Context, req alarmRuleRequest) (*db.AlarmRule, 
 
 // auditVerbVocabulary is every verb an audit record can carry: the ones the
 // selection in Settings governs, plus KubeMG's own recording-access verbs — which
-// are exactly the ones an alarm on "who watched a production shell" would name.
+// are exactly the ones an alarm on "who watched a production shell" would name —
+// and the agent's credential events, which are what an alarm on "somebody else
+// is now this cluster's agent" names.
 var auditVerbVocabulary = append(
 	append([]string{}, auditpolicy.Verbs...),
 	"replay", "recording-get", "recording-delete",
+	bastion.VerbAgentDisplaced, bastion.VerbAgentTokenRotate,
 )
 
 // joinList renders a submitted list into the stored comma-separated form,

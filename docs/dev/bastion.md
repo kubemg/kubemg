@@ -22,8 +22,41 @@ door.
 `GET /agent/v1/tunnel` sits **outside** the JWT middleware — the agent
 authenticates with its registration token, which is the only credential kubemg
 holds for an agent-mode cluster. The install package routes
-(`GET /install/:token/agent.yaml` and `.../kustomize.tar.gz`) are unauthenticated
-for the same reason: the token *is* the credential.
+(`GET /install/:ticket/agent.yaml` and `.../kustomize.tar.gz`) are
+unauthenticated too, but the path carries a **single-use download ticket**,
+never the registration token (`pkg/api/agent_install.go`). The ticket is the
+`ws_tickets` pattern: 256 bits, `kmgi_`-prefixed, only its SHA-256 stored in
+`agent_install_tickets`, redeemed by one `DELETE … RETURNING` so any replica
+can serve it and exactly one fetch wins. It is minted on every JSON read of
+`GET /api/v1/clusters/:id/kustomize`, lives `installTicketTTL` (15 min), and
+both URLs share it — whichever form is fetched first spends it. A path segment
+with the tunnel token's `kmg_` prefix is refused `410` **by shape, without a
+lookup**, so a pre-ticket URL is dead whether or not its token is live. A store
+error on redeem refuses.
+
+**Rotation** (`POST /api/v1/clusters/:id/agent-token/rotate`, admin): the new
+token is written and the cluster's outstanding tickets deleted in one
+transaction (`db.RotateClusterAgentToken`) — a ticket renders the *current*
+token at fetch time, so a leaked pre-rotation URL would otherwise hand out the
+new one. Then `Server.Retire` closes the local tunnel with a close frame naming
+the reason (`ErrCredentialRetired`); a tunnel held by another replica is closed
+by `RunCredentialSweep` (30s), which re-resolves every live tunnel's token.
+**The sweep fails open on a store error** — a database blip must not drop the
+fleet, and the handshake still refuses the old token. No grace window. The
+agent reads its Secret as env vars, fixed at container start, so the pod
+template carries `kubemg.io/secret-checksum` (`agentpkg.secretChecksum`, a
+truncated SHA-256 of URL+token+CA): without it a re-apply after rotation
+updated the Secret and left the pod presenting the old token forever — found
+by the e2e pass, not by a test.
+
+**Displacement** (`Registry.Add` is newest-wins) writes `agent-displaced` via
+`Server.UseAuditor`: user `kubemg:agent`, source address on the context, and
+both agents' versions, both connection times and the previous address in the
+path's query (the audit row has no free-text column, and the path is what the
+table, the SIEM forward and an alarm all carry). A rolling Deployment
+displaces too, and is recorded identically — nothing can tell the two apart
+that an impostor cannot imitate. Both agent verbs are on `auditpolicy`'s
+unsuppressible floor and in the alarm verb vocabulary.
 
 `ProtocolVersion` is checked at the handshake and a mismatch is refused. Bumping
 it is a breaking change that requires every agent to be upgraded, so it is a

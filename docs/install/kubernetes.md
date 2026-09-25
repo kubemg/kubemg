@@ -9,7 +9,7 @@ start from.
 !!! note "This deploys the management plane, not an agent"
     These manifests put the console+gateway binary into *a* cluster. They are
     unrelated to the agent manifests kubemg renders per target cluster
-    (`deploy/kustomize/`, `kubectl apply -k https://.../install/<token>/kustomize.tar.gz`),
+    (`deploy/kustomize/`, `kubectl apply -k https://.../install/<download-ticket>/kustomize.tar.gz`),
     which you apply to every cluster kubemg is going to manage — including,
     if you like, the same cluster the management plane runs in. See
     [Adding a cluster](../clusters/registering.md) and

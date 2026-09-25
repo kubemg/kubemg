@@ -115,7 +115,8 @@ All unauthenticated by necessity — nobody has a session yet.
 | `POST /clusters/:id/check` | Admin | Re-probes health — tunnel connectivity in agent mode, a real dial in direct mode. |
 | `POST /clusters/:id/kubeconfig/generate` | Session | Body `{ttl_seconds?, namespace?}`. `400` TTL outside the configured policy. `424` if the server has no token minter/proxy/public URL configured for the mode in play. Response carries `warning` for a shortened direct-mode TTL (the cluster's own SA token cap) or a non-HTTPS public URL. |
 | `GET /kubeconfig/policy` | Session | `{min_ttl_seconds, default_ttl_seconds, max_ttl_seconds}` — server-wide, not per cluster. |
-| `GET /clusters/:id/kustomize` | Admin | `409` on a direct-mode cluster (nothing to install). `?format=yaml` downloads the flat manifest; otherwise JSON. |
+| `GET /clusters/:id/kustomize` | Admin | `409` on a direct-mode cluster (nothing to install). `?format=yaml` downloads the flat manifest; otherwise JSON, and **every JSON read mints a fresh single-use download ticket** carried by `manifest_url`/`archive_url`/the commands, with `download_expires_at`. Never rotates the registration token. `Cache-Control: no-store`. |
+| `POST /clusters/:id/agent-token/rotate` | Admin | Replaces the registration token, withdraws every outstanding install ticket for the cluster, and closes the attached tunnel (another replica's within 30s). `409` on a direct-mode cluster. Answers `{install, disconnected}` — `install` is the `kustomize` envelope for the new token. Audited as `agent-token-rotate`; a store failure is audited with its reason and answers `500` with the old token still valid. |
 
 ```bash
 curl -sk https://localhost:8443/api/v1/clusters \
@@ -339,8 +340,8 @@ See [Runtime settings](../reference/settings.md) for what each field means.
 | `GET /health` | — | `{"status":"ok"}`. Process liveness only — nothing about TLS, the database or the tunnel. |
 | `GET /metrics` | — | Prometheus scrape endpoint. Served on a **separate internal listener** (`KUBEMG_METRICS_ADDR`), never on this router. Discloses version, route inventory, and process details — not for the public port. See [Prometheus metrics](../install/metrics.md). |
 | `GET /agent/v1/tunnel` | Agent registration token | The tunnel's WebSocket upgrade. Outside the JWT middleware entirely — an agent authenticates on its own registration token as a bearer token on the upgrade. |
-| `GET /install/:token/agent.yaml` | Registration token in the path | Unauthenticated by necessity — `kubectl` cannot carry a kubemg session; the token in the URL *is* the credential. Renders the flat install manifest. |
-| `GET /install/:token/kustomize.tar.gz` | Registration token in the path | Same route family, the Kustomize archive instead. |
+| `GET /install/:ticket/agent.yaml` | Single-use download ticket in the path | Unauthenticated by necessity — `kubectl` cannot carry a kubemg session. The ticket (`kmgi_…`, minted by `GET /clusters/:id/kustomize`) is spent by the first fetch of either form and expires after 15 minutes unused; spent/expired/unknown → `404`, unreadable store → `500`. A `kmg_…` segment (the pre-ticket form, carrying the registration token) → `410` without a lookup. Renders the flat install manifest, which carries the registration token. |
+| `GET /install/:ticket/kustomize.tar.gz` | Single-use download ticket in the path | Same route family and the same ticket, the Kustomize archive instead. |
 | `ANY /api/v1/clusters/:id/proxy/*path` | Session or `ScopeProxy` JWT or machine token | The `kubectl` server URL. Every verb — get, watch, exec, port-forward — lands on this one route; see [How a request flows](request-flow.md). |
 
 ```bash

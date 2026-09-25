@@ -52,6 +52,10 @@ var Verbs = []string{
 //     the one read that hands out a credential rather than describing one, and a
 //     setting that hides it would turn the capability into a way to read every
 //     password in a namespace with nothing to show for it afterwards.
+//   - agent-token-rotate / agent-displaced: a cluster's tunnel credential being
+//     replaced, and a live tunnel being taken over by a newer connection. The
+//     second is how somebody holding a leaked token becomes the agent; a trail
+//     that could be told to forget it would make the takeover silent.
 //   - jit-*: somebody being granted a stronger role than they hold, and for how
 //     long. These are the *fewest* rows in the table and the ones an auditor opens
 //     first — a suppressible privilege escalation record would make the whole
@@ -61,15 +65,17 @@ var Verbs = []string{
 // false for it anyway. Listing them is belt and braces: it makes the intent
 // explicit, and it survives somebody later adding one of these to Verbs.
 var alwaysRecorded = map[string]bool{
-	"replay":           true,
-	"recording-get":    true,
-	"recording-delete": true,
-	"secret-reveal":    true,
-	"jit-request":      true,
-	"jit-approve":      true,
-	"jit-reject":       true,
-	"jit-revoke":       true,
-	"jit-expire":       true,
+	"replay":             true,
+	"recording-get":      true,
+	"recording-delete":   true,
+	"secret-reveal":      true,
+	"agent-token-rotate": true,
+	"agent-displaced":    true,
+	"jit-request":        true,
+	"jit-approve":        true,
+	"jit-reject":         true,
+	"jit-revoke":         true,
+	"jit-expire":         true,
 }
 
 // Snapshot is one resolved policy. It is replaced wholesale rather than mutated,

@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/observability"
 )
@@ -227,6 +229,39 @@ func TestCreateAlarmRuleStoresItsMatchers(t *testing.T) {
 	}
 	if !rule.DeniedOnly || rule.Severity != db.SeverityCritical {
 		t.Errorf("matchers were not stored: %+v", rule)
+	}
+}
+
+// "Somebody else is now this cluster's agent" is the alarm the displacement
+// record exists for, so a rule naming it must be accepted — and its message
+// must not describe it as a proxied call.
+func TestAlarmRuleCanNameTheAgentCredentialVerbs(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	channel := env.store.addAlarmChannel(db.AlarmChannel{
+		Name: "am", Kind: db.ChannelAlertmanager, URL: "https://am.example.com/x", Enabled: true,
+	})
+
+	rec := env.do(t, http.MethodPost, "/api/v1/alarms/rules", env.tokenFor(t, admin), map[string]any{
+		"name":       "agent takeover",
+		"trigger":    db.TriggerAudit,
+		"channel_id": channel.ID,
+		"verbs":      []string{bastion.VerbAgentDisplaced, bastion.VerbAgentTokenRotate},
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected %d, got %d (%s)", http.StatusCreated, rec.Code, rec.Body.String())
+	}
+
+	message := auditMessage(bastion.Event{
+		Verb:    bastion.VerbAgentDisplaced,
+		Cluster: "prod-eu",
+		Method:  http.MethodGet,
+		Path:    "/agent/v1/tunnel?previous_source=10.0.0.1&source=10.9.9.9",
+		Status:  http.StatusOK,
+	}, false)
+	if strings.Contains(message, "proxied") || !strings.Contains(message, "source=10.9.9.9") ||
+		!strings.Contains(message, "prod-eu") {
+		t.Fatalf("unexpected displacement alarm message: %q", message)
 	}
 }
 

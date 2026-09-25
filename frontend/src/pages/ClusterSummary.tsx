@@ -8,10 +8,17 @@ import {
   Layers,
   PackageOpen,
   RefreshCw,
+  RotateCcwKey,
   Timer,
 } from 'lucide-react'
-import { checkCluster, errorMessage, fetchCluster, fetchNodeMetrics } from '../api/client'
-import type { Cluster, NodeMetrics } from '../api/types'
+import {
+  checkCluster,
+  errorMessage,
+  fetchCluster,
+  fetchNodeMetrics,
+  rotateAgentToken,
+} from '../api/client'
+import type { AgentInstall, Cluster, NodeMetrics } from '../api/types'
 import { AgentInstallSheet } from '../components/AgentInstallSheet'
 import { AppShell } from '../components/AppShell'
 import { ClusterWorkloadSummary } from '../components/ClusterWorkloadSummary'
@@ -42,6 +49,7 @@ import { linkState } from '../lib/status'
 import { formatInstant } from '../lib/time'
 import { formatCPU, formatMemory } from '../lib/units'
 import { useAuth } from '../state/auth-context'
+import { useConfirm } from '../state/confirm-context'
 
 /*
  * What a cluster page ranks. Two readings of what it costs, three of what is
@@ -77,6 +85,11 @@ export function ClusterSummary() {
   // Re-reading the install package is not registering anything, so it is an
   // action on this cluster rather than a walk back into the wizard.
   const [installOpen, setInstallOpen] = useState(false)
+  // A rotation answers with the package the agent now needs; the sheet shows
+  // that one rather than fetching another.
+  const [rotated, setRotated] = useState<AgentInstall | null>(null)
+  const [rotating, setRotating] = useState(false)
+  const confirm = useConfirm()
   // Asking for more access belongs on the cluster it is about: this page is where
   // somebody has just read what their grant is and found it is not enough.
   const [requesting, setRequesting] = useState(false)
@@ -117,6 +130,42 @@ export function ClusterSummary() {
       setCheckError(errorMessage(err, 'Could not check this cluster.'))
     } finally {
       setChecking(false)
+    }
+  }
+
+  /*
+   * Rotating the tunnel credential. There is no grace window — the point of a
+   * rotation is that the old token stops working — so the agent goes down the
+   * moment this answers and stays down until the new package is applied. That
+   * is said before the click, not discovered after it.
+   */
+  async function rotate() {
+    if (!cluster) return
+    const ok = await confirm({
+      eyebrow: cluster.name,
+      title: 'Rotate agent token',
+      body: (
+        <>
+          A new registration token replaces the current one. The agent attached to {cluster.name}{' '}
+          is disconnected now and the old token is refused from then on — every console session,
+          kubectl call and shell on this cluster stops until the new install package is applied.
+          Any install URL already handed out stops working too.
+        </>
+      ),
+      confirmLabel: 'Rotate',
+      tone: 'danger',
+    })
+    if (!ok) return
+    setRotating(true)
+    try {
+      const result = await rotateAgentToken(cluster.id)
+      setRotated(result.install)
+      setInstallOpen(true)
+      setCheckError(null)
+    } catch (err) {
+      setCheckError(errorMessage(err, 'Could not rotate the agent token.'))
+    } finally {
+      setRotating(false)
     }
   }
 
@@ -185,6 +234,12 @@ export function ClusterSummary() {
           Agent install
         </Button>
       ) : null}
+      {admin && viaAgent ? (
+        <Button onClick={rotate} disabled={rotating}>
+          <RotateCcwKey aria-hidden="true" className="size-4" />
+          {rotating ? 'Rotating…' : 'Rotate agent token'}
+        </Button>
+      ) : null}
       {admin ? (
         <Button onClick={check} disabled={checking}>
           <RefreshCw aria-hidden="true" className={`size-4 ${checking ? 'animate-spin' : ''}`} />
@@ -233,7 +288,14 @@ export function ClusterSummary() {
       ) : null}
 
       {installOpen && cluster ? (
-        <AgentInstallSheet cluster={cluster} onClose={() => setInstallOpen(false)} />
+        <AgentInstallSheet
+          cluster={cluster}
+          rotated={rotated ?? undefined}
+          onClose={() => {
+            setInstallOpen(false)
+            setRotated(null)
+          }}
+        />
       ) : null}
 
       {requesting && cluster ? (

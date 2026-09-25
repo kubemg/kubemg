@@ -35,6 +35,7 @@ import type {
 } from '../api/types'
 import { AgentInstallBody } from '../components/AgentInstallSheet'
 import { AppShell } from '../components/AppShell'
+import { saveManifest } from '../lib/agentInstall'
 import { DatasourcePanel } from '../components/DatasourcePanel'
 import { LinkStatus, PathHop, PathNode } from '../components/LinkStatus'
 import {
@@ -100,6 +101,19 @@ export function ClusterWizard() {
 
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  // The install URL is single-use and expires, and the wizard can sit open while
+  // somebody finds the right kube context. A fresh one is a re-render, never a
+  // rotation.
+  async function renewInstall() {
+    if (!cluster) return
+    try {
+      setInstall(await fetchAgentInstall(cluster.id))
+      setError(null)
+    } catch (err) {
+      setError(errorMessage(err, 'Could not render the install package.'))
+    }
+  }
 
   async function register(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -180,6 +194,7 @@ export function ClusterWizard() {
             onDirectChange={setDirect}
             cluster={cluster}
             install={install}
+            onRenewInstall={renewInstall}
             busy={busy}
             onSubmit={register}
             onBack={() => setStep(0)}
@@ -355,6 +370,7 @@ function ConnectionStep({
   onDirectChange,
   cluster,
   install,
+  onRenewInstall,
   busy,
   onSubmit,
   onBack,
@@ -366,6 +382,7 @@ function ConnectionStep({
   onDirectChange: (next: typeof BLANK_DIRECT) => void
   cluster: Cluster | null
   install: AgentInstall | null
+  onRenewInstall: () => void
   busy: boolean
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onBack: () => void
@@ -480,7 +497,7 @@ function ConnectionStep({
         </StepActions>
       </Panel>
 
-      {install ? <AgentInstaller install={install} /> : null}
+      {install ? <AgentInstaller install={install} onRenew={onRenewInstall} /> : null}
     </form>
   )
 }
@@ -552,27 +569,29 @@ function ModeCard({
  * shown separately and masked, because it is the cluster's only credential and it
  * is about to live in a Kubernetes Secret.
  */
-function AgentInstaller({ install }: { install: AgentInstall }) {
+function AgentInstaller({ install, onRenew }: { install: AgentInstall; onRenew: () => void }) {
   return (
     <Panel
       eyebrow="Handoff"
       title="Install the agent"
       description={`Run this against ${install.cluster} with a kubeconfig that can create resources in ${install.namespace}. The agent dials back out to kubemg — nothing needs to be opened inbound.`}
       actions={
-        <a
-          href={install.manifest_url}
-          download
+        /* From the manifest in hand, never from the install URL: a browser
+           download would spend the single-use ticket the command still needs. */
+        <button
+          type="button"
+          onClick={() => saveManifest(install)}
           className="inline-flex h-9 items-center gap-2 rounded-control border border-line px-3 text-[13px] text-muted transition-colors hover:text-fg"
         >
           <Download aria-hidden="true" className="size-4" />
           Download YAML
-        </a>
+        </button>
       }
       bodyClassName="flex flex-col gap-4 p-4"
     >
       {/* The same handoff a registered cluster can re-open from its dashboard,
           so the two never drift. */}
-      <AgentInstallBody install={install} />
+      <AgentInstallBody install={install} onRenew={onRenew} />
     </Panel>
   )
 }

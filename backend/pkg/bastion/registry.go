@@ -59,6 +59,15 @@ type Tunnel struct {
 	AgentVersion      string
 	KubernetesVersion string
 	ConnectedAt       time.Time
+	// SourceAddr is where the agent dialled in from, as the server saw it. It is
+	// what tells "the agent reconnected" apart from "somebody else is now the
+	// agent" when a displacement is recorded.
+	SourceAddr string
+
+	// credential is the registration token this tunnel authenticated with. It is
+	// kept so the tunnel can be cut off when that token stops resolving to its
+	// cluster — a rotation on another replica, or the cluster being deleted.
+	credential string
 
 	conn *websocket.Conn
 	// out carries frames to the one goroutine that writes them. gorilla permits
@@ -363,6 +372,19 @@ func (r *Registry) Remove(tunnel *Tunnel) bool {
 	}
 	delete(r.tunnels, tunnel.ClusterID)
 	return true
+}
+
+// Snapshot returns every live tunnel, for a sweep that must not hold the
+// registry's lock while it does I/O.
+func (r *Registry) Snapshot() []*Tunnel {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	out := make([]*Tunnel, 0, len(r.tunnels))
+	for _, tunnel := range r.tunnels {
+		out = append(out, tunnel)
+	}
+	return out
 }
 
 // Get returns the tunnel for a cluster.

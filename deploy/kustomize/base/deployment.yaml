@@ -17,6 +17,13 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: kubemg-agent
+      annotations:
+        # A fingerprint of what the kubemg-agent Secret carries. The agent reads
+        # the Secret as environment variables, fixed at container start, so a
+        # re-apply after a token rotation (or a new bastion URL or CA) has to
+        # change the pod template to restart it. Rendered by kubemg; if you fill
+        # these manifests in by hand, change it whenever the Secret changes.
+        kubemg.io/secret-checksum: __SECRET_CHECKSUM__
     spec:
       serviceAccountName: kubemg-agent
       automountServiceAccountToken: true
