@@ -10,6 +10,7 @@ docs_dir: docs
 
 theme:
   name: material
+  custom_dir: overrides
   language: en
   logo: assets/kubemg-icon.svg
   favicon: assets/kubemg-icon.svg
@@ -18,7 +19,6 @@ theme:
     code: Roboto Mono
   features:
     - navigation.tabs
-    - navigation.tabs.sticky
     - navigation.instant
     - navigation.tracking
     - navigation.sections

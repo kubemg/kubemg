@@ -1,0 +1,54 @@
+{#-
+  Material's primary sidebar (partials/nav.html, mkdocs-material 9.7), with one
+  addition: the switch between the User guide and the Developer guide sits at
+  the top of the sidebar rather than in the header's tab strip, where it read
+  as fine grey print and was easy to miss. `navigation.tabs` stays on — it is
+  what keeps the sidebar to one guide at a time — and the strip itself is
+  hidden in assets/kubemg.css.
+
+  When bumping DOCS_IMAGE, diff this against the image's own copy.
+-#}
+{% import "partials/nav-item.html" as item with context %}
+{% macro first_url(nav_item) -%}
+  {%- if nav_item.children -%}
+    {{- first_url(nav_item.children | first) -}}
+  {%- else -%}
+    {{- nav_item.url | url -}}
+  {%- endif -%}
+{%- endmacro %}
+{% set class = "md-nav md-nav--primary" %}
+{% if "navigation.tabs" in features %}
+  {% set class = class ~ " md-nav--lifted" %}
+{% endif %}
+{% if "toc.integrate" in features %}
+  {% set class = class ~ " md-nav--integrated" %}
+{% endif %}
+<nav class="{{ class }}" aria-label="{{ lang.t('nav') }}" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="{{ config.extra.homepage | d(nav.homepage.url, true) | url }}" title="{{ config.site_name | e }}" class="md-nav__button md-logo" aria-label="{{ config.site_name }}" data-md-component="logo">
+      {% include "partials/logo.html" %}
+    </a>
+    {{ config.site_name }}
+  </label>
+  {% if config.repo_url %}
+    <div class="md-nav__source">
+      {% include "partials/source.html" %}
+    </div>
+  {% endif %}
+  {% set guides = nav.items | selectattr("children") | list %}
+  {% if guides | length > 1 %}
+    <div class="kmg-guides" role="group" aria-label="Guides">
+      {% for guide in guides %}
+        <a href="{{ first_url(guide) }}"
+           class="kmg-guides__link{% if guide.active %} kmg-guides__link--active{% endif %}"
+           {% if guide.active %}aria-current="true"{% endif %}>{{ guide.title }}</a>
+      {% endfor %}
+    </div>
+  {% endif %}
+  <ul class="md-nav__list" data-md-scrollfix>
+    {% for nav_item in nav.items %}
+      {% set path = "__nav_" ~ loop.index %}
+      {{ item.render(nav_item, path, 1) }}
+    {% endfor %}
+  </ul>
+</nav>
