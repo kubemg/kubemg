@@ -130,6 +130,11 @@ services:
       - KUBEMG_SESSION_RECORDING_ENABLED=${KUBEMG_SESSION_RECORDING_ENABLED:-true}
       - KUBEMG_SESSION_RECORDING_KEY=${KUBEMG_SESSION_RECORDING_KEY:-}
 
+      # Credentials stored in the database are encrypted at rest under this key.
+      # Without it they are stored in the clear; once set, the server will not
+      # start without the same key. Back it up separately from postgres-data.
+      - KUBEMG_SECRET_KEY=${KUBEMG_SECRET_KEY:-}
+
       - GIN_MODE=release
 
 volumes:

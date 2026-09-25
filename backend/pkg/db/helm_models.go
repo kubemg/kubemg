@@ -44,7 +44,7 @@ type HelmRepository struct {
 	Username string `gorm:"size:255" json:"username,omitempty"`
 	// Credential never leaves the process. See the package comment on
 	// observability sources: the DTO reports whether one is set, never what.
-	Credential string `gorm:"type:text" json:"-"`
+	Credential string `gorm:"type:text;serializer:secret" json:"-"`
 
 	Description string `gorm:"type:text" json:"description,omitempty"`
 

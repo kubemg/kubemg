@@ -67,6 +67,7 @@ this machine. Put it in `.env` next to `docker-compose.yml`:
 KUBEMG_PUBLIC_URL=https://192.0.2.10:8443
 KUBEMG_TLS_HOSTS=kubemg-backend,backend,192.0.2.10
 KUBEMG_SESSION_RECORDING_KEY=$(openssl rand -base64 32)
+KUBEMG_SECRET_KEY=$(openssl rand -base64 32)
 ```
 
 Then `make down && make up`. It is also editable at runtime from **Settings**

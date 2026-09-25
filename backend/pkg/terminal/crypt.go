@@ -38,13 +38,12 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"strings"
+
+	"github.com/kubemg/kubemg/backend/pkg/secretbox"
 )
 
 // KeySize is the AES-256 key length a recording is encrypted with.
@@ -99,25 +98,11 @@ var ErrTruncated = errors.New("recording is truncated")
 // which would need a KDF and a stored salt, and would invite a key with a few
 // bits of entropy protecting the most sensitive file on the volume.
 func ParseKey(raw string) ([]byte, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return nil, nil
+	key, err := secretbox.DecodeKey(raw)
+	if err != nil {
+		return nil, fmt.Errorf("recording %w", err)
 	}
-
-	if decoded, err := hex.DecodeString(trimmed); err == nil && len(decoded) == KeySize {
-		return decoded, nil
-	}
-	for _, encoding := range []*base64.Encoding{
-		base64.StdEncoding, base64.RawStdEncoding,
-		base64.URLEncoding, base64.RawURLEncoding,
-	} {
-		if decoded, err := encoding.DecodeString(trimmed); err == nil && len(decoded) == KeySize {
-			return decoded, nil
-		}
-	}
-	return nil, fmt.Errorf(
-		"recording key must be %d bytes as hex or base64 (generate one with: openssl rand -base64 %d)",
-		KeySize, KeySize)
+	return key, nil
 }
 
 // Encrypted reports whether a recording written now would be encrypted, which is

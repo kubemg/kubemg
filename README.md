@@ -2,8 +2,8 @@
 
 <img src="docs/assets/readme-hero.png" width="100%" alt="kubemg. No inbound ports. Every call on the record. One agent that connects out, and an audit trail for every kubectl call.">
 
-Central, audited access to every Kubernetes cluster — no inbound firewall rule,
-no CRDs, and no cluster credential stored anywhere.
+Central, audited access to every Kubernetes cluster — one small agent that dials out,
+no CRDs, and a bastion that says plainly what it is trusted with.
 
 [![Docs](https://img.shields.io/badge/docs-kubemg.readthedocs.io-BFF23C?style=flat-square&labelColor=14161A)](https://kubemg.readthedocs.io/) [![Release](https://img.shields.io/github/v/release/kubemg/kubemg?style=flat-square&label=release&labelColor=14161A&color=BFF23C)](https://github.com/kubemg/kubemg/releases) [![Agent](https://img.shields.io/badge/agent-~7_MB_·_amd64_+_arm64-BFF23C?style=flat-square&labelColor=14161A)](agent/) [![Backend](https://img.shields.io/badge/backend-Go_1.26-3A4033?style=flat-square&labelColor=14161A)](backend/) [![Console](https://img.shields.io/badge/console-React_·_Vite_·_TS-3A4033?style=flat-square&labelColor=14161A)](frontend/) [![Store](https://img.shields.io/badge/store-PostgreSQL_16-3A4033?style=flat-square&labelColor=14161A)](backend/pkg/db/) [![Build](https://img.shields.io/badge/build-fully_containerized-3A4033?style=flat-square&labelColor=14161A)](Makefile) [![License](https://img.shields.io/badge/license-AGPL--3.0-D1553C?style=flat-square&labelColor=14161A)](LICENSE)
 
@@ -20,13 +20,25 @@ outlives the project it was issued for, and revoking it means first remembering 
 never heard of your team. There is nowhere in it to say who may reach production, and no record
 afterwards of who did.
 
-**Install a platform.** Rancher-class tools arrive with controllers and dozens of CRDs, want a route
-to your API server, and expect to own the cluster once they are in it.
+**Install a platform.** Rancher-class tools arrive with controllers and CRDs, and expect to own the
+cluster once they are in it. Their agents already dial out — Rancher's through `remotedialer`,
+Portainer's Edge Agent through a reverse tunnel — so "no inbound ports" is table stakes, not a
+difference.
 
 kubemg is the fourth way, and the trade it makes is the whole product: **7 MB in the cluster,
-everything else at the bastion.** The agent opens one outbound WebSocket and holds it. Nothing
-listens. Nothing is exposed. In agent mode kubemg stores **no cluster credential at all** — only the
-registration token the agent presented when it dialled in.
+everything else at the bastion.** The agent opens one outbound WebSocket and holds it, and runs
+nothing else — no controllers, no CRDs. In agent mode kubemg stores no Kubernetes credential, only
+the registration token the agent presents when it dials in.
+
+That last sentence is true and, on its own, misleading, so here is the part it leaves out: the agent
+may impersonate, and it forwards what the bastion sends. **The bastion plus the tunnel is, in effect,
+`system:masters` on every agent-mode cluster.** That is the same trust model as Rancher's
+`cattle-cluster-agent` or Teleport's Kubernetes Service — a central point that can grant anyone
+access can grant itself access — with a far smaller surface inside the cluster: one Deployment, an
+impersonation grant limited to kubemg's own four groups, and an audit trail that can be forwarded
+off the host as it is written. The [threat model](docs/introduction/threat-model.md)
+says what a compromised bastion, a read of its database, a leaked install URL, kubeconfig or machine
+token, and a renamed IdP identity each reach, and what bounds each one.
 
 Every call a developer then makes — from the console or from their own `kubectl` — travels that
 tunnel under their own impersonated identity, and **the cluster's own RBAC makes the decision**. The
@@ -80,15 +92,15 @@ flowchart TB
     linkStyle 5 stroke:#BFF23C,stroke-width:2.5px,color:#BFF23C
 ```
 
-No inbound firewall rule on the cluster. No heavy in-cluster controller. In agent mode kubemg
-stores **no cluster credential at all** — only the registration token the agent presents when it
-dials in.
+No inbound firewall rule on the cluster. No in-cluster controller. The bastion is the trust anchor
+— in effect cluster-admin on every agent-mode cluster — which is why it, its database and its signing
+key are what to harden first.
 
 ## Why
 
 | The problem | What kubemg does |
 |---|---|
-| **Heavy agents.** Rancher-class platforms install controllers and dozens of CRDs, then want to own the cluster. | Installs a tunnel and nothing else — one Deployment, one Secret, one ServiceAccount. |
+| **Heavy agents.** Rancher-class platforms install controllers and CRDs, then want to own the cluster. | Installs a tunnel and nothing else — one Deployment, one Secret, one ServiceAccount, whose only grant is impersonation. |
 | **Desktop tools don't manage teams.** Lens is per-laptop; there is no central place to say who may reach production. | Users, groups, effective-permission merging, and a fleet-wide permission matrix. |
 | **Handing out access is an operational wound.** Long-lived kubeconfigs get copied, shared, never revoked. | Short-lived scoped kubeconfigs that point at kubemg, so revoking access actually revokes it. |
 | **"Who ran that in prod?"** has no answer. | Every call audited, refusals included; every shell recorded and replayable. |
@@ -141,6 +153,8 @@ The parts worth reading before trusting it with production.
 
 <table>
 <tr><th align="left">Control</th><th align="left">What it actually means</th></tr>
+<tr><td><b>The bastion is the trust anchor</b></td>
+<td>The agent may impersonate and forwards what the bastion sends, so the bastion plus the tunnel is, in effect, <code>system:masters</code> on every agent-mode cluster. The agent's grant is narrowed to kubemg's own four groups, the database's credentials are encrypted under <code>KUBEMG_SECRET_KEY</code>, and the audit trail can be forwarded off the host — but the bastion is what to harden first. The <a href="docs/introduction/threat-model.md">threat model</a> goes scenario by scenario.</td></tr>
 <tr><td><b>Impersonation, not shared service accounts</b></td>
 <td>The proxy calls the API server with <code>Impersonate-User</code>/<code>Impersonate-Group</code> derived from the caller's grant. A <code>view</code> grant is read-only because the cluster says so, not because kubemg remembered to check. Client-supplied impersonation and <code>Authorization</code> headers are stripped.</td></tr>
 <tr><td><b>Namespace scope enforced in the proxy</b></td>
@@ -175,7 +189,7 @@ The parts worth reading before trusting it with production.
 flowchart LR
     subgraph agentmode["agent · recommended"]
         direction LR
-        AM1["stores no<br/>cluster credential"]
+        AM1["stores no Kubernetes credential;<br/>the bastion is the trust anchor"]
         AM2["the cluster dials out"]
         AM3["impersonation →<br/>cluster RBAC decides"]
         AM1 --> AM2 --> AM3
@@ -204,6 +218,23 @@ flowchart LR
 The direct-mode limitation is **deliberate and disclosed in the UI**: a generated kubeconfig there
 authenticates without authorizing, and the permission matrix governs kubemg's own authorization
 rather than the cluster's. Agent mode is where the RBAC story closes.
+
+## How it compares
+
+"No inbound ports" is not what sets kubemg apart — every serious product here has an agent that
+dials out. What differs is how much runs in the cluster, how identity reaches it, and what is
+recorded. The two closest comparisons are not Rancher and Lens.
+
+| | What it is | How it reaches a cluster |
+|---|---|---|
+| **Teleport** | The closest comparison, and the more mature product: an access plane for Kubernetes, SSH, databases and more, with SSO, `kubectl` session recording and just-in-time access requests (the full access-request workflow is in the Enterprise edition). Source is AGPL-3.0; the Community Edition binaries carry a commercial licence with use restrictions. | A Teleport agent opens a reverse tunnel out to the Teleport proxy, and its Kubernetes Service sends requests to the API server with impersonation headers — the same shape kubemg has. |
+| **Paralus** | A CNCF sandbox project, Apache-2.0: zero-trust access to Kubernetes with SSO integration, per-user kubeconfigs and audit logs. | A relay agent in the cluster connects out to the relay server, and access lands as just-in-time service accounts created per user. |
+| **Rancher** | A cluster-management platform — provisioning, lifecycle, apps — of which access is one part. | `cattle-cluster-agent` dials out through `remotedialer` and runs under a ServiceAccount with full control of the cluster; the Rancher server impersonates each user through it. |
+| **Portainer** | A container and Kubernetes management UI. | The Edge Agent dials out and opens a reverse tunnel to the Portainer server. |
+| **kubemg** | A Kubernetes-only access gateway and console. Audit forwarding, JIT elevation, session recording and SSO are in the one AGPL-3.0 tree, with no licence key; the agent is Apache-2.0. | One ~7 MB agent dials out; the bastion impersonates `kubemg:u:<username>` in kubemg's own groups, and the cluster's RBAC decides. |
+
+Every row in that table trusts its central server with the clusters it reaches. kubemg does not
+claim otherwise — see the [threat model](docs/introduction/threat-model.md).
 
 ## What it does
 
@@ -401,6 +432,7 @@ same host. Put it in `.env`:
 KUBEMG_PUBLIC_URL=https://192.0.2.10:8443
 KUBEMG_TLS_HOSTS=kubemg-backend,backend,192.0.2.10
 KUBEMG_SESSION_RECORDING_KEY=$(openssl rand -base64 32)
+KUBEMG_SECRET_KEY=$(openssl rand -base64 32)
 ```
 
 Then `make down && make up`. It is also editable at runtime from **Settings** without a restart.
@@ -492,6 +524,7 @@ and `privkey.pem` are recognised too) and it is served on the next restart, with
 | `KUBEMG_SESSION_RECORDING_DIR` | `/var/lib/kubemg/recordings` | Where casts are written. **Mount it** — recordings must outlive the container |
 | `KUBEMG_SESSION_RECORDING_MAX_BYTES` | 32 MiB | Per-recording cap |
 | `KUBEMG_SESSION_RECORDING_KEY` | — | 32 bytes, hex or base64 (`openssl rand -base64 32`): encrypts recordings at rest. **Set it.** Keep it out of the backup that holds the recordings volume; losing it loses the recordings |
+| `KUBEMG_SECRET_KEY` | — | 32 bytes, hex or base64: encrypts the credentials stored in the database (signing key, agent tokens, stored passwords). **Set it**, and back it up separately — the server will not start on an encrypted database without it |
 | `KUBEMG_SESSION_RECORDING_INPUT` | `true` | Record keystrokes as well as output. `false` keeps only what the container printed |
 
 </details>
@@ -506,6 +539,7 @@ bastion. The rendered manifests set all of these for you.
 - [ ] Bootstrap admin password changed — setup refuses to finish until it is, so this is ticked by getting through the wizard
 - [ ] `JWT_SECRET` set explicitly if more than one replica serves the same address
 - [ ] `KUBEMG_SESSION_RECORDING_KEY` generated per install and kept out of the recordings backup
+- [ ] `KUBEMG_SECRET_KEY` generated per install and backed up separately from the database
 - [ ] `KUBEMG_SESSION_RECORDING_DIR` on a persistent volume
 - [ ] `KUBEMG_PUBLIC_URL` = the address your clusters dial, over HTTPS
 - [ ] Managed PostgreSQL with `DB_SSLMODE=require`
@@ -790,4 +824,5 @@ everyone else.
 
 Please report vulnerabilities **privately to the maintainer** rather than opening a public issue. If
 you are evaluating kubemg for production, the security model section above is the honest short
-version — including the direct-mode limitation.
+version — including the direct-mode limitation — and the
+[threat model](docs/introduction/threat-model.md) is the long one.

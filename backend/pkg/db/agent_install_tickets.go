@@ -72,7 +72,7 @@ func (s *Store) RotateClusterAgentToken(ctx context.Context, clusterID uint, tok
 	return s.gdb.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		res := tx.Model(&Cluster{}).
 			Where("id = ? AND connection_mode = ?", clusterID, ModeAgent).
-			Update("agent_token", token)
+			Updates(map[string]any{"agent_token": token, "agent_token_hash": HashAgentToken(token)})
 		if res.Error != nil {
 			return fmt.Errorf("rotate agent token: %w", res.Error)
 		}

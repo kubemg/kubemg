@@ -25,6 +25,44 @@ Three rules there are easy to break by accident:
 `backend/migrations/` is reference DDL that nothing executes. AutoMigrate
 applies the schema at boot and the Go models win any disagreement.
 
+### Credentials at rest
+
+Every column holding a credential KubeMG must read back is tagged
+`serializer:secret` (`pkg/db/secrets.go`), sealed with `pkg/secretbox`
+(AES-256-GCM, random 12-byte nonce, `enc:v1:` + base64 of nonce‖ciphertext‖tag,
+the prefix as additional data) under `KUBEMG_SECRET_KEY`. **The tag is the only
+list**: the serializer, the map-update callback and the boot migration all read
+it off the schema, and a test asserts the expected columns carry it and are
+`json:"-"`.
+
+- **Why a serializer *and* a callback.** GORM applies a field serializer to
+  struct `Create`/`Save`/`Updates(struct)`, but `Updates(map)` and
+  `Update(col, v)` put map values into the SET clause untouched. The
+  `kubemg:seal_secrets` callback (before `gorm:update`, registered in `db.Open`)
+  seals tagged columns in a map update, so a store method that writes a
+  credential through a map cannot land it in the clear. A raw `Exec`/`Raw` is
+  still outside both — do not write a credential that way. The dry-run tests in
+  `secrets_test.go` pin all three write paths.
+- **The key is process state** (`db.UseSecretBox`), set in `main` before the
+  first query: a GORM serializer has no other way to reach it.
+- **`clusters.agent_token` is encrypted, not hashed**, because the install sheet
+  re-renders the package from it without rotating it. The handshake cannot
+  search ciphertext, so `agent_token_hash` (SHA-256, `db.HashAgentToken`) is the
+  lookup key; `ClusterByAgentToken` finds the row by it and the caller still
+  compares the decrypted token with `bastion.SameToken`. Every write of the
+  token writes the hash (`CreateCluster`, `RotateClusterAgentToken`, and the
+  callback for any map update).
+- **Boot** (`sealStoredSecrets` in `cmd/server`, over `db.MigrateSecrets`):
+  malformed key → refuse; every stored value is opened, so ciphertext under
+  another key or with no key → refuse (`ErrSecretKeyMismatch`), never
+  passthrough; with a key, plaintext is sealed in place (idempotent — sealed
+  values are only checked); the agent-token hash is backfilled with or without
+  a key. No key → plaintext and a warning, plus a `secret-key` posture check.
+  `Open` passes unprefixed values through, which is what lets a key be turned on
+  over an existing database.
+- Hashed-only values (passwords, machine tokens, install and WebSocket tickets)
+  do not go through here: nothing needs them back.
+
 ## Configuration and settings
 
 `pkg/config` reads the environment at boot. But an environment variable is a

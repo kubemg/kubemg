@@ -14,8 +14,9 @@ means first remembering that it exists. Put a desktop tool like Lens in front
 of it, and it is very good at being one person's console but has never heard
 of the team — there is nowhere in it to say who may reach production, and no
 record afterwards of who did. Install a Rancher-class platform, and it arrives
-with controllers and dozens of CRDs, wants a route to the API server, and
-expects to own the cluster once it is in.
+with controllers and dozens of CRDs and expects to own the cluster once it is
+in — its agent dials out too, so the tunnel is not what sets kubemg apart; what
+runs at the other end of it is.
 
 kubemg is built around a different trade: **a few megabytes in the cluster,
 everything else at the bastion.** The in-cluster piece opens one outbound
@@ -73,14 +74,22 @@ It is **not**:
 ```
 
 No inbound firewall rule on any cluster. In **agent mode** kubemg stores no
-cluster credential at all — only the registration token the agent presented
-when it dialled in. See [Connection modes](../clusters/connection-modes.md)
+Kubernetes credential — only the registration token the agent presents when
+it dials in. That is not the same as holding no power over the cluster: the
+agent may impersonate, and forwards what the bastion sends, so **the bastion
+plus the tunnel is, in effect, `system:masters` on every agent-mode
+cluster** — the trust model every agent-based access product has, stated
+rather than implied. [Threat model](threat-model.md) says what that means for
+each thing that can leak. See [Connection modes](../clusters/connection-modes.md)
 and [How a request flows](../dev/request-flow.md) for the mechanics.
 
 **Postgres** is the one piece of state kubemg itself owns: users, groups,
 grants, cluster registrations, settings, audit records and session-recording
-metadata. It holds no cluster credentials in agent mode, and in direct mode
-holds exactly the service account token an administrator registered.
+metadata. It holds no Kubernetes credential in agent mode, and in direct mode
+holds exactly the service account token an administrator registered — but in
+either mode it holds the key that signs every session, which is why stored
+credentials are encrypted under `KUBEMG_SECRET_KEY`. See
+[Credentials encrypted at rest](../install/database.md#credentials-encrypted-at-rest).
 
 ## What a developer sees
 

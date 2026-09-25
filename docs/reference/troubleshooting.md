@@ -23,6 +23,19 @@ only changes if the database is wiped, which invalidates every session and
 every previously generated kubeconfig at once. Set `JWT_SECRET` explicitly
 if you rotate secrets through an external manager.
 
+**Server refuses to start: `KUBEMG_SECRET_KEY is unusable`.** The key
+is not 32 bytes written as hex or base64. Generate one with
+`openssl rand -base64 32`. A passphrase is refused on purpose.
+
+**Server refuses to start: `refusing to start: stored credentials cannot
+be decrypted…`.** The database holds credentials encrypted under a
+`KUBEMG_SECRET_KEY` this server does not have — the key was changed, or
+removed, or the database was restored without it. The message names the
+first value it could not read. Restore the original key; nothing else will
+read those values. If the key is truly lost, see
+[Database](../install/database.md#credentials-encrypted-at-rest) for what
+recovery involves.
+
 **Server refuses to start: `refusing to serve plaintext HTTP on
 <addr>: it is reachable from more than this machine…`.** By design — a
 non-loopback `KUBEMG_LISTEN_ADDR` with TLS off would put every session JWT

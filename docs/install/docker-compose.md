@@ -56,6 +56,7 @@ KUBEMG_ADMIN_PASSWORD=<optional — otherwise generated and logged>
 KUBEMG_PUBLIC_URL=https://kubemg.internal:8443
 KUBEMG_TLS_HOSTS=kubemg.internal,192.0.2.10
 KUBEMG_SESSION_RECORDING_KEY=<generate one — openssl rand -base64 32>
+KUBEMG_SECRET_KEY=<generate another — openssl rand -base64 32>
 ```
 
 `KUBEMG_PUBLIC_URL` is the one that is easy to get wrong and hard to
@@ -145,6 +146,9 @@ Back up, at minimum:
 - The `session-recordings` volume, and `KUBEMG_SESSION_RECORDING_KEY`
   **kept separately** from that volume's backup — a key stored beside the
   ciphertext it protects defends against nothing.
+- `KUBEMG_SECRET_KEY`, likewise **kept separately** from the `postgres-data`
+  backup. The credentials in the database are encrypted under it, and the server
+  refuses to start on a restored database without the key it was encrypted with.
 
 ## Using a real certificate
 

@@ -54,6 +54,7 @@ KUBEMG_PUBLIC_URL=https://host.docker.internal:8443
 KUBEMG_TLS_HOSTS=host.docker.internal,kubemg-backend,backend
 KUBEMG_CORS_ORIGINS=http://localhost:5173,http://192.168.1.20:5173
 KUBEMG_SESSION_RECORDING_KEY=<openssl rand -base64 32>
+KUBEMG_SECRET_KEY=<openssl rand -base64 32>
 ```
 
 For a **minikube** cluster on the same host, `https://host.docker.internal:8443`
