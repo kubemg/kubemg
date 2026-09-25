@@ -102,10 +102,11 @@ row that isn't there. A cluster's dashboard for a non-admin is a slim identity
 card plus the counts and alerts drawn from the resource lists they can already
 read — see [Browsing resources](../clusters/explore.md).
 
-<figure markdown>
-  ![The fleet overview](../assets/screenshots/fleet-overview.png)
-  <figcaption>The fleet overview. One row per cluster, banded by environment, with the queue at the top naming what is waiting for an administrator.</figcaption>
-</figure>
+!!! info "Screenshot pending — `fleet-overview.png`"
+    The fleet overview: the connection chain — cluster, tunnel, kubemg, proxy,
+    you — as the page's own heading, one row per cluster, followed by the
+    table banded by environment with the queue at the top naming what is
+    waiting for an administrator.
 
 ## What an administrator sees
 
