@@ -37,7 +37,7 @@ decision, and neither the structured log nor a forwarder makes it.
 RFC 5424 syslog, with the message being one JSON object per record:
 
 ```
-<134>1 2026-08-25T09:14:02.913Z bastion-0 kubemg - kubemg-audit - {"audit":"kubemg.proxy","timestamp":"2026-08-25T09:14:02.913Z","user_id":7,"username":"ada","cluster_id":4,"cluster":"prod-eu","verb":"delete","method":"DELETE","uri":"/api/v1/namespaces/checkout/pods/checkout-7d9f","namespace":"checkout","resource":"pods","impersonate_user":"ada","impersonate_groups":"kubemg:edit","status_code":403,"duration_ms":4,"source_addr":"10.4.1.9","user_agent":"kubectl/v1.31.0","error":"refused by guardrail"}
+<134>1 2026-08-25T09:14:02.913Z bastion-0 kubemg - kubemg-audit - {"audit":"kubemg.proxy","timestamp":"2026-08-25T09:14:02.913Z","user_id":7,"username":"ada","cluster_id":4,"cluster":"prod-eu","verb":"delete","method":"DELETE","uri":"/api/v1/namespaces/checkout/pods/checkout-7d9f","namespace":"checkout","resource":"pods","impersonate_user":"kubemg:u:ada","impersonate_groups":"kubemg:edit","status_code":403,"duration_ms":4,"source_addr":"10.4.1.9","user_agent":"kubectl/v1.31.0","error":"refused by guardrail"}
 ```
 
 **The JSON field names are the structured log's, exactly.** A parser written

@@ -83,7 +83,7 @@ do, **existing agent installs must re-apply their manifests** to pick up the
 new grants; until they do, the symptom is silent and specific rather than a
 tunnel that visibly fails.
 
-It has happened three times so far:
+It has happened four times so far:
 
 - **CRD discovery and custom-resource read/write RBAC.** Without it, CRD
   discovery answers `403` and the Explore sidebar simply shows no custom
@@ -100,6 +100,14 @@ It has happened three times so far:
   the API server authorizes that as `get` on the subresource — so on 0.8.1 and
   0.8.2 the shell pod starts and then fails with `403 Forbidden` while writing
   its kubeconfig. Re-applying the manifests adds the missing verb.
+- **After 0.10.0, the narrowed impersonation grant.** The only change so far
+  that *removes* a permission: the agent may now impersonate only kubemg's
+  four `kubemg:` groups and no ServiceAccount, where it could previously
+  impersonate any group or ServiceAccount. Nothing breaks if you do not
+  re-apply — kubemg sends the same groups either way — but the old grant is
+  the wider one, so an agent that is not re-applied keeps a privilege kubemg
+  no longer needs. Re-apply. See the next section for the part of this
+  release that can change what your own bindings match.
 
 Re-applying is the same command as installing. The console renders it for a
 cluster that already exists: open the cluster's dashboard and choose **Agent
@@ -128,7 +136,37 @@ what's applied and reconcile. Both the cluster detail page and the wizard's
 last step in the console call out whether an attached cluster's RBAC is
 current.
 
-## Install URLs are single-use, and old ones stop working
+## After 0.10.0: kubemg accounts reach the cluster as `kubemg:u:<username>`
+
+From this release every kubemg account is impersonated as
+`kubemg:u:<username>` rather than as the bare username — `ada` becomes
+`kubemg:u:ada` in the API server's audit log, in `kubectl auth can-i --as`,
+and in the **Impersonated as** field of kubemg's own trail. It closes a
+privilege escalation: without the prefix, an account named like a
+ServiceAccount or a `system:` identity was that identity to the cluster (see
+[Why the username is prefixed](../access/model.md#why-the-username-is-prefixed)).
+
+What to check before upgrading:
+
+- **RoleBindings or ClusterRoleBindings you wrote against a kubemg username.**
+  A subject `kind: User, name: ada` no longer matches anybody; rebind it to
+  `kubemg:u:ada`. Find them with
+  `kubectl get rolebindings,clusterrolebindings -A -o json | jq -r '.items[] | select(any(.subjects[]?; .kind=="User")) | .metadata.name'`
+  and look for names that are kubemg usernames. Bindings to the `kubemg:`
+  groups — which is how kubemg's own manifests grant everything — are
+  unaffected, and so are kubemg's fixed identities (`kubemg:alarm-watcher`,
+  `kubemg:event-watcher`, `kubemg:shell-runner`).
+- **Usernames containing `:`.** New and renamed accounts may no longer carry
+  one, and a federated sign-in whose username claim contains one is refused
+  on first sign-in. Existing accounts keep working and are listed in a
+  warning in the server log at startup
+  (`accounts carry a username new accounts may no longer take`); rename them
+  in the user editor at your convenience.
+- **Audit filters or SIEM rules** matching `impersonate_user` against a bare
+  username. Records written before the upgrade keep the bare name; records
+  after it carry the prefix.
+
+## After 0.10.0: install URLs are single-use, and old ones stop working
 
 Install URLs used to carry the cluster's registration token in the path
 (`/install/kmg_…/agent.yaml`), and that token is the agent's permanent

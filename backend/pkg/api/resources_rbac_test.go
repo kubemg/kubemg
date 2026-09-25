@@ -399,8 +399,8 @@ func TestGrantIdentityReportsTheImpersonatedSubject(t *testing.T) {
 	}
 
 	body := decode[map[string]any](t, rec)
-	if body["subject"] != "devops" {
-		t.Fatalf("subject = %v, want the impersonated username", body["subject"])
+	if body["subject"] != "kubemg:u:devops" {
+		t.Fatalf("subject = %v, want the impersonated (prefixed) username", body["subject"])
 	}
 	if body["k8s_role"] != "view" {
 		t.Fatalf("k8s_role = %v, want the grant's role", body["k8s_role"])

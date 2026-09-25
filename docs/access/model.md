@@ -62,19 +62,19 @@ Ada has three rows that all resolve against the same cluster, `prod-eu`:
 
 ## How a grant becomes access on the wire
 
-kubemg never manages per-user credentials on target clusters. Every proxied call is impersonated: the bastion sets `Impersonate-User` to the caller's own username and `Impersonate-Group` to a pair of groups derived from the resolved role:
+kubemg never manages per-user credentials on target clusters. Every proxied call is impersonated: the bastion sets `Impersonate-User` to the caller's own username **under a fixed prefix, `kubemg:u:`**, and `Impersonate-Group` to a pair of groups derived from the resolved role.
 
-That is `kubemg:view` / `kubemg:edit` / `kubemg:cluster-admin`, plus `kubemg:users` on every call regardless of role, giving the cluster one subject to hang baseline access off. Client-supplied credentials and impersonation headers on the incoming request are stripped before kubemg's own are set — nothing a caller sends can widen what it is impersonated as.
+That is `kubemg:view` / `kubemg:edit` / `kubemg:cluster-admin`, plus `kubemg:users` on every call regardless of role, giving the cluster one subject to hang baseline access off. Client-supplied credentials and impersonation headers on the incoming request — `Authorization`, `Impersonate-User`, `Impersonate-Group`, `Impersonate-Uid` and every `Impersonate-Extra-*` — are stripped before kubemg's own are set, so nothing a caller sends can widen what it is impersonated as.
 
 For a caller named `ada` with effective role `edit`, the header set the agent's Kubernetes API server actually sees is:
 
 ```
-Impersonate-User: ada
+Impersonate-User: kubemg:u:ada
 Impersonate-Group: kubemg:edit
 Impersonate-Group: kubemg:users
 ```
 
-Every resolved role produces exactly this shape — `Impersonate-User` is always the caller's own username (never a shared service identity), and `Impersonate-Group` always carries two values: the one group for the resolved role, and `kubemg:users` unconditionally:
+Every resolved role produces exactly this shape — `Impersonate-User` is always the caller's own username behind the prefix (never a shared service identity), and `Impersonate-Group` always carries two values: the one group for the resolved role, and `kubemg:users` unconditionally:
 
 | Effective `k8s_role` | `Impersonate-Group` values |
 | --- | --- |
@@ -84,6 +84,16 @@ Every resolved role produces exactly this shape — `Impersonate-User` is always
 | *(empty/unset)* | `kubemg:view`, `kubemg:users` — `ImpersonationGroups` treats an empty role as `view` |
 
 Nothing here is scoped by namespace: impersonation groups carry the *role*, never the namespace list — that half of the grant is enforced in the proxy itself, described below.
+
+### Why the username is prefixed
+
+A username is chosen by whoever creates the account — an administrator, or an identity provider on first sign-in — and the agent is allowed to impersonate any user. Without a prefix, an account called `system:serviceaccount:kube-system:backup-operator` would reach the API server *as that ServiceAccount* and inherit every binding it holds, whatever its kubemg grant said. This is the same reason Kubernetes' own OIDC integration has `--oidc-username-prefix`. Three things close it together:
+
+- **The prefix.** A kubemg account is always `kubemg:u:<username>` to the cluster. No name an account can take is also a name the cluster already trusts.
+- **The username rule.** A new or renamed account may not contain `:` or a control character — every reserved Kubernetes form (`system:masters`, `system:serviceaccount:…`, `system:node:…`) is colon-separated, and an email or a directory login never needs one. A federated sign-in whose username claim breaks the rule is **refused by name**, not rewritten. Accounts created before the rule are left alone (the prefix already makes them harmless) and are listed in a warning at startup so an administrator can rename them.
+- **The agent's ClusterRole.** The agent may impersonate only the four `kubemg:` groups above, and no ServiceAccount at all. Users cannot be narrowed the same way — Kubernetes has no prefix match for `resourceNames` — which is why the prefix carries that half.
+
+**If you bound a RoleBinding to a kubemg username directly** — `kind: User, name: ada` — rebind it to `kubemg:u:ada`. Bindings to the `kubemg:` groups, which is how kubemg's own manifests grant access, are unaffected. kubemg's own fixed identities (`kubemg:alarm-watcher`, `kubemg:event-watcher`, `kubemg:shell-runner`) are not accounts and keep their names.
 
 ## Where namespace scope is enforced
 

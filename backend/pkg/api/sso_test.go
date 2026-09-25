@@ -522,3 +522,11 @@ const testPublicURL = "https://kubemg.example.com"
 func providerPath(id uint, suffix string) string {
 	return "/api/v1/auth/sso/providers/" + itoa(id) + suffix
 }
+
+// A federated username that fails the rule is a deliberate refusal, not a
+// server fault, and the browser is told why.
+func TestUnsafeFederatedUsernameIsARefusal(t *testing.T) {
+	if got := ssoStatusFor(db.ErrSSOUnsafeUsername); got != http.StatusForbidden {
+		t.Fatalf("ssoStatusFor(ErrSSOUnsafeUsername) = %d, want %d", got, http.StatusForbidden)
+	}
+}
