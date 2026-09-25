@@ -87,6 +87,6 @@ without binding a role, and agent mode is what closes it.
 | A page, a sheet, the design tokens | [Console](frontend.md) |
 | Anything that runs inside a customer cluster | [The agent module](agent.md) |
 
-Before changing an area, read its section in `ARCHITECTURE.md` at the repository
-root. That file carries the alternatives that were tried and rejected, which is
-the part a code comment cannot hold.
+Before changing an area, read its page. Each one records the rules the area keeps
+and why, including what was tried and rejected, which is the part a code comment
+cannot hold.

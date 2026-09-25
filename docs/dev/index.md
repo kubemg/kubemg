@@ -109,13 +109,13 @@ changes its licence, which makes it a review question rather than a refactor.
 
 ## Where the design decisions are recorded
 
-`ARCHITECTURE.md` at the repository root is the design record. For each
-subsystem it carries the argument: why it is shaped the way it is, which
-alternatives were tried, and what must not be reintroduced. The pages under
-[Internals](architecture.md) summarise the shape; the record carries the
-reasons. Read the record's section for an area before changing it — a rule
-without its reason is easy to "fix" back into a bug.
+The pages under [Internals](architecture.md) are the design record. For each
+subsystem they say why it is shaped the way it is and which rules it keeps. Read
+the page for an area before changing it, because a rule changed without its
+reason tends to come back as a bug. The history is in the
+[pull requests](https://github.com/kubemg/kubemg/pulls?q=is%3Apr+is%3Amerged).
+A merged change describes what was built and, often, what was deliberately left
+out.
 
-`roadmap.md` carries open work. A finished item moves to `roadmap-shipped.md`
-with a note on what was actually built and what was deliberately rejected. Read
-the shipped entry before reimplementing anything it describes.
+Open work is tracked in the [issues](https://github.com/kubemg/kubemg/issues).
+See [Contributing](contributing.md) for how to pick something up.

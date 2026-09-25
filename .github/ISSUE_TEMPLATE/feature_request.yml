@@ -11,9 +11,10 @@ body:
         guess at when they are missing: what the change *is*, how anyone will know it is done,
         and what it must deliberately not turn into.
 
-        Before filing, check [`roadmap.md`](../blob/master/roadmap.md) for open work and
-        [`roadmap-shipped.md`](../blob/master/roadmap-shipped.md) for what already shipped —
-        a shipped entry records **why** it was built that way and what was rejected.
+        Before filing, search the open and closed issues and pull requests. A closed one often
+        records **why** something was built the way it was, or why it was turned down. The
+        [Contributing](https://kubemg.readthedocs.io/en/latest/dev/contributing/) page says what
+        a change is held to.
 
   - type: textarea
     id: problem
@@ -84,15 +85,16 @@ body:
       description: >
         Existing invariants that bear on it — impersonation, namespace scoping, the audit trail,
         the visual language (lime is the only interactive accent, every text tone clears 4.5:1),
-        the two connection modes, the read cache. `ARCHITECTURE.md` carries the reasoning for each.
+        the two connection modes, the read cache. The developer guide's Internals pages carry the
+        reasoning for each: https://kubemg.readthedocs.io/en/latest/dev/architecture/
     validations:
       required: false
 
   - type: input
-    id: roadmap
+    id: related
     attributes:
-      label: Roadmap entry
-      description: The heading in `roadmap.md` this belongs under, if it is already tracked there.
-      placeholder: Phase 7 — FinOps, Advanced Visualization & AI SRE Intelligence
+      label: Related issues or pull requests
+      description: Anything already open or closed that this builds on, replaces or overlaps with.
+      placeholder: "#147, #150"
     validations:
       required: false
