@@ -6,15 +6,15 @@ Pin an explicit tag rather than tracking `latest`, in both places a version
 appears:
 
 - The management plane image, `KUBEMG_IMAGE`/`KUBEMG_VERSION`
-  (`ghcr.io/kubemg/kubemg:0.11.0`) in Compose, or the `image:` field of the
+  (`ghcr.io/kubemg/kubemg:0.11.1`) in Compose, or the `image:` field of the
   Deployment in Kubernetes.
-- The agent image, `KUBEMG_AGENT_IMAGE` (`ghcr.io/kubemg/kubemg-agent:0.11.0`),
+- The agent image, `KUBEMG_AGENT_IMAGE` (`ghcr.io/kubemg/kubemg-agent:0.11.1`),
   written into every rendered agent install manifest by the management
   plane, so bumping it here is what changes what a *future* `kubectl apply -k
   …` installs — it does not touch agents already running.
 
 - The browser shell image, `KUBEMG_SHELL_IMAGE`
-  (`ghcr.io/kubemg/kubemg-shell:0.11.0`), which a shell pod runs on a target
+  (`ghcr.io/kubemg/kubemg-shell:0.11.1`), which a shell pod runs on a target
   cluster. Like the agent image it is read when a shell is *started*, so
   bumping it changes the next shell rather than one already open.
 
@@ -144,6 +144,11 @@ page, written as the steps to take, in order:
 - [Upgrading to 0.11.0](upgrading-0.11.md), from 0.10.x. Read it before you pull:
   the identity every cluster sees changes, old install URLs stop working, and
   credential encryption, once turned on, cannot be rolled back past.
+- 0.11.1, from 0.11.0, asks nothing beyond the image pull and needs no agent
+  re-apply. It adds the pod
+  [Debug action](../clusters/terminals-and-logs.md#debugging-a-pod-with-no-shell),
+  whose container runs `busybox:1.36` by default: an air-gapped install
+  should mirror an image with a shell and point `debug_image` at it.
 
 An install that runs from a clone of the repository rather than from the
 published images has one more thing to get right. See
@@ -178,7 +183,7 @@ Two things a rollback does **not** undo:
 ## Documentation versioning
 
 This manual is versioned against release tags on Read the Docs: an install
-running `0.11.0` corresponds to the `0.11.0` version of these docs, not
+running `0.11.1` corresponds to the `0.11.1` version of these docs, not
 whatever `master` says today. If you're following a procedure here, check
 the version selector matches the version you're actually running.
 

@@ -130,7 +130,7 @@ spec:
         fsGroup: 65532
       containers:
         - name: kubemg
-          image: ghcr.io/kubemg/kubemg:0.11.0
+          image: ghcr.io/kubemg/kubemg:0.11.1
           ports:
             - name: https
               containerPort: 8443
