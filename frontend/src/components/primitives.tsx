@@ -573,6 +573,54 @@ export function Panel({
   )
 }
 
+/**
+ * Disclosure folds a card's own explanation behind one line — the "why this
+ * is like this" prose that belongs in the console rather than only in the
+ * manual, kept out of the way of the readings it explains instead of cut.
+ * The summary names what is inside; a bare chevron is not enough, since a
+ * disclosure that could be anything is one nobody opens on purpose.
+ *
+ * The content stays in the DOM whichever way it is drawn — a closed
+ * `<details>` hides it without unmounting it, so it is still there for
+ * find-in-page and a screen reader, and reopening it costs no re-render of
+ * whatever is inside.
+ *
+ * This component draws the disclosure; it does not remember whether it was
+ * left open. `open`/`onOpenChange` are the caller's — see
+ * `lib/disclosures.ts` for the per-user memory every caller wires in the
+ * same way, and note it takes no transition: opening one is instant, the
+ * same rule that keeps everything on this deck still except a genuinely
+ * open stream.
+ */
+export function Disclosure({
+  summary,
+  open,
+  onOpenChange,
+  children,
+  className,
+}: {
+  /** What is folded away, named — never a bare chevron. */
+  summary: ReactNode
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <details
+      className={`group card overflow-hidden ${className ?? ''}`}
+      open={open}
+      onToggle={(event) => onOpenChange(event.currentTarget.open)}
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 px-4 py-3 text-[12.5px] font-medium text-muted hover:text-fg [&::-webkit-details-marker]:hidden">
+        <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 group-open:rotate-180" />
+        {summary}
+      </summary>
+      <div className="border-t border-line-soft px-4 py-3">{children}</div>
+    </details>
+  )
+}
+
 /** SectionHeading separates bands of content that are not panels themselves. */
 export function SectionHeading({
   title,

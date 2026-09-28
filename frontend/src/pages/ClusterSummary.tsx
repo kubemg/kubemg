@@ -36,12 +36,14 @@ import {
   Button,
   ClusterState,
   DetailList,
+  Disclosure,
   EnvironmentTag,
   Meter,
   Notice,
   Panel,
 } from '../components/primitives'
 import { CardSkeleton, MeterGridSkeleton } from '../components/SkeletonLoader'
+import { useDisclosureState } from '../lib/disclosures'
 import { useLiveTick } from '../lib/live'
 import { DEFAULT_RESOURCE, resourceHref } from '../lib/navigation'
 import { queryKey, useCachedQuery } from '../lib/query'
@@ -351,7 +353,12 @@ function AdminDashboard({
   username: string
   actions: ReactNode
 }) {
+  const { user } = useAuth()
   const viaAgent = cluster.connection_mode === 'agent'
+  const [adminExplainerOpen, setAdminExplainerOpen] = useDisclosureState(
+    'cluster-summary.admin.connection',
+    user?.id ?? null,
+  )
 
   return (
     <>
@@ -451,48 +458,53 @@ function AdminDashboard({
 
       <AccessPath cluster={cluster} username={username} />
 
+      {/* Why the connection works the way it does — folded behind one line
+          rather than left open ahead of the charts, and remembered per
+          person from here on. Every word survives; see Disclosure. */}
       {viaAgent ? (
-        <Panel
-          title="How this cluster is reached"
-          eyebrow="Agent mode"
-          bodyClassName="p-4"
+        <Disclosure
+          open={adminExplainerOpen}
+          onOpenChange={setAdminExplainerOpen}
+          summary="How this cluster is reached"
         >
-          <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
-            An agent inside this cluster holds an outbound tunnel to kubemg, and every proxied
-            call is replayed under your own identity using Kubernetes impersonation. The
-            cluster&rsquo;s own RBAC decides what that identity may do — the grant above decides
-            which cluster and namespaces kubemg will carry you to. Every call is written to the
-            audit trail.
-          </p>
-          {/* "The cluster decides" is only honest if the console can show
-              what the cluster decided. This is that view. */}
-          <p className="mt-3 max-w-3xl text-[13px] leading-relaxed text-muted">
-            <Link
-              to={`/clusters/${cluster.id}/explore/clusterroles`}
-              className="text-accent hover:underline"
-            >
-              Read this cluster&rsquo;s own RBAC
-            </Link>{' '}
-            to see the Roles and bindings behind that, and to ask the cluster directly whether
-            an identity may do something.
-          </p>
-          {/* Privileged containers, hostPath mounts and the rest are
-              fields these same reads already carry — this is where
-              they are turned into a ranked list rather than left for
-              someone to notice by eye. */}
-          <p className="mt-3 max-w-3xl text-[13px] leading-relaxed text-muted">
-            <Link to={`/clusters/${cluster.id}/security`} className="text-accent hover:underline">
-              Check this cluster&rsquo;s workload security posture
-            </Link>{' '}
-            for privileged containers, hostPath mounts, missing NetworkPolicies and the rest —
-            read from these same manifests, not a scan of your images.
-          </p>
-        </Panel>
+          <div className="flex flex-col gap-3">
+            <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
+              An agent inside this cluster holds an outbound tunnel to kubemg, and every proxied
+              call is replayed under your own identity using Kubernetes impersonation. The
+              cluster&rsquo;s own RBAC decides what that identity may do — the grant above decides
+              which cluster and namespaces kubemg will carry you to. Every call is written to the
+              audit trail.
+            </p>
+            {/* "The cluster decides" is only honest if the console can show
+                what the cluster decided. This is that view. */}
+            <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
+              <Link
+                to={`/clusters/${cluster.id}/explore/clusterroles`}
+                className="text-accent hover:underline"
+              >
+                Read this cluster&rsquo;s own RBAC
+              </Link>{' '}
+              to see the Roles and bindings behind that, and to ask the cluster directly whether
+              an identity may do something.
+            </p>
+            {/* Privileged containers, hostPath mounts and the rest are
+                fields these same reads already carry — this is where
+                they are turned into a ranked list rather than left for
+                someone to notice by eye. */}
+            <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
+              <Link to={`/clusters/${cluster.id}/security`} className="text-accent hover:underline">
+                Check this cluster&rsquo;s workload security posture
+              </Link>{' '}
+              for privileged containers, hostPath mounts, missing NetworkPolicies and the rest —
+              read from these same manifests, not a scan of your images.
+            </p>
+          </div>
+        </Disclosure>
       ) : (
-        <Panel
-          title="What a kubeconfig for this cluster does"
-          eyebrow="Direct mode"
-          bodyClassName="p-4"
+        <Disclosure
+          open={adminExplainerOpen}
+          onOpenChange={setAdminExplainerOpen}
+          summary="What a kubeconfig for this cluster does"
         >
           <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
             kubemg issues a short-lived token for this cluster&rsquo;s kubemg service account
@@ -500,7 +512,7 @@ function AdminDashboard({
             above decides what you see in kubemg — not what the cluster lets you do. Register
             the cluster in agent mode to have kubemg bind these roles for real.
           </p>
-        </Panel>
+        </Disclosure>
       )}
     </>
   )
@@ -522,7 +534,12 @@ function WorkloadDashboard({
   username: string
   actions: ReactNode
 }) {
+  const { user } = useAuth()
   const viaAgent = cluster.connection_mode === 'agent'
+  const [kubeconfigExplainerOpen, setKubeconfigExplainerOpen] = useDisclosureState(
+    'cluster-summary.developer.kubeconfig',
+    user?.id ?? null,
+  )
 
   return (
     <>
@@ -583,19 +600,20 @@ function WorkloadDashboard({
 
       {/* The one piece of the administrator's prose that is kept here, because
           this page offers the kubeconfig and a direct-mode file does not mean
-          what the chain above it appears to say. */}
+          what the chain above it appears to say. Folded and remembered per
+          person, the same as everywhere else this shared primitive is used. */}
       {viaAgent ? null : (
-        <Panel
-          title="What a kubeconfig for this cluster does"
-          eyebrow="Direct mode"
-          bodyClassName="p-4"
+        <Disclosure
+          open={kubeconfigExplainerOpen}
+          onOpenChange={setKubeconfigExplainerOpen}
+          summary="What a kubeconfig for this cluster does"
         >
           <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
             kubemg issues a short-lived token for this cluster&rsquo;s kubemg service account. It
             creates no RoleBinding, so the grant above decides what you see in kubemg — not what
             the cluster lets you do, and calls made with that file are not proxied or audited here.
           </p>
-        </Panel>
+        </Disclosure>
       )}
     </>
   )

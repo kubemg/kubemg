@@ -12,10 +12,12 @@ import {
 } from '../api/client'
 import type { Cluster, Group, K8sRole, Permission, SubjectType, User } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { useDisclosureState } from '../lib/disclosures'
 import { formatInstant } from '../lib/time'
 import {
   Button,
   DetailList,
+  Disclosure,
   EmptyState,
   EnvironmentTag,
   Field,
@@ -25,6 +27,7 @@ import {
   Sheet,
   TextInput,
 } from '../components/primitives'
+import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
 
 const K8S_ROLES: K8sRole[] = ['cluster-admin', 'edit', 'view']
@@ -50,7 +53,12 @@ function cellKey(subjectId: number, clusterId: number) {
 }
 
 export function PermissionsMatrix() {
+  const { user: viewer } = useAuth()
   const { clusters } = useClusters()
+  const [scopeOpen, setScopeOpen] = useDisclosureState(
+    'permissions-matrix.scope',
+    viewer?.id ?? null,
+  )
   const [tab, setTab] = useState<SubjectType>('user')
   const [users, setUsers] = useState<User[]>([])
   const [groups, setGroups] = useState<Group[]>([])
@@ -166,20 +174,28 @@ export function PermissionsMatrix() {
             which cluster and namespaces KubeMG will carry somebody to; what they
             may then *do* is the cluster's decision, and that is a different
             model living in a different place. Saying so is only honest if the
-            console can show the other one, which it now can. */}
+            console can show the other one, which it now can — folded behind
+            one line rather than left open ahead of the matrix, and
+            remembered per person from here on. */}
         {rbacCluster ? (
-          <p className="text-[12.5px] leading-relaxed text-muted">
-            These grants govern kubemg. On an agent cluster the substantive
-            &ldquo;may they&rdquo; is the cluster&rsquo;s, decided by its own RBAC through
-            impersonation —{' '}
-            <Link
-              to={`/clusters/${rbacCluster.id}/explore/clusterroles`}
-              className="text-accent hover:underline"
-            >
-              read what {rbacCluster.name} itself binds
-            </Link>
-            , and ask it directly whether an identity may do something.
-          </p>
+          <Disclosure
+            open={scopeOpen}
+            onOpenChange={setScopeOpen}
+            summary="What these grants govern, and what they do not"
+          >
+            <p className="text-[12.5px] leading-relaxed text-muted">
+              These grants govern kubemg. On an agent cluster the substantive
+              &ldquo;may they&rdquo; is the cluster&rsquo;s, decided by its own RBAC through
+              impersonation —{' '}
+              <Link
+                to={`/clusters/${rbacCluster.id}/explore/clusterroles`}
+                className="text-accent hover:underline"
+              >
+                read what {rbacCluster.name} itself binds
+              </Link>
+              , and ask it directly whether an identity may do something.
+            </p>
+          </Disclosure>
         ) : null}
 
         {clusters.length === 0 || subjects.length === 0 ? (
