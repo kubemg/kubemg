@@ -22,6 +22,7 @@ import type { AgentInstall, Cluster, NodeMetrics } from '../api/types'
 import { AgentInstallSheet } from '../components/AgentInstallSheet'
 import { AppShell } from '../components/AppShell'
 import { ClusterWorkloadSummary } from '../components/ClusterWorkloadSummary'
+import { ConnectionChain } from '../components/ConnectionChain'
 import { ConsolesPanel } from '../components/ConsolesPanel'
 import { CrdVisibilityPanel } from '../components/CrdVisibilityPanel'
 import { DatasourcePanel } from '../components/DatasourcePanel'
@@ -30,7 +31,6 @@ import type { ComparisonKind } from '../components/MetricComparison'
 import { MetricsChart } from '../components/MetricsChart'
 import { JitRequestModal } from '../components/jit/JitRequestModal'
 import { KubeconfigDrawer } from '../components/KubeconfigDrawer'
-import { PathHop, PathNode } from '../components/LinkStatus'
 import {
   Age,
   Button,
@@ -45,7 +45,6 @@ import { CardSkeleton, MeterGridSkeleton } from '../components/SkeletonLoader'
 import { useLiveTick } from '../lib/live'
 import { DEFAULT_RESOURCE, resourceHref } from '../lib/navigation'
 import { queryKey, useCachedQuery } from '../lib/query'
-import { linkState } from '../lib/status'
 import { formatInstant } from '../lib/time'
 import { formatCPU, formatMemory } from '../lib/units'
 import { useAuth } from '../state/auth-context'
@@ -275,11 +274,33 @@ export function ClusterSummary() {
         {query.loading ? <CardSkeleton lines={4} label="Loading this cluster" /> : null}
 
         {cluster ? (
-          admin ? (
-            <AdminDashboard cluster={cluster} username={username} actions={actions} />
-          ) : (
-            <WorkloadDashboard cluster={cluster} username={username} actions={actions} />
-          )
+          <>
+            {/* The path a call actually takes, said once at the top of the page
+                it belongs to — the same drawing the fleet page opens on, so the
+                two read as one product rather than two. Everything below this
+                is quiet on purpose: a cluster's name, its environment and its
+                last probe are still worth knowing, but none of them competes
+                with this row for the eye. */}
+            <div className="flex flex-col gap-2">
+              <ConnectionChain cluster={cluster} username={username} />
+              <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
+                <EnvironmentTag environment={cluster.environment} />
+                <ClusterState cluster={cluster} />
+                <span
+                  className="ml-auto"
+                  title={formatInstant(cluster.last_checked_at, { seconds: true })}
+                >
+                  last probe <Age iso={cluster.last_checked_at} />
+                </span>
+              </div>
+            </div>
+
+            {admin ? (
+              <AdminDashboard cluster={cluster} username={username} actions={actions} />
+            ) : (
+              <WorkloadDashboard cluster={cluster} username={username} actions={actions} />
+            )}
+          </>
         ) : null}
       </div>
 
@@ -335,62 +356,17 @@ function AdminDashboard({
   return (
     <>
       <section className="card p-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="font-mono text-[22px] font-semibold tracking-[-0.01em] text-fg">
-            {cluster.name}
-          </h2>
-          <EnvironmentTag environment={cluster.environment} />
-          <ClusterState cluster={cluster} />
-          {/* What the pill says is the link now; this is when the last probe
-              ran, which is a different fact and is labelled as one. */}
-          <span
-            className="ml-auto text-[12.5px] text-muted"
-            title={formatInstant(cluster.last_checked_at, { seconds: true })}
-          >
-            last probe <Age iso={cluster.last_checked_at} />
-          </span>
-        </div>
-
+        {/* The cluster's name, its environment and its last probe now live in
+            the masthead above — see ClusterSummary — so this card opens
+            directly on what it is telling you, rather than saying the name a
+            second time. */}
         {cluster.description ? (
-          <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-muted">
+          <p className="max-w-2xl text-[13px] leading-relaxed text-muted">
             {cluster.description}
           </p>
         ) : null}
 
-        {/* The path traffic actually takes, said once, at the top of the
-            cluster it belongs to. Three nodes and what happens between
-            them — the order of the row is the direction of travel, so
-            there is nothing left for a drawn line to add. */}
-        <div className="mt-5 flex flex-col gap-3 rounded-card border border-line-soft bg-raised/50 p-4 sm:flex-row sm:items-end sm:gap-4">
-          <PathNode
-            label="Cluster"
-            value={cluster.name}
-            tone={cluster.status === 'healthy' ? 'ok' : 'idle'}
-          />
-          <PathHop
-            state={linkState(cluster)}
-            caption={
-              viaAgent
-                ? cluster.agent_attached
-                  ? 'outbound tunnel · open'
-                  : 'outbound tunnel · not connected'
-                : 'kubemg dials the API server'
-            }
-          />
-          <PathNode
-            label="kubemg"
-            value={viaAgent ? 'bastion proxy' : 'token issuer'}
-            tone="accent"
-          />
-          <PathHop
-            state={viaAgent ? 'live' : 'direct'}
-            label={viaAgent ? 'Proxied' : 'Kubeconfig'}
-            caption={viaAgent ? 'proxied · audited' : 'kubeconfig · not proxied'}
-          />
-          <PathNode label="You" value={username} />
-        </div>
-
-        <div className="mt-5 border-t border-line-soft pt-4">
+        <div className={cluster.description ? 'mt-5 border-t border-line-soft pt-4' : ''}>
           <DetailList
             columns={2}
             rows={[
@@ -551,29 +527,17 @@ function WorkloadDashboard({
   return (
     <>
       <section className="card p-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="font-mono text-[22px] font-semibold tracking-[-0.01em] text-fg">
-            {cluster.name}
-          </h2>
-          <EnvironmentTag environment={cluster.environment} />
-          <ClusterState cluster={cluster} />
-          {/* What the pill says is the link now; this is when the last probe
-              ran, which is a different fact and is labelled as one. */}
-          <span
-            className="ml-auto text-[12.5px] text-muted"
-            title={formatInstant(cluster.last_checked_at, { seconds: true })}
-          >
-            last probe <Age iso={cluster.last_checked_at} />
-          </span>
-        </div>
-
+        {/* The cluster's name, its environment and its last probe now live in
+            the masthead above — see ClusterSummary — so this card opens
+            directly on what it is telling you, rather than saying the name a
+            second time. */}
         {cluster.description ? (
-          <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-muted">
+          <p className="max-w-2xl text-[13px] leading-relaxed text-muted">
             {cluster.description}
           </p>
         ) : null}
 
-        <div className="mt-5 border-t border-line-soft pt-4">
+        <div className={cluster.description ? 'mt-5 border-t border-line-soft pt-4' : ''}>
           <DetailList
             columns={2}
             rows={[
