@@ -69,6 +69,8 @@ type runtimeSettings struct {
 	ShellIdleTimeoutMinutes int `json:"shell_idle_timeout_minutes"`
 	// ShellMaxLifetimeHours is the absolute deadline written into the pod.
 	ShellMaxLifetimeHours int `json:"shell_max_lifetime_hours"`
+	// DebugImage is what an ephemeral debug container runs.
+	DebugImage string `json:"debug_image"`
 }
 
 type settingsResponse struct {
@@ -107,13 +109,14 @@ type updateSettingsRequest struct {
 	RecordManifestDiffs *bool     `json:"record_manifest_diffs"`
 	// KubeconfigMaxTTLHours accepts 0 to clear the override back to the
 	// build's default ceiling.
-	KubeconfigMaxTTLHours *int `json:"kubeconfig_max_ttl_hours"`
+	KubeconfigMaxTTLHours *int    `json:"kubeconfig_max_ttl_hours"`
 	ShellEnabled          *bool   `json:"shell_enabled"`
 	ShellImage            *string `json:"shell_image"`
 	// ShellIdleTimeoutMinutes and ShellMaxLifetimeHours accept 0 to clear the
 	// override back to the build's defaults.
-	ShellIdleTimeoutMinutes *int `json:"shell_idle_timeout_minutes"`
-	ShellMaxLifetimeHours   *int `json:"shell_max_lifetime_hours"`
+	ShellIdleTimeoutMinutes *int    `json:"shell_idle_timeout_minutes"`
+	ShellMaxLifetimeHours   *int    `json:"shell_max_lifetime_hours"`
+	DebugImage              *string `json:"debug_image"`
 }
 
 // Audit retention bounds. The floor stops an operator from silently emptying
@@ -168,6 +171,10 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 		ShellImage:              s.shellImage,
 		ShellIdleTimeoutMinutes: int(shell.DefaultIdleTimeout / time.Minute),
 		ShellMaxLifetimeHours:   int(shell.DefaultMaxLifetime / time.Hour),
+		// The debug image follows the process the same way the shell image
+		// does, but with no enable switch of its own: a grant that can already
+		// exec into a pod can already ask for one.
+		DebugImage: s.debugImage,
 	}
 	stored, err := s.store.Settings(ctx)
 	if err != nil {
@@ -216,6 +223,9 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 	if v := storedBounded(stored, db.SettingShellMaxLifetimeHours,
 		minShellMaxLifetimeHours, maxShellMaxLifetimeHours); v > 0 {
 		out.ShellMaxLifetimeHours = v
+	}
+	if v := strings.TrimSpace(stored[db.SettingDebugImage]); v != "" {
+		out.DebugImage = v
 	}
 	out.SessionRecordingRetentionDays = clampRecordingRetention(
 		storedDays(stored, db.SettingSessionRecordingRetentionDays), out.AuditRetentionDays)
@@ -369,6 +379,7 @@ func (s *server) getSettings(c *gin.Context) {
 			minShellIdleTimeoutMinutes, maxShellIdleTimeoutMinutes),
 		ShellMaxLifetimeHours: storedBounded(stored, db.SettingShellMaxLifetimeHours,
 			minShellMaxLifetimeHours, maxShellMaxLifetimeHours),
+		DebugImage: strings.TrimSpace(stored[db.SettingDebugImage]),
 	}
 
 	c.JSON(http.StatusOK, settingsResponse{
@@ -392,6 +403,7 @@ func (s *server) getSettings(c *gin.Context) {
 			ShellImage:              s.shellImage,
 			ShellIdleTimeoutMinutes: int(shell.DefaultIdleTimeout / time.Minute),
 			ShellMaxLifetimeHours:   int(shell.DefaultMaxLifetime / time.Hour),
+			DebugImage:              s.debugImage,
 		},
 		Warnings: settingsWarnings(effective),
 	})
@@ -542,6 +554,10 @@ func (s *server) updateSettings(c *gin.Context) {
 		default:
 			values[db.SettingShellMaxLifetimeHours] = strconv.Itoa(hours)
 		}
+	}
+
+	if req.DebugImage != nil {
+		values[db.SettingDebugImage] = strings.TrimSpace(*req.DebugImage)
 	}
 
 	if err := s.store.PutSettings(c.Request.Context(), values, caller.ID); err != nil {

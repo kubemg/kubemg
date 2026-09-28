@@ -36,6 +36,7 @@ function pod(over: Partial<Pod> = {}): Pod {
     restarts: 0,
     created_at: '2026-01-01T00:00:00Z',
     containers: [container('Running')],
+    ephemeral_containers: [],
     ...over,
   }
 }

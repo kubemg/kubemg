@@ -272,6 +272,11 @@ type Options struct {
 	// off, and cannot switch on one this server has no image for.
 	ShellImage   string
 	ShellEnabled bool
+	// DebugImage is what an ephemeral debug container runs. Unlike the shell
+	// there is no matching enable flag: it follows the process the same way —
+	// an empty value is what "no debug image configured" reads as — but the
+	// feature itself needs no separate switch.
+	DebugImage string
 	// BastionCA is the certificate an agent has to trust to dial this server,
 	// baked into every rendered install package. Set it when the bastion serves
 	// a certificate the public CAs do not vouch for — a self-signed one — and
@@ -407,7 +412,9 @@ type server struct {
 	// browser shell as; see Options.
 	shellImage   string
 	shellEnabled bool
-	bastionCA    string
+	// debugImage is what an ephemeral debug container runs; see Options.DebugImage.
+	debugImage string
+	bastionCA  string
 	// recordings is the directory terminal recordings are read back from. Empty
 	// means this server is not recording sessions.
 	recordings     string
@@ -512,6 +519,7 @@ func NewRouter(opts Options) *gin.Engine {
 		agentNamespace:     opts.AgentNamespace,
 		shellImage:         strings.TrimSpace(opts.ShellImage),
 		shellEnabled:       opts.ShellEnabled && strings.TrimSpace(opts.ShellImage) != "",
+		debugImage:         strings.TrimSpace(opts.DebugImage),
 		bastionCA:          opts.BastionCA,
 		recordings:         strings.TrimSpace(opts.RecordingDir),
 		recordingKey:       opts.RecordingKey,
@@ -1055,6 +1063,11 @@ func NewRouter(opts Options) *gin.Engine {
 			// from workload/history's own list rather than from anything the
 			// caller sends.
 			resources.POST("/workload/rollback", s.rollbackWorkload)
+			// The pod that has no shell: a read-modify-write onto its own
+			// ephemeralcontainers subresource, exactly the pattern above, for a
+			// pod rather than a workload — see resources_debug.go. The exec half
+			// that follows is the same terminal route every other container uses.
+			resources.POST("/pods/debug", s.debugPodContainer)
 
 			// `kubectl describe`: the same object, addressed the same way, plus
 			// the events the cluster recorded against it. Those events are the

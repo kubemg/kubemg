@@ -62,16 +62,21 @@ export function PodTerminal({
   namespace,
   pod,
   container,
+  defaultShell,
 }: {
   clusterId: number
   namespace: string
   pod: string
   container: string
+  /** Which shell to open with, when the caller already knows the container
+      has no bash — a debug session's default image is busybox. The picker
+      is still offered and can switch it. */
+  defaultShell?: string
 }) {
   const host = useRef<HTMLDivElement | null>(null)
   const [status, setStatus] = useState<Status>('connecting')
   const [detail, setDetail] = useState<string | null>(null)
-  const [shell, setShell] = useState(DEFAULT_SHELL)
+  const [shell, setShell] = useState(defaultShell ?? DEFAULT_SHELL)
   // What this server captures. It is read once and shown before the first
   // keystroke: telling somebody afterwards that everything they typed was kept
   // is not disclosure, and in several jurisdictions it is not lawful either.

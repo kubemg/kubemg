@@ -50,6 +50,7 @@ import type {
   DatasourceCheck,
   DatasourceInput,
   DatasourceKind,
+  DebugContainerResult,
   DeploymentPosture,
   ClusterRoleEntry,
   EventTimeline,
@@ -775,6 +776,18 @@ export function fetchWorkloads(clusterId: number, namespace: string): Promise<Wo
 
 export function fetchPods(clusterId: number, namespace: string): Promise<Pod[]> {
   return fetchList<Pod>(clusterId, 'pods', 'pods', namespace)
+}
+
+/**
+ * fetchPod reads one pod fresh, the same normalised shape fetchPods returns
+ * for a list. Used to poll a debug container's status after adding one — see
+ * DebugContainerSheet — rather than to browse a namespace.
+ */
+export async function fetchPod(clusterId: number, namespace: string, name: string): Promise<Pod> {
+  const { data } = await http.get<Pod>(`${resourceURL(clusterId, 'pods')}/${encodeURIComponent(name)}`, {
+    params: { namespace },
+  })
+  return data
 }
 
 /*
@@ -1724,6 +1737,31 @@ export async function setNodeSchedulable(
   const { data } = await http.post<NodeSchedulableResult>(resourceURL(clusterId, 'node/schedulable'), {
     name,
     unschedulable,
+  })
+  return data
+}
+
+/**
+ * debugPodContainer writes an ephemeral container onto a pod, sharing the
+ * named existing container's process namespace — `kubectl debug`'s trick for
+ * the pod that has no shell of its own to exec into. The same read-modify-write
+ * shape as scale/restart/suspend/cordon: a stale read answers with the
+ * cluster's own 409 rather than a blind overwrite.
+ *
+ * The container it creates cannot be removed afterwards — the API server has
+ * no delete for an ephemeral container — which is why the console discloses
+ * that before this is ever called rather than after.
+ */
+export async function debugPodContainer(
+  clusterId: number,
+  pod: string,
+  namespace: string,
+  container: string,
+): Promise<DebugContainerResult> {
+  const { data } = await http.post<DebugContainerResult>(resourceURL(clusterId, 'pods/debug'), {
+    pod,
+    namespace,
+    container,
   })
   return data
 }

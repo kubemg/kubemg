@@ -68,6 +68,23 @@ type podView struct {
 	Restarts   int32           `json:"restarts"`
 	Created    time.Time       `json:"created_at"`
 	Containers []containerView `json:"containers"`
+	// EphemeralContainers reports every debug container written onto this pod
+	// — see debugPodContainer — so a caller can tell whether one it just added
+	// has started without opening an exec against it first and reading the
+	// failure. Always present, empty for a pod with none.
+	EphemeralContainers []ephemeralContainerView `json:"ephemeral_containers"`
+}
+
+// ephemeralContainerView reports one debug container's state. Kubernetes
+// carries at most one of running/waiting/terminated at a time; Reason and
+// Message come off the waiting state, which is where "still pulling the
+// image" and "no such image" both show up — an exec attempted before either
+// resolves fails with a message that names neither.
+type ephemeralContainerView struct {
+	Name    string `json:"name"`
+	Running bool   `json:"running"`
+	Reason  string `json:"reason,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 // resourceCluster resolves the cluster and the caller's grant for a resource
@@ -505,7 +522,7 @@ func (s *server) scopedNamespace(c *gin.Context, grant db.UserClusterAccess, nam
 		return "", false
 	}
 	if len(allowed) > 0 && !slices.Contains(allowed, requested) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "namespace is outside your granted scope"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "namespace " + requested + " is outside your granted scope"})
 		return "", false
 	}
 	return requested, true
@@ -541,6 +558,17 @@ type podObject struct {
 				Reason string `json:"reason"`
 			} `json:"state"`
 		} `json:"containerStatuses"`
+		// EphemeralContainerStatuses is absent entirely until the first debug
+		// container is added — see debugPodContainer — and, unlike an ordinary
+		// container, its "running" state carries no reason to read: presence of
+		// that key is the whole answer.
+		EphemeralContainerStatuses []struct {
+			Name  string `json:"name"`
+			State map[string]struct {
+				Reason  string `json:"reason"`
+				Message string `json:"message"`
+			} `json:"state"`
+		} `json:"ephemeralContainerStatuses"`
 	} `json:"status"`
 }
 
@@ -596,6 +624,18 @@ func (p podObject) view() podView {
 		out.Containers = append(out.Containers, view)
 	}
 	out.Total = len(out.Containers)
+
+	out.EphemeralContainers = make([]ephemeralContainerView, 0, len(p.Status.EphemeralContainerStatuses))
+	for _, status := range p.Status.EphemeralContainerStatuses {
+		view := ephemeralContainerView{Name: status.Name}
+		if _, running := status.State["running"]; running {
+			view.Running = true
+		} else if waiting, ok := status.State["waiting"]; ok {
+			view.Reason = waiting.Reason
+			view.Message = waiting.Message
+		}
+		out.EphemeralContainers = append(out.EphemeralContainers, view)
+	}
 	return out
 }
 

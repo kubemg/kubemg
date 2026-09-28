@@ -70,6 +70,7 @@ boot-time defaults only — each is overridable at runtime from Settings.*
 | `KUBEMG_AGENT_NAMESPACE` | `kubemg-system` | Namespace the agent is installed into on target clusters. Browser shell pods run here too. |
 | `KUBEMG_SHELL_ENABLED` | `true` | Offer the [browser shell](../clusters/browser-shell.md) on agent-mode clusters. A settings row can turn this off; it cannot turn it on for a server with no shell image. |
 | `KUBEMG_SHELL_IMAGE` | pinned release image (`ghcr.io/kubemg/kubemg-shell:<version>`) | The image a shell pod runs. Point this at an internal mirror for an air-gapped install; clearing it switches the feature off, since a shell with no image is a button that fails. |
+| `KUBEMG_DEBUG_IMAGE` | `busybox:1.36` | The image an [ephemeral debug container](../clusters/terminals-and-logs.md#debugging-a-pod-with-no-shell) runs, for a pod whose own containers have no shell to exec into. Point this at an internal mirror for an air-gapped install. Unlike the browser shell there is no enable switch — any grant that can already exec into a pod can already ask for one. |
 
 ## TLS
 
