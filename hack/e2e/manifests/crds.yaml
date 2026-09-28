@@ -1,0 +1,62 @@
+# Two CRD families, shaped for the console's sidebar rule: `e2emulti.example`
+# serves two kinds, so it earns a section of its own; `e2esingle.example`
+# serves one, so it lands in Other.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: widgets.stable.e2emulti.example
+spec:
+  group: stable.e2emulti.example
+  scope: Namespaced
+  names:
+    plural: widgets
+    singular: widget
+    kind: Widget
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: gadgets.stable.e2emulti.example
+spec:
+  group: stable.e2emulti.example
+  scope: Namespaced
+  names:
+    plural: gadgets
+    singular: gadget
+    kind: Gadget
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: solos.things.e2esingle.example
+spec:
+  group: things.e2esingle.example
+  scope: Namespaced
+  names:
+    plural: solos
+    singular: solo
+    kind: Solo
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
