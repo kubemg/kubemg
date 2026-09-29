@@ -214,6 +214,21 @@ func (s *server) listKubeconfigs(c *gin.Context) {
 		filter.ClusterID = uint(parsed)
 	}
 	filter.ActiveOnly = c.Query("status") == "active"
+	// `expiring` reads the console's range vocabulary forward rather than back:
+	// the live credentials that run out within that window. The fleet's figure
+	// counts with it and links to the page that lists with it, so the number and
+	// the rows it opens onto are one question asked twice.
+	if raw := strings.ToLower(strings.TrimSpace(c.Query("expiring"))); raw != "" {
+		window, known := consoleRanges[raw]
+		if !known {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "expiring must be one of 15m, 1h, 6h, 24h, 7d or 30d",
+			})
+			return
+		}
+		filter.ActiveOnly = true
+		filter.ExpiresBefore = filter.Now.Add(window)
+	}
 	filter.Limit, filter.Offset = pageParams(c)
 
 	rows, total, err := s.store.ListKubeconfigIssuances(c.Request.Context(), filter)

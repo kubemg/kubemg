@@ -10,17 +10,21 @@
  * are one step earlier — which of these can I open, and with what — so this is
  * a launcher rather than a dashboard.
  *
- * Four things, in the order they are wanted:
+ * Five things, in the order they are wanted:
  *
  *   1. **What you can reach**, in a sentence. Not "1/1 reachable", which is an
  *      operator's framing of the same number.
- *   2. **A live elevation**, when there is one. It is the only thing on this
+ *   2. **Two figures that are the caller's own**: their requests waiting and
+ *      their kubeconfigs about to run out, each a link. Only what a
+ *      non-admin can act on — see `developerFigures` for why refusals and
+ *      agent drift are not here.
+ *   3. **A live elevation**, when there is one. It is the only thing on this
  *      page with a deadline, so it is the only thing that gets a coloured
  *      strip and a countdown.
- *   3. **Where you were last** — the Grafana lesson, that a personal landing
+ *   4. **Where you were last** — the Grafana lesson, that a personal landing
  *      page is recency rather than inventory. It costs nothing: the same
  *      browser-local store the deck switch and `lib/favorites.ts` already use.
- *   4. **Rows carrying your own access.** Your role and your namespaces are the
+ *   5. **Rows carrying your own access.** Your role and your namespaces are the
  *      two facts that decide what happens after the click.
  *
  * Capacity is deliberately absent. `/metrics/nodes` is a cluster-wide read and
@@ -29,16 +33,20 @@
  * fan-out it would cost is the one read in the app whose price scales with the
  * size of the fleet.
  *
- * Nothing here is a read the page did not already make, except the requests
- * list the caller can read about themselves anyway.
+ * Nothing here is a read the page did not already make, except two the caller
+ * can make about themselves anyway: the requests list and a count of their own
+ * kubeconfigs about to expire. Both are narrowed to the caller by the server.
  */
 
 import { useMemo } from 'react'
 import { Link } from 'react-router'
 import { ChevronRight, KeyRound } from 'lucide-react'
 import type { Cluster, Environment, JitRequest } from '../api/types'
+import { FleetStrip } from './FleetStrip'
 import { LinkStatus } from './LinkStatus'
 import { Button, EnvironmentTag } from './primitives'
+import { developerFigures } from '../lib/fleetStrip'
+import type { StripCounts } from '../lib/fleetStrip'
 import { clusterHref, hasTunnel } from '../lib/navigation'
 import { useRecentClusters } from '../lib/recents'
 import { linkState } from '../lib/status'
@@ -201,14 +209,18 @@ function ClusterRow({ cluster }: { cluster: Cluster }) {
 
 export function FleetDeveloperBody({
   clusters,
+  counts,
   elevation,
   onRequestAccess,
 }: {
   clusters: Cluster[]
+  /** The caller's own counts, read once by the page. `refused` is never read here. */
+  counts: StripCounts
   /** The caller's own live elevation, when they hold one. */
   elevation: JitRequest | null
   onRequestAccess: () => void
 }) {
+  const figures = useMemo(() => developerFigures(counts), [counts])
   const recentIds = useRecentClusters()
 
   // Recents resolve against the fleet this caller can actually see, so a
@@ -245,6 +257,8 @@ export function FleetDeveloperBody({
           </Button>
         </div>
       </div>
+
+      <FleetStrip figures={figures} />
 
       {elevation ? <ElevationStrip request={elevation} /> : null}
 

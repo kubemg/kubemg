@@ -143,6 +143,52 @@ func TestRegisterNarrowsANonAdminToTheirOwnRows(t *testing.T) {
 	}
 }
 
+// `expiring` counts the live credentials that run out inside the window — never
+// one already expired or revoked, and never one that outlives it — and it is
+// still narrowed to the caller's own rows for a non-admin.
+func TestRegisterCountsWhatExpiresWithinAWindow(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	dana := env.store.addUser("dana", "pw", db.RoleUser)
+	now := time.Now().UTC()
+	revokedAt := now.Add(-time.Minute)
+	for _, row := range []db.KubeconfigIssuance{
+		{TokenID: "soon", UserID: dana.ID, Username: "dana", ExpiresAt: now.Add(2 * time.Hour)},
+		{TokenID: "admin-soon", UserID: admin.ID, Username: "admin", ExpiresAt: now.Add(20 * time.Hour)},
+		{TokenID: "later", UserID: dana.ID, Username: "dana", ExpiresAt: now.Add(72 * time.Hour)},
+		{TokenID: "gone", UserID: dana.ID, Username: "dana", ExpiresAt: now.Add(-time.Hour)},
+		{TokenID: "revoked", UserID: dana.ID, Username: "dana", ExpiresAt: now.Add(time.Hour), RevokedAt: &revokedAt},
+	} {
+		row := row
+		if err := env.store.CreateKubeconfigIssuance(t.Context(), &row); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	type page struct {
+		Kubeconfigs []kubeconfigResponse `json:"kubeconfigs"`
+		Total       int64                `json:"total"`
+	}
+	rec := env.do(t, http.MethodGet, kubeconfigsPath+"?expiring=24h&limit=1", env.tokenFor(t, admin), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected the register to answer, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if body := decode[page](t, rec); body.Total != 2 {
+		t.Fatalf("an admin should count the two live rows expiring within 24h, got %d", body.Total)
+	}
+
+	rec = env.do(t, http.MethodGet, kubeconfigsPath+"?expiring=24h", env.tokenFor(t, dana), nil)
+	body := decode[page](t, rec)
+	if body.Total != 1 || body.Kubeconfigs[0].ExpiresAt.After(now.Add(3*time.Hour)) {
+		t.Fatalf("a non-admin should count only their own live row expiring soon, got %+v", body)
+	}
+
+	rec = env.do(t, http.MethodGet, kubeconfigsPath+"?expiring=forever", env.tokenFor(t, admin), nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("an unknown window should be refused, got %d", rec.Code)
+	}
+}
+
 // Revoking one credential writes the row and republishes the snapshot the
 // gateway reads, in that order, before the caller is told it worked.
 func TestRevokingOneCredentialPublishesIt(t *testing.T) {

@@ -253,6 +253,14 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | `POST /machine-accounts/:id/tokens` | Admin | Body `{name, cluster_id, namespace?, ttl_seconds? or never_expires}`. `409` disabled account, direct-mode cluster (refused outright — no revocable credential to hand out), or no grant yet on that cluster. `424` no proxy/public URL configured. Response `{token, secret, kubeconfig, ...}` — **`secret` is shown once**, `kmgm_`-prefixed. |
 | `DELETE /machine-accounts/:id/tokens/:tokenId` | Admin | `404` if the token belongs to a different account (never discloses whose). The row is kept, marked revoked. |
 
+## Issued credentials
+
+| Method & path | Auth | Notes |
+| --- | --- | --- |
+| `GET /kubeconfigs` | Session, narrows | Filters `user_id`, `cluster_id`, `status=active`, and `expiring` — a range preset (`15m`…`30d`, not `all`) read *forward*: live credentials that run out within it; implies `status=active`, `400` on any other value. Pages with `limit`/`offset` and answers `{kubeconfigs, total}`, so `limit=1` is a count. Non-admin forced to their own `user_id`; the query cannot widen it. |
+| `POST /kubeconfigs/:id/revoke` | Session | Your own always; somebody else's needs an admin. `404`, not `403`, for a row you cannot read. `409` for a direct-mode credential, naming the ServiceAccount. |
+| `POST /kubeconfigs/revoke-all` | Session | Registered before `/:id`. Answers `{revoked, still_valid, clusters_not_reached}`. |
+
 ## Users
 
 | Method & path | Auth | Notes |

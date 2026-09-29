@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { Link } from 'react-router'
-import { Pencil, Plug, Plus, RefreshCw, Server, Trash2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router'
+import { Pencil, Plug, Plus, RefreshCw, Server, Trash2, X } from 'lucide-react'
 import { checkCluster, deleteCluster, errorMessage } from '../api/client'
 import type { Cluster } from '../api/types'
 import { AppShell } from '../components/AppShell'
@@ -9,6 +9,7 @@ import { LinkStatus } from '../components/LinkStatus'
 import {
   Age,
   Button,
+  Chip,
   ClusterState,
   EmptyState,
   EnvironmentTag,
@@ -23,6 +24,8 @@ import {
   Th,
 } from '../components/primitives'
 import { railChip } from '../lib/branding'
+import { newestAgentVersion } from '../lib/fleet'
+import { AGENT_BEHIND, AGENT_FILTER_PARAM, agentsBehind } from '../lib/fleetStrip'
 import { linkState } from '../lib/status'
 import { useClusters } from '../state/clusters-context'
 import { useConfirm } from '../state/confirm-context'
@@ -37,6 +40,12 @@ export function ClusterManagement() {
   const [filter, setFilter] = useState('')
   const [checking, setChecking] = useState<number | null>(null)
   const [editing, setEditing] = useState<Cluster | null>(null)
+  // `?agent=behind` is how the fleet's drift figure opens this page on the
+  // clusters it counted — the same derivation, so the count and the rows agree.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const behindOnly = searchParams.get(AGENT_FILTER_PARAM) === AGENT_BEHIND
+  const behind = useMemo(() => new Set(agentsBehind(clusters).map((c) => c.id)), [clusters])
+  const newestAgent = useMemo(() => newestAgentVersion(clusters), [clusters])
 
   async function check(cluster: Cluster) {
     setChecking(cluster.id)
@@ -83,9 +92,22 @@ export function ClusterManagement() {
   }
 
   const needle = filter.trim().toLowerCase()
-  const visible = needle
-    ? clusters.filter((cluster) => cluster.name.toLowerCase().includes(needle))
-    : clusters
+  const visible = clusters.filter(
+    (cluster) =>
+      (!needle || cluster.name.toLowerCase().includes(needle)) &&
+      (!behindOnly || behind.has(cluster.id)),
+  )
+
+  function showEveryAgent() {
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current)
+        next.delete(AGENT_FILTER_PARAM)
+        return next
+      },
+      { replace: true },
+    )
+  }
 
   return (
     <AppShell
@@ -111,6 +133,12 @@ export function ClusterManagement() {
               label="Filter clusters by name"
               placeholder="Filter by name"
             />
+            {behindOnly ? (
+              <Chip active title="Show every cluster again" onClick={showEveryAgent}>
+                Agent behind {newestAgent ?? 'the fleet'}
+                <X aria-hidden="true" className="size-3.5" />
+              </Chip>
+            ) : null}
             <span className="ml-auto text-[13px] text-muted">
               {visible.length === clusters.length
                 ? `${clusters.length} ${clusters.length === 1 ? 'cluster' : 'clusters'}`
@@ -242,7 +270,9 @@ export function ClusterManagement() {
 
           {clusters.length > 0 && visible.length === 0 ? (
             <p className="px-4 py-10 text-center text-[13px] text-muted">
-              No cluster matches “{filter}”.
+              {behindOnly && !needle
+                ? 'Every agent is on the newest version running in the fleet.'
+                : `No cluster matches “${filter}”.`}
             </p>
           ) : null}
         </div>

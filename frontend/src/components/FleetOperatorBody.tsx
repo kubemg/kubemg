@@ -17,15 +17,18 @@
  *      approval, an agent behind the rest of the fleet. On a fleet with nothing
  *      waiting the block is *absent* rather than an empty card saying "all
  *      clear", which is what makes its presence mean something.
- *   2. **One figures strip.** Six readings and both capacity tracks on one
- *      surface, in roughly the height three stat cards took for three.
+ *   2. **One strip of decisions.** Four figures — requests waiting, calls
+ *      refused, kubeconfigs about to expire, agents behind — each a link onto
+ *      what it counts (see `lib/fleetStrip.ts`), with both capacity tracks at
+ *      its right end.
  *   3. **A table, banded by environment.** Rows are two lines — a cluster is its
  *      name over what its link is doing — which is what buys back the columns a
  *      dense table would have spent saying the same thing twice.
  *
- * Nothing here reads anything the page did not already read, with one
- * *reduction*: the capacity fan-out now runs for an administrator only, because
- * the developer's body draws no cluster capacity at all.
+ * The strip's counts are read by the page, once, when it opens — two counts
+ * on existing routes, never a fan-out and never on the live tick. The capacity
+ * fan-out runs for an administrator only, because the developer's body draws no
+ * cluster capacity at all.
  */
 
 import { Fragment, useEffect, useMemo, useState } from 'react'
@@ -34,9 +37,12 @@ import { AlertTriangle, ChevronRight, Timer } from 'lucide-react'
 import { fetchNodeMetrics } from '../api/client'
 import type { Cluster, Environment, UsageSummary } from '../api/types'
 import { LinkStatus } from './LinkStatus'
+import { FleetStrip } from './FleetStrip'
 import { Age, EnvironmentTag, MiniMeter, Table, Td, Th } from './primitives'
 import { fleetQueue, isBehind, newestAgentVersion } from '../lib/fleet'
 import type { QueueItem } from '../lib/fleet'
+import { operatorFigures } from '../lib/fleetStrip'
+import type { StripCounts } from '../lib/fleetStrip'
 import { clusterHref } from '../lib/navigation'
 import { linkState } from '../lib/status'
 import { formatCPU, formatMemory, ratio } from '../lib/units'
@@ -182,38 +188,16 @@ function FleetQueue({ items }: { items: QueueItem[] }) {
 
 /* ---------------------------------------------------------------- figures --- */
 
-function Figure({ value, label, tone }: { value: string; label: string; tone?: 'bad' | 'dim' }) {
-  return (
-    <div className="min-w-[104px] border-r border-line-soft px-5 py-3 last:border-r-0">
-      <p
-        className={`font-mono text-[21px] leading-tight ${
-          tone === 'bad'
-            ? 'font-bold text-danger'
-            : tone === 'dim'
-              ? 'text-muted'
-              : 'font-bold text-fg'
-        }`}
-      >
-        {value}
-      </p>
-      <p className="label mt-0.5">{label}</p>
-    </div>
-  )
-}
-
 function FleetFigures({
   clusters,
+  counts,
   capacity,
 }: {
   clusters: Cluster[]
+  counts: StripCounts
   capacity: FleetCapacityState
 }) {
-  const reachable = clusters.filter((cluster) => cluster.status === 'healthy').length
-  const unreachable = clusters.filter((cluster) => cluster.status === 'unhealthy').length
-  const tunnels = clusters.filter((cluster) => cluster.agent_attached).length
-  const environments = BANDS.filter(({ environment }) =>
-    clusters.some((cluster) => cluster.environment === environment),
-  ).length
+  const figures = useMemo(() => operatorFigures(counts, clusters), [counts, clusters])
 
   const { total } = capacity
   // A sum of one is the thing itself: below two contributing clusters the
@@ -222,18 +206,9 @@ function FleetFigures({
   const summed = contributing > 1 && total ? total : null
 
   return (
-    <section className="flex flex-wrap items-stretch overflow-hidden rounded-card border border-line bg-surface">
-      <Figure value={String(clusters.length)} label="clusters" />
-      <Figure value={String(reachable)} label="reachable" />
-      {unreachable > 0 ? (
-        <Figure value={String(unreachable)} label="unreachable" tone="bad" />
-      ) : null}
-      <Figure value={String(tunnels)} label="tunnels open" />
-      {total ? <Figure value={String(total.nodes)} label="nodes" /> : null}
-      <Figure value={String(environments)} label="environments" tone="dim" />
-
+    <FleetStrip figures={figures}>
       {summed ? (
-        <div className="flex min-w-[220px] flex-1 flex-col justify-center gap-1.5 border-l border-line-soft px-5 py-3">
+        <div className="flex min-w-[220px] flex-1 flex-col justify-center gap-1.5 px-5 py-3">
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3">
             <MiniMeter
               label="CPU"
@@ -254,14 +229,17 @@ function FleetFigures({
               {formatMemory(summed.memory_capacity_bytes)}
             </span>
           </div>
-          {capacity.skipped > 0 ? (
-            <p className="text-[11px] text-faint">
-              {capacity.skipped} more not read — open a cluster for its own numbers
-            </p>
-          ) : null}
+          {/* The node total is what the two tracks are summed over, so it is
+              said here as their caption rather than as a figure of its own. */}
+          <p className="text-[11px] text-faint">
+            across {summed.nodes} {summed.nodes === 1 ? 'node' : 'nodes'} in {contributing} clusters
+            {capacity.skipped > 0
+              ? ` · ${capacity.skipped} more not read — open a cluster for its own numbers`
+              : ''}
+          </p>
         </div>
       ) : null}
-    </section>
+    </FleetStrip>
   )
 }
 
@@ -429,20 +407,22 @@ function FleetTable({
 
 export function FleetOperatorBody({
   clusters,
-  pendingRequests,
+  counts,
 }: {
   clusters: Cluster[]
-  /** Access requests waiting on a decision, or 0 when none could be read. */
-  pendingRequests: number
+  /** The strip's counts, read once by the page. See lib/fleetStrip.ts. */
+  counts: StripCounts
 }) {
   const capacity = useFleetCapacity(clusters)
-  const queue = useMemo(() => fleetQueue(clusters, pendingRequests), [clusters, pendingRequests])
+  // The queue names what it can; a count it could not read adds no row.
+  const pending = counts.pending ?? 0
+  const queue = useMemo(() => fleetQueue(clusters, pending), [clusters, pending])
   const newestAgent = useMemo(() => newestAgentVersion(clusters), [clusters])
 
   return (
     <>
       <FleetQueue items={queue} />
-      <FleetFigures clusters={clusters} capacity={capacity} />
+      <FleetFigures clusters={clusters} counts={counts} capacity={capacity} />
       <FleetTable clusters={clusters} capacity={capacity} newestAgent={newestAgent} />
     </>
   )

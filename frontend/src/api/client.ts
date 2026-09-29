@@ -556,14 +556,31 @@ export async function fetchIssuedKubeconfigs(params?: {
   userId?: number
   clusterId?: number
   activeOnly?: boolean
+  /** Only live credentials that run out within this window. */
+  expiring?: TimeRangeId
 }): Promise<IssuedKubeconfig[]> {
   const query = new URLSearchParams()
   if (params?.userId) query.set('user_id', String(params.userId))
   if (params?.clusterId) query.set('cluster_id', String(params.clusterId))
   if (params?.activeOnly) query.set('status', 'active')
+  if (params?.expiring) query.set('expiring', params.expiring)
   const suffix = query.toString() ? `?${query.toString()}` : ''
   const { data } = await http.get<{ kubeconfigs: IssuedKubeconfig[] }>(`/kubeconfigs${suffix}`)
   return data.kubeconfigs ?? []
+}
+
+/**
+ * How many live kubeconfigs run out within the window — the register's own
+ * `total` at a page of one, so the count costs one indexed read however large
+ * the register is. Narrowed to the caller's own rows for a non-admin, by the
+ * server.
+ */
+export async function countExpiringKubeconfigs(within: TimeRangeId): Promise<number> {
+  const { data } = await http.get<{ total?: number }>('/kubeconfigs', {
+    params: { expiring: within, limit: 1 },
+  })
+  if (typeof data.total !== 'number') throw new Error('the register answered without a total')
+  return data.total
 }
 
 export async function revokeIssuedKubeconfig(id: number): Promise<IssuedKubeconfig> {

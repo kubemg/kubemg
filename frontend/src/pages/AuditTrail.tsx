@@ -10,7 +10,7 @@ import {
   RefreshCw,
   ScrollText,
 } from 'lucide-react'
-import { useParams } from 'react-router'
+import { useParams, useSearchParams } from 'react-router'
 import {
   errorMessage,
   exportAudit,
@@ -137,7 +137,11 @@ export function AuditTrail() {
   const [verbs, setVerbs] = useState<string[]>([])
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
-  const [failedOnly, setFailedOnly] = useState(false)
+  // `?failed=true` is how the fleet's refusals figure opens this page on the
+  // rows it counted; the window rides the console's own `range` parameter. Read
+  // once, as the starting filter — the chip owns it from there.
+  const [searchParams] = useSearchParams()
+  const [failedOnly, setFailedOnly] = useState(() => searchParams.get('failed') === 'true')
   const [streamsOnly, setStreamsOnly] = useState(false)
   // The window. The preset is the console's, set in the header and carried in
   // the address, because "the last hour" has to mean one span in the trail and
