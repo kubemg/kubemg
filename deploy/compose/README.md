@@ -90,9 +90,9 @@ manifests carry no `imagePullSecrets`.
 
 | Volume | Holds | If you lose it |
 | --- | --- | --- |
-| `tls-certs` | The certificate minted on first boot | **Every installed agent stops connecting.** It pinned this certificate; a fresh one is a different certificate and the handshake fails. Back this up. |
+| `tls-certs` | The working copy of the certificate minted on first boot | Nothing: the next boot writes the same certificate back from the database, which keeps a copy. |
 | `session-recordings` | Encrypted `.cast.gz` session replays | Audit evidence is gone. Recordings are the artefact an auditor asks for. |
-| `postgres-data` | Users, grants, clusters, audit trail | The install is gone. |
+| `postgres-data` | Users, grants, clusters, audit trail, the minted certificate | The install is gone, and every installed agent stops connecting: it pinned that certificate. Back this up. |
 
 Set `KUBEMG_SESSION_RECORDING_KEY` before anyone opens a shell, or recordings
 are written in plaintext — the server warns about this at boot. Keep the key
@@ -162,4 +162,6 @@ docker compose up -d
 ```
 
 Schema migrations run at boot. Keep the `tls-certs` volume across the upgrade
-and the fleet's agents reconnect on their own.
+and the fleet's agents reconnect on their own; an install that kept the
+certificate only there copies it into the database on the first boot after
+the upgrade.

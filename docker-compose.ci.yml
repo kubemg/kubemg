@@ -66,6 +66,14 @@ services:
       - .:/repo
     command: diff -ru deploy/kustomize/base backend/pkg/agentpkg/base
 
+  chart-test:
+    image: helmunittest/helm-unittest:4.2.3-1.1.2
+    working_dir: /repo
+    volumes:
+      - .:/repo:ro
+    entrypoint: ["sh"]
+    command: hack/chart-check.sh
+
   frontend-build:
     image: node:22-alpine
     working_dir: /app

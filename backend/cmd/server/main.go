@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"crypto/x509"
 	"encoding/base64"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"log"
@@ -238,7 +236,7 @@ func main() {
 	// TLS is resolved before the router is built: an agent's install package
 	// has to carry whatever certificate this server will actually present, and
 	// that is only known once the material exists on disk.
-	tlsMaterial, err := resolveTLS(cfg, logger)
+	tlsMaterial, err := resolveTLS(boot, cfg, store, logger)
 	if err != nil {
 		log.Fatalf("tls setup failed: %v", err)
 	}
@@ -337,14 +335,26 @@ func main() {
 		)
 	}
 
-	// kubectl is the part a loopback bind still breaks: client-go refuses to
-	// send a bearer token over http, so say so once at boot rather than letting
-	// every generated kubeconfig fail unexplained.
-	logger.Warn("serving http without TLS; generated kubeconfigs and kubectl exec will not work",
-		slog.String("version", version),
-		slog.String("addr", cfg.ListenAddr),
-		slog.String("fix", "set KUBEMG_TLS_ENABLED=true"),
-	)
+	// kubectl is the part plaintext breaks: client-go refuses to send a bearer
+	// token over http — unless something in front terminates TLS, which is what
+	// an https public URL over a plaintext listener means (the Helm chart's edge
+	// mode). Say which it is once at boot: a warning that kubectl will not work
+	// is false behind an ingress, and an operator learns to ignore the log line
+	// that was right the other time.
+	if behindTLSProxy(cfg.PublicURL) {
+		logger.Info("serving plain http behind a TLS-terminating proxy",
+			slog.String("version", version),
+			slog.String("addr", cfg.ListenAddr),
+			slog.String("public_url", cfg.PublicURL),
+			slog.String("note", "agents verify the proxy's certificate; set KUBEMG_AGENT_CA_BUNDLE if a private CA issued it"),
+		)
+	} else {
+		logger.Warn("serving http without TLS; generated kubeconfigs and kubectl exec will not work",
+			slog.String("version", version),
+			slog.String("addr", cfg.ListenAddr),
+			slog.String("fix", "set KUBEMG_TLS_ENABLED=true"),
+		)
+	}
 	if err := router.Run(cfg.ListenAddr); err != nil {
 		log.Fatalf("server exited: %v", err)
 	}
@@ -472,6 +482,13 @@ func resolveRecorder(
 	}
 }
 
+// behindTLSProxy reports whether a plaintext listener is reached over https:
+// the public URL is what agents, browsers and kubectl dial, so an https one in
+// front of a plaintext process means a proxy terminates TLS for it.
+func behindTLSProxy(publicURL string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(publicURL)), "https://")
+}
+
 // tlsMaterial is what the rest of the process needs to know about TLS: the
 // certificate an agent must trust, if it is not one the public CAs cover.
 type tlsMaterial struct {
@@ -499,7 +516,11 @@ type tlsMaterial struct {
 // directory, or the files they configured, and mints a self-signed pair when
 // there is neither — so a first boot serves HTTPS rather than refusing to start
 // on a file nobody has been asked for yet.
-func resolveTLS(cfg config.Config, logger *slog.Logger) (tlsMaterial, error) {
+//
+// A minted pair is kept in pairs as well as on disk (certs.EnsureKept), so a
+// lost volume restores the certificate agents pinned instead of minting a new
+// one. A nil pairs is the disk alone.
+func resolveTLS(ctx context.Context, cfg config.Config, pairs certs.PairStore, logger *slog.Logger) (tlsMaterial, error) {
 	out := tlsMaterial{
 		certFile:    cfg.TLS.CertFile,
 		keyFile:     cfg.TLS.KeyFile,
@@ -546,6 +567,10 @@ func resolveTLS(cfg config.Config, logger *slog.Logger) (tlsMaterial, error) {
 		// self-signed certificate on disk that the next boot finds, honours, and
 		// pins into every agent package — with the setting that forbade it still
 		// off.
+		//
+		// The stored copy is not consulted with self-signing off either: what it
+		// holds is a pair this process minted, which is what that setting forbids.
+		hosts := certs.HostsFor(cfg.PublicURL, cfg.TLS.Hosts)
 		if !cfg.TLS.SelfSigned {
 			has, err := certs.HasPair(cfg.TLS.CertFile, cfg.TLS.KeyFile)
 			if err != nil {
@@ -556,19 +581,28 @@ func resolveTLS(cfg config.Config, logger *slog.Logger) (tlsMaterial, error) {
 					"no certificate in %s or at %s, and KUBEMG_TLS_SELF_SIGNED is off",
 					cfg.TLS.SuppliedDir, cfg.TLS.CertFile)
 			}
+			material, err = certs.Ensure(cfg.TLS.CertFile, cfg.TLS.KeyFile, hosts)
+		} else {
+			material, err = certs.EnsureKept(ctx, cfg.TLS.CertFile, cfg.TLS.KeyFile, hosts, pairs)
 		}
-
-		hosts := certs.HostsFor(cfg.PublicURL, cfg.TLS.Hosts)
-		material, err = certs.Ensure(cfg.TLS.CertFile, cfg.TLS.KeyFile, hosts)
 		if err != nil {
 			return tlsMaterial{}, err
 		}
-		if material.Generated {
+		switch {
+		case material.Generated:
 			logger.Warn("generated a self-signed certificate; replace it before this is a real deployment",
 				slog.String("certificate", cfg.TLS.CertFile),
 				slog.String("replace_by", "putting tls.crt and tls.key in "+cfg.TLS.SuppliedDir),
 				slog.Any("hosts", hosts),
 			)
+		case material.Restored:
+			logger.Info("restored the self-signed certificate from the database",
+				slog.String("certificate", cfg.TLS.CertFile),
+				slog.String("note", "the disk had no copy; this is the certificate installed agents pinned"))
+		case material.Kept:
+			logger.Info("kept a copy of the self-signed certificate in the database",
+				slog.String("certificate", cfg.TLS.CertFile),
+				slog.String("note", "a lost volume now restores it instead of minting a new one"))
 		}
 	}
 
@@ -577,27 +611,13 @@ func resolveTLS(cfg config.Config, logger *slog.Logger) (tlsMaterial, error) {
 	// agents have no other way to verify one. Shipping a publicly-trusted
 	// certificate to every agent would pin KubeMG to that one certificate, so
 	// renewing it would strand the whole fleet.
-	if isSelfSigned(material.CertPEM) {
+	if certs.SelfSigned(material.CertPEM) {
 		out.selfSigned = true
 		if bundle == "" {
 			out.agentCA = string(material.CertPEM)
 		}
 	}
 	return out, nil
-}
-
-// isSelfSigned reports whether the leaf certificate vouches for itself, which
-// is what decides whether agents have to be handed it explicitly.
-func isSelfSigned(certPEM []byte) bool {
-	block, _ := pem.Decode(certPEM)
-	if block == nil {
-		return false
-	}
-	cert, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		return false
-	}
-	return cert.CheckSignatureFrom(cert) == nil
 }
 
 // resolveSigningKey settles the key that signs sessions, generated kubeconfigs

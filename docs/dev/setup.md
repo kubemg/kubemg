@@ -35,9 +35,9 @@ make reset   # stop and delete the volumes: data, certificates, recordings
     client-go refuses to send a bearer token over plain HTTP, so a plaintext
     bastion cannot serve a generated kubeconfig or an exec session at all. The
     dev stack mints a self-signed certificate on first boot and keeps it in a
-    named volume, so agents that already pinned a copy keep connecting across a
-    rebuild. `make reset` throws it away and every existing agent install stops
-    trusting the new one.
+    named volume and in the database, so agents that already pinned a copy
+    keep connecting across a rebuild. `make reset` throws both away and every
+    existing agent install stops trusting the new one.
 
 ## Pointing the bastion at a real cluster
 

@@ -88,6 +88,7 @@ jobs:
       matrix:
         service:
           - manifest-check
+          - chart-test
           - backend-vet
           - backend-test
           - backend-build

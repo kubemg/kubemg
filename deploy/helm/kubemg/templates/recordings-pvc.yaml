@@ -1,0 +1,23 @@
+{{- $p := .Values.recordings.persistence -}}
+{{- if and .Values.recordings.enabled $p.enabled (not $p.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "kubemg.fullname" . }}-recordings
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubemg.labels" . | nindent 4 }}
+  annotations:
+    # Recordings are audit evidence. Uninstalling the chart is not a decision
+    # to destroy them; deleting this claim by hand is.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    {{- toYaml $p.accessModes | nindent 4 }}
+  {{- with $p.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $p.size }}
+{{- end }}

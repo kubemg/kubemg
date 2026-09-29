@@ -1,0 +1,60 @@
+suite: the Ingress
+templates:
+  - ingress.yaml
+release:
+  name: kubemg
+  namespace: kubemg
+values:
+  - values/base.yaml
+tests:
+  - it: renders nothing unless asked
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: passes TLS through to the pod in passthrough mode
+    set:
+      ingress.enabled: true
+    asserts:
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/ssl-passthrough"]
+          value: "true"
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/backend-protocol"]
+          value: HTTPS
+      - notExists:
+          path: spec.tls
+      - equal:
+          path: spec.rules[0].host
+          value: kubemg.example.com
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.name
+          value: https
+
+  - it: lets the operator's annotations win over the chart's
+    set:
+      ingress.enabled: true
+      ingress.annotations:
+        nginx.ingress.kubernetes.io/ssl-passthrough: "false"
+    asserts:
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/ssl-passthrough"]
+          value: "false"
+
+  - it: terminates TLS at the ingress in edge mode
+    set:
+      tls.mode: edge
+      ingress.enabled: true
+      ingress.tlsSecretName: edge-tls
+    asserts:
+      - notExists:
+          path: metadata.annotations
+      - equal:
+          path: spec.tls[0].secretName
+          value: edge-tls
+      - equal:
+          path: spec.tls[0].hosts[0]
+          value: kubemg.example.com
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.name
+          value: http

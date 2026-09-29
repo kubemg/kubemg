@@ -1,0 +1,17 @@
+# An ingress terminates TLS with a private CA's certificate; agents are handed
+# that CA.
+publicURL: https://kubemg.corp.example
+tls:
+  mode: edge
+  agentCABundle:
+    existingSecret: corp-ca
+database:
+  host: postgres.corp.example
+  password: change-me
+secrets:
+  secretKey: dGhpcnR5LXR3by1ieXRlcy1vZi1rZXktbWF0ZXJpYWwhIQ==
+  sessionRecordingKey: dGhpcnR5LXR3by1ieXRlcy1vZi1rZXktbWF0ZXJpYWwhIQ==
+ingress:
+  enabled: true
+  className: nginx
+  tlsSecretName: kubemg-edge-tls

@@ -21,6 +21,12 @@ const (
 	// `JWT_SECRET` still wins where it is set: a deployment that already rotates
 	// it out of a secret manager keeps doing so, and nothing here overwrites it.
 	ServerSecretJWTSigningKey = "jwt_signing_key"
+
+	// ServerSecretTLSPair is the self-signed certificate and key the listener
+	// serves when nobody supplied one — the certificate every agent package
+	// pins. It is kept here as well as on disk so that losing the volume is not
+	// a fleet-wide re-pin; see certs.EnsureKept.
+	ServerSecretTLSPair = "tls_self_signed_pair"
 )
 
 // ServerSecret is a value the server generated for itself. It lives on its own
@@ -90,4 +96,42 @@ func (s *Store) serverSecret(ctx context.Context, name string) (string, error) {
 		return "", ErrNotFound
 	}
 	return row.Value, nil
+}
+
+// StoredTLSPair returns the kept self-signed certificate pair, if there is one.
+func (s *Store) StoredTLSPair(ctx context.Context) (string, bool, error) {
+	pair, err := s.serverSecret(ctx, ServerSecretTLSPair)
+	if errors.Is(err, ErrNotFound) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return pair, true, nil
+}
+
+// EnsureTLSPair stores the pair generate mints unless one is already stored,
+// and returns whichever is stored — EnsureServerSecret's race, won once.
+func (s *Store) EnsureTLSPair(ctx context.Context, generate func() (string, error)) (string, error) {
+	return s.EnsureServerSecret(ctx, ServerSecretTLSPair, generate)
+}
+
+// KeepTLSPair replaces the kept pair with the one being served. It goes through
+// Create with an upsert rather than Updates so the value passes the column's
+// secret serializer: an Updates map would reach the kubemg:seal_secrets callback
+// instead, and one path for one column is easier to trust than two.
+func (s *Store) KeepTLSPair(ctx context.Context, pair string) error {
+	if strings.TrimSpace(pair) == "" {
+		return errors.New("keep an empty certificate pair")
+	}
+	row := ServerSecret{Name: ServerSecretTLSPair, Value: pair, CreatedAt: time.Now().UTC()}
+	if err := s.gdb.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "name"}},
+			DoUpdates: clause.AssignmentColumns([]string{"value", "created_at"}),
+		}).
+		Create(&row).Error; err != nil {
+		return fmt.Errorf("store %s: %w", ServerSecretTLSPair, err)
+	}
+	return nil
 }

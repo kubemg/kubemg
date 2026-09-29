@@ -1,0 +1,63 @@
+suite: what outlives the pod
+templates:
+  - recordings-pvc.yaml
+  - postgresql.yaml
+release:
+  name: kubemg
+  namespace: kubemg
+values:
+  - values/base.yaml
+tests:
+  - it: keeps the recordings claim when the chart is uninstalled
+    template: recordings-pvc.yaml
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/resource-policy"]
+          value: keep
+
+  - it: makes no claim when an existing one is named
+    template: recordings-pvc.yaml
+    set:
+      recordings.persistence.existingClaim: evidence
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: runs no PostgreSQL unless asked
+    template: postgresql.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: runs PostgreSQL from the mirror, with the password the server uses
+    template: postgresql.yaml
+    documentIndex: 1
+    set:
+      database.host: ""
+      postgresql.enabled: true
+      global.imageRegistry: mirror.lab
+    asserts:
+      - isKind:
+          of: StatefulSet
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: mirror.lab/library/postgres:16-alpine
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: kubemg
+                key: DB_PASSWORD
+
+  - it: selects only PostgreSQL's pod
+    template: postgresql.yaml
+    documentIndex: 0
+    set:
+      database.host: ""
+      postgresql.enabled: true
+    asserts:
+      - equal:
+          path: spec.selector["app.kubernetes.io/component"]
+          value: postgresql

@@ -46,10 +46,47 @@ kubemg resolves what to serve in a fixed order, checked at every boot:
 2. If nothing is there and `KUBEMG_TLS_SELF_SIGNED=true` (the default), a
    self-signed pair is minted at `KUBEMG_TLS_CERT_FILE`/`KUBEMG_TLS_KEY_FILE`
    (default `/etc/kubemg/tls/tls.{crt,key}`) — **but only once**. An existing
-   pair at those paths is never regenerated or overwritten.
+   pair at those paths is never regenerated or overwritten, and the minted
+   pair is also kept in the database (see below).
 3. If nothing is supplied and `KUBEMG_TLS_SELF_SIGNED=false`, the server
    refuses to start unless a pair already exists at `KUBEMG_TLS_CERT_FILE`/
    `KUBEMG_TLS_KEY_FILE` — this is the "I insist on a real certificate" mode.
+
+### The minted certificate is kept in the database too
+
+Every agent package pins the minted certificate, so losing it is not a
+restart: every installed agent fails its handshake until its package is
+re-applied. On disk it would be only as durable as the volume under
+`/etc/kubemg/tls`, and that volume is the first thing a Kubernetes install
+loses — a replaced pod, a deleted claim, a new node pool.
+
+So kubemg keeps the pair in the database as well, beside the signing key it
+mints for itself, and the file on disk becomes a working copy:
+
+| At boot | What happens |
+|---|---|
+| A pair is on disk | It is served, and the stored copy is updated to match it if it differs. The disk wins because it is what agents have pinned. |
+| Nothing on disk, a pair is stored | The stored pair is written back to disk and served — the same certificate, byte for byte. |
+| Nothing anywhere | A pair is minted, stored, written and served. |
+
+The stored pair is encrypted under `KUBEMG_SECRET_KEY` like every other
+credential in the database — without that key it is stored in plaintext, as
+they all are ([Database](database.md#credentials-encrypted-at-rest)). Only a
+self-signed pair is kept: a certificate a CA issued is renewed from that CA,
+not recovered from here. A stored pair that cannot be read **refuses the
+boot** rather than being replaced, and so does a database that cannot be
+read — minting a new certificate over either would re-pin the whole fleet
+silently. With `KUBEMG_TLS_SELF_SIGNED=false` the stored pair is never used:
+it is a certificate kubemg minted, which is what that setting forbids.
+
+The database is not a new thing to lose here. Every agent's registration
+token already lives in it, so an install that loses its database re-applies
+every agent regardless; keeping the certificate there adds no failure the
+install did not already have.
+
+An install upgraded from a version that kept the certificate only on disk
+copies it into the database on its first boot after the upgrade. Keep the
+volume across that upgrade.
 
 **Half a pair is always a hard error**, in both the supplied directory and
 the minted-pair location — never a silent fallback. If only one of `tls.crt`/
@@ -154,7 +191,7 @@ Both commands must print the same hash.
 
     ```yaml
     volumes:
-      - tls-certs:/etc/kubemg/tls          # the minted pair — back this up
+      - tls-certs:/etc/kubemg/tls          # working copy of the minted pair
       - ./ssl:/etc/kubemg/ssl:ro           # your own certificate, if supplied
     ```
 
@@ -163,20 +200,20 @@ Both commands must print the same hash.
 
 === "Kubernetes"
 
-    ```yaml
-    volumeMounts:
-      - name: tls
-        mountPath: /etc/kubemg/tls        # PVC — the minted pair
-      - name: tls-supplied
-        mountPath: /etc/kubemg/ssl
-        readOnly: true                    # Secret of type kubernetes.io/tls
+    The Helm chart mounts the minted pair's working copy on a memory-backed
+    `emptyDir` — there is no volume for it, because the database holds the
+    copy that matters. Your own certificate is a `kubernetes.io/tls` Secret
+    (cert-manager's output fits as-is), named in `tls.existingSecret` and
+    mounted read-only at `/etc/kubemg/ssl`:
+
+    ```bash
+    helm upgrade --install kubemg oci://ghcr.io/kubemg/charts/kubemg \
+      --reuse-values --set tls.existingSecret=kubemg-tls
     ```
 
-    See [Kubernetes](kubernetes.md#namespace-secret-pvcs) for the full Secret
-    and PVC definitions. The container runs as uid `65532` — files in a
-    supplied Secret or ConfigMap are readable by any uid by default, but a
-    bind-mounted host directory (outside Kubernetes) or a file copied in with
-    a restrictive mode is not: see the permission note below.
+    See [Kubernetes](kubernetes.md#tls) for the modes. The container runs as
+    uid `65532`; the chart mounts the Secret group-readable under the pod's
+    `fsGroup`, so a supplied key is readable without anything else set.
 
 ## Permission failures
 
@@ -202,7 +239,7 @@ differently:
 - **Passthrough** — the proxy forwards the raw TLS stream and kubemg
   terminates it. There is exactly one certificate anywhere in the path, and
   nothing about the trust story below changes. This is the simpler option and
-  the one described in [Kubernetes](kubernetes.md#exposing-it-and-what-that-means-for-tls).
+  the one described in [Kubernetes](kubernetes.md#tls).
 - **Terminated at the proxy** — the proxy presents its own certificate to the
   world and forwards plaintext to kubemg (`KUBEMG_TLS_ENABLED=false` +
   `KUBEMG_ALLOW_INSECURE=true` on kubemg itself). Here, the certificate an
@@ -250,10 +287,20 @@ renewal pipeline) has to restart the container after replacing the files.
 Nothing here watches the directory for changes.
 
 For the minted self-signed pair: it is valid for 365 days. Nothing rotates it
-automatically either — if you're relying on it past a year, delete the pair
-from the `tls-certs` volume/PVC deliberately and restart, which mints a fresh
-one and will require re-pinning every agent (a fresh certificate is a
-different certificate).
+automatically either. If you're relying on it past a year, replace it
+deliberately: delete the stored copy **and** the files, then restart, which
+mints a fresh one — and requires re-applying every agent's install package,
+because a fresh certificate is a different certificate. Deleting only the
+files restores the old pair from the database on the next boot.
+
+```sql
+DELETE FROM server_secrets WHERE name = 'tls_self_signed_pair';
+```
+
+On Kubernetes the files go with the pod, so the statement and a
+`kubectl rollout restart deployment/kubemg` are the whole procedure; with
+Docker Compose, also remove `tls.crt` and `tls.key` from the `tls-certs`
+volume.
 
 ## Verification
 

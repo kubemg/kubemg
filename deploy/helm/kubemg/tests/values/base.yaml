@@ -1,0 +1,5 @@
+# The least an install renders with.
+publicURL: https://kubemg.example.com
+database:
+  host: postgres.example.internal
+  password: test-password

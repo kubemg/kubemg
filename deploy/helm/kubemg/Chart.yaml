@@ -1,0 +1,25 @@
+apiVersion: v2
+name: kubemg
+description: >-
+  The KubeMG management plane — console, gateway and bastion in one image.
+  Centralized, audited access to every Kubernetes cluster without opening one
+  firewall port. This installs the server; each target cluster gets an agent
+  from the console.
+type: application
+# The release workflow packages the chart with the tag's version for both
+# fields, so a published chart and the images it pulls always agree. The values
+# here are what a checkout installs; keep them in step with KUBEMG_VERSION in the
+# Makefile.
+version: 0.11.1
+appVersion: "0.11.1"
+home: https://kubemg.readthedocs.io/
+sources:
+  - https://github.com/kubemg/kubemg
+keywords:
+  - kubernetes
+  - bastion
+  - rbac
+  - audit
+  - multi-cluster
+annotations:
+  artifacthub.io/license: AGPL-3.0

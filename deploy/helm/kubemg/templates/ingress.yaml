@@ -1,0 +1,42 @@
+{{- if .Values.ingress.enabled }}
+{{- $passthrough := include "kubemg.passthrough" . -}}
+{{- $host := default (include "kubemg.publicHost" .) .Values.ingress.host -}}
+{{- $annotations := dict -}}
+{{- if $passthrough -}}
+{{- $_ := set $annotations "nginx.ingress.kubernetes.io/ssl-passthrough" "true" -}}
+{{- $_ := set $annotations "nginx.ingress.kubernetes.io/backend-protocol" "HTTPS" -}}
+{{- end -}}
+{{- $annotations = merge (deepCopy (default dict .Values.ingress.annotations)) $annotations -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "kubemg.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubemg.labels" . | nindent 4 }}
+  {{- with $annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if and (not $passthrough) .Values.ingress.tlsSecretName }}
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      secretName: {{ .Values.ingress.tlsSecretName }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "kubemg.fullname" . }}
+                port:
+                  name: {{ include "kubemg.portName" . }}
+{{- end }}

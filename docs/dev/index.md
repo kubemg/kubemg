@@ -73,6 +73,7 @@ frontend/           Vite + React + TypeScript + Tailwind v4
 agent/              the in-cluster agent — a separate Go module
 deploy/kustomize/   the agent's install manifests (human-facing copy)
 deploy/compose/     standalone-VM install — pulls published images, builds nothing
+deploy/helm/kubemg/ the management plane's Helm chart, published to ghcr.io as OCI
 shell/              the browser shell image
 docs/               this manual (MkDocs Material)
 Dockerfile          the management plane image — spans both Go modules
