@@ -23,9 +23,24 @@ spec:
       labels:
         app: e2e-web
     spec:
+      # Non-root is declared on the container, not the pod: a pod-level
+      # runAsNonRoot is inherited by the Debug action's ephemeral container,
+      # and its default image (busybox) runs as root — the kubelet would refuse
+      # to start it, and this is the pod the Debug action is exercised against.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: web
           image: registry.k8s.io/pause:3.10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65535
+            runAsGroup: 65535
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
           resources:
             requests:
               cpu: 5m
