@@ -1,0 +1,19 @@
+# One object of each fixture kind, so a list has a row to show. Applied after
+# the CRDs above are Established.
+apiVersion: stable.e2emulti.example/v1
+kind: Widget
+metadata:
+  name: e2e-widget
+  namespace: e2e-apps
+---
+apiVersion: stable.e2emulti.example/v1
+kind: Gadget
+metadata:
+  name: e2e-gadget
+  namespace: e2e-apps
+---
+apiVersion: things.e2esingle.example/v1
+kind: Solo
+metadata:
+  name: e2e-solo
+  namespace: e2e-apps

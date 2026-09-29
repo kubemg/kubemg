@@ -47,7 +47,7 @@ DOCKER_NODE  = docker run --rm -v $(PWD)/frontend:/app -v kubemg-npm:/root/.npm 
         frontend-install frontend-build frontend-lint frontend-test frontend-contrast \
         docs-build docs-serve \
         image image-check image-push \
-        up down reset logs ps
+        up down reset logs ps e2e-up e2e-down
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -211,3 +211,18 @@ logs: ## Tail dev stack logs
 
 ps: ## Show dev stack status
 	docker compose ps
+
+## ---- end-to-end fixture ----
+# What every level (c) pass needs, built once and kept: this tree's agent
+# attached to minikube through the tunnel, a second agent-mode cluster with no
+# agent, a namespace-scoped `view` user, a 2-replica Deployment, a Helm release
+# and two CRD families. Idempotent — against a live fixture it changes nothing
+# and prints the same summary. It runs on the host rather than in a container,
+# because minikube, kubectl and helm talk to a local cluster. See
+# docs/dev/verify.md for the variables it reads.
+e2e-up: ## Bring up the dev stack + minikube and seed the e2e fixture (idempotent)
+	hack/e2e/fixture.sh up
+
+# The deliberate reset: removes what e2e-up made, leaves the stack and minikube.
+e2e-down: ## Remove the e2e fixture (keeps the dev stack and minikube running)
+	hack/e2e/fixture.sh down

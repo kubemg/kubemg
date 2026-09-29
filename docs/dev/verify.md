@@ -124,6 +124,63 @@ exact reproduction for every failure. A broad regression sweep is the test
 suite's job. A red end-to-end run is never checked off, and if the environment
 genuinely cannot run the stack, say so rather than skipping the step silently.
 
+### The end-to-end fixture
+
+Most of what a level-three pass used to cost was building the same cluster
+state by hand. `make e2e-up` builds it once and keeps it:
+
+```bash
+make e2e-up     # idempotent: against a live fixture it changes nothing
+make e2e-down   # the deliberate reset; leaves the dev stack and minikube up
+```
+
+It runs on the host, not in a container, because it drives a local cluster:
+it needs `docker`, `minikube`, `kubectl`, `helm`, `jq`, `curl`, `openssl` and
+`git`. In order, it:
+
+1.  starts the dev stack if `/health` does not answer, and checks that the
+    bastion's certificate covers the host the agent will dial — an agent that
+    cannot verify it fails with nothing but an x509 error;
+2.  starts minikube if it is stopped;
+3.  builds the agent from **this tree's** `agent/` and loads it into minikube,
+    tagged `kubemg-agent:e2e-<tree hash>` so an unchanged tree reuses it and an
+    edited one (`-dirty`) is always rebuilt;
+4.  writes two runtime setting overrides — `public_url` (the address the agent
+    dials) and `agent_image` — which `make e2e-down` clears again, and only if
+    they still hold the fixture's values;
+5.  registers two agent-mode clusters, applies the agent package to the first
+    and waits for the tunnel;
+6.  seeds the cluster and ends by printing a summary of all of it.
+
+| What | Where |
+| --- | --- |
+| Cluster with the agent attached | `e2e-minikube`, kube context `minikube` |
+| Agent-mode cluster with no agent | `e2e-detached` |
+| Namespace-scoped `view` user | `e2e-viewer` / `e2e-viewer-pass`, on `e2e-apps` of `e2e-minikube` only |
+| Deployment, 2 replicas | `e2e-apps/e2e-web`, `registry.k8s.io/pause` — runs, turns Ready, has no shell |
+| Helm release | `e2e-apps/e2e-release`, from the local chart in `hack/e2e/chart` (nothing to pull) |
+| CRD family with two kinds | `stable.e2emulti.example`: `Widget`, `Gadget` — its own sidebar section |
+| CRD family with one kind | `things.e2esingle.example`: `Solo` — lands in *Other* |
+
+One agent namespace holds one cluster's agent. If `kubemg-system` on the
+profile already runs another KubeMG cluster's agent, the fixture **refuses**
+rather than detaching that cluster; `E2E_REPLACE_AGENT=1` takes the namespace
+over deliberately.
+
+Everything else is a variable with a default:
+
+| Variable | Default |
+| --- | --- |
+| `E2E_ADMIN_USER` / `E2E_ADMIN_PASSWORD` | `admin` / `admin` |
+| `E2E_PUBLIC_URL` | `https://host.docker.internal:8443` |
+| `E2E_MINIKUBE_PROFILE` | `minikube` |
+| `E2E_API` | `https://localhost:8443` |
+| `E2E_AGENT_VERSION` | `0.0.0-e2e` (what the agent reports) |
+| `E2E_STACK_TIMEOUT` / `E2E_ATTACH_TIMEOUT` | `300` / `180` seconds |
+
+When the dev database has not finished first-run setup, the fixture says so:
+the console opens on the setup wizard, and the API is unaffected.
+
 ## What to do about a flaky or slow gate
 
 Nothing in `verify` is allowed to be flaky, and a test that is

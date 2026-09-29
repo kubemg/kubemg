@@ -1,0 +1,6 @@
+apiVersion: v2
+name: e2e-fixture
+description: A chart with nothing to pull, so the e2e fixture has a Helm release without a network.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
