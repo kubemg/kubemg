@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { errorMessage } from '../api/client'
+import { callbackErrorText } from '../lib/signInError'
 import { Notice, Spinner } from '../components/primitives'
 import { Lockup } from '../components/Mark'
 import { useAuth } from '../state/auth-context'
@@ -28,7 +29,7 @@ export function AuthCallback() {
     window.history.replaceState(null, '', window.location.pathname)
 
     if (failure) {
-      setError(failure)
+      setError(callbackErrorText(failure))
       return
     }
     if (!token) {
@@ -37,7 +38,7 @@ export function AuthCallback() {
     }
 
     adoptSession(token).catch((err) => {
-      setError(errorMessage(err, 'That session could not be used. Please sign in again.'))
+      setError(callbackErrorText(errorMessage(err, 'That session could not be used. Please sign in again.')))
     })
   }, [adoptSession])
 

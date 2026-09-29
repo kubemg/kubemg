@@ -165,6 +165,8 @@ A federated account has no usable local password at all. `POST /api/v1/auth/logi
 
 A machine account gets the identical answer for a different reason — it never signs in with a password at all. Both together mean a caller probing `/auth/login` cannot distinguish "no such user" from "that user exists but signs in through SSO" from "that's a machine account."
 
+The sign-in page keeps the same promise in what it shows: all four read as one sentence — *That username and password did not match* — and, once a provider is configured, one more pointing at the provider's button below the form. That second sentence is added to every such refusal alike, so it tells nobody which case they hit; a person who normally signs in through SSO and typed a password into the local form is the one it is for. A **disabled** account is the one refusal that reads as itself, because the server only says so after the password was right. A directory (LDAP) sign-in that fails because the directory could not be reached says so, rather than reading as a wrong password.
+
 ## Troubleshooting
 
 **Clock skew.** OIDC's ID token validity window and SAML's assertion `NotBefore`/`NotOnOrAfter` are both checked against wall-clock time. A SAML sign-in that fails (`"the SAML assertion is expired or not yet valid"`) on an otherwise-correct configuration is almost always the bastion host and the IdP disagreeing about the time — check NTP on both sides before touching the provider configuration.
