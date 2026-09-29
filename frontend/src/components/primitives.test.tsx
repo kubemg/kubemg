@@ -2,9 +2,9 @@
  * @vitest-environment jsdom
  */
 import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { Meter, OBJECT_MARK, OBJECT_NAME, Pill, Row } from './primitives'
+import { Disclosure, Meter, OBJECT_MARK, OBJECT_NAME, Pill, Row } from './primitives'
 
 /*
  * The DOM half of the suite, kept deliberately small. What is worth rendering a
@@ -66,6 +66,62 @@ describe('Pill', () => {
     const label = screen.getByText('CrashLoopBackOff')
     expect(label.className).toContain('truncate')
     expect(label.parentElement?.className).toContain('min-w-0')
+  })
+})
+
+describe('Disclosure', () => {
+  it('renders closed with a summary line that names what is inside', () => {
+    render(
+      <Disclosure open={false} onOpenChange={() => {}} summary="Why this is like this">
+        <p>The explanation.</p>
+      </Disclosure>,
+    )
+
+    expect(screen.getByText('Why this is like this')).toBeTruthy()
+    const details = screen.getByText('The explanation.').closest('details')
+    expect(details?.hasAttribute('open')).toBe(false)
+  })
+
+  it('renders open when told to', () => {
+    render(
+      <Disclosure open={true} onOpenChange={() => {}} summary="Why this is like this">
+        <p>The explanation.</p>
+      </Disclosure>,
+    )
+
+    const details = screen.getByText('The explanation.').closest('details')
+    expect(details?.hasAttribute('open')).toBe(true)
+  })
+
+  it('keeps its content in the DOM while closed, rather than unmounting it', () => {
+    // find-in-page and a screen reader both need this to still be there —
+    // the point of `hidden`, not a conditional `{open && ...}`.
+    render(
+      <Disclosure open={false} onOpenChange={() => {}} summary="Why this is like this">
+        <p>Findable even while folded.</p>
+      </Disclosure>,
+    )
+
+    expect(screen.getByText('Findable even while folded.')).toBeTruthy()
+  })
+
+  it('reports a toggle rather than owning the open state itself', () => {
+    // The primitive draws the disclosure; `lib/disclosures.ts` is what
+    // remembers it. Asserted here as a native `toggle`, the same event a
+    // click on <summary> fires, so this holds regardless of how the toggle
+    // was reached (click, keyboard, or a test that cannot simulate either).
+    const onOpenChange = vi.fn()
+    render(
+      <Disclosure open={false} onOpenChange={onOpenChange} summary="Why this is like this">
+        <p>Body</p>
+      </Disclosure>,
+    )
+
+    const details = screen.getByText('Body').closest('details') as HTMLDetailsElement
+    details.open = true
+    details.dispatchEvent(new Event('toggle', { bubbles: false }))
+
+    expect(onOpenChange).toHaveBeenCalledWith(true)
   })
 })
 

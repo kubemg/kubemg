@@ -15,6 +15,7 @@ import { SEVERITY_STYLE, SeverityStrip, SeverityTag } from '../components/Severi
 import {
   Age,
   Button,
+  Disclosure,
   EmptyState,
   Field,
   Notice,
@@ -25,6 +26,7 @@ import {
   TextArea,
 } from '../components/primitives'
 import { TableSkeleton } from '../components/SkeletonLoader'
+import { useDisclosureState } from '../lib/disclosures'
 import type { PostureGrouping, PostureSeverity } from '../lib/posture'
 import {
   NO_POSTURE_FILTER,
@@ -37,6 +39,7 @@ import {
 } from '../lib/posture'
 import { ALL_NAMESPACES } from '../lib/resources'
 import { queryKey, useCachedQuery } from '../lib/query'
+import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
 
 /**
@@ -83,6 +86,7 @@ const KIND_TO_RESOURCE: Record<string, string> = {
 }
 
 export function SecurityPosture() {
+  const { user } = useAuth()
   const { clusters, loading: clustersLoading } = useClusters()
   const params = useParams<{ id: string }>()
   const clusterId = Number(params.id)
@@ -228,7 +232,7 @@ export function SecurityPosture() {
             Every word is still here and one click away, because both are real
             claims about what is and is not being checked; what changed is that
             the findings now come first. See ScopeDisclosure. */}
-        {loaded ? <ScopeDisclosure view={loaded} /> : null}
+        {loaded ? <ScopeDisclosure view={loaded} userId={user?.id ?? null} /> : null}
 
         {loaded?.unavailable?.length ? (
           <Notice tone="warn">
@@ -392,19 +396,21 @@ export function SecurityPosture() {
  *
  * What changed is the order. A security team is here to read findings; being
  * shown the limits of the scan before the scan is what made the page feel like
- * a disclaimer with a list attached. Closed by default, one line, one click.
+ * a disclaimer with a list attached. Closed by default, one line, one click —
+ * and remembered per person from here on, through the shared `Disclosure`.
  */
 function ScopeDisclosure({
   view,
+  userId,
 }: {
   view: { non_goal_notice: string; pss_notice: string; pss_unchecked: string[]; disclaimer: string }
+  userId: number | null
 }) {
+  const [open, setOpen] = useDisclosureState('security-posture.scope', userId)
+
   return (
-    <details className="card px-4 py-3">
-      <summary className="cursor-pointer text-[12.5px] text-muted">
-        What this checks, and what it does not
-      </summary>
-      <div className="mt-3 flex flex-col gap-3 text-[12.5px] leading-relaxed text-muted">
+    <Disclosure open={open} onOpenChange={setOpen} summary="What this checks, and what it does not">
+      <div className="flex flex-col gap-3 text-[12.5px] leading-relaxed text-muted">
         <p>{view.non_goal_notice}</p>
         <p>{view.pss_notice}</p>
         {view.pss_unchecked.length > 0 ? (
@@ -416,7 +422,7 @@ function ScopeDisclosure({
         ) : null}
         <p>{view.disclaimer}</p>
       </div>
-    </details>
+    </Disclosure>
   )
 }
 

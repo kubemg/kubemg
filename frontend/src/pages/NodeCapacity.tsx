@@ -10,10 +10,12 @@ import type {
 } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { LiveRefresh } from '../components/LiveRefresh'
-import { EmptyState, Notice, Pill } from '../components/primitives'
+import { Disclosure, EmptyState, Notice, Pill } from '../components/primitives'
 import { TableSkeleton } from '../components/SkeletonLoader'
+import { useDisclosureState } from '../lib/disclosures'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { formatCPU, formatMemory } from '../lib/units'
+import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
 
 /**
@@ -284,9 +286,14 @@ function NodeRow({ node }: { node: NodeCapacityRow }) {
 }
 
 export function NodeCapacity() {
+  const { user } = useAuth()
   const { clusters, loading: clustersLoading } = useClusters()
   const params = useParams<{ id: string }>()
   const clusterId = Number(params.id)
+  const [methodologyOpen, setMethodologyOpen] = useDisclosureState(
+    'node-capacity.methodology',
+    user?.id ?? null,
+  )
 
   const cluster =
     clusters.find(
@@ -429,12 +436,18 @@ export function NodeCapacity() {
           ) : null}
         </div>
 
-        <p className="text-[12px] leading-relaxed text-muted">
-          Reserved and limit figures are read from the pod specs and are exact — the same arithmetic
-          the scheduler does, sidecars and pod overhead included. Live usage comes from the cluster's
-          Metrics API and is a single sample rather than a series. Nothing here estimates a cost or
-          changes anything on the cluster.
-        </p>
+        <Disclosure
+          open={methodologyOpen}
+          onOpenChange={setMethodologyOpen}
+          summary="Where these numbers come from"
+        >
+          <p className="text-[12px] leading-relaxed text-muted">
+            Reserved and limit figures are read from the pod specs and are exact — the same
+            arithmetic the scheduler does, sidecars and pod overhead included. Live usage comes
+            from the cluster's Metrics API and is a single sample rather than a series. Nothing
+            here estimates a cost or changes anything on the cluster.
+          </p>
+        </Disclosure>
       </div>
     </AppShell>
   )
