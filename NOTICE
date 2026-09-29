@@ -26,11 +26,15 @@ can. What it forbids is keeping a modified, network-served fork private.
 
 A COMMERCIAL LICENCE IS AVAILABLE.
 
-The copyright in this work is held in full by the author, so the AGPL is not the
-only terms on which it can be had. If the AGPL's source-offering obligation does
-not fit — an embedded deployment, a closed derivative, an OEM arrangement —
+The author holds the copyright in this work, and outside contributions are
+accepted under the KubeMG Contributor Licence Agreement (CLA.md), which leaves
+each contributor their own copyright and grants the author the right to offer
+their contribution under other terms as well. That is why the AGPL is not the
+only terms on which KubeMG can be had. If the AGPL's source-offering obligation
+does not fit — an embedded deployment, a closed derivative, an OEM arrangement —
 contact the maintainer for proprietary terms. The AGPL grant here is not
-withdrawn by that; it stands for everyone else.
+withdrawn by that; it stands for everyone else, and the agreement commits every
+contribution to stay available under it.
 
 --------------------------------------------------------------------------------
 
