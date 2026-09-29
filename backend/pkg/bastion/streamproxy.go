@@ -2,6 +2,8 @@ package bastion
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -204,6 +206,12 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 	defer conn.Close()
 	defer closeClient(conn, stream.Err())
 	defer stream.Close(nil)
+	// Bounded to what the agent writes as a single frame. A larger message
+	// would reach the cluster cut short with nothing said; refusing it closes
+	// the session with 1009 instead. It also keeps one oversized paste from
+	// becoming a tunnel frame past the agent's read limit, which would drop
+	// the tunnel — every session on the cluster — rather than this one.
+	conn.SetReadLimit(MaxSessionMessage)
 
 	event.Status = http.StatusSwitchingProtocols
 	event.Phase = PhaseOpen
@@ -226,6 +234,9 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 
 	var fromClient, fromCluster int64
 	done := make(chan struct{})
+	// Why the client's side ended, when that is worth a line in the trail. It
+	// is written before done closes and read only after, so it needs no lock.
+	var clientErr error
 	// A refusal has to be written to the client socket, and only one goroutine
 	// may ever write to it — gorilla makes concurrent writes a panic, not a race
 	// to be hoped away. So the notice is handed to the loop below, which is the
@@ -239,6 +250,9 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 		for {
 			kind, payload, err := conn.ReadMessage()
 			if err != nil {
+				if errors.Is(err, websocket.ErrReadLimit) {
+					clientErr = errSessionMessageTooBig
+				}
 				return
 			}
 			fromClient += int64(len(payload))
@@ -317,7 +331,7 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 			}
 
 		case <-done:
-			p.recordStreamClose(c, event, fromCluster, fromClient, nil)
+			p.recordStreamClose(c, event, fromCluster, fromClient, clientErr)
 			return
 
 		case <-c.Request.Context().Done():
@@ -326,6 +340,11 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 		}
 	}
 }
+
+// errSessionMessageTooBig is the closing record's reason for a session ended by
+// a message over MaxSessionMessage.
+var errSessionMessageTooBig = fmt.Errorf(
+	"a session message larger than %d bytes was refused", MaxSessionMessage)
 
 // recordStreamClose writes the closing half of a stream's audit trail, carrying
 // how long the session lasted and how much moved through it.
