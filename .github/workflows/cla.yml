@@ -1,0 +1,64 @@
+name: CLA
+
+# Every outside contribution is accepted under CLA.md, because KubeMG is offered
+# under a commercial licence beside the AGPL and the author can only license
+# code they hold the right to (see NOTICE). This bot asks each new contributor
+# to accept the agreement once, by commenting on their pull request, and records
+# the acceptance; a pull request with a contributor who has not accepted it gets
+# a failing `CLAAssistant` status.
+#
+# It runs on `pull_request_target` so it can comment on and set a status for a
+# pull request opened from a fork — which a `pull_request` run cannot, having a
+# read-only token there. That event runs with the base repository's token, so
+# this workflow must never check out or execute anything from the pull request:
+# it reads only the list of committers through the API.
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, closed, synchronize]
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  CLAAssistant:
+    runs-on: ubuntu-latest
+    # A comment only matters on a pull request, and only when it is the
+    # signature or a request to check again.
+    if: >-
+      github.event_name == 'pull_request_target' ||
+      (github.event.issue.pull_request &&
+       (github.event.comment.body == 'recheck' ||
+        github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'))
+    steps:
+      - name: CLA Assistant
+        # Pinned to the v2.6.1 commit rather than the tag: this step holds a
+        # write token, so what it runs must not change under a moved tag.
+        uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          path-to-document: 'https://github.com/kubemg/kubemg/blob/master/CLA.md'
+          path-to-signatures: 'signatures/cla.json'
+          # Signatures live on their own unprotected branch: the bot commits
+          # each acceptance, and master only takes changes through review.
+          branch: 'cla-signatures'
+          # The copyright holder does not license their own work to themselves,
+          # and a bot is not an author.
+          allowlist: 'ozkanpoyrazoglu,*[bot]'
+          signed-commit-message: '$contributorName accepted the CLA in $owner/$repo#$pullRequestNo'
+          create-file-commit-message: 'Start the record of CLA acceptances'
+          custom-notsigned-prcomment: >-
+            Thank you for this contribution. KubeMG is offered under a commercial
+            licence as well as the AGPL, so every contribution is accepted under
+            the [Contributor Licence Agreement](https://github.com/kubemg/kubemg/blob/master/CLA.md).
+            You keep your copyright, and the project stays open source. Please read
+            it, then accept it by commenting with the exact sentence below. You
+            only need to do this once, and it also covers anything you contributed
+            before.
+          custom-allsigned-prcomment: 'Every contributor on this pull request has accepted the CLA.'
+          lock-pullrequest-aftermerge: false

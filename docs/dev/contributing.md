@@ -150,6 +150,31 @@ the licence of the directory it touches, and moving code across that boundary
 changes its licence — which makes it a question for review rather than a
 refactor. `NOTICE` is the authority.
 
+### The Contributor Licence Agreement
+
+KubeMG is also offered under a commercial licence, and the author can only offer
+that for code they have the right to license. So every outside contribution is
+accepted under the
+[Contributor Licence Agreement](https://github.com/kubemg/kubemg/blob/master/CLA.md).
+In short:
+
+- **You keep your copyright.** The agreement grants a licence; it does not
+  transfer ownership, and you may license your own work to anyone else.
+- **It lets the author offer your contribution under other terms too**,
+  including a commercial licence.
+- **Your contribution stays open source.** Whatever else it is offered under, it
+  remains available under the licence of the directory it landed in.
+- **If an employer has rights to what you write**, you need their permission
+  before you contribute.
+
+You accept it once, and that covers everything you have contributed and will
+contribute. On your first pull request a bot comments with a link to the
+agreement and a sentence to copy; post that sentence as a comment on the pull
+request and the check turns green. Comment `recheck` to run the check again. A
+pull request is not merged while one of its committers has not accepted the
+agreement, so make sure every commit is authored with an email address linked
+to your GitHub account — the bot cannot match a commit that is not.
+
 ## Documentation is part of the change
 
 A change that adds a setting, a route, a page or a refusal is not finished until
