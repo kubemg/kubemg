@@ -140,7 +140,9 @@ the whole reason the column exists, and a row update every two seconds for
 nine hundred identical successes buys nothing.
 
 `Record` never blocks and never fails a caller. The queue holds 4096
-records; past that a record is **dropped** and the drop is logged. That is
+records; past that a record is **dropped** and the drop is logged — and,
+with [metrics](../install/metrics.md#dropped-audit-records) enabled, counted
+on `kubemg_audit_records_dropped_total{sink="forward"}`. That is
 the same trade the database sink makes and for the same reason: a slow SIEM
 must never become a slow `kubectl`. It also means a forwarder is not a
 durable queue — if delivery has to survive an outage of the collector, put

@@ -18,6 +18,12 @@ read the full detail.
       what ticks this box; there's no separate step. See
       [Environment reference](environment.md#auth-jwt-bootstrap).
 
+- [ ] **Exactly one kubemg replica.** An agent's tunnel lives in the replica
+      it connected to; a second replica behind the same address answers
+      `503` for every cluster whose agent chose the other one. On
+      Kubernetes, `replicas: 1` with `strategy: Recreate`. See
+      [Choosing a deployment](index.md#sizing-and-high-availability).
+
 - [ ] **`JWT_SECRET` set explicitly** if you want a deliberate, known
       signing key you control the rotation of — otherwise the server mints
       one on first boot and keeps it in the database (safe across several

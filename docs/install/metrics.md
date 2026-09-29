@@ -25,8 +25,28 @@ KubeMG starts a second listener on that address serving only `/metrics`. Bind it
 | `kubemg_db_query_duration_seconds` | Histogram | `operation` | Per GORM operation type: `create`, `query`, `update`, `delete`, `row`, `raw`. |
 | `kubemg_db_queries_total` | Counter | `operation`, `error` | `error="true"` means a real database error. `ErrRecordNotFound` is not an error — it is normal flow for existence checks. |
 | `kubemg_build_info` | Gauge | `version` | Always `1`. Use the `version` label to correlate anomalies with deploys. |
+| `kubemg_audit_records_dropped_total` | Counter | `sink` | Audit records discarded because a sink's queue was full. `sink="store"` is the database table the audit page reads; `sink="forward"` is the push to your syslog collector. Both series start at `0`. |
+| `kubemg_audit_queue_depth` | Gauge | `sink` | Records waiting in that sink's queue. Each queue holds 4096; a record that arrives while it is full is dropped. |
 
 Go runtime and process metrics (goroutines, GC pauses, file descriptors) come from the standard Prometheus registry and are included automatically.
+
+## Dropped audit records
+
+Neither audit sink ever makes a `kubectl` wait: when the database or the
+collector falls behind, its queue fills and further records are dropped rather
+than held. A non-zero `kubemg_audit_records_dropped_total` therefore means the
+audit page (`store`) or your SIEM (`forward`) is missing records for that
+period. The records are not lost outright — the server's own log stream
+carries every one of them regardless, so recover the gap from there. Alert on
+any increase:
+
+```yaml
+- alert: KubemgAuditRecordsDropped
+  expr: increase(kubemg_audit_records_dropped_total[10m]) > 0
+```
+
+A queue depth that climbs toward 4096 and stays there is the warning before
+the drops start.
 
 ## Example Prometheus scrape config
 

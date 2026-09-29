@@ -67,6 +67,10 @@ type Store interface {
 type Options struct {
 	Store  Store
 	Logger *slog.Logger
+	// OnDrop is called each time a record is dropped, beside the log line — it
+	// is how the count reaches something that can alert. Nil means nobody is
+	// counting.
+	OnDrop func()
 }
 
 // Forwarder ships audit records to every enabled destination.
@@ -84,6 +88,7 @@ type Forwarder struct {
 
 	reload  chan struct{}
 	dropped atomic.Int64
+	onDrop  func()
 
 	// senders are keyed by destination id and hold their connections open
 	// across flushes. Only the drain goroutine touches them.
@@ -111,6 +116,7 @@ func New(opts Options) *Forwarder {
 	return &Forwarder{
 		store:   opts.Store,
 		logger:  logger,
+		onDrop:  opts.OnDrop,
 		queue:   make(chan record, queueSize),
 		done:    make(chan struct{}),
 		reload:  make(chan struct{}, 1),
@@ -131,6 +137,9 @@ func (f *Forwarder) Record(ctx context.Context, event bastion.Event) {
 	select {
 	case f.queue <- rec:
 	default:
+		if f.onDrop != nil {
+			f.onDrop()
+		}
 		// Log the first drop and then every thousandth, so a sustained outage
 		// does not turn the log itself into the problem.
 		if n := f.dropped.Add(1); n == 1 || n%1000 == 0 {
@@ -162,6 +171,14 @@ func (f *Forwarder) Dropped() int64 {
 		return 0
 	}
 	return f.dropped.Load()
+}
+
+// QueueLen is how many records are waiting to be delivered.
+func (f *Forwarder) QueueLen() int {
+	if f == nil {
+		return 0
+	}
+	return len(f.queue)
 }
 
 // Run drains the queue until the context is cancelled, then flushes what is

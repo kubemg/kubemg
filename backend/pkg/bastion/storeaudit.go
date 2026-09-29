@@ -48,6 +48,10 @@ type StoreAuditor struct {
 	dropped    atomic.Int64
 	suppressed atomic.Int64
 	done       chan struct{}
+
+	// onDrop is told about every drop, beside the log line — it is how the
+	// count reaches something that can alert. Nil means nobody is counting.
+	onDrop func()
 }
 
 // NewStoreAuditor builds the persistent auditor. Run must be started for it to
@@ -65,6 +69,14 @@ func NewStoreAuditor(sink AuditSink, logger *slog.Logger, policy *auditpolicy.Po
 	}
 }
 
+// OnDrop sets what is called each time a record is dropped. Set it before the
+// auditor is handed to anything that records; it is not safe to change while
+// Record may run.
+func (a *StoreAuditor) OnDrop(fn func()) { a.onDrop = fn }
+
+// QueueLen is how many records are waiting to be written.
+func (a *StoreAuditor) QueueLen() int { return len(a.queue) }
+
 // Record enqueues an audit event. It is safe from any goroutine and never
 // blocks.
 func (a *StoreAuditor) Record(ctx context.Context, event Event) {
@@ -75,6 +87,9 @@ func (a *StoreAuditor) Record(ctx context.Context, event Event) {
 	select {
 	case a.queue <- toAuditRow(ctx, event):
 	default:
+		if a.onDrop != nil {
+			a.onDrop()
+		}
 		// Log the first drop and then every thousandth, so a sustained outage
 		// does not turn the log itself into the problem.
 		if n := a.dropped.Add(1); n == 1 || n%1000 == 0 {

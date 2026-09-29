@@ -9,6 +9,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -342,6 +343,47 @@ func TestFullQueueDropsAndNeverBlocks(t *testing.T) {
 	}
 	if forwarder.Dropped() < 500 {
 		t.Fatalf("wanted the overflow dropped and counted, got %d", forwarder.Dropped())
+	}
+}
+
+// With a destination configured, each record the full queue discards reaches
+// the drop hook exactly once.
+func TestFullQueueReportsEachDrop(t *testing.T) {
+	store := &fakeStore{dests: []db.AuditForwarder{{
+		ID: 1, Name: "siem", Kind: db.ForwarderSyslog,
+		Host: "127.0.0.1", Port: 6514, Protocol: db.ForwarderProtoTCP, Enabled: true,
+	}}}
+	var drops atomic.Int64
+	forwarder := New(Options{Store: store, OnDrop: func() { drops.Add(1) }})
+	forwarder.refresh(context.Background()) // no drain running: the queue can only fill
+	if !forwarder.active.Load() {
+		t.Fatal("a configured destination should make the forwarder active")
+	}
+
+	done := make(chan struct{})
+	var beforeFull int64
+	go func() {
+		defer close(done)
+		for range queueSize {
+			forwarder.Record(context.Background(), event("get", 200))
+		}
+		beforeFull = drops.Load()
+		forwarder.Record(context.Background(), event("get", 200))
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Record blocked when the queue was full")
+	}
+	if beforeFull != 0 {
+		t.Fatalf("nothing is dropped before the queue fills, hook fired %d times", beforeFull)
+	}
+	if got := drops.Load(); got != 1 {
+		t.Fatalf("one record over the limit is one drop, hook fired %d times", got)
+	}
+	if got := forwarder.QueueLen(); got != queueSize {
+		t.Fatalf("QueueLen = %d, want %d", got, queueSize)
 	}
 }
 

@@ -267,6 +267,77 @@ func TestDBAfterDoesNotCountRecordNotFoundAsError(t *testing.T) {
 	}
 }
 
+// Both sinks' series exist from the moment a hook is handed out, so an alert on
+// the counter reads a quiet trail as zero rather than as a missing series.
+func TestAuditDropHookCountsPerSink(t *testing.T) {
+	m, reg := NewStandalone()
+	store := m.AuditDropHook(SinkStore)
+	forward := m.AuditDropHook(SinkForward)
+
+	if got := valueBySink(t, reg, "kubemg_audit_records_dropped_total"); got[SinkStore] != 0 || got[SinkForward] != 0 || len(got) != 2 {
+		t.Fatalf("before any drop, want both sinks at zero, got %v", got)
+	}
+
+	store()
+	store()
+	forward()
+
+	got := valueBySink(t, reg, "kubemg_audit_records_dropped_total")
+	if got[SinkStore] != 2 || got[SinkForward] != 1 {
+		t.Fatalf("dropped by sink = %v; want store=2 forward=1", got)
+	}
+}
+
+func TestObserveAuditQueueReportsTheSinksLength(t *testing.T) {
+	m, reg := NewStandalone()
+	depth := 7
+	m.ObserveAuditQueue(SinkStore, func() int { return depth })
+	m.ObserveAuditQueue(SinkForward, func() int { return 0 })
+
+	got := valueBySink(t, reg, "kubemg_audit_queue_depth")
+	if got[SinkStore] != 7 || got[SinkForward] != 0 {
+		t.Fatalf("queue depth by sink = %v; want store=7 forward=0", got)
+	}
+
+	// Read at scrape time, not pushed.
+	depth = 4096
+	if got := valueBySink(t, reg, "kubemg_audit_queue_depth"); got[SinkStore] != 4096 {
+		t.Fatalf("queue depth after the queue grew = %v; want store=4096", got)
+	}
+}
+
+// Metrics switched off is a nil *Metrics; wiring the sinks through it must
+// leave them exactly as they were.
+func TestAuditHooksOnNilMetrics(t *testing.T) {
+	var m *Metrics
+	if hook := m.AuditDropHook(SinkStore); hook != nil {
+		t.Fatal("a nil Metrics must hand out no drop hook")
+	}
+	m.ObserveAuditQueue(SinkStore, func() int { return 1 })
+}
+
+// valueBySink reads a counter or gauge family keyed by its sink label.
+func valueBySink(t *testing.T, reg *prometheus.Registry, name string) map[string]float64 {
+	t.Helper()
+	out := map[string]float64{}
+	for _, f := range gatherMetric(t, reg, name) {
+		for _, metric := range f.GetMetric() {
+			sink := ""
+			for _, label := range metric.GetLabel() {
+				if label.GetName() == "sink" {
+					sink = label.GetValue()
+				}
+			}
+			if metric.GetCounter() != nil {
+				out[sink] = metric.GetCounter().GetValue()
+			} else {
+				out[sink] = metric.GetGauge().GetValue()
+			}
+		}
+	}
+	return out
+}
+
 // gatherMetric collects all metric families from reg and returns those named n.
 func gatherMetric(t *testing.T, reg *prometheus.Registry, name string) []*dto.MetricFamily {
 	t.Helper()
