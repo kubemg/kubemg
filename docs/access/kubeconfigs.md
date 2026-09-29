@@ -126,7 +126,7 @@ POST /api/v1/kubeconfigs/:id/revoke
 POST /api/v1/kubeconfigs/revoke-all
 ```
 
-Reading follows the audit trail's rule exactly: everybody may read, a non-admin is narrowed by the handler to their own rows, and the `user_id` query parameter can narrow that further but **never widen it**. Revoking your own credential is never administrative — revoking a file you know you lost must not require finding an administrator — and revoking somebody else's always is. In the console the register is **Admin → Identity → Issued credentials** for the fleet, and `/me/credentials` for an operator's own.
+Reading follows the audit trail's rule exactly: everybody may read, a non-admin is narrowed by the handler to their own rows, and the `user_id` query parameter can narrow that further but **never widen it**. Revoking your own credential is never administrative — revoking a file you know you lost must not require finding an administrator — and revoking somebody else's always is. In the console the register is **Admin → Identity → Issued credentials** for the fleet, and `/me/credentials` for an operator's own. Adding `?expiring=24h` (or any window from `15m` to `30d`) narrows either page to the live credentials that run out within it — the fleet page's *kubeconfigs expiring* figure opens the register that way.
 
 `last_used_at` is written off the request's own path and at most once every five minutes per credential, the machine token's rule: this read would otherwise sit in front of every proxied call. A credential that was generated and never used is the most useful row on the page.
 

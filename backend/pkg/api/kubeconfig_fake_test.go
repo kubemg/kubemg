@@ -50,6 +50,9 @@ func (f *fakeStore) ListKubeconfigIssuances(
 		if filter.ActiveOnly && (row.Revoked() || row.Expired(now)) {
 			continue
 		}
+		if !filter.ExpiresBefore.IsZero() && row.ExpiresAt.After(filter.ExpiresBefore) {
+			continue
+		}
 		out = append(out, *row)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })

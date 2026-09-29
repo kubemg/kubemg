@@ -22,7 +22,11 @@ type KubeconfigFilter struct {
 	// past their expiry. It is the default reading of "who holds access right
 	// now", which is the question the register exists to answer.
 	ActiveOnly bool
-	Now        time.Time
+	// ExpiresBefore, when set, keeps the rows that expire at or before it. "About
+	// to expire" is only a question about credentials that still work, so the
+	// handler sets ActiveOnly beside it.
+	ExpiresBefore time.Time
+	Now           time.Time
 
 	Limit  int
 	Offset int
@@ -59,6 +63,9 @@ func (s *Store) ListKubeconfigIssuances(
 			now = time.Now().UTC()
 		}
 		query = query.Where("revoked_at IS NULL AND expires_at > ?", now)
+	}
+	if !filter.ExpiresBefore.IsZero() {
+		query = query.Where("expires_at <= ?", filter.ExpiresBefore)
 	}
 
 	var total int64

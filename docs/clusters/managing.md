@@ -9,7 +9,9 @@ inventory table at `/admin/clusters`, and the per-cluster dashboard at
 `/admin/clusters`, admin-only, lists every
 registered cluster: name, rail chip, environment, link state, API server
 (hidden below `md` width), status, Kubernetes version (hidden below `md`), and a
-row of actions. A filter box narrows by name. From here:
+row of actions. A filter box narrows by name, and `?agent=behind` narrows to the
+clusters whose agent is older than the newest one running anywhere in the fleet
+— the fleet page's *agents behind* figure opens the table that way. From here:
 
 - **Register cluster** opens the wizard at `/admin/clusters/new` — see
   [Adding a cluster](registering.md).

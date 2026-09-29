@@ -18,7 +18,7 @@
  * for what each one draws and why.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { Plus, RefreshCw, Server } from 'lucide-react'
 import { checkCluster, errorMessage, fetchJitRequests } from '../api/client'
@@ -30,6 +30,8 @@ import { FleetOperatorBody } from '../components/FleetOperatorBody'
 import { JitRequestModal } from '../components/jit/JitRequestModal'
 import { LiveChip } from '../components/LiveRefresh'
 import { Button, EmptyState, Notice } from '../components/primitives'
+import { useFleetCounts } from '../lib/fleetCounts'
+import type { Count, StripCounts } from '../lib/fleetStrip'
 import { FLEET_INTERVAL } from '../lib/live'
 import { clusterHref } from '../lib/navigation'
 import { useAuth } from '../state/auth-context'
@@ -45,6 +47,11 @@ export function Overview() {
   const isAdmin = user?.role === 'admin'
   const username = user?.username ?? 'you'
   const { pending, elevation, reloadRequests } = useAccessRequests(isAdmin)
+  const { refused, expiring } = useFleetCounts(isAdmin)
+  const counts = useMemo<StripCounts>(
+    () => ({ pending, refused, expiring }),
+    [pending, refused, expiring],
+  )
 
   async function checkAll() {
     setChecking(true)
@@ -128,10 +135,11 @@ export function Overview() {
                 nothing to draw it too. */}
             <FleetConnectionChains clusters={clusters} username={username} />
             {isAdmin ? (
-              <FleetOperatorBody clusters={clusters} pendingRequests={pending} />
+              <FleetOperatorBody clusters={clusters} counts={counts} />
             ) : (
               <FleetDeveloperBody
                 clusters={clusters}
+                counts={counts}
                 elevation={elevation}
                 onRequestAccess={() => setRequesting(true)}
               />
@@ -194,16 +202,17 @@ export function FleetConnectionChains({
  * their own requests, so the same call answers both. It is read once here
  * rather than in either body, so the two never both ask.
  *
- * A failure is swallowed on purpose. This is a secondary reading on a page
- * whose subject is the fleet: an approvals endpoint that is briefly unavailable
- * must cost the caller one queue row, not the cluster list they came for.
+ * A failure costs the page nothing but this reading: an approvals endpoint that
+ * is briefly unavailable must not cost the caller the cluster list they came
+ * for. It is reported as `null` — unknown — rather than as 0, so the strip can
+ * say it does not know instead of saying nobody is waiting.
  */
 function useAccessRequests(isAdmin: boolean): {
-  pending: number
+  pending: Count
   elevation: JitRequest | null
   reloadRequests: () => Promise<void>
 } {
-  const [pending, setPending] = useState(0)
+  const [pending, setPending] = useState<Count>(undefined)
   const [elevation, setElevation] = useState<JitRequest | null>(null)
 
   const reloadRequests = useCallback(async () => {
@@ -214,7 +223,7 @@ function useAccessRequests(isAdmin: boolean): {
       // server's own `pending`, which is already scoped to what they may decide.
       setElevation(list.requests.find((request) => request.active) ?? null)
     } catch {
-      setPending(0)
+      setPending(null)
       setElevation(null)
     }
   }, [])

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { FileKey, KeyRound, ShieldOff } from 'lucide-react'
+import { useSearchParams } from 'react-router'
+import { FileKey, KeyRound, ShieldOff, X } from 'lucide-react'
 import {
   errorMessage,
   fetchIssuedKubeconfigs,
@@ -12,6 +13,7 @@ import { PasswordSheet } from '../components/PasswordSheet'
 import {
   Age,
   Button,
+  Chip,
   EmptyState,
   Notice,
   Pill,
@@ -23,6 +25,7 @@ import {
   Th,
 } from '../components/primitives'
 import type { Tone } from '../lib/status'
+import { isTimeRange } from '../lib/timerange'
 import { relativeAge } from '../lib/time'
 import { useAuth } from '../state/auth-context'
 import { useConfirm } from '../state/confirm-context'
@@ -69,6 +72,12 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
   const [filter, setFilter] = useState('')
   const [blanket, setBlanket] = useState<KubeconfigRevokeAllResult | null>(null)
   const [changingPassword, setChangingPassword] = useState(false)
+  // `?expiring=24h` is how the fleet's figure opens this page on the rows it
+  // counted: live credentials running out within that window, asked of the
+  // server with the same parameter the count was. `all` is not a window here.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const rawExpiring = searchParams.get('expiring')
+  const expiring = isTimeRange(rawExpiring) && rawExpiring !== 'all' ? rawExpiring : undefined
 
   // The fleet reading asks for everything and lets the server decide; the
   // operator's own asks for their id explicitly, so the page reads the same
@@ -79,6 +88,7 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
       const next = await fetchIssuedKubeconfigs({
         userId: mine ? user?.id : undefined,
         activeOnly: status === 'active',
+        expiring,
       })
       setRows(next)
       setError(null)
@@ -87,7 +97,7 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
     } finally {
       setLoading(false)
     }
-  }, [mine, status, user?.id])
+  }, [mine, status, user?.id, expiring])
 
   useEffect(() => {
     void load()
@@ -227,6 +237,25 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
               options={[...FILTERS]}
               ariaLabel="Which credentials to show"
             />
+            {expiring ? (
+              <Chip
+                active
+                title="Show every credential again"
+                onClick={() =>
+                  setSearchParams(
+                    (current) => {
+                      const next = new URLSearchParams(current)
+                      next.delete('expiring')
+                      return next
+                    },
+                    { replace: true },
+                  )
+                }
+              >
+                Live, expiring within {expiring}
+                <X aria-hidden="true" className="size-3.5" />
+              </Chip>
+            ) : null}
             <SearchInput
               value={filter}
               onChange={setFilter}
