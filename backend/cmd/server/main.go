@@ -144,6 +144,11 @@ func main() {
 	// is asynchronous so a slow database never becomes a slow kubectl. The verb
 	// selection applies to the table only — see StoreAuditor.
 	auditStore := bastion.NewStoreAuditor(store, logger, policy)
+	// A drop is logged either way; with metrics on it is also counted where an
+	// alert can see it, since a trail with holes in it otherwise looks exactly
+	// like a quiet afternoon. Both calls are no-ops with metrics off.
+	auditStore.OnDrop(met.AuditDropHook(metrics.SinkStore))
+	met.ObserveAuditQueue(metrics.SinkStore, auditStore.QueueLen)
 	auditCtx, stopAudit := context.WithCancel(context.Background())
 	go auditStore.Run(auditCtx)
 	defer func() {
@@ -179,7 +184,12 @@ func main() {
 	// The verb selection is deliberately not handed to it. Narrowing the
 	// queryable table is a storage decision; narrowing what leaves for a SIEM
 	// would be an audit decision, and the structured log does not make it either.
-	forwarder := auditforward.New(auditforward.Options{Store: store, Logger: logger})
+	forwarder := auditforward.New(auditforward.Options{
+		Store:  store,
+		Logger: logger,
+		OnDrop: met.AuditDropHook(metrics.SinkForward),
+	})
+	met.ObserveAuditQueue(metrics.SinkForward, forwarder.QueueLen)
 	go forwarder.Run(auditCtx)
 	defer forwarder.Wait()
 

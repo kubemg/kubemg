@@ -115,8 +115,13 @@ metadata:
   name: kubemg
   namespace: kubemg
 spec:
-  # See "Replicas" below before scaling past 1.
+  # Exactly one — see "Replicas" below.
   replicas: 1
+  # Never two pods at once, not even during an upgrade: the agents' tunnels
+  # would split between them, and the ReadWriteOnce volumes cannot attach to
+  # both.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: kubemg
@@ -270,16 +275,17 @@ terminates TLS for real traffic.
 
 ## Replicas
 
-The management plane is close to stateless — see
+Run **one** replica, with `strategy: Recreate`. Each agent's tunnel lives in
+the memory of the pod its connection reached, so a second pod behind the same
+Service answers `503 no agent tunnel is attached to this cluster` for every
+cluster whose agent chose the other one — and shows those agents as not
+attached. `RollingUpdate` causes the same split for the length of every
+rollout, and would also stall it: the new pod cannot mount the
+`ReadWriteOnce` volumes the old one still holds. `Recreate` costs a short
+outage per upgrade; the agents reconnect on their own once the new pod is
+ready, each within a minute (their retry backs off to 60 seconds). See
 [Choosing a deployment](index.md#sizing-and-high-availability) for the full
-reasoning. In short: set `JWT_SECRET` explicitly before running more than one
-replica (otherwise each mints its own key independently before agreeing on
-one in the database), put `/etc/kubemg/tls` and the recordings directory on
-volumes every replica can read consistently (`ReadWriteMany`, or an external
-object store fronted appropriately, if you need more than one replica and a
-single `ReadWriteOnce` PVC won't attach to more than one node), and don't
-worry about the cluster-event alarm poller — it self-elects a single replica
-via a database lease regardless of how many you run.
+reasoning.
 
 ## Next
 

@@ -1,7 +1,8 @@
 // Package metrics provides Prometheus instrumentation for the KubeMG server.
-// It exposes three signal types: HTTP request metrics (count, latency,
-// in-flight), database query metrics (latency, total per operation), and a
-// build-info gauge so dashboards can correlate anomalies with deploys.
+// It exposes four signal types: HTTP request metrics (count, latency,
+// in-flight), database query metrics (latency, total per operation), the audit
+// sinks' dropped records and queue depth, and a build-info gauge so dashboards
+// can correlate anomalies with deploys.
 package metrics
 
 import (
@@ -26,13 +27,22 @@ type Metrics struct {
 	dbQueryDuration      *prometheus.HistogramVec
 	dbQueriesTotal       *prometheus.CounterVec
 	buildInfo            *prometheus.GaugeVec
+	auditDropped         *prometheus.CounterVec
+	registerer           prometheus.Registerer
 	gatherer             prometheus.Gatherer
 }
+
+// The two audit sinks that drop a record rather than block the proxy. They are
+// the only values the sink label takes, so each audit series is two series.
+const (
+	SinkStore   = "store"
+	SinkForward = "forward"
+)
 
 // New registers all KubeMG metrics against reg and returns the handle.
 // Use Default() to instrument a production server against the standard registry.
 func New(reg prometheus.Registerer, gath prometheus.Gatherer) *Metrics {
-	m := &Metrics{gatherer: gath}
+	m := &Metrics{registerer: reg, gatherer: gath}
 
 	m.httpRequestsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "kubemg_http_requests_total",
@@ -66,6 +76,11 @@ func New(reg prometheus.Registerer, gath prometheus.Gatherer) *Metrics {
 		Help: "Build metadata; value is always 1. Use label values for version info.",
 	}, []string{"version"})
 
+	m.auditDropped = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "kubemg_audit_records_dropped_total",
+		Help: "Audit records an audit sink discarded because its queue was full. The server's own log stream still carries them.",
+	}, []string{"sink"})
+
 	reg.MustRegister(
 		m.httpRequestsTotal,
 		m.httpRequestDuration,
@@ -73,6 +88,7 @@ func New(reg prometheus.Registerer, gath prometheus.Gatherer) *Metrics {
 		m.dbQueryDuration,
 		m.dbQueriesTotal,
 		m.buildInfo,
+		m.auditDropped,
 	)
 
 	return m
@@ -97,6 +113,30 @@ func NewStandalone() (*Metrics, *prometheus.Registry) {
 // Call once at startup after the version string is known.
 func (m *Metrics) RegisterBuildInfo(version string) {
 	m.buildInfo.WithLabelValues(version).Set(1)
+}
+
+// AuditDropHook returns what an audit sink calls each time it drops a record.
+// Asking for it creates the sink's series at zero, so an alert on the counter
+// sees a quiet trail rather than a missing series. A nil Metrics — metrics
+// switched off — returns nil, which the sinks read as "no hook".
+func (m *Metrics) AuditDropHook(sink string) func() {
+	if m == nil {
+		return nil
+	}
+	return m.auditDropped.WithLabelValues(sink).Inc
+}
+
+// ObserveAuditQueue publishes a sink's queue depth, read from depth at scrape
+// time rather than pushed on every record. A no-op on a nil Metrics.
+func (m *Metrics) ObserveAuditQueue(sink string, depth func() int) {
+	if m == nil {
+		return
+	}
+	m.registerer.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name:        "kubemg_audit_queue_depth",
+		Help:        "Audit records waiting in a sink's queue. A sink drops records once its queue is full.",
+		ConstLabels: prometheus.Labels{"sink": sink},
+	}, func() float64 { return float64(depth()) }))
 }
 
 // Middleware returns a Gin handler that records per-request HTTP metrics.

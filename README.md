@@ -537,7 +537,8 @@ bastion. The rendered manifests set all of these for you.
 
 - [ ] Real TLS material dropped into `/etc/kubemg/ssl` (`ssl/` beside the compose file), or `KUBEMG_AGENT_CA_BUNDLE` set behind an ingress — **Settings → Deployment** reports which certificate is actually in force
 - [ ] Bootstrap admin password changed — setup refuses to finish until it is, so this is ticked by getting through the wizard
-- [ ] `JWT_SECRET` set explicitly if more than one replica serves the same address
+- [ ] Exactly one KubeMG replica (`strategy: Recreate` on Kubernetes) — an agent's tunnel lives in the replica it dialled, and a second one answers `503` for every cluster whose agent chose the other
+- [ ] `JWT_SECRET` set explicitly if you want a signing key you rotate yourself
 - [ ] `KUBEMG_SESSION_RECORDING_KEY` generated per install and kept out of the recordings backup
 - [ ] `KUBEMG_SECRET_KEY` generated per install and backed up separately from the database
 - [ ] `KUBEMG_SESSION_RECORDING_DIR` on a persistent volume

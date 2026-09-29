@@ -51,10 +51,28 @@ management plane's public address.
 
 ## Sizing and high availability
 
-The management plane is close to stateless: every read and write goes through
-PostgreSQL, and a session is a signed JWT rather than server-side state. That
-means you can run more than one replica behind a load balancer for
-availability, with two things to get right:
+**Run exactly one kubemg replica.** An agent's tunnel is held in the memory of
+the replica its connection reached, and no other replica can use it. With two
+replicas behind a load balancer, each agent-mode cluster is attached to one of
+them, and every request the balancer sends to the other — Explore, the
+terminal, the browser shell, a `kubectl` call through an issued kubeconfig —
+answers `503 no agent tunnel is attached to this cluster`. The fleet page
+served by that replica shows the agent as not attached. It reads as "the
+cluster is down" when the cause is the second replica. Session affinity does
+not fix it: affinity keeps a *user* on one replica, but which replica holds a
+cluster's tunnel is decided by where the agent's own connection landed.
+
+Availability comes from restarting quickly rather than from a second copy.
+When the replica comes back, every agent reconnects on its own — each within
+a minute, since an agent's retry backs off to 60 seconds — and the clusters
+reappear without anyone touching them. On Kubernetes, deploy with
+`strategy: Recreate` (see [Kubernetes](kubernetes.md#replicas)) so an upgrade
+never runs two replicas side by side.
+
+The rest of the management plane is close to stateless — every read and write
+goes through PostgreSQL, and a session is a signed JWT rather than server-side
+state — and the parts below already behave correctly with more than one
+replica, so they need no attention when that limit is lifted:
 
 - **`JWT_SECRET`** is optional even with several replicas: left unset, each
   one mints a key on first boot and stores it via a conflict-safe upsert, so
@@ -75,9 +93,8 @@ availability, with two things to get right:
   configuration — it works the same whether you run one replica or ten.
 
 The TLS certificate and the recordings directory are the two pieces of local
-state; put both on shared/persistent volumes if you run more than one replica,
-so every replica serves the same certificate and every recording is visible
-regardless of which replica wrote it.
+state; put both on persistent volumes, so a restarted replica serves the
+certificate every agent has pinned and keeps every recording it wrote.
 
 ## Next
 
