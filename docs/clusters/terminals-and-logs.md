@@ -167,6 +167,20 @@ Port-forward carries **arbitrary TCP**, not a terminal, so it is deliberately
 **not** teed into a session recording the way `exec`/`attach` are — there is
 no terminal content to capture, only a byte stream kubemg cannot interpret.
 
+## How much one message may carry
+
+A single message into a session — `exec`, `attach`, port-forward, the browser
+terminal — may carry at most **1 MiB**. `kubectl` sends at most 32 KiB per
+message and the console far less, so nothing ordinary comes near it. A client
+that writes more in one message is refused with WebSocket close code `1009`
+(message too big), and the session's closing record in the audit trail says
+why.
+
+Agents released before this limit existed delivered only the first 4 KiB of
+any larger message and dropped the rest without an error. A `kubectl cp` into a
+pod that leaves a short file, or stdin piped into `kubectl exec -i` that arrives
+cut off, is that agent: re-apply the cluster's install package to upgrade it.
+
 ## What lands in the audit trail
 
 Every one of these calls is recorded, refusals included, and verbs are named

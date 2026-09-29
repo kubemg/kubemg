@@ -3,6 +3,7 @@ package bastion
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -861,6 +862,75 @@ func TestProxyExecPipesBothDirections(t *testing.T) {
 	if opens := agent.streamOpens(); len(opens) != 1 || !opens[0].Upgrade {
 		t.Fatalf("exec must open an upgrade stream, got %+v", opens)
 	}
+}
+
+// A message up to MaxSessionMessage reaches the agent whole; one byte more is
+// refused with 1009 and recorded, rather than forwarded for the cluster to cut
+// short or turned into a tunnel frame past the agent's read limit.
+func TestProxySessionBoundsOneMessage(t *testing.T) {
+	h := newHarness(t)
+	h.addCluster(1, "prod-eu", "kmg_valid")
+	admin := h.addUser(10, "admin", db.SystemRoleAdmin)
+
+	session := func(a *fakeAgent, id string, open StreamOpen) {
+		_ = a.send(Message{Type: MessageStreamStart, ID: id, StreamStart: &StreamStart{
+			Status: http.StatusSwitchingProtocols, Subprotocol: open.Subprotocols[0],
+		}})
+	}
+	agent, err := h.dialStreamingAgent("kmg_valid", okResponse("{}"), session)
+	if err != nil {
+		t.Fatalf("dial agent: %v", err)
+	}
+	waitFor(t, func() bool { return h.gateway.Registry().Connected(1) })
+
+	url := "ws" + strings.TrimPrefix(h.server.URL, "http") +
+		"/api/v1/clusters/1/proxy/api/v1/namespaces/team-a/pods/web-0/exec?command=sh&stdin=true"
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+h.token(admin))
+	dialer := *websocket.DefaultDialer
+	dialer.Subprotocols = ChannelSubprotocols
+	conn, _, err := dialer.Dial(url, header)
+	if err != nil {
+		t.Fatalf("exec upgrade failed: %v", err)
+	}
+	defer conn.Close()
+
+	if err := conn.WriteMessage(websocket.BinaryMessage, make([]byte, MaxSessionMessage)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	waitFor(t, func() bool { return len(agent.streamReceived()) == 1 })
+	if got := len(agent.streamReceived()[0].Data); got != MaxSessionMessage {
+		t.Fatalf("a message at the limit reached the agent as %d bytes, want %d", got, MaxSessionMessage)
+	}
+
+	if err := conn.WriteMessage(websocket.BinaryMessage, make([]byte, MaxSessionMessage+1)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	var closeErr *websocket.CloseError
+	for {
+		if _, _, err := conn.ReadMessage(); err != nil {
+			if !errors.As(err, &closeErr) {
+				t.Fatalf("session ended with %v, want a close frame", err)
+			}
+			break
+		}
+	}
+	if closeErr.Code != websocket.CloseMessageTooBig {
+		t.Fatalf("close code = %d, want %d", closeErr.Code, websocket.CloseMessageTooBig)
+	}
+	if got := len(agent.streamReceived()); got != 1 {
+		t.Fatalf("the oversized message must not be forwarded; agent received %d messages", got)
+	}
+
+	waitFor(t, func() bool {
+		for _, event := range h.audit.events() {
+			if event.Phase == PhaseClose && event.Error == errSessionMessageTooBig.Error() {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 func TestProxyStreamAuditsOpenAndClose(t *testing.T) {

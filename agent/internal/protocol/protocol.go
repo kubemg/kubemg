@@ -12,6 +12,17 @@ package protocol
 // this cannot half-work against a newer server.
 const ProtocolVersion = 2
 
+// MaxSessionMessage is the largest single message an interactive session —
+// exec, attach, port-forward — may carry from the client towards the cluster.
+// The bastion refuses a larger one and the agent sizes its write buffer to it,
+// so every message the bastion forwards leaves the agent as **one** WebSocket
+// frame. That is load-bearing: the API server's exec endpoint reads each frame
+// as a message of its own, so a message split into continuation frames arrives
+// as one short stdin write followed by frames whose first data byte is taken
+// for a channel number, and the rest is silently discarded. The two sides must
+// agree on this number; kubectl's own messages are 32 KiB plus a channel byte.
+const MaxSessionMessage = 1 << 20
+
 // MessageType discriminates the frames multiplexed over one tunnel.
 type MessageType string
 

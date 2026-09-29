@@ -113,6 +113,18 @@ Two shapes:
 A backlogged stream is killed **alone**. It must never block the tunnel, because
 one slow `logs -f` would otherwise take every other cluster call with it.
 
+One client message leaves the agent as **one** WebSocket frame, and the two ends
+hold each other to it through `MaxSessionMessage` (1 MiB, mirrored in both
+protocol copies). The API server's exec endpoint reads each *frame* as a
+message, so a message the agent's writer fragments arrives as a short stdin
+write followed by frames whose first data byte is read as a channel number —
+silent truncation. The agent's dialer therefore writes with a buffer that size
+(pooled, so it is held only during a write), and `serveUpgradeStream` sets it
+as the client socket's read limit, refusing anything larger with `1009` rather
+than forwarding it. The limit also keeps one message from becoming a tunnel
+frame past the agent's `maxFrame` read limit, which would drop the tunnel for
+every session on the cluster.
+
 `port-forward` rides the upgrade path over WebSocket. SPDY is refused with a 501
 that names `KUBECTL_PORT_FORWARD_WEBSOCKETS=true`, so the error tells the
 operator the fix rather than just failing.

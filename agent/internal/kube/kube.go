@@ -18,9 +18,12 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/kubemg/kubemg/agent/internal/protocol"
 )
 
 // In-cluster service account paths, mounted by the kubelet.
@@ -119,6 +122,15 @@ func New(opts Options) (*Client, error) {
 		dialer: &websocket.Dialer{
 			TLSClientConfig:  tlsConfig,
 			HandshakeTimeout: 20 * time.Second,
+			// Every message has to leave as one frame. gorilla splits a message
+			// longer than its write buffer into continuation frames, and the API
+			// server's exec endpoint reads each frame as a message of its own —
+			// so at the 4 KiB default, a stdin write past it lost everything after
+			// its first 4095 bytes, silently. client-go sizes its buffer for the
+			// same reason. The pool holds a buffer this large only while a message
+			// is being written, not for the life of every session.
+			WriteBufferSize: protocol.MaxSessionMessage,
+			WriteBufferPool: &sync.Pool{},
 		},
 	}, nil
 }
