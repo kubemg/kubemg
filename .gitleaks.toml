@@ -10,4 +10,7 @@ description = "Test fixtures use short, obviously fake credentials, not real sec
 paths = [
   '''.*_test\.go$''',
   '''.*\.test\.tsx?$''',
+  # The Helm chart's CI value sets: rendered by `make chart-test`, never
+  # installed. Their keys are fixtures shaped like what an operator supplies.
+  '''^deploy/helm/kubemg/ci/[^/]+-values\.yaml$''',
 ]

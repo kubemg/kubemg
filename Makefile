@@ -71,7 +71,7 @@ manifest-check: ## Verify the embedded agent manifests match deploy/kustomize/ba
 # and compare — the chart must be as safe under `helm template` (Argo CD, Flux)
 # as under `helm install` — then the unit tests in deploy/helm/kubemg/tests.
 chart-test: ## Lint, render and unit-test the management plane Helm chart
-	@docker run --rm -v $(PWD):/repo -w /repo --entrypoint sh $(HELM_IMAGE) hack/chart-check.sh
+	@docker run --rm -v $(PWD):/repo:ro -w /repo --entrypoint sh $(HELM_IMAGE) hack/chart-check.sh
 
 ## ---- backend ----
 backend-build: ## Compile the Go server binary

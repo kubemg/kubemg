@@ -26,4 +26,7 @@ for values in "$chart"/ci/*-values.yaml; do
 	fi
 done
 
-helm unittest "$chart"
+# helm-unittest writes tests/__snapshot__ inside the chart it runs, and CI
+# mounts the repository read-only, so it runs against a copy.
+cp -R "$chart" "$scratch/chart"
+helm unittest "$scratch/chart"
