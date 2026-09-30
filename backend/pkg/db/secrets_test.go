@@ -309,3 +309,32 @@ func TestSecretColumnsNeverSerialize(t *testing.T) {
 		}
 	}
 }
+
+// The kept certificate pair carries the private key every agent pins against,
+// and it is replaced by an upsert rather than by Updates — so it has to be shown
+// that the upsert path seals too, not assumed from the struct path above.
+func TestKeptTLSPairIsSealed(t *testing.T) {
+	box := secretTestBox(t, 1)
+	withBox(t, box)
+	gdb := dryRunDB(t)
+
+	var sent string
+	var vars []any
+	if err := gdb.Callback().Create().After("gorm:create").Register("test:capture", func(tx *gorm.DB) {
+		sent = tx.Statement.SQL.String()
+		vars = tx.Statement.Vars
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := NewStore(gdb).KeepTLSPair(context.Background(), "private-key-material"); err != nil {
+		t.Fatalf("keep: %v", err)
+	}
+	if !strings.Contains(sent, "ON CONFLICT") || !strings.Contains(sent, `"value"="excluded"."value"`) {
+		t.Fatalf("expected an upsert that replaces the value, sent %s", sent)
+	}
+	got := varsString(vars)
+	if strings.Contains(got, "private-key-material") || !strings.Contains(got, secretbox.Prefix) {
+		t.Fatalf("upsert sent %s", got)
+	}
+}

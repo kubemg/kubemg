@@ -5,9 +5,9 @@ single container image, `ghcr.io/kubemg/kubemg`. There are two supported ways
 to run it in production, plus the dev stack you should not run in production
 at all.
 
-| | Dev stack (`make up`) | [Docker Compose](docker-compose.md) | [Kubernetes](kubernetes.md) |
+| | Dev stack (`make up`) | [Docker Compose](docker-compose.md) | [Kubernetes (Helm)](kubernetes.md) |
 |---|---|---|---|
-| Builds from source | Yes (bind-mounted) | No — pulls published images | No — pulls published images |
+| Builds from source | Yes (bind-mounted) | No — pulls published images | No — the published chart pulls published images |
 | Where it runs | Your laptop | A single VM or bare host | A cluster |
 | TLS | Self-signed, on by default | Self-signed by default, or your own cert in `ssl/` | Terminate at the pod or at an ingress — see [TLS](tls.md) |
 | CORS | Needed (Vite on a separate port) | Not needed (same-origin) | Not needed (same-origin) |
@@ -18,8 +18,8 @@ on, or you want the smallest possible number of moving parts, use
 [Docker Compose](docker-compose.md) — `deploy/compose/` pulls three images
 (`kubemg`, `postgres`, and the agent your *target* clusters pull) and builds
 nothing, so it runs on a host with no toolchain. If you're already running
-Kubernetes and want the management plane to live there too, use
-[Kubernetes](kubernetes.md).
+Kubernetes and want the management plane to live there too, install the
+[Helm chart](kubernetes.md).
 
 Either way, the cluster kubemg *manages* does not have to be the machine or
 cluster the management plane runs on — the whole point of the bastion/agent
@@ -43,11 +43,13 @@ management plane's public address.
   Every `exec`/`attach` session is recorded for replay; an unmounted directory
   means recordings that vanish on the next restart, which is the audit
   evidence an auditor will ask for.
-- **A persistent volume for the TLS material kubemg mints itself**
-  (`/etc/kubemg/tls`), unless you supply your own certificate. That
-  certificate is pinned into every already-installed agent's trust bundle —
-  losing the volume means minting a new one, and every existing agent then
-  fails its handshake against a certificate it does not recognize.
+- **The database, backed up.** Unless you supply your own certificate,
+  kubemg mints one on first boot and pins it into every agent package it
+  renders. It keeps that certificate in the database as well as on disk, so
+  a replaced pod or a lost volume restores the same certificate rather than
+  minting one no installed agent recognises — see
+  [TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too). Losing
+  the database loses it, together with every agent's registration token.
 
 ## Sizing and high availability
 
@@ -92,14 +94,15 @@ replica, so they need no attention when that limit is lifted:
   expires rather than needing to be released. This requires no
   configuration — it works the same whether you run one replica or ten.
 
-The TLS certificate and the recordings directory are the two pieces of local
-state; put both on persistent volumes, so a restarted replica serves the
-certificate every agent has pinned and keeps every recording it wrote.
+The recordings directory is the one piece of local state; put it on a
+persistent volume, so a restarted replica keeps every recording it wrote. The
+certificate every agent has pinned is not local state: each boot writes it
+back from the database, so every replica serves the same one.
 
 ## Next
 
 - [Docker Compose](docker-compose.md) — the single-host path
-- [Kubernetes](kubernetes.md) — the in-cluster path
+- [Kubernetes](kubernetes.md) — the in-cluster path, with the Helm chart
 - [TLS and certificates](tls.md)
 - [Environment reference](environment.md)
 - [Production checklist](production-checklist.md)

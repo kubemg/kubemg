@@ -1,0 +1,76 @@
+suite: the Services
+templates:
+  - service.yaml
+  - metrics.yaml
+release:
+  name: kubemg
+  namespace: kubemg
+values:
+  - values/base.yaml
+tests:
+  - it: publishes the TLS port on 443 in passthrough mode
+    template: service.yaml
+    asserts:
+      - equal:
+          path: spec.ports[0].port
+          value: 443
+      - equal:
+          path: spec.ports[0].targetPort
+          value: https
+      - equal:
+          path: spec.selector["app.kubernetes.io/component"]
+          value: server
+
+  - it: publishes plain HTTP on 80 behind an edge ingress
+    template: service.yaml
+    set:
+      tls.mode: edge
+    asserts:
+      - equal:
+          path: spec.ports[0].port
+          value: 80
+      - equal:
+          path: spec.ports[0].targetPort
+          value: http
+
+  - it: never publishes the metrics port on the Service agents reach
+    template: service.yaml
+    set:
+      metrics.enabled: true
+      service.type: LoadBalancer
+    asserts:
+      - lengthEqual:
+          path: spec.ports
+          count: 1
+
+  - it: puts metrics behind a ClusterIP Service of their own
+    template: metrics.yaml
+    documentIndex: 0
+    set:
+      metrics.enabled: true
+      service.type: LoadBalancer
+    asserts:
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.ports[0].targetPort
+          value: metrics
+
+  - it: scrapes through a ServiceMonitor when asked
+    template: metrics.yaml
+    set:
+      metrics.enabled: true
+      metrics.serviceMonitor.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: ServiceMonitor
+        documentIndex: 1
+
+  - it: renders no metrics objects by default
+    template: metrics.yaml
+    asserts:
+      - hasDocuments:
+          count: 0

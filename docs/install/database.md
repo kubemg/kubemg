@@ -83,12 +83,11 @@ and tables already present and leaves them alone.
 | The JWT signing key, when not supplied via `JWT_SECRET` | Postgres (`server_secrets`) — generated once at first boot and read on every subsequent boot, so it survives a restart without needing to be set explicitly. Encrypted under `KUBEMG_SECRET_KEY` when one is set |
 | Just-in-time access requests and grants | Postgres (`jit_requests`, and `user_cluster_access` rows with `source='jit'`) |
 | The alarm-watcher background-job lease | Postgres (`leases`) — see [Choosing a deployment](index.md#sizing-and-high-availability) |
-| The TLS certificate kubemg mints for itself | **Disk**, under `/etc/kubemg/tls` (or wherever `KUBEMG_TLS_CERT_FILE`/`KEY_FILE` point) — never the database |
+| The TLS certificate kubemg mints for itself | Postgres (`server_secrets`), with a working copy on disk under `/etc/kubemg/tls` that is written back from the database whenever it is missing — see [TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too). Encrypted under `KUBEMG_SECRET_KEY` when one is set. A certificate you supply is never copied here |
 
 This split is why backing up the database alone is not a full backup: the
-`tls-certs` volume (every already-installed agent has pinned that specific
-certificate) and the recordings volume (audit evidence a database backup
-alone cannot reconstruct) both need their own backup coverage. See
+recordings volume holds audit evidence a database backup cannot reconstruct,
+and needs its own backup coverage. See
 [Docker Compose](docker-compose.md#backup) and
 [Choosing a deployment](index.md#what-the-management-plane-needs-regardless-of-where-it-runs).
 
@@ -100,7 +99,7 @@ random nonce per value, written as `enc:v1:…`):
 
 | Credential | Table.column |
 |---|---|
-| The generated session/kubeconfig signing key | `server_secrets.value` |
+| The generated session/kubeconfig signing key, and the private key of the certificate kubemg minted for itself | `server_secrets.value` |
 | Every agent's tunnel (registration) token | `clusters.agent_token` |
 | Direct-mode ServiceAccount tokens | `clusters.service_account_token` |
 | Observability datasource credentials | `observability_sources.credential` |
@@ -167,9 +166,9 @@ Postgres the way you back up any Postgres database that matters:
   `backend/migrations/*.sql` files under your own change control first —
   they're written to be safe to run either before or after `AutoMigrate`
   does the same work.
-- Back up the `tls-certs` and session-recordings volumes on their own
-  schedule alongside the database — see the table above for why a database
-  backup alone is incomplete.
+- Back up the session-recordings volume on its own schedule alongside the
+  database — see the table above for why a database backup alone is
+  incomplete. The certificate kubemg minted is in the database backup.
 - Back up `KUBEMG_SECRET_KEY` separately. A database restored without it does
   not boot — see [Credentials encrypted at rest](#credentials-encrypted-at-rest).
 

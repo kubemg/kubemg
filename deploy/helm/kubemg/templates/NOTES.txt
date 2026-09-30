@@ -1,0 +1,96 @@
+{{- $fullname := include "kubemg.fullname" . -}}
+{{- $ns := .Release.Namespace -}}
+KubeMG {{ .Chart.AppVersion }} is installed as {{ $fullname }} in {{ $ns }}.
+
+PUBLIC URL
+  {{ .Values.publicURL }}
+  Every agent dials this address. Changing it later means re-applying every
+  agent's install package.
+
+TLS — {{ .Values.tls.mode }}
+{{- if include "kubemg.passthrough" . }}
+  KubeMG terminates TLS itself; whatever sits in front of it must pass the TLS
+  stream through untouched.
+{{- if .Values.tls.existingSecret }}
+  It serves the certificate in Secret {{ .Values.tls.existingSecret }}.
+{{- if not .Values.tls.agentCABundle.existingSecret }}
+  A self-signed certificate there is pinned into agent packages on its own; one
+  a private CA issued (cert-manager's CA issuer, a corporate PKI) is not — set
+  tls.agentCABundle to that CA, or every agent's handshake fails with an x509
+  error that points at the cluster rather than here.
+{{- end }}
+{{- else }}
+  It serves a self-signed certificate it minted on first boot for
+  {{ include "kubemg.publicHost" . }}, pinned into every agent package. The
+  certificate is kept in the database as well as the pod, so a replaced pod
+  serves the same one; losing the database loses it, along with every agent's
+  registration token.
+{{- end }}
+{{- else }}
+  The ingress terminates TLS and this pod serves plain HTTP behind it, so the
+  certificate agents verify is the ingress's.
+{{- if .Values.tls.agentCABundle.existingSecret }}
+  Agents are told to trust the CA in Secret {{ .Values.tls.agentCABundle.existingSecret }}.
+{{- else }}
+  No agent CA bundle is set, so agents trust only publicly-trusted
+  certificates. If the ingress presents one a private CA issued, set
+  tls.agentCABundle to that CA before installing any agent.
+{{- end }}
+{{- end }}
+
+REACHING IT
+{{- if .Values.ingress.enabled }}
+  Ingress {{ $fullname }} routes {{ default (include "kubemg.publicHost" .) .Values.ingress.host }} to the pod.
+{{- if include "kubemg.passthrough" . }}
+  It carries ingress-nginx's ssl-passthrough annotation, which works only when
+  the controller runs with --enable-ssl-passthrough. Any other controller needs
+  its own passthrough route (a Gateway API TLSRoute, say) or a LoadBalancer
+  Service instead.
+{{- end }}
+{{- else if eq .Values.service.type "LoadBalancer" }}
+  Point {{ include "kubemg.publicHost" . }} at the load balancer's address:
+    kubectl get service {{ $fullname }} -n {{ $ns }}
+{{- else if eq .Values.service.type "NodePort" }}
+  Point {{ include "kubemg.publicHost" . }} at a node, on the port in:
+    kubectl get service {{ $fullname }} -n {{ $ns }}
+{{- else }}
+  WARNING: the Service is ClusterIP and no ingress is enabled, so nothing
+  outside this cluster can reach KubeMG — including every agent. Set
+  service.type=LoadBalancer, or ingress.enabled=true.
+{{- end }}
+
+FIRST SIGN-IN
+  Username: {{ .Values.admin.username }}
+{{- if or .Values.secrets.adminPassword .Values.secrets.existingSecret }}
+  Password: as configured.
+{{- else }}
+  Password: generated on first boot and printed once to the log:
+    kubectl logs -n {{ $ns }} deploy/{{ $fullname }} | grep -A6 'not configured yet'
+{{- end }}
+
+ONE REPLICA
+  The Deployment runs exactly one pod, replaced with Recreate. Each agent's
+  tunnel lives in the pod it reached; a second pod would answer 503 for every
+  cluster whose agent chose the other one.
+{{- if not (or .Values.secrets.secretKey .Values.secrets.existingSecret) }}
+
+WARNING: secrets.secretKey is not set, so every credential KubeMG stores in its
+database — agent tokens, the certificate's private key, SSO and alarm secrets —
+is stored in plaintext. Set it (openssl rand -base64 32) and keep it: once set,
+the server refuses to start without it.
+{{- end }}
+{{- if and .Values.recordings.enabled (not (or .Values.secrets.sessionRecordingKey .Values.secrets.existingSecret)) }}
+
+WARNING: secrets.sessionRecordingKey is not set, so session recordings are
+written in plaintext.
+{{- end }}
+{{- if and .Values.recordings.enabled (not .Values.recordings.persistence.enabled) }}
+
+WARNING: recordings.persistence is off. Session recordings are audit evidence,
+and without a volume they vanish on the next rollout.
+{{- end }}
+{{- if .Values.postgresql.enabled }}
+
+WARNING: the in-chart PostgreSQL is for evaluation — one pod, no backups. Every
+agent's registration token and this install's certificate live in it.
+{{- end }}

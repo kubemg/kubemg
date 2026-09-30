@@ -620,8 +620,23 @@ registry under the org that owns the source — `ghcr.io/kubemg/kubemg` and
 the push authenticates with the workflow's own token rather than a credential somebody has to
 rotate. `REGISTRY` in the Makefile is what an air-gapped site overrides to retag them.
 
-A **Helm chart for the management plane** is planned but not yet shipped, along with the remaining
-air-gap work (a `make save-images` bundle and pull-secret support for the agent's mirror).
+`deploy/helm/kubemg/` is the Kubernetes path: the management plane's Helm chart, published by the
+same workflow as an OCI artefact at the tag's version, so it pulls exactly the images that release
+published.
+
+```bash
+helm install kubemg oci://ghcr.io/kubemg/charts/kubemg --namespace kubemg --create-namespace \
+  --set publicURL=https://kubemg.example.com \
+  --set database.host=postgres.example.internal --set database.existingSecret=kubemg-db \
+  --set service.type=LoadBalancer
+```
+
+Nothing in it is generated at render time, so it installs the same objects under `helm template`,
+Argo CD and Flux; the self-signed certificate every agent pins is minted by the server and kept in
+its database, so a replaced pod serves the same one. See the
+[Kubernetes install guide](https://kubemg.readthedocs.io/en/latest/install/kubernetes/). The
+remaining air-gap work (a `make save-images` bundle and pull-secret support for the agent's mirror)
+is still open.
 
 ## Roadmap
 
@@ -657,7 +672,7 @@ one reads objects the impersonated tunnel already reaches, under grants that alr
 
 Alongside the numbered phases, two standing efforts run in parallel rather than as a phase:
 **packaging &amp; deployment** — the management-plane image and the compose install above are the
-first shipped item there; a Helm chart and the remaining air-gap work are open — and **maintenance
+first shipped items there, and the management plane's Helm chart the latest; the remaining air-gap work is open — and **maintenance
 &amp; dependency hygiene**, operational risk rather than missing features, where tunnel
 head-of-line blocking, agent sizing and read rate limiting are the open items.
 

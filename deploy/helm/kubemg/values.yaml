@@ -1,0 +1,214 @@
+# KubeMG management plane.
+#
+# Two things have to be set on every install: `publicURL`, and a database —
+# either `database.host` (the default, an external PostgreSQL 16) or
+# `postgresql.enabled` (a plain in-chart PostgreSQL for evaluation). The chart
+# refuses to render without them rather than coming up pointed at nothing.
+#
+# Nothing in this chart is generated at render time — no random password, no
+# `lookup`, no certificate minted by a template function. A render is the same
+# under `helm install`, `helm template`, Argo CD and Flux, which is what keeps a
+# GitOps sync from quietly replacing something every agent depends on.
+
+# -- The address a target cluster's agent dials, and the one browsers and
+# kubectl use. It must be https: client-go refuses to send a bearer token over
+# plain http, so generated kubeconfigs and `kubectl exec` would not work.
+#
+# Choose it before the first install. The certificate KubeMG mints on first
+# boot covers this host and is pinned into every agent package it renders;
+# changing it later means a new certificate and re-applying every agent. It can
+# be overridden at runtime under Settings, but the certificate does not follow.
+publicURL: ""
+
+global:
+  # -- Replaces the registry host of every image this install runs or hands
+  # out — the server, the in-chart PostgreSQL, and the agent and browser-shell
+  # images the console renders into install packages — keeping each image's
+  # repository path. For a site that mirrors them under its own registry.
+  imageRegistry: ""
+
+image:
+  registry: ghcr.io
+  repository: kubemg/kubemg
+  # -- Defaults to the chart's appVersion.
+  tag: ""
+  # -- Pins the image by digest; wins over tag when set.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+tls:
+  # -- Who terminates TLS for the traffic agents and browsers send.
+  #
+  # `passthrough` (default): KubeMG does. Expose it with a LoadBalancer Service
+  # or an ingress that passes TLS through untouched. There is one certificate in
+  # the whole path, and it is the one agents pin.
+  #
+  # `edge`: an ingress in front terminates TLS and forwards plain HTTP to the
+  # pod. Agents then verify the ingress's certificate, which KubeMG never sees —
+  # if it is not publicly trusted, set `tls.agentCABundle` to its CA or every
+  # agent's handshake fails.
+  mode: passthrough
+  # -- Extra names for the self-signed certificate KubeMG mints when no
+  # certificate is supplied. The public URL's host is always included.
+  hosts: []
+  # -- A `kubernetes.io/tls` Secret (tls.crt, tls.key) to serve instead of a
+  # self-signed certificate — cert-manager's output fits as-is. Passthrough only.
+  # A self-signed certificate here is pinned into agent packages automatically;
+  # one a private CA issued needs that CA in `tls.agentCABundle`.
+  existingSecret: ""
+  # -- The CA bundle agents are told to trust, pinned into every install
+  # package in place of anything inferred. Needed for a private CA's
+  # certificate, in either mode; not needed for a publicly trusted one.
+  agentCABundle:
+    existingSecret: ""
+    key: ca.crt
+
+admin:
+  # -- The first administrator's username. The password comes from
+  # `secrets.adminPassword`; unset, one is generated and printed once to the
+  # pod's log.
+  username: admin
+
+database:
+  # -- An external PostgreSQL 16. Required unless `postgresql.enabled`.
+  host: ""
+  port: 5432
+  name: kubemg
+  user: kubemg
+  sslMode: require
+  # -- Rendered into the chart's Secret. Prefer `existingSecret`.
+  password: ""
+  # -- A Secret holding the database password.
+  existingSecret: ""
+  existingSecretPasswordKey: DB_PASSWORD
+
+# A plain PostgreSQL StatefulSet for evaluation — deliberately not a subchart,
+# which would be a second chart for an air-gapped site to mirror. It uses the
+# `database` block's name, user and password. For production, run PostgreSQL
+# the way the rest of your databases run, with backups: every agent's
+# registration token lives in it.
+postgresql:
+  enabled: false
+  image:
+    registry: docker.io
+    repository: library/postgres
+    tag: 16-alpine
+    pullPolicy: IfNotPresent
+  persistence:
+    size: 10Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+secrets:
+  # -- A Secret holding any of JWT_SECRET, KUBEMG_SECRET_KEY,
+  # KUBEMG_SESSION_RECORDING_KEY and KUBEMG_ADMIN_PASSWORD. When set, the four
+  # values below are ignored and every key is optional.
+  existingSecret: ""
+  # -- Encrypts every credential KubeMG stores in the database (32 bytes,
+  # `openssl rand -base64 32`). Unset, they are stored in plaintext. Once set it
+  # can never be removed: the server refuses to start without it.
+  secretKey: ""
+  # -- Encrypts session recordings at rest (32 bytes). Unset, recordings are
+  # written in plaintext.
+  sessionRecordingKey: ""
+  # -- Signs sessions and generated kubeconfigs. Unset, the server mints one
+  # and keeps it in the database, which is the right default.
+  jwtSecret: ""
+  # -- The first administrator's password. Unset, one is generated and
+  # printed once to the pod's log.
+  adminPassword: ""
+
+recordings:
+  # -- Record every exec/attach session through the gateway.
+  enabled: true
+  persistence:
+    # -- Recordings are audit evidence; without a volume they vanish on the
+    # next rollout. The claim is kept on `helm uninstall`.
+    enabled: true
+    existingClaim: ""
+    size: 20Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+
+agent:
+  # -- The agent image rendered into install packages. Empty is the agent
+  # released with this server (or its mirror under `global.imageRegistry`).
+  image: ""
+
+shell:
+  # -- The browser shell: a kubectl pod per user per cluster, run by KubeMG.
+  enabled: true
+  # -- Empty is the shell image released with this server (or its mirror).
+  image: ""
+
+# -- The image `kubectl debug`-style ephemeral containers use. Empty is
+# busybox:1.36 from Docker Hub (or its mirror under `global.imageRegistry`).
+debugImage: ""
+
+service:
+  # -- `ClusterIP` reaches nothing outside this cluster — no agent can dial it.
+  # Use `LoadBalancer` (or `NodePort`) for passthrough, or enable `ingress`.
+  type: ClusterIP
+  # -- Defaults to 443 in passthrough mode and 80 in edge mode.
+  port: null
+  nodePort: null
+  annotations: {}
+  loadBalancerSourceRanges: []
+
+ingress:
+  enabled: false
+  className: ""
+  # -- In passthrough mode the chart adds ingress-nginx's ssl-passthrough and
+  # HTTPS-backend annotations; those need the controller started with
+  # `--enable-ssl-passthrough`. Any other controller passes TLS through with a
+  # resource of its own (a Gateway API TLSRoute, say): use a LoadBalancer
+  # Service or create that route yourself. Annotations set here win.
+  annotations: {}
+  # -- Defaults to the public URL's host.
+  host: ""
+  # -- Edge mode only: the Secret holding the certificate the ingress presents.
+  tlsSecretName: ""
+
+metrics:
+  # -- Serves Prometheus metrics on a separate plain-HTTP port, behind its own
+  # ClusterIP Service — never on the Service agents and browsers reach.
+  enabled: false
+  port: 9090
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}
+
+serviceAccount:
+  # -- KubeMG never calls the API server of the cluster it runs in, so the
+  # account is granted nothing and its token is not mounted.
+  name: ""
+
+# -- Extra environment variables for the server container — anything in the
+# environment reference the values above do not cover.
+extraEnv: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+priorityClassName: ""

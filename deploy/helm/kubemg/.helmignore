@@ -1,0 +1,8 @@
+# The unit tests and the CI value sets are the chart's own verification, not
+# part of what an install renders.
+tests/
+ci/
+.DS_Store
+*.swp
+*.bak
+*.tmp

@@ -1,7 +1,7 @@
 name: Release
 
-# Publishes the two images a deployment pulls: the management plane and the
-# agent. It runs on a tag rather than on every push to master, because a
+# Publishes the images a deployment pulls — the management plane, the agent and
+# the browser shell — and the management plane's Helm chart. It runs on a tag rather than on every push to master, because a
 # published tag is what somebody's cluster will pull for months and cutting one
 # should be a deliberate act.
 #
@@ -182,6 +182,70 @@ jobs:
           docker buildx build --platform ${{ matrix.platforms }} \
             --build-arg VERSION=${{ steps.version.outputs.version }} \
             ${{ matrix.context }}
+
+  # The management plane's Helm chart, as an OCI artefact beside the images:
+  # `helm install kubemg oci://ghcr.io/<org>/charts/kubemg --version <v>`. It is
+  # packaged with the tag's version for both the chart and the app, so a
+  # published chart pulls exactly the images this run published — which is why
+  # it waits for all three of them.
+  chart:
+    name: Package and publish the Helm chart
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same resolution and the same refusal as the publish job: the version
+      # arrives through the environment and is checked before it is used.
+      - name: Resolve version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            version="$INPUT_VERSION"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::'$version' is not a semver version; refusing to publish it"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Keep in step with HELM_IMAGE in the Makefile, which is what verified it.
+      - uses: azure/setup-helm@v4
+        with:
+          version: v4.2.3
+
+      # The unit tests ran on the PR (chart-test); a lint against the minimum an
+      # install renders with is the last word before the artefact exists.
+      - name: Package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          helm lint --strict deploy/helm/kubemg --set publicURL=https://kubemg.example.com \
+            --set database.host=db --set database.password=x
+          helm package deploy/helm/kubemg --version "$VERSION" --app-version "$VERSION" --destination dist
+
+      - name: Log in to GitHub Container Registry
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GH_TOKEN" | helm registry login ghcr.io --username "$ACTOR" --password-stdin
+
+      - name: Push
+        if: ${{ !inputs.dry_run }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          OWNER: ${{ github.repository_owner }}
+        run: helm push "dist/kubemg-$VERSION.tgz" "oci://ghcr.io/$OWNER/charts"
 
   # The notes page, so a tag can never again be published without one.
   #

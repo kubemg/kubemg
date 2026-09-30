@@ -40,12 +40,15 @@ See [Database](database.md) for what that does and how the reference DDL in
 `backend/migrations/` fits in if a DBA wants to review or pre-apply a change
 under change control first.
 
-**Keep the TLS certificate volume across the upgrade.** Whether it's the
-self-signed pair kubemg minted or one you supplied, it must survive the
-upgrade unchanged — every already-installed agent has that specific
-certificate pinned into its trust bundle, and a fresh certificate (even a
+**Keep the certificate across the upgrade.** Whether it's the self-signed
+pair kubemg minted or one you supplied, it must survive the upgrade
+unchanged — every already-installed agent has that specific certificate
+pinned into its trust bundle, and a fresh certificate (even a
 correctly-configured one) is a *different* certificate that every existing
-agent will refuse.
+agent will refuse. A minted pair is kept in the database as well as on disk
+([TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too)); an install
+upgraded from a version that kept it only on disk copies it into the database
+on its first boot after the upgrade, so keep the volume for that boot.
 
 ## Agent and server version compatibility
 

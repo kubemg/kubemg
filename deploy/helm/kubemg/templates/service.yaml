@@ -1,0 +1,29 @@
+{{- $port := include "kubemg.portName" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kubemg.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubemg.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- with .Values.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    {{- include "kubemg.serverSelectorLabels" . | nindent 4 }}
+  ports:
+    # The one port agents, browsers and kubectl reach. Metrics never ride it.
+    - name: {{ $port }}
+      port: {{ include "kubemg.servicePort" . }}
+      targetPort: {{ $port }}
+      protocol: TCP
+      {{- if and .Values.service.nodePort (ne .Values.service.type "ClusterIP") }}
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}

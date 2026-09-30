@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"os"
@@ -19,7 +20,7 @@ func TestResolveTLSPrefersASuppliedCertificateOverTheGeneratedOne(t *testing.T) 
 	cfg := tlsConfigIn(t)
 
 	// First boot: nothing supplied, so a pair is minted and pinned.
-	first, err := resolveTLS(cfg, quietLogger())
+	first, err := resolveTLS(context.Background(), cfg, nil, quietLogger())
 	if err != nil {
 		t.Fatalf("first boot: %v", err)
 	}
@@ -35,7 +36,7 @@ func TestResolveTLSPrefersASuppliedCertificateOverTheGeneratedOne(t *testing.T) 
 	// file the listener is handed.
 	writeSuppliedPair(t, cfg.TLS.SuppliedDir)
 
-	second, err := resolveTLS(cfg, quietLogger())
+	second, err := resolveTLS(context.Background(), cfg, nil, quietLogger())
 	if err != nil {
 		t.Fatalf("second boot: %v", err)
 	}
@@ -63,7 +64,7 @@ func TestResolveTLSStillProvisionsAListenerBehindACABundle(t *testing.T) {
 	bundle := filepath.Join(bundleDir, "tls.crt")
 	cfg.TLS.AgentCABundle = bundle
 
-	material, err := resolveTLS(cfg, quietLogger())
+	material, err := resolveTLS(context.Background(), cfg, nil, quietLogger())
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -89,7 +90,7 @@ func TestResolveTLSRefusesToMintWhenSelfSigningIsOff(t *testing.T) {
 	cfg := tlsConfigIn(t)
 	cfg.TLS.SelfSigned = false
 
-	if _, err := resolveTLS(cfg, quietLogger()); err == nil {
+	if _, err := resolveTLS(context.Background(), cfg, nil, quietLogger()); err == nil {
 		t.Fatal("expected a refusal")
 	}
 	// And it must have refused without minting anything: a certificate left
@@ -100,9 +101,65 @@ func TestResolveTLSRefusesToMintWhenSelfSigningIsOff(t *testing.T) {
 	}
 
 	writeSuppliedPair(t, cfg.TLS.SuppliedDir)
-	if _, err := resolveTLS(cfg, quietLogger()); err != nil {
+	if _, err := resolveTLS(context.Background(), cfg, nil, quietLogger()); err != nil {
 		t.Fatalf("a supplied certificate is exactly what that setting asks for: %v", err)
 	}
+}
+
+// A replaced pod on Kubernetes comes up with an empty /etc/kubemg/tls. What it
+// hands agents has to be the certificate they already pinned — so the pinned CA
+// a second pod reports must be the first pod's, not a fresh mint.
+func TestResolveTLSPinsTheSameCertificateAcrossAReplacedPod(t *testing.T) {
+	store := &pairsInMemory{}
+
+	first, err := resolveTLS(context.Background(), tlsConfigIn(t), store, quietLogger())
+	if err != nil {
+		t.Fatalf("first pod: %v", err)
+	}
+	second, err := resolveTLS(context.Background(), tlsConfigIn(t), store, quietLogger())
+	if err != nil {
+		t.Fatalf("second pod: %v", err)
+	}
+	if first.agentCA == "" || first.agentCA != second.agentCA {
+		t.Fatal("the replaced pod pinned a different certificate into agent packages")
+	}
+}
+
+// With self-signing off, a stored pair is still a pair this process minted —
+// exactly what the setting forbids — so it is not restored in its place.
+func TestResolveTLSDoesNotRestoreAMintedPairWithSelfSigningOff(t *testing.T) {
+	store := &pairsInMemory{}
+	if _, err := resolveTLS(context.Background(), tlsConfigIn(t), store, quietLogger()); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	cfg := tlsConfigIn(t)
+	cfg.TLS.SelfSigned = false
+	if _, err := resolveTLS(context.Background(), cfg, store, quietLogger()); err == nil {
+		t.Fatal("expected a refusal")
+	}
+}
+
+type pairsInMemory struct{ pair string }
+
+func (p *pairsInMemory) StoredTLSPair(context.Context) (string, bool, error) {
+	return p.pair, p.pair != "", nil
+}
+
+func (p *pairsInMemory) EnsureTLSPair(_ context.Context, generate func() (string, error)) (string, error) {
+	if p.pair == "" {
+		minted, err := generate()
+		if err != nil {
+			return "", err
+		}
+		p.pair = minted
+	}
+	return p.pair, nil
+}
+
+func (p *pairsInMemory) KeepTLSPair(_ context.Context, pair string) error {
+	p.pair = pair
+	return nil
 }
 
 // tlsConfigIn is a TLS-terminating configuration rooted in a temporary

@@ -1,0 +1,33 @@
+suite: what the install says
+templates:
+  - NOTES.txt
+release:
+  name: kubemg
+  namespace: kubemg
+values:
+  - values/base.yaml
+tests:
+  - it: warns that a ClusterIP Service reaches no agent
+    asserts:
+      - matchRegexRaw:
+          pattern: nothing\s+outside this cluster can reach KubeMG
+  - it: says a minted certificate is kept in the database
+    asserts:
+      - matchRegexRaw:
+          pattern: kept in the database as well as the pod
+  - it: says agents trust only public certificates behind an edge ingress with no bundle
+    set:
+      tls.mode: edge
+    asserts:
+      - matchRegexRaw:
+          pattern: agents trust only publicly-trusted\s+certificates
+  - it: warns about plaintext credentials without a secret key
+    asserts:
+      - matchRegexRaw:
+          pattern: "WARNING: secrets.secretKey is not set"
+  - it: stays quiet about the secret key when an existing Secret may carry it
+    set:
+      secrets.existingSecret: kubemg-keys
+    asserts:
+      - notMatchRegexRaw:
+          pattern: secrets.secretKey is not set

@@ -4,7 +4,7 @@
 make verify
 ```
 
-That is the gate. It runs, in order: `manifest-check`, `backend-vet`,
+That is the gate. It runs, in order: `manifest-check`, `chart-test`, `backend-vet`,
 `backend-test`, `backend-build`, `agent-vet`, `agent-test`, `agent-build`,
 `frontend-lint`, `frontend-test`, `frontend-contrast`, `frontend-build` and
 `docs-build`. Nothing is proposed for merge without it, and on Apple Silicon it
@@ -20,21 +20,34 @@ docker compose -f docker-compose.ci.yml run --rm frontend-build
 ```
 
 **This is not a local-only convenience.** `.github/workflows/pr-checks.yml`
-runs every one of those eleven services as its own check, `make verify (<service>)`,
+runs every one of those twelve services as its own check, `make verify (<service>)`,
 on every pull request into `master` and again on push — the exact command a
 contributor runs locally, nothing duplicated into the workflow itself. A PR
 that fails to compile, fails `go vet`, breaks a test, or fails lint shows a red
-check with that service's name; a clean PR shows all eleven green. This runs
+check with that service's name; a clean PR shows all twelve green. This runs
 alongside, and independently of, the security-focused jobs in the same
 workflow (gitleaks, the two Trivy scans, govulncheck, the documentation build)
 — those answer "is this safe to merge", this answers "does it work".
 
-## The four gates that are not ordinary tests
+## The five gates that are not ordinary tests
 
 **`make manifest-check`** diffs `deploy/kustomize/base/` against the copy
 embedded in `backend/pkg/agentpkg/base/`. The manifests exist twice on purpose —
 one copy for humans to read and apply, one the server renders install packages
 from — and this target is what stops them drifting. Edit both or neither.
+
+**`make chart-test`** verifies the management plane's Helm chart
+(`deploy/helm/kubemg/`) in the pinned `helm-unittest` image, by running
+`hack/chart-check.sh`. It lints the chart against every value set in `ci/`,
+renders each one twice and fails if the two renders differ, refuses any
+template that calls `lookup` or a random or certificate-generating function,
+and then runs the unit tests in `tests/`. The first three are one rule: Argo CD
+and Flux render with `helm template`, where `lookup` answers nothing and a
+generated value changes on every render — so a chart that used either would
+install one database password or certificate and replace it on the next sync.
+A refusal the chart makes (`fail` in `_helpers.tpl`) and every value that
+reaches the pod belong in `tests/`, asserted with `failedTemplate`, `contains`
+and `equal` — not checked by installing the chart.
 
 **`make frontend-contrast`** reads the design tokens out of `frontend/src/index.css`
 and measures every colour pairing the components actually build against WCAG. It

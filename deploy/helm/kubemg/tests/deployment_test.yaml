@@ -1,0 +1,392 @@
+suite: the server Deployment
+templates:
+  - deployment.yaml
+release:
+  name: kubemg
+  namespace: kubemg
+values:
+  - values/base.yaml
+tests:
+  # ---- refusals ----------------------------------------------------------
+  - it: refuses to render without a public URL
+    set:
+      publicURL: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: publicURL is required
+
+  - it: refuses a plain-http public URL, which no kubeconfig could use
+    set:
+      publicURL: http://kubemg.example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: must be an https:// URL
+
+  - it: refuses a public URL with no host
+    set:
+      publicURL: https://
+    asserts:
+      - failedTemplate:
+          errorPattern: must be an https:// URL
+
+  - it: refuses to render with no database at all
+    set:
+      database.host: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "no database:"
+
+  - it: refuses an external database and the in-chart one together
+    set:
+      postgresql.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: both set; choose one
+
+  - it: refuses to invent a database password
+    set:
+      database.password: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: no database password
+
+  - it: refuses a served certificate in edge mode, where the pod never presents it
+    set:
+      tls.mode: edge
+      tls.existingSecret: kubemg-tls
+    asserts:
+      - failedTemplate:
+          errorPattern: tls.existingSecret is set in edge mode
+
+  - it: refuses an ingress certificate in passthrough mode, where the ingress never presents it
+    set:
+      ingress.enabled: true
+      ingress.tlsSecretName: edge-tls
+    asserts:
+      - failedTemplate:
+          errorPattern: ingress.tlsSecretName is set in passthrough mode
+
+  # ---- shape -------------------------------------------------------------
+  - it: runs exactly one pod and never two at once
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+
+  - it: selects only the server's pods, never the in-chart PostgreSQL
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/component"]
+          value: server
+
+  - it: mounts no service account token and writes nothing outside its volumes
+    asserts:
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 65532
+
+  # ---- TLS ---------------------------------------------------------------
+  - it: terminates its own TLS by default, from a working copy the database backs
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_TLS_ENABLED
+            value: "true"
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].name
+          value: https
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.scheme
+          value: HTTPS
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tls
+            emptyDir:
+              medium: Memory
+              sizeLimit: 1Mi
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tls
+            mountPath: /etc/kubemg/tls
+
+  - it: serves plain HTTP behind an edge-terminating ingress, and says so on purpose
+    set:
+      tls.mode: edge
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_TLS_ENABLED
+            value: "false"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_ALLOW_INSECURE
+            value: "true"
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.scheme
+          value: HTTP
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tls
+            mountPath: /etc/kubemg/tls
+
+  - it: serves an operator's certificate from the supplied directory
+    set:
+      tls.existingSecret: kubemg-tls
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tls-supplied
+            mountPath: /etc/kubemg/ssl
+            readOnly: true
+      - equal:
+          path: spec.template.spec.volumes[?(@.name == "tls-supplied")].secret.secretName
+          value: kubemg-tls
+
+  - it: hands agents the CA bundle it is given
+    set:
+      tls.agentCABundle.existingSecret: corp-ca
+      tls.agentCABundle.key: bundle.pem
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_AGENT_CA_BUNDLE
+            value: /etc/kubemg/agent-ca/bundle.pem
+      - equal:
+          path: spec.template.spec.volumes[?(@.name == "agent-ca")].secret.secretName
+          value: corp-ca
+
+  - it: passes extra names for the minted certificate
+    set:
+      tls.hosts: [kubemg.internal, 10.0.0.5]
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_TLS_HOSTS
+            value: kubemg.internal,10.0.0.5
+
+  # ---- images ------------------------------------------------------------
+  - it: pulls the server at the chart's appVersion, and leaves the images it hands out to the server
+    chart:
+      appVersion: 9.8.7
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/kubemg/kubemg:9.8.7
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: KUBEMG_AGENT_IMAGE
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: KUBEMG_SHELL_IMAGE
+
+  - it: rewrites every image to a mirror, keeping repository paths and the shared tag
+    chart:
+      appVersion: 9.8.7
+    set:
+      global.imageRegistry: mirror.lab
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: mirror.lab/kubemg/kubemg:9.8.7
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_AGENT_IMAGE
+            value: mirror.lab/kubemg/kubemg-agent:9.8.7
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_SHELL_IMAGE
+            value: mirror.lab/kubemg/kubemg-shell:9.8.7
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_DEBUG_IMAGE
+            value: mirror.lab/library/busybox:1.36
+
+  - it: lets an explicit image win over the mirror
+    set:
+      global.imageRegistry: mirror.lab
+      agent.image: other.lab/agent:1.0.0
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_AGENT_IMAGE
+            value: other.lab/agent:1.0.0
+
+  - it: pins the server by digest when one is given
+    set:
+      image.digest: sha256:abc
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/kubemg/kubemg@sha256:abc
+
+  # ---- secrets -----------------------------------------------------------
+  - it: reads every key from an existing Secret, each optional
+    set:
+      secrets.existingSecret: kubemg-keys
+      secrets.secretKey: ignored
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: kubemg-keys
+                key: KUBEMG_SECRET_KEY
+                optional: true
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: JWT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: kubemg-keys
+                key: JWT_SECRET
+                optional: true
+
+  - it: references only the keys it was given as values
+    set:
+      secrets.secretKey: a-key
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: kubemg
+                key: KUBEMG_SECRET_KEY
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: JWT_SECRET
+
+  - it: reads the database password from an existing Secret
+    set:
+      database.password: ""
+      database.existingSecret: kubemg-db
+      database.existingSecretPasswordKey: password
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: kubemg-db
+                key: password
+
+  - it: points at the in-chart PostgreSQL without TLS when it runs one
+    set:
+      database.host: ""
+      postgresql.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_HOST
+            value: kubemg-postgresql
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_SSLMODE
+            value: disable
+
+  - it: waits for the in-chart PostgreSQL rather than crash-looping on it
+    chart:
+      appVersion: 9.8.7
+    set:
+      database.host: ""
+      postgresql.enabled: true
+      global.imageRegistry: mirror.lab
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].image
+          value: mirror.lab/library/postgres:16-alpine
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: DB_HOST
+            value: kubemg-postgresql
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: PGUSER
+            value: kubemg
+
+  - it: does not wait on an external database
+    asserts:
+      - notExists:
+          path: spec.template.spec.initContainers
+
+  # ---- recordings and metrics --------------------------------------------
+  - it: keeps recordings on the chart's claim
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[?(@.name == "recordings")].persistentVolumeClaim.claimName
+          value: kubemg-recordings
+
+  - it: uses an existing claim for recordings
+    set:
+      recordings.persistence.existingClaim: evidence
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[?(@.name == "recordings")].persistentVolumeClaim.claimName
+          value: evidence
+
+  - it: falls back to an emptyDir when recordings are not persisted
+    set:
+      recordings.persistence.enabled: false
+    asserts:
+      - exists:
+          path: spec.template.spec.volumes[?(@.name == "recordings")].emptyDir
+
+  - it: serves metrics on their own port only when asked
+    set:
+      metrics.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_METRICS_ADDR
+            value: ":9090"
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: metrics
+            containerPort: 9090
+
+  - it: names the Secret's keys on the pod, never a hash of their values
+    set:
+      secrets.secretKey: a-key
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["kubemg.io/secret-keys"]
+          value: DB_PASSWORD,KUBEMG_SECRET_KEY

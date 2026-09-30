@@ -1,0 +1,285 @@
+{{- include "kubemg.validate" . -}}
+{{- $passthrough := include "kubemg.passthrough" . -}}
+{{- $port := include "kubemg.portName" . -}}
+{{- $secretKeys := list "JWT_SECRET" "KUBEMG_SECRET_KEY" "KUBEMG_SESSION_RECORDING_KEY" "KUBEMG_ADMIN_PASSWORD" -}}
+{{- $secretValues := dict "JWT_SECRET" .Values.secrets.jwtSecret "KUBEMG_SECRET_KEY" .Values.secrets.secretKey "KUBEMG_SESSION_RECORDING_KEY" .Values.secrets.sessionRecordingKey "KUBEMG_ADMIN_PASSWORD" .Values.secrets.adminPassword -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kubemg.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubemg.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  # One, and not a value. Each agent's tunnel lives in the memory of the pod its
+  # connection reached, so a second pod behind the same Service answers 503 for
+  # every cluster whose agent chose the other one.
+  replicas: 1
+  # Never two pods at once, not even for an upgrade: a rolling update splits the
+  # tunnels the same way for the length of the rollout, and stalls on the
+  # ReadWriteOnce recordings volume the old pod still holds. Recreate costs a
+  # short outage; agents reconnect on their own within a minute.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "kubemg.serverSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kubemg.serverSelectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        # Which keys the chart's Secret carries, so adding one — setting
+        # secrets.secretKey for the first time, say — restarts the pod, since
+        # the server reads them only at boot. Names, not a checksum of the
+        # values: a hash of a password is a verifier for it, and the `view`
+        # role reads Deployments while it cannot read Secrets.
+        kubemg.io/secret-keys: {{ include "kubemg.secretData" . | fromYaml | keys | sortAlpha | join "," | quote }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "kubemg.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      securityContext:
+        # The image's own user: distroless's nonroot. fsGroup is what makes the
+        # recordings volume writable by it.
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      {{- if .Values.postgresql.enabled }}
+      # Installed together, the server starts before PostgreSQL accepts
+      # connections and exits on the refusal, so a first install read as a
+      # crash loop. Waiting uses the PostgreSQL image already pulled for the
+      # StatefulSet — nothing extra for a mirror to carry. An external database
+      # gets no wait: it is already up, and a server that cannot reach it
+      # should say so rather than sit in an init container.
+      initContainers:
+        - name: wait-for-postgresql
+          image: {{ include "kubemg.postgresql.image" . }}
+          imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          command:
+            - sh
+            - -c
+            - until pg_isready -q -h "$DB_HOST" -p "$DB_PORT"; do sleep 2; done
+          env:
+            - name: DB_HOST
+              value: {{ include "kubemg.databaseHost" . | quote }}
+            - name: DB_PORT
+              value: {{ .Values.database.port | quote }}
+            # Named explicitly: without it pg_isready looks up the OS user for
+            # uid 65532, which has no passwd entry, and gives up without ever
+            # dialling — so the wait never ends.
+            - name: PGUSER
+              value: {{ .Values.database.user | quote }}
+      {{- end }}
+      containers:
+        - name: kubemg
+          image: {{ include "kubemg.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: {{ $port }}
+              containerPort: 8443
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+            {{- end }}
+          env:
+            - name: KUBEMG_PUBLIC_URL
+              value: {{ .Values.publicURL | quote }}
+            - name: KUBEMG_LISTEN_ADDR
+              value: ":8443"
+            {{- if $passthrough }}
+            - name: KUBEMG_TLS_ENABLED
+              value: "true"
+            - name: KUBEMG_TLS_SELF_SIGNED
+              value: "true"
+            {{- with .Values.tls.hosts }}
+            - name: KUBEMG_TLS_HOSTS
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- else }}
+            # Edge mode: the ingress terminates TLS. The server refuses to serve
+            # plain HTTP on a reachable address unless told this is deliberate.
+            - name: KUBEMG_TLS_ENABLED
+              value: "false"
+            - name: KUBEMG_ALLOW_INSECURE
+              value: "true"
+            {{- end }}
+            {{- if .Values.tls.agentCABundle.existingSecret }}
+            - name: KUBEMG_AGENT_CA_BUNDLE
+              value: /etc/kubemg/agent-ca/{{ .Values.tls.agentCABundle.key }}
+            {{- end }}
+            - name: DB_HOST
+              value: {{ include "kubemg.databaseHost" . | quote }}
+            - name: DB_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DB_SSLMODE
+              value: {{ include "kubemg.databaseSSLMode" . | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  {{- include "kubemg.databasePasswordRef" . | nindent 18 }}
+            {{- range $key := $secretKeys }}
+            {{- if $.Values.secrets.existingSecret }}
+            - name: {{ $key }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secrets.existingSecret }}
+                  key: {{ $key }}
+                  optional: true
+            {{- else if get $secretValues $key }}
+            - name: {{ $key }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kubemg.secretName" $ }}
+                  key: {{ $key }}
+            {{- end }}
+            {{- end }}
+            - name: KUBEMG_ADMIN_USERNAME
+              value: {{ .Values.admin.username | quote }}
+            - name: KUBEMG_SESSION_RECORDING_ENABLED
+              value: {{ .Values.recordings.enabled | quote }}
+            - name: KUBEMG_SESSION_RECORDING_DIR
+              value: /var/lib/kubemg/recordings
+            - name: KUBEMG_SHELL_ENABLED
+              value: {{ .Values.shell.enabled | quote }}
+            {{- with include "kubemg.agentImage" . }}
+            - name: KUBEMG_AGENT_IMAGE
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with include "kubemg.shellImage" . }}
+            - name: KUBEMG_SHELL_IMAGE
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with include "kubemg.debugImage" . }}
+            - name: KUBEMG_DEBUG_IMAGE
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.metrics.enabled }}
+            - name: KUBEMG_METRICS_ADDR
+              value: ":{{ .Values.metrics.port }}"
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            {{- if $passthrough }}
+            # A working copy only: the certificate KubeMG mints is kept in the
+            # database and written back here on every start, so a replaced pod
+            # serves the certificate agents already pinned.
+            - name: tls
+              mountPath: /etc/kubemg/tls
+            {{- end }}
+            {{- if .Values.tls.existingSecret }}
+            - name: tls-supplied
+              mountPath: /etc/kubemg/ssl
+              readOnly: true
+            {{- end }}
+            {{- if .Values.tls.agentCABundle.existingSecret }}
+            - name: agent-ca
+              mountPath: /etc/kubemg/agent-ca
+              readOnly: true
+            {{- end }}
+            - name: recordings
+              mountPath: /var/lib/kubemg/recordings
+          # The first boot migrates the schema, which can take a while on a
+          # slow volume; the startup probe gives it that time without making
+          # the liveness probe lenient forever after.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: {{ $port }}
+              scheme: {{ upper $port }}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ $port }}
+              scheme: {{ upper $port }}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ $port }}
+              scheme: {{ upper $port }}
+            periodSeconds: 20
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        {{- if $passthrough }}
+        - name: tls
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        {{- end }}
+        {{- if .Values.tls.existingSecret }}
+        - name: tls-supplied
+          secret:
+            secretName: {{ .Values.tls.existingSecret }}
+            defaultMode: 0440
+            items:
+              - key: tls.crt
+                path: tls.crt
+              - key: tls.key
+                path: tls.key
+        {{- end }}
+        {{- if .Values.tls.agentCABundle.existingSecret }}
+        - name: agent-ca
+          secret:
+            secretName: {{ .Values.tls.agentCABundle.existingSecret }}
+            defaultMode: 0440
+            items:
+              - key: {{ .Values.tls.agentCABundle.key }}
+                path: {{ .Values.tls.agentCABundle.key }}
+        {{- end }}
+        - name: recordings
+          {{- if and .Values.recordings.enabled .Values.recordings.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-recordings" (include "kubemg.fullname" .)) .Values.recordings.persistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

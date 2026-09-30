@@ -1,0 +1,14 @@
+# Production shape: external PostgreSQL, KubeMG terminates TLS behind a
+# LoadBalancer, every key supplied from an existing Secret.
+publicURL: https://kubemg.example.com
+database:
+  host: postgres.example.internal
+  existingSecret: kubemg-db
+secrets:
+  existingSecret: kubemg-keys
+service:
+  type: LoadBalancer
+  loadBalancerSourceRanges:
+    - 10.0.0.0/8
+metrics:
+  enabled: true

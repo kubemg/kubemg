@@ -42,6 +42,12 @@ type Material struct {
 	CertPEM []byte
 	// Generated reports whether this run created the pair.
 	Generated bool
+	// Restored reports that the pair was written back from the stored copy
+	// because the disk had none (EnsureKept only).
+	Restored bool
+	// Kept reports that the pair on disk was copied to the store because the
+	// store had no copy of it, or an older one (EnsureKept only).
+	Kept bool
 }
 
 // Ensure returns the certificate at certFile/keyFile, generating a self-signed

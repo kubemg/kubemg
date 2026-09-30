@@ -73,16 +73,16 @@ agent trust story in detail.
 
 ```yaml
 volumes:
-  - tls-certs:/etc/kubemg/tls          # minted certificate — back this up
+  - tls-certs:/etc/kubemg/tls          # working copy of the minted certificate
   - ./ssl:/etc/kubemg/ssl:ro           # your own certificate, if you supply one
   - session-recordings:/var/lib/kubemg/recordings
 ```
 
 | Volume | Holds | If you lose it |
 |---|---|---|
-| `tls-certs` | The certificate minted on first boot | **Every installed agent stops connecting.** It pinned this certificate; a fresh one is a different certificate and the handshake fails. |
+| `tls-certs` | The working copy of the certificate minted on first boot | Nothing: the next boot writes the same certificate back from the database, which keeps it too — see [TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too). Losing `postgres-data` loses it along with everything else. |
 | `session-recordings` | Encrypted `.cast.gz` session replays | Audit evidence is gone — recordings are the artefact an auditor asks for. |
-| `postgres-data` | Users, grants, clusters, audit trail | The install is gone. |
+| `postgres-data` | Users, grants, clusters, audit trail, the minted certificate | The install is gone, and every installed agent stops connecting: it pinned that certificate. |
 
 `./ssl` is a **read-only bind mount**, not a named volume, because it's the
 one directory an operator has to be able to drop a file into from the host.
@@ -128,7 +128,9 @@ docker compose up -d
 
 Schema migrations run automatically at boot (see [Database](database.md)).
 Keep the `tls-certs` volume across the upgrade and the fleet's agents
-reconnect on their own without re-installing anything. See
+reconnect on their own without re-installing anything — an install that
+kept the certificate only on this volume copies it into the database on the
+first boot after the upgrade. See
 [Upgrading](upgrading.md) for version compatibility between the management
 plane and the agent.
 
@@ -141,8 +143,6 @@ Back up, at minimum:
 
 - The `postgres-data` volume (or better, run managed PostgreSQL and back that
   up per your usual process — see [Database](database.md)).
-- The `tls-certs` volume, if you are relying on the self-signed certificate
-  kubemg minted rather than supplying your own.
 - The `session-recordings` volume, and `KUBEMG_SESSION_RECORDING_KEY`
   **kept separately** from that volume's backup — a key stored beside the
   ciphertext it protects defends against nothing.

@@ -3,6 +3,9 @@ NODE_IMAGE ?= node:22-alpine
 # Pinned rather than :latest so a theme release cannot change the published
 # manual without a commit. Keep it in step with docs/requirements.txt.
 DOCS_IMAGE ?= squidfunk/mkdocs-material:9.7.7
+# Helm and the helm-unittest plugin in one pinned image, for the management
+# plane chart. Keep it in step with the helm version release.yml packages with.
+HELM_IMAGE ?= helmunittest/helm-unittest:4.2.3-1.1.2
 
 # Both images are published to GitHub's registry under the same org that owns
 # the source, so the image and the code it was built from have one name and one
@@ -40,7 +43,7 @@ DOCKER_GO    = docker run --rm -v $(PWD)/backend:/app -v kubemg-go-mod:/go/pkg/m
 DOCKER_AGENT = docker run --rm -v $(PWD)/agent:/app -v kubemg-go-mod:/go/pkg/mod -v kubemg-go-build:/root/.cache/go-build -w /app $(GO_IMAGE)
 DOCKER_NODE  = docker run --rm -v $(PWD)/frontend:/app -v kubemg-npm:/root/.npm -w /app $(NODE_IMAGE)
 
-.PHONY: help build test verify manifest-check \
+.PHONY: help build test verify manifest-check chart-test \
         backend-build backend-test backend-vet backend-tidy \
         agent-build agent-test agent-vet agent-tidy agent-image agent-image-check agent-push \
         shell-image shell-image-check shell-push \
@@ -55,7 +58,7 @@ help:
 ## ---- aggregate ----
 build: backend-build agent-build frontend-build ## Build backend + agent + frontend in containers
 test: backend-test agent-test frontend-test ## Run all container-based tests
-verify: manifest-check backend-vet backend-test backend-build agent-vet agent-test agent-build frontend-lint frontend-test frontend-contrast frontend-build docs-build ## Full containerized verification
+verify: manifest-check chart-test backend-vet backend-test backend-build agent-vet agent-test agent-build frontend-lint frontend-test frontend-contrast frontend-build docs-build ## Full containerized verification
 
 # The bastion embeds its own copy of the agent manifests so they ship inside the
 # server binary. Two copies can drift; this makes drift a build failure.
@@ -63,6 +66,12 @@ manifest-check: ## Verify the embedded agent manifests match deploy/kustomize/ba
 	@docker run --rm -v $(PWD):/repo -w /repo $(GO_IMAGE) \
 		diff -ru deploy/kustomize/base backend/pkg/agentpkg/base \
 		|| { echo "deploy/kustomize/base and backend/pkg/agentpkg/base have drifted; update both."; exit 1; }
+
+# The management plane's Helm chart: lint every CI value set, render each twice
+# and compare — the chart must be as safe under `helm template` (Argo CD, Flux)
+# as under `helm install` — then the unit tests in deploy/helm/kubemg/tests.
+chart-test: ## Lint, render and unit-test the management plane Helm chart
+	@docker run --rm -v $(PWD):/repo:ro -w /repo --entrypoint sh $(HELM_IMAGE) hack/chart-check.sh
 
 ## ---- backend ----
 backend-build: ## Compile the Go server binary

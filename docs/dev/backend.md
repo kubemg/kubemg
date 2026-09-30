@@ -63,6 +63,31 @@ it off the schema, and a test asserts the expected columns carry it and are
 - Hashed-only values (passwords, machine tokens, install and WebSocket tickets)
   do not go through here: nothing needs them back.
 
+### The minted certificate is a server secret
+
+`server_secrets` holds two rows the server mints for itself: the JWT signing
+key and, since the Helm chart, the listener's self-signed certificate pair
+(`tls_self_signed_pair` — certificate PEM then key PEM, one value so the two
+are never stored half each). `certs.EnsureKept` owns the rules and
+`resolveTLS` in `cmd/server` calls it; `db.Store` satisfies `certs.PairStore`
+(`StoredTLSPair`, `EnsureTLSPair`, `KeepTLSPair`).
+
+- **The disk is a working copy.** A pair on disk is served and the row
+  follows it (`Kept`); an empty disk gets the row written back (`Restored`);
+  only when both are empty is a pair minted, through `EnsureServerSecret`'s
+  conditional insert, so racing replicas converge on the winner's pair.
+- **Only a self-signed pair is kept.** It is the one agents pin; a CA-issued
+  key has no business in the database.
+- **Refuse rather than re-mint.** An unreadable row or an unreadable store
+  fails the boot — minting over either is a silent fleet-wide re-pin.
+  `KUBEMG_TLS_SELF_SIGNED=false` never consults the row.
+- **`KeepTLSPair` is an upsert through `Create`**, so the value passes the
+  column's serializer; `TestKeptTLSPairIsSealed` pins that path.
+
+This is what lets the chart mount `/etc/kubemg/tls` on an `emptyDir` and never
+generate a certificate itself — see `make chart-test` in
+[Building and testing](verify.md).
+
 ## Configuration and settings
 
 `pkg/config` reads the environment at boot. But an environment variable is a

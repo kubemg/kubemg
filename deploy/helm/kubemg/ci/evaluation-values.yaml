@@ -1,0 +1,21 @@
+# Evaluation in an air-gapped lab: in-chart PostgreSQL, every image from a
+# mirror, a certificate from cert-manager, metrics scraped by the operator.
+publicURL: https://kubemg.lab.internal
+global:
+  imageRegistry: registry.lab.internal
+imagePullSecrets:
+  - name: lab-mirror
+tls:
+  existingSecret: kubemg-tls
+  agentCABundle:
+    existingSecret: kubemg-tls
+postgresql:
+  enabled: true
+database:
+  password: evaluation-only
+service:
+  type: NodePort
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true

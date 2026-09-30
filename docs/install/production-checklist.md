@@ -75,13 +75,12 @@ read the full detail.
       compliance requirement quietly deletes evidence before anyone asks for
       it. See [Environment reference](environment.md#audit-retention).
 
-- [ ] **The TLS certificate volume backed up separately from the
-      database.** Losing `tls-certs` mints a fresh self-signed certificate
-      on the next boot, and every already-installed agent then fails its
-      handshake against a certificate it doesn't recognize — this is a
-      fleet-wide incident, not a config fix. See
-      [Docker Compose](docker-compose.md#the-volumes-and-which-to-back-up) or
-      [Kubernetes](kubernetes.md#namespace-secret-pvcs).
+- [ ] **The database backed up, with `KUBEMG_SECRET_KEY` kept apart
+      from the backup.** The certificate kubemg minted is kept there, and
+      every already-installed agent pinned it: a database restored without
+      it — or not restored at all — is a fleet-wide re-install, not a config
+      fix. See [TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too)
+      and [Database](database.md#backup-and-restore).
 
 - [ ] **Agent manifests are current on every attached cluster.** Agent RBAC
       has gained permissions between releases without a protocol bump (CRD
