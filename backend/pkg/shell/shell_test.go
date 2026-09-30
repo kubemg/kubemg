@@ -364,3 +364,36 @@ func TestSelectorFindsShellsAndNothingElse(t *testing.T) {
 		t.Fatalf("selector = %q, want it confined to objects KubeMG manages", selector)
 	}
 }
+
+// The shell pod lives beside the agent and comes from the same mirror, so it
+// names the agent's pull secret — and names none when none is configured.
+func TestPodNamesThePullSecretOnlyWhenOneIsConfigured(t *testing.T) {
+	_, spec, _ := podSpec()
+	if _, found := spec["imagePullSecrets"]; found {
+		t.Fatalf("imagePullSecrets = %v, want the key absent when none is configured", spec["imagePullSecrets"])
+	}
+
+	raw, err := PodManifest(PodSpec{
+		Namespace:       "kubemg-system",
+		Image:           "registry.corp.example/kubemg/kubemg-shell:test",
+		ImagePullSecret: "mirror-pull",
+		UserID:          7,
+		Username:        "ada",
+		MaxLifetime:     8 * time.Hour,
+		Now:             time.Date(2026, 8, 27, 9, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	var pod struct {
+		Spec struct {
+			ImagePullSecrets []map[string]string `json:"imagePullSecrets"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(raw, &pod); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got := pod.Spec.ImagePullSecrets; len(got) != 1 || got[0]["name"] != "mirror-pull" {
+		t.Fatalf("imagePullSecrets = %v, want one named mirror-pull", got)
+	}
+}

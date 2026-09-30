@@ -27,6 +27,10 @@ spec:
     spec:
       serviceAccountName: kubemg-agent
       automountServiceAccountToken: true
+      # Empty unless KubeMG is configured with an image pull secret, for a
+      # mirror that requires authentication. The Secret is yours to create in
+      # this namespace: KubeMG names it and never carries registry credentials.
+      imagePullSecrets: __IMAGE_PULL_SECRETS__
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532

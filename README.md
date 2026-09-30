@@ -634,9 +634,26 @@ helm install kubemg oci://ghcr.io/kubemg/charts/kubemg --namespace kubemg --crea
 Nothing in it is generated at render time, so it installs the same objects under `helm template`,
 Argo CD and Flux; the self-signed certificate every agent pins is minted by the server and kept in
 its database, so a replaced pod serves the same one. See the
-[Kubernetes install guide](https://kubemg.readthedocs.io/en/latest/install/kubernetes/). The
-remaining air-gap work (a `make save-images` bundle and pull-secret support for the agent's mirror)
-is still open.
+[Kubernetes install guide](https://kubemg.readthedocs.io/en/latest/install/kubernetes/).
+
+### Air-gapped installs
+
+Nothing is fetched from the internet at runtime; what an air-gapped site has to arrange is the
+images — the server and PostgreSQL this host runs, and the agent, browser shell and debug images
+your **clusters** pull.
+
+```bash
+make save-images                              # all five, one docker-load tarball, linux/amd64
+make save-images SAVE_PLATFORM=linux/arm64
+```
+
+That is for a site that receives artefacts on physical media rather than through a mirror; it needs
+only Docker, since the pull runs in a container. A mirror that requires authentication is covered by
+naming a pull secret — `KUBEMG_AGENT_IMAGE_PULL_SECRET`, the chart's `agent.imagePullSecret`, or
+**Agent settings** — which the agent and browser shell pods pull with. kubemg stores the name only;
+the install sheet shows the command that creates the Secret on each cluster, from credentials in the
+operator's own shell. See the
+[air-gapped install guide](https://kubemg.readthedocs.io/en/latest/install/air-gapped/).
 
 ## Roadmap
 
@@ -672,9 +689,10 @@ one reads objects the impersonated tunnel already reaches, under grants that alr
 
 Alongside the numbered phases, two standing efforts run in parallel rather than as a phase:
 **packaging &amp; deployment** — the management-plane image and the compose install above are the
-first shipped items there, and the management plane's Helm chart the latest; the remaining air-gap work is open — and **maintenance
-&amp; dependency hygiene**, operational risk rather than missing features, where tunnel
-head-of-line blocking, agent sizing and read rate limiting are the open items.
+first shipped items there, then the management plane's Helm chart, and the air-gapped image bundle
+and agent pull secret the latest — and **maintenance &amp; dependency hygiene**, operational risk
+rather than missing features, where read rate limiting, the audit trail's gaps, a rotation scheme
+for the secret key and the exit status of a session the tunnel ended are the open items.
 
 ### Shipped
 

@@ -5,6 +5,8 @@ global:
   imageRegistry: registry.lab.internal
 imagePullSecrets:
   - name: lab-mirror
+agent:
+  imagePullSecret: lab-mirror
 tls:
   existingSecret: kubemg-tls
   agentCABundle:

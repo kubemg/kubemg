@@ -1911,6 +1911,12 @@ export interface AgentInstall {
   kustomize_command: string
   manifest: string
   files: Record<string, string>
+  /** The Secret the package pulls the agent image with, and the command that
+      creates it — both absent unless a pull secret is configured. The command
+      reads the registry's credentials from the operator's shell; KubeMG holds
+      none. */
+  image_pull_secret?: string
+  pull_secret_command?: string
 }
 
 /** A rotated agent credential: the package the agent now needs, and whether
@@ -1966,6 +1972,10 @@ export interface RuntimeSettings {
   public_url: string
   agent_image: string
   agent_namespace: string
+  /** The Secret, in the agent namespace, the agent and browser shell images
+      are pulled with — for a mirror that requires authentication. Only its
+      name: the Secret is the cluster operator's to create. Empty names none. */
+  agent_image_pull_secret: string
   /** Retention window for the audit trail. 0 in `overrides` means unset. */
   audit_retention_days: number
   /** Retention window for terminal recordings. 0 means "follow the audit

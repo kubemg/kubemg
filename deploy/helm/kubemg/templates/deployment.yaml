@@ -176,6 +176,10 @@ spec:
             - name: KUBEMG_AGENT_IMAGE
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.agent.imagePullSecret }}
+            - name: KUBEMG_AGENT_IMAGE_PULL_SECRET
+              value: {{ . | quote }}
+            {{- end }}
             {{- with include "kubemg.shellImage" . }}
             - name: KUBEMG_SHELL_IMAGE
               value: {{ . | quote }}

@@ -82,9 +82,12 @@ Nothing else is fetched at runtime: the console's fonts are served out of the
 binary rather than a CDN, and no page calls an external host.
 
 `KUBEMG_AGENT_IMAGE` is the one that has to be reachable **from your clusters**,
-not from this host — it is written into the manifests operators apply. A mirror
-that requires authentication is not yet supported for the agent: the rendered
-manifests carry no `imagePullSecrets`.
+not from this host — it is written into the manifests operators apply. If that
+mirror requires authentication, set `KUBEMG_AGENT_IMAGE_PULL_SECRET` to the name
+of the pull secret your clusters will hold; the install sheet shows the command
+that creates it. For a site that receives images on physical media, `make
+save-images` in a checkout writes all of them into one `docker load` tarball.
+See <https://kubemg.readthedocs.io/en/latest/install/air-gapped/>.
 
 ## The two volumes, and which one to back up
 

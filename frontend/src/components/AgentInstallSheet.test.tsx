@@ -106,6 +106,29 @@ describe('AgentInstallSheet', () => {
     expect(screen.queryByText('tok-secret')).toBeNull()
   })
 
+  it('offers no pull secret step when none is configured', async () => {
+    render(<AgentInstallSheet cluster={cluster} onClose={() => {}} />)
+
+    await waitFor(() => expect(screen.getByText('Install command')).toBeTruthy())
+    expect(screen.queryByText('First, the pull secret')).toBeNull()
+  })
+
+  it('puts the pull secret step before the install command when one is configured', async () => {
+    const command =
+      'kubectl -n kubemg-system create secret docker-registry mirror-pull --docker-server=registry.corp'
+    answer = async () =>
+      install({ image_pull_secret: 'mirror-pull', pull_secret_command: command })
+    render(<AgentInstallSheet cluster={cluster} onClose={() => {}} />)
+
+    await waitFor(() => expect(screen.getByText(command)).toBeTruthy())
+    const step = screen.getByText('First, the pull secret')
+    const installLabel = screen.getByText('Install command')
+    // Order is the instruction: the Secret has to exist before the pod first pulls.
+    expect(
+      step.compareDocumentPosition(installLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
   it('explains a render that failed instead of showing an empty sheet', async () => {
     answer = async () => {
       throw new Error('nope')

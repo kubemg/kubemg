@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -38,6 +39,12 @@ type agentInstallResponse struct {
 	KustomizeCommand string            `json:"kustomize_command"`
 	Manifest         string            `json:"manifest"`
 	Files            map[string]string `json:"files"`
+	// ImagePullSecret is the Secret the package names for pulling the agent
+	// image, and PullSecretCommand creates it. Both are empty when no pull
+	// secret is configured. The command carries no credential — it reads the
+	// registry's from the operator's environment — because KubeMG holds none.
+	ImagePullSecret   string `json:"image_pull_secret,omitempty"`
+	PullSecretCommand string `json:"pull_secret_command,omitempty"`
 }
 
 // clusterKustomize serves the rendered agent installation package for a cluster
@@ -148,9 +155,40 @@ func (s *server) agentInstallEnvelope(ctx context.Context, cluster *db.Cluster) 
 		KustomizeCommand: fmt.Sprintf(
 			"curl -sfL%s %s | tar -xz\nkubectl apply -k %s",
 			curlInsecureFlag(opts.BastionCA != ""), archiveURL, agentpkg.PackageDir),
-		Manifest: manifest,
-		Files:    files,
+		Manifest:          manifest,
+		Files:             files,
+		ImagePullSecret:   opts.ImagePullSecret,
+		PullSecretCommand: pullSecretCommand(opts),
 	}, nil
+}
+
+// pullSecretCommand renders the step an operator runs before the install
+// command when the agent image comes from a registry that needs credentials.
+// The Secret has to exist before the pod first pulls, or the agent sits in an
+// image pull back-off for minutes after it is created — so the namespace is
+// created first, idempotently, since the package that also creates it has not
+// been applied yet.
+func pullSecretCommand(opts agentpkg.Options) string {
+	if opts.ImagePullSecret == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"kubectl create namespace %[1]s --dry-run=client -o yaml | kubectl apply -f -\n"+
+			"kubectl -n %[1]s create secret docker-registry %[2]s \\\n"+
+			"  --docker-server=%[3]s \\\n"+
+			"  --docker-username=\"$REGISTRY_USERNAME\" --docker-password=\"$REGISTRY_PASSWORD\"",
+		opts.Namespace, opts.ImagePullSecret, imageRegistryHost(opts.Image))
+}
+
+// imageRegistryHost is the registry an image reference is pulled from, by the
+// rule the container runtime applies: the first path component is a host only
+// when it looks like one, and a reference without one is Docker Hub's.
+func imageRegistryHost(image string) string {
+	host, _, found := strings.Cut(image, "/")
+	if !found || (!strings.ContainsAny(host, ".:") && host != "localhost") {
+		return "docker.io"
+	}
+	return host
 }
 
 // applyCommand renders the one-liner an operator pastes. `kubectl apply -f
@@ -268,7 +306,8 @@ func (s *server) agentOptions(ctx context.Context, token string) agentpkg.Option
 		// The CA is the server's own listener certificate, so it is boot-time
 		// configuration rather than a runtime setting: changing it means
 		// restarting with different TLS material anyway.
-		BastionCA: s.bastionCA,
+		BastionCA:       s.bastionCA,
+		ImagePullSecret: settings.AgentImagePullSecret,
 	}
 }
 

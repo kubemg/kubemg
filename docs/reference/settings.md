@@ -61,6 +61,20 @@ never dial back in.
 | Environment default | `KUBEMG_AGENT_NAMESPACE` (falls back to `kubemg-system`) |
 | Validation | Must be a valid Kubernetes name (lowercase letters, digits, dashes; not leading/trailing dash) if non-empty |
 
+### `agent_image_pull_secret`
+
+| | |
+|---|---|
+| Meaning | The name of a `docker-registry` Secret, in the agent namespace on each target cluster, that the agent and browser shell images are pulled with — for a mirror that requires authentication. |
+| Environment default | `KUBEMG_AGENT_IMAGE_PULL_SECRET` (falls back to none) |
+| Validation | Must be a valid Secret name (lowercase letters, digits, dashes and dots) if non-empty — the name, never the credential |
+| Unset behaviour | no pull secret is named, and the install sheet offers no step to create one |
+
+kubemg stores only the name. With one set, the install sheet's first step
+creates the Secret from credentials in the operator's own shell. Debug
+containers do not use it: an ephemeral container pulls with the pod it joins.
+See [Air-gapped installs](../install/air-gapped.md#a-mirror-that-requires-authentication).
+
 ### `debug_image`
 
 | | |

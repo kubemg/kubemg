@@ -410,3 +410,82 @@ func hasWarningAbout(warnings []string, needle string) bool {
 	}
 	return false
 }
+
+// The pull secret is stored as a name and nothing else. Unset, the package
+// names none and offers no step; set, the manifest names it and the install
+// sheet's first step creates it — against the registry the agent image is
+// actually pulled from, and with no credential in the command.
+func TestAgentImagePullSecretReachesTheInstallPackage(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+	cluster := env.store.addAgentCluster("edge-eu", db.EnvStaging, "kmg_pull-token")
+	installPath := "/api/v1/clusters/" + itoa(cluster.ID) + "/kustomize"
+
+	before := decode[agentInstallResponse](t, env.do(t, http.MethodGet, installPath, token, nil))
+	if before.ImagePullSecret != "" || before.PullSecretCommand != "" {
+		t.Fatalf("no pull secret is configured, so none should be named: %+v", before)
+	}
+	if !strings.Contains(before.Manifest, "imagePullSecrets: []") {
+		t.Fatal("expected an empty pull secret list in the manifest")
+	}
+
+	rec := env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]string{
+		"agent_image":             "registry.corp.example:5000/kubemg/kubemg-agent:1.0",
+		"agent_image_pull_secret": " mirror-pull ",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("settings status = %d (%s)", rec.Code, rec.Body.String())
+	}
+	if got := decode[settingsResponse](t, rec).Effective.AgentImagePullSecret; got != "mirror-pull" {
+		t.Fatalf("effective pull secret = %q, want mirror-pull", got)
+	}
+
+	after := decode[agentInstallResponse](t, env.do(t, http.MethodGet, installPath, token, nil))
+	if after.ImagePullSecret != "mirror-pull" {
+		t.Fatalf("install package names %q, want mirror-pull", after.ImagePullSecret)
+	}
+	if !strings.Contains(after.Manifest, `imagePullSecrets: [{name: "mirror-pull"}]`) {
+		t.Fatal("the rendered Deployment does not name the pull secret")
+	}
+	for _, want := range []string{
+		"kubectl create namespace " + after.Namespace + " --dry-run=client",
+		"kubectl -n " + after.Namespace + " create secret docker-registry mirror-pull",
+		"--docker-server=registry.corp.example:5000",
+		`"$REGISTRY_PASSWORD"`,
+	} {
+		if !strings.Contains(after.PullSecretCommand, want) {
+			t.Fatalf("pull secret command lacks %q:\n%s", want, after.PullSecretCommand)
+		}
+	}
+	if strings.Contains(after.PullSecretCommand, "kmg_pull-token") {
+		t.Fatal("the pull secret command must not carry the tunnel credential")
+	}
+
+	rec = env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]string{"agent_image_pull_secret": ""})
+	if got := decode[settingsResponse](t, rec).Effective.AgentImagePullSecret; got != "" {
+		t.Fatalf("clearing the pull secret left %q in force", got)
+	}
+}
+
+// A value that cannot be a Secret's name is refused where it is typed — above
+// all a pasted dockerconfigjson, which is the credential itself.
+func TestAgentImagePullSecretRefusesWhatCannotBeAName(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+
+	for _, value := range []string{
+		"RegCred",
+		"reg_cred",
+		"regcred\n      hostNetwork: true",
+		`{"auths":{"registry.corp.example":{"auth":"dXNlcjpwYXNz"}}}`,
+	} {
+		rec := env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]string{
+			"agent_image_pull_secret": value,
+		})
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%q: status = %d, want %d", value, rec.Code, http.StatusBadRequest)
+		}
+	}
+}

@@ -19,11 +19,11 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/api"
 	"github.com/kubemg/kubemg/backend/pkg/auditforward"
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
-	"github.com/kubemg/kubemg/backend/pkg/credentials"
 	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/certs"
 	"github.com/kubemg/kubemg/backend/pkg/config"
+	"github.com/kubemg/kubemg/backend/pkg/credentials"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/guardrails"
 	"github.com/kubemg/kubemg/backend/pkg/jit"
@@ -248,24 +248,25 @@ func main() {
 	tokens.UseWSTicketStore(store)
 
 	router := api.NewRouter(api.Options{
-		Store:          store,
-		JWT:            tokens,
-		Tokens:         clusters,
-		Health:         clusters,
-		SANamespace:    cfg.SANamespace,
-		AllowedOrigins: cfg.AllowedOrigins,
-		Bastion:        gateway,
-		Proxy:          proxy,
-		PublicURL:      cfg.PublicURL,
-		AgentImage:     cfg.AgentImage,
-		AgentNamespace: cfg.AgentNamespace,
-		ShellImage:     cfg.Shell.Image,
-		ShellEnabled:   cfg.Shell.Enabled,
-		DebugImage:     cfg.DebugImage,
-		BastionCA:      tlsMaterial.agentCA,
+		Store:                store,
+		JWT:                  tokens,
+		Tokens:               clusters,
+		Health:               clusters,
+		SANamespace:          cfg.SANamespace,
+		AllowedOrigins:       cfg.AllowedOrigins,
+		Bastion:              gateway,
+		Proxy:                proxy,
+		PublicURL:            cfg.PublicURL,
+		AgentImage:           cfg.AgentImage,
+		AgentNamespace:       cfg.AgentNamespace,
+		AgentImagePullSecret: cfg.AgentImagePullSecret,
+		ShellImage:           cfg.Shell.Image,
+		ShellEnabled:         cfg.Shell.Enabled,
+		DebugImage:           cfg.DebugImage,
+		BastionCA:            tlsMaterial.agentCA,
 		// What the console's footer names this install as. See api.Options.Version.
-		Version:        version,
-		Metrics:        met,
+		Version: version,
+		Metrics: met,
 		// Housekeeping shares the audit writer's lifetime: both are background
 		// work that has to stop when the process is winding down.
 		AuditRetentionDays: cfg.AuditRetentionDays,
@@ -295,8 +296,8 @@ func main() {
 			TLSSupplied:       tlsMaterial.supplied,
 			AgentCABundleSet:  strings.TrimSpace(cfg.TLS.AgentCABundle) != "",
 		},
-		Background:         auditCtx,
-		Logger:             logger,
+		Background: auditCtx,
+		Logger:     logger,
 	})
 
 	// The console is served from the same origin as the API it calls, which is

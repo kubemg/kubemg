@@ -153,8 +153,12 @@ func PodName(userID uint) string {
 type PodSpec struct {
 	Namespace string
 	Image     string
-	UserID    uint
-	Username  string
+	// ImagePullSecret names the Secret, in Namespace, the image is pulled with.
+	// It is the agent's: the shell pod lives beside the agent and comes from the
+	// same mirror. Empty names none.
+	ImagePullSecret string
+	UserID          uint
+	Username        string
 	// MaxLifetime becomes the pod's own activeDeadlineSeconds. It is written into
 	// the cluster rather than only enforced by the reaper because a bastion that
 	// is down, wedged or mid-upgrade must not be what stands between a forgotten
@@ -271,6 +275,11 @@ func PodManifest(spec PodSpec) ([]byte, error) {
 			},
 		},
 	}
+	if spec.ImagePullSecret != "" {
+		pod["spec"].(map[string]any)["imagePullSecrets"] = []any{
+			map[string]any{"name": spec.ImagePullSecret},
+		}
+	}
 	return json.Marshal(pod)
 }
 
@@ -304,7 +313,7 @@ func SeedCommand(size int) []string {
 type Status struct {
 	// Exists is false when there is no pod, which is the ordinary state — a shell
 	// is created when somebody asks for one.
-	Exists bool `json:"exists"`
+	Exists bool   `json:"exists"`
 	Name   string `json:"name,omitempty"`
 	// Phase is the pod's own phase, verbatim.
 	Phase string `json:"phase,omitempty"`

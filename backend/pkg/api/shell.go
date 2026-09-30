@@ -87,10 +87,13 @@ const shellActivityInterval = 3 * time.Minute
 
 // shellConfig is the resolved lifecycle policy for this install.
 type shellConfig struct {
-	Enabled     bool
-	Image       string
-	Namespace   string
-	IdleTimeout time.Duration
+	Enabled   bool
+	Image     string
+	Namespace string
+	// ImagePullSecret is the agent's: the shell pod lives in the agent's
+	// namespace and comes from the same mirror.
+	ImagePullSecret string
+	IdleTimeout     time.Duration
 	// MaxLifetime is the pod's absolute deadline. It is never longer than the
 	// credential inside it: a shell whose kubectl stopped working an hour ago is
 	// a terminal that looks alive and answers nothing, so the pod's deadline is
@@ -107,11 +110,12 @@ func (s *server) shellSettings(ctx context.Context) shellConfig {
 		lifetime = ceiling
 	}
 	return shellConfig{
-		Enabled:     runtime.ShellEnabled,
-		Image:       runtime.ShellImage,
-		Namespace:   runtime.AgentNamespace,
-		IdleTimeout: shell.ClampIdleTimeout(time.Duration(runtime.ShellIdleTimeoutMinutes) * time.Minute),
-		MaxLifetime: lifetime,
+		Enabled:         runtime.ShellEnabled,
+		Image:           runtime.ShellImage,
+		Namespace:       runtime.AgentNamespace,
+		ImagePullSecret: runtime.AgentImagePullSecret,
+		IdleTimeout:     shell.ClampIdleTimeout(time.Duration(runtime.ShellIdleTimeoutMinutes) * time.Minute),
+		MaxLifetime:     lifetime,
 	}
 }
 
@@ -449,12 +453,13 @@ func (s *server) createShellPod(
 	ctx context.Context, holder *db.User, cluster *db.Cluster, config shellConfig,
 ) error {
 	manifest, err := shell.PodManifest(shell.PodSpec{
-		Namespace:   config.Namespace,
-		Image:       config.Image,
-		UserID:      holder.ID,
-		Username:    holder.Username,
-		MaxLifetime: config.MaxLifetime,
-		Now:         time.Now().UTC(),
+		Namespace:       config.Namespace,
+		Image:           config.Image,
+		ImagePullSecret: config.ImagePullSecret,
+		UserID:          holder.ID,
+		Username:        holder.Username,
+		MaxLifetime:     config.MaxLifetime,
+		Now:             time.Now().UTC(),
 	})
 	if err != nil {
 		return errors.New("the shell pod could not be rendered")

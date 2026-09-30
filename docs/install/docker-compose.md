@@ -102,9 +102,10 @@ KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.11.1
 ```
 
 `KUBEMG_AGENT_IMAGE` has to be reachable **from your target clusters**, not
-from this host — it's written into every rendered agent manifest. A mirror
-that requires authentication is not yet supported for the agent: the
-rendered manifests carry no `imagePullSecrets`.
+from this host — it's written into every rendered agent manifest. If that
+mirror requires authentication, name the pull secret your clusters will hold
+in `KUBEMG_AGENT_IMAGE_PULL_SECRET`. [Air-gapped installs](air-gapped.md)
+covers both, and carrying the images across on physical media.
 
 ## Logs
 

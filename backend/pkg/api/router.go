@@ -266,6 +266,9 @@ type Options struct {
 	// AgentImage and AgentNamespace parameterise the generated manifests.
 	AgentImage     string
 	AgentNamespace string
+	// AgentImagePullSecret names the Secret those manifests, and the browser
+	// shell's pod, pull their image with. Empty names none.
+	AgentImagePullSecret string
 	// ShellImage is the image a browser shell pod runs on a target cluster, and
 	// ShellEnabled is whether this build offers the feature at all. Both follow
 	// the process rather than the database: a settings row can switch the shell
@@ -408,6 +411,8 @@ type server struct {
 	publicURL      string
 	agentImage     string
 	agentNamespace string
+	// agentImagePullSecret is the boot-time pull secret; see Options.
+	agentImagePullSecret string
 	// shellImage and shellEnabled are what this process was started able to run a
 	// browser shell as; see Options.
 	shellImage   string
@@ -507,37 +512,38 @@ func NewRouter(opts Options) *gin.Engine {
 	}
 
 	s := &server{
-		store:              opts.Store,
-		instanceID:         uuid.NewString(),
-		jwt:                opts.JWT,
-		tokens:             opts.Tokens,
-		health:             opts.Health,
-		proxy:              opts.Proxy,
-		saNamespace:        saNamespace,
-		publicURL:          publicURL,
-		agentImage:         opts.AgentImage,
-		agentNamespace:     opts.AgentNamespace,
-		shellImage:         strings.TrimSpace(opts.ShellImage),
-		shellEnabled:       opts.ShellEnabled && strings.TrimSpace(opts.ShellImage) != "",
-		debugImage:         strings.TrimSpace(opts.DebugImage),
-		bastionCA:          opts.BastionCA,
-		recordings:         strings.TrimSpace(opts.RecordingDir),
-		recordingKey:       opts.RecordingKey,
-		recordingInput:     opts.RecordingInput,
-		auditor:            opts.Auditor,
-		auditRetentionDays: retention,
-		auditPolicy:        opts.AuditPolicy,
-		guardrails:         opts.Guardrails,
-		credentials:        opts.Credentials,
-		alarms:             opts.Alarms,
-		forwarder:          opts.Forwarder,
-		jit:                opts.JIT,
-		jitCallbackSecret:  opts.JITCallbackSecret,
-		logger:             opts.Logger,
-		allowedOrigins:     opts.AllowedOrigins,
-		ssoFlows:           newFlowStore(),
-		deployment:         opts.Deployment,
-		version:            strings.TrimSpace(opts.Version),
+		store:                opts.Store,
+		instanceID:           uuid.NewString(),
+		jwt:                  opts.JWT,
+		tokens:               opts.Tokens,
+		health:               opts.Health,
+		proxy:                opts.Proxy,
+		saNamespace:          saNamespace,
+		publicURL:            publicURL,
+		agentImage:           opts.AgentImage,
+		agentNamespace:       opts.AgentNamespace,
+		agentImagePullSecret: strings.TrimSpace(opts.AgentImagePullSecret),
+		shellImage:           strings.TrimSpace(opts.ShellImage),
+		shellEnabled:         opts.ShellEnabled && strings.TrimSpace(opts.ShellImage) != "",
+		debugImage:           strings.TrimSpace(opts.DebugImage),
+		bastionCA:            opts.BastionCA,
+		recordings:           strings.TrimSpace(opts.RecordingDir),
+		recordingKey:         opts.RecordingKey,
+		recordingInput:       opts.RecordingInput,
+		auditor:              opts.Auditor,
+		auditRetentionDays:   retention,
+		auditPolicy:          opts.AuditPolicy,
+		guardrails:           opts.Guardrails,
+		credentials:          opts.Credentials,
+		alarms:               opts.Alarms,
+		forwarder:            opts.Forwarder,
+		jit:                  opts.JIT,
+		jitCallbackSecret:    opts.JITCallbackSecret,
+		logger:               opts.Logger,
+		allowedOrigins:       opts.AllowedOrigins,
+		ssoFlows:             newFlowStore(),
+		deployment:           opts.Deployment,
+		version:              strings.TrimSpace(opts.Version),
 	}
 	if opts.Bastion != nil {
 		s.tunnels = opts.Bastion.Registry()

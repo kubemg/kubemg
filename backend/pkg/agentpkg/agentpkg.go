@@ -50,6 +50,7 @@ const (
 	placeholderImage     = "__AGENT_IMAGE__"
 	placeholderCA        = "__BASTION_CA__"
 	placeholderChecksum  = "__SECRET_CHECKSUM__"
+	placeholderPull      = "__IMAGE_PULL_SECRETS__"
 )
 
 // applyOrder is the order resources are concatenated into the flat manifest.
@@ -79,6 +80,11 @@ type Options struct {
 	// a self-signed one, typically — and empty otherwise, which the agent reads
 	// as "use the system roots".
 	BastionCA string
+	// ImagePullSecret names a Secret in the agent namespace the kubelet pulls
+	// the agent image with, for a mirror that requires authentication. Empty
+	// renders no pull secret. KubeMG only names it: the Secret is the
+	// operator's to create, because registry credentials are theirs.
+	ImagePullSecret string
 }
 
 // dns1123Label is what Kubernetes itself requires of a namespace name. It is
@@ -86,6 +92,18 @@ type Options struct {
 // rendered manifest: no character in this set can open a new YAML document,
 // a new mapping key, or a newline.
 var dns1123Label = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
+
+// dns1123Subdomain is what Kubernetes requires of a Secret name, and keeps a
+// pull secret's name as inert in the manifest as dns1123Label keeps the
+// namespace.
+var dns1123Subdomain = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
+
+// ValidImagePullSecret reports whether name can be a Secret's name. The
+// settings route asks it too, so a name is refused where it is typed rather
+// than when a package is rendered.
+func ValidImagePullSecret(name string) bool {
+	return len(name) <= 253 && dns1123Subdomain.MatchString(name)
+}
 
 func (o Options) normalize() (Options, error) {
 	if strings.TrimSpace(o.BastionURL) == "" {
@@ -111,6 +129,10 @@ func (o Options) normalize() (Options, error) {
 	}
 	if o.Image == "" {
 		o.Image = DefaultImage
+	}
+	o.ImagePullSecret = strings.TrimSpace(o.ImagePullSecret)
+	if o.ImagePullSecret != "" && !ValidImagePullSecret(o.ImagePullSecret) {
+		return o, fmt.Errorf("image pull secret %q is not a valid Secret name", o.ImagePullSecret)
 	}
 	return o, nil
 }
@@ -141,6 +163,7 @@ func Render(opts Options) (map[string]string, error) {
 		// so it needs no quoting: an empty CA renders as an empty value.
 		placeholderCA, base64.StdEncoding.EncodeToString([]byte(opts.BastionCA)),
 		placeholderChecksum, quote(secretChecksum(opts)),
+		placeholderPull, imagePullSecrets(opts.ImagePullSecret),
 	)
 
 	out := make(map[string]string, len(entries))
@@ -238,6 +261,16 @@ func fileOrder(files map[string]string) []string {
 	}
 	sort.Strings(rest)
 	return append(out, rest...)
+}
+
+// imagePullSecrets renders the pod's pull secret list as a YAML flow sequence.
+// No secret is an empty list rather than an absent key, so the manifest has one
+// shape either way and a GitOps copy of the base has one placeholder to fill.
+func imagePullSecrets(name string) string {
+	if name == "" {
+		return "[]"
+	}
+	return `[{name: ` + quote(name) + `}]`
 }
 
 // quote renders a value as a double-quoted YAML scalar.

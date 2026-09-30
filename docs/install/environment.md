@@ -60,14 +60,16 @@ See [Database](database.md) for AutoMigrate behavior and the reference DDL.
 
 ## Public URL & agent
 
-*`KUBEMG_PUBLIC_URL`, `KUBEMG_AGENT_IMAGE` and `KUBEMG_AGENT_NAMESPACE` are
-boot-time defaults only — each is overridable at runtime from Settings.*
+*`KUBEMG_PUBLIC_URL`, `KUBEMG_AGENT_IMAGE`, `KUBEMG_AGENT_NAMESPACE` and
+`KUBEMG_AGENT_IMAGE_PULL_SECRET` are boot-time defaults only — each is
+overridable at runtime from Settings.*
 
 | Variable | Default | What it is |
 |---|---|---|
 | `KUBEMG_PUBLIC_URL` | `http://localhost:8080` | The address agents and operators reach this server on. Baked into every generated agent install command and kubeconfig — must be reachable from a **target cluster**, not this process's own listen address. A non-HTTPS value here surfaces as a warning rather than a kubeconfig that silently fails at first use. |
 | `KUBEMG_AGENT_IMAGE` | pinned release image (`ghcr.io/kubemg/kubemg-agent:<version>`) | The agent container image rendered into every generated install manifest. Point this at an internal mirror for an air-gapped install. |
 | `KUBEMG_AGENT_NAMESPACE` | `kubemg-system` | Namespace the agent is installed into on target clusters. Browser shell pods run here too. |
+| `KUBEMG_AGENT_IMAGE_PULL_SECRET` | — | The name of a `docker-registry` Secret in that namespace, for a mirror that requires authentication. The agent and browser shell pods pull with it. Only the name — the Secret is created on each cluster, and the install sheet shows the command. See [Air-gapped installs](air-gapped.md#a-mirror-that-requires-authentication). |
 | `KUBEMG_SHELL_ENABLED` | `true` | Offer the [browser shell](../clusters/browser-shell.md) on agent-mode clusters. A settings row can turn this off; it cannot turn it on for a server with no shell image. |
 | `KUBEMG_SHELL_IMAGE` | pinned release image (`ghcr.io/kubemg/kubemg-shell:<version>`) | The image a shell pod runs. Point this at an internal mirror for an air-gapped install; clearing it switches the feature off, since a shell with no image is a button that fails. |
 | `KUBEMG_DEBUG_IMAGE` | `busybox:1.36` | The image an [ephemeral debug container](../clusters/terminals-and-logs.md#debugging-a-pod-with-no-shell) runs, for a pod whose own containers have no shell to exec into. Point this at an internal mirror for an air-gapped install. Unlike the browser shell there is no enable switch — any grant that can already exec into a pod can already ask for one. |
@@ -156,6 +158,7 @@ KUBEMG_TLS_SUPPLIED_DIR=/etc/kubemg/ssl
 # KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.11.1
 # KUBEMG_POSTGRES_IMAGE=registry.internal/postgres:16-alpine
 # KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.11.1
+# KUBEMG_AGENT_IMAGE_PULL_SECRET=registry-internal
 KUBEMG_AGENT_NAMESPACE=kubemg-system
 
 # --- audit & recordings ----------------------------------------------------

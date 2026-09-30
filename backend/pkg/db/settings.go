@@ -15,6 +15,11 @@ const (
 	SettingPublicURL      = "public_url"
 	SettingAgentImage     = "agent_image"
 	SettingAgentNamespace = "agent_namespace"
+	// SettingAgentImagePullSecret names the Secret, in the agent namespace, the
+	// kubelet pulls the agent and browser shell images with — for a mirror that
+	// requires authentication. Only the name is stored: the credentials behind
+	// it are the cluster operator's and never pass through KubeMG.
+	SettingAgentImagePullSecret = "agent_image_pull_secret"
 	// SettingAuditRetentionDays is how long a proxied call stays in the audit
 	// table. It is stored as a decimal string like every other setting so the
 	// key/value table needs no second column.
@@ -125,6 +130,7 @@ var SettingKeys = []string{
 	SettingPublicURL,
 	SettingAgentImage,
 	SettingAgentNamespace,
+	SettingAgentImagePullSecret,
 	SettingAuditRetentionDays,
 	SettingSessionRecordingRetentionDays,
 	SettingAuditVerbs,
