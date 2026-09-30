@@ -10,6 +10,7 @@ import { SettingsAside, SettingsLayout } from '../../components/settings/Setting
 type Draft = {
   agent_image: string
   agent_namespace: string
+  agent_image_pull_secret: string
   shell_enabled: boolean
   shell_image: string
   shell_idle_timeout_minutes: string
@@ -21,6 +22,7 @@ function draftOf(settings: SettingsResponse): Draft {
   return {
     agent_image: settings.overrides.agent_image,
     agent_namespace: settings.overrides.agent_namespace,
+    agent_image_pull_secret: settings.overrides.agent_image_pull_secret,
     // The switch has no "unset": what the server reports as effective is what
     // the box is showing, and a server with no image reports it off.
     shell_enabled: settings.effective.shell_enabled,
@@ -44,6 +46,7 @@ export function AgentSettings() {
   const [draft, setDraft] = useState<Draft>({
     agent_image: '',
     agent_namespace: '',
+    agent_image_pull_secret: '',
     shell_enabled: false,
     shell_image: '',
     shell_idle_timeout_minutes: '',
@@ -81,6 +84,7 @@ export function AgentSettings() {
       const next = await updateSettings({
         agent_image: draft.agent_image.trim(),
         agent_namespace: draft.agent_namespace.trim(),
+        agent_image_pull_secret: draft.agent_image_pull_secret.trim(),
         shell_enabled: draft.shell_enabled,
         shell_image: draft.shell_image.trim(),
         // 0 clears an override back to the build's default, the rule every
@@ -108,6 +112,7 @@ export function AgentSettings() {
     settings !== null &&
     (draft.agent_image.trim() !== settings.overrides.agent_image ||
       draft.agent_namespace.trim() !== settings.overrides.agent_namespace ||
+      draft.agent_image_pull_secret.trim() !== settings.overrides.agent_image_pull_secret ||
       draft.shell_enabled !== settings.effective.shell_enabled ||
       draft.shell_image.trim() !== settings.overrides.shell_image ||
       draft.shell_idle_timeout_minutes.trim() !==
@@ -133,6 +138,15 @@ export function AgentSettings() {
               value={settings.effective.agent_namespace}
               source={settingSource(settings.overrides.agent_namespace, settings.defaults.agent_namespace)}
               reach="New installs only. An agent already running lives where it was installed, and the shell runner's Role is bound in that namespace."
+            />
+            <SettingsAside
+              label="Image pull secret"
+              value={settings.effective.agent_image_pull_secret || 'none'}
+              source={settingSource(
+                settings.overrides.agent_image_pull_secret,
+                settings.defaults.agent_image_pull_secret,
+              )}
+              reach="Install packages rendered from now on, and the next shell pod started. An agent already running keeps the pull secret it was installed with until its manifest is re-applied."
             />
             <SettingsAside
               label="Browser shell"
@@ -218,6 +232,20 @@ export function AgentSettings() {
                   onChange={(event) => set('agent_namespace', event.target.value)}
                 />
               </Field>
+
+              <Field
+                label="Image pull secret"
+                htmlFor="agent_image_pull_secret"
+                hint={`For a mirror that requires authentication: the name of a docker-registry Secret in the agent namespace, which the agent and the browser shell pull with. KubeMG stores only the name — the install sheet shows the command that creates it. ${settings.defaults.agent_image_pull_secret ? `Leave empty for ${settings.defaults.agent_image_pull_secret}.` : 'Leave empty for none.'}`}
+              >
+                <TextInput
+                  id="agent_image_pull_secret"
+                  className="font-mono text-[12.5px]"
+                  placeholder={settings.defaults.agent_image_pull_secret || 'none'}
+                  value={draft.agent_image_pull_secret}
+                  onChange={(event) => set('agent_image_pull_secret', event.target.value)}
+                />
+              </Field>
             </Panel>
 
             {/* The browser shell lives on this page rather than beside the
@@ -240,7 +268,7 @@ export function AgentSettings() {
                 <span className="min-w-0">
                   <span className="text-[13px] text-fg">Offer a browser shell on agent-mode clusters</span>
                   <span className="mt-0.5 block text-[12px] leading-snug text-muted">
-                    A pod with <code>kubectl</code> and <code>helm</code> in it, started only when
+                    A pod with <code>kubectl</code> in it, started only when
                     somebody asks. It holds no cluster credential of its own: its kubeconfig points
                     back at this server, so every command it runs is impersonated as the operator,
                     answered by the cluster's own RBAC and audited. Turning this off refuses new

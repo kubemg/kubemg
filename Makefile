@@ -6,6 +6,9 @@ DOCS_IMAGE ?= squidfunk/mkdocs-material:9.7.7
 # Helm and the helm-unittest plugin in one pinned image, for the management
 # plane chart. Keep it in step with the helm version release.yml packages with.
 HELM_IMAGE ?= helmunittest/helm-unittest:4.2.3-1.1.2
+# crane pulls an image set into one `docker load`-able tarball for a platform
+# this machine need not be, without the daemon's image store in the way.
+CRANE_IMAGE ?= gcr.io/go-containerregistry/crane:v0.22.1
 
 # Both images are published to GitHub's registry under the same org that owns
 # the source, so the image and the code it was built from have one name and one
@@ -49,7 +52,7 @@ DOCKER_NODE  = docker run --rm -v $(PWD)/frontend:/app -v kubemg-npm:/root/.npm 
         shell-image shell-image-check shell-push \
         frontend-install frontend-build frontend-lint frontend-test frontend-contrast \
         docs-build docs-serve \
-        image image-check image-push \
+        image image-check image-push save-images \
         up down reset logs ps e2e-up e2e-down
 
 help:
@@ -161,6 +164,24 @@ image-push: ## Build and push the multi-arch management plane image (requires do
 image-check: ## Build the management plane image for every published platform (no output)
 	docker buildx build --platform $(KUBEMG_PLATFORMS) \
 		--build-arg VERSION=$(KUBEMG_VERSION) .
+
+## ---- air-gapped bundle ----
+# For a site that receives artefacts on physical media rather than through a
+# mirror: every image a default install runs or hands out, in one tarball for
+# one platform — the management plane, the agent and shell it renders into
+# install packages, the debug container's image, and the PostgreSQL the compose
+# path and the chart's evaluation mode run. The images are the published ones at
+# this checkout's versions; override the *_IMAGE variables to bundle others.
+SAVE_PLATFORM  ?= linux/amd64
+DEBUG_IMAGE    ?= busybox:1.36
+POSTGRES_IMAGE ?= postgres:16-alpine
+SAVE_IMAGES     = $(KUBEMG_IMAGE) $(AGENT_IMAGE) $(SHELL_IMAGE) $(DEBUG_IMAGE) $(POSTGRES_IMAGE)
+SAVE_BUNDLE    ?= kubemg-images-$(KUBEMG_VERSION)-$(subst /,-,$(SAVE_PLATFORM)).tar
+
+save-images: ## Pull every image an install runs into one docker-load tarball (SAVE_PLATFORM=linux/amd64)
+	docker run --rm -v $(PWD):/out -w /out $(CRANE_IMAGE) \
+		pull --platform $(SAVE_PLATFORM) $(SAVE_IMAGES) $(SAVE_BUNDLE)
+	@echo "$(SAVE_BUNDLE): docker load -i $(SAVE_BUNDLE), then retag and push under your registry"
 
 ## ---- frontend ----
 frontend-install: ## Install npm dependencies

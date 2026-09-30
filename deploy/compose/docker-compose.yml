@@ -123,6 +123,9 @@ services:
       # an air-gapped install; it is written into the manifests operators apply.
       - KUBEMG_AGENT_IMAGE=${KUBEMG_AGENT_IMAGE:-ghcr.io/kubemg/kubemg-agent:0.11.1}
       - KUBEMG_AGENT_NAMESPACE=${KUBEMG_AGENT_NAMESPACE:-kubemg-system}
+      # The name of a pull secret in that namespace, for a mirror that requires
+      # authentication. Only the name: the Secret is created on each cluster.
+      - KUBEMG_AGENT_IMAGE_PULL_SECRET=${KUBEMG_AGENT_IMAGE_PULL_SECRET:-}
 
       # Recordings are encrypted at rest. Without a key they are written in the
       # clear — set one, and keep it somewhere other than this host, since a key

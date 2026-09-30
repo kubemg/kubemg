@@ -1,6 +1,6 @@
 # KubeMG Dumb Agent — Kustomize base.
 #
-# This is a template, not a directly applicable root: the four __PLACEHOLDER__
+# This is a template, not a directly applicable root: the __PLACEHOLDER__
 # values are filled in by the KubeMG bastion when it renders an installation
 # package for a specific cluster (see deploy/kustomize/README.md).
 #

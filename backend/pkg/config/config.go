@@ -68,6 +68,10 @@ type Config struct {
 	AgentImage string
 	// AgentNamespace is where the agent is installed on target clusters.
 	AgentNamespace string
+	// AgentImagePullSecret names a Secret in that namespace the agent and the
+	// browser shell images are pulled with, for a mirror that requires
+	// authentication. Empty names none. `KUBEMG_AGENT_IMAGE_PULL_SECRET`.
+	AgentImagePullSecret string
 	// Shell is the browser shell: a pod KubeMG runs on a target cluster with a
 	// terminal attached to it.
 	Shell Shell
@@ -225,9 +229,10 @@ func Load() Config {
 			"CORS_ALLOWED_ORIGINS",
 			[]string{"http://localhost:5173", "http://127.0.0.1:5173"},
 		),
-		PublicURL:      strings.TrimRight(env("KUBEMG_PUBLIC_URL", "http://localhost:8080"), "/"),
-		AgentImage:     env("KUBEMG_AGENT_IMAGE", agentpkg.DefaultImage),
-		AgentNamespace: env("KUBEMG_AGENT_NAMESPACE", agentpkg.DefaultNamespace),
+		PublicURL:            strings.TrimRight(env("KUBEMG_PUBLIC_URL", "http://localhost:8080"), "/"),
+		AgentImage:           env("KUBEMG_AGENT_IMAGE", agentpkg.DefaultImage),
+		AgentNamespace:       env("KUBEMG_AGENT_NAMESPACE", agentpkg.DefaultNamespace),
+		AgentImagePullSecret: env("KUBEMG_AGENT_IMAGE_PULL_SECRET", ""),
 		Shell: Shell{
 			Enabled: envBool("KUBEMG_SHELL_ENABLED", true),
 			Image:   env("KUBEMG_SHELL_IMAGE", shell.DefaultImage),

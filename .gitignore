@@ -102,6 +102,8 @@ id_ed25519*
 kustomize.tar.gz
 *-kubemg-agent.yaml
 *-kubemg-agent.tar.gz
+# make save-images
+kubemg-images-*.tar
 
 # Local Postgres data if the compose volume is ever bind-mounted.
 /data/

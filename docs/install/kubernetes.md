@@ -250,6 +250,7 @@ its explanation. The ones most installs touch:
 | `metrics.enabled` / `.serviceMonitor.enabled` | off / off | [Prometheus metrics](metrics.md) on their own port, behind their own `ClusterIP` Service — never the one agents reach. |
 | `global.imageRegistry` | — | A mirror for every image; see [below](#mirrored-and-air-gapped-registries). |
 | `imagePullSecrets` | — | For the server's pod and the in-chart PostgreSQL. |
+| `agent.imagePullSecret` | — | The name of a pull secret on your **target** clusters, for the agent and browser shell images; see [Air-gapped installs](air-gapped.md#a-mirror-that-requires-authentication). |
 | `extraEnv` | — | Anything else from the [environment reference](environment.md). |
 
 ## What the chart does not generate
@@ -296,8 +297,10 @@ hands out — the agent in every install package, the browser shell and the
 debug container — so mirror `kubemg/kubemg`, `kubemg/kubemg-agent`,
 `kubemg/kubemg-shell`, `library/postgres` and `library/busybox` under the same
 paths. The agent and shell images are pulled by your **target** clusters, not
-this one. A mirror that requires authentication is not yet supported for the
-agent: its rendered manifests carry no `imagePullSecrets`.
+this one, so a mirror that requires authentication needs a pull secret there
+too — `agent.imagePullSecret` names it; see
+[Air-gapped installs](air-gapped.md#a-mirror-that-requires-authentication),
+which also covers carrying the images across on physical media.
 
 Carry the chart itself across with `helm pull
 oci://ghcr.io/kubemg/charts/kubemg --version 0.11.1` and install from the

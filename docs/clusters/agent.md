@@ -290,12 +290,13 @@ KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.11.1
 ```
 
 This has to be reachable **from every cluster kubemg manages**, not from the
-bastion host. There is currently no support for a private mirror that
-requires authentication for the agent specifically — the rendered manifests
-carry no `imagePullSecrets` — so an authenticated internal registry needs a
-pull secret added to the manifest by hand before applying it. A `make
-save-images` bundle for an air-gapped bundle is on the roadmap but not yet
-shipped.
+bastion host. If the mirror requires authentication, name a pull secret under
+**Agent settings → Image pull secret** (or `KUBEMG_AGENT_IMAGE_PULL_SECRET`):
+the manifest names it, and the install package's first step creates it on the
+cluster from credentials in your shell — kubemg never holds them. For a site
+that receives images on physical media, `make save-images` writes every image
+an install needs into one `docker load` tarball. Both are covered in
+[Air-gapped installs](../install/air-gapped.md).
 
 Building the agent image yourself:
 

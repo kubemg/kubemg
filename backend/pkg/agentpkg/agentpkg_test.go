@@ -8,6 +8,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"sigs.k8s.io/yaml"
 )
 
 func testOptions() Options {
@@ -30,7 +32,7 @@ func TestRenderSubstitutesEveryPlaceholder(t *testing.T) {
 	// whole point is that none can.
 	placeholders := []string{
 		placeholderNamespace, placeholderBastion, placeholderToken, placeholderImage,
-		placeholderCA, placeholderChecksum,
+		placeholderCA, placeholderChecksum, placeholderPull,
 	}
 	for name, body := range files {
 		for _, placeholder := range placeholders {
@@ -139,9 +141,9 @@ func TestRenderRequiresBastionURLAndToken(t *testing.T) {
 func TestRenderRejectsAnInvalidNamespace(t *testing.T) {
 	cases := map[string]string{
 		"embedded newline and a second document": "kubemg-system\n---\napiVersion: v1\nkind: Secret",
-		"uppercase":                               "Kubemg-System",
-		"underscore":                              "kubemg_system",
-		"leading hyphen":                          "-kubemg",
+		"uppercase":                              "Kubemg-System",
+		"underscore":                             "kubemg_system",
+		"leading hyphen":                         "-kubemg",
 	}
 
 	for name, namespace := range cases {
@@ -150,6 +152,63 @@ func TestRenderRejectsAnInvalidNamespace(t *testing.T) {
 			opts.Namespace = namespace
 			if _, err := Render(opts); err == nil {
 				t.Fatalf("expected %q to be rejected as an invalid namespace", namespace)
+			}
+		})
+	}
+}
+
+// podPullSecrets parses the rendered Deployment rather than matching text, so
+// the flow sequence is proven to be YAML a cluster reads as a list of names.
+func podPullSecrets(t *testing.T, opts Options) []map[string]string {
+	t.Helper()
+	files, err := Render(opts)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	var deployment struct {
+		Spec struct {
+			Template struct {
+				Spec struct {
+					ImagePullSecrets []map[string]string `json:"imagePullSecrets"`
+				} `json:"spec"`
+			} `json:"template"`
+		} `json:"spec"`
+	}
+	if err := yaml.Unmarshal([]byte(files["deployment.yaml"]), &deployment); err != nil {
+		t.Fatalf("the rendered Deployment is not YAML: %v", err)
+	}
+	return deployment.Spec.Template.Spec.ImagePullSecrets
+}
+
+func TestRenderNamesNoPullSecretByDefault(t *testing.T) {
+	if got := podPullSecrets(t, testOptions()); len(got) != 0 {
+		t.Fatalf("expected no pull secret, got %v", got)
+	}
+}
+
+func TestRenderNamesTheConfiguredPullSecret(t *testing.T) {
+	opts := testOptions()
+	opts.ImagePullSecret = " mirror-pull.corp "
+	got := podPullSecrets(t, opts)
+	if len(got) != 1 || got[0]["name"] != "mirror-pull.corp" {
+		t.Fatalf("expected one pull secret named mirror-pull.corp, got %v", got)
+	}
+}
+
+func TestRenderRejectsAnInvalidPullSecret(t *testing.T) {
+	cases := map[string]string{
+		"embedded newline and a second key": "regcred\n      hostNetwork: true",
+		"flow terminator":                   "regcred}], hostNetwork: true, x: [{a",
+		"uppercase":                         "RegCred",
+		"underscore":                        "reg_cred",
+		"too long":                          strings.Repeat("a", 254),
+	}
+	for name, secret := range cases {
+		t.Run(name, func(t *testing.T) {
+			opts := testOptions()
+			opts.ImagePullSecret = secret
+			if _, err := Render(opts); err == nil {
+				t.Fatalf("expected %q to be rejected as a pull secret name", secret)
 			}
 		})
 	}

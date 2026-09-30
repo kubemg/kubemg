@@ -145,6 +145,12 @@ agent:
   # -- The agent image rendered into install packages. Empty is the agent
   # released with this server (or its mirror under `global.imageRegistry`).
   image: ""
+  # -- The name of a docker-registry Secret, in each target cluster's agent
+  # namespace, that the agent and browser-shell images are pulled with — for a
+  # mirror that requires authentication. Only the name: KubeMG never holds the
+  # registry credentials, and the install sheet shows the command that creates
+  # the Secret. Distinct from `imagePullSecrets`, which is this chart's own pod.
+  imagePullSecret: ""
 
 shell:
   # -- The browser shell: a kubectl pod per user per cluster, run by KubeMG.

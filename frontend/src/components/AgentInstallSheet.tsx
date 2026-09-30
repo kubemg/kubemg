@@ -33,6 +33,18 @@ export function AgentInstallBody({
 
   return (
     <>
+      {install.pull_secret_command ? (
+        <>
+          <CodeBlock label="First, the pull secret" value={install.pull_secret_command} />
+          <p className="text-[12px] leading-snug text-muted">
+            The agent image comes from a registry that needs credentials. The package names the
+            Secret <code>{install.image_pull_secret}</code> and KubeMG never holds what is in it:
+            create it once on this cluster, from <code>REGISTRY_USERNAME</code> and{' '}
+            <code>REGISTRY_PASSWORD</code> in your shell, before the install command. The browser
+            shell pulls with it too.
+          </p>
+        </>
+      ) : null}
       <CodeBlock label="Install command" value={install.apply_command} />
       <p
         className={`flex flex-wrap items-baseline gap-x-2 text-[12px] leading-snug ${link.expired ? 'text-warn' : 'text-muted'}`}

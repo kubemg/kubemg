@@ -237,6 +237,24 @@ tests:
             name: KUBEMG_AGENT_IMAGE
             value: other.lab/agent:1.0.0
 
+  - it: names the agent's pull secret only when one is given
+    set:
+      agent.imagePullSecret: mirror-pull
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_AGENT_IMAGE_PULL_SECRET
+            value: mirror-pull
+
+  - it: sets no agent pull secret by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: KUBEMG_AGENT_IMAGE_PULL_SECRET
+
   - it: pins the server by digest when one is given
     set:
       image.digest: sha256:abc

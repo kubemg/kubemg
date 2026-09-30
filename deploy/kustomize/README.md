@@ -33,7 +33,7 @@ kubectl apply -k kubemg-agent
 ## GitOps installation
 
 To manage the agent from your own repository, copy `base/` and substitute the
-four placeholders yourself, or point an overlay at it:
+placeholders yourself, or point an overlay at it:
 
 | Placeholder | Value |
 | --- | --- |
@@ -41,6 +41,9 @@ four placeholders yourself, or point an overlay at it:
 | `__BASTION_URL__` | your KubeMG server's public URL |
 | `__CLUSTER_TOKEN__` | the registration token from the wizard |
 | `__AGENT_IMAGE__` | agent image, normally `ghcr.io/kubemg/kubemg-agent:<version>` |
+| `__BASTION_CA__` | base64 of the PEM the agent pins for a self-signed bastion, or empty |
+| `__SECRET_CHECKSUM__` | any value you change whenever the Secret changes, so a re-apply restarts the agent |
+| `__IMAGE_PULL_SECRETS__` | `[]`, or `[{name: <secret>}]` for a mirror that requires authentication |
 
 Keep `__CLUSTER_TOKEN__` out of the repository — use your existing secret
 management for the `kubemg-agent` Secret and drop `secret.yaml` from

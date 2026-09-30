@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kubemg/kubemg/backend/pkg/agentpkg"
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
@@ -27,6 +28,9 @@ type runtimeSettings struct {
 	PublicURL      string `json:"public_url"`
 	AgentImage     string `json:"agent_image"`
 	AgentNamespace string `json:"agent_namespace"`
+	// AgentImagePullSecret names the Secret, in the agent namespace, the agent
+	// and browser shell images are pulled with. Empty names none.
+	AgentImagePullSecret string `json:"agent_image_pull_secret"`
 	// AuditRetentionDays is how long the pruner keeps a proxied call. Zero in
 	// the overrides means "unset", exactly as an empty string does for the
 	// others.
@@ -91,6 +95,9 @@ type updateSettingsRequest struct {
 	PublicURL      *string `json:"public_url"`
 	AgentImage     *string `json:"agent_image"`
 	AgentNamespace *string `json:"agent_namespace"`
+	// AgentImagePullSecret accepts "" to clear the override back to the
+	// environment's value.
+	AgentImagePullSecret *string `json:"agent_image_pull_secret"`
 	// AuditRetentionDays accepts 0 to clear the override back to the default.
 	AuditRetentionDays *int `json:"audit_retention_days"`
 	// SessionRecordingRetentionDays accepts 0 to fall back to the audit window.
@@ -152,10 +159,11 @@ var (
 // with the boot-time address is far better than not generating one at all.
 func (s *server) settings(ctx context.Context) runtimeSettings {
 	out := runtimeSettings{
-		PublicURL:          s.publicURL,
-		AgentImage:         s.agentImage,
-		AgentNamespace:     s.agentNamespace,
-		AuditRetentionDays: s.auditRetentionDays,
+		PublicURL:            s.publicURL,
+		AgentImage:           s.agentImage,
+		AgentNamespace:       s.agentNamespace,
+		AuditRetentionDays:   s.auditRetentionDays,
+		AgentImagePullSecret: s.agentImagePullSecret,
 		// Recording follows the process: a server started with no recording
 		// directory cannot record, and the switch below can only turn that off.
 		RecordExecSessions: s.recordings != "",
@@ -199,6 +207,9 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 	}
 	if v := strings.TrimSpace(stored[db.SettingAgentNamespace]); v != "" {
 		out.AgentNamespace = v
+	}
+	if v := strings.TrimSpace(stored[db.SettingAgentImagePullSecret]); v != "" {
+		out.AgentImagePullSecret = v
 	}
 	if v := storedRetentionDays(stored); v > 0 {
 		out.AuditRetentionDays = v
@@ -365,6 +376,7 @@ func (s *server) getSettings(c *gin.Context) {
 		PublicURL:                     strings.TrimSpace(stored[db.SettingPublicURL]),
 		AgentImage:                    strings.TrimSpace(stored[db.SettingAgentImage]),
 		AgentNamespace:                strings.TrimSpace(stored[db.SettingAgentNamespace]),
+		AgentImagePullSecret:          strings.TrimSpace(stored[db.SettingAgentImagePullSecret]),
 		AuditRetentionDays:            storedRetentionDays(stored),
 		SessionRecordingRetentionDays: storedDays(stored, db.SettingSessionRecordingRetentionDays),
 		AuditVerbs:                    overrideVerbs,
@@ -386,10 +398,11 @@ func (s *server) getSettings(c *gin.Context) {
 		Effective: effective,
 		Overrides: overrides,
 		Defaults: runtimeSettings{
-			PublicURL:          s.publicURL,
-			AgentImage:         s.agentImage,
-			AgentNamespace:     s.agentNamespace,
-			AuditRetentionDays: s.auditRetentionDays,
+			PublicURL:            s.publicURL,
+			AgentImage:           s.agentImage,
+			AgentNamespace:       s.agentNamespace,
+			AuditRetentionDays:   s.auditRetentionDays,
+			AgentImagePullSecret: s.agentImagePullSecret,
 			// The recording window's default is not an environment variable: it is
 			// whatever the audit window resolves to, because that is its ceiling.
 			SessionRecordingRetentionDays: effective.AuditRetentionDays,
@@ -446,6 +459,16 @@ func (s *server) updateSettings(c *gin.Context) {
 			return
 		}
 		values[db.SettingAgentNamespace] = namespace
+	}
+	if req.AgentImagePullSecret != nil {
+		name := strings.TrimSpace(*req.AgentImagePullSecret)
+		if name != "" && !agentpkg.ValidImagePullSecret(name) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "the image pull secret must be a Secret's name (lowercase letters, digits, dashes and dots) — the name, not its contents",
+			})
+			return
+		}
+		values[db.SettingAgentImagePullSecret] = name
 	}
 	if req.AuditRetentionDays != nil {
 		days := *req.AuditRetentionDays

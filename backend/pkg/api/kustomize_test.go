@@ -277,3 +277,22 @@ func TestApplyCommandFetchesInsecurelyWhenSelfSigned(t *testing.T) {
 		t.Fatalf("unexpected self-signed apply command: %q", got)
 	}
 }
+
+// The pull secret step has to name the registry the kubelet will actually ask,
+// which is the container runtime's reading of the reference, not a guess.
+func TestImageRegistryHostReadsTheReferenceAsTheRuntimeDoes(t *testing.T) {
+	cases := map[string]string{
+		"ghcr.io/kubemg/kubemg-agent:0.11.1":            "ghcr.io",
+		"registry.corp.example:5000/kubemg/agent:1.0":   "registry.corp.example:5000",
+		"mirror:5000/agent":                             "mirror:5000",
+		"localhost/kubemg-agent":                        "localhost",
+		"busybox:1.36":                                  "docker.io",
+		"kubemg/kubemg-agent":                           "docker.io",
+		"kubemg/kubemg-agent@sha256:0123456789abcdef01": "docker.io",
+	}
+	for image, want := range cases {
+		if got := imageRegistryHost(image); got != want {
+			t.Errorf("imageRegistryHost(%q) = %q, want %q", image, got, want)
+		}
+	}
+}

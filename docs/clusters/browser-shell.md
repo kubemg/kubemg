@@ -181,4 +181,6 @@ without a shell image cannot be talked into offering one from the database.
 
 For an air-gapped site, mirror the shell image alongside the agent's and point
 `KUBEMG_SHELL_IMAGE` at your copy; the image can also be rebuilt from
-`shell/Dockerfile` against mirrored artefacts.
+`shell/Dockerfile` against mirrored artefacts. A shell pod runs beside the agent
+and pulls with the agent's [image pull secret](../install/air-gapped.md#a-mirror-that-requires-authentication)
+when one is configured.
