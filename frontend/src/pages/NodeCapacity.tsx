@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { ChevronDown, Cpu } from 'lucide-react'
+import { AlertTriangle, Ban, ChevronDown, CircleX, Cpu, Server } from 'lucide-react'
 import { errorMessage, fetchClusterCapacity } from '../api/client'
 import type {
   CapacityDimension,
@@ -10,7 +10,7 @@ import type {
 } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { LiveRefresh } from '../components/LiveRefresh'
-import { Disclosure, EmptyState, Notice, Pill } from '../components/primitives'
+import { Disclosure, EmptyState, Notice, Pill, StatTile } from '../components/primitives'
 import { TableSkeleton } from '../components/SkeletonLoader'
 import { useDisclosureState } from '../lib/disclosures'
 import { queryKey, useCachedQuery } from '../lib/query'
@@ -95,12 +95,9 @@ function AllocationBar({
   return (
     <div className="min-w-0">
       <div className="flex items-baseline gap-2">
-        <span className="label">{label}</span>
-        <span className="ml-auto font-mono text-[12.5px] text-fg tabular-nums">
-          {format(dimension.requested)}
-        </span>
-        <span className="font-mono text-[12px] text-faint tabular-nums">
-          / {measured ? format(dimension.allocatable) : 'unknown'}
+        <span className="text-[12.5px] text-muted">{label}</span>
+        <span className="ml-auto font-mono text-[13px] font-semibold text-fg tabular-nums">
+          {measured ? PERCENT.format(dimension.requested_percent / 100) : '—'}
         </span>
       </div>
 
@@ -136,20 +133,43 @@ function AllocationBar({
         ) : null}
       </div>
 
-      <p className="mt-1 flex flex-wrap gap-x-3 font-mono text-[11px] text-faint tabular-nums">
-        <span>{dimension.requested_percent.toFixed(0)}% reserved</span>
+      <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] text-faint">
         <span>
-          {dimension.used > 0 ? `${format(dimension.used)} used` : 'no live usage'}
+          <span className="font-mono text-fg tabular-nums">{format(dimension.requested)}</span>
+          <span className="font-mono tabular-nums">
+            {' '}
+            / {measured ? format(dimension.allocatable) : 'unknown'}
+          </span>{' '}
+          reserved
         </span>
         <span>
-          {dimension.limited > 0
-            ? `limits ${dimension.limited_percent.toFixed(0)}% of the node`
-            : 'no limits declared'}
+          {dimension.used > 0 ? (
+            <>
+              <span className="font-mono tabular-nums">{format(dimension.used)}</span> in use
+            </>
+          ) : (
+            'no live usage'
+          )}
+        </span>
+        <span>
+          {dimension.limited > 0 ? (
+            <>
+              limits{' '}
+              <span className="font-mono tabular-nums">
+                {PERCENT.format(dimension.limited_percent / 100)}
+              </span>{' '}
+              of the node
+            </>
+          ) : (
+            'no limits declared'
+          )}
         </span>
       </p>
     </div>
   )
 }
+
+const PERCENT = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 0 })
 
 /** PodSlotBar is the third ceiling, and the one that binds before the others do. */
 function PodSlotBar({ slots }: { slots: PodSlots }) {
@@ -157,12 +177,9 @@ function PodSlotBar({ slots }: { slots: PodSlots }) {
   return (
     <div className="min-w-0">
       <div className="flex items-baseline gap-2">
-        <span className="label">Pod slots</span>
-        <span className="ml-auto font-mono text-[12.5px] text-fg tabular-nums">
-          {slots.scheduled}
-        </span>
-        <span className="font-mono text-[12px] text-faint tabular-nums">
-          / {slots.allocatable > 0 ? slots.allocatable : 'unknown'}
+        <span className="text-[12.5px] text-muted">Pod slots</span>
+        <span className="ml-auto font-mono text-[13px] font-semibold text-fg tabular-nums">
+          {PERCENT.format(slots.percent / 100)}
         </span>
       </div>
       <div
@@ -180,8 +197,13 @@ function PodSlotBar({ slots }: { slots: PodSlots }) {
           style={{ width: `${Math.min(100, Math.max(0, slots.percent))}%` }}
         />
       </div>
-      <p className="mt-1 font-mono text-[11px] text-faint tabular-nums">
-        {slots.percent.toFixed(0)}% taken
+      <p className="mt-1.5 text-[12px] text-faint">
+        <span className="font-mono text-fg tabular-nums">{slots.scheduled}</span>
+        <span className="font-mono tabular-nums">
+          {' '}
+          / {slots.allocatable > 0 ? slots.allocatable : 'unknown'}
+        </span>{' '}
+        taken
         {slots.without_requests > 0 ? ` · ${slots.without_requests} reserving nothing` : ''}
       </p>
     </div>
@@ -194,7 +216,7 @@ function NodeRow({ node }: { node: NodeCapacityRow }) {
   const worst = node.concerns[0]
 
   return (
-    <li className="min-w-0 px-4 py-4">
+    <li className="defer-row min-w-0 px-5 py-4 [contain-intrinsic-size:auto_160px]">
       <div className="flex flex-wrap items-center gap-2.5">
         <span className="min-w-0 truncate font-mono text-[13px] text-fg">{node.name}</span>
         {node.roles.map((role) => (
@@ -382,24 +404,34 @@ export function NodeCapacity() {
         ) : null}
 
         {summary && summary.nodes > 0 ? (
-          <div className="card min-w-0 p-4">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <h2 className="text-[14px] font-semibold text-fg">
-                {summary.nodes} {summary.nodes === 1 ? 'node' : 'nodes'}
-              </h2>
-              {attention > 0 ? (
-                <Pill tone="warn">{attention} needing attention</Pill>
-              ) : (
-                <Pill tone="ok">nothing pressing</Pill>
-              )}
-              {summary.schedulable < summary.nodes ? (
-                <Pill tone="idle">{summary.nodes - summary.schedulable} cordoned</Pill>
-              ) : null}
-              {summary.ready < summary.nodes ? (
-                <Pill tone="bad">{summary.nodes - summary.ready} not ready</Pill>
-              ) : null}
-            </div>
-            <div className="mt-3 grid gap-4 sm:grid-cols-3">
+          <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatTile icon={Server} label="Nodes" value={summary.nodes} />
+            <StatTile
+              icon={AlertTriangle}
+              label="Needing attention"
+              value={attention}
+              tone={attention > 0 ? 'warn' : 'neutral'}
+              sub={attention > 0 ? undefined : 'nothing pressing'}
+            />
+            <StatTile
+              icon={Ban}
+              label="Cordoned"
+              value={summary.nodes - summary.schedulable}
+            />
+            <StatTile
+              icon={CircleX}
+              label="Not ready"
+              value={summary.nodes - summary.ready}
+              tone={summary.ready < summary.nodes ? 'danger' : 'neutral'}
+            />
+          </div>
+          <div className="card min-w-0 px-5 pt-4 pb-5">
+            <h2 className="text-[16px] font-bold text-fg">Reserved across the cluster</h2>
+            <p className="mt-0.5 text-[13px] text-muted">
+              What pods have asked for against what the nodes can give, with live use as a tick
+            </p>
+            <div className="mt-4 grid gap-5 sm:grid-cols-3">
               <AllocationBar label="CPU reserved" dimension={summary.cpu} format={formatCPU} />
               <AllocationBar
                 label="Memory reserved"
@@ -409,12 +441,17 @@ export function NodeCapacity() {
               <PodSlotBar slots={summary.pods} />
             </div>
           </div>
+          </>
         ) : null}
 
         <div className="card min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
-            <h2 className="text-[14px] font-semibold text-fg">Nodes</h2>
-            {loading ? <span className="text-[12px] text-muted">Reading the cluster…</span> : null}
+          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
+            <h2 className="text-[16px] font-bold text-fg">Nodes</h2>
+            {loading ? (
+              <span role="status" className="text-[12.5px] text-muted">
+                Reading the cluster…
+              </span>
+            ) : null}
           </div>
 
           {loading && !loaded ? (

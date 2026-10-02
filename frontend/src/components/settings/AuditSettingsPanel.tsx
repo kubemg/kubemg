@@ -96,7 +96,6 @@ export function AuditSettingsPanel({
   return (
     <>
       <Panel
-        eyebrow="Audit"
         title="What reaches the trail"
         description="Every proxied call is recorded. On a busy fleet most of those rows are reads nobody queries, so the table can be narrowed to the actions worth keeping — the structured log a SIEM tails stays complete either way."
         bodyClassName="flex flex-col gap-4 p-4"

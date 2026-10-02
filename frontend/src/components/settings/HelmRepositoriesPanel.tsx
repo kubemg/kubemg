@@ -90,7 +90,6 @@ export function HelmRepositoriesPanel() {
   return (
     <>
       <Panel
-        eyebrow="Helm"
         title="Chart repositories"
         description="Where an install or a chart upgrade may pull a chart from. Reading the catalogue is open to anyone signed in; adding a repository is an outbound-egress decision, so only an admin may."
         bodyClassName="flex flex-col"

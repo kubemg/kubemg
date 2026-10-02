@@ -23,9 +23,17 @@
  *
  * The palette is the kubemg brand kit: ink #14161A, lime #BFF23C, moss #3A4033,
  * bone #F2F3EF, amber #E8A33D, rust #D1553C, sage #7FB069. Lime is an accent and
- * not a surface — it must not cover more than about 5% of a screen — and text on
- * lime is always ink, never white. Type is Archivo for the interface and
- * Commit Mono for the data.
+ * not a surface — beyond the current navigation row and the primary action it
+ * stays off large areas — and text on lime is always ink, never white. Type is
+ * Inter for the interface, Archivo only for the `kubemg` wordmark, and Commit
+ * Mono for the data.
+ *
+ * The chrome follows a floating two-column sidebar: the rail and the tree sit
+ * together in one card inset from the window edge, the row you are on (and the
+ * row under the pointer) fills with a lime pill, and the rail marks its current
+ * cluster with a corner arc. Those few state changes ease over 300ms; every
+ * transition honours `prefers-reduced-motion`, and nothing loops except a link
+ * that is genuinely open (see `link-live`/`breathe`).
  *
  * Dark is the default deck; light is a full peer, not an afterthought. Every
  * colour below is a token pair — never hard-code a hex in a component.
@@ -45,6 +53,27 @@
  * exception and stay hairlines: 1.4.11 is about the boundary that identifies a
  * control and its state, and it exempts decoration.
  */
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/inter-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
 
 @font-face {
   font-family: 'Archivo';
@@ -122,7 +151,7 @@
    * tree's collapsed state; the value here is what a first paint uses, and it is
    * only consulted at `lg` and above, where the rail and tree exist at all.
    */
-  --deck-main-inset: 18.75rem;
+  --deck-main-inset: 20.75rem;
 
   /*
    * How tall the page header is, and where a sticky table heading therefore
@@ -157,7 +186,7 @@
    * and saves `Th` from having to switch between two `position` utilities that
    * would then race each other in the stylesheet.
    */
-  --deck-header-h: calc(3.5rem + 1px);
+  --deck-header-h: calc(4rem + 1px);
   --table-heading-position: relative;
   --table-sticky-top: 0px;
 
@@ -182,8 +211,10 @@
   --deck-muted: #444d5b;
   --deck-faint: #5f697a;
 
-  /* The rail and the section panel: chrome, one step *deeper* than the work
-     surface — which on this deck means a cool grey below the page, not a
+  /* The rail and the section panel: chrome. Since the sidebar became a
+     floating card it is the page's own white, set off by the grey ground around
+     it rather than by being darker; before that it was one step *deeper* than
+     the work surface — a cool grey below the page, not a
      graphite slab borrowed from the dark deck. It used to be the dark deck's
      rail on both decks, and that was wrong twice over: a near-black column
      beside a white page is the loudest thing on screen when the chrome should
@@ -192,9 +223,9 @@
      dark-on-dark there. Its tokens stay separate rather than reusing
      `bg`/`raised` because the rail's own hover and selected states have to be
      legible against the rail, not against the page. */
-  --deck-rail: #e7ebf1;
-  --deck-rail-raised: #d9e0e9;
-  --deck-rail-border: #c9d1de;
+  --deck-rail: #ffffff;
+  --deck-rail-raised: #eef1f6;
+  --deck-rail-border: #dfe3eb;
   --deck-rail-text: #0f131a;
   --deck-rail-muted: #414a58;
   --deck-rail-faint: #525c6b;
@@ -225,10 +256,29 @@
      do, so there it is nothing at all. */
   --deck-mark-chip: #14161a;
 
+  /*
+   * The slab: the one dark plate on the page — the fleet's "needs you" banner.
+   * It is ink running into moss on both decks (so it reads the same whichever
+   * deck is on), with bone text on it and a lime glow in one corner; lime
+   * itself appears on it only as a word, never as the plate.
+   */
+  --deck-slab: #14161a;
+  --deck-slab-end: #3a4033;
+  --deck-slab-text: #f2f3ef;
+  --deck-slab-muted: #c4c9bb;
+  /* State on the slab: the dark deck's amber and rust, on both decks, because
+     the plate is dark on both. */
+  --deck-slab-warn: #e8a33d;
+  --deck-slab-danger: #e4735c;
+
   --deck-accent: #4c650c;
   --deck-accent-hover: #3d5209;
   --deck-accent-fill: #bff23c;
   --deck-accent-fill-hover: #cef95e;
+  /* Where the navigation pill's gradient lands: lime let down into the panel
+     it sits on. Ink is still measured against it, though the label only ever
+     sits on the solid half. */
+  --deck-accent-fill-end: #dcf894;
   --deck-accent-soft: #edf4d6;
   --deck-accent-line: #cfe293;
   --deck-on-accent: #14161a;
@@ -241,8 +291,13 @@
   --deck-warn-soft: #f8efdc;
   --deck-danger: #a8341f;
   --deck-danger-soft: #fae8e4;
+  /* Text on a solid state fill — a count badge. White here, where the tones
+     are taken dark; ink on the dark deck, where they are the brand's own. */
+  --deck-on-state: #ffffff;
 
   --deck-shadow: 0 1px 2px rgb(15 19 26 / 0.05), 0 8px 24px -16px rgb(15 19 26 / 0.28);
+  /* What sits between the page and an overlay over it. */
+  --deck-scrim: rgb(15 19 26 / 0.45);
   --deck-shadow-lift: 0 2px 4px rgb(15 19 26 / 0.06), 0 18px 40px -20px rgb(15 19 26 / 0.35);
 
   /*
@@ -313,10 +368,20 @@
   --deck-ink: #14161a;
   --deck-mark-chip: transparent;
 
+  /* The page is already ink here, so the plate starts one step up from it —
+     an ink slab on an ink page has no left edge. */
+  --deck-slab: #23272b;
+  --deck-slab-end: #3a4033;
+  --deck-slab-text: #f2f3ef;
+  --deck-slab-muted: #c4c9bb;
+  --deck-slab-warn: #e8a33d;
+  --deck-slab-danger: #e4735c;
+
   --deck-accent: #bff23c;
   --deck-accent-hover: #d0f95e;
   --deck-accent-fill: #bff23c;
   --deck-accent-fill-hover: #cef95e;
+  --deck-accent-fill-end: #759330;
   --deck-accent-soft: #242b14;
   --deck-accent-line: #4b5a22;
   --deck-on-accent: #14161a;
@@ -329,8 +394,10 @@
   --deck-warn-soft: #2a2011;
   --deck-danger: #e4735c;
   --deck-danger-soft: #2b1714;
+  --deck-on-state: #14161a;
 
   --deck-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  --deck-scrim: rgb(0 0 0 / 0.6);
   --deck-shadow-lift: 0 2px 6px rgb(0 0 0 / 0.45), 0 20px 44px -24px rgb(0 0 0 / 0.7);
 
   /* The same eight hues, stepped for the dark surface — a selected dark palette,
@@ -370,8 +437,13 @@
   --color-accent-hover: var(--deck-accent-hover);
   --color-ink: var(--deck-ink);
   --color-mark-chip: var(--deck-mark-chip);
+  --color-slab-text: var(--deck-slab-text);
+  --color-slab-muted: var(--deck-slab-muted);
+  --color-slab-warn: var(--deck-slab-warn);
+  --color-slab-danger: var(--deck-slab-danger);
   --color-accent-fill: var(--deck-accent-fill);
   --color-accent-fill-hover: var(--deck-accent-fill-hover);
+  --color-accent-fill-end: var(--deck-accent-fill-end);
   --color-accent-soft: var(--deck-accent-soft);
   --color-accent-line: var(--deck-accent-line);
   --color-on-accent: var(--deck-on-accent);
@@ -382,6 +454,7 @@
   --color-warn-soft: var(--deck-warn-soft);
   --color-danger: var(--deck-danger);
   --color-danger-soft: var(--deck-danger-soft);
+  --color-on-state: var(--deck-on-state);
 
   --color-chart-1: var(--deck-chart-1);
   --color-chart-2: var(--deck-chart-2);
@@ -398,10 +471,13 @@
   --radius-control: 8px;
   --radius-chip: 6px;
 
+  --color-scrim: var(--deck-scrim);
+
   --shadow-deck: var(--deck-shadow);
   --shadow-lift: var(--deck-shadow-lift);
 
-  --font-sans: 'Archivo', ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-brand: 'Archivo', ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'Commit Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -420,15 +496,16 @@
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    touch-action: manipulation;
   }
 
-  /* Archivo is a grotesque with a tall x-height, so headings are set tight —
-     -0.03em is the brand's own figure and it is what stops a large heading from
-     reading as spaced-out. */
+  /* Inter is already set fairly tight; a heading takes a little more so a
+     large one does not read as spaced-out. */
   h1,
   h2,
   h3 {
-    letter-spacing: -0.03em;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
   }
 
   /* Every figure that gets compared down a column lines up. */
@@ -476,26 +553,120 @@
 }
 
 /*
- * Micro-caps used for field labels, column heads, and panel eyebrows.
+ * Field labels, column heads, and panel eyebrows.
  *
- * These are set in mono rather than in Archivo, and tracked wide. A label is
- * not prose — it is the name of a slot, sitting above the data that fills it —
- * and mono is what the data is already in, so the label and its value read as
- * one column instead of two typefaces stacked.
+ * Sentence case in the interface face at semibold, the way the template the
+ * chrome follows sets its own. They used to be mono micro-caps tracked wide;
+ * the slot still reads as a name above its value because the weight and the
+ * quiet tone do that work, and the value itself stays in mono where it is an
+ * identifier.
  */
 @utility label {
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-family: var(--font-sans);
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  letter-spacing: 0;
   color: var(--deck-faint);
+}
+
+/*
+ * A navigation row: the row you are on, and the row under the pointer, fill
+ * with a lime pill running out into the panel. The fill is a pseudo-element
+ * so it can fade (a gradient cannot transition), and the label turns ink on
+ * it — never white on lime.
+ */
+@utility nav-pill {
+  position: relative;
+  isolation: isolate;
+  transition: color 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--deck-accent-fill) 50%, var(--deck-accent-fill-end) 100%);
+    opacity: 0;
+    transition: opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  &:hover,
+  &:focus-visible,
+  &[aria-current='page'] {
+    color: var(--deck-on-accent);
+  }
+
+  &:hover::before,
+  &:focus-visible::before,
+  &[aria-current='page']::before {
+    opacity: 1;
+  }
+
+  /* Whatever the row carries — a count, a scope word, a link glyph — goes ink
+     with it on the pill; a quiet tone on lime is unreadable. */
+  &:hover :is(span, svg),
+  &:focus-visible :is(span, svg),
+  &[aria-current='page'] :is(span, svg) {
+    color: var(--deck-on-accent);
+  }
+}
+
+/*
+ * A row in a list that can run to hundreds or thousands — log lines, event
+ * groups, findings, nodes. The browser skips laying out and painting the ones
+ * off screen, which is what virtualising buys, without a library and without
+ * taking them out of the DOM (find-in-page still reaches them). The intrinsic
+ * size keeps the scrollbar honest before a row has been drawn.
+ */
+@utility defer-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
+}
+
+/* A group heading in the navigation: the name of the rows under it. */
+@utility nav-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--deck-rail-text);
+}
+
+/*
+ * The rail's current cluster: a lime arc around its lower-left corner, set a
+ * few pixels outside the chip so it reads as a bracket rather than a border.
+ */
+@utility rail-arc {
+  &::after {
+    content: '';
+    position: absolute;
+    left: -5px;
+    bottom: -5px;
+    width: 16px;
+    height: 16px;
+    border-left: 2px solid var(--deck-accent);
+    border-bottom: 2px solid var(--deck-accent);
+    border-bottom-left-radius: 12px;
+    pointer-events: none;
+  }
 }
 
 @utility card {
   background: var(--deck-surface);
   border: 1px solid var(--deck-border);
   border-radius: var(--radius-card);
+  box-shadow: var(--deck-shadow);
+}
+
+/* The slab's plate: ink into moss, a lime glow in the top-right corner. */
+@utility slab {
+  background:
+    radial-gradient(
+      120% 140% at 100% 0%,
+      color-mix(in srgb, var(--deck-accent-fill) 20%, transparent) 0%,
+      transparent 48%
+    ),
+    linear-gradient(105deg, var(--deck-slab) 0%, var(--deck-slab-end) 100%);
+  color: var(--deck-slab-text);
 }
 
 @utility lift {

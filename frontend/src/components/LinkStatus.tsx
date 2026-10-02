@@ -5,6 +5,7 @@ import type { LucideIcon } from 'lucide-react'
 // the four states could drift from the function that decides between them.
 export type { LinkState } from '../lib/status'
 import type { LinkState } from '../lib/status'
+import { LINK_LABEL } from '../lib/status'
 
 /*
  * The link, said rather than drawn. This used to be a strand — a coloured
@@ -42,13 +43,6 @@ const RAIL_TONE: Record<LinkState, string> = {
   direct: 'text-rail-muted',
   down: 'text-danger',
   idle: 'text-rail-faint',
-}
-
-const LABEL: Record<LinkState, string> = {
-  live: 'Tunnel open',
-  direct: 'Direct',
-  down: 'No link',
-  idle: 'Waiting',
 }
 
 const READING: Record<LinkState, string> = {
@@ -106,7 +100,7 @@ export function LinkStatus({
         className={`size-3.5 shrink-0 ${tone} ${state === 'live' ? 'link-live' : ''}`}
       />
       <span className={`font-mono text-[11.5px] ${state === 'down' ? 'text-danger' : 'text-muted'}`}>
-        {label ?? LABEL[state]}
+        {label ?? LINK_LABEL[state]}
       </span>
     </span>
   )

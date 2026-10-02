@@ -377,7 +377,7 @@ export function WorkloadLogView({
           className="min-w-40 flex-1"
           value={filter}
           onChange={setFilter}
-          placeholder="Filter lines or pods"
+          placeholder="Filter lines or pods…"
           label="Filter log lines"
         />
 

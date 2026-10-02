@@ -74,6 +74,14 @@ export function clusterStateLabel(cluster: Cluster): string {
 /** The four ways a link reads, wherever it is drawn. */
 export type LinkState = 'live' | 'direct' | 'down' | 'idle'
 
+/** The word for each state, for a surface that draws its own glyph. */
+export const LINK_LABEL: Record<LinkState, string> = {
+  live: 'Tunnel open',
+  direct: 'Direct',
+  down: 'No link',
+  idle: 'Waiting',
+}
+
 /** How a cluster's link should read: is a tunnel carrying traffic right now. */
 export function linkState(cluster: Cluster): LinkState {
   if (cluster.connection_mode === 'agent') {

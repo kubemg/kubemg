@@ -240,23 +240,23 @@ export function FleetDeveloperBody({
 
   return (
     <>
-      <div className="flex flex-wrap items-end gap-4">
+      <section className="slab flex flex-wrap items-end gap-4 rounded-card px-5 py-6 sm:px-7">
         <div>
-          <h2 className="text-[22px] leading-tight font-semibold tracking-[-0.03em] text-fg">
-            {clusters.length} {clusters.length === 1 ? 'cluster' : 'clusters'} you can open.
+          <h2 className="text-[24px] leading-tight font-bold text-slab-text sm:text-[28px]">
+            {clusters.length} {clusters.length === 1 ? 'cluster' : 'clusters'} you can open
           </h2>
-          <p className="mt-1 text-[13px] text-muted">
+          <p className="mt-1.5 text-[14px] text-slab-muted">
             Across {environments} {environments === 1 ? 'environment' : 'environments'} ·{' '}
             {reachable} reachable right now
           </p>
         </div>
         <div className="ml-auto">
-          <Button variant="primary" onClick={onRequestAccess}>
+          <Button variant="primary" onClick={onRequestAccess} className="h-10 rounded-full px-4">
             <KeyRound aria-hidden="true" className="size-4" />
             Request access
           </Button>
         </div>
-      </div>
+      </section>
 
       <FleetStrip figures={figures} />
 

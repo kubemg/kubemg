@@ -40,6 +40,7 @@ import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
 import { useConfirm } from '../state/confirm-context'
 import { useResult } from '../state/result-context'
+import { useUrlFlag, useUrlText } from '../lib/urlState'
 
 // The player carries the terminal emulator, which is the heaviest thing in the
 // app. Even on the page that exists to replay sessions it is loaded on the first
@@ -116,10 +117,11 @@ export function SessionRecordings() {
   const [error, setError] = useState<string | null>(null)
   const [users, setUsers] = useState<User[]>([])
 
-  const [clusterId, setClusterId] = useState('')
-  const [userId, setUserId] = useState('')
-  const [search, setSearch] = useState('')
-  const [openOnly, setOpenOnly] = useState(false)
+  // Kept in the address, so a narrowed list is a link (see lib/urlState).
+  const [clusterId, setClusterId] = useUrlText('cluster')
+  const [userId, setUserId] = useUrlText('user')
+  const [search, setSearch] = useUrlText('q')
+  const [openOnly, setOpenOnly] = useUrlFlag('open')
   const [offset, setOffset] = useState(0)
 
   // The recording being watched. The row is handed to the player, so opening one
@@ -235,12 +237,12 @@ export function SessionRecordings() {
         ) : null}
 
         <div className="card min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-2.5 border-b border-line-soft px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2.5 border-b border-line-soft px-5 pt-4 pb-3.5">
             <SearchInput
               value={search}
               onChange={(next) => narrow(() => setSearch(next))}
               label="Search recorded sessions"
-              placeholder="Pod, namespace, user"
+              placeholder="Pod, namespace, user…"
               className="w-full sm:w-56"
             />
 

@@ -1119,8 +1119,8 @@ export function Explore() {
         ) : null}
 
         <div className="card min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
-            <h2 className="text-[14px] font-semibold text-fg">{item.label}</h2>
+          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
+            <h2 className="text-[16px] font-bold text-fg">{item.label}</h2>
             <span className="font-mono text-[12.5px] text-faint">
               {count !== totalCount ? `${count} of ${totalCount}` : count}
             </span>

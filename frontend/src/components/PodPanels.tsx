@@ -368,7 +368,7 @@ export function PodLogView({
           className="min-w-40 flex-1"
           value={filter}
           onChange={setFilter}
-          placeholder="Filter lines"
+          placeholder="Filter lines…"
           label="Filter log lines"
         />
 

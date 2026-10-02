@@ -199,12 +199,12 @@ export function UserManagement() {
         {rowError ? <Notice tone="error">{rowError}</Notice> : null}
 
         <div className="card min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
             <SearchInput
               value={filter}
               onChange={setFilter}
               label="Filter users"
-              placeholder="Filter by name or email"
+              placeholder="Filter by name or email…"
             />
             <span className="ml-auto text-[13px] text-muted">
               {visible.length === users.length
@@ -299,7 +299,18 @@ export function UserManagement() {
                       <button
                         type="button"
                         disabled={isSelf || busy}
-                        onClick={() =>
+                        onClick={async () => {
+                          if (
+                            row.is_active &&
+                            !(await confirm({
+                              eyebrow: row.username,
+                              title: `Disable ${row.username}`,
+                              body: 'They cannot sign in from now, and kubeconfigs they hold stop being accepted. Their grants and group memberships are kept for when the account is activated again.',
+                              confirmLabel: 'Disable',
+                              tone: 'danger',
+                            }))
+                          )
+                            return
                           run(
                             row.id,
                             `Could not update ${row.username}.`,
@@ -313,7 +324,7 @@ export function UserManagement() {
                                 : undefined,
                             },
                           )
-                        }
+                        }}
                         title={
                           isSelf
                             ? 'You cannot disable your own account'

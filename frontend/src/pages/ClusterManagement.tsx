@@ -8,12 +8,12 @@ import { ClusterLabelsSheet } from '../components/ClusterLabelsSheet'
 import { LinkStatus } from '../components/LinkStatus'
 import {
   Age,
-  Button,
   Chip,
   ClusterState,
   EmptyState,
   EnvironmentTag,
   IconButton,
+  LinkButton,
   Notice,
   OBJECT_MARK,
   OBJECT_NAME,
@@ -113,12 +113,10 @@ export function ClusterManagement() {
     <AppShell
       title="Clusters"
       actions={
-        <Link to="/admin/clusters/new">
-          <Button variant="primary">
+        <LinkButton to="/admin/clusters/new" variant="primary">
             <Plus aria-hidden="true" className="size-4" />
             Register cluster
-          </Button>
-        </Link>
+        </LinkButton>
       }
     >
       <div className="flex min-w-0 flex-col gap-4">
@@ -126,12 +124,12 @@ export function ClusterManagement() {
         {rowError ? <Notice tone="error">{rowError}</Notice> : null}
 
         <div className="card min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
             <SearchInput
               value={filter}
               onChange={setFilter}
               label="Filter clusters by name"
-              placeholder="Filter by name"
+              placeholder="Filter by name…"
             />
             {behindOnly ? (
               <Chip active title="Show every cluster again" onClick={showEveryAgent}>
@@ -255,12 +253,10 @@ export function ClusterManagement() {
               icon={<Server aria-hidden="true" className="size-5" />}
               title="No clusters registered"
               action={
-                <Link to="/admin/clusters/new">
-                  <Button variant="primary">
+                <LinkButton to="/admin/clusters/new" variant="primary">
                     <Plus aria-hidden="true" className="size-4" />
                     Register cluster
-                  </Button>
-                </Link>
+                </LinkButton>
               }
             >
               Registration walks through identity, how kubemg reaches the cluster, the handshake,

@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
-import { Siren, X } from 'lucide-react'
+import { AlertTriangle, Boxes, Siren, X } from 'lucide-react'
 import { errorMessage, fetchClusterEvents, fetchNamespaces } from '../api/client'
 import type { Namespace } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { LiveRefresh } from '../components/LiveRefresh'
 import { EventGroupRow } from '../components/EventGroupRow'
-import { Chip, EmptyState, Notice, Pill, SearchInput, Select } from '../components/primitives'
+import { Chip, EmptyState, Notice, SearchInput, Select, StatTile } from '../components/primitives'
 import { TableSkeleton } from '../components/SkeletonLoader'
 import { ALL_NAMESPACES } from '../lib/resources'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { useTimeRange } from '../state/timerange-context'
 import { useClusters } from '../state/clusters-context'
+import { useUrlText, useWriteParam } from '../lib/urlState'
 
 /**
  * What just broke, across a whole cluster.
@@ -66,7 +67,7 @@ export function EventsTimeline() {
   // Narrows the loaded timeline to matching object names. It is the same gap the
   // Explore object filter closes: nothing in the header can find one pod among
   // two hundred rows.
-  const [filter, setFilter] = useState('')
+  const [filter, setFilter] = useUrlText('q')
   // Which groups are open. Keyed by the server's stable group key, so an
   // expanded row survives the re-read a refresh causes.
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -80,17 +81,9 @@ export function EventsTimeline() {
   const cluster = reachable.find((entry) => entry.id === clusterId) ?? null
   const unreadable = cluster ? null : (clusters.find((entry) => entry.id === clusterId) ?? null)
 
-  function setParam(key: string, value: string | null) {
-    setSearchParams(
-      (previous) => {
-        const next = new URLSearchParams(previous)
-        if (value === null || value === '') next.delete(key)
-        else next.set(key, value)
-        return next
-      },
-      { replace: true },
-    )
-  }
+  // Against the address as it is now, so clearing the kind and the name in
+  // one click clears both rather than the second write undoing the first.
+  const setParam = useWriteParam()
 
   // The namespace list is what the scope picker is built from. A grant that can
   // browse a cluster it cannot enumerate keeps its own error rather than sharing
@@ -296,17 +289,20 @@ export function EventsTimeline() {
           </Notice>
         ) : null}
 
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatTile icon={Boxes} label="Objects" value={COUNT.format(totals.objects)} />
+          <StatTile icon={Siren} label="Events" value={COUNT.format(totals.firings)} />
+          <StatTile
+            icon={AlertTriangle}
+            label="Warnings"
+            value={COUNT.format(totals.warnings)}
+            tone={totals.warnings > 0 ? 'warn' : 'neutral'}
+          />
+        </div>
+
         <div className="card min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
-            <h2 className="text-[14px] font-semibold text-fg">
-              {totals.objects} {totals.objects === 1 ? 'object' : 'objects'}
-            </h2>
-            <span className="font-mono text-[12.5px] text-faint">
-              {totals.firings} {totals.firings === 1 ? 'event' : 'events'}
-            </span>
-            {totals.warnings > 0 ? (
-              <Pill tone="warn">{totals.warnings} warning{totals.warnings === 1 ? '' : 's'}</Pill>
-            ) : null}
+          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
+            <h2 className="text-[16px] font-bold text-fg">By object, newest first</h2>
 
             {/* The filter, not the ordering. Newest first stays underneath it. */}
             <Chip
@@ -331,7 +327,7 @@ export function EventsTimeline() {
               <SearchInput
                 value={filter}
                 onChange={setFilter}
-                placeholder="Filter by object or reason"
+                placeholder="Filter by object or reason…"
                 label="Filter events"
                 className="ml-auto w-full sm:w-64"
               />
@@ -405,3 +401,5 @@ export function EventsTimeline() {
     </AppShell>
   )
 }
+
+const COUNT = new Intl.NumberFormat()

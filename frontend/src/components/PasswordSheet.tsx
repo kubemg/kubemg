@@ -32,10 +32,24 @@ export function PasswordSheet({ onClose, onRevoked }: {
   const [done, setDone] = useState<PasswordChangeResult | null>(null)
 
   const mismatch = confirm !== '' && confirm !== next
+  // Set by the first submit: from then an empty field says so under itself.
+  const [tried, setTried] = useState(false)
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (mismatch || busy) return
+    if (busy) return
+    setTried(true)
+    const missing = !current
+      ? 'password-current'
+      : !next
+        ? 'password-new'
+        : !confirm || mismatch
+          ? 'password-confirm'
+          : null
+    if (missing) {
+      document.getElementById(missing)?.focus()
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -75,7 +89,7 @@ export function PasswordSheet({ onClose, onRevoked }: {
             <Button
               type="submit"
               variant="primary"
-              disabled={busy || mismatch || !current || !next || !confirm}
+              disabled={busy}
             >
               {busy ? 'Changing…' : 'Change password'}
             </Button>
@@ -109,7 +123,11 @@ export function PasswordSheet({ onClose, onRevoked }: {
         </Notice>
       ) : (
         <>
-          <Field label="Current password" htmlFor="password-current">
+          <Field
+            label="Current password"
+            htmlFor="password-current"
+            error={tried && !current ? 'Enter the password you signed in with.' : undefined}
+          >
             <TextInput
               id="password-current"
               type="password"
@@ -122,6 +140,7 @@ export function PasswordSheet({ onClose, onRevoked }: {
             label="New password"
             htmlFor="password-new"
             hint="At least 8 characters — the rule your account was created under."
+            error={tried && !next ? 'Choose the new password.' : undefined}
           >
             <TextInput
               id="password-new"
@@ -134,7 +153,13 @@ export function PasswordSheet({ onClose, onRevoked }: {
           <Field
             label="Confirm the new password"
             htmlFor="password-confirm"
-            error={mismatch ? 'The two do not match.' : undefined}
+            error={
+              mismatch
+                ? 'The two do not match.'
+                : tried && !confirm
+                  ? 'Type the new password again.'
+                  : undefined
+            }
           >
             <TextInput
               id="password-confirm"

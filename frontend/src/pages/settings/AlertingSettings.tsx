@@ -9,7 +9,7 @@ export function AlertingSettings() {
 
   return (
     <SettingsLayout title="Alerting">
-      <div className="flex min-w-0 max-w-3xl flex-col gap-4">
+      <div className="flex min-w-0 max-w-5xl flex-col gap-4">
         <AlarmSettingsPanel clusters={clusters} />
       </div>
     </SettingsLayout>

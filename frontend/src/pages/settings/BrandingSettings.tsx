@@ -8,6 +8,7 @@ import { Button, Field, Notice, Panel, Select, TextInput } from '../../component
 import { Lockup } from '../../components/Mark'
 import { SettingsAside, SettingsLayout } from '../../components/settings/SettingsLayout'
 import { useBranding } from '../../state/branding-context'
+import { useUnsavedGuard } from '../../lib/unsavedGuard'
 
 /**
  * Where a customer puts their own name on their console.
@@ -106,6 +107,7 @@ export function BrandingSettings() {
 
   const stored = branding ? normalize(branding) : null
   const dirty = stored !== null && !same(stored, normalize(draft))
+  useUnsavedGuard(dirty, 'the branding')
 
   return (
     <SettingsLayout

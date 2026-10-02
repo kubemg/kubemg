@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
-import { CheckCircle2, Download, RefreshCw, ShieldAlert, ShieldCheck, Undo2 } from 'lucide-react'
+import { CheckCircle2, Download, RefreshCw, ShieldAlert, Undo2 } from 'lucide-react'
 import {
   acknowledgePostureFinding,
   errorMessage,
@@ -15,6 +15,7 @@ import { SEVERITY_STYLE, SeverityStrip, SeverityTag } from '../components/Severi
 import {
   Age,
   Button,
+  Dialog,
   Disclosure,
   EmptyState,
   Field,
@@ -26,10 +27,10 @@ import {
   TextArea,
 } from '../components/primitives'
 import { TableSkeleton } from '../components/SkeletonLoader'
+import { useUrlFlag, useUrlText } from '../lib/urlState'
 import { useDisclosureState } from '../lib/disclosures'
-import type { PostureGrouping, PostureSeverity } from '../lib/posture'
+import type { PostureFilter, PostureGrouping, PostureSeverity } from '../lib/posture'
 import {
-  NO_POSTURE_FILTER,
   filterFindings,
   groupFindings,
   postureCsv,
@@ -85,6 +86,8 @@ const KIND_TO_RESOURCE: Record<string, string> = {
   DaemonSet: 'daemonsets',
 }
 
+const SEVERITIES: PostureSeverity[] = ['critical', 'high', 'medium', 'low']
+
 export function SecurityPosture() {
   const { user } = useAuth()
   const { clusters, loading: clustersLoading } = useClusters()
@@ -113,8 +116,31 @@ export function SecurityPosture() {
   })
 
   const [acking, setAcking] = useState<PostureFinding | null>(null)
-  const [filter, setFilter] = useState(NO_POSTURE_FILTER)
-  const [grouping, setGrouping] = useState<PostureGrouping>('none')
+  // The filter and the grouping live in the address, so a link opens on the
+  // same findings (see lib/urlState). The setter keeps the object shape the
+  // derivations below take.
+  const [severityParam, setSeverityParam] = useUrlText('severity')
+  const [showAcknowledged, setShowAcknowledged] = useUrlFlag('acknowledged')
+  const [searchParam, setSearchParam] = useUrlText('q')
+  const filter = useMemo<PostureFilter>(
+    () => ({
+      severity: SEVERITIES.includes(severityParam as PostureSeverity)
+        ? (severityParam as PostureSeverity)
+        : null,
+      showAcknowledged,
+      search: searchParam,
+    }),
+    [severityParam, showAcknowledged, searchParam],
+  )
+  const setFilter = (update: (current: PostureFilter) => PostureFilter) => {
+    const next = update(filter)
+    if (next.severity !== filter.severity) setSeverityParam(next.severity ?? '')
+    if (next.showAcknowledged !== filter.showAcknowledged) setShowAcknowledged(next.showAcknowledged)
+    if (next.search !== filter.search) setSearchParam(next.search)
+  }
+  const [groupingParam, setGroupingParam] = useUrlText('group', 'none')
+  const grouping = groupingParam as PostureGrouping
+  const setGrouping = (next: PostureGrouping) => setGroupingParam(next)
 
   /* Every derivation below is a hook, so all of them run before the early
      return for an unreachable cluster — a `useMemo` after a conditional return
@@ -269,8 +295,8 @@ export function SecurityPosture() {
         ) : null}
 
         <div className="card min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
-            <h2 className="text-[14px] font-semibold text-fg">
+          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
+            <h2 className="text-[16px] font-bold text-fg">
               {visible.length === findings.length
                 ? `${findings.length} ${findings.length === 1 ? 'finding' : 'findings'}`
                 : `${visible.length} of ${findings.length} findings`}
@@ -287,7 +313,7 @@ export function SecurityPosture() {
                 value={filter.search}
                 onChange={(search) => setFilter((current) => ({ ...current, search }))}
                 label="Filter findings"
-                placeholder="Object, namespace, rule or field"
+                placeholder="Object, namespace, rule or field…"
               />
               <Segmented<PostureGrouping>
                 ariaLabel="Group findings"
@@ -467,7 +493,7 @@ function FindingRow({
   const [busy, setBusy] = useState(false)
 
   return (
-    <li className="flex flex-wrap items-start gap-3 px-4 py-3">
+    <li className="defer-row flex flex-wrap items-start gap-3 px-5 py-3 [contain-intrinsic-size:auto_96px]">
       {/* The stripe carries the severity, where the old dot carried only
           "acknowledged or not" — every unacknowledged finding was the same red,
           which is what made 36 rows read as one undifferentiated wall. An
@@ -580,62 +606,48 @@ function AcknowledgeSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center p-4 sm:items-center">
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="scrim-in absolute inset-0 bg-black/55 backdrop-blur-[2px]"
-      />
-
-      <form
-        role="dialog"
-        aria-modal="true"
-        aria-label="Acknowledge this finding"
-        onSubmit={submit}
-        className="pop-in card relative w-full max-w-lg p-4 lift"
-      >
-        <div className="mb-3 flex items-center gap-2">
-          <ShieldCheck aria-hidden="true" className="size-4 text-accent" />
-          <h2 className="text-[14px] font-semibold text-fg">Acknowledge this finding</h2>
-        </div>
-
-        <p className="mb-3 text-[12.5px] leading-relaxed text-muted">
-          {finding.title} on{' '}
-          <span className="font-mono text-fg">
-            {finding.namespace ? `${finding.namespace}/` : ''}
-            {finding.name}
-          </span>
-          . The finding stays on every future scan, marked as acknowledged with your name and this
-          reason — it does not disappear.
+    <Dialog
+      title="Acknowledge this finding"
+      subject={`${finding.namespace ? `${finding.namespace}/` : ''}${finding.name}`}
+      onClose={onClose}
+      footer={
+        <>
+          <Button type="button" variant="ghost" pill onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form="ack-form"
+            variant="primary"
+            pill
+            disabled={saving || reason.trim() === ''}
+          >
+            {saving ? 'Saving…' : 'Acknowledge'}
+          </Button>
+        </>
+      }
+    >
+      <form id="ack-form" onSubmit={submit} className="flex flex-col gap-3">
+        <p>
+          {finding.title}. The finding stays on every future scan, marked as acknowledged with your
+          name and this reason — it does not disappear.
         </p>
 
-        {error ? (
-          <div className="mb-3">
-            <Notice tone="error">{error}</Notice>
-          </div>
-        ) : null}
+        {error ? <Notice tone="error">{error}</Notice> : null}
 
         <Field label="Reason" htmlFor="ack-reason" hint="Why this is here on purpose.">
           <TextArea
             id="ack-reason"
+            name="ack-reason"
+            prose
             rows={3}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
-            placeholder="e.g. runs privileged on purpose to drive the hardware test rig in this namespace"
-            autoFocus
+            placeholder="e.g. runs privileged on purpose to drive the hardware test rig…"
+            data-autofocus
           />
         </Field>
-
-        <div className="mt-4 flex justify-end gap-2">
-          <Button type="button" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={saving || reason.trim() === ''}>
-            {saving ? 'Saving…' : 'Acknowledge'}
-          </Button>
-        </div>
       </form>
-    </div>
+    </Dialog>
   )
 }

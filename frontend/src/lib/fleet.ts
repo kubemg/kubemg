@@ -1,5 +1,7 @@
-import type { Cluster } from '../api/types'
+import type { AuditEvent, Cluster } from '../api/types'
 import { clusterPageHref } from './navigation'
+import { linkState } from './status'
+import type { LinkState } from './status'
 import { relativeAge } from './time'
 
 /*
@@ -136,4 +138,33 @@ export function fleetQueue(clusters: Cluster[], pendingRequests: number): QueueI
   }
 
   return items
+}
+
+/**
+ * How the fleet's links read, counted: one bucket per link state, every state
+ * present even at zero so a bar drawn from it keeps its order.
+ */
+export function fleetLinkCounts(clusters: Cluster[]): Record<LinkState, number> {
+  const counts: Record<LinkState, number> = { live: 0, direct: 0, idle: 0, down: 0 }
+  for (const cluster of clusters) counts[linkState(cluster)] += 1
+  return counts
+}
+
+/**
+ * One audit record, said in a line: what was done, to what, on which cluster.
+ * The object is the resource with its namespace when the record names one,
+ * else the path the call went to — a record always has one of the two.
+ */
+export function activityLine(event: AuditEvent): string {
+  const object = event.resource
+    ? event.namespace
+      ? `${event.namespace}/${event.resource}`
+      : event.resource
+    : event.path
+  return [event.verb, object, event.cluster].filter(Boolean).join(' · ')
+}
+
+/** Whether a record is a refusal or a failure — what the feed flags. */
+export function activityRefused(event: AuditEvent): boolean {
+  return event.status >= 400 || Boolean(event.error)
 }

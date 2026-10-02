@@ -110,7 +110,7 @@ export function HelmChartPicker({
         <SearchInput
           value={query}
           onChange={setQuery}
-          placeholder="Search this repository’s charts"
+          placeholder="Search this repository’s charts…"
           label="Search charts"
         />
         <div className="mt-2 max-h-52 overflow-y-auto rounded-control border border-line">

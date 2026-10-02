@@ -6,6 +6,7 @@ import type { SettingsResponse } from '../../api/types'
 import { Button, Field, Notice, Panel, TextInput } from '../../components/primitives'
 import { settingSource } from '../../lib/settings'
 import { SettingsAside, SettingsLayout } from '../../components/settings/SettingsLayout'
+import { useUnsavedGuard } from '../../lib/unsavedGuard'
 
 /** The ceiling the build refuses to go past, whatever is typed here. It matches
     k8s.MaxTTL on the server, which enforces it — this copy only keeps the form
@@ -45,6 +46,12 @@ export function GeneralSettings() {
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    // The button stays live; a value that cannot be saved is pointed at here,
+    // where its error is already written under the field.
+    if (ceilingError !== undefined) {
+      document.getElementById('kubeconfig_max_ttl_hours')?.focus()
+      return
+    }
     setBusy(true)
     setError(null)
     setSaved(false)
@@ -75,6 +82,7 @@ export function GeneralSettings() {
   const dirty =
     settings !== null &&
     (publicUrl.trim() !== settings.overrides.public_url || ceiling.trim() !== ceilingDraft(settings))
+  useUnsavedGuard(dirty, 'these settings')
 
   return (
     <SettingsLayout
@@ -117,7 +125,7 @@ export function GeneralSettings() {
               type="submit"
               form="general-settings-form"
               variant="primary"
-              disabled={busy || !dirty || ceilingError !== undefined}
+              disabled={busy || !dirty}
             >
               {busy ? 'Saving…' : 'Save settings'}
             </Button>

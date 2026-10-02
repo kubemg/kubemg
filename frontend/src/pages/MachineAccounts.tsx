@@ -177,12 +177,12 @@ export function MachineAccounts() {
         <SetupPath accounts={accounts} />
 
         <div className="card min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
             <SearchInput
               value={filter}
               onChange={setFilter}
               label="Filter machine accounts"
-              placeholder="Filter by name"
+              placeholder="Filter by name…"
             />
             <span className="ml-auto text-[13px] text-muted">
               {visible.length === accounts.length
@@ -245,7 +245,20 @@ export function MachineAccounts() {
                       <button
                         type="button"
                         disabled={busy}
-                        onClick={() =>
+                        onClick={async () => {
+                          // Disabling stops every credential the account holds;
+                          // that is asked first. Activating is not.
+                          if (
+                            row.is_active &&
+                            !(await confirm({
+                              eyebrow: row.username,
+                              title: `Disable ${row.username}`,
+                              body: 'Every token this machine account holds stops being accepted now, and whatever runs on them starts failing. Activating it again brings them back.',
+                              confirmLabel: 'Disable',
+                              tone: 'danger',
+                            }))
+                          )
+                            return
                           run(
                             row.id,
                             `Could not update ${row.username}.`,
@@ -259,7 +272,7 @@ export function MachineAccounts() {
                                 : undefined,
                             },
                           )
-                        }
+                        }}
                         title={
                           row.is_active
                             ? `Disable ${row.username} and every credential it holds`
@@ -383,7 +396,7 @@ export function SetupPath({ accounts }: { accounts: MachineAccount[] }) {
         {steps.map((step, index) => (
           <li
             key={step.label}
-            className="relative flex min-w-0 flex-1 flex-col gap-1 border-b border-line-soft px-4 py-3 last:border-b-0 md:border-r md:border-b-0 md:last:border-r-0"
+            className="relative flex min-w-0 flex-1 flex-col gap-1 border-b border-line-soft px-5 pt-4 pb-3.5 last:border-b-0 md:border-r md:border-b-0 md:last:border-r-0"
           >
             <span className="label flex items-center gap-1.5">
               {step.done ? (
@@ -550,7 +563,15 @@ function MachineAccountSheet({
     }
   }
 
-  async function revokeGrant(id: number) {
+  async function revokeGrant(id: number, clusterName: string) {
+    const ok = await confirm({
+      eyebrow: account.username,
+      title: `Revoke access to ${clusterName}`,
+      body: `${account.username} loses its grant on ${clusterName} now, and its tokens stop reaching that cluster.`,
+      confirmLabel: 'Revoke',
+      tone: 'danger',
+    })
+    if (!ok) return
     setBusy(true)
     setError(null)
     try {
@@ -636,7 +657,7 @@ function MachineAccountSheet({
                     label={`Revoke access to ${entry.cluster_name}`}
                     tone="danger"
                     disabled={busy}
-                    onClick={() => revokeGrant(entry.cluster_id)}
+                    onClick={() => void revokeGrant(entry.cluster_id, entry.cluster_name)}
                   >
                     <Trash2 aria-hidden="true" className="size-4" />
                   </IconButton>
