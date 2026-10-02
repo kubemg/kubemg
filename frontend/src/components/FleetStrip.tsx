@@ -23,15 +23,18 @@ const FIGURE_ICON: Record<string, typeof Gauge> = {
 
 export function FleetStrip({
   figures,
+  className,
   children,
 }: {
   figures: StripFigure[]
+  /** The grid, where a page lays the tiles out other than four across. */
+  className?: string
   children?: ReactNode
 }) {
   return (
     <section
       aria-label="Needs a decision"
-      className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      className={className ?? 'grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4'}
     >
       {figures.map((figure) => (
         <StripLink key={figure.key} figure={figure} />
