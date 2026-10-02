@@ -56,6 +56,7 @@ import {
 import { StepActions, Stepper } from '../components/WizardChrome'
 import { MAX_SHORT_NAME, deriveChip, normalizeShortName, railChip } from '../lib/branding'
 import { useClusters } from '../state/clusters-context'
+import { useConfirm } from '../state/confirm-context'
 
 const ENVIRONMENTS: Environment[] = ['prod', 'staging', 'dev']
 const K8S_ROLES: K8sRole[] = ['cluster-admin', 'edit', 'view']
@@ -837,6 +838,7 @@ function AccessStep({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const confirm = useConfirm()
 
   const [subjectType, setSubjectType] = useState<SubjectType>('group')
   const [subjectId, setSubjectId] = useState('')
@@ -905,6 +907,14 @@ function AccessStep({
   }
 
   async function revoke(permission: Permission) {
+    const ok = await confirm({
+      eyebrow: cluster.name,
+      title: `Revoke ${permission.subject_name}'s access`,
+      body: `${permission.subject_name} loses ${permission.k8s_role} on ${cluster.name} now. Kubeconfigs issued under this grant stop being accepted at their next call.`,
+      confirmLabel: 'Revoke',
+      tone: 'danger',
+    })
+    if (!ok) return
     setBusy(true)
     setError(null)
     try {

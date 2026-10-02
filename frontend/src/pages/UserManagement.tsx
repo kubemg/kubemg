@@ -299,7 +299,18 @@ export function UserManagement() {
                       <button
                         type="button"
                         disabled={isSelf || busy}
-                        onClick={() =>
+                        onClick={async () => {
+                          if (
+                            row.is_active &&
+                            !(await confirm({
+                              eyebrow: row.username,
+                              title: `Disable ${row.username}`,
+                              body: 'They cannot sign in from now, and kubeconfigs they hold stop being accepted. Their grants and group memberships are kept for when the account is activated again.',
+                              confirmLabel: 'Disable',
+                              tone: 'danger',
+                            }))
+                          )
+                            return
                           run(
                             row.id,
                             `Could not update ${row.username}.`,
@@ -313,7 +324,7 @@ export function UserManagement() {
                                 : undefined,
                             },
                           )
-                        }
+                        }}
                         title={
                           isSelf
                             ? 'You cannot disable your own account'

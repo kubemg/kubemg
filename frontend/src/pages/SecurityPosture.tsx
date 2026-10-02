@@ -27,10 +27,10 @@ import {
   TextArea,
 } from '../components/primitives'
 import { TableSkeleton } from '../components/SkeletonLoader'
+import { useUrlFlag, useUrlText } from '../lib/urlState'
 import { useDisclosureState } from '../lib/disclosures'
-import type { PostureGrouping, PostureSeverity } from '../lib/posture'
+import type { PostureFilter, PostureGrouping, PostureSeverity } from '../lib/posture'
 import {
-  NO_POSTURE_FILTER,
   filterFindings,
   groupFindings,
   postureCsv,
@@ -86,6 +86,8 @@ const KIND_TO_RESOURCE: Record<string, string> = {
   DaemonSet: 'daemonsets',
 }
 
+const SEVERITIES: PostureSeverity[] = ['critical', 'high', 'medium', 'low']
+
 export function SecurityPosture() {
   const { user } = useAuth()
   const { clusters, loading: clustersLoading } = useClusters()
@@ -114,8 +116,31 @@ export function SecurityPosture() {
   })
 
   const [acking, setAcking] = useState<PostureFinding | null>(null)
-  const [filter, setFilter] = useState(NO_POSTURE_FILTER)
-  const [grouping, setGrouping] = useState<PostureGrouping>('none')
+  // The filter and the grouping live in the address, so a link opens on the
+  // same findings (see lib/urlState). The setter keeps the object shape the
+  // derivations below take.
+  const [severityParam, setSeverityParam] = useUrlText('severity')
+  const [showAcknowledged, setShowAcknowledged] = useUrlFlag('acknowledged')
+  const [searchParam, setSearchParam] = useUrlText('q')
+  const filter = useMemo<PostureFilter>(
+    () => ({
+      severity: SEVERITIES.includes(severityParam as PostureSeverity)
+        ? (severityParam as PostureSeverity)
+        : null,
+      showAcknowledged,
+      search: searchParam,
+    }),
+    [severityParam, showAcknowledged, searchParam],
+  )
+  const setFilter = (update: (current: PostureFilter) => PostureFilter) => {
+    const next = update(filter)
+    if (next.severity !== filter.severity) setSeverityParam(next.severity ?? '')
+    if (next.showAcknowledged !== filter.showAcknowledged) setShowAcknowledged(next.showAcknowledged)
+    if (next.search !== filter.search) setSearchParam(next.search)
+  }
+  const [groupingParam, setGroupingParam] = useUrlText('group', 'none')
+  const grouping = groupingParam as PostureGrouping
+  const setGrouping = (next: PostureGrouping) => setGroupingParam(next)
 
   /* Every derivation below is a hook, so all of them run before the early
      return for an unreachable cluster — a `useMemo` after a conditional return

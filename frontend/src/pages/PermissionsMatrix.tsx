@@ -29,6 +29,8 @@ import {
 } from '../components/primitives'
 import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
+import { useConfirm } from '../state/confirm-context'
+import { useUrlText } from '../lib/urlState'
 
 const K8S_ROLES: K8sRole[] = ['cluster-admin', 'edit', 'view']
 
@@ -59,7 +61,10 @@ export function PermissionsMatrix() {
     'permissions-matrix.scope',
     viewer?.id ?? null,
   )
-  const [tab, setTab] = useState<SubjectType>('user')
+  // Which matrix is showing is part of the address, so a link opens on it.
+  const [tabParam, setTabParam] = useUrlText('subjects', 'user')
+  const tab: SubjectType = tabParam === 'group' ? 'group' : 'user'
+  const setTab = (next: SubjectType) => setTabParam(next)
   const [users, setUsers] = useState<User[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const [permissions, setPermissions] = useState<Permission[]>([])
@@ -356,6 +361,7 @@ function GrantSheet({
   const [namespaces, setNamespaces] = useState(current?.namespaces.join(', ') ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const confirm = useConfirm()
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -380,6 +386,14 @@ function GrantSheet({
   }
 
   async function revoke() {
+    const ok = await confirm({
+      eyebrow: cluster.name,
+      title: `Revoke ${subject.name}'s access`,
+      body: `${subject.name} loses ${current?.k8s_role ?? 'its grant'} on ${cluster.name} now. Kubeconfigs issued under this grant stop being accepted at their next call.`,
+      confirmLabel: 'Revoke',
+      tone: 'danger',
+    })
+    if (!ok) return
     setBusy(true)
     setError(null)
     try {

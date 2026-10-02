@@ -12,6 +12,7 @@ import { ALL_NAMESPACES } from '../lib/resources'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { useTimeRange } from '../state/timerange-context'
 import { useClusters } from '../state/clusters-context'
+import { useUrlText, useWriteParam } from '../lib/urlState'
 
 /**
  * What just broke, across a whole cluster.
@@ -66,7 +67,7 @@ export function EventsTimeline() {
   // Narrows the loaded timeline to matching object names. It is the same gap the
   // Explore object filter closes: nothing in the header can find one pod among
   // two hundred rows.
-  const [filter, setFilter] = useState('')
+  const [filter, setFilter] = useUrlText('q')
   // Which groups are open. Keyed by the server's stable group key, so an
   // expanded row survives the re-read a refresh causes.
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -80,17 +81,9 @@ export function EventsTimeline() {
   const cluster = reachable.find((entry) => entry.id === clusterId) ?? null
   const unreadable = cluster ? null : (clusters.find((entry) => entry.id === clusterId) ?? null)
 
-  function setParam(key: string, value: string | null) {
-    setSearchParams(
-      (previous) => {
-        const next = new URLSearchParams(previous)
-        if (value === null || value === '') next.delete(key)
-        else next.set(key, value)
-        return next
-      },
-      { replace: true },
-    )
-  }
+  // Against the address as it is now, so clearing the kind and the name in
+  // one click clears both rather than the second write undoing the first.
+  const setParam = useWriteParam()
 
   // The namespace list is what the scope picker is built from. A grant that can
   // browse a cluster it cannot enumerate keeps its own error rather than sharing

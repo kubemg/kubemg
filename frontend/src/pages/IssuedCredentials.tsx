@@ -30,6 +30,7 @@ import { relativeAge } from '../lib/time'
 import { useAuth } from '../state/auth-context'
 import { useConfirm } from '../state/confirm-context'
 import { useResult } from '../state/result-context'
+import { useUrlText } from '../lib/urlState'
 
 /**
  * IssuedCredentials is the register: every kubeconfig this console has handed
@@ -68,8 +69,11 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
   const [error, setError] = useState<string | null>(null)
   const [rowError, setRowError] = useState<string | null>(null)
   const [busyRow, setBusyRow] = useState<number | null>(null)
-  const [status, setStatus] = useState<StatusFilter>('active')
-  const [filter, setFilter] = useState('')
+  // Kept in the address, so a narrowed register is a link (see lib/urlState).
+  const [statusParam, setStatusParam] = useUrlText('status', 'active')
+  const status: StatusFilter = statusParam === 'all' ? 'all' : 'active'
+  const setStatus = (next: StatusFilter) => setStatusParam(next)
+  const [filter, setFilter] = useUrlText('q')
   const [blanket, setBlanket] = useState<KubeconfigRevokeAllResult | null>(null)
   const [changingPassword, setChangingPassword] = useState(false)
   // `?expiring=24h` is how the fleet's figure opens this page on the rows it
@@ -104,6 +108,14 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
   }, [load])
 
   async function revokeOne(row: IssuedKubeconfig) {
+    const ok = await confirm({
+      eyebrow: row.cluster_name,
+      title: `Revoke ${row.username}'s kubeconfig`,
+      body: `It stops being accepted at its next call. Whoever uses it needs a new one.`,
+      confirmLabel: 'Revoke',
+      tone: 'danger',
+    })
+    if (!ok) return
     setBusyRow(row.id)
     setRowError(null)
     setBlanket(null)
