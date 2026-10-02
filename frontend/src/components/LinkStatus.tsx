@@ -76,12 +76,16 @@ export function LinkStatus({
   state,
   variant = 'detail',
   surface = 'work',
+  size = 'sm',
   label,
   className,
 }: {
   state: LinkState
   variant?: 'detail' | 'glyph'
   surface?: 'work' | 'rail'
+  /* `lg` is the seal leading a card — the cluster picker — where it stands
+     for the cluster the way an avatar stands for a person. */
+  size?: 'sm' | 'lg'
   label?: string
   className?: string
 }) {
@@ -94,9 +98,15 @@ export function LinkStatus({
         role="img"
         aria-label={reading}
         title={reading}
-        className={`grid size-5 shrink-0 place-items-center rounded-full border-2 bg-clip-padding ring-2 ${seal} ${className ?? ''}`}
+        className={`grid shrink-0 place-items-center rounded-full bg-clip-padding ${
+          size === 'lg' ? 'size-8 border-[3px] ring-[3px]' : 'size-5 border-2 ring-2'
+        } ${seal} ${className ?? ''}`}
       >
-        <Icon aria-hidden="true" className="size-2.5" strokeWidth={2.5} />
+        <Icon
+          aria-hidden="true"
+          className={size === 'lg' ? 'size-3.5' : 'size-2.5'}
+          strokeWidth={size === 'lg' ? 2.25 : 2.5}
+        />
       </span>
     )
   }
