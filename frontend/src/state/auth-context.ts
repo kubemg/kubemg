@@ -14,6 +14,9 @@ export interface AuthState {
    */
   adoptSession: (token: string, user?: User) => Promise<void>
   signOut: () => void
+  /** Adopt the account the server answered with after an edit of its own, so
+      every surface reading `user` shows the stored value. */
+  replaceUser: (user: User) => void
   /**
    * Whether this server still needs first-run setup. It lives here rather than
    * in a provider of its own because it is the same phase of the session as

@@ -7,6 +7,7 @@ import {
   Bot,
   ChevronRight,
   ChevronsUpDown,
+  CircleUserRound,
   FileKey,
   Gauge,
   KeyRound,
@@ -42,6 +43,7 @@ import { useTheme } from '../lib/theme'
 import {
   ACCESS_HOME,
   CREDENTIALS_HOME,
+  PROFILE_HOME,
   ADMIN_HOME,
   clusterHref,
   clusterIdFromPath,
@@ -415,6 +417,7 @@ export function AppShell({
   const pages = useMemo<CommandTarget[]>(() => {
     const targets: CommandTarget[] = [
       { id: 'page-fleet', label: 'All clusters', hint: 'Fleet', to: '/' },
+      { id: 'page-profile', label: 'My profile', hint: 'You', to: PROFILE_HOME },
       { id: 'page-access', label: 'My access', hint: 'You', to: ACCESS_HOME },
       { id: 'page-credentials', label: 'My credentials', hint: 'You', to: CREDENTIALS_HOME },
     ]
@@ -583,10 +586,15 @@ export function AppShell({
             </div>
 
             {/* The template's plan card, about the person instead: who is
-                signed in, and the doors that are theirs. */}
+                signed in, and the doors that are theirs. The name is the door
+                to the account itself — where everyone looks for it. */}
             <div className="m-3 mt-0 flex shrink-0 flex-col gap-1 rounded-card border border-accent-line bg-linear-to-b from-accent-soft to-rail p-2">
-              <div className="flex items-center gap-2.5 px-1.5 pt-1 pb-1.5">
-                <span className="grid size-9 shrink-0 place-items-center rounded-full border border-accent-line bg-rail font-data text-[12px] font-semibold text-rail-fg">
+              <NavLink
+                to={PROFILE_HOME}
+                title="Your profile"
+                className="nav-pill group flex items-center gap-2.5 rounded-control px-1.5 pt-1 pb-1.5"
+              >
+                <span className="grid size-9 shrink-0 place-items-center rounded-full border border-accent-line bg-rail font-data text-[12px] font-semibold text-rail-fg group-hover:bg-transparent group-focus-visible:bg-transparent group-aria-[current=page]:bg-transparent">
                   {initials}
                 </span>
                 <span className="min-w-0 flex-1 leading-tight">
@@ -597,7 +605,7 @@ export function AppShell({
                     {isAdmin ? 'Administrator' : 'Developer'}
                   </span>
                 </span>
-              </div>
+              </NavLink>
               {inAdmin ? (
                 <Link to={returnCluster ? clusterHref(returnCluster) : '/'} className={FOOTER_ROW}>
                   <ArrowLeft aria-hidden="true" className="size-4 shrink-0" />
@@ -1125,6 +1133,12 @@ function MobileNav({
             <p className="nav-title px-1 pb-2">You</p>
             <ul className="flex flex-col gap-0.5">
               <li>
+                <NavLink to={PROFILE_HOME} className={RAIL_LINK}>
+                  <CircleUserRound aria-hidden="true" className="size-4 shrink-0" />
+                  My profile
+                </NavLink>
+              </li>
+              <li>
                 <NavLink to={ACCESS_HOME} className={RAIL_LINK}>
                   <Timer aria-hidden="true" className="size-4 shrink-0" />
                   My access
@@ -1163,13 +1177,20 @@ function MobileNav({
         </div>
 
         <div className="flex shrink-0 items-center gap-2.5 border-t border-rail-line px-3 py-3">
-          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-rail-raised font-data text-[12px] font-semibold text-rail-fg">
-            {username.slice(0, 2).toUpperCase()}
-          </span>
-          <span className="min-w-0 flex-1 leading-tight">
-            <span className="block truncate text-[13px] text-rail-fg">{username}</span>
-            <span className="block text-[12px] text-rail-faint">{role}</span>
-          </span>
+          {/* The name is the door to the account, as on the desktop card. */}
+          <Link
+            to={PROFILE_HOME}
+            title="Your profile"
+            className="-m-1 flex min-w-0 flex-1 items-center gap-2.5 rounded-control p-1 transition-colors hover:bg-rail-raised"
+          >
+            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-rail-raised font-data text-[12px] font-semibold text-rail-fg">
+              {username.slice(0, 2).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1 leading-tight">
+              <span className="block truncate text-[13px] text-rail-fg">{username}</span>
+              <span className="block text-[12px] text-rail-faint">{role}</span>
+            </span>
+          </Link>
           <button
             type="button"
             onClick={onToggleTheme}

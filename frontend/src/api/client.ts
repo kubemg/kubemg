@@ -64,6 +64,7 @@ import type {
   NewMachineToken,
   PasswordChange,
   PasswordChangeResult,
+  ProfileUpdate,
   HelmChartList,
   HelmHistory,
   HelmRelease,
@@ -604,6 +605,13 @@ export async function revokeAllIssuedKubeconfigs(
  * because that route is an administrator editing somebody else's account; this
  * one refuses without the current password, so a live session is not enough.
  */
+/** Edits the caller's own account — not PUT /users/:id, which is an
+    administrator editing somebody else's. */
+export async function updateOwnProfile(body: ProfileUpdate): Promise<User> {
+  const { data } = await http.patch<User>('/auth/me', body)
+  return data
+}
+
 export async function changeOwnPassword(body: PasswordChange): Promise<PasswordChangeResult> {
   const { data } = await http.post<PasswordChangeResult>('/auth/password', body)
   return data

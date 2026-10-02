@@ -38,6 +38,7 @@ function auth(signIn: AuthState['signIn'] = async () => {}): AuthState {
     signIn,
     adoptSession: async () => {},
     signOut: () => {},
+    replaceUser: () => {},
     setupRequired: false,
     setupLoading: false,
     refreshSetupState: async () => {},
