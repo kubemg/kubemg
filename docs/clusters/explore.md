@@ -206,7 +206,10 @@ a release is a labelled Secret rather than a kind the API server counts.
 One drawer, one object, four tabs — because finding out something is broken,
 asking why, and changing it is one investigation rather than three:
 
-- **Overview** — the object's own summary fields.
+- **Overview** — the object's own summary fields. On an Ingress, HTTPRoute,
+  VirtualService or Service it opens with the **traffic map** — see
+  [The traffic map](#the-traffic-map) below — because where a route sends its
+  traffic is the first thing a route is opened for.
 - **Describe & Events** — metadata, `status.conditions`, a bounded flatten of
   `spec`/`status`, and the cluster's own events against the object, newest
   first (unlike `kubectl describe`, which prints oldest first) — because a
@@ -215,6 +218,102 @@ asking why, and changing it is one investigation rather than three:
 - **YAML** — the live manifest, editable for anything the write path allows.
 - **Logs & Terminal** (pods) / **Logs** (workloads that support pooled logs)
   — see [Terminals and logs](terminals-and-logs.md).
+
+### The traffic map
+
+An Ingress, an HTTPRoute or a VirtualService says "send this host and path to
+that Service", and everything that can go wrong with that sentence is invisible
+from the route itself. The traffic map, at the top of the object's **Overview**,
+follows it and draws every hop, left
+to right:
+
+| Column | What is drawn |
+| --- | --- |
+| Entry | The Ingress's hosts (with the TLS Secret each one names), or the Gateways and Istio gateways a route attaches to — or `mesh` for a VirtualService with none. |
+| Route | The object itself: its class and address, or its hostnames. |
+| Service | Every Service a rule sends to, with its type, ports and how many endpoints are ready. |
+| Workload | The Deployment, StatefulSet, DaemonSet or Job that owns the pods — a ReplicaSet is followed to its Deployment. |
+| Pods | The pods the Service selects, unready ones first. More than four per workload fold into one "+N more" box. |
+
+Each edge carries the rule that sends traffic down it — host and path, the
+weight of a split, the port. Point at any box to light its whole path (what
+leads to it and what it leads to) and fade the rest; click one that is an
+object to open it in the same drawer, so you can walk from a route to the pod
+that is failing without closing anything. A pod opens on its own drawer with
+logs and terminal.
+
+**What it calls broken**, each drawn in red with the reason beside it and
+listed in words under the drawing:
+
+- the Service a rule names does not exist;
+- the port a rule names is not one the Service exposes — drawn on that
+  rule's edge, not on the Service, since another route may reach the same
+  Service on a port it does expose;
+- the Service's selector matches no pods;
+- the Service has no ready endpoint (none of its pods passes its readiness
+  probe), or fewer than all — drawn as degraded;
+- a pod is failing — in its container's own word (`CrashLoopBackOff`,
+  `ImagePullBackOff`), not a generic "not ready";
+- for an HTTPRoute, a gateway controller has refused it or could not resolve a
+  reference (`Accepted` / `ResolvedRefs` false on the route's status — a
+  cross-namespace backend without a ReferenceGrant shows up here);
+- an Ingress no controller has given an address to yet — drawn as degraded.
+
+On a **Service** the map reads the other way: the Ingresses, HTTPRoutes and
+VirtualServices in the Service's namespace that send to it, then the Service
+forward to its pods. Routes in other namespaces are not searched, and the tab
+says so.
+
+Every hop is read as you, through the same tunnel as everything else on this
+page, so it is in the audit trail and the cluster's RBAC decides each one:
+
+- A hop the cluster refuses is drawn as **refused** (dashed) with the
+  cluster's own reason; the rest of the map is still drawn.
+- A hop into a namespace outside your grant — a VirtualService sending to
+  `ledger.payments.svc.cluster.local` when you hold only `shop` — is drawn as
+  **outside your access** and is **not read at all**.
+
+What it deliberately does not do:
+
+- **It never opens a Secret.** A TLS Secret is named on its host but not read,
+  so looking at a route does not put a Secret read in the audit trail.
+- **DestinationRules are not read.** An Istio subset is a label on the edge,
+  not the set of pods it selects.
+- Destinations that are not Services — an Ingress resource backend, a
+  non-Service `backendRef`, a VirtualService host that is not
+  `name` or `name.namespace.svc…` (a ServiceEntry or an external API) — are
+  drawn but not followed.
+- A map follows at most ten Services; more are drawn as "not followed".
+- It is not live. **Refresh** (the circular arrow) reads the path again.
+
+**Only what needs a look** (offered when a map has a problem and healthy hops
+besides) narrows the drawing to the broken hops and every path through them —
+the routes that reach a failing Service and the pods behind it, which is the
+blast radius and the cause in one picture. On a busy map only the labels of
+broken edges and of the path you point at are drawn.
+
+### A namespace's map
+
+A namespace's own page draws a **Traffic** panel with every Ingress, HTTPRoute
+and VirtualService in the namespace followed at once (up to 25 Services). A
+hop opens in the same drawer Explore uses. Services no route reaches are not
+drawn there — open one for its own map.
+
+### What a workload depends on
+
+A Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob or Pod gets a
+**Dependencies** map on its Overview, under its pods: every object its pod
+template names, with how it is used on the edge (`env DB_PASSWORD`,
+`volume config → /etc/app`, `image pull secret`, `service account`,
+`env from every key`).
+
+| Object | What is checked |
+| --- | --- |
+| ConfigMap | Read for its **key names** (never shown values): a missing ConfigMap is broken, a key the template names but the ConfigMap lacks breaks that edge. An absent ConfigMap every reference marks `optional` is a warning — the pods start without it. |
+| Secret | **Never read.** Drawn as named; it turns broken when a pod reports it — a container waiting on `secret "db" not found` or `couldn't find key password in Secret …`. A Secret volume no pod has tried to mount yet cannot be told apart from one that exists, and the map says so. |
+| ServiceAccount | Read; a missing one means the controller cannot create the pods. |
+| PersistentVolumeClaim | Read: `Pending` is a warning, `Lost` is broken, a bound claim is followed to its **PersistentVolume** (capacity, reclaim policy, phase). A StatefulSet's `volumeClaimTemplates` are named per replica (`data-db-0`, …, the first four). |
+| PersistentVolume | Cluster-scoped, so a namespace-scoped grant draws it as outside your access and does not read it. |
 
 A Helm release opens the same drawer over its own two panels (values,
 history) instead, since it has no manifest for the object route to address —

@@ -7,6 +7,9 @@ import { AppShell } from '../components/AppShell'
 import { ClusterWorkloadSummary } from '../components/ClusterWorkloadSummary'
 import { EventGroupRow } from '../components/EventGroupRow'
 import { NetworkPolicyCoveragePanel } from '../components/NetworkPolicyCoveragePanel'
+import { ResourceDetailDrawer } from '../components/ResourceDetailDrawer'
+import type { DetailTarget } from '../components/ResourceDetailDrawer'
+import { TrafficMapPanel } from '../components/TrafficMap'
 import { ResourceView } from '../components/ResourceTables'
 import { Age, EmptyState, Notice, Panel, StatTile } from '../components/primitives'
 import { CardSkeleton } from '../components/SkeletonLoader'
@@ -54,6 +57,8 @@ export function NamespaceDetail() {
 
   const cluster = clusters.find((entry) => entry.id === clusterId)
   const live = cluster ? hasTunnel(cluster) : false
+  // A hop opened from the traffic map, read in the same drawer Explore uses.
+  const [detail, setDetail] = useState<DetailTarget | null>(null)
 
   // The namespace list is the one read that says what this object *is* — its
   // phase, its age, and whether the caller's grant covers it. It is the same
@@ -145,6 +150,24 @@ export function NamespaceDetail() {
             developer dashboard draws, scoped to here. */}
         <ClusterWorkloadSummary cluster={cluster} namespace={name} />
 
+        {/* Every route here at once — how traffic enters this namespace and
+            where it breaks. "Only what needs a look" narrows it to the broken
+            hops and everything they reach or are reached by. */}
+        <Panel
+          title="Traffic"
+          eyebrow="Every route here"
+          description="Each Ingress, HTTPRoute and VirtualService in this namespace, followed to its pods."
+          bodyClassName="p-4"
+        >
+          <TrafficMapPanel
+            cluster={cluster}
+            kind="namespaces"
+            name={name}
+            namespace={name}
+            onOpen={setDetail}
+          />
+        </Panel>
+
         {/* What the namespace is allowed to grow to. A quota is the reason a
             pod that never appeared never appeared, and it lived two clicks
             away from the list that does not show it. */}
@@ -211,6 +234,16 @@ export function NamespaceDetail() {
           />
         </Panel>
       </div>
+
+      {detail ? (
+        <ResourceDetailDrawer
+          key={`${detail.kind}/${detail.namespace ?? ''}/${detail.name}`}
+          cluster={cluster}
+          target={detail}
+          onClose={() => setDetail(null)}
+          onOpen={setDetail}
+        />
+      ) : null}
     </AppShell>
   )
 }

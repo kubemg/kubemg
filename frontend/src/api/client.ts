@@ -140,6 +140,7 @@ import type {
   RecordingPolicy,
   TerminalSession,
   TerminalSessionPage,
+  TrafficMap,
   TerminalSessionQuery,
   User,
   UserPatch,
@@ -1032,6 +1033,40 @@ export async function fetchNetworkPolicyReachability(
     { params: { kind, name, namespace } },
   )
   return data
+}
+
+/**
+ * Where a route's traffic goes — or, for a Service, which routes send to it.
+ * Every hop is the caller's own read; one the cluster refuses is drawn as
+ * refused rather than failing the map.
+ */
+export async function fetchTrafficMap(
+  clusterId: number,
+  kind: string,
+  name: string,
+  namespace: string,
+): Promise<TrafficMap> {
+  const { data } = await http.get<TrafficMap>(resourceURL(clusterId, 'traffic'), {
+    params: { kind, name, namespace },
+  })
+  return { ...data, nodes: data.nodes ?? [], edges: data.edges ?? [], notes: data.notes ?? [] }
+}
+
+/**
+ * What a workload's pod template names — ConfigMaps (read for their keys),
+ * Secrets (named, never read), its ServiceAccount, volume claims and the
+ * volumes they bound — drawn the way a traffic map is.
+ */
+export async function fetchDependencyMap(
+  clusterId: number,
+  kind: string,
+  name: string,
+  namespace: string,
+): Promise<TrafficMap> {
+  const { data } = await http.get<TrafficMap>(resourceURL(clusterId, 'dependencies'), {
+    params: { kind, name, namespace },
+  })
+  return { ...data, nodes: data.nodes ?? [], edges: data.edges ?? [], notes: data.notes ?? [] }
 }
 
 /** The namespace-level summary of what is and is not covered. */

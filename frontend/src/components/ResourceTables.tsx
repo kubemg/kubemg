@@ -2309,7 +2309,7 @@ function RouteTable({
         {routes.map((route) => (
           <Row key={`${route.namespace}/${route.name}`}>
             <Td>
-              <Name title={route.name} namespace={route.namespace}>
+              <Name title={route.name} namespace={route.namespace} onOpen={opener(onManifest, route)}>
                 {route.name}
               </Name>
             </Td>

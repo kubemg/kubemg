@@ -1,0 +1,345 @@
+# A small shop for the traffic map: one Ingress, two HTTPRoutes and a
+# VirtualService over the same three Services, with every way a join can break
+# present at least once. Open any of them in Explore → e2e-apps; the map is the
+# first thing on its Overview.
+#
+#   shop-api       e2e-web's two ready pods             healthy
+#   shop-checkout  one pod that never turns Ready       no ready endpoint
+#   shop-legacy    a selector nothing carries           matches no pods
+#   ledger         in e2e-payments, outside the scoped  drawn "outside your
+#                  viewer's grant                       access", never read
+#
+# The Ingress also names a port shop-api does not expose and a Service that
+# does not exist; the HTTPRoute `shop` carries the status a gateway controller
+# writes for a cross-namespace backend with no ReferenceGrant (fixture.sh writes
+# it through the status subresource, since no controller runs here).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: e2e-payments
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shop-api
+  namespace: e2e-apps
+spec:
+  selector:
+    app: e2e-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+---
+# Never Ready: `pause` listens on nothing, so the readiness probe never passes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shop-checkout
+  namespace: e2e-apps
+  labels:
+    app: shop-checkout
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: shop-checkout
+  template:
+    metadata:
+      labels:
+        app: shop-checkout
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: checkout
+          image: registry.k8s.io/pause:3.10
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65535
+            runAsGroup: 65535
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              memory: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shop-checkout
+  namespace: e2e-apps
+spec:
+  selector:
+    app: shop-checkout
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shop-legacy
+  namespace: e2e-apps
+spec:
+  selector:
+    app: shop-legacy-retired
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ledger
+  namespace: e2e-payments
+spec:
+  selector:
+    app: ledger
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shop
+  namespace: e2e-apps
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [shop.e2e.test]
+      secretName: shop-tls
+  rules:
+    - host: shop.e2e.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: shop-api, port: { number: 80 } }
+          - path: /checkout
+            pathType: Prefix
+            backend:
+              service: { name: shop-checkout, port: { name: http } }
+          - path: /legacy
+            pathType: Prefix
+            backend:
+              service: { name: shop-legacy, port: { number: 80 } }
+    - host: admin.e2e.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: shop-api, port: { number: 9443 } }
+          - path: /old
+            pathType: Prefix
+            backend:
+              service: { name: shop-removed, port: { number: 80 } }
+---
+# The healthy one, so the Service's own map shows two routes reaching it.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: docs
+  namespace: e2e-apps
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: docs.e2e.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: shop-api, port: { name: http } }
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: edge
+  namespace: e2e-apps
+spec:
+  gatewayClassName: e2e
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: shop
+  namespace: e2e-apps
+spec:
+  parentRefs:
+    - name: edge
+      sectionName: http
+  hostnames: [shop.e2e.test]
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /api }
+      backendRefs:
+        - { name: shop-api, port: 80, weight: 90 }
+        - { name: shop-checkout, port: 80, weight: 10 }
+    - matches:
+        - path: { type: PathPrefix, value: /pay }
+      backendRefs:
+        - { name: ledger, namespace: e2e-payments, port: 80 }
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: docs
+  namespace: e2e-apps
+spec:
+  parentRefs:
+    - name: edge
+  hostnames: [docs.e2e.test]
+  rules:
+    - backendRefs:
+        - { name: shop-api, port: 80 }
+---
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: public
+  namespace: e2e-apps
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port: { number: 80, name: http, protocol: HTTP }
+      hosts: [shop.e2e.test]
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: shop
+  namespace: e2e-apps
+spec:
+  hosts: [shop.e2e.test]
+  gateways: [public, mesh]
+  http:
+    - match:
+        - uri: { prefix: /api }
+      route:
+        - destination: { host: shop-api, subset: v1, port: { number: 80 } }
+          weight: 80
+        - destination: { host: shop-checkout.e2e-apps.svc.cluster.local, subset: canary }
+          weight: 20
+    - match:
+        - uri: { prefix: /payments }
+      route:
+        - destination: { host: ledger.e2e-payments.svc.cluster.local, port: { number: 80 } }
+    - match:
+        - uri: { prefix: /stripe }
+      route:
+        - destination: { host: api.stripe.com }
+---
+# The dependency map's half: a worker whose pod template names a ConfigMap
+# (present, read for its keys), an optional ConfigMap that is absent (a warning,
+# not a failure), a Secret that was never created (learnt from the pod's own
+# CreateContainerConfigError — the Secret is never read), its own
+# ServiceAccount, and a claim minikube's default StorageClass binds.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shop-config
+  namespace: e2e-apps
+data:
+  queue: orders
+  app.yaml: |
+    workers: 2
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: shop-worker
+  namespace: e2e-apps
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: shop-data
+  namespace: e2e-apps
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 64Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shop-worker
+  namespace: e2e-apps
+  labels:
+    app: shop-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: shop-worker
+  template:
+    metadata:
+      labels:
+        app: shop-worker
+    spec:
+      serviceAccountName: shop-worker
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: config
+          configMap:
+            name: shop-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: shop-data
+      containers:
+        - name: worker
+          image: registry.k8s.io/pause:3.10
+          env:
+            - name: QUEUE
+              valueFrom:
+                configMapKeyRef: { name: shop-config, key: queue }
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: shop-db, key: password }
+          envFrom:
+            - configMapRef: { name: shop-flags, optional: true }
+          volumeMounts:
+            - { name: config, mountPath: /etc/shop }
+            - { name: data, mountPath: /var/lib/shop }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65535
+            runAsGroup: 65535
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              memory: 16Mi

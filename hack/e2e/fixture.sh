@@ -224,6 +224,45 @@ ensure_objects() {
   kc -n "$NAMESPACE" rollout status "deploy/$DEPLOYMENT" --timeout=180s >/dev/null
 }
 
+# The traffic map's shop: routes of every kind over Services healthy and broken.
+# The Gateway API and Istio stand-in CRDs are applied only where no real ones
+# exist — a cluster with Istio installed keeps its own, and the fixture's
+# objects are read through them instead.
+TRAFFIC_CRDS="httproutes.gateway.networking.k8s.io gateways.gateway.networking.k8s.io virtualservices.networking.istio.io gateways.networking.istio.io"
+
+ensure_traffic() {
+  local crd foreign=""
+  for crd in $TRAFFIC_CRDS; do
+    if kc get crd "$crd" >/dev/null 2>&1 &&
+      [ "$(kc get crd "$crd" -o jsonpath='{.metadata.labels.e2e\.kubemg\.io/fixture}')" != "true" ]; then
+      foreign="$foreign $crd"
+    fi
+  done
+  if [ -n "$foreign" ]; then
+    warn "real CRDs already installed ($foreign ); the traffic fixture uses them and applies no stand-ins"
+  else
+    say "applying the Gateway API and Istio stand-in CRDs"
+    kc apply -f "$HERE/manifests/traffic-crds.yaml" >/dev/null
+    # shellcheck disable=SC2086
+    kc wait --for condition=Established --timeout=60s $(printf 'crd/%s ' $TRAFFIC_CRDS) >/dev/null
+  fi
+
+  say "applying the traffic map's shop (Ingresses, HTTPRoutes, a VirtualService)"
+  kc apply -f "$HERE/manifests/traffic.yaml" >/dev/null
+
+  # What a gateway controller would write, since none runs here: `docs` is
+  # accepted and resolved; `shop` is accepted but its cross-namespace backend
+  # has no ReferenceGrant. A real controller, if there is one, overwrites both.
+  local accepted='{"type":"Accepted","status":"True","reason":"Accepted","message":"","lastTransitionTime":"2026-01-01T00:00:00Z","observedGeneration":1}'
+  local resolved='{"type":"ResolvedRefs","status":"True","reason":"ResolvedRefs","message":"","lastTransitionTime":"2026-01-01T00:00:00Z","observedGeneration":1}'
+  local refused='{"type":"ResolvedRefs","status":"False","reason":"RefNotPermitted","message":"backendRef ledger in e2e-payments is not permitted by any ReferenceGrant","lastTransitionTime":"2026-01-01T00:00:00Z","observedGeneration":1}'
+  local parent='{"name":"edge","namespace":"'"$NAMESPACE"'","sectionName":"http"}'
+  kc -n "$NAMESPACE" patch httproute docs --subresource=status --type=merge -p \
+    '{"status":{"parents":[{"parentRef":{"name":"edge","namespace":"'"$NAMESPACE"'"},"controllerName":"e2e.kubemg.io/fixture","conditions":['"$accepted,$resolved"']}]}}' >/dev/null
+  kc -n "$NAMESPACE" patch httproute shop --subresource=status --type=merge -p \
+    '{"status":{"parents":[{"parentRef":'"$parent"',"controllerName":"e2e.kubemg.io/fixture","conditions":['"$accepted,$refused"']}]}}' >/dev/null
+}
+
 # `helm upgrade --install` would append a revision on every run, which is not a
 # no-op; the release is installed once and left alone.
 ensure_release() {
@@ -268,6 +307,7 @@ up() {
   detached=$(ensure_cluster "$DETACHED" staging)
   attach_agent "$cluster"
   ensure_objects
+  ensure_traffic
   ensure_release
   viewer=$(ensure_viewer "$cluster")
 
@@ -288,6 +328,11 @@ KubeMG e2e fixture — ready
   Helm release       $NAMESPACE/$RELEASE   local chart hack/e2e/chart, one ConfigMap
   CRDs               stable.e2emulti.example: Widget, Gadget (own section)
                      things.e2esingle.example: Solo (Other)
+  Traffic map        $NAMESPACE: Ingresses shop, docs · HTTPRoutes shop, docs · VirtualService shop
+                     Services shop-api (healthy), shop-checkout (never ready),
+                     shop-legacy (matches nothing); e2e-payments/ledger (outside the viewer's grant)
+  Dependency map     $NAMESPACE/shop-worker: ConfigMap shop-config, optional shop-flags (absent),
+                     Secret shop-db (never created), ServiceAccount, claim shop-data
 EOF
   if [ "$setup" = "true" ]; then
     warn "first-run setup is not finished, so the console opens on the setup wizard; the API is unaffected"
@@ -308,7 +353,9 @@ down() {
     say "removing the fixture's objects from minikube ($PROFILE)"
     helm --kube-context "$PROFILE" -n "$NAMESPACE" uninstall "$RELEASE" >/dev/null 2>&1 || true
     kc delete --ignore-not-found -f "$HERE/manifests/crds.yaml" >/dev/null
-    kc delete --ignore-not-found namespace "$NAMESPACE" >/dev/null
+    kc delete --ignore-not-found namespace "$NAMESPACE" e2e-payments >/dev/null
+    # Only the stand-ins this fixture applied; a real Gateway API or Istio stays.
+    kc delete crd --ignore-not-found -l e2e.kubemg.io/fixture=true >/dev/null
     if [ -n "$cluster" ]; then
       api GET "/api/v1/clusters/$cluster/kustomize?format=yaml" | kc delete --ignore-not-found -f - >/dev/null
     fi

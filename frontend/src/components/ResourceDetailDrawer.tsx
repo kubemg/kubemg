@@ -22,6 +22,7 @@ import { HelmHistoryPanel } from './HelmHistoryPanel'
 import { HelmValuesPanel } from './HelmValuesPanel'
 import { LogExplorer } from './LogExplorer'
 import { ReachabilityTab } from './NetworkPolicyReachability'
+import { TrafficMapPanel } from './TrafficMap'
 import { PodLogView, PodOverview } from './PodPanels'
 import { WorkloadActionPanel } from './WorkloadActionPanel'
 import type { WorkloadActionName, WorkloadActionTarget } from './WorkloadActionPanel'
@@ -74,6 +75,26 @@ export type DetailTab =
   | 'values'
   | 'history'
   | 'reachability'
+
+/** The kinds whose Overview leads with a traffic map: the three routes
+    forward, a Service back to the routes that reach it. */
+const TRAFFIC_KINDS: ReadonlySet<string> = new Set([
+  'ingresses',
+  'httproutes',
+  'virtualservices',
+  'services',
+])
+
+/** The kinds whose Overview draws what their pods need in order to start. */
+const DEPENDENCY_KINDS: ReadonlySet<string> = new Set([
+  'deployments',
+  'statefulsets',
+  'daemonsets',
+  'replicasets',
+  'jobs',
+  'cronjobs',
+  'pods',
+])
 
 /** Which stream the logs tab is showing. */
 type StreamView = 'logs' | 'history' | 'terminal'
@@ -548,6 +569,7 @@ export function ResourceDetailDrawer({
           onOpenPod={(row) =>
             onOpen?.({ kind: 'pods', label: 'Pod', name: row.name, namespace: row.namespace, pod: row })
           }
+          onOpen={onOpen}
         />
       ) : null}
 
@@ -710,6 +732,7 @@ function OverviewTab({
   name,
   namespace,
   onOpenPod,
+  onOpen,
 }: {
   cluster: Cluster
   pod?: Pod
@@ -721,6 +744,8 @@ function OverviewTab({
   name: string
   namespace?: string
   onOpenPod: (pod: Pod) => void
+  /** Opens a hop of the traffic map in this same drawer. */
+  onOpen?: (target: DetailTarget) => void
 }) {
   if (loading && !describe) return <p className="text-[13px] text-muted">Reading the object…</p>
   if (!describe) return null
@@ -757,6 +782,23 @@ function OverviewTab({
           has restarted. The list row already carries all of it. */}
       {pod ? <PodOverview cluster={cluster} pod={pod} /> : null}
 
+      {/* Where a route's traffic goes is the first thing a route is opened
+          for — "does this host reach anything, and is it healthy" — so it
+          leads the overview rather than waiting behind a tab, the way a
+          workload's pods do below. */}
+      {!pod && namespace && TRAFFIC_KINDS.has(kind) ? (
+        <div className="flex flex-col gap-2">
+          <span className="label">Traffic</span>
+          <TrafficMapPanel
+            cluster={cluster}
+            kind={kind}
+            name={name}
+            namespace={namespace}
+            onOpen={onOpen}
+          />
+        </div>
+      ) : null}
+
       {/* A workload's health is its pods' health — what it owns right now, and
           whether each one is ready, is answered here rather than behind a tab
           of its own, the way Rancher's own workload page reads.
@@ -775,6 +817,23 @@ function OverviewTab({
             namespace={namespace}
             label={describe.kind || kind}
             onOpenPod={onOpenPod}
+          />
+        </div>
+      ) : null}
+
+      {/* What the pods need in order to start, under the pods themselves: a
+          pod stuck in CreateContainerConfigError is answered by the ConfigMap
+          or Secret drawn broken here. */}
+      {namespace && DEPENDENCY_KINDS.has(kind) ? (
+        <div className="flex flex-col gap-2">
+          <span className="label">Dependencies</span>
+          <TrafficMapPanel
+            cluster={cluster}
+            kind={kind}
+            name={name}
+            namespace={namespace}
+            onOpen={onOpen}
+            source="dependencies"
           />
         </div>
       ) : null}

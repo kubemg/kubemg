@@ -174,6 +174,9 @@ it needs `docker`, `minikube`, `kubectl`, `helm`, `jq`, `curl`, `openssl` and
 | Helm release | `e2e-apps/e2e-release`, from the local chart in `hack/e2e/chart` (nothing to pull) |
 | CRD family with two kinds | `stable.e2emulti.example`: `Widget`, `Gadget` — its own sidebar section |
 | CRD family with one kind | `things.e2esingle.example`: `Solo` — lands in *Other* |
+| Traffic map shop | `e2e-apps`: Ingresses `shop` and `docs`, HTTPRoutes `shop` and `docs` on Gateway `edge`, VirtualService `shop` on Istio Gateway `public` + `mesh`, over Services `shop-api` (healthy), `shop-checkout` (a pod that never turns Ready), `shop-legacy` (matches no pods) and `e2e-payments/ledger` (outside the viewer's grant). The Ingress also names a port `shop-api` does not expose and a Service that does not exist; HTTPRoute `shop` carries a `RefNotPermitted` status. See `hack/e2e/manifests/traffic.yaml`. |
+| Dependency map | `e2e-apps/shop-worker`: ConfigMap `shop-config` (read for keys), optional `shop-flags` (absent → warning), Secret `shop-db` (never created; the pod's `CreateContainerConfigError` is how the map learns it), ServiceAccount `shop-worker`, claim `shop-data` bound by minikube's default StorageClass. |
+| Gateway API / Istio | Stand-in CRDs (`traffic-crds.yaml`, labelled `e2e.kubemg.io/fixture`) — applied only when no real ones are installed, and the only CRDs of those groups `e2e-down` removes. No controller runs: the fixture writes the HTTPRoutes' status itself. |
 
 One agent namespace holds one cluster's agent. If `kubemg-system` on the
 profile already runs another KubeMG cluster's agent, the fixture **refuses**
