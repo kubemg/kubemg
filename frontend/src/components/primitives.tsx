@@ -35,6 +35,16 @@ import { usageTone } from '../lib/units'
 // larger ones about what a tone looks like — so the pairing lives in one place.
 const TONE_CHIP = TONE_SOFT
 
+// Its edge is the tone at hairline strength, the way the environment tag draws
+// its own: a soft fill alone barely separates from a striped row.
+const TONE_EDGE: Record<Tone, string> = {
+  ok: 'border-ok/40',
+  warn: 'border-warn/40',
+  bad: 'border-danger/40',
+  idle: 'border-faint/60',
+  accent: 'border-accent/40',
+}
+
 const TONE_DOT: Record<Tone, string> = {
   ok: 'bg-ok',
   warn: 'bg-warn',
@@ -58,7 +68,7 @@ export function Pill({
   return (
     <span
       title={title}
-      className={`inline-flex min-w-0 items-center gap-1.5 rounded-chip px-2 py-0.5 text-[12px] font-medium whitespace-nowrap ${TONE_CHIP[tone]}`}
+      className={`inline-flex min-w-0 items-center gap-1.5 rounded-full border px-2 py-px text-[12px] font-medium whitespace-nowrap ${TONE_CHIP[tone]} ${TONE_EDGE[tone]}`}
     >
       {dot ? (
         <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${TONE_DOT[tone]}`} />
@@ -1036,6 +1046,13 @@ function useColumnResize(columnKey?: string) {
 }
 
 /**
+ * A column heading reads as the row it is: semibold in the interface face, in
+ * the foreground tone, on a raised band — not the quiet `label` a field name
+ * wears, which left the heading row looking like one more row of data.
+ */
+const HEADING = 'text-[12.5px] font-semibold whitespace-nowrap text-fg'
+
+/**
  * Th is a column heading, and where it sits vertically is not its own decision:
  * `--table-heading-position` and `--table-sticky-top` are read off whatever box
  * this table is in. At rest they are `relative` and `0`, which is a heading
@@ -1064,7 +1081,7 @@ export function Th({
     <th
       scope="col"
       style={style}
-      className={`label [position:var(--table-heading-position)] top-[var(--table-sticky-top)] z-1 bg-surface shadow-[inset_0_-1px_0_var(--color-line)] px-4 py-2.5 ${
+      className={`${HEADING} [position:var(--table-heading-position)] top-[var(--table-sticky-top)] z-1 bg-raised shadow-[inset_0_-1px_0_var(--color-line)] px-5 py-2.5 ${
         align === 'right' ? 'text-right' : 'text-left'
       } ${className ?? ''}`}
     >
@@ -1121,16 +1138,16 @@ export function SortTh({
       scope="col"
       aria-sort={direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'}
       style={style}
-      className={`label [position:var(--table-heading-position)] top-[var(--table-sticky-top)] z-1 bg-surface shadow-[inset_0_-1px_0_var(--color-line)] px-4 py-2.5 ${
+      className={`${HEADING} [position:var(--table-heading-position)] top-[var(--table-sticky-top)] z-1 bg-raised shadow-[inset_0_-1px_0_var(--color-line)] px-5 py-2.5 ${
         align === 'right' ? 'text-right' : 'text-left'
       } ${className ?? ''}`}
     >
       <button
         type="button"
         onClick={onSort}
-        className={`group label flex w-full cursor-pointer items-center gap-1 transition-colors hover:text-fg ${
+        className={`group ${HEADING} flex w-full cursor-pointer items-center gap-1 transition-colors hover:text-accent ${
           align === 'right' ? 'justify-end' : ''
-        } ${direction ? 'text-fg' : ''}`}
+        }`}
       >
         <span className="min-w-0 truncate">{children}</span>
         {arrow}
@@ -1185,7 +1202,7 @@ export function Row({
             }
           : undefined
       }
-      className={`group/row border-t border-line-soft transition-colors hover:bg-raised focus-within:bg-raised ${
+      className={`group/row border-t border-line-soft transition-colors even:bg-raised/40 hover:bg-raised focus-within:bg-raised ${
         onOpen ? 'cursor-pointer' : ''
       } ${className ?? ''}`}
     >
@@ -1195,38 +1212,20 @@ export function Row({
 }
 
 /**
- * OBJECT_NAME is how a name that addresses something is *set*; OBJECT_MARK is
- * how a row *says* it addresses something. They are two constants because the
- * name is the one thing in a list whose length nobody controls — a pod carries
- * its ReplicaSet hash and its own suffix — so the name wraps, and an affordance
- * that lives on the text has to survive being cut in half.
+ * OBJECT_NAME is how a name that addresses something is set: the row's first
+ * column, semibold in the foreground tone, and the accent when the row is under
+ * the pointer or holds focus. The name is the one string in a list whose length
+ * nobody controls — a pod carries its ReplicaSet hash and its own suffix — so it
+ * wraps rather than truncating, and it wears no underline, which a wrap would
+ * cut in half.
  *
- * An underline does not. Clamped to two lines it decorates only the first (the
- * `-webkit-box` the clamp needs drops the rest), and unclamped it leaves a stub
- * under the four characters that spilled — thirty rows of ragged offcuts that
- * read as damage rather than as structure.
- *
- * So the mark moved to the row's edge, where a name's length cannot reach it:
- * one hairline bar per row, the full height of the cell however many lines the
- * name takes. It is `accent-line` at rest — the accent at hairline weight, the
- * same weight as the row rules — because lime is the deck's only interactive
- * accent and thirty saturated bars is a stripe, not a signal. Row hover brings
- * it to full accent along with the name.
- *
- * It still encodes the same fact the underline did, and now encodes it once per
- * row instead of once per line: a row wearing a bar opens onto something, and a
- * row without one holds a value and nothing more.
+ * It used to sit beside a hairline lime bar on the row's edge that said "this
+ * opens". The bar went with the list refresh: thirty of them down a list read
+ * as a stripe rather than a signal, and the weight now says the same thing — a
+ * name that opens something is semibold, a name that only holds a value is not.
  */
 export const OBJECT_NAME =
-  'block min-w-0 cursor-pointer text-left font-data font-medium text-fg [overflow-wrap:anywhere] transition-colors group-hover/row:text-accent hover:text-accent focus-visible:text-accent'
-
-/**
- * The bar itself, set on the cell's content wrapper so it takes the height of a
- * wrapped name. Applied only where the name actually opens something — that is
- * what makes its absence readable.
- */
-export const OBJECT_MARK =
-  '-ml-2 border-l-2 border-accent-line pl-2 transition-colors group-hover/row:border-accent'
+  'block min-w-0 cursor-pointer text-left font-data font-semibold text-fg [overflow-wrap:anywhere] transition-colors group-hover/row:text-accent hover:text-accent focus-visible:text-accent'
 
 export function Td({
   children,
@@ -1238,7 +1237,7 @@ export function Td({
   title?: string
 }) {
   return (
-    <td title={title} className={`px-4 py-2.5 ${className ?? ''}`}>
+    <td title={title} className={`px-5 py-3 ${className ?? ''}`}>
       {children}
     </td>
   )

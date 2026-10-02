@@ -24,7 +24,6 @@ import {
   Field,
   IconButton,
   Notice,
-  OBJECT_MARK,
   OBJECT_NAME,
   Panel,
   Row,
@@ -210,7 +209,7 @@ export function MachineAccounts() {
                 return (
                   <Row key={row.id}>
                     <Td>
-                      <span className={`flex ${OBJECT_MARK}`}>
+                      <span className="flex">
                         <button
                           type="button"
                           className={OBJECT_NAME}

@@ -4,7 +4,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { Disclosure, Meter, OBJECT_MARK, OBJECT_NAME, Pill, Row } from './primitives'
+import { Disclosure, Meter, OBJECT_NAME, Pill, Row } from './primitives'
 
 /*
  * The DOM half of the suite, kept deliberately small. What is worth rendering a
@@ -128,9 +128,8 @@ describe('Disclosure', () => {
 describe('an object name', () => {
   /*
    * A name in a list is the one string nobody controls the length of, so it
-   * wraps — and the affordance therefore cannot live on the text, where a wrap
-   * either halves it or leaves a stub. It lives on the row's edge instead, and
-   * says the same thing once per row rather than once per line.
+   * wraps — and the affordance therefore cannot be an underline, which a wrap
+   * either halves or leaves a stub of. Weight carries it instead.
    */
   it('wraps rather than truncating, and carries no decoration of its own', () => {
     expect(OBJECT_NAME).toContain('[overflow-wrap:anywhere]')
@@ -141,11 +140,7 @@ describe('an object name', () => {
     // accent on the one thing already certain to be clicked.
     expect(OBJECT_NAME.split(' ')).toContain('text-fg')
     expect(OBJECT_NAME.split(' ')).not.toContain('text-accent')
-  })
-
-  it('marks the row edge at hairline weight, and lights it on hover', () => {
-    expect(OBJECT_MARK).toContain('border-accent-line')
-    expect(OBJECT_MARK).toContain('group-hover/row:border-accent')
+    expect(OBJECT_NAME.split(' ')).toContain('font-semibold')
   })
 
   it('answers for a hover anywhere on its row, not only on the text', () => {
@@ -154,11 +149,9 @@ describe('an object name', () => {
         <tbody>
           <Row>
             <td>
-              <span className={OBJECT_MARK}>
-                <button type="button" className={OBJECT_NAME}>
-                  argocd-notifications-controller-7d7c69d4d8-nbttw
-                </button>
-              </span>
+              <button type="button" className={OBJECT_NAME}>
+                argocd-notifications-controller-7d7c69d4d8-nbttw
+              </button>
             </td>
           </Row>
         </tbody>
@@ -167,7 +160,6 @@ describe('an object name', () => {
     const row = screen.getByRole('row')
     expect(row.className).toContain('group/row')
     expect(row.className).toContain('focus-within:bg-raised')
-    // The name and the mark are both the group's subjects, so one hover moves both.
     expect(screen.getByRole('button').className).toContain('group-hover/row:text-accent')
   })
 })
