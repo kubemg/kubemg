@@ -48,7 +48,6 @@ import {
 import {
   Age,
   IconButton,
-  OBJECT_MARK,
   OBJECT_NAME,
   Pill,
   Row,
@@ -439,15 +438,9 @@ function Name({
   to?: string
 }) {
   const full = namespace && title ? `${namespace}/${title}` : title
-  // The bar is the affordance, so it is drawn for exactly the two branches that
-  // open something. A name with nowhere to go wears nothing, which is what
-  // makes the bar readable in the rows that do.
-  const addressable = Boolean(to || onOpen)
 
   return (
-    <span
-      className={`flex items-start gap-2.5 ${addressable ? OBJECT_MARK : 'border-l-2 border-transparent -ml-2 pl-2'}`}
-    >
+    <span className="flex items-start gap-2.5">
       {tone ? (
         // `mt` rather than `items-center`: the dot belongs beside the name's
         // first line, not floating at the middle of a two-line name.

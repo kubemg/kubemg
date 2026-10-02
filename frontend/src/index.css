@@ -10,8 +10,8 @@
  * on the light one, in both cases a step behind the page rather than in
  * front of it; lime (#BFF23C) is the only interactive accent, and sage/amber/rust
  * are state that is actually changing. Identifiers —
- * cluster names, endpoints, versions, counts, paths — are set in `font-data`
- * with tabular figures, because they are data and get compared column to column.
+ * cluster names, endpoints, versions, counts, paths — are set in `font-data`,
+ * and a figure compared down a column carries tabular digits of its own.
  *
  * A cluster's link to KubeMG is stated, not drawn (see
  * components/LinkStatus.tsx): a glyph whose silhouette carries the state — two
@@ -26,9 +26,9 @@
  * not a surface — beyond the current navigation row and the primary action it
  * stays off large areas — and text on lime is always ink, never white. Type is
  * Inter for the interface and for the data (`font-data`: identifiers and
- * figures, with tabular digits so columns still line up), Archivo only for the
- * `kubemg` wordmark, and Commit Mono only for code — YAML, logs, commands,
- * patterns and diffs, where a column of characters has to align.
+ * figures; a figure compared down a column adds `tabular-nums`), Archivo only
+ * for the `kubemg` wordmark, and Commit Mono only for code — YAML, logs,
+ * commands, patterns and diffs, where a column of characters has to align.
  *
  * The chrome follows a floating two-column sidebar: the rail and the tree sit
  * together in one card inset from the window edge, the row you are on (and the
@@ -511,9 +511,10 @@
     text-wrap: balance;
   }
 
-  /* Every figure that gets compared down a column lines up. */
-  table,
-  .font-data,
+  /* Tabular figures are asked for where a figure is compared down a column
+     (`tabular-nums` on the reading itself), never set on a whole table or on
+     `font-data`: Inter's `tnum` also widens the hyphen by a third, and a
+     Kubernetes name is mostly hyphens — `kube-prom-…` read as letter-spaced. */
   .font-mono {
     font-variant-numeric: tabular-nums;
   }

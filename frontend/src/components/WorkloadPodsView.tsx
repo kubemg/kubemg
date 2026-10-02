@@ -15,7 +15,6 @@ import {
   Button,
   EmptyState,
   Notice,
-  OBJECT_MARK,
   OBJECT_NAME,
   Pill,
   Row,
@@ -224,7 +223,7 @@ export function WorkloadPodsView({
               return (
                 <Row key={`${pod.namespace}/${pod.name}`}>
                   <Td>
-                    <span className={`flex items-start gap-2.5 ${OBJECT_MARK}`}>
+                    <span className="flex items-start gap-2.5">
                       <span
                         aria-hidden="true"
                         className={`mt-1.5 size-1.5 shrink-0 rounded-full ${TONE_FILL[podTone(pod)]}`}

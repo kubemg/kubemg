@@ -15,7 +15,6 @@ import {
   IconButton,
   LinkButton,
   Notice,
-  OBJECT_MARK,
   OBJECT_NAME,
   Row,
   SearchInput,
@@ -168,7 +167,7 @@ export function ClusterManagement() {
               {visible.map((cluster) => (
                 <Row key={cluster.id}>
                   <Td>
-                    <span className={`flex ${OBJECT_MARK}`}>
+                    <span className="flex">
                       <Link to={`/clusters/${cluster.id}`} className={OBJECT_NAME}>
                         {cluster.name}
                       </Link>
