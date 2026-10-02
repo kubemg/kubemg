@@ -378,7 +378,7 @@ export function TerminalSessionPlayer({
               )}
             </IconButton>
 
-            <span className="font-mono text-[12px] text-muted tabular-nums">
+            <span className="font-data text-[12px] text-muted tabular-nums">
               {clock(position)} / {clock(cast.duration)}
             </span>
 

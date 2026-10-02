@@ -145,7 +145,7 @@ export function GroupMappingEditor({
         eyebrow="Group federation"
         title={
           <>
-            What <span className="font-mono text-accent">{provider.name}</span> groups are worth
+            What <span className="font-data text-accent">{provider.name}</span> groups are worth
           </>
         }
         onClose={onClose}
@@ -194,7 +194,7 @@ export function GroupMappingEditor({
             <tbody>
               {mappings.map((mapping) => (
                 <Row key={mapping.id}>
-                  <Td className="truncate font-mono text-[12.5px]" title={mapping.external_group_pattern}>
+                  <Td className="truncate font-data text-[12.5px]" title={mapping.external_group_pattern}>
                     {mapping.external_group_pattern}
                   </Td>
                   <Td className="truncate text-muted">
@@ -208,7 +208,7 @@ export function GroupMappingEditor({
                           ? `${mapping.environment_filter} clusters`
                           : 'every cluster'}
                         {mapping.namespaces.length > 0 ? (
-                          <span className="block font-mono text-[11.5px] text-faint">
+                          <span className="block font-data text-[11.5px] text-faint">
                             {mapping.namespaces.join(', ')}
                           </span>
                         ) : null}
@@ -327,7 +327,7 @@ function MappingSheet({
         <TextInput
           id="mapping-pattern"
           required
-          className="font-mono text-[12.5px]"
+          className="font-data text-[12.5px]"
           placeholder="platform-*"
           value={draft.external_group_pattern}
           onChange={(event) => set('external_group_pattern', event.target.value)}
@@ -401,7 +401,7 @@ function MappingSheet({
           >
             <TextInput
               id="mapping-namespaces"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               placeholder="payments, checkout"
               value={draft.namespaces}
               onChange={(event) => set('namespaces', event.target.value)}

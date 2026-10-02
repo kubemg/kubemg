@@ -46,7 +46,7 @@ export function ClusterSwitcher({ cluster }: { cluster: Cluster }) {
         className="flex h-9 min-w-0 items-center gap-2 rounded-full border border-line bg-surface pr-2.5 pl-3 text-[14px] font-semibold text-fg transition-colors duration-300 hover:border-faint/60"
       >
         <EnvironmentDot environment={cluster.environment} />
-        <span className="min-w-0 truncate font-mono" translate="no">
+        <span className="min-w-0 truncate font-data" translate="no">
           {cluster.name}
         </span>
         <ChevronDown aria-hidden="true" className={`size-3.5 shrink-0 text-faint ${open ? 'rotate-180' : ''}`} />

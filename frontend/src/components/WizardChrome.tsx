@@ -43,7 +43,7 @@ export function Stepper({
               }`}
             >
               <span
-                className={`grid size-6 shrink-0 place-items-center rounded-full font-mono text-[11.5px] font-semibold ${
+                className={`grid size-6 shrink-0 place-items-center rounded-full font-data text-[11.5px] font-semibold ${
                   done
                     ? 'bg-ok-soft text-ok'
                     : active

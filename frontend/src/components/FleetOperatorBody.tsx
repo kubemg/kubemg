@@ -205,7 +205,7 @@ function FleetSlab({ clusters, items }: { clusters: Cluster[]; items: QueueItem[
                 ) : (
                   <Timer aria-hidden="true" className="size-4 shrink-0 text-slab-warn" />
                 )}
-                <span className="truncate font-mono text-[13.5px] font-semibold text-slab-text">
+                <span className="truncate font-data text-[13.5px] font-semibold text-slab-text">
                   {item.subject}
                 </span>
                 <span className="col-start-2 text-[13px] text-slab-muted sm:col-start-3">
@@ -233,7 +233,7 @@ function CapacityBar({ label, percent, title }: { label: string; percent: number
     <div className="flex min-w-0 flex-col gap-1.5" title={title}>
       <span className="flex items-baseline justify-between gap-2 text-[12px] text-muted">
         <span>{label}</span>
-        <span className="font-mono font-semibold text-fg tabular-nums">{Math.round(percent)}%</span>
+        <span className="font-data font-semibold text-fg tabular-nums">{Math.round(percent)}%</span>
       </span>
       <span
         role="meter"
@@ -294,7 +294,7 @@ function FleetCapacity({
             >
               <Link
                 to={clusterHref(cluster)}
-                className="flex min-w-0 items-center gap-2 font-mono text-[13px] text-fg hover:text-accent"
+                className="flex min-w-0 items-center gap-2 font-data text-[13px] text-fg hover:text-accent"
               >
                 <EnvironmentDot environment={cluster.environment} />
                 <span className="truncate">{cluster.name}</span>
@@ -386,7 +386,7 @@ function FleetLinks({ clusters }: { clusters: Cluster[] }) {
           <li key={state} className="flex items-center gap-2 text-muted">
             <span aria-hidden="true" className={`size-2.5 rounded-full ${LINK_FILL[state]}`} />
             {LINK_LABEL[state]}
-            <span className="ml-auto font-mono font-semibold text-fg tabular-nums">
+            <span className="ml-auto font-data font-semibold text-fg tabular-nums">
               {counts[state]}
             </span>
           </li>
@@ -436,12 +436,12 @@ function RecentActivity() {
             >
               <span
                 aria-hidden="true"
-                className="row-span-2 grid size-8 place-items-center rounded-full bg-raised font-mono text-[11px] font-semibold text-fg"
+                className="row-span-2 grid size-8 place-items-center rounded-full bg-raised font-data text-[11px] font-semibold text-fg"
               >
                 {event.username.slice(0, 2).toUpperCase()}
               </span>
               <span className="flex min-w-0 items-center gap-2">
-                <span className="truncate font-mono text-[13px] font-medium text-fg">
+                <span className="truncate font-data text-[13px] font-medium text-fg">
                   {event.username}
                 </span>
                 {activityRefused(event) ? (
@@ -454,7 +454,7 @@ function RecentActivity() {
                 <Age iso={event.at} />
               </span>
               <span
-                className="col-span-2 col-start-2 truncate font-mono text-[12px] text-muted"
+                className="col-span-2 col-start-2 truncate font-data text-[12px] text-muted"
                 title={activityLine(event)}
               >
                 {activityLine(event)}
@@ -490,7 +490,7 @@ function ClusterRow({
           <LinkStatus state={linkState(cluster)} variant="glyph" className="shrink-0" />
           <span className="flex min-w-0 flex-col gap-0.5">
             <span
-              className={`truncate font-mono text-[13.5px] leading-tight font-semibold ${
+              className={`truncate font-data text-[13.5px] leading-tight font-semibold ${
                 failing ? 'text-danger' : 'text-fg'
               } group-hover:text-accent`}
             >
@@ -506,7 +506,7 @@ function ClusterRow({
       </Td>
       <Td className="py-3.5">
         <span className="flex flex-col gap-0.5">
-          <span className="font-mono text-[12.5px] leading-tight text-fg">
+          <span className="font-data text-[12.5px] leading-tight text-fg">
             {cluster.kubernetes_version ?? '—'}
           </span>
           <span className="text-[11px] leading-tight text-faint">
@@ -515,14 +515,14 @@ function ClusterRow({
         </span>
       </Td>
       <Td
-        className={`hidden py-3.5 font-mono text-[12px] md:table-cell ${
+        className={`hidden py-3.5 font-data text-[12px] md:table-cell ${
           drifted ? 'text-warn' : 'text-muted'
         }`}
         title={drifted ? `behind ${newestAgent} running elsewhere in the fleet` : undefined}
       >
         {cluster.agent_version ?? '—'}
       </Td>
-      <Td className="py-3.5 font-mono text-[12px] text-muted">
+      <Td className="py-3.5 font-data text-[12px] text-muted">
         <Age iso={cluster.status === 'pending' ? undefined : cluster.last_checked_at} />
       </Td>
     </tr>

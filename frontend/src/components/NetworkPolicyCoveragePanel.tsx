@@ -63,9 +63,9 @@ export function NetworkPolicyCoveragePanel({
     <div className="card flex flex-col gap-2.5 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[13px] font-medium text-fg">
-          Coverage in <span className="font-mono">{coverage.namespace}</span>
+          Coverage in <span className="font-data">{coverage.namespace}</span>
         </span>
-        <span className="font-mono text-[12px] text-faint">
+        <span className="font-data text-[12px] text-faint">
           {coverage.policy_count} {coverage.policy_count === 1 ? 'policy' : 'policies'},{' '}
           {coverage.pod_count} {coverage.pod_count === 1 ? 'pod' : 'pods'}
         </span>
@@ -122,7 +122,7 @@ function CoverageReading({
         ) : null}
       </div>
       {uncovered > 0 && examples && examples.length > 0 ? (
-        <span className="truncate font-mono text-[11.5px] text-faint" title={examples.join(', ')}>
+        <span className="truncate font-data text-[11.5px] text-faint" title={examples.join(', ')}>
           e.g. {examples.slice(0, 3).join(', ')}
           {uncovered > examples.length ? ` +${uncovered - examples.length} more` : ''}
         </span>

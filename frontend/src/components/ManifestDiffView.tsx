@@ -71,7 +71,7 @@ export function ManifestDiffView({
           <tbody>
             {diff.changes.map((change) => (
               <tr key={change.path} className="border-b border-line-soft last:border-0">
-                <td className="px-3 py-2 align-top font-mono text-[12px] text-fg">
+                <td className="px-3 py-2 align-top font-data text-[12px] text-fg">
                   <span
                     className={`mr-1.5 font-sans text-[10.5px] font-semibold uppercase tracking-wide ${KIND_TONE[change.kind]}`}
                   >

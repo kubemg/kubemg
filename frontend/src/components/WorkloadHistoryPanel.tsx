@@ -182,20 +182,20 @@ export function WorkloadHistoryPanel({
               const isCurrent = entry.revision === current?.revision
               return (
                 <Row key={entry.revision}>
-                  <Td className="font-mono">
+                  <Td className="font-data">
                     {entry.revision}
                     {isCurrent ? <span className="ml-2 text-[12px] text-muted">current</span> : null}
                   </Td>
-                  <Td className="font-mono text-muted" title={entry.created_at}>
+                  <Td className="font-data text-muted" title={entry.created_at}>
                     {entry.created_at ? <Age iso={entry.created_at} /> : '—'}
                   </Td>
-                  <Td className="truncate font-mono text-[12.5px]" title={entry.images.join(', ')}>
+                  <Td className="truncate font-data text-[12.5px]" title={entry.images.join(', ')}>
                     {entry.images.length > 0 ? entry.images.join(', ') : '—'}
                   </Td>
                   <Td className="hidden truncate text-muted md:table-cell" title={entry.change_cause}>
                     {entry.change_cause || '—'}
                   </Td>
-                  <Td className="font-mono text-muted">
+                  <Td className="font-data text-muted">
                     {entry.ready != null && entry.replicas != null ? `${entry.ready}/${entry.replicas}` : '—'}
                   </Td>
                   <Td className="text-right">

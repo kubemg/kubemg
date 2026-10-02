@@ -161,7 +161,7 @@ export function GeneralSettings() {
             >
               <TextInput
                 id="public_url"
-                className="font-mono text-[12.5px]"
+                className="font-data text-[12.5px]"
                 placeholder={settings.defaults.public_url}
                 value={publicUrl}
                 onChange={(event) => {
@@ -193,7 +193,7 @@ export function GeneralSettings() {
                 max={MAX_CEILING_HOURS}
                 step={1}
                 inputMode="numeric"
-                className="max-w-40 font-mono text-[12.5px]"
+                className="max-w-40 font-data text-[12.5px]"
                 placeholder={String(settings.defaults.kubeconfig_max_ttl_hours)}
                 value={ceiling}
                 onChange={(event) => {

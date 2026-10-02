@@ -10,8 +10,8 @@
  * on the light one, in both cases a step behind the page rather than in
  * front of it; lime (#BFF23C) is the only interactive accent, and sage/amber/rust
  * are state that is actually changing. Identifiers —
- * cluster names, endpoints, versions, counts, paths — are set in mono with
- * tabular figures, because they are data and get compared column to column.
+ * cluster names, endpoints, versions, counts, paths — are set in `font-data`
+ * with tabular figures, because they are data and get compared column to column.
  *
  * A cluster's link to KubeMG is stated, not drawn (see
  * components/LinkStatus.tsx): a glyph whose silhouette carries the state — two
@@ -25,8 +25,10 @@
  * bone #F2F3EF, amber #E8A33D, rust #D1553C, sage #7FB069. Lime is an accent and
  * not a surface — beyond the current navigation row and the primary action it
  * stays off large areas — and text on lime is always ink, never white. Type is
- * Inter for the interface, Archivo only for the `kubemg` wordmark, and Commit
- * Mono for the data.
+ * Inter for the interface and for the data (`font-data`: identifiers and
+ * figures, with tabular digits so columns still line up), Archivo only for the
+ * `kubemg` wordmark, and Commit Mono only for code — YAML, logs, commands,
+ * patterns and diffs, where a column of characters has to align.
  *
  * The chrome follows a floating two-column sidebar: the rail and the tree sit
  * together in one card inset from the window edge, the row you are on (and the
@@ -478,6 +480,7 @@
 
   --font-sans: 'Inter', ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-brand: 'Archivo', ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-data: 'Inter', ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'Commit Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -510,6 +513,7 @@
 
   /* Every figure that gets compared down a column lines up. */
   table,
+  .font-data,
   .font-mono {
     font-variant-numeric: tabular-nums;
   }
@@ -558,8 +562,8 @@
  * Sentence case in the interface face at semibold, the way the template the
  * chrome follows sets its own. They used to be mono micro-caps tracked wide;
  * the slot still reads as a name above its value because the weight and the
- * quiet tone do that work, and the value itself stays in mono where it is an
- * identifier.
+ * quiet tone do that work, and the value itself is set in `font-data` where it
+ * is an identifier.
  */
 @utility label {
   font-family: var(--font-sans);

@@ -227,11 +227,11 @@ export function CreateResourceSheet({
           <span className="inline-flex items-start gap-1.5">
             <Check aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
             <span>
-              Created <span className="font-mono">{created.name}</span>
+              Created <span className="font-data">{created.name}</span>
               {created.namespace ? (
                 <>
                   {' '}
-                  in <span className="font-mono">{created.namespace}</span>
+                  in <span className="font-data">{created.namespace}</span>
                 </>
               ) : null}
               . The manifest below is what the cluster stored, including everything it filled in

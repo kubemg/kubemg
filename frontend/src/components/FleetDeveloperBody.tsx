@@ -108,13 +108,13 @@ function ElevationStrip({ request }: { request: JitRequest }) {
       <KeyRound aria-hidden="true" className="size-4 shrink-0 text-warn" />
       <span className="label text-warn">Elevated</span>
       <span className="text-[13px] text-fg">
-        <span className="font-mono font-semibold">{request.requested_role}</span> on{' '}
-        <span className="font-mono font-semibold">{request.cluster_name}</span>
+        <span className="font-data font-semibold">{request.requested_role}</span> on{' '}
+        <span className="font-data font-semibold">{request.cluster_name}</span>
         {request.approver_username ? (
           <span className="text-muted"> · approved by {request.approver_username}</span>
         ) : null}
       </span>
-      <span className="ml-auto font-mono text-[12.5px] font-semibold text-warn tabular-nums">
+      <span className="ml-auto font-data text-[12.5px] font-semibold text-warn tabular-nums">
         {formatCountdown(remaining)} left
       </span>
     </section>
@@ -132,11 +132,11 @@ function RecentCluster({ cluster }: { cluster: Cluster }) {
       <span className="label">Last opened</span>
       <span className="flex min-w-0 items-center gap-2">
         <LinkStatus state={linkState(cluster)} variant="glyph" />
-        <span className="truncate font-mono text-[14px] font-semibold text-fg group-hover:text-accent">
+        <span className="truncate font-data text-[14px] font-semibold text-fg group-hover:text-accent">
           {cluster.name}
         </span>
       </span>
-      <span className="truncate font-mono text-[11.5px] text-muted">
+      <span className="truncate font-data text-[11.5px] text-muted">
         {cluster.k8s_role} · {namespaceReading(cluster)}
       </span>
       {cluster.status === 'unhealthy' ? (
@@ -165,7 +165,7 @@ function ClusterRow({ cluster }: { cluster: Cluster }) {
 
         <span className="flex min-w-0 flex-col gap-0.5">
           <span
-            className={`truncate font-mono text-[13.5px] leading-tight font-semibold ${
+            className={`truncate font-data text-[13.5px] leading-tight font-semibold ${
               failing ? 'text-danger' : 'text-fg'
             } group-hover:text-accent`}
           >
@@ -181,7 +181,7 @@ function ClusterRow({ cluster }: { cluster: Cluster }) {
 
         <span className="col-start-2 flex min-w-0 flex-col gap-0.5 sm:col-start-3">
           <span className="label">Your role</span>
-          <span className="truncate font-mono text-[12.5px] leading-tight text-fg">
+          <span className="truncate font-data text-[12.5px] leading-tight text-fg">
             {cluster.k8s_role}
           </span>
         </span>
@@ -189,7 +189,7 @@ function ClusterRow({ cluster }: { cluster: Cluster }) {
         <span className="col-start-2 flex min-w-0 flex-col gap-0.5 sm:col-start-4">
           <span className="label">Namespaces</span>
           <span
-            className="truncate font-mono text-[12px] leading-tight text-muted"
+            className="truncate font-data text-[12px] leading-tight text-muted"
             title={namespaceReading(cluster)}
           >
             {namespaceReading(cluster)}

@@ -227,7 +227,7 @@ function SummaryCard({
                   aria-hidden="true"
                   className={`size-2 rounded-full ${TONE_FILL[segment.tone ?? 'idle']}`}
                 />
-                <span className="font-mono font-semibold text-fg tabular-nums">{segment.value}</span>
+                <span className="font-data font-semibold text-fg tabular-nums">{segment.value}</span>
                 {segment.label.toLowerCase()}
               </span>
             ))}
@@ -279,7 +279,7 @@ function AttentionPanel({ cluster, rows }: { cluster: Cluster; rows: Attention[]
             >
               {row.name}
             </Link>
-            <span className="font-mono text-[12px] text-faint">{row.namespace}</span>
+            <span className="font-data text-[12px] text-faint">{row.namespace}</span>
             <span className="text-[12px] text-muted">{row.kind}</span>
             <span className="ml-auto shrink-0">
               <Pill tone={row.tone}>{row.reason}</Pill>

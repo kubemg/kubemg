@@ -366,14 +366,14 @@ function ClusterSlab({
       </p>
       <h2
         id="cluster-slab-name"
-        className="mt-1 truncate font-mono text-[24px] font-bold tracking-normal text-slab-text sm:text-[28px]"
+        className="mt-1 truncate font-data text-[24px] font-bold tracking-normal text-slab-text sm:text-[28px]"
         translate="no"
       >
         {cluster.name}
       </h2>
       <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[13px] text-slab-muted">
         <span
-          className={`inline-flex items-center rounded-chip border px-1.5 py-px font-mono text-[11px] tracking-wide uppercase ${SLAB_ENVIRONMENT[cluster.environment]}`}
+          className={`inline-flex items-center rounded-chip border px-1.5 py-px font-data text-[11px] tracking-wide uppercase ${SLAB_ENVIRONMENT[cluster.environment]}`}
         >
           {cluster.environment}
         </span>
@@ -382,7 +382,7 @@ function ClusterSlab({
           last probe <Age iso={cluster.last_checked_at} />
         </span>
         {admin && cluster.api_url ? (
-          <span className="min-w-0 truncate font-mono text-[12.5px]" translate="no">
+          <span className="min-w-0 truncate font-data text-[12.5px]" translate="no">
             · {cluster.api_url}
           </span>
         ) : null}
@@ -430,7 +430,7 @@ function AdminDashboard({ cluster, username }: { cluster: Cluster; username: str
         <StatTile
           icon={Waypoints}
           label="Link"
-          mono={false}
+          data={false}
           value={LINK_LABEL[link]}
           sub={viaAgent ? 'outbound agent tunnel' : 'kubemg dials the API server'}
           tone={link === 'live' ? 'ok' : link === 'down' ? 'danger' : 'neutral'}
@@ -451,7 +451,7 @@ function AdminDashboard({ cluster, username }: { cluster: Cluster; username: str
             tone={behind ? 'warn' : 'neutral'}
           />
         ) : (
-          <StatTile icon={Server} label="Connection" mono={false} value="Direct API access" />
+          <StatTile icon={Server} label="Connection" data={false} value="Direct API access" />
         )}
         <StatTile
           icon={CalendarClock}
@@ -616,7 +616,7 @@ function WorkloadDashboard({ cluster, username }: { cluster: Cluster; username: 
         <StatTile
           icon={ScrollText}
           label="Every call"
-          mono={false}
+          data={false}
           value={viaAgent ? 'Proxied and audited' : 'Not proxied'}
           sub={viaAgent ? undefined : 'calls made with a kubeconfig'}
           tone={viaAgent ? 'neutral' : 'warn'}
@@ -749,7 +749,7 @@ function Capacity({ cluster }: { cluster: Cluster }) {
           <ul className="flex flex-col gap-3 border-t border-line-soft pt-4">
             {metrics.nodes.map((node) => (
               <li key={node.name} className="flex flex-col gap-2">
-                <span className="truncate font-mono text-[13px] text-fg" title={node.name}>
+                <span className="truncate font-data text-[13px] text-fg" title={node.name}>
                   {node.name}
                 </span>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -824,7 +824,7 @@ function AccessPath({ cluster, username }: { cluster: Cluster; username: string 
           >
             <span className="label">{hop.label}</span>
             <span
-              className={`flex items-center gap-1.5 truncate font-mono text-[13.5px] ${
+              className={`flex items-center gap-1.5 truncate font-data text-[13.5px] ${
                 hop.gap ? 'text-warn' : 'text-fg'
               }`}
               title={hop.value}

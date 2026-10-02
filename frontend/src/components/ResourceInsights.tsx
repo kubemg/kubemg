@@ -166,7 +166,7 @@ export function ResourceInsights({
           </span>
         ) : null}
         {summary.length > 0 ? (
-          <span className="ml-auto font-mono text-[11.5px] text-faint tabular-nums">
+          <span className="ml-auto font-data text-[11.5px] text-faint tabular-nums">
             {summary.join(' · ')}
           </span>
         ) : null}
@@ -198,7 +198,7 @@ export function ResourceInsights({
           {usage ? (
             <span
               title={`Sampled on ${usage.sampled} of ${total.value}`}
-              className="font-mono text-[11.5px] text-faint tabular-nums"
+              className="font-data text-[11.5px] text-faint tabular-nums"
             >
               CPU {formatCPU(usage.cpu)} · Memory {formatMemory(usage.memory)}
             </span>
@@ -307,7 +307,7 @@ function Total({
 }) {
   const body = (
     <>
-      <span className="font-mono text-[22px] leading-none font-bold text-fg tabular-nums">
+      <span className="font-data text-[22px] leading-none font-bold text-fg tabular-nums">
         {stat.value}
       </span>
       <span className="label">{stat.label}</span>
@@ -360,7 +360,7 @@ function SegmentChip({
   const body = (
     <>
       <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${segmentFill(segment)}`} />
-      <span className="font-mono text-[13px] font-semibold text-fg tabular-nums">
+      <span className="font-data text-[13px] font-semibold text-fg tabular-nums">
         {segment.value}
       </span>
       <span className="min-w-0 truncate text-[12.5px] text-muted">
@@ -406,7 +406,7 @@ function Reading({
   const body = (
     <>
       <span
-        className={`font-mono text-[12.5px] font-semibold tabular-nums ${
+        className={`font-data text-[12.5px] font-semibold tabular-nums ${
           stat.tone ? TONE_TEXT[stat.tone] : 'text-fg'
         }`}
       >
@@ -461,7 +461,7 @@ function Alert({
 
   const body = (
     <>
-      <span className="min-w-0 truncate font-mono text-[12px] text-fg">{alert.name}</span>
+      <span className="min-w-0 truncate font-data text-[12px] text-fg">{alert.name}</span>
       <span className={`shrink-0 text-[12px] ${tint}`}>{alert.reason}</span>
     </>
   )

@@ -398,7 +398,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-control bg-raised px-3 py-2">
       <span className="label shrink-0">{label}</span>
-      <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-fg">{value}</span>
+      <span className="min-w-0 flex-1 truncate font-data text-[12px] text-fg">{value}</span>
       <IconButton
         label={copied ? 'Copied' : 'Copy'}
         onClick={() => {
@@ -497,12 +497,12 @@ function ProviderSheet({
       {provider && provider.protocol !== 'ldap' ? (
         <Notice tone="info">
           Register{' '}
-          <span className="font-mono">{provider.redirect_url}</span> with this provider
+          <span className="font-data">{provider.redirect_url}</span> with this provider
           {provider.entity_id ? (
             <>
               {' '}
               as the {provider.protocol === 'saml' ? 'assertion consumer service' : 'redirect URI'},
-              using entity ID <span className="font-mono">{provider.entity_id}</span>
+              using entity ID <span className="font-data">{provider.entity_id}</span>
             </>
           ) : null}
           .
@@ -518,7 +518,7 @@ function ProviderSheet({
           >
             <TextInput
               id="sso-issuer"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               placeholder="https://login.example.com/realms/main"
               value={draft.issuer_url}
               onChange={(event) => set('issuer_url', event.target.value)}
@@ -527,7 +527,7 @@ function ProviderSheet({
           <Field label="Client ID" htmlFor="sso-client-id">
             <TextInput
               id="sso-client-id"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               value={draft.client_id}
               onChange={(event) => set('client_id', event.target.value)}
             />
@@ -557,7 +557,7 @@ function ProviderSheet({
           >
             <TextInput
               id="sso-scopes"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               value={draft.scopes}
               onChange={(event) => set('scopes', event.target.value)}
             />
@@ -574,7 +574,7 @@ function ProviderSheet({
           >
             <TextInput
               id="sso-saml-url"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               placeholder="https://idp.example.com/app/exk1/sso/saml/metadata"
               value={draft.saml_metadata_url}
               onChange={(event) => set('saml_metadata_url', event.target.value)}
@@ -600,7 +600,7 @@ function ProviderSheet({
           >
             <TextInput
               id="sso-saml-entity"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               value={draft.saml_entity_id}
               onChange={(event) => set('saml_entity_id', event.target.value)}
             />
@@ -614,7 +614,7 @@ function ProviderSheet({
             <Field label="Host" htmlFor="sso-ldap-host">
               <TextInput
                 id="sso-ldap-host"
-                className="font-mono text-[12.5px]"
+                className="font-data text-[12.5px]"
                 placeholder="ldap.example.com"
                 value={draft.ldap_host}
                 onChange={(event) => set('ldap_host', event.target.value)}
@@ -628,7 +628,7 @@ function ProviderSheet({
               <TextInput
                 id="sso-ldap-port"
                 inputMode="numeric"
-                className="font-mono text-[12.5px]"
+                className="font-data text-[12.5px]"
                 value={draft.ldap_port}
                 onChange={(event) => set('ldap_port', event.target.value)}
               />
@@ -672,7 +672,7 @@ function ProviderSheet({
           >
             <TextInput
               id="sso-ldap-binddn"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               placeholder="cn=kubemg,ou=services,dc=example,dc=com"
               value={draft.ldap_bind_dn}
               onChange={(event) => set('ldap_bind_dn', event.target.value)}
@@ -695,7 +695,7 @@ function ProviderSheet({
           <Field label="Base DN" htmlFor="sso-ldap-basedn">
             <TextInput
               id="sso-ldap-basedn"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               placeholder="ou=people,dc=example,dc=com"
               value={draft.ldap_base_dn}
               onChange={(event) => set('ldap_base_dn', event.target.value)}
@@ -708,7 +708,7 @@ function ProviderSheet({
           >
             <TextInput
               id="sso-ldap-filter"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               placeholder="(&(objectClass=person)(uid=%s))"
               value={draft.ldap_user_filter}
               onChange={(event) => set('ldap_user_filter', event.target.value)}
@@ -719,7 +719,7 @@ function ProviderSheet({
             <Field label="Username attribute" htmlFor="sso-ldap-userattr" hint="Default uid">
               <TextInput
                 id="sso-ldap-userattr"
-                className="font-mono text-[12.5px]"
+                className="font-data text-[12.5px]"
                 placeholder="uid"
                 value={draft.ldap_user_attribute}
                 onChange={(event) => set('ldap_user_attribute', event.target.value)}
@@ -728,7 +728,7 @@ function ProviderSheet({
             <Field label="Email attribute" htmlFor="sso-ldap-mailattr" hint="Default mail">
               <TextInput
                 id="sso-ldap-mailattr"
-                className="font-mono text-[12.5px]"
+                className="font-data text-[12.5px]"
                 placeholder="mail"
                 value={draft.ldap_email_attribute}
                 onChange={(event) => set('ldap_email_attribute', event.target.value)}
@@ -743,7 +743,7 @@ function ProviderSheet({
           >
             <TextInput
               id="sso-ldap-groupattr"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               placeholder="memberOf"
               value={draft.ldap_group_attribute}
               onChange={(event) => set('ldap_group_attribute', event.target.value)}
@@ -756,7 +756,7 @@ function ProviderSheet({
           >
             <TextInput
               id="sso-ldap-groupfilter"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               placeholder="(&(objectClass=groupOfNames)(member=%s))"
               value={draft.ldap_group_filter}
               onChange={(event) => set('ldap_group_filter', event.target.value)}
@@ -766,7 +766,7 @@ function ProviderSheet({
             <Field label="Group base DN" htmlFor="sso-ldap-groupbase" hint="Defaults to the base DN.">
               <TextInput
                 id="sso-ldap-groupbase"
-                className="font-mono text-[12.5px]"
+                className="font-data text-[12.5px]"
                 value={draft.ldap_group_base_dn}
                 onChange={(event) => set('ldap_group_base_dn', event.target.value)}
               />
@@ -778,7 +778,7 @@ function ProviderSheet({
             >
               <TextInput
                 id="sso-ldap-groupname"
-                className="font-mono text-[12.5px]"
+                className="font-data text-[12.5px]"
                 placeholder="cn"
                 value={draft.ldap_group_name_attribute}
                 onChange={(event) => set('ldap_group_name_attribute', event.target.value)}
@@ -793,7 +793,7 @@ function ProviderSheet({
           <Field label="Username claim" htmlFor="sso-username-claim">
             <TextInput
               id="sso-username-claim"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               placeholder={draft.protocol === 'oidc' ? 'preferred_username' : 'auto'}
               value={draft.username_claim}
               onChange={(event) => set('username_claim', event.target.value)}
@@ -802,7 +802,7 @@ function ProviderSheet({
           <Field label="Email claim" htmlFor="sso-email-claim">
             <TextInput
               id="sso-email-claim"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               placeholder={draft.protocol === 'oidc' ? 'email' : 'auto'}
               value={draft.email_claim}
               onChange={(event) => set('email_claim', event.target.value)}
@@ -811,7 +811,7 @@ function ProviderSheet({
           <Field label="Groups claim" htmlFor="sso-groups-claim">
             <TextInput
               id="sso-groups-claim"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               placeholder={draft.protocol === 'oidc' ? 'groups' : 'auto'}
               value={draft.groups_claim}
               onChange={(event) => set('groups_claim', event.target.value)}
@@ -822,14 +822,14 @@ function ProviderSheet({
       {usernameClaimIsEditable(draft.protocol, draft.username_claim) ? (
         <Notice tone="warn">
           {draft.username_claim.trim() ? (
-            <span className="font-mono">{draft.username_claim.trim()}</span>
+            <span className="font-data">{draft.username_claim.trim()}</span>
           ) : (
             'The default username claim'
           )}{' '}
           is one many providers let a person edit. The first sign-in makes it the account's name for good, and a
           person who renames themselves at the provider to somebody else's name is refused rather than let in —
           but only once that account has signed in and recorded its provider ID. Use{' '}
-          <span className="font-mono">sub</span> or an attribute only a directory administrator writes.
+          <span className="font-data">sub</span> or an attribute only a directory administrator writes.
         </Notice>
       ) : null}
 

@@ -236,14 +236,14 @@ function NamespaceIdentity({ entry, loading }: { entry?: Namespace; loading: boo
       <StatTile
         icon={Activity}
         label="Phase"
-        mono={false}
+        data={false}
         value={entry.status}
         tone={tone === 'ok' ? 'ok' : tone === 'bad' ? 'danger' : tone === 'warn' ? 'warn' : 'neutral'}
       />
       <StatTile
         icon={KeyRound}
         label="Your grant"
-        mono={false}
+        data={false}
         value={entry.granted ? 'Granted to you' : 'Not granted'}
         sub={entry.granted ? undefined : 'what is below is what the cluster lets you read'}
       />

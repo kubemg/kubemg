@@ -514,19 +514,19 @@ function TreeRow({
       >
         <span className="min-w-0 flex-1 truncate">{row.label}</span>
         {/* The count reads before the scope word: it is the thing the eye is
-            scanning the column for, and it is data, so it is mono like every
+            scanning the column for, and it is data, so it is set as data like every
             other number in the console. A row with no count draws nothing — the
             space simply stays empty rather than holding a placeholder that
             would read as a zero. */}
         {count === null ? null : (
-          <span className="shrink-0 font-mono text-[11px] text-rail-muted tabular-nums">
+          <span className="shrink-0 font-data text-[11px] text-rail-muted tabular-nums">
             {count}
           </span>
         )}
         {/* Cluster-scoped lists ignore the namespace picker; saying so here is
             why it disappears. */}
         {row.item.scope === 'cluster' ? (
-          <span className="shrink-0 font-mono text-[10px] text-rail-faint">cluster</span>
+          <span className="shrink-0 font-data text-[10px] text-rail-faint">cluster</span>
         ) : null}
       </Link>
       <PinButton item={row.item} pinned={pinned} onPin={onPin} />

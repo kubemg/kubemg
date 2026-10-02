@@ -93,7 +93,7 @@ export function SettingsAside({
   return (
     <div className="flex flex-col gap-1.5 rounded-card border border-line bg-surface p-3">
       <p className="label text-faint">{label}</p>
-      <p className="min-w-0 font-mono text-[12.5px] break-words text-fg">{value}</p>
+      <p className="min-w-0 font-data text-[12.5px] break-words text-fg">{value}</p>
       {source ? <p className="text-[12px] text-muted">{SOURCE_COPY[source]}</p> : null}
       {reach ? <p className="text-[12px] text-muted">{reach}</p> : null}
     </div>

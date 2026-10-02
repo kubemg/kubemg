@@ -127,11 +127,11 @@ export function JitRequestModal({
       {cluster ? (
         <p className="flex flex-wrap items-baseline gap-2 rounded-control bg-raised px-3.5 py-2.5">
           <span className="label">Cluster</span>
-          <span className="font-mono text-[13px] text-fg" translate="no">
+          <span className="font-data text-[13px] text-fg" translate="no">
             {cluster.name}
           </span>
           <span className="label">Current role</span>
-          <span className="font-mono text-[13px] text-fg">{cluster.k8s_role}</span>
+          <span className="font-data text-[13px] text-fg">{cluster.k8s_role}</span>
         </p>
       ) : (
         <Field label="Cluster" htmlFor="jit-cluster">
@@ -169,7 +169,7 @@ export function JitRequestModal({
           {durations.map((option) => (
             <Chip key={option} active={option === minutes} onClick={() => setMinutes(option)}>
               <Clock aria-hidden="true" className="size-3.5" />
-              <span className="font-mono text-[12.5px]">{formatWindow(option)}</span>
+              <span className="font-data text-[12.5px]">{formatWindow(option)}</span>
             </Chip>
           ))}
         </div>
@@ -186,7 +186,7 @@ export function JitRequestModal({
       >
         <TextInput
           id="jit-namespaces"
-          className="font-mono text-[12.5px]"
+          className="font-data text-[12.5px]"
           placeholder="e.g. payments, checkout…"
           name="jit-namespaces"
           autoComplete="off"

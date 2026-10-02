@@ -105,14 +105,14 @@ export function InsightTrend({
           which is what lets the plot's own gutter stay narrow. */}
       {reading ? (
         <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-          <span className="font-mono text-[22px] leading-none font-bold text-fg tabular-nums">
+          <span className="font-data text-[22px] leading-none font-bold text-fg tabular-nums">
             {format(reading.latest)}
           </span>
           {/* A namespace burning more CPU is a fact, not a fault — the catalogue
               calls these readings neutral — so the delta carries its direction in
               the glyph and spends no state colour on it. */}
           {reading.delta !== null ? (
-            <span className="rounded-chip bg-raised px-1.5 py-0.5 font-mono text-[12px] font-semibold text-muted tabular-nums">
+            <span className="rounded-chip bg-raised px-1.5 py-0.5 font-data text-[12px] font-semibold text-muted tabular-nums">
               <span aria-hidden="true">{reading.delta >= 0 ? '▲' : '▼'}</span>
               <span className="sr-only">{reading.delta >= 0 ? 'up' : 'down'}</span>{' '}
               {Math.abs(Math.round(reading.delta))}%

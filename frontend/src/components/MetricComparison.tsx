@@ -155,7 +155,7 @@ export function MetricComparison({
             <tbody>
               {rows.map((row) => (
                 <Row key={row.name}>
-                  <Td className="font-mono text-[13px] text-fg" title={row.name}>
+                  <Td className="font-data text-[13px] text-fg" title={row.name}>
                     {/* The rank, drawn: each row's reading against the largest
                         in the list, with a tick where it stood before. */}
                     <span className="block max-w-[28rem] truncate" translate="no">
@@ -174,10 +174,10 @@ export function MetricComparison({
                       ) : null}
                     </span>
                   </Td>
-                  <Td className="text-right font-mono font-semibold tabular-nums text-fg">
+                  <Td className="text-right font-data font-semibold tabular-nums text-fg">
                     {formatMetric(result?.unit ?? 'count', row.current)}
                   </Td>
-                  <Td className="hidden text-right font-mono tabular-nums text-muted sm:table-cell">
+                  <Td className="hidden text-right font-data tabular-nums text-muted sm:table-cell">
                     {row.previous === undefined
                       ? '—'
                       : formatMetric(result?.unit ?? 'count', row.previous)}
@@ -269,7 +269,7 @@ function Delta({
 
   return (
     <span
-      className={`inline-flex items-center justify-end gap-1 rounded-chip px-1.5 py-0.5 font-mono text-[12.5px] font-semibold tabular-nums ${tone}`}
+      className={`inline-flex items-center justify-end gap-1 rounded-chip px-1.5 py-0.5 font-data text-[12.5px] font-semibold tabular-nums ${tone}`}
     >
       <Arrow aria-hidden="true" className="size-3.5 shrink-0" />
       <span className="sr-only">{rising ? 'up' : 'down'} </span>

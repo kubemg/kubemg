@@ -99,7 +99,7 @@ export function LinkStatus({
         aria-hidden="true"
         className={`size-3.5 shrink-0 ${tone} ${state === 'live' ? 'link-live' : ''}`}
       />
-      <span className={`font-mono text-[11.5px] ${state === 'down' ? 'text-danger' : 'text-muted'}`}>
+      <span className={`font-data text-[11.5px] ${state === 'down' ? 'text-danger' : 'text-muted'}`}>
         {label ?? LINK_LABEL[state]}
       </span>
     </span>
@@ -128,7 +128,7 @@ export function PathNode({
         <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${dot}`} />
         <span className="label">{label}</span>
       </span>
-      <span className="truncate font-mono text-[13px] text-fg" title={value}>
+      <span className="truncate font-data text-[13px] text-fg" title={value}>
         {value}
       </span>
     </span>
@@ -157,7 +157,7 @@ export function PathHop({
       </span>
       <span className="min-w-0 flex-1">
         <LinkStatus state={state} label={label} />
-        <span className="mt-1 block truncate font-mono text-[11px] text-faint" title={caption}>
+        <span className="mt-1 block truncate font-data text-[11px] text-faint" title={caption}>
           {caption}
         </span>
       </span>

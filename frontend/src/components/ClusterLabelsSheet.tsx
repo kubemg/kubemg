@@ -96,13 +96,13 @@ export function ClusterLabelsSheet({
               autoFocus
               maxLength={MAX_SHORT_NAME}
               placeholder={deriveChip(cluster.name)}
-              className="max-w-24 font-mono uppercase"
+              className="max-w-24 font-data uppercase"
               value={shortName}
               onChange={(event) => setShortName(normalizeShortName(event.target.value))}
             />
             <span
               aria-hidden="true"
-              className="grid size-10 shrink-0 place-items-center rounded-control border border-line bg-rail font-mono text-[10.5px] font-semibold text-rail-fg"
+              className="grid size-10 shrink-0 place-items-center rounded-control border border-line bg-rail font-data text-[10.5px] font-semibold text-rail-fg"
             >
               {railChip({ name: cluster.name, short_name: shortName })}
             </span>

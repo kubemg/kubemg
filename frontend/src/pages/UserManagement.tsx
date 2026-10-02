@@ -248,7 +248,7 @@ export function UserManagement() {
                 const busy = busyRow === row.id
                 return (
                   <Row key={row.id}>
-                    <Td className="truncate font-mono text-fg">
+                    <Td className="truncate font-data text-fg">
                       {/* The row opens onto the access review, which is what
                           this list was previously missing a destination for:
                           "what can this person reach today" had to be assembled

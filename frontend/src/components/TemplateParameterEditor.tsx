@@ -51,7 +51,7 @@ export function TemplateParameterEditor({
             >
               <TextInput
                 aria-label="Parameter name"
-                className="w-40 font-mono text-[12.5px]"
+                className="w-40 font-data text-[12.5px]"
                 value={parameter.name}
                 placeholder="name"
                 onChange={(event) => update(index, { name: event.target.value })}

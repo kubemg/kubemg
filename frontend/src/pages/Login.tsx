@@ -103,7 +103,7 @@ export function Login() {
       </section>
 
       {/* The right half keeps the left half's three rails — a top row, the
-          content, a mono line at the foot — on one 400px column, so the toggle
+          content, a data line at the foot — on one 400px column, so the toggle
           sits on the card's right edge, the footnote on its left, and the card
           is centred between two things rather than floating in what was left
           over. The toggle is in the flow rather than fixed, so it can never sit
