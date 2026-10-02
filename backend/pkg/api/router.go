@@ -899,6 +899,10 @@ func NewRouter(opts Options) *gin.Engine {
 			// to the routes that send to it. Every hop is the caller's own
 			// impersonated read. See resources_traffic.go.
 			resources.GET("/traffic", s.showTrafficMap)
+			// What a workload's pod template names — ConfigMaps, Secrets (named,
+			// never read), the ServiceAccount, volume claims and their volumes.
+			// See resources_dependencies.go.
+			resources.GET("/dependencies", s.showDependencyMap)
 
 			// The rest of the inventory behind the Explore sidebar: one route
 			// per list an operator can be looking at. The cluster-scoped ones

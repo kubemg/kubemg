@@ -80,8 +80,16 @@ const maxTrafficPodsPerWorkload = 4
 // more pods than this is drawn from the first page and says so.
 const trafficListLimit = 250
 
-// The kinds a map can be asked for.
-var trafficRootKinds = []string{"ingresses", "httproutes", "virtualservices", "services"}
+// The kinds a map can be asked for. `namespaces` is every route in one
+// namespace drawn together — the namespace page's map.
+var trafficRootKinds = []string{"ingresses", "httproutes", "virtualservices", "services", "namespaces"}
+
+// trafficColumns titles a traffic map's five columns.
+var trafficColumns = []string{"Entry", "Route", "Service", "Workload", "Pods"}
+
+// maxNamespaceServices is the namespace map's bound: every route in the
+// namespace at once reaches more Services than one route does.
+const maxNamespaceServices = 25
 
 type trafficNode struct {
 	ID string `json:"id"`
@@ -117,7 +125,10 @@ type trafficEdge struct {
 }
 
 type trafficMap struct {
-	Root  string        `json:"root"`
+	Root string `json:"root"`
+	// Columns are the titles of the columns the nodes' `column` indexes, left
+	// to right — a traffic map's and a dependency map's are different.
+	Columns []string      `json:"columns"`
 	Nodes []trafficNode `json:"nodes"`
 	Edges []trafficEdge `json:"edges"`
 	// Notes are what this map did not look at, said where the map is read.
@@ -178,6 +189,10 @@ func (s *server) showTrafficMap(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if kind == "namespaces" && name != namespace {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a namespace's map is asked for with the namespace as both name and namespace"})
+		return
+	}
 
 	resolver := newTrafficResolver(tunnelReader{s: s, c: c, user: user, cluster: cluster, grant: grant},
 		grant.NamespaceList())
@@ -204,8 +219,9 @@ type trafficResolver struct {
 
 	// services is every Service already followed, nil for one that was drawn
 	// but could not be read, so a Service two rules send to is read once.
-	services map[string]*serviceObject
-	followed int
+	services    map[string]*serviceObject
+	followed    int
+	maxServices int
 	// owners caches the workload a pod's controller resolves to, so ten pods
 	// of one ReplicaSet cost one ReplicaSet read.
 	owners map[string]string
@@ -223,12 +239,14 @@ func newTrafficResolver(read trafficReader, allowed []string) *trafficResolver {
 	return &trafficResolver{
 		read:     read,
 		allowed:  allowed,
-		out:      trafficMap{Nodes: []trafficNode{}, Edges: []trafficEdge{}, Notes: []string{}},
+		out:      trafficMap{Columns: trafficColumns, Nodes: []trafficNode{}, Edges: []trafficEdge{}, Notes: []string{}},
 		nodes:    map[string]int{},
 		edges:    map[[2]string]int{},
 		notes:    map[string]bool{},
 		services: map[string]*serviceObject{},
 		owners:   map[string]string{},
+
+		maxServices: maxTrafficServices,
 	}
 }
 
@@ -254,6 +272,10 @@ func (r *trafficResolver) resolve(kind, namespace, name string) (*trafficMap, *r
 		r.out.Root = r.addVirtualService(object, "")
 	case "services":
 		if failure := r.resolveServiceRoot(namespace, name); failure != nil {
+			return nil, failure
+		}
+	case "namespaces":
+		if failure := r.resolveNamespace(namespace); failure != nil {
 			return nil, failure
 		}
 	}
@@ -325,10 +347,18 @@ func (r *trafficResolver) addEdge(from, to, label, state, problem string) {
 	key := [2]string{from, to}
 	if index, seen := r.edges[key]; seen {
 		edge := &r.out.Edges[index]
+		worse := severity(state) > severity(edge.State)
 		if label != "" && !slices.Contains(edge.Labels, label) {
-			edge.Labels = append(edge.Labels, label)
+			// The rule that broke the edge is the label drawn on it: a healthy
+			// rule and a broken one to the same Service are one edge, and the
+			// first label is the one there is room for.
+			if worse {
+				edge.Labels = append([]string{label}, edge.Labels...)
+			} else {
+				edge.Labels = append(edge.Labels, label)
+			}
 		}
-		if severity(state) > severity(edge.State) {
+		if worse {
 			edge.State, edge.Problem = state, problem
 		}
 		return
@@ -1006,9 +1036,9 @@ func (r *trafficResolver) service(namespace, name string) *serviceObject {
 	}
 	node := trafficNode{ID: id, Kind: "Service", Resource: "services", Namespace: namespace, Name: name,
 		Column: trafficColumnService}
-	if r.followed >= maxTrafficServices {
+	if r.followed >= r.maxServices {
 		node.State = trafficUnchecked
-		node.Problem = fmt.Sprintf("not followed — a map follows at most %d Services", maxTrafficServices)
+		node.Problem = fmt.Sprintf("not followed — a map follows at most %d Services", r.maxServices)
 		r.addNode(node)
 		r.services[id] = nil
 		return nil
@@ -1325,52 +1355,30 @@ func (r *trafficResolver) resolveServiceRoot(namespace, name string) *readFailur
 	r.followed++
 	r.drawService(object)
 
-	found := 0
-	collect := func(versions []resourceListPath, kind string, add func(json.RawMessage) bool) {
-		items, truncated, failure := r.list(namespace, versions, "")
-		if failure != nil {
-			// An optional CRD that is not installed is not something to report.
-			if failure.status != http.StatusNotFound {
-				r.note(fmt.Sprintf("%s in %s could not be read: %s", kind, namespace, failure.problem))
+	found, failure := r.eachRoute(namespace,
+		func(object ingressObject) bool {
+			if !object.sendsTo(id) {
+				return false
 			}
-			return
-		}
-		if truncated {
-			r.note(fmt.Sprintf("Only the first %d %s in %s were searched.", trafficListLimit, kind, namespace))
-		}
-		for _, raw := range items {
-			if add(raw) {
-				found++
+			r.addIngress(object, id)
+			return true
+		},
+		func(object httpRouteObject) bool {
+			if !object.sendsTo(namespace, name) {
+				return false
 			}
-		}
-	}
+			r.addHTTPRoute(object, id)
+			return true
+		},
+		func(object virtualServiceObject) bool {
+			if !object.sendsTo(namespace, name) {
+				return false
+			}
+			r.addVirtualService(object, id)
+			return true
+		})
 
-	collect(objectKinds["ingresses"].versions, "Ingresses", func(raw json.RawMessage) bool {
-		var object ingressObject
-		if json.Unmarshal(raw, &object) != nil || !object.sendsTo(id) {
-			return false
-		}
-		r.addIngress(object, id)
-		return true
-	})
-	collect(objectKinds["httproutes"].versions, "HTTPRoutes", func(raw json.RawMessage) bool {
-		var object httpRouteObject
-		if json.Unmarshal(raw, &object) != nil || !object.sendsTo(namespace, name) {
-			return false
-		}
-		r.addHTTPRoute(object, id)
-		return true
-	})
-	collect(objectKinds["virtualservices"].versions, "VirtualServices", func(raw json.RawMessage) bool {
-		var object virtualServiceObject
-		if json.Unmarshal(raw, &object) != nil || !object.sendsTo(namespace, name) {
-			return false
-		}
-		r.addVirtualService(object, id)
-		return true
-	})
-
-	if found == 0 {
+	if found == 0 && failure == nil {
 		r.note(fmt.Sprintf("No Ingress, HTTPRoute or VirtualService in %s sends traffic to this Service.", namespace))
 	}
 	r.note(fmt.Sprintf("Only routes in %s are searched — an HTTPRoute or VirtualService in another namespace that sends here is not shown.", namespace))
@@ -1393,4 +1401,71 @@ func (o ingressObject) sendsTo(serviceID string) bool {
 		}
 	}
 	return false
+}
+
+// eachRoute reads every Ingress, HTTPRoute and VirtualService in a namespace
+// and hands each to its function, which says whether it drew it. An optional
+// CRD that is not installed is silent; any other failed list is a note.
+func (r *trafficResolver) eachRoute(namespace string,
+	ingress func(ingressObject) bool,
+	httpRoute func(httpRouteObject) bool,
+	virtualService func(virtualServiceObject) bool,
+) (int, *readFailure) {
+	found := 0
+	var failed []*readFailure
+	collect := func(versions []resourceListPath, kind string, add func(json.RawMessage) bool) {
+		items, truncated, failure := r.list(namespace, versions, "")
+		if failure != nil {
+			if failure.status != http.StatusNotFound {
+				failed = append(failed, failure)
+				r.note(fmt.Sprintf("%s in %s could not be read: %s", kind, namespace, failure.problem))
+			}
+			return
+		}
+		if truncated {
+			r.note(fmt.Sprintf("Only the first %d %s in %s were searched.", trafficListLimit, kind, namespace))
+		}
+		for _, raw := range items {
+			if add(raw) {
+				found++
+			}
+		}
+	}
+	collect(objectKinds["ingresses"].versions, "Ingresses", func(raw json.RawMessage) bool {
+		var object ingressObject
+		return json.Unmarshal(raw, &object) == nil && ingress(object)
+	})
+	collect(objectKinds["httproutes"].versions, "HTTPRoutes", func(raw json.RawMessage) bool {
+		var object httpRouteObject
+		return json.Unmarshal(raw, &object) == nil && httpRoute(object)
+	})
+	collect(objectKinds["virtualservices"].versions, "VirtualServices", func(raw json.RawMessage) bool {
+		var object virtualServiceObject
+		return json.Unmarshal(raw, &object) == nil && virtualService(object)
+	})
+	// Not one of the three lists answered: that is the read failing, not a
+	// namespace with no routes in it.
+	if len(failed) == 3 {
+		return found, failed[0]
+	}
+	return found, nil
+}
+
+// resolveNamespace draws every route in a namespace together — the namespace
+// page's map. There is no root: the namespace is not a node.
+func (r *trafficResolver) resolveNamespace(namespace string) *readFailure {
+	r.maxServices = maxNamespaceServices
+	found, failure := r.eachRoute(namespace,
+		func(object ingressObject) bool { r.addIngress(object, ""); return true },
+		func(object httpRouteObject) bool { r.addHTTPRoute(object, ""); return true },
+		func(object virtualServiceObject) bool { r.addVirtualService(object, ""); return true })
+	if failure != nil {
+		return failure
+	}
+	if found == 0 {
+		r.note(fmt.Sprintf("No Ingress, HTTPRoute or VirtualService in %s.", namespace))
+		return nil
+	}
+	r.note("A Service no route reaches is not drawn here — open it for its own map.")
+	return nil
 }
