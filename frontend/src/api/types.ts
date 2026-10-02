@@ -56,7 +56,7 @@ export interface User {
   created_at: string
 }
 
-export type AccountType = 'user' | 'service'
+export type AccountType = 'user' | 'machine'
 
 /** `local`, or the federation protocol that authenticates the account. */
 export type AuthSource = 'local' | SSOProtocol
@@ -194,6 +194,15 @@ export interface KubeconfigRevokeAllResult {
  * formality: a stolen session is exactly the case the route must not serve, and
  * re-authenticating is the one thing a session cannot do on its holder's behalf.
  */
+/**
+ * Editing your own account. Only the email: the username is the identity the
+ * gateway impersonates and every audit record's name, so renaming it stays an
+ * administrator's act.
+ */
+export interface ProfileUpdate {
+  email?: string
+}
+
 export interface PasswordChange {
   current_password: string
   new_password: string

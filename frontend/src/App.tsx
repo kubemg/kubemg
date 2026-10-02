@@ -17,6 +17,7 @@ import { Overview } from './pages/Overview'
 import { IssuedCredentials } from './pages/IssuedCredentials'
 import { MachineAccounts } from './pages/MachineAccounts'
 import { PermissionsMatrix } from './pages/PermissionsMatrix'
+import { Profile } from './pages/Profile'
 import { SecurityPosture } from './pages/SecurityPosture'
 import { SessionRecordings } from './pages/SessionRecordings'
 import { Setup } from './pages/Setup'
@@ -402,6 +403,17 @@ export default function App() {
                 Not adminOnly: the people who need to ask for access are the
                 ones without it, and the server narrows a non-admin to their own
                 requests exactly as it does on the audit trail. */}
+            {/* Reached from the person's own name on the sidebar card. The
+                server answers it from the session, so there is no id to
+                address and nobody else's to reach. */}
+            <Route
+              path="/me/profile"
+              element={
+                <RequireAuth>
+                  <Profile />
+                </RequireAuth>
+              }
+            />
             <Route
               path="/me/access"
               element={

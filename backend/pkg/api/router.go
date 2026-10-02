@@ -657,6 +657,9 @@ func NewRouter(opts Options) *gin.Engine {
 	{
 		v1.POST("/auth/login", s.login)
 		v1.GET("/auth/me", requireAuth, s.me)
+		// Editing your own details, beside reading them — PUT /users/:id is an
+		// administrator editing somebody else's account. See profile.go.
+		v1.PATCH("/auth/me", requireAuth, s.updateProfile)
 		// The console calls this over a header-authenticated request, then opens
 		// the WebSocket the ticket is for — see auth.Manager.IssueWSTicket.
 		v1.POST("/auth/ws-ticket", requireAuth, s.mintWSTicket)

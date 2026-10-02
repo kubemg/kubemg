@@ -10,6 +10,7 @@ import {
 import type { IssuedKubeconfig, KubeconfigRevokeAllResult } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { PasswordSheet } from '../components/PasswordSheet'
+import { profileAbilities } from '../lib/profile'
 import {
   Age,
   Button,
@@ -206,7 +207,7 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
               password actually lives here: a federated account's is held by its
               provider and a machine account has none at all, so the button would
               open a form that can only refuse. */}
-          {mine && user?.auth_source === 'local' && user?.account_type !== 'service' ? (
+          {mine && user && profileAbilities(user).changePassword ? (
             <Button onClick={() => setChangingPassword(true)}>
               <KeyRound aria-hidden="true" className="size-4" />
               Change password
