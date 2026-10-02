@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { TrafficEdge, TrafficMap, TrafficNode } from '../api/types'
-import { NODE_HEIGHT, layoutTraffic, tracePath, trafficProblems } from './trafficMap'
+import { NODE_HEIGHT, layoutTraffic, problemPaths, tracePath, trafficProblems } from './trafficMap'
 
 function node(id: string, column: number, over: Partial<TrafficNode> = {}): TrafficNode {
   return { id, kind: 'Service', name: id, column, detail: [], state: 'ok', ...over }
@@ -127,5 +127,27 @@ describe('the map in words', () => {
     const ids = trafficProblems(map).map((entry) => entry.id)
     expect(ids).toContain('ledger')
     expect(ids).not.toContain('mesh')
+  })
+})
+
+describe('narrowing to what needs a look', () => {
+  it('keeps a broken hop and every path through it, and drops the healthy branch', () => {
+    const map = fork()
+    map.nodes[2] = node('cart', 2, { state: 'bad', problem: 'its selector app=cart matches no pods' })
+    const ids = problemPaths(map).nodes.map((entry) => entry.id).sort()
+    expect(ids).toEqual(['cart', 'cart-deploy', 'cart-pod', 'host', 'web'])
+  })
+
+  it('keeps the source of an edge that is itself the problem', () => {
+    const map = fork()
+    map.edges[1] = edge('web', 'api', { state: 'bad', problem: 'port 9443 is not a port of Service api' })
+    const ids = problemPaths(map).nodes.map((entry) => entry.id)
+    expect(ids).toContain('web')
+    expect(ids).toContain('api')
+  })
+
+  it('uses the map’s own column titles', () => {
+    const map: TrafficMap = { ...fork(), columns: ['Workload', 'Uses', 'Bound volume', '', ''] }
+    expect(layoutTraffic(map).columns[0].title).toBe('Workload')
   })
 })

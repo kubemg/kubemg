@@ -85,6 +85,17 @@ const TRAFFIC_KINDS: ReadonlySet<string> = new Set([
   'services',
 ])
 
+/** The kinds whose Overview draws what their pods need in order to start. */
+const DEPENDENCY_KINDS: ReadonlySet<string> = new Set([
+  'deployments',
+  'statefulsets',
+  'daemonsets',
+  'replicasets',
+  'jobs',
+  'cronjobs',
+  'pods',
+])
+
 /** Which stream the logs tab is showing. */
 type StreamView = 'logs' | 'history' | 'terminal'
 
@@ -806,6 +817,23 @@ function OverviewTab({
             namespace={namespace}
             label={describe.kind || kind}
             onOpenPod={onOpenPod}
+          />
+        </div>
+      ) : null}
+
+      {/* What the pods need in order to start, under the pods themselves: a
+          pod stuck in CreateContainerConfigError is answered by the ConfigMap
+          or Secret drawn broken here. */}
+      {namespace && DEPENDENCY_KINDS.has(kind) ? (
+        <div className="flex flex-col gap-2">
+          <span className="label">Dependencies</span>
+          <TrafficMapPanel
+            cluster={cluster}
+            kind={kind}
+            name={name}
+            namespace={namespace}
+            onOpen={onOpen}
+            source="dependencies"
           />
         </div>
       ) : null}

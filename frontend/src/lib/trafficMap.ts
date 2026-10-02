@@ -156,8 +156,9 @@ export function layoutTraffic(map: TrafficMap): TrafficLayout {
     })
   }
 
+  const titles = map.columns ?? COLUMN_TITLES
   const columns = used.map((column) => ({
-    title: COLUMN_TITLES[column] ?? '',
+    title: titles[column] ?? '',
     x: left.get(column) ?? PADDING,
   }))
 
@@ -263,5 +264,27 @@ function defaultProblem(state: TrafficState): string {
       return 'outside your granted scope'
     default:
       return ''
+  }
+}
+
+/**
+ * The map narrowed to what needs a look: every problem hop and the paths
+ * through it, upstream and downstream — its blast radius and its cause. A
+ * namespace with forty healthy hops and one broken Service reads as that
+ * Service, the routes that send to it and the pods behind it.
+ */
+export function problemPaths(map: TrafficMap): TrafficMap {
+  const keep = new Set<string>()
+  for (const entry of trafficProblems(map)) {
+    for (const id of tracePath(map, entry.id).nodes) keep.add(id)
+  }
+  // An edge's own problem names its target, so its source is kept too.
+  for (const edge of map.edges) {
+    if (edge.problem && isProblem(edge.state, edge.problem) && keep.has(edge.to)) keep.add(edge.from)
+  }
+  return {
+    ...map,
+    nodes: map.nodes.filter((node) => keep.has(node.id)),
+    edges: map.edges.filter((edge) => keep.has(edge.from) && keep.has(edge.to)),
   }
 }

@@ -801,6 +801,9 @@ export interface TrafficEdge {
 /** A route followed to its pods, or a Service followed back to its routes. */
 export interface TrafficMap {
   root: string
+  /** Titles of the columns `column` indexes. A traffic map's are entry →
+      pods; a dependency map's are workload → bound volume. */
+  columns?: string[]
   nodes: TrafficNode[]
   edges: TrafficEdge[]
   /** What the map did not look at. */

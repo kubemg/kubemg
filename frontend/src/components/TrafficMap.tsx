@@ -1,17 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import {
   Box,
   Boxes,
   Cloud,
   Ellipsis,
+  FileKey,
+  FileText,
   Globe,
+  HardDrive,
   Network,
   RefreshCw,
   Route,
+  UserRound,
   Waypoints,
 } from 'lucide-react'
-import { errorMessage, fetchTrafficMap } from '../api/client'
+import { errorMessage, fetchDependencyMap, fetchTrafficMap } from '../api/client'
 import type { Cluster, TrafficMap, TrafficNode, TrafficState } from '../api/types'
 import type { ResourceKey } from '../lib/resources'
 import { resourceItem, resourceSingular } from '../lib/resources'
@@ -21,6 +25,7 @@ import {
   PADDING,
   isProblem,
   layoutTraffic,
+  problemPaths,
   tracePath,
   trafficProblems,
 } from '../lib/trafficMap'
@@ -41,19 +46,38 @@ import { IconButton, Notice, Pill } from './primitives'
  * clear, and the only change of state is the fade when a hop is pointed at,
  * which honours reduced motion.
  */
+/** The two maps one panel draws: where traffic goes, and what a workload's
+    pods need in order to start. */
+const SOURCES = {
+  traffic: {
+    fetch: fetchTrafficMap,
+    reading: 'Following the traffic…',
+    failed: 'Could not draw where this traffic goes.',
+  },
+  dependencies: {
+    fetch: fetchDependencyMap,
+    reading: 'Reading what it depends on…',
+    failed: 'Could not draw what this depends on.',
+  },
+} as const
+
 export function TrafficMapPanel({
   cluster,
   kind,
   name,
   namespace,
   onOpen,
+  source = 'traffic',
 }: {
   cluster: Cluster
-  kind: ResourceKey
+  /** The root's sidebar key — or `namespaces`, for a namespace's whole map. */
+  kind: ResourceKey | 'namespaces'
   name: string
   namespace: string
   onOpen?: (target: DetailTarget) => void
+  source?: keyof typeof SOURCES
 }) {
+  const reader = SOURCES[source]
   const { discovered } = useInventory()
   const [map, setMap] = useState<TrafficMap | null>(null)
   const [loading, setLoading] = useState(true)
@@ -63,14 +87,14 @@ export function TrafficMapPanel({
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setMap(await fetchTrafficMap(cluster.id, kind, name, namespace))
+      setMap(await reader.fetch(cluster.id, kind, name, namespace))
       setError(null)
     } catch (err) {
-      setError(errorMessage(err, 'Could not draw where this traffic goes.'))
+      setError(errorMessage(err, reader.failed))
     } finally {
       setLoading(false)
     }
-  }, [cluster.id, kind, name, namespace])
+  }, [cluster.id, kind, name, namespace, reader])
 
   useEffect(() => {
     void load()
@@ -102,7 +126,7 @@ export function TrafficMapPanel({
     [discovered],
   )
 
-  if (loading && !map) return <p className="text-[13px] text-muted">Following the traffic…</p>
+  if (loading && !map) return <p className="text-[13px] text-muted">{reader.reading}</p>
   if (error && !map) return <Notice tone="error">{error}</Notice>
   if (!map) return null
 
@@ -128,6 +152,11 @@ const KIND_ICON: Record<string, typeof Box> = {
   HTTPRoute: Route,
   VirtualService: Route,
   Service: Network,
+  ConfigMap: FileText,
+  Secret: FileKey,
+  ServiceAccount: UserRound,
+  PersistentVolumeClaim: HardDrive,
+  PersistentVolume: HardDrive,
   External: Cloud,
   Pod: Box,
   More: Ellipsis,
@@ -196,10 +225,44 @@ export function TrafficMapView({
   onOpen?: (target: DetailTarget) => void
   error?: string | null
 }) {
-  const layout = useMemo(() => layoutTraffic(map), [map])
-  const lit = useMemo(() => (focus ? tracePath(map, focus) : null), [map, focus])
   const problems = useMemo(() => trafficProblems(map), [map])
+  // "Only what needs a look": the problem hops and the paths through them.
+  // Offered only where it would hide something.
+  const [narrow, setNarrow] = useState(false)
+  const narrowed = useMemo(() => problemPaths(map), [map])
+  const canNarrow = problems.length > 0 && narrowed.nodes.length < map.nodes.length
+  const shown = narrow && canNarrow ? narrowed : map
+
+  const layout = useMemo(() => layoutTraffic(shown), [shown])
+  const dense = layout.edges.filter((entry) => entry.edge.labels.length > 0).length > 6
+  const lit = useMemo(() => (focus ? tracePath(shown, focus) : null), [shown, focus])
   const byId = useMemo(() => new Map(map.nodes.map((node) => [node.id, node])), [map])
+
+  /*
+   * Pointing is settled, not instant. Leaving a box used to clear the trace at
+   * once, so crossing the gap to the next box faded the whole map up and back
+   * down again — a flicker on every move. A leave now waits a moment, and an
+   * enter on another box cancels it, so moving between boxes only changes what
+   * actually changes.
+   */
+  const release = useRef<number | null>(null)
+  useEffect(() => () => {
+    if (release.current !== null) window.clearTimeout(release.current)
+  }, [])
+  const point = (id: string | null) => {
+    if (release.current !== null) {
+      window.clearTimeout(release.current)
+      release.current = null
+    }
+    if (id !== null) {
+      onFocus(id)
+      return
+    }
+    release.current = window.setTimeout(() => {
+      release.current = null
+      onFocus(null)
+    }, 180)
+  }
 
   const open = (node: TrafficNode | undefined) => {
     if (!node || !onOpen) return
@@ -221,12 +284,26 @@ export function TrafficMapView({
       <div className="flex flex-wrap items-center gap-2">
         <p className="min-w-0 flex-1 text-[13px] text-muted">
           {problems.length === 0
-            ? 'Every hop on this path answers.'
+            ? 'Every hop on this map answers.'
             : broken > 0
-              ? `${broken} ${broken === 1 ? 'hop is' : 'hops are'} broken on this path.`
+              ? `${broken} ${broken === 1 ? 'hop is' : 'hops are'} broken on this map.`
               : `${problems.length} ${problems.length === 1 ? 'hop needs' : 'hops need'} a look.`}{' '}
           Point at a hop to trace its path; open one to read it.
         </p>
+        {canNarrow ? (
+          <button
+            type="button"
+            aria-pressed={narrow}
+            onClick={() => setNarrow((value) => !value)}
+            className={`rounded-chip border px-2.5 py-1 text-[12.5px] font-medium transition-colors ${
+              narrow
+                ? 'border-accent-line bg-accent-soft text-fg'
+                : 'border-line text-muted hover:text-fg'
+            }`}
+          >
+            Only what needs a look
+          </button>
+        ) : null}
         {onRefresh ? (
           <IconButton label="Read the path again" onClick={onRefresh} disabled={loading}>
             <RefreshCw aria-hidden="true" className="size-4" />
@@ -294,7 +371,9 @@ export function TrafficMapView({
                 key={`${edge.from}->${edge.to}`}
                 d={path}
                 fill="none"
-                strokeWidth={lit && !dim ? 2 : 1.5}
+                // One width whether lit or not: a marker scales with the stroke,
+                // so a wider lit edge made every arrowhead jump on hover.
+                strokeWidth={1.5}
                 strokeDasharray={tone.dashed ? '5 4' : undefined}
                 markerEnd={`url(#${tone.marker})`}
                 className={`${tone.stroke} transition-opacity duration-200 motion-reduce:transition-none ${dim ? 'opacity-20' : ''}`}
@@ -306,6 +385,10 @@ export function TrafficMapView({
 
           {layout.edges.map(({ edge, labelX, labelY, labelWidth }) => {
             if (edge.labels.length === 0) return null
+            // A namespace's map has more rules than its gaps have room for, so
+            // there a label is drawn only where it explains something: on a
+            // broken edge, and on the path being pointed at.
+            if (dense && edge.state !== 'bad' && !lit?.edges.has(edge)) return null
             const text = clip(
               edge.labels[0] + (edge.labels.length > 1 ? ` +${edge.labels.length - 1}` : ''),
               labelWidth - 10,
@@ -343,7 +426,7 @@ export function TrafficMapView({
             const tone = NODE_TONE[node.state]
             const Icon = KIND_ICON[node.kind] ?? Boxes
             const target = onOpen ? targetOf(node) : null
-            const root = node.id === map.root
+            const root = node.id === map.root && map.root !== ''
             const dim = lit && !lit.nodes.has(node.id)
             const line = node.problem && isProblem(node.state, node.problem)
               ? node.problem
@@ -360,10 +443,10 @@ export function TrafficMapView({
                 role={target ? 'button' : undefined}
                 tabIndex={target ? 0 : -1}
                 aria-label={`${node.kind} ${node.name}, ${STATE_WORD[node.state]}${node.problem ? `: ${node.problem}` : ''}`}
-                onMouseEnter={() => onFocus(node.id)}
-                onMouseLeave={() => onFocus(null)}
-                onFocus={() => onFocus(node.id)}
-                onBlur={() => onFocus(null)}
+                onMouseEnter={() => point(node.id)}
+                onMouseLeave={() => point(null)}
+                onFocus={() => point(node.id)}
+                onBlur={() => point(null)}
                 onClick={() => target && open(node)}
                 onKeyDown={(event) => onKey(event, node)}
                 className={`outline-none transition-opacity duration-200 motion-reduce:transition-none ${target ? 'cursor-pointer' : ''} ${dim ? 'opacity-25' : ''} [&:focus-visible>rect:first-of-type]:stroke-accent`}
@@ -416,8 +499,8 @@ export function TrafficMapView({
               return (
                 <li
                   key={`${entry.id}-${index}`}
-                  onMouseEnter={() => onFocus(entry.id)}
-                  onMouseLeave={() => onFocus(null)}
+                  onMouseEnter={() => point(entry.id)}
+                  onMouseLeave={() => point(null)}
                   className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-3 py-2 text-[13px]"
                 >
                   <Pill tone={PILL_TONE[entry.state]}>{STATE_WORD[entry.state]}</Pill>

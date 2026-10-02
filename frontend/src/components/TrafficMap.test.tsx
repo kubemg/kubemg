@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { TrafficMap, TrafficNode } from '../api/types'
@@ -74,7 +75,7 @@ describe('the traffic map', () => {
 
   it('says what is broken in words, beside the drawing', () => {
     draw()
-    expect(screen.getByText('1 hop is broken on this path.', { exact: false })).toBeTruthy()
+    expect(screen.getByText('1 hop is broken on this map.', { exact: false })).toBeTruthy()
     expect(screen.getAllByText('its selector app=api matches no pods').length).toBeGreaterThan(0)
   })
 
@@ -87,5 +88,62 @@ describe('the traffic map', () => {
   it('states what the map did not look at', () => {
     draw()
     expect(screen.getByText(/DestinationRules are not read/)).toBeTruthy()
+  })
+})
+
+describe('pointing at hops', () => {
+  it('moves the trace from one box to the next without clearing it in between', () => {
+    vi.useFakeTimers()
+    try {
+      const { onFocus } = draw()
+      const service = screen.getByRole('button', { name: /^Service api/ })
+      const ingress = screen.getByRole('button', { name: /^Ingress web/ })
+      fireEvent.mouseEnter(service)
+      fireEvent.mouseLeave(service)
+      fireEvent.mouseEnter(ingress)
+      act(() => vi.advanceTimersByTime(500))
+      // Clearing in the gap is what faded the whole map up and back down.
+      expect(onFocus).not.toHaveBeenCalledWith(null)
+      expect(onFocus).toHaveBeenLastCalledWith('ingresses/shop/web')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('clears the trace once the pointer has really left', () => {
+    vi.useFakeTimers()
+    try {
+      const { onFocus } = draw()
+      const service = screen.getByRole('button', { name: /^Service api/ })
+      fireEvent.mouseEnter(service)
+      fireEvent.mouseLeave(service)
+      act(() => vi.advanceTimersByTime(500))
+      expect(onFocus).toHaveBeenLastCalledWith(null)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('offers to narrow to what needs a look only where that hides something', () => {
+    // Every hop of the base map is on the broken path, so narrowing would hide
+    // nothing and is not offered.
+    draw()
+    expect(screen.queryByRole('button', { name: 'Only what needs a look' })).toBeNull()
+    cleanup()
+
+    const wider: TrafficMap = {
+      ...map,
+      nodes: [
+        ...map.nodes,
+        { id: 'host/docs.example.com', kind: 'Host', name: 'docs.example.com', column: 0, detail: [], state: 'ok' },
+        { id: 'ingresses/shop/docs', kind: 'Ingress', resource: 'ingresses', namespace: 'shop', name: 'docs', column: 1, detail: [], state: 'ok' },
+      ],
+      edges: [...map.edges, { from: 'host/docs.example.com', to: 'ingresses/shop/docs', labels: [], state: 'ok' }],
+    }
+    render(<TrafficMapView map={wider} focus={null} onFocus={vi.fn()} targetOf={targetOf} onOpen={vi.fn()} />)
+    expect(screen.getByRole('button', { name: /^Ingress docs/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Only what needs a look' }))
+    expect(screen.queryByRole('button', { name: /^Ingress docs/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /^Service api/ })).toBeTruthy()
   })
 })
