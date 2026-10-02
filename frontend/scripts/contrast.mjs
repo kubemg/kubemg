@@ -198,6 +198,22 @@ function check(deck, tokens) {
   // rather than `accent`, which on the light deck is the same hue taken down the
   // ramp so it can be read as text.
   measure('on-accent', 'accent-fill', TEXT_FLOOR, 'on-accent on accent-fill')
+  // The navigation pill runs lime out into the panel; the label sits on the
+  // solid half, but the far end is held to the floor too, so a long row's
+  // count or scope word stays readable wherever it lands.
+  measure('on-accent', 'accent-fill-end', TEXT_FLOOR, 'on-accent on accent-fill-end')
+  // The slab is ink into moss; its text is held to the floor at the lighter
+  // (moss) end, which is the tighter one.
+  for (const tone of ['slab-text', 'slab-muted']) {
+    measure(tone, 'slab-end', TEXT_FLOOR, `${tone} on slab-end`)
+  }
+  for (const tone of ['slab-warn', 'slab-danger']) {
+    measure(tone, 'slab-end', GLYPH_FLOOR, `${tone} glyph on slab-end`)
+  }
+  // A count badge is a solid state fill with its figure on it.
+  for (const tone of ['warn', 'danger']) {
+    measure('on-state', tone, TEXT_FLOOR, `on-state on ${tone}`)
+  }
 
   // The mark is lime on a chip that is ink where the deck needs one and nothing
   // where it does not. Measured where there is a chip to measure against — on

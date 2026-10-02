@@ -150,31 +150,34 @@ function FleetQueue({ items }: { items: QueueItem[] }) {
   // Absent rather than empty: a block that is always there stops being read.
   if (items.length === 0) return null
 
+  const heading =
+    items.length === 1 ? 'One thing is waiting on you' : `${items.length} things are waiting on you`
+
   return (
-    <section className="overflow-hidden rounded-card border border-line bg-surface">
-      <div className="flex items-center gap-2.5 border-b border-line-soft bg-raised px-3.5 py-2.5">
-        <h2 className="label text-fg">Needs you</h2>
-        <p className="ml-auto text-[11px] text-faint">{items.length} waiting</p>
-      </div>
-      <ul>
+    <section aria-labelledby="fleet-queue-heading" className="slab rounded-card px-5 py-6 sm:px-7">
+      <p className="text-[12.5px] font-semibold text-slab-muted">Needs you</p>
+      <h2 id="fleet-queue-heading" className="mt-1 text-[24px] font-bold text-slab-text sm:text-[28px]">
+        {heading}
+      </h2>
+      <ul className="mt-4 flex flex-col gap-1">
         {items.map((item) => (
           <li key={item.key}>
             <Link
               to={item.to}
-              className="group grid grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-x-3.5 gap-y-1 border-b border-line-soft px-3.5 py-2.5 last:border-b-0 hover:bg-raised sm:grid-cols-[18px_150px_minmax(0,1fr)_auto]"
+              className="group grid grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-x-3.5 gap-y-1 rounded-control px-2 py-2 transition-colors duration-300 hover:bg-slab-text/10 sm:grid-cols-[18px_170px_minmax(0,1fr)_auto]"
             >
               {item.tone === 'bad' ? (
-                <AlertTriangle aria-hidden="true" className="size-4 shrink-0 text-danger" />
+                <AlertTriangle aria-hidden="true" className="size-4 shrink-0 text-slab-danger" />
               ) : (
-                <Timer aria-hidden="true" className="size-4 shrink-0 text-warn" />
+                <Timer aria-hidden="true" className="size-4 shrink-0 text-slab-warn" />
               )}
-              <span className="truncate font-mono text-[13px] font-semibold text-fg">
+              <span className="truncate font-mono text-[13.5px] font-semibold text-slab-text">
                 {item.subject}
               </span>
-              <span className="col-start-2 text-[12.5px] text-muted sm:col-start-3">
+              <span className="col-start-2 text-[13px] text-slab-muted sm:col-start-3">
                 {item.detail}
               </span>
-              <span className="col-start-2 inline-flex items-center gap-1 justify-self-start text-[12px] font-semibold text-accent sm:col-start-4 sm:justify-self-end">
+              <span className="col-start-2 inline-flex items-center gap-1.5 justify-self-start rounded-full bg-accent-fill px-3 py-1 text-[12.5px] font-semibold text-on-accent sm:col-start-4 sm:justify-self-end">
                 {item.action}
                 <ChevronRight aria-hidden="true" className="size-3.5" />
               </span>
@@ -208,7 +211,8 @@ function FleetFigures({
   return (
     <FleetStrip figures={figures}>
       {summed ? (
-        <div className="flex min-w-[220px] flex-1 flex-col justify-center gap-1.5 px-5 py-3">
+        <div className="flex flex-col justify-center gap-2 rounded-card border border-line bg-surface p-4 shadow-deck sm:col-span-2 xl:col-span-4">
+          <p className="text-[14px] text-fg">Fleet capacity</p>
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3">
             <MiniMeter
               label="CPU"

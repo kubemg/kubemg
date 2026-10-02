@@ -96,13 +96,21 @@ moving the token, never by adding an exception in a component.**
 Charts use the categorical palette `--chart-1` through `--chart-8`. Slot order is
 the colour-blindness mechanism: never reorder it and never add a ninth.
 
-Animation is close to banned. `LinkStatus` uses four static icons for live,
-direct, down and idle. There is no travelling pulse, no marquee, and nothing else
-animates except a single breathing indicator on a genuinely open stream.
+Nothing loops. `LinkStatus` uses four static icons for live, direct, down and
+idle. There is no travelling pulse and no marquee; the only repeating motion is a
+single breathing indicator on a genuinely open stream. The chrome's state
+changes — the navigation pill filling, a rail chip on hover — ease over 300 to
+500ms on colour and opacity only, and switch off under `prefers-reduced-motion`.
 
-Two typefaces, Archivo for text and Commit Mono for code, both self-hosted from
-`public/fonts`. There are no font CDN calls, and adding one would be a privacy
-regression rather than a convenience.
+Three typefaces, all self-hosted from `public/fonts`: Inter for the interface,
+Archivo only for the `kubemg` wordmark, and Commit Mono for identifiers and code.
+There are no font CDN calls, and adding one would be a privacy regression rather
+than a convenience.
+
+The sidebar is one card floating 12px in from the window: the cluster rail and
+the panel side by side. The row you are on, and the row under the pointer, fill
+with the `nav-pill` utility (a lime gradient with an ink label, lit by
+`aria-current`); the rail's current cluster carries the `rail-arc` corner.
 
 ## Testing
 

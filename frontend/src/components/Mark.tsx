@@ -101,7 +101,7 @@ export function Lockup({ className, markClass }: { className?: string; markClass
        descender and no capitals. */
     <span className={`flex items-center gap-[0.32em] ${className ?? ''}`}>
       <MarkChip className={`size-[1.45em] shrink-0 ${markClass ?? ''}`} />
-      <span className="font-bold tracking-[-0.045em] lowercase">kubemg</span>
+      <span className="font-brand font-bold tracking-[-0.045em] lowercase">kubemg</span>
     </span>
   )
 }

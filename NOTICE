@@ -64,9 +64,10 @@ dependencies are, in full:
     tailwindcss, vite, typescript, oxlint                        MIT
 
   Bundled assets (frontend/public/fonts, self-hosted woff2)
+    Inter                                                        SIL Open Font License 1.1
     Archivo                                                      SIL Open Font License 1.1
     Commit Mono                                                  SIL Open Font License 1.1
-    Both licence texts sit beside the font files, as the OFL requires.
+    All three licence texts sit beside the font files, as the OFL requires.
 
 --------------------------------------------------------------------------------
 
