@@ -123,6 +123,12 @@ tone's soft fill only when the reading is asking for something.
 A `StatTile` can also be a link onto what it counts, or a toggle that filters
 the list under it, and can carry a bar or a breakdown below its reading.
 
+A list page (the Administration pages are the pattern) says what it is for in
+`AppShell`'s `description`, under the title, rather than in an info `Notice` at
+the top of its body; opens on a row of `StatTile`s counted from the rows it
+holds; and draws a person as an `Avatar`. A `Notice` is for something the
+reader should act on or know right now, and leads with its tone's glyph.
+
 Every overlay is one family. A `Sheet` is the editing surface; a `Dialog` is a
 centred question with two answers, which is what a confirmation is. Both join
 the same overlay stack: only the topmost answers Escape and holds Tab, focus

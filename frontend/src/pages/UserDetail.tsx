@@ -104,7 +104,11 @@ export function UserDetail() {
   const title = review?.user.username ?? 'Account'
 
   return (
-    <AppShell title={title} parent={{ label: 'Users', to: '/admin/users' }}>
+    <AppShell
+      title={title}
+      description="What this account can reach today and through which grants, the kubeconfigs it holds, and the shells it opened."
+      parent={{ label: 'Users', to: '/admin/users' }}
+    >
       <div className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
         {loading && !review ? <p className="text-[13px] text-muted">Loading…</p> : null}

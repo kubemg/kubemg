@@ -5,8 +5,10 @@ import {
   Lock,
   MonitorPlay,
   PlayCircle,
+  Eye,
   RefreshCw,
   ShieldAlert,
+  SquareTerminal,
   Trash2,
 } from 'lucide-react'
 import {
@@ -29,6 +31,7 @@ import {
   SearchInput,
   Select,
   Sheet,
+  StatTile,
   Table,
   Td,
   Th,
@@ -208,6 +211,7 @@ export function SessionRecordings() {
   return (
     <AppShell
       title="Session recordings"
+      description="Every exec and attach through kubemg, recorded as it happened and replayable here. Watching a recording is itself written to the audit trail."
       actions={
         <Button onClick={() => void load()} disabled={loading}>
           <RefreshCw aria-hidden="true" className={`size-4 ${loading ? 'animate-spin' : ''}`} />
@@ -217,6 +221,24 @@ export function SessionRecordings() {
     >
       <div className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatTile icon={SquareTerminal} label="Recorded sessions" value={total} />
+          <StatTile
+            icon={MonitorPlay}
+            label="Recording"
+            value={enabled ? 'On' : 'Off'}
+            data={false}
+            tone={enabled ? 'ok' : 'warn'}
+            sub={enabled ? 'every new exec and attach' : 'nothing new is recorded'}
+          />
+          <StatTile
+            icon={Eye}
+            label="You can replay"
+            value={scopedToSelf ? 'Your own sessions' : 'Every session'}
+            data={false}
+          />
+        </div>
 
         {/* An empty list means two entirely different things, and the server says
             which: nobody opened a shell, or nobody was recording when they did. */}

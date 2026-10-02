@@ -302,6 +302,7 @@ export function AuditTrail() {
   return (
     <AppShell
       title="Audit trail"
+      description="Every call that went through kubemg — allowed, refused or failed — with who made it, on which cluster, and what it touched."
       timeRange
       actions={
         <>

@@ -12,15 +12,19 @@ import { Link } from 'react-router'
 import type { LucideIcon } from 'lucide-react'
 import {
   Check,
+  CircleAlert,
+  CircleCheck,
   ChevronDown,
   ChevronUp,
   ChevronsUpDown,
   Copy,
   Eye,
   EyeOff,
+  Info,
   Loader2,
   MoreVertical,
   Search,
+  TriangleAlert,
   X,
 } from 'lucide-react'
 import type { Cluster, Environment } from '../api/types'
@@ -51,6 +55,22 @@ const TONE_DOT: Record<Tone, string> = {
   bad: 'bg-danger',
   idle: 'bg-faint',
   accent: 'bg-accent',
+}
+
+/**
+ * Avatar is a person (or a machine) as two letters in a round chip — the
+ * sidebar's own account card, the activity feed and the user lists all draw
+ * the same one, so an account looks like itself wherever it turns up.
+ */
+export function Avatar({ name, className }: { name: string; className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`grid size-8 shrink-0 place-items-center rounded-full border border-line-soft bg-raised text-[11.5px] font-semibold text-fg ${className ?? ''}`}
+    >
+      {name.slice(0, 2).toUpperCase()}
+    </span>
+  )
 }
 
 /** Pill is the compact state chip: a dot plus a word, never colour alone. */
@@ -836,8 +856,17 @@ export function SectionHeading({
 const NOTICE_TONE = {
   error: 'border-danger/35 bg-danger-soft text-danger',
   warn: 'border-warn/35 bg-warn-soft text-warn',
-  info: 'border-line bg-raised text-muted',
+  info: 'border-line-soft bg-raised/60 text-muted',
   ok: 'border-ok/35 bg-ok-soft text-ok',
+}
+
+// A notice leads with the glyph for its tone, in a round chip like every other
+// glyph on the deck, so the kind of message is read before the message is.
+const NOTICE_GLYPH: Record<keyof typeof NOTICE_TONE, { icon: LucideIcon; chip: string }> = {
+  error: { icon: CircleAlert, chip: 'border-danger/35 text-danger' },
+  warn: { icon: TriangleAlert, chip: 'border-warn/35 text-warn' },
+  info: { icon: Info, chip: 'border-line-soft text-accent' },
+  ok: { icon: CircleCheck, chip: 'border-ok/35 text-ok' },
 }
 
 export function Notice({
@@ -847,12 +876,19 @@ export function Notice({
   tone: keyof typeof NOTICE_TONE
   children: ReactNode
 }) {
+  const { icon: Icon, chip } = NOTICE_GLYPH[tone]
   return (
     <div
       role={tone === 'error' ? 'alert' : 'status'}
-      className={`rounded-control border px-3.5 py-2.5 text-[13px] leading-relaxed ${NOTICE_TONE[tone]}`}
+      className={`flex items-start gap-3 rounded-card border px-3.5 py-3 text-[13px] leading-relaxed ${NOTICE_TONE[tone]}`}
     >
-      {children}
+      <span
+        aria-hidden="true"
+        className={`grid size-6 shrink-0 place-items-center rounded-full border bg-surface ${chip}`}
+      >
+        <Icon className="size-3.5" />
+      </span>
+      <div className="min-w-0 flex-1 self-center">{children}</div>
     </div>
   )
 }

@@ -112,6 +112,7 @@ export function BrandingSettings() {
   return (
     <SettingsLayout
       title="Branding"
+      description="Whose installation this is: your organisation’s name and mark beside the kubemg lockup, a banner across every page, and a caveat line under it."
       aside={
         <>
           <SettingsAside

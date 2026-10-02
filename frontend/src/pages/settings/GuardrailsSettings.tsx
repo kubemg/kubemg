@@ -8,7 +8,10 @@ export function GuardrailsSettings() {
   const { clusters } = useClusters()
 
   return (
-    <SettingsLayout title="Guardrails">
+    <SettingsLayout
+      title="Guardrails"
+      description="Rules kubemg checks every call against before the cluster sees it, on top of whatever its RBAC allows. A block refuses the call; a warn lets it through and records the match, which is how a new rule is tried out before it is armed."
+    >
       <div className="flex min-w-0 max-w-5xl flex-col gap-4">
         <GuardrailSettingsPanel clusters={clusters} />
       </div>

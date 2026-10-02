@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Bot, Check, ChevronRight, KeyRound, Plus, Trash2 } from 'lucide-react'
+import { Bot, Check, KeyRound, Network, Plus, PowerOff, Trash2 } from 'lucide-react'
 import {
   assignPermission,
   createMachineAccount,
@@ -30,6 +30,7 @@ import {
   SearchInput,
   Select,
   Sheet,
+  StatTile,
   Table,
   Td,
   Th,
@@ -152,6 +153,7 @@ export function MachineAccounts() {
   return (
     <AppShell
       title="Machine accounts"
+      description="A machine account acts under its own name inside the cluster, so the cluster’s own RBAC decides what it may do and every call it makes is in the audit trail. Its credential is stored here rather than signed: revoking one stops the next call, with no expiry to wait for."
       actions={
         <Button variant="primary" onClick={() => setCreateOpen(true)}>
           <Plus aria-hidden="true" className="size-4" />
@@ -163,15 +165,27 @@ export function MachineAccounts() {
         {error ? <Notice tone="error">{error}</Notice> : null}
         {rowError ? <Notice tone="error">{rowError}</Notice> : null}
 
-        {/* Said once, at the top, because it is the thing that makes this
-            surface different from every other credential in the console: what
-            it hands out outlives the session that handed it out. */}
-        <Notice tone="info">
-          A machine account acts under its own name inside the cluster, so the cluster’s own RBAC
-          decides what it may do and every call it makes is in the audit trail. Its credential is
-          stored here rather than signed, which means revoking one stops the next call — you do not
-          have to wait for it to expire.
-        </Notice>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <StatTile icon={Bot} label="Accounts" value={accounts.length} />
+          <StatTile
+            icon={Network}
+            label="With cluster access"
+            value={accounts.filter((entry) => entry.access.length > 0).length}
+            sub={`of ${accounts.length}`}
+          />
+          <StatTile
+            icon={KeyRound}
+            label="Live credentials"
+            value={accounts.reduce((sum, entry) => sum + entry.active_tokens, 0)}
+            tone={accounts.some((entry) => entry.active_tokens > 0) ? 'ok' : 'neutral'}
+          />
+          <StatTile
+            icon={PowerOff}
+            label="Disabled"
+            value={accounts.filter((entry) => !entry.is_active).length}
+            tone={accounts.some((entry) => !entry.is_active) ? 'warn' : 'neutral'}
+          />
+        </div>
 
         <SetupPath accounts={accounts} />
 
@@ -391,27 +405,30 @@ export function SetupPath({ accounts }: { accounts: MachineAccount[] }) {
 
   return (
     <Panel title="What a machine account needs, in order" eyebrow="Path">
-      <ol className="flex flex-col md:flex-row">
+      <ol className="grid gap-3 p-5 md:grid-cols-3">
         {steps.map((step, index) => (
           <li
             key={step.label}
-            className="relative flex min-w-0 flex-1 flex-col gap-1 border-b border-line-soft px-5 pt-4 pb-3.5 last:border-b-0 md:border-r md:border-b-0 md:last:border-r-0"
+            className={`flex min-w-0 gap-3 rounded-card border p-4 ${
+              step.done ? 'border-accent-line bg-surface' : 'border-line-soft bg-raised/40'
+            }`}
           >
-            <span className="label flex items-center gap-1.5">
-              {step.done ? (
-                <Check aria-hidden="true" className="size-3.5 text-ok" />
-              ) : (
-                <span className="font-data text-faint">{index + 1}</span>
-              )}
-              {step.label}
+            {/* A step taken trades its number for a check: the strip reads as
+                where this installation is, not as a tutorial that never ends. */}
+            <span
+              aria-hidden="true"
+              className={`grid size-8 shrink-0 place-items-center rounded-full text-[13px] font-semibold ${
+                step.done
+                  ? 'bg-accent-fill text-on-accent'
+                  : 'border border-line bg-surface font-data text-muted'
+              }`}
+            >
+              {step.done ? <Check className="size-4" /> : index + 1}
             </span>
-            <span className="text-[12.5px] leading-relaxed text-muted">{step.body}</span>
-            {index < steps.length - 1 ? (
-              <ChevronRight
-                aria-hidden="true"
-                className="absolute top-1/2 right-0 hidden size-4 -translate-y-1/2 translate-x-1/2 rounded-full bg-surface text-faint md:block"
-              />
-            ) : null}
+            <span className="flex min-w-0 flex-col gap-1">
+              <span className="text-[14px] font-semibold text-fg">{step.label}</span>
+              <span className="text-[13px] leading-relaxed text-muted">{step.body}</span>
+            </span>
           </li>
         ))}
       </ol>

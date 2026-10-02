@@ -126,6 +126,7 @@ export function AgentSettings() {
   return (
     <SettingsLayout
       title="Agent settings"
+      description="What gets installed into a cluster: the agent, the browser shell and the debug container. A change reaches install packages rendered from now on; an agent already running keeps what it was installed with until its manifests are re-applied."
       aside={
         settings ? (
           <>

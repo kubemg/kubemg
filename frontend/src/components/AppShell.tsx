@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Activity,
@@ -218,6 +218,98 @@ const PANEL_COLLAPSED_KEY = 'kubemg_panel_collapsed'
  */
 let lastClusterId: number | null = null
 
+/**
+ * Where each sidebar list was scrolled to, by what it is listing.
+ *
+ * Module state for the same reason as `lastClusterId`: every page mounts its
+ * own AppShell, so a row picked far down the Administration list or a cluster
+ * tree used to land the reader back at the top of that list on the page it
+ * opened — the list they had just scrolled was a new one. Keyed by the list's
+ * content (Administration, one cluster's tree, the fleet, the rail), so moving
+ * into another cluster starts its own tree at its own position.
+ *
+ * A row picked in the list also leaves an anchor: how far down the list it sat
+ * when it was clicked. The next page puts its lit row back at that height,
+ * which survives the two lists not being the same height — Explore's panel
+ * carries its resource tree, a dashboard's does not — where a bare scroll
+ * offset lands the row somewhere else.
+ */
+const keptScroll = new Map<string, { top: number; anchor?: number; href?: string | null }>()
+
+/** The room left above or below the current row when it is brought into view. */
+const SCROLL_MARGIN = 24
+
+function useKeptScroll(key: string) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  // Layout, not a plain effect: restoring after paint would draw the list at
+  // the top for a frame and then jump.
+  useLayoutEffect(() => {
+    const list = ref.current
+    if (!list) return
+    const kept = keptScroll.get(key)
+    // The anchor is spent by the page it was left for.
+    if (kept) keptScroll.set(key, { top: kept.top })
+    // Until the reader scrolls it themselves, the position is still ours to
+    // place. A cluster tree is not at its full height on the frame it mounts —
+    // its sections open from stored state, its counts arrive — so a position
+    // set then is clamped short, and was being remembered as the clamp.
+    let touched = false
+
+    const place = () => {
+      const box = list.getBoundingClientRect()
+      const current = list.querySelector<HTMLElement>('[aria-current="page"]')
+      // Only for the row that was clicked: a list left any other way — the
+      // palette, a link in the body — has no anchor that means anything.
+      if (current && kept?.anchor !== undefined && current.getAttribute('href') === kept.href) {
+        const offset = current.getBoundingClientRect().top - box.top + list.scrollTop
+        list.scrollTop = offset - kept.anchor
+        return
+      }
+      list.scrollTop = kept?.top ?? 0
+      // A page reached some other way — the palette, a link in the body — can
+      // light a row the kept position does not show. Bring it in, by the least
+      // movement, inside the list only: scrollIntoView would also move the page.
+      if (!current) return
+      const row = current.getBoundingClientRect()
+      if (row.top < box.top) list.scrollTop -= box.top - row.top + SCROLL_MARGIN
+      else if (row.bottom > box.bottom) list.scrollTop += row.bottom - box.bottom + SCROLL_MARGIN
+    }
+    place()
+
+    const grown = new ResizeObserver(() => {
+      if (!touched) place()
+    })
+    for (const child of Array.from(list.children)) grown.observe(child)
+
+    const take = () => {
+      touched = true
+    }
+    const remember = () => {
+      if (touched) keptScroll.set(key, { top: list.scrollTop })
+    }
+    const leave = (event: MouseEvent) => {
+      const link = (event.target as Element | null)?.closest('a')
+      if (!link || !list.contains(link)) return
+      keptScroll.set(key, {
+        top: list.scrollTop,
+        anchor: link.getBoundingClientRect().top - list.getBoundingClientRect().top,
+        href: link.getAttribute('href'),
+      })
+    }
+    const intents = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const
+    for (const intent of intents) list.addEventListener(intent, take, { passive: true })
+    list.addEventListener('scroll', remember, { passive: true })
+    list.addEventListener('click', leave)
+    return () => {
+      grown.disconnect()
+      for (const intent of intents) list.removeEventListener(intent, take)
+      list.removeEventListener('scroll', remember)
+      list.removeEventListener('click', leave)
+    }
+  }, [key])
+  return ref
+}
+
 function storedPanelCollapsed(): boolean {
   try {
     return localStorage.getItem(PANEL_COLLAPSED_KEY) === '1'
@@ -229,6 +321,7 @@ function storedPanelCollapsed(): boolean {
 
 export function AppShell({
   title,
+  description,
   parent,
   actions,
   timeRange = false,
@@ -238,6 +331,12 @@ export function AppShell({
   children,
 }: {
   title: string
+  /**
+   * One or two sentences under the title: what this page is for, said once.
+   * It replaces the info notice a page used to open its body with, which read
+   * as a warning box on a page that had nothing to warn about.
+   */
+  description?: ReactNode
   /** Rendered ahead of the title as a breadcrumb, for pages nested under another. */
   parent?: { label: string; to: string }
   actions?: ReactNode
@@ -278,6 +377,12 @@ export function AppShell({
   const { categories } = useInventory()
   const { theme, toggle } = useTheme()
   const { pathname } = useLocation()
+
+  const railScroll = useKeptScroll('rail')
+  const panelCluster = clusterIdFromPath(pathname)
+  const panelScroll = useKeptScroll(
+    isAdminPath(pathname) ? 'admin' : panelCluster !== null ? `cluster:${panelCluster}` : 'fleet',
+  )
 
   const [navOpen, setNavOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -386,7 +491,10 @@ export function AppShell({
 
           {/* Padded wider than the chips so the current one's corner arc,
               which sits outside it, is not clipped by the scroll box. */}
-          <div className="flex min-h-0 w-full flex-col items-center gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-1 pb-2">
+          <div
+            ref={railScroll}
+            className="flex min-h-0 w-full flex-col items-center gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-1 pb-2"
+          >
             {railClusters.map((cluster) => {
               const active = isClusterPath(pathname, cluster.id)
               return (
@@ -457,7 +565,10 @@ export function AppShell({
               <PanelContext cluster={openCluster} clusters={clusters} />
             )}
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-4 pb-3 [scrollbar-color:var(--deck-accent)_transparent]">
+            <div
+              ref={panelScroll}
+              className="min-h-0 flex-1 overflow-y-auto px-3 pt-4 pb-3 [scrollbar-color:var(--deck-accent)_transparent]"
+            >
               {inAdmin ? (
                 <AdminNav />
               ) : openCluster ? (
@@ -619,7 +730,12 @@ export function AppShell({
             {/* The page's own heading row: where you are, and what this page
                 is scoped by and offers. It scrolls with the page; only the
                 search bar above it stays. */}
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+            <div
+              className={`mb-5 flex flex-wrap justify-between gap-x-4 gap-y-3 ${
+                description ? 'items-start' : 'items-center'
+              }`}
+            >
+              <div className="min-w-0">
               <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2">
                 {/* A cluster is a place, not a page below one — the switcher
                     takes the slot the parent breadcrumb would have, and the
@@ -646,6 +762,12 @@ export function AppShell({
                 ) : null}
                 <h1 className="min-w-0 truncate text-[20px] font-bold text-fg">{title}</h1>
               </nav>
+              {description ? (
+                <p className="mt-1 max-w-3xl text-[13.5px] leading-relaxed text-muted">
+                  {description}
+                </p>
+              ) : null}
+              </div>
 
               {scope || scopeAction || timeRange || actions ? (
                 <div className="flex flex-wrap items-center gap-2">

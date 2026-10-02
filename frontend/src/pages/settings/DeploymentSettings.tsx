@@ -42,6 +42,7 @@ export function DeploymentSettings() {
   return (
     <SettingsLayout
       title="Deployment"
+      description="What this server read from its environment when it started. Nothing here changes from the console — each line names what to change and where, and a restart picks it up."
       actions={
         <Button type="button" variant="ghost" onClick={() => void load()} disabled={loading}>
           <RotateCcw aria-hidden="true" className="size-4" />
