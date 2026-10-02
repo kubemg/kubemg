@@ -823,7 +823,9 @@ export function ingressInsights(ingresses: Ingress[], label: string): ResourceIn
   return {
     headline:
       pending.length === 0
-        ? `All ${plural(ingresses.length, 'ingress')} have an address`
+        ? ingresses.length === 1
+          ? 'The ingress has an address'
+          : `All ${plural(ingresses.length, 'ingress')} have an address`
         : `${plural(pending.length, 'ingress')} without an address`,
     headlineTone: pending.length === 0 ? 'ok' : 'warn',
     total: reading(label, ingresses.length),
@@ -917,7 +919,9 @@ export function routeInsights(routes: Route[], label: string): ResourceInsight {
   return {
     headline:
       orphaned.length === 0
-        ? `All ${plural(routes.length, 'route')} are attached to a gateway`
+        ? routes.length === 1
+          ? 'The route is attached to a gateway'
+          : `All ${plural(routes.length, 'route')} are attached to a gateway`
         : `${plural(orphaned.length, 'route')} attached to no gateway`,
     headlineTone: orphaned.length === 0 ? 'ok' : 'warn',
     total: reading(label, routes.length),
