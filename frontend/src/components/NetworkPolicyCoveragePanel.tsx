@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { errorMessage, fetchNetworkPolicyCoverage } from '../api/client'
+import { ArrowDownToLine, ArrowUpFromLine } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import type { Cluster, NetworkPolicyCoverage } from '../api/types'
-import { Notice, Pill } from './primitives'
+import { Notice, Panel } from './primitives'
 
 /**
  * The namespace-level summary of what is and is not covered by a
@@ -59,73 +61,116 @@ export function NetworkPolicyCoveragePanel({
     return null
   }
 
-  return (
-    <div className="card flex flex-col gap-2.5 p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[13px] font-medium text-fg">
-          Coverage in <span className="font-data">{coverage.namespace}</span>
-        </span>
-        <span className="font-data text-[12px] text-faint">
-          {coverage.policy_count} {coverage.policy_count === 1 ? 'policy' : 'policies'},{' '}
-          {coverage.pod_count} {coverage.pod_count === 1 ? 'pod' : 'pods'}
-        </span>
-      </div>
+  const pods = `${coverage.pod_count} ${coverage.pod_count === 1 ? 'pod' : 'pods'} running`
+  const policies =
+    coverage.policy_count === 0
+      ? `No NetworkPolicy in ${coverage.namespace}`
+      : `${coverage.policy_count} ${coverage.policy_count === 1 ? 'NetworkPolicy' : 'NetworkPolicies'} in ${coverage.namespace}`
 
-      <div className="flex flex-wrap gap-4">
+  return (
+    <Panel
+      title="Network policy coverage"
+      eyebrow="Declared"
+      description={`${policies}, ${pods}. Which of them a policy selects, in each direction.`}
+    >
+      <div className="grid gap-4 p-5 md:grid-cols-2">
         <CoverageReading
+          icon={ArrowDownToLine}
           label="Ingress"
           covered={coverage.ingress_covered_pods}
           uncovered={coverage.ingress_uncovered_pods}
           examples={coverage.ingress_uncovered_examples}
         />
         <CoverageReading
+          icon={ArrowUpFromLine}
           label="Egress"
           covered={coverage.egress_covered_pods}
           uncovered={coverage.egress_uncovered_pods}
           examples={coverage.egress_uncovered_examples}
         />
       </div>
-
-      <p className="text-[12px] text-muted">{coverage.disclaimer}</p>
-    </div>
+      <p className="border-t border-line-soft px-5 py-3.5 text-[12.5px] leading-relaxed text-muted">
+        {coverage.disclaimer}
+      </p>
+    </Panel>
   )
 }
 
 function CoverageReading({
+  icon: Icon,
   label,
   covered,
   uncovered,
   examples,
 }: {
+  icon: LucideIcon
   label: string
   covered: number
   uncovered: number
   examples?: string[]
 }) {
+  // `covered === 0` is read as "nothing here uses a NetworkPolicy for this
+  // direction at all" rather than as "everything is wide open by omission" —
+  // the sharper finding this whole feature exists to surface is a namespace
+  // where *some* pods are governed and others are not, which is exactly what a
+  // non-zero `covered` alongside a non-zero `uncovered` means. So the gap is
+  // drawn as danger only then, and as the quiet tone otherwise.
+  const gap = covered === 0 ? 'bg-faint' : 'bg-danger'
+  const gapText = covered === 0 ? 'text-fg' : 'text-danger'
+  const total = covered + uncovered
+  // The "more" counts against what is drawn, not against what was sent: the
+  // server may send more examples than the three shown here.
+  const shown = examples?.slice(0, 3) ?? []
+
   return (
-    <div className="flex min-w-40 flex-col gap-1">
-      <span className="text-[11px] tracking-wide text-faint uppercase">{label}</span>
-      <div className="flex items-center gap-1.5">
-        <Pill tone="ok" dot={false}>
-          {covered} covered
-        </Pill>
+    <div className="flex min-w-0 flex-col gap-3 rounded-card border border-line-soft bg-raised/40 p-4">
+      <div className="flex items-center gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-full border border-line-soft bg-surface text-muted shadow-deck">
+          <Icon aria-hidden="true" className="size-4" />
+        </span>
+        <span className="text-[14px] font-semibold text-fg">{label}</span>
+        <span className="ml-auto text-[12.5px] text-muted">
+          <span className="font-data font-semibold text-fg tabular-nums">{covered}</span> of{' '}
+          <span className="font-data tabular-nums">{total}</span> covered
+        </span>
+      </div>
+
+      <div
+        role="img"
+        aria-label={`${covered} covered, ${uncovered} uncovered`}
+        className="flex h-2.5 gap-[3px]"
+      >
+        {covered > 0 ? (
+          <span className="block h-full rounded-[3px] bg-ok" style={{ flexGrow: covered }} />
+        ) : null}
         {uncovered > 0 ? (
-          // `covered === 0` is read as "nothing here uses a NetworkPolicy for
-          // this direction at all" rather than as "everything is wide open by
-          // omission" — the sharper finding this whole feature exists to
-          // surface is a namespace where *some* pods are governed and others
-          // are not, which is exactly what a non-zero `covered` alongside a
-          // non-zero `uncovered` means.
-          <Pill tone={covered === 0 ? 'idle' : 'bad'} dot={false}>
-            {uncovered} uncovered
-          </Pill>
+          <span className={`block h-full rounded-[3px] ${gap}`} style={{ flexGrow: uncovered }} />
         ) : null}
       </div>
-      {uncovered > 0 && examples && examples.length > 0 ? (
-        <span className="truncate font-data text-[11.5px] text-faint" title={examples.join(', ')}>
-          e.g. {examples.slice(0, 3).join(', ')}
-          {uncovered > examples.length ? ` +${uncovered - examples.length} more` : ''}
-        </span>
+
+      <ul className="flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-muted">
+        <li className="flex items-center gap-2">
+          <span aria-hidden="true" className="size-2.5 rounded-full bg-ok" />
+          Covered
+          <span className="font-data font-semibold text-fg tabular-nums">{covered}</span>
+        </li>
+        <li className="flex items-center gap-2">
+          <span aria-hidden="true" className={`size-2.5 rounded-full ${gap}`} />
+          Uncovered
+          <span className={`font-data font-semibold tabular-nums ${uncovered > 0 ? gapText : 'text-fg'}`}>
+            {uncovered}
+          </span>
+        </li>
+      </ul>
+
+      {uncovered > 0 && shown.length > 0 ? (
+        <p className="min-w-0 text-[12.5px] text-muted">
+          <span className="text-faint">Not selected: </span>
+          <span className="font-data text-fg [overflow-wrap:anywhere]" title={examples?.join(', ')}>
+            {shown.join(', ')}
+          </span>
+          {uncovered > shown.length ? ` and ${uncovered - shown.length} more` : ''}
+        </p>
       ) : null}
     </div>
   )
