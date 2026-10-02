@@ -41,7 +41,7 @@ import { IconButton, Notice, Pill } from './primitives'
  * clear, and the only change of state is the fade when a hop is pointed at,
  * which honours reduced motion.
  */
-export function TrafficMapTab({
+export function TrafficMapPanel({
   cluster,
   kind,
   name,

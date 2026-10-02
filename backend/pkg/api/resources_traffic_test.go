@@ -408,7 +408,7 @@ func TestTrafficMapReadsAnHTTPRouteFromItsStatus(t *testing.T) {
 	if gateway.State != trafficOK || gateway.APIGroup != "gateway.networking.k8s.io" || gateway.Resource != "gateways" {
 		t.Fatalf("expected the accepting Gateway, openable as a custom resource, got %+v", gateway)
 	}
-	if edge := findEdge(t, m, "httproutes/shop/web", "services/shop/api"); edge.Labels[0] != "/api · 90%:80" {
+	if edge := findEdge(t, m, "httproutes/shop/web", "services/shop/api"); edge.Labels[0] != "/api:80 · 90%" {
 		t.Fatalf("expected the weight on the edge, got %+v", edge.Labels)
 	}
 	if canary := findNode(t, m, "services/shop/api-canary"); canary.State != trafficBad {

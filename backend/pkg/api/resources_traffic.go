@@ -707,10 +707,11 @@ func (r *trafficResolver) addHTTPRoute(object httpRouteObject, only string) stri
 			total += deref(ref.Weight, 1)
 		}
 		for _, ref := range rule.BackendRefs {
-			edgeLabel := label
+			var extras []string
 			if len(rule.BackendRefs) > 1 && total > 0 {
-				edgeLabel += fmt.Sprintf(" · %d%%", deref(ref.Weight, 1)*100/total)
+				extras = append(extras, fmt.Sprintf("%d%%", deref(ref.Weight, 1)*100/total))
 			}
+			edgeLabel := strings.Join(append([]string{label}, extras...), " · ")
 			backendNamespace, isService := ref.serviceTarget(namespace)
 			if !isService {
 				if only != "" {
@@ -724,7 +725,7 @@ func (r *trafficResolver) addHTTPRoute(object httpRouteObject, only string) stri
 				continue
 			}
 			port := servicePortRef{number: deref(ref.Port, 0)}
-			r.serviceBackend(id, edgeLabel, backendNamespace, ref.Name, port, only)
+			r.serviceBackend(id, label, backendNamespace, ref.Name, port, only, extras...)
 		}
 	}
 	return id
@@ -882,14 +883,15 @@ func (r *trafficResolver) addVirtualService(object virtualServiceObject, only st
 			total += route.Weight
 		}
 		for _, route := range entry.routes {
-			label := entry.label
+			var extras []string
 			if route.Destination.Subset != "" {
-				label += " · subset " + route.Destination.Subset
+				extras = append(extras, "subset "+route.Destination.Subset)
 				r.note("A subset is drawn as a label: DestinationRules are not read, so which pods a subset selects is not shown.")
 			}
 			if len(entry.routes) > 1 && total > 0 {
-				label += fmt.Sprintf(" · %d%%", route.Weight*100/total)
+				extras = append(extras, fmt.Sprintf("%d%%", route.Weight*100/total))
 			}
+			label := strings.Join(append([]string{entry.label}, extras...), " · ")
 			service, serviceNamespace, ok := istioService(route.Destination.Host, namespace)
 			if !ok {
 				if only != "" {
@@ -905,7 +907,7 @@ func (r *trafficResolver) addVirtualService(object virtualServiceObject, only st
 			if route.Destination.Port != nil {
 				port.number = route.Destination.Port.Number
 			}
-			r.serviceBackend(id, label, serviceNamespace, service, port, only)
+			r.serviceBackend(id, entry.label, serviceNamespace, service, port, only, extras...)
 		}
 	}
 	return id
@@ -970,13 +972,15 @@ func (s serviceObject) portSummary() string {
 
 // serviceBackend draws the edge from a route to a Service, following the
 // Service the first time it is reached.
-func (r *trafficResolver) serviceBackend(from, label, namespace, name string, port servicePortRef, only string) {
+// The label reads match, then port, then whatever qualifies the split —
+// "/api:80 · subset v1 · 80%" — so the port stays beside the path it serves.
+func (r *trafficResolver) serviceBackend(from, label, namespace, name string, port servicePortRef, only string, extras ...string) {
 	to := trafficID("services", namespace, name)
 	if only != "" && to != only {
 		return
 	}
 	service := r.service(namespace, name)
-	label += port.String()
+	label = strings.Join(append([]string{label + port.String()}, extras...), " · ")
 
 	state, problem := trafficOK, ""
 	switch target := r.node(to); {

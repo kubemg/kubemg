@@ -206,7 +206,10 @@ a release is a labelled Secret rather than a kind the API server counts.
 One drawer, one object, four tabs — because finding out something is broken,
 asking why, and changing it is one investigation rather than three:
 
-- **Overview** — the object's own summary fields.
+- **Overview** — the object's own summary fields. On an Ingress, HTTPRoute,
+  VirtualService or Service it opens with the **traffic map** — see
+  [The traffic map](#the-traffic-map) below — because where a route sends its
+  traffic is the first thing a route is opened for.
 - **Describe & Events** — metadata, `status.conditions`, a bounded flatten of
   `spec`/`status`, and the cluster's own events against the object, newest
   first (unlike `kubectl describe`, which prints oldest first) — because a
@@ -215,14 +218,13 @@ asking why, and changing it is one investigation rather than three:
 - **YAML** — the live manifest, editable for anything the write path allows.
 - **Logs & Terminal** (pods) / **Logs** (workloads that support pooled logs)
   — see [Terminals and logs](terminals-and-logs.md).
-- **Traffic** (Ingresses, HTTPRoutes, VirtualServices and Services) — where
-  the traffic goes, drawn. See [The traffic map](#the-traffic-map) below.
 
 ### The traffic map
 
 An Ingress, an HTTPRoute or a VirtualService says "send this host and path to
 that Service", and everything that can go wrong with that sentence is invisible
-from the route itself. The **Traffic** tab follows it and draws every hop, left
+from the route itself. The traffic map, at the top of the object's **Overview**,
+follows it and draws every hop, left
 to right:
 
 | Column | What is drawn |
@@ -257,7 +259,7 @@ listed in words under the drawing:
   cross-namespace backend without a ReferenceGrant shows up here);
 - an Ingress no controller has given an address to yet — drawn as degraded.
 
-On a **Service** the tab reads the other way: the Ingresses, HTTPRoutes and
+On a **Service** the map reads the other way: the Ingresses, HTTPRoutes and
 VirtualServices in the Service's namespace that send to it, then the Service
 forward to its pods. Routes in other namespaces are not searched, and the tab
 says so.

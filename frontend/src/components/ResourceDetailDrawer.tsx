@@ -22,7 +22,7 @@ import { HelmHistoryPanel } from './HelmHistoryPanel'
 import { HelmValuesPanel } from './HelmValuesPanel'
 import { LogExplorer } from './LogExplorer'
 import { ReachabilityTab } from './NetworkPolicyReachability'
-import { TrafficMapTab } from './TrafficMap'
+import { TrafficMapPanel } from './TrafficMap'
 import { PodLogView, PodOverview } from './PodPanels'
 import { WorkloadActionPanel } from './WorkloadActionPanel'
 import type { WorkloadActionName, WorkloadActionTarget } from './WorkloadActionPanel'
@@ -75,10 +75,9 @@ export type DetailTab =
   | 'values'
   | 'history'
   | 'reachability'
-  | 'traffic'
 
-/** The kinds a traffic map is drawn for: the three routes forward, a Service
-    back to the routes that reach it. */
+/** The kinds whose Overview leads with a traffic map: the three routes
+    forward, a Service back to the routes that reach it. */
 const TRAFFIC_KINDS: ReadonlySet<string> = new Set([
   'ingresses',
   'httproutes',
@@ -338,9 +337,6 @@ export function ResourceDetailDrawer({
   if (!release && target.namespace && hasPodLabels(target.kind)) {
     tabs.push({ value: 'reachability', label: 'Reachability' })
   }
-  if (!release && target.namespace && TRAFFIC_KINDS.has(target.kind)) {
-    tabs.push({ value: 'traffic', label: 'Traffic' })
-  }
 
   // What the object says it is running, for the scale dialog's prefill. It comes
   // from the describe already on screen rather than from a read of its own.
@@ -562,6 +558,7 @@ export function ResourceDetailDrawer({
           onOpenPod={(row) =>
             onOpen?.({ kind: 'pods', label: 'Pod', name: row.name, namespace: row.namespace, pod: row })
           }
+          onOpen={onOpen}
         />
       ) : null}
 
@@ -573,16 +570,6 @@ export function ResourceDetailDrawer({
           kind={target.kind}
           name={target.name}
           namespace={target.namespace}
-        />
-      ) : null}
-
-      {tab === 'traffic' && target.namespace ? (
-        <TrafficMapTab
-          cluster={cluster}
-          kind={target.kind}
-          name={target.name}
-          namespace={target.namespace}
-          onOpen={onOpen}
         />
       ) : null}
 
@@ -734,6 +721,7 @@ function OverviewTab({
   name,
   namespace,
   onOpenPod,
+  onOpen,
 }: {
   cluster: Cluster
   pod?: Pod
@@ -745,6 +733,8 @@ function OverviewTab({
   name: string
   namespace?: string
   onOpenPod: (pod: Pod) => void
+  /** Opens a hop of the traffic map in this same drawer. */
+  onOpen?: (target: DetailTarget) => void
 }) {
   if (loading && !describe) return <p className="text-[13px] text-muted">Reading the object…</p>
   if (!describe) return null
@@ -780,6 +770,23 @@ function OverviewTab({
           what each container is using against its own limit, and how often it
           has restarted. The list row already carries all of it. */}
       {pod ? <PodOverview cluster={cluster} pod={pod} /> : null}
+
+      {/* Where a route's traffic goes is the first thing a route is opened
+          for — "does this host reach anything, and is it healthy" — so it
+          leads the overview rather than waiting behind a tab, the way a
+          workload's pods do below. */}
+      {!pod && namespace && TRAFFIC_KINDS.has(kind) ? (
+        <div className="flex flex-col gap-2">
+          <span className="label">Traffic</span>
+          <TrafficMapPanel
+            cluster={cluster}
+            kind={kind}
+            name={name}
+            namespace={namespace}
+            onOpen={onOpen}
+          />
+        </div>
+      ) : null}
 
       {/* A workload's health is its pods' health — what it owns right now, and
           whether each one is ready, is answered here rather than behind a tab
