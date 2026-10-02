@@ -331,6 +331,8 @@ KubeMG e2e fixture — ready
   Traffic map        $NAMESPACE: Ingresses shop, docs · HTTPRoutes shop, docs · VirtualService shop
                      Services shop-api (healthy), shop-checkout (never ready),
                      shop-legacy (matches nothing); e2e-payments/ledger (outside the viewer's grant)
+  Dependency map     $NAMESPACE/shop-worker: ConfigMap shop-config, optional shop-flags (absent),
+                     Secret shop-db (never created), ServiceAccount, claim shop-data
 EOF
   if [ "$setup" = "true" ]; then
     warn "first-run setup is not finished, so the console opens on the setup wizard; the API is unaffected"

@@ -286,6 +286,35 @@ What it deliberately does not do:
 - A map follows at most ten Services; more are drawn as "not followed".
 - It is not live. **Refresh** (the circular arrow) reads the path again.
 
+**Only what needs a look** (offered when a map has a problem and healthy hops
+besides) narrows the drawing to the broken hops and every path through them —
+the routes that reach a failing Service and the pods behind it, which is the
+blast radius and the cause in one picture. On a busy map only the labels of
+broken edges and of the path you point at are drawn.
+
+### A namespace's map
+
+A namespace's own page draws a **Traffic** panel with every Ingress, HTTPRoute
+and VirtualService in the namespace followed at once (up to 25 Services). A
+hop opens in the same drawer Explore uses. Services no route reaches are not
+drawn there — open one for its own map.
+
+### What a workload depends on
+
+A Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob or Pod gets a
+**Dependencies** map on its Overview, under its pods: every object its pod
+template names, with how it is used on the edge (`env DB_PASSWORD`,
+`volume config → /etc/app`, `image pull secret`, `service account`,
+`env from every key`).
+
+| Object | What is checked |
+| --- | --- |
+| ConfigMap | Read for its **key names** (never shown values): a missing ConfigMap is broken, a key the template names but the ConfigMap lacks breaks that edge. An absent ConfigMap every reference marks `optional` is a warning — the pods start without it. |
+| Secret | **Never read.** Drawn as named; it turns broken when a pod reports it — a container waiting on `secret "db" not found` or `couldn't find key password in Secret …`. A Secret volume no pod has tried to mount yet cannot be told apart from one that exists, and the map says so. |
+| ServiceAccount | Read; a missing one means the controller cannot create the pods. |
+| PersistentVolumeClaim | Read: `Pending` is a warning, `Lost` is broken, a bound claim is followed to its **PersistentVolume** (capacity, reclaim policy, phase). A StatefulSet's `volumeClaimTemplates` are named per replica (`data-db-0`, …, the first four). |
+| PersistentVolume | Cluster-scoped, so a namespace-scoped grant draws it as outside your access and does not read it. |
+
 A Helm release opens the same drawer over its own two panels (values,
 history) instead, since it has no manifest for the object route to address —
 see [Helm releases](helm.md).

@@ -253,3 +253,93 @@ spec:
         - uri: { prefix: /stripe }
       route:
         - destination: { host: api.stripe.com }
+---
+# The dependency map's half: a worker whose pod template names a ConfigMap
+# (present, read for its keys), an optional ConfigMap that is absent (a warning,
+# not a failure), a Secret that was never created (learnt from the pod's own
+# CreateContainerConfigError — the Secret is never read), its own
+# ServiceAccount, and a claim minikube's default StorageClass binds.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shop-config
+  namespace: e2e-apps
+data:
+  queue: orders
+  app.yaml: |
+    workers: 2
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: shop-worker
+  namespace: e2e-apps
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: shop-data
+  namespace: e2e-apps
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 64Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shop-worker
+  namespace: e2e-apps
+  labels:
+    app: shop-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: shop-worker
+  template:
+    metadata:
+      labels:
+        app: shop-worker
+    spec:
+      serviceAccountName: shop-worker
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: config
+          configMap:
+            name: shop-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: shop-data
+      containers:
+        - name: worker
+          image: registry.k8s.io/pause:3.10
+          env:
+            - name: QUEUE
+              valueFrom:
+                configMapKeyRef: { name: shop-config, key: queue }
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: shop-db, key: password }
+          envFrom:
+            - configMapRef: { name: shop-flags, optional: true }
+          volumeMounts:
+            - { name: config, mountPath: /etc/shop }
+            - { name: data, mountPath: /var/lib/shop }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65535
+            runAsGroup: 65535
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              memory: 16Mi
