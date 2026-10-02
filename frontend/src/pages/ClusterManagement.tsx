@@ -226,14 +226,9 @@ export function ClusterManagement() {
                     <EnvironmentTag environment={cluster.environment} />
                   </Td>
                   <Td className="hidden md:table-cell">
-                    <span className="flex items-center gap-2">
-                      {cluster.connection_mode === 'agent' ? (
-                        <Plug aria-hidden="true" className="size-3.5 shrink-0 text-faint" />
-                      ) : (
-                        <Server aria-hidden="true" className="size-3.5 shrink-0 text-faint" />
-                      )}
-                      <LinkStatus state={linkState(cluster)} />
-                    </span>
+                    {/* The API server column already says which way the link
+                        runs, so the badge stands alone. */}
+                    <LinkStatus state={linkState(cluster)} />
                   </Td>
                   <Td
                     className="hidden truncate font-data text-[12.5px] text-muted md:table-cell"

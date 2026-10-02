@@ -27,22 +27,24 @@ const ICON: Record<LinkState, LucideIcon> = {
   idle: CircleDashed,
 }
 
-/* `ok` and `danger` are state and stay semantic wherever they land. The two
+/* The link reads the way the deck's status badges do: a soft plate in the
+   state's tone with a hairline edge in the same tone, the glyph inside it.
+   `ok` and `danger` are state and stay semantic wherever they land. The two
    neutral states are not state, they are the absence of it, so on the rail they
    take the rail's own quiet tokens rather than the work palette's — a `muted`
    borrowed from the page is the wrong grey against chrome, on either deck. */
 const TONE: Record<LinkState, string> = {
-  live: 'text-ok',
-  direct: 'text-muted',
-  down: 'text-danger',
-  idle: 'text-faint',
+  live: 'border-ok/40 bg-ok-soft text-ok',
+  direct: 'border-line bg-raised text-muted',
+  down: 'border-danger/40 bg-danger-soft text-danger',
+  idle: 'border-dashed border-faint/60 bg-raised text-faint',
 }
 
 const RAIL_TONE: Record<LinkState, string> = {
-  live: 'text-ok',
-  direct: 'text-rail-muted',
-  down: 'text-danger',
-  idle: 'text-rail-faint',
+  live: 'border-ok/40 bg-ok-soft text-ok',
+  direct: 'border-rail-line bg-rail text-rail-muted',
+  down: 'border-danger/40 bg-danger-soft text-danger',
+  idle: 'border-dashed border-rail-line bg-rail text-rail-faint',
 }
 
 const READING: Record<LinkState, string> = {
@@ -54,8 +56,8 @@ const READING: Record<LinkState, string> = {
 
 /**
  * LinkStatus is how a cluster's link to KubeMG reads everywhere it is shown.
- * `detail` is the glyph with its word, for a card, a table cell or a path;
- * `glyph` is the glyph alone, for the rail, the palette and the cluster menu,
+ * `detail` is the glyph with its word in a badge, for a card, a table cell or
+ * a path; `glyph` is the glyph alone in a round plate, for the rail, the palette and the cluster menu,
  * where the row is already carrying a name and a version and a third piece of
  * text would make it a paragraph. A live link breathes, slowly — it is the one
  * thing on the deck that is genuinely still happening.
@@ -83,9 +85,9 @@ export function LinkStatus({
         role="img"
         aria-label={reading}
         title={reading}
-        className={`inline-flex shrink-0 ${className ?? ''}`}
+        className={`grid size-5 shrink-0 place-items-center rounded-full border ${tone} ${className ?? ''}`}
       >
-        <Icon aria-hidden="true" className={`size-3.5 ${tone}`} />
+        <Icon aria-hidden="true" className="size-3" />
       </span>
     )
   }
@@ -93,15 +95,13 @@ export function LinkStatus({
   return (
     <span
       title={reading}
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap ${className ?? ''}`}
+      className={`inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border px-2 py-px text-[12px] font-medium whitespace-nowrap ${tone} ${className ?? ''}`}
     >
       <Icon
         aria-hidden="true"
-        className={`size-3.5 shrink-0 ${tone} ${state === 'live' ? 'link-live' : ''}`}
+        className={`size-3 shrink-0 ${state === 'live' ? 'link-live' : ''}`}
       />
-      <span className={`font-data text-[11.5px] ${state === 'down' ? 'text-danger' : 'text-muted'}`}>
-        {label ?? LINK_LABEL[state]}
-      </span>
+      <span className="min-w-0 truncate">{label ?? LINK_LABEL[state]}</span>
     </span>
   )
 }

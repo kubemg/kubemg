@@ -97,7 +97,9 @@ Charts use the categorical palette `--chart-1` through `--chart-8`. Slot order i
 the colour-blindness mechanism: never reorder it and never add a ninth.
 
 Nothing loops. `LinkStatus` uses four static icons for live, direct, down and
-idle. There is no travelling pulse and no marquee; the only repeating motion is a
+idle, drawn the way a status badge is: a soft plate in the state's tone with a
+hairline edge — round around the glyph alone, a pill around the glyph and its
+word. There is no travelling pulse and no marquee; the only repeating motion is a
 single breathing indicator on a genuinely open stream. The chrome's state
 changes — the navigation pill filling, a rail chip on hover — ease over 300 to
 500ms on colour and opacity only, and switch off under `prefers-reduced-motion`.
