@@ -313,7 +313,7 @@ export function SecurityPosture() {
                 value={filter.search}
                 onChange={(search) => setFilter((current) => ({ ...current, search }))}
                 label="Filter findings"
-                placeholder="Object, namespace, rule or field"
+                placeholder="Object, namespace, rule or field…"
               />
               <Segmented<PostureGrouping>
                 ariaLabel="Group findings"
@@ -493,7 +493,7 @@ function FindingRow({
   const [busy, setBusy] = useState(false)
 
   return (
-    <li className="flex flex-wrap items-start gap-3 px-4 py-3">
+    <li className="defer-row flex flex-wrap items-start gap-3 px-5 py-3 [contain-intrinsic-size:auto_96px]">
       {/* The stripe carries the severity, where the old dot carried only
           "acknowledged or not" — every unacknowledged finding was the same red,
           which is what made 36 rows read as one undifferentiated wall. An

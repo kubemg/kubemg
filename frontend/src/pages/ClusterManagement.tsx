@@ -129,7 +129,7 @@ export function ClusterManagement() {
               value={filter}
               onChange={setFilter}
               label="Filter clusters by name"
-              placeholder="Filter by name"
+              placeholder="Filter by name…"
             />
             {behindOnly ? (
               <Chip active title="Show every cluster again" onClick={showEveryAgent}>

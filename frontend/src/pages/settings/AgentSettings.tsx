@@ -6,6 +6,7 @@ import type { SettingsResponse } from '../../api/types'
 import { Button, Field, Notice, Panel, TextInput } from '../../components/primitives'
 import { settingSource } from '../../lib/settings'
 import { SettingsAside, SettingsLayout } from '../../components/settings/SettingsLayout'
+import { useUnsavedGuard } from '../../lib/unsavedGuard'
 
 type Draft = {
   agent_image: string
@@ -120,6 +121,7 @@ export function AgentSettings() {
       draft.shell_max_lifetime_hours.trim() !==
         numberField(settings.overrides.shell_max_lifetime_hours) ||
       draft.debug_image.trim() !== settings.overrides.debug_image)
+  useUnsavedGuard(dirty, 'these settings')
 
   return (
     <SettingsLayout

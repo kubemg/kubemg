@@ -8,6 +8,7 @@ import { AuditForwardingPanel } from '../../components/settings/AuditForwardingP
 import { AuditSettingsPanel } from '../../components/settings/AuditSettingsPanel'
 import { settingSource } from '../../lib/settings'
 import { SettingsAside, SettingsLayout } from '../../components/settings/SettingsLayout'
+import { useUnsavedGuard } from '../../lib/unsavedGuard'
 
 /**
  * Blank means "use the default", so the form state is the override, not the
@@ -100,6 +101,12 @@ export function AuditSettings() {
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!retentionValid || !recordingRetentionValid) {
+      document
+        .getElementById(retentionValid ? 'session_recording_retention_days' : 'audit_retention_days')
+        ?.focus()
+      return
+    }
     setBusy(true)
     setError(null)
     setSaved(false)
@@ -139,8 +146,7 @@ export function AuditSettings() {
       ) ||
       draft.record_exec_sessions !== settings.effective.record_exec_sessions ||
       draft.record_manifest_diffs !== settings.effective.record_manifest_diffs)
-
-  const valid = retentionValid && recordingRetentionValid
+  useUnsavedGuard(dirty, 'these settings')
 
   return (
     <SettingsLayout
@@ -203,7 +209,7 @@ export function AuditSettings() {
               type="submit"
               form="audit-settings-form"
               variant="primary"
-              disabled={busy || !dirty || !valid}
+              disabled={busy || !dirty}
             >
               {busy ? 'Saving…' : 'Save settings'}
             </Button>

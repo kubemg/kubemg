@@ -241,7 +241,7 @@ function LogLines({
         {entries.map((entry, index) => (
           <li
             key={`${entry.at}/${entry.pod ?? ''}/${index}`}
-            className="flex gap-3 px-3 py-1.5 font-mono text-[12px] leading-relaxed"
+            className="defer-row flex gap-3 px-3 py-1.5 font-mono text-[12px] leading-relaxed [contain-intrinsic-size:auto_28px]"
           >
             <span className="shrink-0 text-faint tabular-nums">{clockTime(entry.at)}</span>
 

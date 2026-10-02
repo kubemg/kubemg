@@ -131,6 +131,17 @@ line over an area fading from its own slot colour, the latest sample is
 marked, gridlines are dashed, and the legend carries each series' latest
 reading.
 
+A list page keeps its filters in the query string through `lib/urlState`
+(`useUrlText`, `useUrlFlag`, `useUrlList`), so a narrowed list survives a
+reload and is a link. Writes replace the history entry and read the address as
+it is now, so two in one handler compose. A form with unsaved edits calls
+`useUnsavedGuard(dirty)`: leaving the console is asked about by the browser,
+and following a link inside it is asked about on the console's own dialog.
+A form's submit button stays enabled until the request starts; a field that
+cannot be saved is pointed at — its error shown, focus moved to it — when the
+form is submitted. A row in a list that can run to hundreds takes the
+`defer-row` utility, so the browser skips laying out the rows off screen.
+
 ## Testing
 
 ```bash

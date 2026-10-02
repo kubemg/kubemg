@@ -57,6 +57,7 @@ import { StepActions, Stepper } from '../components/WizardChrome'
 import { MAX_SHORT_NAME, deriveChip, normalizeShortName, railChip } from '../lib/branding'
 import { useClusters } from '../state/clusters-context'
 import { useConfirm } from '../state/confirm-context'
+import { useUnsavedGuard } from '../lib/unsavedGuard'
 
 const ENVIRONMENTS: Environment[] = ['prod', 'staging', 'dev']
 const K8S_ROLES: K8sRole[] = ['cluster-admin', 'edit', 'view']
@@ -102,6 +103,13 @@ export function ClusterWizard() {
 
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  // Until the cluster exists, what has been typed into the first two steps
+  // lives only here.
+  useUnsavedGuard(
+    cluster === null && (identity.name.trim() !== '' || direct !== BLANK_DIRECT),
+    'this cluster',
+  )
 
   // The install URL is single-use and expires, and the wizard can sit open while
   // somebody finds the right kube context. A fresh one is a re-render, never a

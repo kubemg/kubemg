@@ -204,7 +204,7 @@ export function UserManagement() {
               value={filter}
               onChange={setFilter}
               label="Filter users"
-              placeholder="Filter by name or email"
+              placeholder="Filter by name or email…"
             />
             <span className="ml-auto text-[13px] text-muted">
               {visible.length === users.length

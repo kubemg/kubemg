@@ -272,7 +272,7 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
               value={filter}
               onChange={setFilter}
               label="Filter credentials"
-              placeholder="Filter by holder or cluster"
+              placeholder="Filter by holder or cluster…"
             />
             <span className="ml-auto text-[13px] text-muted">
               {visible.length === rows.length

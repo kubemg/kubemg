@@ -182,7 +182,7 @@ export function MachineAccounts() {
               value={filter}
               onChange={setFilter}
               label="Filter machine accounts"
-              placeholder="Filter by name"
+              placeholder="Filter by name…"
             />
             <span className="ml-auto text-[13px] text-muted">
               {visible.length === accounts.length

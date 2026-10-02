@@ -60,7 +60,7 @@ export function TemplateParameterEditor({
                 aria-label="Label"
                 className="w-40"
                 value={parameter.label ?? ''}
-                placeholder="Label shown to the caller"
+                placeholder="Label shown to the caller…"
                 onChange={(event) => update(index, { label: event.target.value })}
               />
               <Select

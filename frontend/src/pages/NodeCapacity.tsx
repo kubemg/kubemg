@@ -216,7 +216,7 @@ function NodeRow({ node }: { node: NodeCapacityRow }) {
   const worst = node.concerns[0]
 
   return (
-    <li className="min-w-0 px-5 py-4">
+    <li className="defer-row min-w-0 px-5 py-4 [contain-intrinsic-size:auto_160px]">
       <div className="flex flex-wrap items-center gap-2.5">
         <span className="min-w-0 truncate font-mono text-[13px] text-fg">{node.name}</span>
         {node.roles.map((role) => (

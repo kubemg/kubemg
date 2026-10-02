@@ -31,7 +31,7 @@ export function EventGroupRow({
   const warning = group.type === 'Warning'
 
   return (
-    <li>
+    <li className="defer-row">
       <button
         type="button"
         onClick={onToggle}

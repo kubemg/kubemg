@@ -612,6 +612,18 @@
   }
 }
 
+/*
+ * A row in a list that can run to hundreds or thousands — log lines, event
+ * groups, findings, nodes. The browser skips laying out and painting the ones
+ * off screen, which is what virtualising buys, without a library and without
+ * taking them out of the DOM (find-in-page still reaches them). The intrinsic
+ * size keeps the scrollbar honest before a row has been drawn.
+ */
+@utility defer-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
+}
+
 /* A group heading in the navigation: the name of the rows under it. */
 @utility nav-title {
   font-size: 13px;

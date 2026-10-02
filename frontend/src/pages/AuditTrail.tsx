@@ -361,7 +361,7 @@ export function AuditTrail() {
               value={search}
               onChange={(next) => narrow(() => setSearch(next))}
               label="Search the audit trail"
-              placeholder="Path, user, resource"
+              placeholder="Path, user, resource…"
               className="w-full sm:w-56"
             />
 

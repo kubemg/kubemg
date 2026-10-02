@@ -243,7 +243,7 @@ function CrdVisibilitySheet({
         value={filter}
         onChange={setFilter}
         label="Filter custom resources"
-        placeholder="Filter by kind or API group"
+        placeholder="Filter by kind or API group…"
         className="w-full"
       />
 

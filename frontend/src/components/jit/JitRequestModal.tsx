@@ -71,10 +71,16 @@ export function JitRequestModal({
   const target = cluster ?? options.find((entry) => entry.id === clusterID)
   const reasonTooShort = reason.trim().length < MIN_REASON
   const valid = clusterID > 0 && !reasonTooShort
+  // Set by the first submit: from then a reason too short says so at once.
+  const [tried, setTried] = useState(false)
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!valid) return
+    setTried(true)
+    if (!valid) {
+      document.getElementById(clusterID > 0 ? 'jit-reason' : 'jit-cluster')?.focus()
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -110,7 +116,7 @@ export function JitRequestModal({
           <Button type="button" variant="ghost" pill onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" pill disabled={busy || !valid}>
+          <Button type="submit" variant="primary" pill disabled={busy}>
             {busy ? 'Submitting…' : 'Submit request'}
           </Button>
         </>
@@ -194,7 +200,7 @@ export function JitRequestModal({
         label="Reason"
         htmlFor="jit-reason"
         error={
-          reason.length > 0 && reasonTooShort
+          (tried || reason.length > 0) && reasonTooShort
             ? `A few more words — at least ${MIN_REASON} characters.`
             : undefined
         }

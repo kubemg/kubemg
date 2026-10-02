@@ -327,7 +327,7 @@ export function EventsTimeline() {
               <SearchInput
                 value={filter}
                 onChange={setFilter}
-                placeholder="Filter by object or reason"
+                placeholder="Filter by object or reason…"
                 label="Filter events"
                 className="ml-auto w-full sm:w-64"
               />

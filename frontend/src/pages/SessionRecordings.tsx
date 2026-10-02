@@ -242,7 +242,7 @@ export function SessionRecordings() {
               value={search}
               onChange={(next) => narrow(() => setSearch(next))}
               label="Search recorded sessions"
-              placeholder="Pod, namespace, user"
+              placeholder="Pod, namespace, user…"
               className="w-full sm:w-56"
             />
 
