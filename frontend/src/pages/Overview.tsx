@@ -19,7 +19,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router'
 import { Plus, RefreshCw, Server } from 'lucide-react'
 import { checkCluster, errorMessage, fetchJitRequests } from '../api/client'
 import type { JitRequest } from '../api/types'
@@ -28,7 +27,7 @@ import { FleetDeveloperBody } from '../components/FleetDeveloperBody'
 import { FleetOperatorBody } from '../components/FleetOperatorBody'
 import { JitRequestModal } from '../components/jit/JitRequestModal'
 import { LiveChip } from '../components/LiveRefresh'
-import { Button, EmptyState, Notice } from '../components/primitives'
+import { Button, EmptyState, LinkButton, Notice } from '../components/primitives'
 import { useFleetCounts } from '../lib/fleetCounts'
 import type { Count, StripCounts } from '../lib/fleetStrip'
 import { FLEET_INTERVAL } from '../lib/live'
@@ -103,12 +102,10 @@ export function Overview() {
               title={isAdmin ? 'No clusters yet' : 'No clusters granted to you'}
               action={
                 isAdmin ? (
-                  <Link to="/admin/clusters/new">
-                    <Button variant="primary">
+                  <LinkButton to="/admin/clusters/new" variant="primary">
                       <Plus aria-hidden="true" className="size-4" />
                       Register a cluster
-                    </Button>
-                  </Link>
+                  </LinkButton>
                 ) : (
                   <Button variant="primary" onClick={() => setRequesting(true)}>
                     Request access

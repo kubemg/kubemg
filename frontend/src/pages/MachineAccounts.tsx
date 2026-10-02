@@ -177,7 +177,7 @@ export function MachineAccounts() {
         <SetupPath accounts={accounts} />
 
         <div className="card min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
             <SearchInput
               value={filter}
               onChange={setFilter}
@@ -383,7 +383,7 @@ export function SetupPath({ accounts }: { accounts: MachineAccount[] }) {
         {steps.map((step, index) => (
           <li
             key={step.label}
-            className="relative flex min-w-0 flex-1 flex-col gap-1 border-b border-line-soft px-4 py-3 last:border-b-0 md:border-r md:border-b-0 md:last:border-r-0"
+            className="relative flex min-w-0 flex-1 flex-col gap-1 border-b border-line-soft px-5 pt-4 pb-3.5 last:border-b-0 md:border-r md:border-b-0 md:last:border-r-0"
           >
             <span className="label flex items-center gap-1.5">
               {step.done ? (

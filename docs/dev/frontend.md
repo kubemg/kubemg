@@ -116,6 +116,20 @@ A dashboard opens on a `slab` — the one dark plate on a page, ink into moss on
 both decks, with its own `slab-*` text and state tokens and `Button`'s `slab`
 variant for actions on it — and states its facts as `StatTile`s, which take a
 tone's soft fill only when the reading is asking for something.
+A `StatTile` can also be a link onto what it counts, or a toggle that filters
+the list under it, and can carry a bar or a breakdown below its reading.
+
+Every overlay is one family. A `Sheet` is the editing surface; a `Dialog` is a
+centred question with two answers, which is what a confirmation is. Both join
+the same overlay stack: only the topmost answers Escape and holds Tab, focus
+moves in when it opens and back to the opener when it closes. A destructive
+`Dialog` is an `alertdialog` and opens on Cancel. Navigation that should look
+like a button is a `LinkButton`, never a `Button` inside a `Link`.
+
+Charts are drawn by hand in SVG (`MetricsChart`'s `Plot`): each series is a
+line over an area fading from its own slot colour, the latest sample is
+marked, gridlines are dashed, and the legend carries each series' latest
+reading.
 
 ## Testing
 

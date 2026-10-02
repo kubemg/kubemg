@@ -199,7 +199,7 @@ export function UserManagement() {
         {rowError ? <Notice tone="error">{rowError}</Notice> : null}
 
         <div className="card min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
             <SearchInput
               value={filter}
               onChange={setFilter}

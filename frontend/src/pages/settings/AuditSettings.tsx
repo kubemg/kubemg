@@ -250,7 +250,7 @@ export function AuditSettings() {
           written, not by the page's Save button, and putting rows that already
           persisted behind a dirty-state save would be a lie about what is in
           force. */}
-      <div className="mt-4 flex min-w-0 max-w-3xl flex-col gap-4">
+      <div className="flex min-w-0 max-w-5xl flex-col gap-4">
         <AuditForwardingPanel />
       </div>
     </SettingsLayout>

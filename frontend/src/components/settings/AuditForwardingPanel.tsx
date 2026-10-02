@@ -143,7 +143,6 @@ export function AuditForwardingPanel() {
   return (
     <>
       <Panel
-        eyebrow="Audit forwarding"
         title="Where the trail is shipped"
         description="Every audit record is pushed here as RFC 5424 syslog with a JSON message — the same fields this server writes to its own log, so one parser reads both copies. This is not an alarm: nothing is deduplicated and no verb selection narrows it."
         bodyClassName="flex flex-col"

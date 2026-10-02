@@ -221,6 +221,36 @@ export function Button({
   )
 }
 
+/**
+ * LinkButton is navigation drawn as a button: a real link (so it opens in a new
+ * tab and reads as one to a screen reader), with a button's look. A `<Button>`
+ * inside a `<Link>` is two interactive elements nested, which is invalid.
+ */
+export function LinkButton({
+  to,
+  variant = 'secondary',
+  size = 'md',
+  pill = false,
+  className,
+  children,
+}: {
+  to: string
+  variant?: keyof typeof BUTTON_VARIANT
+  size?: keyof typeof BUTTON_SIZE
+  pill?: boolean
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <Link
+      to={to}
+      className={`inline-flex shrink-0 items-center justify-center font-medium whitespace-nowrap transition-colors duration-300 ${pill ? 'rounded-full px-4' : 'rounded-control'} ${BUTTON_SIZE[size]} ${BUTTON_VARIANT[variant]} ${className ?? ''}`}
+    >
+      {children}
+    </Link>
+  )
+}
+
 /** IconButton is a bare action in a dense row: always titled, never unlabelled. */
 export function IconButton({
   label,
@@ -559,7 +589,7 @@ export function SearchInput({
 /* --------------------------------------------------------------- surfaces --- */
 
 /**
- * Panel is the standard surface: a 16px title (with a quiet eyebrow above it
+ * Panel is the standard surface: a 16px title (with a quiet pill beside it
  * where the panel is one of a set), an optional 13px description, actions on
  * the right, content below.
  */
@@ -585,8 +615,16 @@ export function Panel({
     <section className={`card overflow-hidden ${className ?? ''}`}>
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
         <div className="min-w-0">
-          {eyebrow ? <p className="label mb-0.5">{eyebrow}</p> : null}
-          <h2 className="truncate text-[16px] font-bold text-fg">{title}</h2>
+          {/* Where the panel is one of a set — a step, a section — the set is
+              named in a quiet pill beside the title rather than above it. */}
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="truncate text-[16px] font-bold text-fg">{title}</h2>
+            {eyebrow ? (
+              <span className="shrink-0 rounded-full border border-line px-2 py-px text-[11.5px] font-medium text-muted">
+                {eyebrow}
+              </span>
+            ) : null}
+          </div>
           {description ? (
             <p className="mt-0.5 max-w-2xl text-[13px] leading-relaxed text-muted">{description}</p>
           ) : null}

@@ -6,7 +6,7 @@ import { SettingsLayout } from '../../components/settings/SettingsLayout'
 export function SsoSettings() {
   return (
     <SettingsLayout title="SSO">
-      <div className="flex min-w-0 max-w-3xl flex-col gap-4">
+      <div className="flex min-w-0 max-w-5xl flex-col gap-4">
         <SsoSettingsPanel />
       </div>
     </SettingsLayout>

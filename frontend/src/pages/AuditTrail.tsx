@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Activity,
   CalendarClock,
   ChevronLeft,
   ChevronRight,
@@ -9,6 +10,8 @@ import {
   Radio,
   RefreshCw,
   ScrollText,
+  ShieldX,
+  SquareTerminal,
 } from 'lucide-react'
 import { useParams, useSearchParams } from 'react-router'
 import {
@@ -37,6 +40,7 @@ import {
   SearchInput,
   Select,
   Sheet,
+  StatTile,
   Table,
   Td,
   Th,
@@ -324,10 +328,23 @@ export function AuditTrail() {
         ) : null}
 
         {summary ? (
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Stat label={`Calls · last ${summary.window_hours}h`} value={summary.total} />
-            <Stat label="Refused or failed" value={summary.failed} tone="bad" />
-            <Stat label="Sessions opened" value={summary.streams} tone="accent" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <StatTile
+              icon={Activity}
+              label={`Calls · last ${summary.window_hours}h`}
+              value={COUNT.format(summary.total)}
+            />
+            <StatTile
+              icon={ShieldX}
+              label="Refused or failed"
+              value={COUNT.format(summary.failed)}
+              tone={summary.failed > 0 ? 'danger' : 'neutral'}
+            />
+            <StatTile
+              icon={SquareTerminal}
+              label="Sessions opened"
+              value={COUNT.format(summary.streams)}
+            />
           </div>
         ) : null}
 
@@ -338,7 +355,7 @@ export function AuditTrail() {
             and a heading pinning against the card instead of the window is
             pushed down into the rows rather than held above them. */}
         <div className="card min-w-0 overflow-clip [--table-heading-position:sticky] [--table-sticky-top:var(--deck-header-h)]">
-          <div className="flex flex-wrap items-center gap-2.5 border-b border-line-soft px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2.5 border-b border-line-soft px-5 pt-4 pb-3.5">
             <SearchInput
               value={search}
               onChange={(next) => narrow(() => setSearch(next))}
@@ -445,7 +462,7 @@ export function AuditTrail() {
           </div>
 
           {showWindow ? (
-            <div className="flex flex-wrap items-end gap-3 border-b border-line-soft px-4 py-3">
+            <div className="flex flex-wrap items-end gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
               <div className="w-56">
                 <Field label="From" htmlFor="audit-from">
                   <TextInput
@@ -715,20 +732,4 @@ export function AuditTrail() {
   )
 }
 
-function Stat({
-  label,
-  value,
-  tone = 'default',
-}: {
-  label: string
-  value: number
-  tone?: 'default' | 'bad' | 'accent'
-}) {
-  const accent = tone === 'bad' ? 'text-danger' : tone === 'accent' ? 'text-accent' : 'text-fg'
-  return (
-    <div className="card px-4 py-3.5">
-      <p className="label">{label}</p>
-      <p className={`mt-1 font-mono text-[26px] leading-none font-semibold ${accent}`}>{value}</p>
-    </div>
-  )
-}
+const COUNT = new Intl.NumberFormat()

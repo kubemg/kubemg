@@ -135,8 +135,7 @@ function Identity({ review }: { review: UserAccessReview }) {
 
   return (
     <Panel
-      eyebrow="Identity"
-      title={user.username}
+      title="Identity"
       description="Where this account's credentials live, and when it was last used."
       bodyClassName="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-4"
       actions={
@@ -226,7 +225,6 @@ function Identity({ review }: { review: UserAccessReview }) {
 function Reach({ review }: { review: UserAccessReview }) {
   return (
     <Panel
-      eyebrow="Access"
       title={
         review.clusters.length === 0
           ? 'Reaches no cluster'
@@ -332,7 +330,6 @@ function grantOrigin(origin: string, source?: string, group?: string): string {
 function Credentials({ rows, live }: { rows: IssuedKubeconfig[]; live: number }) {
   return (
     <Panel
-      eyebrow="Credentials"
       title={live === 0 ? 'No live kubeconfig' : `${live} live kubeconfig${live === 1 ? '' : 's'}`}
       description="A kubeconfig is a file somebody already has. Removing a grant does not take one back — revoking it does."
       actions={
@@ -392,7 +389,6 @@ function Credentials({ rows, live }: { rows: IssuedKubeconfig[]; live: number })
 function Sessions({ rows }: { rows: TerminalSession[] }) {
   return (
     <Panel
-      eyebrow="Activity"
       title="Recent sessions"
       description="The last ten interactive sessions this account opened. The full trail, and any recording, is in Activity."
       actions={

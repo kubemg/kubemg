@@ -210,7 +210,6 @@ export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
   return (
     <>
       <Panel
-        eyebrow="Alarms"
         title="Where alarms are delivered"
         description="A channel is one destination and holds its own credential. Alertmanager composes with a fleet that already routes alerts; a webhook receives the raw signal, which is what a SIEM wants."
         bodyClassName="flex flex-col"
@@ -317,7 +316,6 @@ export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
       </Panel>
 
       <Panel
-        eyebrow="Alarms"
         title="What is worth sending"
         description="Cluster events are read down the agent tunnel — nothing is polled until a cluster-event rule exists. Audit rules cover the half no cluster-side alerting can see: a request kubemg refused never reached the API server, so no cluster has an event for it."
         bodyClassName="flex flex-col"

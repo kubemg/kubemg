@@ -114,8 +114,10 @@ export function Setup() {
       <header className="border-b border-line-soft">
         <div className="mx-auto flex max-w-4xl flex-wrap items-baseline gap-x-3 gap-y-1 px-5 py-5">
           <Lockup className="text-[18px] text-fg" />
-          <h1 className="text-[15px] font-medium text-fg">Set up this bastion</h1>
-          <p className="label ml-auto">signed in as {user?.username}</p>
+          <h1 className="text-[20px] font-bold text-fg">Set up this bastion</h1>
+          <p className="ml-auto text-[13px] text-muted">
+            Signed in as <span className="font-mono text-fg">{user?.username}</span>
+          </p>
         </div>
       </header>
 

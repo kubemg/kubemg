@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
-import { Siren, X } from 'lucide-react'
+import { AlertTriangle, Boxes, Siren, X } from 'lucide-react'
 import { errorMessage, fetchClusterEvents, fetchNamespaces } from '../api/client'
 import type { Namespace } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { LiveRefresh } from '../components/LiveRefresh'
 import { EventGroupRow } from '../components/EventGroupRow'
-import { Chip, EmptyState, Notice, Pill, SearchInput, Select } from '../components/primitives'
+import { Chip, EmptyState, Notice, SearchInput, Select, StatTile } from '../components/primitives'
 import { TableSkeleton } from '../components/SkeletonLoader'
 import { ALL_NAMESPACES } from '../lib/resources'
 import { queryKey, useCachedQuery } from '../lib/query'
@@ -296,17 +296,20 @@ export function EventsTimeline() {
           </Notice>
         ) : null}
 
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatTile icon={Boxes} label="Objects" value={COUNT.format(totals.objects)} />
+          <StatTile icon={Siren} label="Events" value={COUNT.format(totals.firings)} />
+          <StatTile
+            icon={AlertTriangle}
+            label="Warnings"
+            value={COUNT.format(totals.warnings)}
+            tone={totals.warnings > 0 ? 'warn' : 'neutral'}
+          />
+        </div>
+
         <div className="card min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
-            <h2 className="text-[14px] font-semibold text-fg">
-              {totals.objects} {totals.objects === 1 ? 'object' : 'objects'}
-            </h2>
-            <span className="font-mono text-[12.5px] text-faint">
-              {totals.firings} {totals.firings === 1 ? 'event' : 'events'}
-            </span>
-            {totals.warnings > 0 ? (
-              <Pill tone="warn">{totals.warnings} warning{totals.warnings === 1 ? '' : 's'}</Pill>
-            ) : null}
+          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
+            <h2 className="text-[16px] font-bold text-fg">By object, newest first</h2>
 
             {/* The filter, not the ordering. Newest first stays underneath it. */}
             <Chip
@@ -405,3 +408,5 @@ export function EventsTimeline() {
     </AppShell>
   )
 }
+
+const COUNT = new Intl.NumberFormat()

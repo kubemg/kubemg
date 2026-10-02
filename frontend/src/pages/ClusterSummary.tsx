@@ -818,7 +818,7 @@ function AccessPath({ cluster, username }: { cluster: Cluster; username: string 
         {hops.map((hop, index) => (
           <li
             key={hop.label}
-            className={`relative flex min-w-0 flex-1 flex-col gap-1 border-b border-line-soft px-4 py-3 last:border-b-0 md:border-r md:border-b-0 md:last:border-r-0 ${
+            className={`relative flex min-w-0 flex-1 flex-col gap-1 border-b border-line-soft px-5 pt-4 pb-3.5 last:border-b-0 md:border-r md:border-b-0 md:last:border-r-0 ${
               hop.gap ? 'bg-warn-soft' : ''
             }`}
           >

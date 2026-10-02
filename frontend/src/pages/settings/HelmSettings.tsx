@@ -6,7 +6,7 @@ import { SettingsLayout } from '../../components/settings/SettingsLayout'
 export function HelmSettings() {
   return (
     <SettingsLayout title="Helm">
-      <div className="flex min-w-0 max-w-3xl flex-col gap-4">
+      <div className="flex min-w-0 max-w-5xl flex-col gap-4">
         <HelmRepositoriesPanel />
       </div>
     </SettingsLayout>

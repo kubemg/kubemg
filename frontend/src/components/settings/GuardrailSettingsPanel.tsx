@@ -168,7 +168,6 @@ export function GuardrailSettingsPanel({ clusters }: { clusters: Cluster[] }) {
   return (
     <>
       <Panel
-        eyebrow="Safety"
         title="Command guardrails"
         description="Rules that refuse a call whatever the cluster’s RBAC allows — because the person who deletes the wrong namespace is usually the person entitled to delete it. They cover proxied API calls and what is typed into a container."
         bodyClassName="flex flex-col"
