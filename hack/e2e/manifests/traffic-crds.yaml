@@ -1,0 +1,111 @@
+# Just enough of the Gateway API and Istio for the traffic map to read: the
+# four kinds it follows, served at v1, with a status subresource so the fixture
+# can write the verdict a gateway controller would. The schema keeps whatever it
+# is given — these are stand-ins for the real CRDs, not copies of them, and no
+# controller acts on them.
+#
+# Labelled so `make e2e-down` removes only these: on a cluster that already has
+# the real Gateway API or Istio installed, the fixture uses those and never
+# applies this file (see ensure_traffic in fixture.sh).
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: gateways.gateway.networking.k8s.io
+  labels:
+    e2e.kubemg.io/fixture: "true"
+  annotations:
+    # A *.k8s.io group is protected; the real Gateway API CRDs carry this.
+    api-approved.kubernetes.io: https://github.com/kubernetes-sigs/gateway-api/pull/2466
+spec:
+  group: gateway.networking.k8s.io
+  scope: Namespaced
+  names:
+    plural: gateways
+    singular: gateway
+    kind: Gateway
+    listKind: GatewayList
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: httproutes.gateway.networking.k8s.io
+  labels:
+    e2e.kubemg.io/fixture: "true"
+  annotations:
+    # A *.k8s.io group is protected; the real Gateway API CRDs carry this.
+    api-approved.kubernetes.io: https://github.com/kubernetes-sigs/gateway-api/pull/2466
+spec:
+  group: gateway.networking.k8s.io
+  scope: Namespaced
+  names:
+    plural: httproutes
+    singular: httproute
+    kind: HTTPRoute
+    listKind: HTTPRouteList
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: gateways.networking.istio.io
+  labels:
+    e2e.kubemg.io/fixture: "true"
+spec:
+  group: networking.istio.io
+  scope: Namespaced
+  names:
+    plural: gateways
+    singular: gateway
+    kind: Gateway
+    listKind: GatewayList
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: virtualservices.networking.istio.io
+  labels:
+    e2e.kubemg.io/fixture: "true"
+spec:
+  group: networking.istio.io
+  scope: Namespaced
+  names:
+    plural: virtualservices
+    singular: virtualservice
+    kind: VirtualService
+    listKind: VirtualServiceList
+    shortNames: [vs]
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
