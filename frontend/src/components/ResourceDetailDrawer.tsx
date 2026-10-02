@@ -22,6 +22,7 @@ import { HelmHistoryPanel } from './HelmHistoryPanel'
 import { HelmValuesPanel } from './HelmValuesPanel'
 import { LogExplorer } from './LogExplorer'
 import { ReachabilityTab } from './NetworkPolicyReachability'
+import { TrafficMapTab } from './TrafficMap'
 import { PodLogView, PodOverview } from './PodPanels'
 import { WorkloadActionPanel } from './WorkloadActionPanel'
 import type { WorkloadActionName, WorkloadActionTarget } from './WorkloadActionPanel'
@@ -74,6 +75,16 @@ export type DetailTab =
   | 'values'
   | 'history'
   | 'reachability'
+  | 'traffic'
+
+/** The kinds a traffic map is drawn for: the three routes forward, a Service
+    back to the routes that reach it. */
+const TRAFFIC_KINDS: ReadonlySet<string> = new Set([
+  'ingresses',
+  'httproutes',
+  'virtualservices',
+  'services',
+])
 
 /** Which stream the logs tab is showing. */
 type StreamView = 'logs' | 'history' | 'terminal'
@@ -327,6 +338,9 @@ export function ResourceDetailDrawer({
   if (!release && target.namespace && hasPodLabels(target.kind)) {
     tabs.push({ value: 'reachability', label: 'Reachability' })
   }
+  if (!release && target.namespace && TRAFFIC_KINDS.has(target.kind)) {
+    tabs.push({ value: 'traffic', label: 'Traffic' })
+  }
 
   // What the object says it is running, for the scale dialog's prefill. It comes
   // from the describe already on screen rather than from a read of its own.
@@ -559,6 +573,16 @@ export function ResourceDetailDrawer({
           kind={target.kind}
           name={target.name}
           namespace={target.namespace}
+        />
+      ) : null}
+
+      {tab === 'traffic' && target.namespace ? (
+        <TrafficMapTab
+          cluster={cluster}
+          kind={target.kind}
+          name={target.name}
+          namespace={target.namespace}
+          onOpen={onOpen}
         />
       ) : null}
 

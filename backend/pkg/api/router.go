@@ -893,6 +893,13 @@ func NewRouter(opts Options) *gin.Engine {
 			// way workload/pods is. See resources_rollout.go.
 			resources.GET("/workload/history", s.showWorkloadHistory)
 
+			// Where a route's traffic goes: an Ingress, HTTPRoute or
+			// VirtualService followed to its Services, their endpoints, the
+			// workloads behind them and their pods — or a Service followed back
+			// to the routes that send to it. Every hop is the caller's own
+			// impersonated read. See resources_traffic.go.
+			resources.GET("/traffic", s.showTrafficMap)
+
 			// The rest of the inventory behind the Explore sidebar: one route
 			// per list an operator can be looking at. The cluster-scoped ones
 			// refuse a namespace-scoped grant, since a cluster-wide list would

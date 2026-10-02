@@ -1433,7 +1433,11 @@ export function Explore() {
       </div>
 
       {detail && cluster ? (
+        // Keyed by the object, so opening another one from inside the drawer —
+        // a pod from the Pods tab, a hop from the Traffic map — starts it fresh
+        // on that object's own first tab rather than on a tab it may not have.
         <ResourceDetailDrawer
+          key={`${detail.kind}/${detail.namespace ?? ''}/${detail.name}`}
           cluster={cluster}
           target={detail}
           onClose={() => setDetail(null)}

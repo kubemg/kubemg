@@ -186,6 +186,7 @@ fan-out limit) rather than listing the whole cluster.
 | `GET /pods/:pod` | |
 | `GET /pods/:pod/logs` | Query `tail` (1–5000, default 200), `container?`, `previous?`. |
 | `GET /workload/pods` | Resolves a Deployment/StatefulSet/DaemonSet/ReplicaSet/Job to its pods via a **derived** label selector, never a caller-supplied one — capped at 50 pods. |
+| `GET /traffic` | Query `kind` (`ingresses`/`httproutes`/`virtualservices`/`services`), `namespace`, `name`. A route followed to its Services → EndpointSlices → pods (by the Service's own selector) → controlling workload (ReplicaSet → Deployment); a Service followed back to the routes in its namespace that send to it. `{root, nodes[], edges[], notes[]}`; a node is `{id, kind, resource?, api_group?, namespace?, name, column 0–4, detail[], state, problem?, pod?}`, `state` one of `ok`/`warn`/`bad`/`unchecked`/`denied`/`outside`. A hop the cluster refuses is `denied`, one outside the grant is `outside` and **not read**; only the root object's own failure fails the request (cluster's status and words). Never reads a Secret. At most 10 Services followed, 4 pods per workload drawn. `400` for another kind. |
 | `GET /deployments` `/statefulsets` `/daemonsets` | |
 | `GET /jobs` `/cronjobs` | CronJob rows carry `next_schedule_at` or `schedule_error`. |
 | `GET /replicasets` | Carries the **controlling** owner reference and the `deployment.kubernetes.io/revision` annotation. |

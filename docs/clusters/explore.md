@@ -215,6 +215,74 @@ asking why, and changing it is one investigation rather than three:
 - **YAML** — the live manifest, editable for anything the write path allows.
 - **Logs & Terminal** (pods) / **Logs** (workloads that support pooled logs)
   — see [Terminals and logs](terminals-and-logs.md).
+- **Traffic** (Ingresses, HTTPRoutes, VirtualServices and Services) — where
+  the traffic goes, drawn. See [The traffic map](#the-traffic-map) below.
+
+### The traffic map
+
+An Ingress, an HTTPRoute or a VirtualService says "send this host and path to
+that Service", and everything that can go wrong with that sentence is invisible
+from the route itself. The **Traffic** tab follows it and draws every hop, left
+to right:
+
+| Column | What is drawn |
+| --- | --- |
+| Entry | The Ingress's hosts (with the TLS Secret each one names), or the Gateways and Istio gateways a route attaches to — or `mesh` for a VirtualService with none. |
+| Route | The object itself: its class and address, or its hostnames. |
+| Service | Every Service a rule sends to, with its type, ports and how many endpoints are ready. |
+| Workload | The Deployment, StatefulSet, DaemonSet or Job that owns the pods — a ReplicaSet is followed to its Deployment. |
+| Pods | The pods the Service selects, unready ones first. More than four per workload fold into one "+N more" box. |
+
+Each edge carries the rule that sends traffic down it — host and path, the
+weight of a split, the port. Point at any box to light its whole path (what
+leads to it and what it leads to) and fade the rest; click one that is an
+object to open it in the same drawer, so you can walk from a route to the pod
+that is failing without closing anything. A pod opens on its own drawer with
+logs and terminal.
+
+**What it calls broken**, each drawn in red with the reason beside it and
+listed in words under the drawing:
+
+- the Service a rule names does not exist;
+- the port a rule names is not one the Service exposes — drawn on that
+  rule's edge, not on the Service, since another route may reach the same
+  Service on a port it does expose;
+- the Service's selector matches no pods;
+- the Service has no ready endpoint (none of its pods passes its readiness
+  probe), or fewer than all — drawn as degraded;
+- a pod is failing — in its container's own word (`CrashLoopBackOff`,
+  `ImagePullBackOff`), not a generic "not ready";
+- for an HTTPRoute, a gateway controller has refused it or could not resolve a
+  reference (`Accepted` / `ResolvedRefs` false on the route's status — a
+  cross-namespace backend without a ReferenceGrant shows up here);
+- an Ingress no controller has given an address to yet — drawn as degraded.
+
+On a **Service** the tab reads the other way: the Ingresses, HTTPRoutes and
+VirtualServices in the Service's namespace that send to it, then the Service
+forward to its pods. Routes in other namespaces are not searched, and the tab
+says so.
+
+Every hop is read as you, through the same tunnel as everything else on this
+page, so it is in the audit trail and the cluster's RBAC decides each one:
+
+- A hop the cluster refuses is drawn as **refused** (dashed) with the
+  cluster's own reason; the rest of the map is still drawn.
+- A hop into a namespace outside your grant — a VirtualService sending to
+  `ledger.payments.svc.cluster.local` when you hold only `shop` — is drawn as
+  **outside your access** and is **not read at all**.
+
+What it deliberately does not do:
+
+- **It never opens a Secret.** A TLS Secret is named on its host but not read,
+  so looking at a route does not put a Secret read in the audit trail.
+- **DestinationRules are not read.** An Istio subset is a label on the edge,
+  not the set of pods it selects.
+- Destinations that are not Services — an Ingress resource backend, a
+  non-Service `backendRef`, a VirtualService host that is not
+  `name` or `name.namespace.svc…` (a ServiceEntry or an external API) — are
+  drawn but not followed.
+- A map follows at most ten Services; more are drawn as "not followed".
+- It is not live. **Refresh** (the circular arrow) reads the path again.
 
 A Helm release opens the same drawer over its own two panels (values,
 history) instead, since it has no manifest for the object route to address —
