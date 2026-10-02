@@ -260,12 +260,12 @@ function SourceRow({
           <span className="text-[13.5px] font-medium text-fg">{KIND_LABEL[kind]}</span>
           {source ? (
             <>
-              <span className="font-mono text-[12.5px] text-muted">{source.provider_label}</span>
+              <span className="font-data text-[12.5px] text-muted">{source.provider_label}</span>
               <Pill tone={sourceTone(source)} title={source.last_message}>
                 {sourceStateLabel(source)}
               </Pill>
               {source.detected_version ? (
-                <span className="font-mono text-[11.5px] text-faint">{source.detected_version}</span>
+                <span className="font-data text-[11.5px] text-faint">{source.detected_version}</span>
               ) : null}
             </>
           ) : (
@@ -289,7 +289,7 @@ function SourceRow({
         ) : null}
 
         {source ? (
-          <p className="mt-1 truncate font-mono text-[12px] text-faint" title={source.endpoint}>
+          <p className="mt-1 truncate font-data text-[12px] text-faint" title={source.endpoint}>
             {source.endpoint}
             {source.access_mode === 'in-cluster' ? ' · via tunnel' : ' · dialled from kubemg'}
             {source.last_checked_at ? ` · checked ${relativeAge(source.last_checked_at)}` : null}
@@ -378,7 +378,7 @@ function Discovered({
             >
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-[13px] text-fg">
+                  <span className="font-data text-[13px] text-fg">
                     {candidate.service_namespace}/{candidate.service_name}:{candidate.service_port}
                   </span>
                   <Pill tone={candidate.score > 1 ? 'ok' : 'warn'} dot={false}>
@@ -601,7 +601,7 @@ export function DatasourceSheet({
       title={
         <>
           {source ? 'Edit' : 'Connect'} {KIND_LABEL[kind].toLowerCase()} for{' '}
-          <span className="font-mono text-accent">{cluster.name}</span>
+          <span className="font-data text-accent">{cluster.name}</span>
         </>
       }
       onClose={onClose}
@@ -628,7 +628,7 @@ export function DatasourceSheet({
             <Check aria-hidden="true" className="mr-1.5 -mt-0.5 inline size-3.5" />
           ) : null}
           {check.message}
-          <span className="mt-1 block font-mono text-[11.5px] opacity-80">
+          <span className="mt-1 block font-data text-[11.5px] opacity-80">
             {check.endpoint}
             {check.path}
           </span>
@@ -648,7 +648,7 @@ export function DatasourceSheet({
                 key={`${candidate.service_namespace}/${candidate.service_name}`}
                 type="button"
                 onClick={() => applyCandidate(candidate)}
-                className="rounded-control border border-line bg-surface px-2.5 py-1.5 text-left font-mono text-[12px] text-muted transition-colors hover:bg-raised hover:text-fg"
+                className="rounded-control border border-line bg-surface px-2.5 py-1.5 text-left font-data text-[12px] text-muted transition-colors hover:bg-raised hover:text-fg"
               >
                 {candidate.service_namespace}/{candidate.service_name}:{candidate.service_port}
               </button>
@@ -707,7 +707,7 @@ export function DatasourceSheet({
               <TextInput
                 id="service_namespace"
                 required
-                className="font-mono text-[12.5px]"
+                className="font-data text-[12.5px]"
                 placeholder="monitoring"
                 value={draft.service_namespace}
                 onChange={(event) => update('service_namespace', event.target.value)}
@@ -717,7 +717,7 @@ export function DatasourceSheet({
               <TextInput
                 id="service_name"
                 required
-                className="font-mono text-[12.5px]"
+                className="font-data text-[12.5px]"
                 placeholder="prometheus-server"
                 value={draft.service_name}
                 onChange={(event) => update('service_name', event.target.value)}
@@ -727,7 +727,7 @@ export function DatasourceSheet({
               <TextInput
                 id="service_port"
                 required
-                className="font-mono text-[12.5px]"
+                className="font-data text-[12.5px]"
                 placeholder={info.defaultPort}
                 value={draft.service_port}
                 onChange={(event) => update('service_port', event.target.value)}
@@ -756,7 +756,7 @@ export function DatasourceSheet({
               id="url"
               type="url"
               required
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               placeholder="https://vmselect.example.com:8481"
               value={draft.url}
               onChange={(event) => update('url', event.target.value)}
@@ -785,7 +785,7 @@ export function DatasourceSheet({
       >
         <TextInput
           id="path_prefix"
-          className="font-mono text-[12.5px]"
+          className="font-data text-[12.5px]"
           placeholder={info.defaultPrefix || '/'}
           value={draft.path_prefix}
           onChange={(event) => update('path_prefix', event.target.value)}
@@ -803,7 +803,7 @@ export function DatasourceSheet({
       >
         <TextInput
           id="grafana_datasource"
-          className="font-mono text-[12.5px]"
+          className="font-data text-[12.5px]"
           placeholder="P1809F7CD0C75ACF3"
           value={draft.grafana_datasource}
           onChange={(event) => update('grafana_datasource', event.target.value)}

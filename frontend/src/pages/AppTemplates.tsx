@@ -139,7 +139,7 @@ export function AppTemplates() {
                           {templateDisplayName(template)}
                         </span>
                         <span className="flex items-center gap-1.5">
-                          <span className="font-mono text-[11.5px] text-faint">{template.name}</span>
+                          <span className="font-data text-[11.5px] text-faint">{template.name}</span>
                           {template.seeded ? <Pill tone="idle">seeded</Pill> : null}
                         </span>
                       </button>
@@ -147,7 +147,7 @@ export function AppTemplates() {
                     <Td className="hidden truncate text-[12.5px] text-muted md:table-cell">
                       {template.description ?? '—'}
                     </Td>
-                    <Td className="font-mono text-[12.5px] text-muted">{template.parameters.length}</Td>
+                    <Td className="font-data text-[12.5px] text-muted">{template.parameters.length}</Td>
                     <Td className="text-[12.5px] text-muted"><Age iso={template.updated_at} /></Td>
                     <Td className="text-right">
                       <span className="flex justify-end gap-1">
@@ -275,7 +275,7 @@ function TemplateEditorSheet({
         >
           <TextInput
             id="tpl_admin_name"
-            className="font-mono text-[12.5px]"
+            className="font-data text-[12.5px]"
             value={name}
             disabled={template !== null}
             onChange={(event) => setName(event.target.value)}

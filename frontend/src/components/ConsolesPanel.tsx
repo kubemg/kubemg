@@ -119,7 +119,7 @@ export function ConsolesPanel({
                   href={ui.url}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="inline-flex items-center gap-1.5 rounded-chip border border-line bg-raised px-2 py-1 font-mono text-[12px] text-muted transition-colors hover:text-fg"
+                  className="inline-flex items-center gap-1.5 rounded-chip border border-line bg-raised px-2 py-1 font-data text-[12px] text-muted transition-colors hover:text-fg"
                   title={ui.url}
                 >
                   <ExternalLink aria-hidden="true" className="size-3.5" />
@@ -202,7 +202,7 @@ function ConsoleRow({
             href={link.url}
             target="_blank"
             rel="noreferrer noopener"
-            className="mt-1 inline-flex max-w-full items-center gap-1.5 font-mono text-[12px] text-accent transition-colors hover:text-accent-hover"
+            className="mt-1 inline-flex max-w-full items-center gap-1.5 font-data text-[12px] text-accent transition-colors hover:text-accent-hover"
           >
             <span className="truncate">{link.url}</span>
             <ExternalLink aria-hidden="true" className="size-3 shrink-0" />

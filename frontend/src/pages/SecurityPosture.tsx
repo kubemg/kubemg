@@ -370,11 +370,11 @@ export function SecurityPosture() {
                   {grouping === 'severity' ? (
                     <SeverityTag severity={group.key as PostureSeverity} />
                   ) : (
-                    <span className="min-w-0 truncate font-mono text-[12.5px] text-fg">
+                    <span className="min-w-0 truncate font-data text-[12.5px] text-fg">
                       {group.label}
                     </span>
                   )}
-                  <span className="font-mono text-[11.5px] text-faint">{group.findings.length}</span>
+                  <span className="font-data text-[11.5px] text-faint">{group.findings.length}</span>
                 </h3>
               ) : null}
               <ul className="divide-y divide-line-soft">
@@ -512,19 +512,19 @@ function FindingRow({
         <div className="flex flex-wrap items-baseline gap-x-2">
           <span className="text-[13.5px] font-medium text-fg">{finding.title}</span>
           <span className="text-[11px] text-faint">{finding.kind}</span>
-          <span className="truncate font-mono text-[13px] text-fg">
+          <span className="truncate font-data text-[13px] text-fg">
             {finding.namespace ? <span className="text-faint">{finding.namespace}/</span> : null}
             {finding.name}
           </span>
           {finding.container ? (
-            <span className="font-mono text-[11.5px] text-faint">{finding.container}</span>
+            <span className="font-data text-[11.5px] text-faint">{finding.container}</span>
           ) : null}
           <PSSBadge finding={finding} />
           {finding.acknowledged ? <Pill tone="idle">Acknowledged</Pill> : null}
         </div>
 
         <p className="mt-1 max-w-3xl text-[12.5px] leading-relaxed text-muted">{finding.message}</p>
-        <p className="mt-1 font-mono text-[11.5px] text-faint">{finding.field}</p>
+        <p className="mt-1 font-data text-[11.5px] text-faint">{finding.field}</p>
 
         {finding.acknowledged ? (
           <p className="mt-1 text-[12px] text-muted">

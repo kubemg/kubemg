@@ -129,7 +129,7 @@ export function HelmRepositoriesPanel() {
                     {repository.chart_count} chart{repository.chart_count === 1 ? '' : 's'}
                   </Pill>
                 </div>
-                <p className="mt-1 truncate font-mono text-[12px] text-muted">{repository.url}</p>
+                <p className="mt-1 truncate font-data text-[12px] text-muted">{repository.url}</p>
                 {repository.description ? (
                   <p className="mt-1 text-[12px] text-muted">{repository.description}</p>
                 ) : null}
@@ -305,7 +305,7 @@ function RepositorySheet({
         >
           <TextInput
             id="helm_repo_url"
-            className="font-mono text-[12.5px]"
+            className="font-data text-[12.5px]"
             value={url}
             onChange={(event) => setUrl(event.target.value)}
             placeholder="https://charts.example.com"
@@ -341,7 +341,7 @@ function RepositorySheet({
             id="helm_repo_credential"
             type="password"
             autoComplete="new-password"
-            className="font-mono text-[12.5px]"
+            className="font-data text-[12.5px]"
             value={credential}
             disabled={clearCredential}
             onChange={(event) => setCredential(event.target.value)}

@@ -83,7 +83,7 @@ export function IssueMachineTokenSheet({
       width="lg"
       title={
         <>
-          Credential for <span className="font-mono text-accent">{account.username}</span>
+          Credential for <span className="font-data text-accent">{account.username}</span>
         </>
       }
       onClose={onClose}
@@ -181,7 +181,7 @@ export function IssueMachineTokenSheet({
       >
         <TextInput
           id="token-namespace"
-          className="font-mono"
+          className="font-data"
           placeholder={grant?.namespaces[0] ?? 'default'}
           value={namespace}
           onChange={(event) => setNamespace(event.target.value)}
@@ -253,7 +253,7 @@ function IssuedCredential({
         </div>
         <p className="text-[12px] text-muted">
           A CI job can use this as a bearer token against{' '}
-          <span className="font-mono">{issued.server}</span>, but the kubeconfig below is the form
+          <span className="font-data">{issued.server}</span>, but the kubeconfig below is the form
           kubectl and most tooling expect.
         </p>
       </div>
@@ -296,8 +296,8 @@ function IssuedCredential({
           numbered={false}
         />
         <p className="text-[12px] text-muted">
-          It acts as <span className="font-mono">{account.username}</span> with the{' '}
-          <span className="font-mono">{issued.k8s_role}</span> role, and every call it makes is in
+          It acts as <span className="font-data">{account.username}</span> with the{' '}
+          <span className="font-data">{issued.k8s_role}</span> role, and every call it makes is in
           the audit trail under that name. In a pipeline, keep the file in the runner&rsquo;s own
           secret store — kubemg cannot hand it out a second time.
         </p>

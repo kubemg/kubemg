@@ -175,7 +175,7 @@ export function ClusterManagement() {
                     </span>
                   </Td>
                   <Td className="hidden md:table-cell">
-                    <span className="font-mono text-[12px] font-semibold text-muted">
+                    <span className="font-data text-[12px] font-semibold text-muted">
                       {railChip(cluster)}
                     </span>
                   </Td>
@@ -193,7 +193,7 @@ export function ClusterManagement() {
                     </span>
                   </Td>
                   <Td
-                    className="hidden truncate font-mono text-[12.5px] text-muted md:table-cell"
+                    className="hidden truncate font-data text-[12.5px] text-muted md:table-cell"
                     title={cluster.api_url}
                   >
                     {/* An agent cluster has no API URL here on purpose: KubeMG
@@ -208,7 +208,7 @@ export function ClusterManagement() {
                       </span>
                     </span>
                   </Td>
-                  <Td className="hidden truncate font-mono text-[12.5px] text-muted md:table-cell">
+                  <Td className="hidden truncate font-data text-[12.5px] text-muted md:table-cell">
                     {cluster.kubernetes_version ?? '—'}
                   </Td>
                   <Td>

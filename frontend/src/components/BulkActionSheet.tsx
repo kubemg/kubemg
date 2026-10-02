@@ -204,7 +204,7 @@ export function BulkActionSheet({
             <li key={row.key} className="flex items-start gap-2.5 px-3 py-2">
               <OutcomeGlyph state={outcome?.state} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate font-mono text-[12.5px] text-fg">{row.name}</span>
+                <span className="block truncate font-data text-[12.5px] text-fg">{row.name}</span>
                 <span className="block truncate text-[11.5px] text-faint">
                   {row.label}
                   {row.namespace ? ` · ${row.namespace}` : ''}

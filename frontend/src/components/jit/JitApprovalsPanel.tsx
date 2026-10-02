@@ -210,17 +210,17 @@ export function JitApprovalsPanel({
                 className="flex flex-col gap-3 border-t border-line-soft px-4 py-3 first:border-t-0"
               >
                 <div className="flex flex-wrap items-baseline gap-2">
-                  <span className="font-mono text-[13.5px] text-fg">
+                  <span className="font-data text-[13.5px] text-fg">
                     {request.requester_username}
                   </span>
                   <span className="text-[13px] text-muted">wants</span>
                   <Pill tone="warn" dot={false}>
-                    <span className="font-mono">{request.requested_role}</span>
+                    <span className="font-data">{request.requested_role}</span>
                   </Pill>
                   <span className="text-[13px] text-muted">on</span>
-                  <span className="font-mono text-[13px] text-fg">{request.cluster_name}</span>
+                  <span className="font-data text-[13px] text-fg">{request.cluster_name}</span>
                   <span className="text-[13px] text-muted">for</span>
-                  <span className="font-mono text-[13px] text-fg">
+                  <span className="font-data text-[13px] text-fg">
                     {formatWindow(request.duration_minutes)}
                   </span>
                   <span className="ml-auto text-[12.5px] text-muted">
@@ -314,21 +314,21 @@ export function JitApprovalsPanel({
                 const mine = request.requester_id === user?.id
                 return (
                   <Row key={request.id} title={request.reason}>
-                    <Td className="truncate font-mono text-[13px]">{request.requester_username}</Td>
-                    <Td className="truncate font-mono text-[13px]">{request.cluster_name}</Td>
+                    <Td className="truncate font-data text-[13px]">{request.requester_username}</Td>
+                    <Td className="truncate font-data text-[13px]">{request.cluster_name}</Td>
                     <Td>
                       <Pill tone="ok" dot={false}>
-                        <span className="font-mono">{request.requested_role}</span>
+                        <span className="font-data">{request.requested_role}</span>
                       </Pill>
                     </Td>
-                    <Td className="hidden truncate font-mono text-[12.5px] text-muted md:table-cell">
+                    <Td className="hidden truncate font-data text-[12.5px] text-muted md:table-cell">
                       {request.namespaces.length > 0 ? request.namespaces.join(', ') : 'all'}
                     </Td>
                     <Td>
                       {/* Amber under five minutes: the point at which somebody
                           mid-task needs to know they are about to lose it. */}
                       <span
-                        className={`font-mono text-[13px] tabular-nums ${
+                        className={`font-data text-[13px] tabular-nums ${
                           left < 300 ? 'text-warn' : 'text-fg'
                         }`}
                       >
@@ -384,9 +384,9 @@ export function JitApprovalsPanel({
             <tbody>
               {history.map((request) => (
                 <Row key={request.id} title={request.reason}>
-                  <Td className="truncate font-mono text-[13px]">{request.requester_username}</Td>
-                  <Td className="truncate font-mono text-[13px]">{request.cluster_name}</Td>
-                  <Td className="font-mono text-[12.5px]">{request.requested_role}</Td>
+                  <Td className="truncate font-data text-[13px]">{request.requester_username}</Td>
+                  <Td className="truncate font-data text-[13px]">{request.cluster_name}</Td>
+                  <Td className="font-data text-[12.5px]">{request.requested_role}</Td>
                   <Td>
                     <Pill tone={STATUS_TONE[request.status]}>{request.status}</Pill>
                   </Td>

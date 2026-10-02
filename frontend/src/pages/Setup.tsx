@@ -116,7 +116,7 @@ export function Setup() {
           <Lockup className="text-[18px] text-fg" />
           <h1 className="text-[20px] font-bold text-fg">Set up this bastion</h1>
           <p className="ml-auto text-[13px] text-muted">
-            Signed in as <span className="font-mono text-fg">{user?.username}</span>
+            Signed in as <span className="font-data text-fg">{user?.username}</span>
           </p>
         </div>
       </header>
@@ -250,7 +250,7 @@ function AdministratorStep({
           {pristine ? (
             <Notice tone="warn">
               Anyone who can read this server’s log can sign in as{' '}
-              <span className="font-mono">{user?.username}</span> until this is changed.
+              <span className="font-data">{user?.username}</span> until this is changed.
             </Notice>
           ) : (
             <Notice tone="ok">The bootstrap password is no longer in force.</Notice>
@@ -366,7 +366,7 @@ function AddressStep({
             <TextInput
               id="public_url"
               autoFocus
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               placeholder="https://kubemg.internal:8443"
               value={value}
               onChange={(event) => setValue(event.target.value)}
@@ -457,7 +457,7 @@ function ImagesStep({
           >
             <TextInput
               id="agent_image"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               placeholder={settings.defaults.agent_image}
               value={image}
               onChange={(event) => setImage(event.target.value)}
@@ -471,7 +471,7 @@ function ImagesStep({
           >
             <TextInput
               id="agent_namespace"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               placeholder={settings.defaults.agent_namespace}
               value={namespace}
               onChange={(event) => setNamespace(event.target.value)}
@@ -742,7 +742,7 @@ function Effective({ label, value }: { label: string; value: string }) {
   return (
     <p className="flex flex-wrap items-baseline gap-2 rounded-control bg-raised px-3 py-2">
       <span className="label">{label}</span>
-      <span className="min-w-0 truncate font-mono text-[12.5px] text-fg">{value}</span>
+      <span className="min-w-0 truncate font-data text-[12.5px] text-fg">{value}</span>
     </p>
   )
 }

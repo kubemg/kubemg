@@ -233,7 +233,7 @@ export function MachineAccounts() {
                         </span>
                       )}
                     </Td>
-                    <Td className="font-mono text-[12.5px] text-muted">
+                    <Td className="font-data text-[12.5px] text-muted">
                       {row.token_count === 0
                         ? '—'
                         : `${row.active_tokens} live / ${row.token_count}`}
@@ -402,7 +402,7 @@ export function SetupPath({ accounts }: { accounts: MachineAccount[] }) {
               {step.done ? (
                 <Check aria-hidden="true" className="size-3.5 text-ok" />
               ) : (
-                <span className="font-mono text-faint">{index + 1}</span>
+                <span className="font-data text-faint">{index + 1}</span>
               )}
               {step.label}
             </span>
@@ -470,7 +470,7 @@ function CreateMachineAccountSheet({
       >
         <TextInput
           id="machine-username"
-          className="font-mono"
+          className="font-data"
           placeholder="jenkins-release"
           value={username}
           onChange={(event) => setUsername(event.target.value)}
@@ -616,7 +616,7 @@ function MachineAccountSheet({
     <Sheet
       eyebrow="Machine account"
       width="lg"
-      title={<span className="font-mono text-accent">{account.username}</span>}
+      title={<span className="font-data text-accent">{account.username}</span>}
       onClose={onClose}
       footer={
         <>
@@ -645,7 +645,7 @@ function MachineAccountSheet({
                 key={entry.cluster_id}
                 className="flex items-center gap-3 rounded-control border border-line-soft px-3 py-2"
               >
-                <span className="font-mono text-[13px] text-fg">{entry.cluster_name}</span>
+                <span className="font-data text-[13px] text-fg">{entry.cluster_name}</span>
                 <Pill tone="idle" dot={false}>{entry.k8s_role}</Pill>
                 <span className="truncate text-[12.5px] text-muted">
                   {entry.namespaces.length > 0
@@ -703,7 +703,7 @@ function MachineAccountSheet({
           >
             <TextInput
               id="machine-namespaces"
-              className="font-mono"
+              className="font-data"
               placeholder="payments, payments-staging"
               value={namespaces}
               onChange={(event) => setNamespaces(event.target.value)}
@@ -733,7 +733,7 @@ function MachineAccountSheet({
                 className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-control border border-line-soft px-3 py-2"
               >
                 <span className="text-[13px] text-fg">{token.name}</span>
-                <span className="font-mono text-[12px] text-faint">{token.hint}…</span>
+                <span className="font-data text-[12px] text-faint">{token.hint}…</span>
                 <Pill tone={token.status === 'active' ? 'ok' : 'idle'}>{token.status}</Pill>
                 <span className="text-[12.5px] text-muted">
                   {token.cluster_name ?? `cluster ${token.cluster_id}`}

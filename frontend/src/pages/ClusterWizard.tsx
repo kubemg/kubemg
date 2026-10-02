@@ -284,7 +284,7 @@ function IdentityStep({
               autoFocus
               disabled={locked}
               placeholder="prod-eu"
-              className="font-mono"
+              className="font-data"
               value={value.name}
               onChange={(event) => update('name', event.target.value)}
             />
@@ -333,13 +333,13 @@ function IdentityStep({
                 disabled={locked}
                 maxLength={MAX_SHORT_NAME}
                 placeholder={deriveChip(value.name) || 'EU1'}
-                className="max-w-24 font-mono uppercase"
+                className="max-w-24 font-data uppercase"
                 value={value.short_name}
                 onChange={(event) => update('short_name', normalizeShortName(event.target.value))}
               />
               <span
                 aria-hidden="true"
-                className="grid size-10 shrink-0 place-items-center rounded-control border border-line bg-rail font-mono text-[10.5px] font-semibold text-rail-fg"
+                className="grid size-10 shrink-0 place-items-center rounded-control border border-line bg-rail font-data text-[10.5px] font-semibold text-rail-fg"
               >
                 {railChip({ name: value.name, short_name: value.short_name })}
               </span>
@@ -447,7 +447,7 @@ function ConnectionStep({
                 id="api_url"
                 type="url"
                 required
-                className="font-mono text-[12.5px]"
+                className="font-data text-[12.5px]"
                 placeholder="https://prod-eu.example.com:6443"
                 value={direct.api_url}
                 onChange={(event) => updateDirect('api_url', event.target.value)}
@@ -1022,11 +1022,11 @@ function AccessStep({
                 className="flex items-center gap-3 border-b border-line-soft px-4 py-2.5 last:border-b-0"
               >
                 <span className="label w-14 shrink-0">{permission.subject_type}</span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-fg">
+                <span className="min-w-0 flex-1 truncate font-data text-[13px] text-fg">
                   {permission.subject_name}
                 </span>
-                <span className="font-mono text-[12.5px] text-muted">{permission.k8s_role}</span>
-                <span className="hidden truncate font-mono text-[12px] text-faint sm:block">
+                <span className="font-data text-[12.5px] text-muted">{permission.k8s_role}</span>
+                <span className="hidden truncate font-data text-[12px] text-faint sm:block">
                   {permission.namespaces.length > 0
                     ? permission.namespaces.join(', ')
                     : 'all namespaces'}

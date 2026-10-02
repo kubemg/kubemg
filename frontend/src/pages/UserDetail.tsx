@@ -145,7 +145,7 @@ function Identity({ review }: { review: UserAccessReview }) {
         </>
       }
     >
-      <Fact label="Email" value={user.email || 'None recorded'} mono={Boolean(user.email)} />
+      <Fact label="Email" value={user.email || 'None recorded'} data={Boolean(user.email)} />
       <Fact
         label="Signs in through"
         value={
@@ -174,7 +174,7 @@ function Identity({ review }: { review: UserAccessReview }) {
               'Not recorded for that sign-in'
             : '—')
         }
-        mono={Boolean(user.last_login_addr)}
+        data={Boolean(user.last_login_addr)}
       />
 
       <div className="sm:col-span-2 xl:col-span-4">
@@ -249,12 +249,12 @@ function Reach({ review }: { review: UserAccessReview }) {
           {review.clusters.map((entry) => (
             <li key={entry.cluster_id} className="flex flex-col gap-2 px-4 py-3">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-[11px] font-semibold text-faint">
+                <span className="font-data text-[11px] font-semibold text-faint">
                   {railChip({ name: entry.cluster, short_name: entry.short_name })}
                 </span>
                 <Link
                   to={`/clusters/${entry.cluster_id}`}
-                  className="font-mono text-[13.5px] text-fg hover:underline"
+                  className="font-data text-[13.5px] text-fg hover:underline"
                 >
                   {entry.cluster}
                 </Link>
@@ -359,7 +359,7 @@ function Credentials({ rows, live }: { rows: IssuedKubeconfig[]; live: number })
           <tbody>
             {rows.map((row) => (
               <Row key={row.id}>
-                <Td className="truncate font-mono text-fg">{row.cluster_name}</Td>
+                <Td className="truncate font-data text-fg">{row.cluster_name}</Td>
                 <Td className="text-[12.5px] text-muted">
                   {row.k8s_role ?? '—'}
                   {row.namespace ? ` · ${row.namespace}` : ''}
@@ -417,8 +417,8 @@ function Sessions({ rows }: { rows: TerminalSession[] }) {
           <tbody>
             {rows.map((row) => (
               <Row key={row.id}>
-                <Td className="truncate font-mono text-fg">{row.cluster}</Td>
-                <Td className="truncate font-mono text-[12.5px] text-muted">
+                <Td className="truncate font-data text-fg">{row.cluster}</Td>
+                <Td className="truncate font-data text-[12.5px] text-muted">
                   {row.namespace ? `${row.namespace}/` : ''}
                   {row.pod_name ?? '—'}
                   {row.container_name ? ` · ${row.container_name}` : ''}
@@ -442,12 +442,12 @@ function Sessions({ rows }: { rows: TerminalSession[] }) {
 function Fact({
   label,
   value,
-  mono,
+  data,
   title,
 }: {
   label: string
   value: string
-  mono?: boolean
+  data?: boolean
   title?: string
 }) {
   return (
@@ -455,7 +455,7 @@ function Fact({
       <p className="label text-faint">{label}</p>
       <p
         title={title}
-        className={`mt-1 min-w-0 truncate text-[13px] text-fg ${mono ? 'font-mono text-[12.5px]' : ''}`}
+        className={`mt-1 min-w-0 truncate text-[13px] text-fg ${data ? 'font-data text-[12.5px]' : ''}`}
       >
         {value}
       </p>

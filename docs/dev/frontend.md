@@ -102,8 +102,10 @@ single breathing indicator on a genuinely open stream. The chrome's state
 changes — the navigation pill filling, a rail chip on hover — ease over 300 to
 500ms on colour and opacity only, and switch off under `prefers-reduced-motion`.
 
-Three typefaces, all self-hosted from `public/fonts`: Inter for the interface,
-Archivo only for the `kubemg` wordmark, and Commit Mono for identifiers and code.
+Three typefaces, all self-hosted from `public/fonts`: Inter for the interface and
+for data (`font-data` — identifiers and figures, with tabular digits), Archivo
+only for the `kubemg` wordmark, and Commit Mono (`font-mono`) only for code:
+YAML, logs, commands, patterns and diff values, where characters have to line up.
 There are no font CDN calls, and adding one would be a privacy regression rather
 than a convenience.
 

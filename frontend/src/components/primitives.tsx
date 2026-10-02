@@ -454,7 +454,7 @@ export function Segmented<T extends string>({
             {option.icon}
             {option.label}
             {option.count === undefined ? null : (
-              <span className="font-mono text-[11.5px] text-faint">{option.count}</span>
+              <span className="font-data text-[11.5px] text-faint">{option.count}</span>
             )}
           </button>
         )
@@ -465,7 +465,7 @@ export function Segmented<T extends string>({
 
 export function KeyHint({ children }: { children: ReactNode }) {
   return (
-    <kbd className="rounded-chip border border-line bg-raised px-1.5 py-px font-mono text-[11px] text-faint">
+    <kbd className="rounded-chip border border-line bg-raised px-1.5 py-px font-data text-[11px] text-faint">
       {children}
     </kbd>
   )
@@ -672,7 +672,7 @@ export function StatTile({
   sub,
   tone = 'neutral',
   dim = false,
-  mono = true,
+  data = true,
   to,
   onClick,
   pressed,
@@ -687,8 +687,8 @@ export function StatTile({
   tone?: StatTone
   /** The reading is not a reading yet — failed or in flight — and looks it. */
   dim?: boolean
-  /** Figures and identifiers are mono; a reading that is a phrase is not. */
-  mono?: boolean
+  /** Figures and identifiers are set as data; a reading that is a phrase is not. */
+  data?: boolean
   /** Makes the whole tile a link onto the thing it counts. */
   to?: string
   /** Makes the whole tile a toggle — a filter over the list under it. */
@@ -714,7 +714,7 @@ export function StatTile({
       </span>
       <span
         className={`mt-1 min-w-0 leading-tight font-bold break-words ${
-          mono ? 'font-mono text-[22px] tabular-nums' : 'text-[18px]'
+          data ? 'font-data text-[22px] tabular-nums' : 'text-[18px]'
         } ${dim ? 'text-muted' : STAT_VALUE[tone]}`}
       >
         {value}
@@ -1218,7 +1218,7 @@ export function Row({
  * row without one holds a value and nothing more.
  */
 export const OBJECT_NAME =
-  'block min-w-0 cursor-pointer text-left font-mono font-medium text-fg [overflow-wrap:anywhere] transition-colors group-hover/row:text-accent hover:text-accent focus-visible:text-accent'
+  'block min-w-0 cursor-pointer text-left font-data font-medium text-fg [overflow-wrap:anywhere] transition-colors group-hover/row:text-accent hover:text-accent focus-visible:text-accent'
 
 /**
  * The bar itself, set on the cell's content wrapper so it takes the height of a
@@ -1487,7 +1487,7 @@ export function Dialog({
             {title}
           </h2>
           {subject ? (
-            <p className="mt-0.5 truncate font-mono text-[13px] text-muted">{subject}</p>
+            <p className="mt-0.5 truncate font-data text-[13px] text-muted">{subject}</p>
           ) : null}
           <div id={bodyId} className="mt-3 text-[13.5px] leading-relaxed text-muted">
             {children}
@@ -1582,7 +1582,7 @@ export function Slab({ children, className }: { children: ReactNode; className?:
 }
 
 /**
- * Meter is the deck's utilisation bar: a label, the reading in mono, and a
+ * Meter is the deck's utilisation bar: a label, the reading set as data, and a
  * track. It is a bar rather than a chart because the metrics behind it are a
  * single live sample, not a series — metrics-server keeps a couple of minutes
  * and nothing more, so there is no history to plot and none is implied.
@@ -1624,7 +1624,7 @@ export function Meter({
       <div className="flex items-baseline gap-2">
         <span className="text-[12.5px] text-muted">{label}</span>
         {bounded ? (
-          <span className="ml-auto font-mono text-[13px] font-semibold text-fg tabular-nums">
+          <span className="ml-auto font-data text-[13px] font-semibold text-fg tabular-nums">
             {formatPercent(percent)}
           </span>
         ) : null}
@@ -1658,8 +1658,8 @@ export function Meter({
         )}
       </div>
       <p className="mt-1.5 flex items-baseline gap-1.5 text-[12px] text-faint">
-        <span className="font-mono text-fg tabular-nums">{value}</span>
-        <span className="font-mono tabular-nums">{bounded ? `/ ${capacity}` : 'no limit'}</span>
+        <span className="font-data text-fg tabular-nums">{value}</span>
+        <span className="font-data tabular-nums">{bounded ? `/ ${capacity}` : 'no limit'}</span>
       </p>
     </div>
   )
@@ -1727,7 +1727,7 @@ export function MiniMeter({
           />
         )}
       </span>
-      <span className="text-right font-mono text-[11.5px] font-semibold text-fg tabular-nums">
+      <span className="text-right font-data text-[11.5px] font-semibold text-fg tabular-nums">
         {bounded ? formatPercent(percent) : '—'}
       </span>
     </div>
@@ -1750,7 +1750,7 @@ export function DetailList({
         <div key={row.term} className="min-w-0">
           <dt className="label">{row.term}</dt>
           <dd
-            className={`mt-0.5 truncate font-mono text-[13px] ${
+            className={`mt-0.5 truncate font-data text-[13px] ${
               row.tone === 'bad' ? 'text-danger' : row.tone === 'warn' ? 'text-warn' : 'text-fg'
             }`}
           >

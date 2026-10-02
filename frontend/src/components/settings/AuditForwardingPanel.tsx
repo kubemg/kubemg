@@ -184,7 +184,7 @@ export function AuditForwardingPanel() {
                       <Pill tone="warn">certificate not verified</Pill>
                     ) : null}
                   </div>
-                  <p className="mt-1 truncate font-mono text-[12px] text-muted">
+                  <p className="mt-1 truncate font-data text-[12px] text-muted">
                     {forwarder.host}:{forwarder.port} · {forwarder.app_name} · facility{' '}
                     {forwarder.facility}
                   </p>
@@ -395,7 +395,7 @@ function ForwarderSheet({
           >
             <TextInput
               id="forwarder_host"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               value={draft.host}
               onChange={(event) => set('host', event.target.value)}
               placeholder="logsign.example.com"
@@ -427,7 +427,7 @@ function ForwarderSheet({
           >
             <TextInput
               id="forwarder_app"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               value={draft.app_name}
               onChange={(event) => set('app_name', event.target.value)}
               placeholder="kubemg"

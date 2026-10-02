@@ -90,7 +90,7 @@ export function KubeconfigDrawer({
       eyebrow="Cluster access"
       title={
         <>
-          Kubeconfig for <span className="font-mono text-accent">{cluster.name}</span>
+          Kubeconfig for <span className="font-data text-accent">{cluster.name}</span>
         </>
       }
       onClose={onClose}
@@ -154,7 +154,7 @@ export function KubeconfigDrawer({
           id="namespace"
           name="namespace"
           list="granted-namespaces"
-          className="font-mono"
+          className="font-data"
           placeholder={cluster.namespaces[0] ?? 'default'}
           value={namespace}
           onChange={(event) => setNamespace(event.target.value)}
@@ -214,7 +214,7 @@ function IssuedCredential({ issued }: { issued: Kubeconfig }) {
         <div className="flex items-end justify-between gap-4">
           <div>
             <p className="label">Time left</p>
-            <p className={`mt-1 font-mono text-[32px] leading-none font-semibold ${tone}`}>
+            <p className={`mt-1 font-data text-[32px] leading-none font-semibold ${tone}`}>
               {formatDuration(remaining)}
             </p>
           </div>

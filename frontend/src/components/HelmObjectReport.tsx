@@ -68,14 +68,14 @@ export function HelmObjectTable({ objects }: { objects: ObjectReport[] }) {
         <tbody>
           {objects.map((object, index) => (
             <Row key={`${object.kind}/${object.namespace ?? ''}/${object.name}/${index}`}>
-              <Td className="font-mono">
+              <Td className="font-data">
                 {object.kind}
                 {object.hook ? (
                   <span className="ml-1.5 text-[11px] text-muted">hook</span>
                 ) : null}
               </Td>
-              <Td className="truncate font-mono">{object.name}</Td>
-              <Td className="hidden truncate font-mono text-muted md:table-cell">
+              <Td className="truncate font-data">{object.name}</Td>
+              <Td className="hidden truncate font-data text-muted md:table-cell">
                 {object.namespace ?? '—'}
               </Td>
               <Td>

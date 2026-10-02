@@ -395,7 +395,7 @@ export function AppShell({
                   to={clusterHref(cluster)}
                   title={cluster.name}
                   aria-current={active ? 'page' : undefined}
-                  className={`relative grid size-10 shrink-0 place-items-center rounded-control font-mono text-[11px] font-semibold transition-colors duration-500 ${
+                  className={`relative grid size-10 shrink-0 place-items-center rounded-control font-data text-[11px] font-semibold transition-colors duration-500 ${
                     active
                       ? 'rail-arc bg-rail-raised text-rail-fg'
                       : 'text-rail-muted hover:bg-rail-raised hover:text-accent'
@@ -475,7 +475,7 @@ export function AppShell({
                 signed in, and the doors that are theirs. */}
             <div className="m-3 mt-0 flex shrink-0 flex-col gap-1 rounded-card border border-accent-line bg-linear-to-b from-accent-soft to-rail p-2">
               <div className="flex items-center gap-2.5 px-1.5 pt-1 pb-1.5">
-                <span className="grid size-9 shrink-0 place-items-center rounded-full border border-accent-line bg-rail font-mono text-[12px] font-semibold text-rail-fg">
+                <span className="grid size-9 shrink-0 place-items-center rounded-full border border-accent-line bg-rail font-data text-[12px] font-semibold text-rail-fg">
                   {initials}
                 </span>
                 <span className="min-w-0 flex-1 leading-tight">
@@ -786,13 +786,13 @@ function PanelContext({
               <EnvironmentDot environment={cluster.environment} />
             </span>
             <span className="min-w-0 flex-1 leading-tight">
-              <span className="block truncate font-mono text-[13.5px] font-semibold text-rail-fg">
+              <span className="block truncate font-data text-[13.5px] font-semibold text-rail-fg">
                 {cluster.name}
               </span>
               <span className="mt-1 flex items-center gap-1.5">
                 <EnvironmentTag environment={cluster.environment} />
                 {cluster.kubernetes_version ? (
-                  <span className="truncate font-mono text-[11px] text-rail-faint">
+                  <span className="truncate font-data text-[11px] text-rail-faint">
                     {cluster.kubernetes_version}
                   </span>
                 ) : null}
@@ -904,7 +904,7 @@ function FleetNav({ clusters, pathname }: { clusters: Cluster[]; pathname: strin
       <div className="mt-4 border-t border-rail-line pt-4">
         <p className="nav-title flex items-center justify-between px-1 pb-2">
           <span>Clusters</span>
-          <span className="font-mono text-[12px] font-normal text-rail-faint">
+          <span className="font-data text-[12px] font-normal text-rail-faint">
             {clusters.length}
           </span>
         </p>
@@ -921,7 +921,7 @@ function FleetNav({ clusters, pathname }: { clusters: Cluster[]; pathname: strin
                   className="nav-pill flex h-10 items-center gap-2.5 rounded-control px-3 text-rail-muted"
                 >
                   <EnvironmentDot environment={cluster.environment} />
-                  <span className="min-w-0 flex-1 truncate font-mono text-[13px]">
+                  <span className="min-w-0 flex-1 truncate font-data text-[13px]">
                     {cluster.name}
                   </span>
                   <LinkStatus state={linkState(cluster)} variant="glyph" surface="rail" />
@@ -1042,7 +1042,7 @@ function MobileNav({
         </div>
 
         <div className="flex shrink-0 items-center gap-2.5 border-t border-rail-line px-3 py-3">
-          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-rail-raised font-mono text-[12px] font-semibold text-rail-fg">
+          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-rail-raised font-data text-[12px] font-semibold text-rail-fg">
             {username.slice(0, 2).toUpperCase()}
           </span>
           <span className="min-w-0 flex-1 leading-tight">

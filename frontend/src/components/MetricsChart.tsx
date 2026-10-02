@@ -401,7 +401,7 @@ export function Plot({
             x={geometry.left - 8}
             y={yFor(value) + 3.5}
             textAnchor="end"
-            className="fill-faint font-mono text-[10.5px] tabular-nums"
+            className="fill-faint font-data text-[10.5px] tabular-nums"
           >
             {tick(value)}
           </text>
@@ -494,7 +494,7 @@ export function Plot({
                 x={xFor(at)}
                 y={geometry.height - 7}
                 textAnchor={index === 0 ? 'start' : index === timeTicks.length - 1 ? 'end' : 'middle'}
-                className="fill-faint font-mono text-[10.5px] tabular-nums"
+                className="fill-faint font-data text-[10.5px] tabular-nums"
               >
                 {clock.format(at)}
               </text>
@@ -611,10 +611,10 @@ function Readout({
               aria-hidden="true"
               className={`size-2 shrink-0 rounded-full ${SERIES_STROKE[row.slot]} bg-current`}
             />
-            <span className="min-w-0 truncate font-mono text-[12px] text-muted" translate="no">
+            <span className="min-w-0 truncate font-data text-[12px] text-muted" translate="no">
               {row.name}
             </span>
-            <span className="ml-auto pl-3 font-mono text-[12.5px] font-bold text-fg tabular-nums">
+            <span className="ml-auto pl-3 font-data text-[12.5px] font-bold text-fg tabular-nums">
               {format(row.point!.value)}
             </span>
           </li>
@@ -646,14 +646,14 @@ function Legend({ series, unit }: { series: MetricSeries[]; unit: MetricResult['
               className={`size-2.5 shrink-0 rounded-full ${SERIES_STROKE[index]} bg-current`}
             />
             <span
-              className="max-w-56 truncate font-mono text-[12px] text-muted"
+              className="max-w-56 truncate font-data text-[12px] text-muted"
               translate="no"
               title={entry.name}
             >
               {entry.name}
             </span>
             {last ? (
-              <span className="font-mono text-[12.5px] font-bold text-fg tabular-nums">
+              <span className="font-data text-[12.5px] font-bold text-fg tabular-nums">
                 {format(last.value)}
               </span>
             ) : null}
@@ -693,18 +693,18 @@ function SeriesTable({ result }: { result: MetricResult }) {
             return (
               <tr key={entry.name} className="border-t border-line-soft">
                 <td
-                  className="max-w-64 truncate px-3 py-1.5 font-mono text-[12.5px] text-fg"
+                  className="max-w-64 truncate px-3 py-1.5 font-data text-[12.5px] text-fg"
                   translate="no"
                 >
                   {entry.name}
                 </td>
-                <td className="px-3 py-1.5 text-right font-mono text-[12.5px] text-fg">
+                <td className="px-3 py-1.5 text-right font-data text-[12.5px] text-fg">
                   {format(latest)}
                 </td>
-                <td className="px-3 py-1.5 text-right font-mono text-[12.5px] text-muted">
+                <td className="px-3 py-1.5 text-right font-data text-[12.5px] text-muted">
                   {format(peak)}
                 </td>
-                <td className="px-3 py-1.5 text-right font-mono text-[12.5px] text-muted">
+                <td className="px-3 py-1.5 text-right font-data text-[12.5px] text-muted">
                   {format(mean)}
                 </td>
               </tr>

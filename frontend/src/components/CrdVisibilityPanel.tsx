@@ -109,13 +109,13 @@ export function CrdVisibilityPanel({
           <p className="text-[13px] text-muted">
             {hiddenHere === 0 ? (
               <>
-                All <span className="font-mono text-fg">{total}</span> custom resources this cluster
+                All <span className="font-data text-fg">{total}</span> custom resources this cluster
                 serves are in the sidebar.
               </>
             ) : (
               <>
-                <span className="font-mono text-fg">{hiddenHere}</span> of{' '}
-                <span className="font-mono text-fg">{total}</span> custom resources are kept out of the
+                <span className="font-data text-fg">{hiddenHere}</span> of{' '}
+                <span className="font-data text-fg">{total}</span> custom resources are kept out of the
                 sidebar.
               </>
             )}
@@ -218,8 +218,8 @@ function CrdVisibilitySheet({
       footer={
         <>
           <span className="mr-auto text-[12.5px] text-muted">
-            <span className="font-mono text-fg">{shownCount}</span> of{' '}
-            <span className="font-mono text-fg">{crds.length}</span> shown
+            <span className="font-data text-fg">{shownCount}</span> of{' '}
+            <span className="font-data text-fg">{crds.length}</span> shown
           </span>
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
@@ -257,7 +257,7 @@ function CrdVisibilitySheet({
             return (
               <section key={group} className="card overflow-hidden">
                 <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line-soft px-3 py-2">
-                  <p className="font-mono truncate text-[12.5px] text-fg">{group}</p>
+                  <p className="font-data truncate text-[12.5px] text-fg">{group}</p>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -277,7 +277,7 @@ function CrdVisibilitySheet({
                       >
                         <div className="min-w-0">
                           <p className="truncate text-[13px] text-fg">{crd.kind}</p>
-                          <p className="font-mono truncate text-[11.5px] text-faint">{crd.plural}</p>
+                          <p className="font-data truncate text-[11.5px] text-faint">{crd.plural}</p>
                         </div>
                         <Chip
                           active={shown}

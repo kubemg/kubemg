@@ -226,7 +226,7 @@ export function CommandPalette({
           {matches.map((target, index) => {
             const active = index === cursor
             // A cluster's own view is labelled "name — View": the name is an
-            // identifier and set in mono, the view is a word and is not.
+            // identifier and set as data, the view is a word and is not.
             const [name, view] = target.cluster ? target.label.split(' — ') : [target.label]
             return (
               <li key={target.id} role="presentation">
@@ -255,7 +255,7 @@ export function CommandPalette({
                     >
                       {target.cluster ? (
                         <>
-                          <span className="font-mono" translate="no">
+                          <span className="font-data" translate="no">
                             {name}
                           </span>
                           {view ? ` — ${view}` : null}

@@ -345,8 +345,8 @@ export function TemplateSheet({
               <tbody>
                 {objects.map((object, index) => (
                   <Row key={`${object.kind}/${object.name}/${index}`}>
-                    <Td className="font-mono">{object.kind}</Td>
-                    <Td className="truncate font-mono">{object.name}</Td>
+                    <Td className="font-data">{object.kind}</Td>
+                    <Td className="truncate font-data">{object.name}</Td>
                     <Td>
                       <ObjectStatusPill status={statuses[index]} />
                       {statuses[index]?.state === 'refused' ? (
@@ -380,9 +380,9 @@ export function TemplateSheet({
             {objects.map((object, index) => (
               <div key={`${object.kind}/${object.name}/${index}`} className="flex flex-col gap-1.5">
                 <span className="text-[13px] font-medium text-fg">
-                  {object.kind} <span className="font-mono text-muted">{object.name}</span>
+                  {object.kind} <span className="font-data text-muted">{object.name}</span>
                   {object.namespace ? (
-                    <span className="ml-1.5 font-mono text-[12px] text-faint">{object.namespace}</span>
+                    <span className="ml-1.5 font-data text-[12px] text-faint">{object.namespace}</span>
                   ) : null}
                 </span>
                 <YamlView

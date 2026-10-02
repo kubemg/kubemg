@@ -214,7 +214,7 @@ export function AgentSettings() {
               >
                 <TextInput
                   id="agent_image"
-                  className="font-mono text-[12.5px]"
+                  className="font-data text-[12.5px]"
                   placeholder={settings.defaults.agent_image}
                   value={draft.agent_image}
                   onChange={(event) => set('agent_image', event.target.value)}
@@ -228,7 +228,7 @@ export function AgentSettings() {
               >
                 <TextInput
                   id="agent_namespace"
-                  className="font-mono text-[12.5px]"
+                  className="font-data text-[12.5px]"
                   placeholder={settings.defaults.agent_namespace}
                   value={draft.agent_namespace}
                   onChange={(event) => set('agent_namespace', event.target.value)}
@@ -242,7 +242,7 @@ export function AgentSettings() {
               >
                 <TextInput
                   id="agent_image_pull_secret"
-                  className="font-mono text-[12.5px]"
+                  className="font-data text-[12.5px]"
                   placeholder={settings.defaults.agent_image_pull_secret || 'none'}
                   value={draft.agent_image_pull_secret}
                   onChange={(event) => set('agent_image_pull_secret', event.target.value)}
@@ -289,7 +289,7 @@ export function AgentSettings() {
               >
                 <TextInput
                   id="shell_image"
-                  className="font-mono text-[12.5px]"
+                  className="font-data text-[12.5px]"
                   placeholder={settings.defaults.shell_image}
                   value={draft.shell_image}
                   onChange={(event) => set('shell_image', event.target.value)}
@@ -348,7 +348,7 @@ export function AgentSettings() {
               >
                 <TextInput
                   id="debug_image"
-                  className="font-mono text-[12.5px]"
+                  className="font-data text-[12.5px]"
                   placeholder={settings.defaults.debug_image}
                   value={draft.debug_image}
                   onChange={(event) => set('debug_image', event.target.value)}

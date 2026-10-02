@@ -145,7 +145,7 @@ export function SaveAsTemplateSheet({
             >
               <TextInput
                 id="tpl_save_name"
-                className="font-mono text-[12.5px]"
+                className="font-data text-[12.5px]"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
               />

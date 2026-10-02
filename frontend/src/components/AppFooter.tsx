@@ -17,7 +17,7 @@ import { useBranding } from '../state/branding-context'
  *
  * It draws nothing until the read answers, and nothing at all if it fails: a
  * footer is the quietest thing on the page and an error in it would be the
- * loudest. The version is mono because it is data, like every other version in
+ * loudest. The version is set as data because it is data, like every other version in
  * this console.
  */
 export function AppFooter() {
@@ -49,7 +49,7 @@ export function AppFooter() {
     <footer className="mt-2 border-t border-line px-4 py-3 xl:px-6">
       <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-4 gap-y-1">
         {info ? (
-          <span className="font-mono text-[11.5px] text-faint">
+          <span className="font-data text-[11.5px] text-faint">
             kubemg <span className="text-muted">{info.version}</span>
           </span>
         ) : null}

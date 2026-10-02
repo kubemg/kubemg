@@ -236,12 +236,12 @@ export function PermissionsMatrix() {
                         scope="col"
                         className="min-w-[140px] border-b border-l border-line-soft bg-surface px-3 py-3 text-left align-bottom"
                       >
-                        <span className="block truncate font-mono text-[12.5px] font-normal text-fg">
+                        <span className="block truncate font-data text-[12.5px] font-normal text-fg">
                           {cluster.name}
                         </span>
                         <span className="mt-1 flex items-center gap-1.5">
                           <EnvironmentTag environment={cluster.environment} />
-                          <span className="font-mono text-[10.5px] text-faint">
+                          <span className="font-data text-[10.5px] text-faint">
                             {cluster.connection_mode}
                           </span>
                         </span>
@@ -256,7 +256,7 @@ export function PermissionsMatrix() {
                         scope="row"
                         className="sticky left-0 z-1 max-w-[240px] bg-surface px-4 py-2.5 text-left font-normal"
                       >
-                        <span className="block truncate font-mono text-fg">{subject.name}</span>
+                        <span className="block truncate font-data text-fg">{subject.name}</span>
                         <span className="block truncate text-[11.5px] text-muted">
                           {subject.detail}
                         </span>
@@ -276,7 +276,7 @@ export function PermissionsMatrix() {
                               {permission ? (
                                 <>
                                   <span
-                                    className={`inline-flex rounded-chip px-1.5 py-px font-mono text-[11px] ${
+                                    className={`inline-flex rounded-chip px-1.5 py-px font-data text-[11px] ${
                                       ROLE_STYLE[permission.k8s_role] ?? ROLE_STYLE.view
                                     }`}
                                   >
@@ -303,7 +303,7 @@ export function PermissionsMatrix() {
                                   } — granted by an approved access request.`}
                                 >
                                   <Timer aria-hidden="true" className="size-3 shrink-0" />
-                                  <span className="truncate font-mono">
+                                  <span className="truncate font-data">
                                     +{temporary.k8s_role}
                                   </span>
                                 </span>

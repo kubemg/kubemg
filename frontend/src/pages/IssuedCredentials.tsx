@@ -298,12 +298,12 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
             <tbody>
               {visible.map((row) => (
                 <Row key={row.id}>
-                  {mine ? null : <Td className="truncate font-mono text-fg">{row.username}</Td>}
+                  {mine ? null : <Td className="truncate font-data text-fg">{row.username}</Td>}
                   <Td className="truncate">
                     <span className="text-fg">{row.cluster_name}</span>
                     <span className="ml-1.5 text-[12px] text-muted">{row.connection_mode}</span>
                   </Td>
-                  <Td className="hidden font-mono text-[12.5px] text-muted md:table-cell">
+                  <Td className="hidden font-data text-[12.5px] text-muted md:table-cell">
                     {row.namespace || 'all'}
                     {row.k8s_role ? ` · ${row.k8s_role}` : ''}
                   </Td>

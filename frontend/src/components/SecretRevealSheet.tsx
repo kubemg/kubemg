@@ -90,7 +90,7 @@ export function SecretRevealSheet({
           return (
             <div key={key} className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between gap-3">
-                <span className="truncate font-mono text-[12.5px] text-fg">{key}</span>
+                <span className="truncate font-data text-[12.5px] text-fg">{key}</span>
                 {value ? (
                   <span className="shrink-0 text-[12px] text-faint">{value.bytes} bytes</span>
                 ) : (

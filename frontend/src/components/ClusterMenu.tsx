@@ -133,7 +133,7 @@ export function ClusterMenu({
               <p className="flex items-center gap-2 px-2.5 pt-2 pb-1.5">
                 <EnvironmentDot environment={id} />
                 <span className="label">{label}</span>
-                <span className="ml-auto font-mono text-[11.5px] text-faint">{rows.length}</span>
+                <span className="ml-auto font-data text-[11.5px] text-faint">{rows.length}</span>
               </p>
               <ul className="flex flex-col gap-0.5">
                 {rows.map((entry) => {
@@ -153,14 +153,14 @@ export function ClusterMenu({
                         }`}
                       >
                         <span
-                          className={`min-w-0 flex-1 truncate font-mono text-[13px] ${
+                          className={`min-w-0 flex-1 truncate font-data text-[13px] ${
                             active ? 'text-accent' : 'text-fg'
                           }`}
                         >
                           {entry.name}
                         </span>
                         {entry.kubernetes_version ? (
-                          <span className="shrink-0 font-mono text-[11px] text-faint">
+                          <span className="shrink-0 font-data text-[11px] text-faint">
                             {entry.kubernetes_version}
                           </span>
                         ) : null}

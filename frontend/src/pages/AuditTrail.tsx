@@ -366,7 +366,7 @@ export function AuditTrail() {
             />
 
             {routeClusterId ? (
-              <span className="flex h-8 items-center rounded-control border border-line-soft bg-raised px-3 font-mono text-[12.5px] text-fg">
+              <span className="flex h-8 items-center rounded-control border border-line-soft bg-raised px-3 font-data text-[12.5px] text-fg">
                 {clusters.find((cluster) => cluster.id === Number(routeClusterId))?.name ??
                   `cluster ${routeClusterId}`}
               </span>
@@ -455,7 +455,7 @@ export function AuditTrail() {
             </Chip>
 
             {from || to ? (
-              <span className="font-mono text-[12px] text-accent">
+              <span className="font-data text-[12px] text-accent">
                 {from ? formatInstant(from, { seconds: true }) : 'anything'} →{' '}
                 {to ? formatInstant(to, { seconds: true }) : 'now'}
               </span>
@@ -469,7 +469,7 @@ export function AuditTrail() {
                   <TextInput
                     id="audit-from"
                     type="datetime-local"
-                    className="font-mono text-[12.5px]"
+                    className="font-data text-[12.5px]"
                     value={from}
                     onChange={(event) => narrow(() => setFrom(event.target.value))}
                   />
@@ -480,7 +480,7 @@ export function AuditTrail() {
                   <TextInput
                     id="audit-to"
                     type="datetime-local"
-                    className="font-mono text-[12.5px]"
+                    className="font-data text-[12.5px]"
                     value={to}
                     onChange={(event) => narrow(() => setTo(event.target.value))}
                   />
@@ -522,7 +522,7 @@ export function AuditTrail() {
                   )
                 }
               >
-                <span className="font-mono text-[12.5px]">{value}</span>
+                <span className="font-data text-[12.5px]">{value}</span>
               </Chip>
             ))}
             {verbs.length > 0 ? (
@@ -574,15 +574,15 @@ export function AuditTrail() {
                       <Age iso={event.at} />
                     </button>
                   </Td>
-                  <Td className="truncate font-mono text-[12.5px] text-fg">
+                  <Td className="truncate font-data text-[12.5px] text-fg">
                     {event.username || '—'}
                   </Td>
-                  <Td className="hidden truncate font-mono text-[12.5px] text-muted md:table-cell">
+                  <Td className="hidden truncate font-data text-[12.5px] text-muted md:table-cell">
                     {event.cluster || '—'}
                   </Td>
                   <Td>
                     <span
-                      className={`flex items-center gap-1.5 font-mono text-[12.5px] ${
+                      className={`flex items-center gap-1.5 font-data text-[12.5px] ${
                         MUTATING.has(event.verb) ? 'text-warn' : 'text-fg'
                       }`}
                     >
@@ -592,7 +592,7 @@ export function AuditTrail() {
                       {event.verb}
                     </span>
                   </Td>
-                  <Td className="hidden truncate font-mono text-[12px] text-muted lg:table-cell">
+                  <Td className="hidden truncate font-data text-[12px] text-muted lg:table-cell">
                     {event.path}
                   </Td>
                   <Td>
@@ -725,7 +725,7 @@ export function AuditTrail() {
           title="Manifest diff"
           onClose={() => setViewingDiff(null)}
         >
-          <p className="font-mono text-[12.5px] text-muted">{viewingDiff.path}</p>
+          <p className="font-data text-[12.5px] text-muted">{viewingDiff.path}</p>
           <ManifestDiffView diff={viewingDiff.diff} />
         </Sheet>
       ) : null}

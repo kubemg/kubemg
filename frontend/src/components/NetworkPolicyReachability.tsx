@@ -98,7 +98,7 @@ export function ReachabilityTab({
                   .map(([key, value]) => (
                     <li
                       key={key}
-                      className="flex max-w-full min-w-0 items-center gap-1 rounded-chip border border-line bg-raised px-2 py-1 font-mono text-[12px]"
+                      className="flex max-w-full min-w-0 items-center gap-1 rounded-chip border border-line bg-raised px-2 py-1 font-data text-[12px]"
                     >
                       <span className="shrink-0 text-muted">{key}</span>
                       <span className="truncate text-fg">{value}</span>
@@ -171,7 +171,7 @@ function Direction({
               {peers.map((peer, index) => (
                 <li
                   key={index}
-                  className="rounded-control border border-line bg-raised px-2.5 py-1.5 font-mono text-[12.5px] text-fg"
+                  className="rounded-control border border-line bg-raised px-2.5 py-1.5 font-data text-[12.5px] text-fg"
                 >
                   <PeerText peer={peer} />
                 </li>

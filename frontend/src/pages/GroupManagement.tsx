@@ -238,7 +238,7 @@ function GroupCard({
             key={member.id}
             className="flex items-center gap-2.5 border-b border-line-soft px-4 py-2 last:border-0"
           >
-            <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-fg">
+            <span className="min-w-0 flex-1 truncate font-data text-[13px] text-fg">
               {member.username}
             </span>
             <span className="label shrink-0">{member.system_role}</span>

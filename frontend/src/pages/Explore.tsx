@@ -1121,7 +1121,7 @@ export function Explore() {
         <div className="card min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
             <h2 className="text-[16px] font-bold text-fg">{item.label}</h2>
-            <span className="font-mono text-[12.5px] text-faint">
+            <span className="font-data text-[12.5px] text-faint">
               {count !== totalCount ? `${count} of ${totalCount}` : count}
             </span>
             {namespaced && namespace ? (
@@ -1134,7 +1134,7 @@ export function Explore() {
                   )
                 ) : (
                   <>
-                    in <span className="font-mono">{namespace}</span>
+                    in <span className="font-data">{namespace}</span>
                   </>
                 )}
               </span>
@@ -1248,7 +1248,7 @@ export function Explore() {
               absent one. */}
           {selection ? (
             <div className="flex flex-wrap items-center gap-2 border-b border-line-soft bg-raised/40 px-4 py-2.5">
-              <span className="font-mono text-[12.5px] text-fg">
+              <span className="font-data text-[12.5px] text-fg">
                 {selected.length} selected
               </span>
               {selected.length === 0 ? (
@@ -1404,7 +1404,7 @@ export function Explore() {
               ) : (
                 <>
                   {' '}
-                  in <span className="font-mono">{namespace}</span>
+                  in <span className="font-data">{namespace}</span>
                 </>
               )}
               .

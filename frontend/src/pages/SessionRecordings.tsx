@@ -312,19 +312,19 @@ export function SessionRecordings() {
                   <Td className="truncate text-[12.5px] text-muted">
                     <Age iso={session.started_at} />
                   </Td>
-                  <Td className="truncate font-mono text-[12.5px] text-fg">
+                  <Td className="truncate font-data text-[12.5px] text-fg">
                     {session.username || '—'}
                   </Td>
-                  <Td className="hidden truncate font-mono text-[12.5px] text-muted md:table-cell">
+                  <Td className="hidden truncate font-data text-[12.5px] text-muted md:table-cell">
                     {session.cluster || '—'}
                   </Td>
-                  <Td className="hidden truncate font-mono text-[12px] text-muted lg:table-cell">
+                  <Td className="hidden truncate font-data text-[12px] text-muted lg:table-cell">
                     {sessionTarget(session)}
                   </Td>
-                  <Td className="truncate font-mono text-[12.5px] text-muted">
+                  <Td className="truncate font-data text-[12.5px] text-muted">
                     {session.open ? 'running' : formatDuration(session.duration_seconds)}
                   </Td>
-                  <Td className="hidden truncate font-mono text-[12.5px] text-muted md:table-cell">
+                  <Td className="hidden truncate font-data text-[12.5px] text-muted md:table-cell">
                     {formatMemory(session.byte_count)}
                   </Td>
                   <Td>

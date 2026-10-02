@@ -355,7 +355,7 @@ export function ResourceDetailDrawer({
     <Sheet
       width="wide"
       eyebrow={`${cluster.name}${target.namespace ? ` · ${target.namespace}` : ''} · ${target.label}`}
-      title={<span className="font-mono">{target.name}</span>}
+      title={<span className="font-data">{target.name}</span>}
       onClose={close}
       footer={
         <>
@@ -807,11 +807,11 @@ function Conditions({ conditions }: { conditions: ResourceCondition[] }) {
               const tone = conditionTone(condition)
               return (
                 <Row key={condition.type}>
-                  <Td className="truncate font-mono text-[12.5px] text-fg">{condition.type}</Td>
+                  <Td className="truncate font-data text-[12.5px] text-fg">{condition.type}</Td>
                   <Td>
                     <Pill tone={tone}>{condition.status}</Pill>
                   </Td>
-                  <Td className="hidden truncate font-mono text-[12.5px] text-muted md:table-cell">
+                  <Td className="hidden truncate font-data text-[12.5px] text-muted md:table-cell">
                     {condition.reason || '—'}
                   </Td>
                   <Td className="text-[12.5px] text-muted" title={condition.message}>
@@ -855,7 +855,7 @@ function KeyValues({ title, values }: { title: string; values?: Record<string, s
         {entries.map(([key, value]) => (
           <li
             key={key}
-            className="flex max-w-full min-w-0 items-center gap-1 rounded-chip border border-line bg-raised px-2 py-1 font-mono text-[12px]"
+            className="flex max-w-full min-w-0 items-center gap-1 rounded-chip border border-line bg-raised px-2 py-1 font-data text-[12px]"
             title={`${key}: ${value}`}
           >
             <span className="shrink-0 text-muted">{key}</span>
@@ -943,15 +943,15 @@ function Events({ describe }: { describe: ResourceDescribeResult }) {
                 <Td>
                   <Pill tone={eventTone(event)}>{event.type || 'Normal'}</Pill>
                 </Td>
-                <Td className="truncate font-mono text-[12.5px] text-fg">{event.reason || '—'}</Td>
+                <Td className="truncate font-data text-[12.5px] text-fg">{event.reason || '—'}</Td>
                 <Td className="text-[12.5px] text-muted" title={event.message}>
                   {event.message || '—'}
                 </Td>
-                <Td className="hidden truncate font-mono text-[12.5px] text-muted lg:table-cell">
+                <Td className="hidden truncate font-data text-[12.5px] text-muted lg:table-cell">
                   {event.source || '—'}
                 </Td>
                 <Td
-                  className={`font-mono text-[12.5px] ${event.count > 1 ? 'text-warn' : 'text-muted'}`}
+                  className={`font-data text-[12.5px] ${event.count > 1 ? 'text-warn' : 'text-muted'}`}
                 >
                   {event.count}
                 </Td>
@@ -994,8 +994,8 @@ function Fields({
       <dl className="grid gap-x-6 gap-y-2 rounded-card border border-line px-3 py-3 sm:grid-cols-2">
         {fields.map((field) => (
           <div key={field.path} className="flex min-w-0 items-baseline gap-2">
-            <dt className="shrink-0 font-mono text-[12px] text-muted">{field.path}</dt>
-            <dd className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-fg" title={field.value}>
+            <dt className="shrink-0 font-data text-[12px] text-muted">{field.path}</dt>
+            <dd className="min-w-0 flex-1 truncate font-data text-[12.5px] text-fg" title={field.value}>
               {field.value}
             </dd>
           </div>

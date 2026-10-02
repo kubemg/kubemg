@@ -96,7 +96,7 @@ function AllocationBar({
     <div className="min-w-0">
       <div className="flex items-baseline gap-2">
         <span className="text-[12.5px] text-muted">{label}</span>
-        <span className="ml-auto font-mono text-[13px] font-semibold text-fg tabular-nums">
+        <span className="ml-auto font-data text-[13px] font-semibold text-fg tabular-nums">
           {measured ? PERCENT.format(dimension.requested_percent / 100) : '—'}
         </span>
       </div>
@@ -135,8 +135,8 @@ function AllocationBar({
 
       <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] text-faint">
         <span>
-          <span className="font-mono text-fg tabular-nums">{format(dimension.requested)}</span>
-          <span className="font-mono tabular-nums">
+          <span className="font-data text-fg tabular-nums">{format(dimension.requested)}</span>
+          <span className="font-data tabular-nums">
             {' '}
             / {measured ? format(dimension.allocatable) : 'unknown'}
           </span>{' '}
@@ -145,7 +145,7 @@ function AllocationBar({
         <span>
           {dimension.used > 0 ? (
             <>
-              <span className="font-mono tabular-nums">{format(dimension.used)}</span> in use
+              <span className="font-data tabular-nums">{format(dimension.used)}</span> in use
             </>
           ) : (
             'no live usage'
@@ -155,7 +155,7 @@ function AllocationBar({
           {dimension.limited > 0 ? (
             <>
               limits{' '}
-              <span className="font-mono tabular-nums">
+              <span className="font-data tabular-nums">
                 {PERCENT.format(dimension.limited_percent / 100)}
               </span>{' '}
               of the node
@@ -178,7 +178,7 @@ function PodSlotBar({ slots }: { slots: PodSlots }) {
     <div className="min-w-0">
       <div className="flex items-baseline gap-2">
         <span className="text-[12.5px] text-muted">Pod slots</span>
-        <span className="ml-auto font-mono text-[13px] font-semibold text-fg tabular-nums">
+        <span className="ml-auto font-data text-[13px] font-semibold text-fg tabular-nums">
           {PERCENT.format(slots.percent / 100)}
         </span>
       </div>
@@ -198,8 +198,8 @@ function PodSlotBar({ slots }: { slots: PodSlots }) {
         />
       </div>
       <p className="mt-1.5 text-[12px] text-faint">
-        <span className="font-mono text-fg tabular-nums">{slots.scheduled}</span>
-        <span className="font-mono tabular-nums">
+        <span className="font-data text-fg tabular-nums">{slots.scheduled}</span>
+        <span className="font-data tabular-nums">
           {' '}
           / {slots.allocatable > 0 ? slots.allocatable : 'unknown'}
         </span>{' '}
@@ -218,7 +218,7 @@ function NodeRow({ node }: { node: NodeCapacityRow }) {
   return (
     <li className="defer-row min-w-0 px-5 py-4 [contain-intrinsic-size:auto_160px]">
       <div className="flex flex-wrap items-center gap-2.5">
-        <span className="min-w-0 truncate font-mono text-[13px] text-fg">{node.name}</span>
+        <span className="min-w-0 truncate font-data text-[13px] text-fg">{node.name}</span>
         {node.roles.map((role) => (
           <span key={role} className="label text-faint">
             {role}
@@ -277,7 +277,7 @@ function NodeRow({ node }: { node: NodeCapacityRow }) {
                 {node.top_requests.map((pod) => (
                   <li
                     key={`${pod.namespace}/${pod.name}`}
-                    className="flex flex-wrap items-baseline gap-x-2.5 font-mono text-[12px]"
+                    className="flex flex-wrap items-baseline gap-x-2.5 font-data text-[12px]"
                   >
                     <span className="text-faint">{pod.namespace}</span>
                     <span className="min-w-0 truncate text-fg">{pod.name}</span>

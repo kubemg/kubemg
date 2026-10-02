@@ -171,17 +171,17 @@ export function PodOverview({ cluster, pod }: { cluster: Cluster; pod: Pod }) {
           {pod.containers.map((entry) => (
             <li key={entry.name} className="rounded-card border border-line px-3 py-2.5">
               <div className="flex items-center gap-2.5">
-                <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-fg">
+                <span className="min-w-0 flex-1 truncate font-data text-[13px] text-fg">
                   {entry.name}
                 </span>
                 {entry.restarts > 0 ? (
-                  <span className="font-mono text-[12px] text-warn">
+                  <span className="font-data text-[12px] text-warn">
                     {entry.restarts} restarts
                   </span>
                 ) : null}
                 <Pill tone={entry.ready ? 'ok' : 'warn'}>{entry.state}</Pill>
               </div>
-              <p className="mt-1 truncate font-mono text-[12px] text-muted" title={entry.image}>
+              <p className="mt-1 truncate font-data text-[12px] text-muted" title={entry.image}>
                 {entry.image}
               </p>
               <ContainerUsageBars
@@ -393,7 +393,7 @@ export function PodLogView({
         ) : (
           <span>last 200 lines</span>
         )}
-        <span className="ml-auto font-mono text-[11.5px] text-faint tabular-nums">
+        <span className="ml-auto font-data text-[11.5px] text-faint tabular-nums">
           {filter.trim() !== '' ? `${matched} of ${total} lines` : `${total} lines`}
         </span>
       </div>

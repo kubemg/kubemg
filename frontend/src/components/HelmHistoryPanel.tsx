@@ -184,7 +184,7 @@ export function HelmHistoryPanel({
               const isCurrent = entry.revision === current.revision
               return (
                 <Row key={entry.revision}>
-                  <Td className="font-mono">
+                  <Td className="font-data">
                     {entry.revision}
                     {isCurrent ? (
                       <span className="ml-2 text-[12px] text-muted">current</span>
@@ -193,10 +193,10 @@ export function HelmHistoryPanel({
                   <Td>
                     <Pill tone={revisionTone(entry.status)}>{entry.status || 'unknown'}</Pill>
                   </Td>
-                  <Td className="hidden truncate font-mono md:table-cell" title={entry.chart_version}>
+                  <Td className="hidden truncate font-data md:table-cell" title={entry.chart_version}>
                     {entry.chart_version || '—'}
                   </Td>
-                  <Td className="font-mono text-muted" title={entry.updated_at}>
+                  <Td className="font-data text-muted" title={entry.updated_at}>
                     {entry.updated_at ? <Age iso={entry.updated_at} /> : '—'}
                   </Td>
                   <Td className="truncate text-muted" title={entry.description}>

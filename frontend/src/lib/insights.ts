@@ -161,7 +161,7 @@ export interface ResourceInsight {
   /** Aggregate live consumption, when the cluster serves the Metrics API. */
   usage?: { cpu: number; memory: number; sampled: number }
   /**
-   * The compact mono fragments the folded header carries on its right. Folding
+   * The compact data fragments the folded header carries on its right. Folding
    * has to cost the reader something, but it must not cost them the reason they
    * would have unfolded.
    */
