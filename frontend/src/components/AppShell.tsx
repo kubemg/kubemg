@@ -904,9 +904,9 @@ function PanelContext({
       >
         {cluster ? (
           <>
-            <span className="shrink-0">
-              <EnvironmentDot environment={cluster.environment} />
-            </span>
+            {/* The link leads the card, at the size of an avatar: the
+                environment already has its tag on the line below. */}
+            <LinkStatus state={linkState(cluster)} variant="glyph" surface="rail" size="lg" />
             <span className="min-w-0 flex-1 leading-tight">
               <span className="block truncate font-data text-[13.5px] font-semibold text-rail-fg">
                 {cluster.name}
@@ -918,7 +918,6 @@ function PanelContext({
                     {cluster.kubernetes_version}
                   </span>
                 ) : null}
-                <LinkStatus state={linkState(cluster)} variant="glyph" surface="rail" />
               </span>
             </span>
           </>

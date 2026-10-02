@@ -560,6 +560,7 @@ function ModeCard({
 
       <LinkStatus
         state={shape}
+        className="self-start"
         label={shape === 'live' ? 'Cluster dials out to kubemg' : 'kubemg dials the API server'}
       />
 

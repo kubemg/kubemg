@@ -27,22 +27,34 @@ const ICON: Record<LinkState, LucideIcon> = {
   idle: CircleDashed,
 }
 
-/* `ok` and `danger` are state and stay semantic wherever they land. The two
-   neutral states are not state, they are the absence of it, so on the rail they
-   take the rail's own quiet tokens rather than the work palette's — a `muted`
-   borrowed from the page is the wrong grey against chrome, on either deck. */
+/* With its word, the link reads the way the deck's status badges do: a soft
+   plate in the state's tone with a hairline edge in the same tone. */
 const TONE: Record<LinkState, string> = {
-  live: 'text-ok',
-  direct: 'text-muted',
-  down: 'text-danger',
-  idle: 'text-faint',
+  live: 'border-ok/40 bg-ok-soft text-ok',
+  direct: 'border-line bg-raised text-muted',
+  down: 'border-danger/40 bg-danger-soft text-danger',
+  idle: 'border-dashed border-faint/60 bg-raised text-faint',
 }
 
-const RAIL_TONE: Record<LinkState, string> = {
-  live: 'text-ok',
-  direct: 'text-rail-muted',
-  down: 'text-danger',
-  idle: 'text-rail-faint',
+/* The glyph on its own is a seal rather than a plate: a solid disc in the
+   state's tone, the glyph in `on-state` on it, ringed twice in the same tone
+   fading outwards. The rings are what let a 20px mark carry the state from
+   across a row. The neutral states keep no disc — there is no state to fill
+   it with — only the rings, in the surface's own line; on the rail that is
+   the rail's line, because a grey borrowed from the page is the wrong grey
+   against chrome, on either deck. */
+const SEAL: Record<LinkState, string> = {
+  live: 'border-ok/35 bg-ok text-on-state ring-ok/15',
+  direct: 'border-line bg-raised text-muted ring-line-soft',
+  down: 'border-danger/35 bg-danger text-on-state ring-danger/15',
+  idle: 'border-dashed border-faint/60 bg-raised text-faint ring-transparent',
+}
+
+const RAIL_SEAL: Record<LinkState, string> = {
+  live: SEAL.live,
+  direct: 'border-rail-line bg-rail text-rail-muted ring-rail-line/50',
+  down: SEAL.down,
+  idle: 'border-dashed border-rail-line bg-rail text-rail-faint ring-transparent',
 }
 
 const READING: Record<LinkState, string> = {
@@ -54,8 +66,8 @@ const READING: Record<LinkState, string> = {
 
 /**
  * LinkStatus is how a cluster's link to KubeMG reads everywhere it is shown.
- * `detail` is the glyph with its word, for a card, a table cell or a path;
- * `glyph` is the glyph alone, for the rail, the palette and the cluster menu,
+ * `detail` is the glyph with its word in a badge, for a card, a table cell or
+ * a path; `glyph` is the glyph alone in a ringed seal, for the rail, the palette and the cluster menu,
  * where the row is already carrying a name and a version and a third piece of
  * text would make it a paragraph. A live link breathes, slowly — it is the one
  * thing on the deck that is genuinely still happening.
@@ -64,28 +76,37 @@ export function LinkStatus({
   state,
   variant = 'detail',
   surface = 'work',
+  size = 'sm',
   label,
   className,
 }: {
   state: LinkState
   variant?: 'detail' | 'glyph'
   surface?: 'work' | 'rail'
+  /* `lg` is the seal leading a card — the cluster picker — where it stands
+     for the cluster the way an avatar stands for a person. */
+  size?: 'sm' | 'lg'
   label?: string
   className?: string
 }) {
   const Icon = ICON[state]
   const reading = READING[state]
-  const tone = surface === 'rail' ? RAIL_TONE[state] : TONE[state]
-
   if (variant === 'glyph') {
+    const seal = surface === 'rail' ? RAIL_SEAL[state] : SEAL[state]
     return (
       <span
         role="img"
         aria-label={reading}
         title={reading}
-        className={`inline-flex shrink-0 ${className ?? ''}`}
+        className={`grid shrink-0 place-items-center rounded-full bg-clip-padding ${
+          size === 'lg' ? 'size-8 border-[3px] ring-[3px]' : 'size-5 border-2 ring-2'
+        } ${seal} ${className ?? ''}`}
       >
-        <Icon aria-hidden="true" className={`size-3.5 ${tone}`} />
+        <Icon
+          aria-hidden="true"
+          className={size === 'lg' ? 'size-3.5' : 'size-2.5'}
+          strokeWidth={size === 'lg' ? 2.25 : 2.5}
+        />
       </span>
     )
   }
@@ -93,15 +114,13 @@ export function LinkStatus({
   return (
     <span
       title={reading}
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap ${className ?? ''}`}
+      className={`inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border px-2 py-px text-[12px] font-medium whitespace-nowrap ${TONE[state]} ${className ?? ''}`}
     >
       <Icon
         aria-hidden="true"
-        className={`size-3.5 shrink-0 ${tone} ${state === 'live' ? 'link-live' : ''}`}
+        className={`size-3 shrink-0 ${state === 'live' ? 'link-live' : ''}`}
       />
-      <span className={`font-data text-[11.5px] ${state === 'down' ? 'text-danger' : 'text-muted'}`}>
-        {label ?? LINK_LABEL[state]}
-      </span>
+      <span className="min-w-0 truncate">{label ?? LINK_LABEL[state]}</span>
     </span>
   )
 }
