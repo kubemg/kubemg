@@ -87,6 +87,7 @@ export function GeneralSettings() {
   return (
     <SettingsLayout
       title="General settings"
+      description="Where clusters reach this server, and how long a kubeconfig may live. A value set here overrides what the server read from its environment at boot; clearing it falls back to that."
       aside={
         settings ? (
           <>

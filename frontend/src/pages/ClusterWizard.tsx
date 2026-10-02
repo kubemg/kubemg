@@ -166,6 +166,7 @@ export function ClusterWizard() {
   return (
     <AppShell
       title="Register cluster"
+      description="Five steps: name the cluster, choose how kubemg reaches it, watch it connect, point it at metrics and logs if it has them, and grant access. The cluster is created when you leave step two."
       parent={{ label: 'Clusters', to: '/admin/clusters' }}
       actions={
         cluster ? (

@@ -125,6 +125,7 @@ export function ClusterManagement() {
   return (
     <AppShell
       title="Clusters"
+      description="Every cluster kubemg is registered to reach, how it reaches it, and whether that link is up right now."
       actions={
         <LinkButton to="/admin/clusters/new" variant="primary">
             <Plus aria-hidden="true" className="size-4" />
