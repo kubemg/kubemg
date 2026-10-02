@@ -305,7 +305,10 @@ export function bucketLabel(
 
 /** Plural without a lookup table, which is all these labels ever need. */
 function plural(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? '' : 's'}`
+  if (count === 1) return `${count} ${word}`
+  // "ingresss" and "classs" read as typos on the one line meant to be read at a
+  // glance, so a sibilant takes "es".
+  return `${count} ${word}${/(s|x|z|ch|sh)$/.test(word) ? 'es' : 's'}`
 }
 
 /**

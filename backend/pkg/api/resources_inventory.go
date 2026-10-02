@@ -341,6 +341,17 @@ type serviceView struct {
 	Ports       []string `json:"ports"`
 }
 
+// orEmpty answers an absent list as an empty one. A Go nil slice encodes as
+// `null`, and an Ingress no controller has given an address yet — the ordinary
+// state on a cluster with no load balancer — took the whole Ingresses page down
+// on `addresses.length`. A list field is a list, always.
+func orEmpty(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
+}
+
 type ingressView struct {
 	listMeta
 	Class     string   `json:"class"`
@@ -476,9 +487,11 @@ func (s *server) listIngresses(c *gin.Context) {
 
 		for _, item := range list.Items {
 			view := ingressView{
-				listMeta: item.Metadata.meta(),
-				Class:    item.Spec.IngressClassName,
-				Rules:    len(item.Spec.Rules),
+				listMeta:  item.Metadata.meta(),
+				Class:     item.Spec.IngressClassName,
+				Hosts:     []string{},
+				Addresses: []string{},
+				Rules:     len(item.Spec.Rules),
 			}
 			for _, rule := range item.Spec.Rules {
 				if rule.Host != "" && !slices.Contains(view.Hosts, rule.Host) {
@@ -560,7 +573,8 @@ func (s *server) listHTTPRoutes(c *gin.Context) {
 		for _, item := range list.Items {
 			view := routeView{
 				listMeta:  item.Metadata.meta(),
-				Hostnames: item.Spec.Hostnames,
+				Hostnames: orEmpty(item.Spec.Hostnames),
+				Parents:   []string{},
 				Rules:     len(item.Spec.Rules),
 			}
 			for _, parent := range item.Spec.ParentRefs {
@@ -632,8 +646,8 @@ func (s *server) listVirtualServices(c *gin.Context) {
 		for _, item := range list.Items {
 			out = append(out, routeView{
 				listMeta:  item.Metadata.meta(),
-				Hostnames: item.Spec.Hosts,
-				Parents:   item.Spec.Gateways,
+				Hostnames: orEmpty(item.Spec.Hosts),
+				Parents:   orEmpty(item.Spec.Gateways),
 				Rules:     len(item.Spec.HTTP) + len(item.Spec.TCP) + len(item.Spec.TLS),
 			})
 		}
