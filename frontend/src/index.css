@@ -366,7 +366,9 @@
   --deck-ink: #14161a;
   --deck-mark-chip: transparent;
 
-  --deck-slab: #14161a;
+  /* The page is already ink here, so the plate starts one step up from it —
+     an ink slab on an ink page has no left edge. */
+  --deck-slab: #23272b;
   --deck-slab-end: #3a4033;
   --deck-slab-text: #f2f3ef;
   --deck-slab-muted: #c4c9bb;

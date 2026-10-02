@@ -8,6 +8,8 @@ import type {
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from 'react'
+import { Link } from 'react-router'
+import type { LucideIcon } from 'lucide-react'
 import {
   Check,
   ChevronDown,
@@ -181,6 +183,9 @@ const BUTTON_VARIANT = {
   secondary: 'border border-line bg-surface text-fg hover:border-faint/60 hover:bg-raised',
   ghost: 'text-muted hover:bg-raised hover:text-fg',
   danger: 'border border-danger/40 text-danger hover:bg-danger-soft hover:border-danger/70',
+  /* A secondary action sitting on the slab — bone on the dark plate, which is
+     dark on both decks, so it does not borrow the page's surface. */
+  slab: 'border border-slab-text/35 bg-slab-text/8 text-slab-text hover:bg-slab-text/16',
 }
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -558,10 +563,10 @@ export function Panel({
 }) {
   return (
     <section className={`card overflow-hidden ${className ?? ''}`}>
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line-soft px-4 py-3">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line-soft px-4 py-3.5">
         <div className="min-w-0">
           {eyebrow ? <p className="label mb-0.5">{eyebrow}</p> : null}
-          <h2 className="truncate text-[15px] font-semibold text-fg">{title}</h2>
+          <h2 className="truncate text-[16px] font-bold text-fg">{title}</h2>
           {description ? (
             <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-muted">{description}</p>
           ) : null}
@@ -570,6 +575,98 @@ export function Panel({
       </header>
       {children ? <div className={bodyClassName}>{children}</div> : null}
     </section>
+  )
+}
+
+/*
+ * A StatTile is one figure with its glyph: a label, the reading, and an
+ * optional line under it. A tile that is reporting a state takes that state's
+ * soft fill, fading into the surface; a neutral one stays on the raised tone,
+ * so colour on a row of tiles only ever means "this one".
+ */
+type StatTone = 'neutral' | 'ok' | 'warn' | 'danger'
+
+const STAT_TINT: Record<StatTone, string> = {
+  neutral: 'from-raised',
+  ok: 'from-ok-soft',
+  warn: 'from-warn-soft',
+  danger: 'from-danger-soft',
+}
+
+const STAT_GLYPH: Record<StatTone, string> = {
+  neutral: 'text-muted',
+  ok: 'text-ok',
+  warn: 'text-warn',
+  danger: 'text-danger',
+}
+
+const STAT_VALUE: Record<StatTone, string> = {
+  neutral: 'text-fg',
+  ok: 'text-fg',
+  warn: 'text-warn',
+  danger: 'text-danger',
+}
+
+export function StatTile({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  tone = 'neutral',
+  dim = false,
+  mono = true,
+  to,
+  title,
+}: {
+  icon: LucideIcon
+  label: string
+  value: ReactNode
+  sub?: ReactNode
+  tone?: StatTone
+  /** The reading is not a reading yet — failed or in flight — and looks it. */
+  dim?: boolean
+  /** Figures and identifiers are mono; a reading that is a phrase is not. */
+  mono?: boolean
+  /** Makes the whole tile a link onto the thing it counts. */
+  to?: string
+  title?: string
+}) {
+  const body = (
+    <>
+      <span
+        className={`mb-4 grid size-10 place-items-center rounded-full border border-line-soft bg-surface shadow-deck ${STAT_GLYPH[tone]}`}
+      >
+        <Icon aria-hidden="true" className="size-4.5" />
+      </span>
+      <span
+        className={`text-[14px] text-fg ${to ? 'transition-colors duration-300 group-hover:text-accent' : ''}`}
+      >
+        {label}
+      </span>
+      <span
+        className={`mt-1 min-w-0 leading-tight font-bold break-words ${
+          mono ? 'font-mono text-[22px] tabular-nums' : 'text-[18px]'
+        } ${dim ? 'text-muted' : STAT_VALUE[tone]}`}
+      >
+        {value}
+      </span>
+      {sub ? <span className="mt-1 min-w-0 truncate text-[12.5px] text-muted">{sub}</span> : null}
+    </>
+  )
+  const frame = `flex min-w-0 flex-col rounded-card border border-line bg-linear-to-b ${STAT_TINT[tone]} to-surface p-4 shadow-deck`
+
+  return to ? (
+    <Link
+      to={to}
+      title={title}
+      className={`group ${frame} transition-colors duration-300 hover:border-faint/60`}
+    >
+      {body}
+    </Link>
+  ) : (
+    <div title={title} className={frame}>
+      {body}
+    </div>
   )
 }
 

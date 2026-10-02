@@ -206,6 +206,7 @@ function check(deck, tokens) {
   // (moss) end, which is the tighter one.
   for (const tone of ['slab-text', 'slab-muted']) {
     measure(tone, 'slab-end', TEXT_FLOOR, `${tone} on slab-end`)
+    measure(tone, 'slab', TEXT_FLOOR, `${tone} on slab`)
   }
   for (const tone of ['slab-warn', 'slab-danger']) {
     measure(tone, 'slab-end', GLYPH_FLOOR, `${tone} glyph on slab-end`)

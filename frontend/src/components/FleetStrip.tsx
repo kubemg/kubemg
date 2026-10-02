@@ -9,9 +9,9 @@
  */
 
 import type { ReactNode } from 'react'
-import { Link } from 'react-router'
 import { FileKey, Gauge, Server, ShieldX, Timer } from 'lucide-react'
 import type { StripFigure } from '../lib/fleetStrip'
+import { StatTile } from './primitives'
 
 /** Each figure's glyph, by key. A key with none here gets the gauge. */
 const FIGURE_ICON: Record<string, typeof Gauge> = {
@@ -41,45 +41,32 @@ export function FleetStrip({
   )
 }
 
-/*
- * One figure, as a tile. A figure that is asking for something takes its
- * tone's soft fill, fading into the surface; a zero, a failed read and a read
- * in flight stay neutral, so colour only ever means "this one".
- */
+/* One figure, as a tile, tinted only when it is asking for something. */
 function StripLink({ figure }: { figure: StripFigure }) {
   const { value } = figure
   const reading = typeof value === 'number'
   const lit = reading && value > 0
-  const bad = lit && figure.tone === 'bad'
-  const Icon = FIGURE_ICON[figure.key] ?? Gauge
 
   // Unknown and not-yet-read are both *not a number*, and both must look it: a
   // dash for a read that failed, an ellipsis for one still in flight. Neither is
   // ever drawn as 0.
   const shown = reading ? String(value) : value === null ? '—' : '…'
-  const figureTone = !reading ? 'text-muted' : bad ? 'text-danger' : lit ? 'text-warn' : 'text-fg'
-  const tint = bad ? 'from-danger-soft' : lit ? 'from-warn-soft' : 'from-raised'
-  const glyph = bad ? 'text-danger' : lit ? 'text-warn' : 'text-muted'
 
   return (
-    <Link
+    <StatTile
       to={figure.to}
       title={value === null ? 'Could not be read — open the page for the rows' : undefined}
-      className={`group flex flex-col rounded-card border border-line bg-linear-to-b ${tint} to-surface p-4 shadow-deck transition-colors duration-300 hover:border-faint/60`}
-    >
-      <span
-        className={`mb-4 grid size-10 place-items-center rounded-full border border-line-soft bg-surface shadow-deck ${glyph}`}
-      >
-        <Icon aria-hidden="true" className="size-4.5" />
-      </span>
-      <span className="text-[14px] text-fg transition-colors duration-300 group-hover:text-accent">
-        {figure.label}
-      </span>
-      <span className={`mt-1 font-mono text-[24px] leading-tight font-bold tabular-nums ${figureTone}`}>
-        {shown}
-        {value === null ? <span className="sr-only"> (could not be read)</span> : null}
-        {value === undefined ? <span className="sr-only"> (reading)</span> : null}
-      </span>
-    </Link>
+      icon={FIGURE_ICON[figure.key] ?? Gauge}
+      label={figure.label}
+      tone={lit ? (figure.tone === 'bad' ? 'danger' : 'warn') : 'neutral'}
+      dim={!reading}
+      value={
+        <>
+          {shown}
+          {value === null ? <span className="sr-only"> (could not be read)</span> : null}
+          {value === undefined ? <span className="sr-only"> (reading)</span> : null}
+        </>
+      }
+    />
   )
 }

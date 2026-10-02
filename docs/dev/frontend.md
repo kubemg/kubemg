@@ -112,6 +112,11 @@ the panel side by side. The row you are on, and the row under the pointer, fill
 with the `nav-pill` utility (a lime gradient with an ink label, lit by
 `aria-current`); the rail's current cluster carries the `rail-arc` corner.
 
+A dashboard opens on a `slab` — the one dark plate on a page, ink into moss on
+both decks, with its own `slab-*` text and state tokens and `Button`'s `slab`
+variant for actions on it — and states its facts as `StatTile`s, which take a
+tone's soft fill only when the reading is asking for something.
+
 ## Testing
 
 ```bash
