@@ -1,4 +1,6 @@
+import { ShieldAlert, ShieldCheck } from 'lucide-react'
 import type { PostureSeverity } from '../lib/posture'
+import { StatTile } from './primitives'
 
 /**
  * How loudly a band is drawn.
@@ -9,11 +11,14 @@ import type { PostureSeverity } from '../lib/posture'
  * severity is not something you press. What *is* pressable is the tile around
  * it, which takes the ordinary control treatment.
  */
-export const SEVERITY_STYLE: Record<PostureSeverity, { label: string; text: string; bar: string }> = {
-  critical: { label: 'Critical', text: 'text-danger', bar: 'bg-danger' },
-  high: { label: 'High', text: 'text-danger', bar: 'bg-danger/60' },
-  medium: { label: 'Medium', text: 'text-warn', bar: 'bg-warn' },
-  low: { label: 'Low', text: 'text-muted', bar: 'bg-faint' },
+export const SEVERITY_STYLE: Record<
+  PostureSeverity,
+  { label: string; text: string; bar: string; tone: 'danger' | 'warn' | 'neutral' }
+> = {
+  critical: { label: 'Critical', text: 'text-danger', bar: 'bg-danger', tone: 'danger' },
+  high: { label: 'High', text: 'text-danger', bar: 'bg-danger/60', tone: 'danger' },
+  medium: { label: 'Medium', text: 'text-warn', bar: 'bg-warn', tone: 'warn' },
+  low: { label: 'Low', text: 'text-muted', bar: 'bg-faint', tone: 'neutral' },
 }
 
 /**
@@ -40,41 +45,48 @@ export function SeverityStrip({
   selected: PostureSeverity | null
   onSelect: (severity: PostureSeverity) => void
 }) {
+  const total = distribution.reduce((sum, band) => sum + band.total, 0)
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      {distribution.map((band) => {
-        const style = SEVERITY_STYLE[band.severity]
-        const active = selected === band.severity
-        return (
-          <button
-            key={band.severity}
-            type="button"
-            aria-pressed={active}
-            disabled={band.total === 0}
-            onClick={() => onSelect(band.severity)}
-            className={`flex min-w-0 flex-col gap-1 rounded-card border p-3 text-left transition-colors disabled:cursor-default disabled:opacity-60 ${
-              active
-                ? "border-accent-line bg-accent-soft"
-                : "border-line bg-surface enabled:hover:border-faint/60 enabled:hover:bg-raised"
-            }`}
-          >
-            <span className="flex items-center gap-2">
-              <span aria-hidden="true" className={`h-3 w-1 shrink-0 rounded-full ${style.bar}`} />
-              <span className="label text-faint">{style.label}</span>
-            </span>
-            <span className="flex items-baseline gap-2">
-              <span className={`font-mono text-[20px] leading-none font-semibold ${style.text}`}>
-                {band.total}
-              </span>
-              {band.total > 0 ? (
-                <span className="text-[12px] text-muted">
-                  {band.open === 0 ? "all acknowledged" : `${band.open} open`}
-                </span>
-              ) : null}
-            </span>
-          </button>
-        )
-      })}
+    <div className="flex flex-col gap-3">
+      {/* How bad and how much, at a glance, before the tiles that filter. */}
+      {total > 0 ? (
+        <div
+          role="img"
+          aria-label={distribution
+            .filter((band) => band.total > 0)
+            .map((band) => `${band.total} ${SEVERITY_STYLE[band.severity].label.toLowerCase()}`)
+            .join(', ')}
+          className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-raised"
+        >
+          {distribution
+            .filter((band) => band.total > 0)
+            .map((band) => (
+              <span
+                key={band.severity}
+                className={`block h-full ${SEVERITY_STYLE[band.severity].bar}`}
+                style={{ flexGrow: band.total }}
+              />
+            ))}
+        </div>
+      ) : null}
+      <div role="group" aria-label="Filter by severity" className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        {distribution.map((band) => {
+          const style = SEVERITY_STYLE[band.severity]
+          return (
+            <StatTile
+              key={band.severity}
+              icon={band.severity === 'low' ? ShieldCheck : ShieldAlert}
+              label={style.label}
+              value={band.total}
+              tone={band.total === 0 ? 'neutral' : style.tone}
+              sub={band.total > 0 ? (band.open === 0 ? 'all acknowledged' : `${band.open} open`) : undefined}
+              pressed={selected === band.severity}
+              disabled={band.total === 0}
+              onClick={() => onSelect(band.severity)}
+            />
+          )
+        })}
+      </div>
     </div>
   )
 }

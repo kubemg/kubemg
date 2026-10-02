@@ -31,7 +31,7 @@ export interface PlotGeometry {
   bottom: number
 }
 
-export const PLOT_FULL: PlotGeometry = { height: 180, left: 62, right: 12, top: 10, bottom: 22 }
+export const PLOT_FULL: PlotGeometry = { height: 220, left: 48, right: 14, top: 12, bottom: 26 }
 
 /**
  * The band inside the Explore pilot header. Shorter, and with a tighter gutter
@@ -39,7 +39,7 @@ export const PLOT_FULL: PlotGeometry = { height: 180, left: 62, right: 12, top: 
  * matters is written out above it in full, so the ticks here only have to carry
  * a magnitude.
  */
-export const PLOT_COMPACT: PlotGeometry = { height: 104, left: 46, right: 8, top: 8, bottom: 16 }
+export const PLOT_COMPACT: PlotGeometry = { height: 120, left: 42, right: 10, top: 10, bottom: 16 }
 
 /**
  * One reading of the catalogue, as state. See the note at the top of the file.

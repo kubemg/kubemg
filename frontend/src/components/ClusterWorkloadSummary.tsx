@@ -29,7 +29,7 @@ import { Boxes, Layers } from 'lucide-react'
 import { errorMessage, fetchPods, fetchWorkloads, withReadReport } from '../api/client'
 import type { Cluster, Workload } from '../api/types'
 import { MetricsChart } from './MetricsChart'
-import { EmptyState, Field, Notice, OBJECT_NAME, Panel, Pill, Select } from './primitives'
+import { EmptyState, Field, Notice, OBJECT_NAME, Panel, Pill, Select, StatTile } from './primitives'
 import { CardSkeleton } from './SkeletonLoader'
 import type { InsightAlert, ResourceInsight } from '../lib/insights'
 import { MAX_ALERTS, podInsights, workloadInsights } from '../lib/insights'
@@ -153,7 +153,7 @@ export function ClusterWorkloadSummary({
               are the fourth answer to the same question and reading them apart
               from the workloads that own them is how a rollout looks fine
               while every pod behind it crash-loops. */}
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {cards.map((card) => (
               <SummaryCard
                 key={card.kind}
@@ -196,47 +196,45 @@ function SummaryCard({
   insight: ResourceInsight
   href: string
 }) {
-  const total = insight.total.value
+  const shown = insight.segments.filter((segment) => segment.value > 0)
+  const sum = shown.reduce((total, segment) => total + segment.share, 0)
 
   return (
-    <Link
+    <StatTile
       to={href}
-      className="card flex flex-col gap-3 p-4 transition-colors hover:border-accent-line"
+      icon={label === 'Pods' ? Boxes : Layers}
+      label={label}
+      value={insight.total.value}
+      sub={shown.length === 0 ? insight.headline : undefined}
     >
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="label">{label}</span>
-        <span className="font-mono text-[20px] leading-none font-semibold text-fg tabular-nums">
-          {total}
-        </span>
-      </div>
-
-      {insight.segments.length > 0 ? (
-        <div
-          aria-hidden="true"
-          className="flex h-1.5 overflow-hidden rounded-full bg-raised"
-        >
-          {insight.segments.map((segment) => (
-            <span
-              key={segment.id}
-              className={TONE_FILL[segment.tone ?? 'idle']}
-              style={{ width: `${Math.max(segment.share * 100, 1)}%` }}
-            />
-          ))}
-        </div>
+      {shown.length > 0 ? (
+        <>
+          {/* Widths grow by share, so a sliver can be floored for visibility
+              without the bar running past its track. */}
+          <span aria-hidden="true" className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-raised">
+            {shown.map((segment) => (
+              <span
+                key={segment.id}
+                className={`block h-full min-w-1 ${TONE_FILL[segment.tone ?? 'idle']}`}
+                style={{ flexGrow: sum > 0 ? segment.share : 1 }}
+              />
+            ))}
+          </span>
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {shown.map((segment) => (
+              <span key={segment.id} className="flex items-center gap-1.5 text-[12.5px] text-muted">
+                <span
+                  aria-hidden="true"
+                  className={`size-2 rounded-full ${TONE_FILL[segment.tone ?? 'idle']}`}
+                />
+                <span className="font-mono font-semibold text-fg tabular-nums">{segment.value}</span>
+                {segment.label.toLowerCase()}
+              </span>
+            ))}
+          </span>
+        </>
       ) : null}
-
-      <div className="flex flex-wrap items-center gap-1.5">
-        {insight.segments.length > 0 ? (
-          insight.segments.map((segment) => (
-            <Pill key={segment.id} tone={segment.tone ?? 'idle'}>
-              {segment.value} {segment.label.toLowerCase()}
-            </Pill>
-          ))
-        ) : (
-          <span className="text-[12.5px] text-muted">{insight.headline}</span>
-        )}
-      </div>
-    </Link>
+    </StatTile>
   )
 }
 

@@ -636,7 +636,11 @@ export function StatTile({
   dim = false,
   mono = true,
   to,
+  onClick,
+  pressed,
+  disabled,
   title,
+  children,
 }: {
   icon: LucideIcon
   label: string
@@ -649,8 +653,15 @@ export function StatTile({
   mono?: boolean
   /** Makes the whole tile a link onto the thing it counts. */
   to?: string
+  /** Makes the whole tile a toggle — a filter over the list under it. */
+  onClick?: () => void
+  pressed?: boolean
+  disabled?: boolean
   title?: string
+  /** Under the reading: a bar, a breakdown — anything the figure summarises. */
+  children?: ReactNode
 }) {
+  const interactive = Boolean(to || onClick)
   const body = (
     <>
       <span
@@ -659,7 +670,7 @@ export function StatTile({
         <Icon aria-hidden="true" className="size-4.5" />
       </span>
       <span
-        className={`text-[14px] text-fg ${to ? 'transition-colors duration-300 group-hover:text-accent' : ''}`}
+        className={`text-[14px] text-fg ${interactive ? 'transition-colors duration-300 group-hover:text-accent' : ''}`}
       >
         {label}
       </span>
@@ -671,19 +682,35 @@ export function StatTile({
         {value}
       </span>
       {sub ? <span className="mt-1 min-w-0 truncate text-[12.5px] text-muted">{sub}</span> : null}
+      {children ? <span className="mt-3 flex min-w-0 flex-col gap-2">{children}</span> : null}
     </>
   )
-  const frame = `flex min-w-0 flex-col rounded-card border border-line bg-linear-to-b ${STAT_TINT[tone]} to-surface p-4 shadow-deck`
+  const tint = pressed ? 'from-accent-soft border-accent-line' : `${STAT_TINT[tone]} border-line`
+  const frame = `flex min-w-0 flex-col rounded-card border bg-linear-to-b ${tint} to-surface p-4 text-left shadow-deck`
+  const hover = 'group transition-colors duration-300 enabled:hover:border-faint/60 [&:not(button)]:hover:border-faint/60'
 
-  return to ? (
-    <Link
-      to={to}
-      title={title}
-      className={`group ${frame} transition-colors duration-300 hover:border-faint/60`}
-    >
-      {body}
-    </Link>
-  ) : (
+  if (to) {
+    return (
+      <Link to={to} title={title} className={`${frame} ${hover}`}>
+        {body}
+      </Link>
+    )
+  }
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        title={title}
+        aria-pressed={pressed}
+        disabled={disabled}
+        onClick={onClick}
+        className={`${frame} ${hover} disabled:cursor-default disabled:opacity-60`}
+      >
+        {body}
+      </button>
+    )
+  }
+  return (
     <div title={title} className={frame}>
       {body}
     </div>
