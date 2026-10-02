@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router'
-import { FileKey, KeyRound, ShieldOff, X } from 'lucide-react'
+import { FileKey, Hourglass, KeyRound, ShieldOff, Unlink, Users, X } from 'lucide-react'
 import {
   errorMessage,
   fetchIssuedKubeconfigs,
@@ -20,6 +20,7 @@ import {
   Row,
   SearchInput,
   Segmented,
+  StatTile,
   Table,
   Td,
   Th,
@@ -178,9 +179,27 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
       )
     : rows
 
+  // The figures describe the rows this page holds — the live register unless
+  // "All" or an expiry window says otherwise — so a tile never counts a row
+  // the table under it is not showing.
+  const live = rows.filter((row) => row.status === 'active')
+  const soon = Date.now() + 24 * 60 * 60 * 1000
+  const expiringSoon = live.filter((row) => new Date(row.expires_at).getTime() <= soon).length
+  const unrevocable = live.filter((row) => !row.revocable).length
+  const holders = new Set(live.map((row) => row.username)).size
+
   return (
     <AppShell
       title={mine ? 'My credentials' : 'Issued credentials'}
+      description={
+        <>
+          A kubeconfig for a cluster reached through an agent carries a kubemg token, so revoking
+          it here stops the next call. One for a cluster registered for direct API access carries a
+          token that cluster minted, which kubemg cannot withdraw — those rows say so, and the only
+          lever is deleting the account’s <code className="font-mono text-[12.5px]">kubemg-…</code>{' '}
+          ServiceAccount on the cluster.
+        </>
+      }
       actions={
         <>
           {/* Only on the operator's own reading, and only for an account whose
@@ -217,16 +236,28 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
         {error ? <Notice tone="error">{error}</Notice> : null}
         {rowError ? <Notice tone="error">{rowError}</Notice> : null}
 
-        {/* Said once, at the top, because it is what makes this register worth
-            reading rather than a log: the two credentials it holds stop by
-            completely different means. */}
-        <Notice tone="info">
-          A kubeconfig for a cluster reached through an agent carries a KubeMG token, so revoking it
-          here stops the next call. A kubeconfig for a cluster registered for direct API access
-          carries a token that cluster minted, which KubeMG cannot withdraw — those rows say so, and
-          the only lever is deleting the account’s <code>kubemg-…</code> ServiceAccount on the
-          cluster.
-        </Notice>
+        <div className={`grid grid-cols-2 gap-4 ${mine ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`}>
+          <StatTile
+            icon={FileKey}
+            label="Live"
+            value={live.length}
+            tone={live.length > 0 ? 'ok' : 'neutral'}
+          />
+          <StatTile
+            icon={Hourglass}
+            label="Expiring · 24h"
+            value={expiringSoon}
+            tone={expiringSoon > 0 ? 'warn' : 'neutral'}
+          />
+          <StatTile
+            icon={Unlink}
+            label="Not revocable here"
+            value={unrevocable}
+            sub={unrevocable > 0 ? 'direct API access' : undefined}
+            tone={unrevocable > 0 ? 'warn' : 'neutral'}
+          />
+          {mine ? null : <StatTile icon={Users} label="Holders" value={holders} />}
+        </div>
 
         {blanket ? (
           <Notice tone={blanket.still_valid > 0 ? 'warn' : 'ok'}>

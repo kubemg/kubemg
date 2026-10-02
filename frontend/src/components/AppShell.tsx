@@ -229,6 +229,7 @@ function storedPanelCollapsed(): boolean {
 
 export function AppShell({
   title,
+  description,
   parent,
   actions,
   timeRange = false,
@@ -238,6 +239,12 @@ export function AppShell({
   children,
 }: {
   title: string
+  /**
+   * One or two sentences under the title: what this page is for, said once.
+   * It replaces the info notice a page used to open its body with, which read
+   * as a warning box on a page that had nothing to warn about.
+   */
+  description?: ReactNode
   /** Rendered ahead of the title as a breadcrumb, for pages nested under another. */
   parent?: { label: string; to: string }
   actions?: ReactNode
@@ -619,7 +626,12 @@ export function AppShell({
             {/* The page's own heading row: where you are, and what this page
                 is scoped by and offers. It scrolls with the page; only the
                 search bar above it stays. */}
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+            <div
+              className={`mb-5 flex flex-wrap justify-between gap-x-4 gap-y-3 ${
+                description ? 'items-start' : 'items-center'
+              }`}
+            >
+              <div className="min-w-0">
               <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2">
                 {/* A cluster is a place, not a page below one — the switcher
                     takes the slot the parent breadcrumb would have, and the
@@ -646,6 +658,12 @@ export function AppShell({
                 ) : null}
                 <h1 className="min-w-0 truncate text-[20px] font-bold text-fg">{title}</h1>
               </nav>
+              {description ? (
+                <p className="mt-1 max-w-3xl text-[13.5px] leading-relaxed text-muted">
+                  {description}
+                </p>
+              ) : null}
+              </div>
 
               {scope || scopeAction || timeRange || actions ? (
                 <div className="flex flex-wrap items-center gap-2">

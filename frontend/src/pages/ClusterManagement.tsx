@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { Pencil, Plug, Plus, RefreshCw, Server, Trash2, X } from 'lucide-react'
+import { CircleDashed, Pencil, Plug, Plus, RefreshCw, Server, Trash2, Unplug, Waypoints, X } from 'lucide-react'
 import { checkCluster, deleteCluster, errorMessage } from '../api/client'
 import type { Cluster } from '../api/types'
 import { AppShell } from '../components/AppShell'
@@ -18,12 +18,13 @@ import {
   OBJECT_NAME,
   Row,
   SearchInput,
+  StatTile,
   Table,
   Td,
   Th,
 } from '../components/primitives'
 import { railChip } from '../lib/branding'
-import { newestAgentVersion } from '../lib/fleet'
+import { fleetLinkCounts, newestAgentVersion } from '../lib/fleet'
 import { AGENT_BEHIND, AGENT_FILTER_PARAM, agentsBehind } from '../lib/fleetStrip'
 import { linkState } from '../lib/status'
 import { useClusters } from '../state/clusters-context'
@@ -97,6 +98,19 @@ export function ClusterManagement() {
       (!behindOnly || behind.has(cluster.id)),
   )
 
+  function showBehindOnly() {
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current)
+        next.set(AGENT_FILTER_PARAM, AGENT_BEHIND)
+        return next
+      },
+      { replace: true },
+    )
+  }
+
+  const links = fleetLinkCounts(clusters)
+
   function showEveryAgent() {
     setSearchParams(
       (current) => {
@@ -121,6 +135,35 @@ export function ClusterManagement() {
       <div className="flex min-w-0 flex-col gap-4">
         {listError ? <Notice tone="error">{listError}</Notice> : null}
         {rowError ? <Notice tone="error">{rowError}</Notice> : null}
+
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <StatTile icon={Server} label="Registered" value={clusters.length} />
+          <StatTile
+            icon={Waypoints}
+            label="Linked"
+            value={links.live + links.direct}
+            sub={`${links.live} tunnel · ${links.direct} direct`}
+            tone={links.live + links.direct > 0 ? 'ok' : 'neutral'}
+          />
+          <StatTile
+            icon={links.down > 0 ? Unplug : CircleDashed}
+            label={links.down > 0 ? 'Down or waiting' : 'Waiting to dial in'}
+            value={links.down + links.idle}
+            sub={links.down > 0 ? `${links.down} down` : undefined}
+            tone={links.down > 0 ? 'danger' : links.idle > 0 ? 'warn' : 'neutral'}
+          />
+          {/* The one figure here that filters the list under it: an agent
+              behind is the row an operator goes looking for. */}
+          <StatTile
+            icon={Plug}
+            label="Agents behind"
+            value={behind.size}
+            sub={newestAgent ? `newest ${newestAgent}` : undefined}
+            tone={behind.size > 0 ? 'warn' : 'neutral'}
+            onClick={behind.size > 0 || behindOnly ? (behindOnly ? showEveryAgent : showBehindOnly) : undefined}
+            pressed={behindOnly}
+          />
+        </div>
 
         <div className="card min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
@@ -174,7 +217,7 @@ export function ClusterManagement() {
                     </span>
                   </Td>
                   <Td className="hidden md:table-cell">
-                    <span className="font-data text-[12px] font-semibold text-muted">
+                    <span className="inline-grid h-8 min-w-8 place-items-center rounded-control border border-line-soft bg-raised px-1.5 font-data text-[11px] font-semibold text-fg">
                       {railChip(cluster)}
                     </span>
                   </Td>

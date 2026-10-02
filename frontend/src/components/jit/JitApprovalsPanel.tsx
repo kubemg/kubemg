@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, Clock, Inbox, Plus, ShieldOff, X } from 'lucide-react'
+import { Check, Clock, History, Inbox, Plus, ShieldOff, Timer, X } from 'lucide-react'
 import {
   approveJitRequest,
   errorMessage,
@@ -14,6 +14,7 @@ import { useLiveTick } from '../../lib/live'
 import { formatDuration, formatWindow } from '../../lib/time'
 import {
   Age,
+  Avatar,
   Button,
   EmptyState,
   IconButton,
@@ -21,6 +22,7 @@ import {
   Panel,
   Pill,
   Row,
+  StatTile,
   Table,
   Td,
   Th,
@@ -161,6 +163,30 @@ export function JitApprovalsPanel({
   return (
     <div className="flex flex-col gap-4">
       {error ? <Notice tone="error">{error}</Notice> : null}
+
+      {list ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatTile
+            icon={Inbox}
+            label="Waiting on a decision"
+            value={waiting.length}
+            tone={waiting.length > 0 ? 'warn' : 'neutral'}
+          />
+          <StatTile
+            icon={Timer}
+            label="Elevations in force"
+            value={live.length}
+            tone={live.length > 0 ? 'ok' : 'neutral'}
+          />
+          <StatTile
+            icon={History}
+            label="Decided"
+            value={history.length}
+            sub={`${history.filter((request) => request.status === 'rejected').length} rejected`}
+          />
+        </div>
+      ) : null}
+
       {list?.scoped_to_me ? (
         // Said explicitly, for the same reason the audit page says it: an empty
         // list otherwise means either "nothing is happening" or "you cannot see
@@ -207,10 +233,11 @@ export function JitApprovalsPanel({
             {waiting.map((request) => (
               <li
                 key={request.id}
-                className="flex flex-col gap-3 border-t border-line-soft px-4 py-3 first:border-t-0"
+                className="flex flex-col gap-3 border-t border-line-soft px-5 py-4 first:border-t-0"
               >
-                <div className="flex flex-wrap items-baseline gap-2">
-                  <span className="font-data text-[13.5px] text-fg">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Avatar name={request.requester_username} />
+                  <span className="font-data text-[13.5px] font-semibold text-fg">
                     {request.requester_username}
                   </span>
                   <span className="text-[13px] text-muted">wants</span>

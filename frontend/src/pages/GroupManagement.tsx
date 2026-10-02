@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Plus, Trash2, UserMinus, UsersRound } from 'lucide-react'
+import { Plus, Trash2, UserMinus, UserRound, UsersRound } from 'lucide-react'
 import {
   addGroupMember,
   createGroup,
@@ -10,22 +10,31 @@ import {
   fetchUsers,
   removeGroupMember,
 } from '../api/client'
-import type { Group, User } from '../api/types'
+import type { Group, SystemRole, User } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import {
+  Avatar,
   Button,
   EmptyState,
   Field,
   IconButton,
   Notice,
   Panel,
+  Pill,
   Select,
   Sheet,
+  StatTile,
   TextInput,
 } from '../components/primitives'
 import { relativeAge } from '../lib/time'
 import { useConfirm } from '../state/confirm-context'
 import { useResult } from '../state/result-context'
+
+const ROLE_LABEL: Record<SystemRole, string> = {
+  superadmin: 'Super admin',
+  admin: 'Admin',
+  user: 'User',
+}
 
 export function GroupManagement() {
   const confirm = useConfirm()
@@ -112,6 +121,7 @@ export function GroupManagement() {
   return (
     <AppShell
       title="Groups"
+      description="Grant a cluster to a group once instead of to each member in turn. Every member inherits the grant, and where a user holds both, the more permissive one applies."
       actions={
         <Button variant="primary" onClick={() => setSheetOpen(true)}>
           <Plus aria-hidden="true" className="size-4" />
@@ -122,6 +132,24 @@ export function GroupManagement() {
       <div className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
         {rowError ? <Notice tone="error">{rowError}</Notice> : null}
+
+        {groups.length > 0 ? (
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+            <StatTile icon={UsersRound} label="Groups" value={groups.length} />
+            <StatTile
+              icon={UserRound}
+              label="Accounts in a group"
+              value={new Set(groups.flatMap((group) => group.member_ids)).size}
+              sub={`of ${users.length}`}
+            />
+            <StatTile
+              icon={UserMinus}
+              label="Empty groups"
+              value={groups.filter((group) => group.member_ids.length === 0).length}
+              tone={groups.some((group) => group.member_ids.length === 0) ? 'warn' : 'neutral'}
+            />
+          </div>
+        ) : null}
 
         {loading && groups.length === 0 ? (
           <p className="text-[13px] text-muted">Loading…</p>
@@ -236,12 +264,15 @@ function GroupCard({
         {members.map((member) => (
           <li
             key={member.id}
-            className="flex items-center gap-2.5 border-b border-line-soft px-4 py-2 last:border-0"
+            className="flex items-center gap-3 border-b border-line-soft px-5 py-2.5 last:border-0"
           >
-            <span className="min-w-0 flex-1 truncate font-data text-[13px] text-fg">
+            <Avatar name={member.username} />
+            <span className="min-w-0 flex-1 truncate font-data text-[13.5px] font-medium text-fg">
               {member.username}
             </span>
-            <span className="label shrink-0">{member.system_role}</span>
+            <Pill tone={member.system_role === 'user' ? 'idle' : 'accent'} dot={false}>
+              {ROLE_LABEL[member.system_role]}
+            </Pill>
             <IconButton
               label={`Remove ${member.username} from ${group.name}`}
               onClick={() => onRemove(member.id)}
@@ -253,13 +284,13 @@ function GroupCard({
         ))}
 
         {members.length === 0 ? (
-          <li className="px-4 py-4 text-[13px] text-muted">No members yet.</li>
+          <li className="px-5 py-4 text-[13px] text-muted">No members yet.</li>
         ) : null}
       </ul>
 
       <form
         onSubmit={add}
-        className="flex items-center gap-2 border-t border-line-soft bg-raised/40 px-4 py-3"
+        className="flex items-center gap-2 border-t border-line-soft bg-raised/40 px-5 py-3"
       >
         <Select
           aria-label={`Add a member to ${group.name}`}
