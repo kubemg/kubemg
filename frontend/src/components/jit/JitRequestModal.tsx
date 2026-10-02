@@ -107,10 +107,10 @@ export function JitRequestModal({
       width="lg"
       footer={
         <>
-          <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
+          <Button type="button" variant="ghost" pill onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || !valid}>
+          <Button type="submit" variant="primary" pill disabled={busy || !valid}>
             {busy ? 'Submitting…' : 'Submit request'}
           </Button>
         </>
@@ -119,11 +119,13 @@ export function JitRequestModal({
       {error ? <Notice tone="error">{error}</Notice> : null}
 
       {cluster ? (
-        <p className="flex flex-wrap items-baseline gap-2 rounded-control bg-raised px-3 py-2">
+        <p className="flex flex-wrap items-baseline gap-2 rounded-control bg-raised px-3.5 py-2.5">
           <span className="label">Cluster</span>
-          <span className="font-mono text-[12.5px] text-fg">{cluster.name}</span>
-          <span className="label">now</span>
-          <span className="font-mono text-[12.5px] text-fg">{cluster.k8s_role}</span>
+          <span className="font-mono text-[13px] text-fg" translate="no">
+            {cluster.name}
+          </span>
+          <span className="label">Current role</span>
+          <span className="font-mono text-[13px] text-fg">{cluster.k8s_role}</span>
         </p>
       ) : (
         <Field label="Cluster" htmlFor="jit-cluster">
@@ -179,7 +181,10 @@ export function JitRequestModal({
         <TextInput
           id="jit-namespaces"
           className="font-mono text-[12.5px]"
-          placeholder="payments, checkout"
+          placeholder="e.g. payments, checkout…"
+          name="jit-namespaces"
+          autoComplete="off"
+          spellCheck={false}
           value={namespaces}
           onChange={(event) => setNamespaces(event.target.value)}
         />
@@ -197,10 +202,12 @@ export function JitRequestModal({
       >
         <TextArea
           id="jit-reason"
+          name="jit-reason"
+          prose
           rows={3}
           value={reason}
           onChange={(event) => setReason(event.target.value)}
-          placeholder="INC-4821: checkout pods are crash-looping and I need to read the OOM events and restart the deployment."
+          placeholder="INC-4821: checkout pods are crash-looping and I need to read the OOM events and restart the deployment…"
         />
       </Field>
 

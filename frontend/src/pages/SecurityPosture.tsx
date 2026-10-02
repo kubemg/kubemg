@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
-import { CheckCircle2, Download, RefreshCw, ShieldAlert, ShieldCheck, Undo2 } from 'lucide-react'
+import { CheckCircle2, Download, RefreshCw, ShieldAlert, Undo2 } from 'lucide-react'
 import {
   acknowledgePostureFinding,
   errorMessage,
@@ -15,6 +15,7 @@ import { SEVERITY_STYLE, SeverityStrip, SeverityTag } from '../components/Severi
 import {
   Age,
   Button,
+  Dialog,
   Disclosure,
   EmptyState,
   Field,
@@ -580,62 +581,48 @@ function AcknowledgeSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center p-4 sm:items-center">
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="scrim-in absolute inset-0 bg-black/55 backdrop-blur-[2px]"
-      />
-
-      <form
-        role="dialog"
-        aria-modal="true"
-        aria-label="Acknowledge this finding"
-        onSubmit={submit}
-        className="pop-in card relative w-full max-w-lg p-4 lift"
-      >
-        <div className="mb-3 flex items-center gap-2">
-          <ShieldCheck aria-hidden="true" className="size-4 text-accent" />
-          <h2 className="text-[14px] font-semibold text-fg">Acknowledge this finding</h2>
-        </div>
-
-        <p className="mb-3 text-[12.5px] leading-relaxed text-muted">
-          {finding.title} on{' '}
-          <span className="font-mono text-fg">
-            {finding.namespace ? `${finding.namespace}/` : ''}
-            {finding.name}
-          </span>
-          . The finding stays on every future scan, marked as acknowledged with your name and this
-          reason — it does not disappear.
+    <Dialog
+      title="Acknowledge this finding"
+      subject={`${finding.namespace ? `${finding.namespace}/` : ''}${finding.name}`}
+      onClose={onClose}
+      footer={
+        <>
+          <Button type="button" variant="ghost" pill onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form="ack-form"
+            variant="primary"
+            pill
+            disabled={saving || reason.trim() === ''}
+          >
+            {saving ? 'Saving…' : 'Acknowledge'}
+          </Button>
+        </>
+      }
+    >
+      <form id="ack-form" onSubmit={submit} className="flex flex-col gap-3">
+        <p>
+          {finding.title}. The finding stays on every future scan, marked as acknowledged with your
+          name and this reason — it does not disappear.
         </p>
 
-        {error ? (
-          <div className="mb-3">
-            <Notice tone="error">{error}</Notice>
-          </div>
-        ) : null}
+        {error ? <Notice tone="error">{error}</Notice> : null}
 
         <Field label="Reason" htmlFor="ack-reason" hint="Why this is here on purpose.">
           <TextArea
             id="ack-reason"
+            name="ack-reason"
+            prose
             rows={3}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
-            placeholder="e.g. runs privileged on purpose to drive the hardware test rig in this namespace"
-            autoFocus
+            placeholder="e.g. runs privileged on purpose to drive the hardware test rig…"
+            data-autofocus
           />
         </Field>
-
-        <div className="mt-4 flex justify-end gap-2">
-          <Button type="button" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={saving || reason.trim() === ''}>
-            {saving ? 'Saving…' : 'Acknowledge'}
-          </Button>
-        </div>
       </form>
-    </div>
+    </Dialog>
   )
 }

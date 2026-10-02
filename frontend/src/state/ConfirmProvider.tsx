@@ -1,12 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
-import { Button, Sheet } from '../components/primitives'
+import { Button, Dialog } from '../components/primitives'
 import { ConfirmContext } from './confirm-context'
 import type { Confirm, ConfirmRequest } from './confirm-context'
 
 /**
- * ConfirmProvider holds the one confirmation sheet and the promise it settles.
+ * ConfirmProvider holds the one confirmation dialog and the promise it settles.
  *
  * Exactly one question is ever open, for the same reason exactly one `Sheet` is:
  * a confirmation is asked in answer to a click, and a click cannot land while
@@ -14,9 +14,8 @@ import type { Confirm, ConfirmRequest } from './confirm-context'
  * request while one is open would be a bug, and it settles the first as `false`
  * rather than silently dropping either.
  *
- * Every path out of the sheet settles the promise: the button, the cancel, the
- * close control, Escape and the scrim (both of which `Sheet` routes to
- * `onClose`). A promise left unsettled would leave the caller's `await` hanging
+ * Every path out of the dialog settles the promise: the button, the cancel,
+ * Escape and the scrim (both of which `Dialog` routes to `onClose`). A promise left unsettled would leave the caller's `await` hanging
  * for the life of the page, which is the one failure mode a confirmation must
  * not have.
  */
@@ -48,14 +47,22 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     <ConfirmContext.Provider value={value}>
       {children}
       {request ? (
-        <Sheet
+        <Dialog
           title={request.title}
-          eyebrow={request.eyebrow}
-          width="md"
+          subject={request.eyebrow}
+          tone={request.tone === 'default' ? 'default' : 'danger'}
           onClose={() => answer(false)}
           footer={
             <>
-              <Button type="button" variant="ghost" onClick={() => answer(false)}>
+              {/* A destructive question opens on Cancel, so a reflexive Enter
+                  answers "no"; an ordinary one opens on its own act. */}
+              <Button
+                type="button"
+                variant="ghost"
+                pill
+                data-autofocus={request.tone === 'default' ? undefined : true}
+                onClick={() => answer(false)}
+              >
                 Cancel
               </Button>
               {/* The act's own word, so the button says what the reader clicked
@@ -63,7 +70,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
               <Button
                 type="button"
                 variant={request.tone === 'default' ? 'primary' : 'danger'}
-                autoFocus
+                pill
+                data-autofocus={request.tone === 'default' ? true : undefined}
                 onClick={() => answer(true)}
               >
                 {request.confirmLabel}
@@ -71,8 +79,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             </>
           }
         >
-          <div className="text-[13px] leading-relaxed text-muted">{request.body}</div>
-        </Sheet>
+          {request.body}
+        </Dialog>
       ) : null}
     </ConfirmContext.Provider>
   )

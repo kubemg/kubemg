@@ -976,7 +976,7 @@ function MobileNav({
         type="button"
         aria-label="Close navigation"
         onClick={onClose}
-        className="scrim-in absolute inset-0 bg-black/55"
+        className="scrim-in absolute inset-0 bg-scrim"
       />
 
       <div

@@ -42,14 +42,14 @@ export function ClusterSwitcher({ cluster }: { cluster: Cluster }) {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className="flex min-w-0 items-center gap-1.5 rounded-control py-1 pr-1.5 pl-1 text-[15px] font-semibold text-fg transition-colors hover:bg-raised"
+        aria-label={`Switch cluster (current: ${cluster.name})`}
+        className="flex h-9 min-w-0 items-center gap-2 rounded-full border border-line bg-surface pr-2.5 pl-3 text-[14px] font-semibold text-fg transition-colors duration-300 hover:border-faint/60"
       >
         <EnvironmentDot environment={cluster.environment} />
-        <span className="min-w-0 truncate font-mono">{cluster.name}</span>
-        <ChevronDown
-          aria-hidden="true"
-          className={`size-3.5 shrink-0 text-faint transition-transform ${open ? 'rotate-180' : ''}`}
-        />
+        <span className="min-w-0 truncate font-mono" translate="no">
+          {cluster.name}
+        </span>
+        <ChevronDown aria-hidden="true" className={`size-3.5 shrink-0 text-faint ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open ? (

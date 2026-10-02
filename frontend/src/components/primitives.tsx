@@ -24,7 +24,7 @@ import {
   X,
 } from 'lucide-react'
 import type { Cluster, Environment } from '../api/types'
-import { TONE_SOFT, clusterStateLabel, clusterTone } from '../lib/status'
+import { TONE_FILL, TONE_SOFT, clusterStateLabel, clusterTone } from '../lib/status'
 import { formatInstant, relativeAge } from '../lib/time'
 import type { Tone } from '../lib/status'
 import { usageTone } from '../lib/units'
@@ -133,9 +133,17 @@ export function ActivityTag({ active }: { active: boolean }) {
  * making the quietest environment the loudest mark in the row.
  */
 const ENVIRONMENT_TAG: Record<Environment, string> = {
-  prod: 'border-danger/40 text-danger',
-  staging: 'border-warn/40 text-warn',
-  dev: 'border-faint/60 text-muted',
+  prod: 'border-danger/40 bg-danger-soft text-danger',
+  staging: 'border-warn/40 bg-warn-soft text-warn',
+  dev: 'border-faint/60 bg-raised text-muted',
+}
+
+/* The environment as a word, not a code: sentence case, the way every other
+   label on the deck is now set. */
+const ENVIRONMENT_WORD: Record<Environment, string> = {
+  prod: 'Prod',
+  staging: 'Staging',
+  dev: 'Dev',
 }
 
 const ENVIRONMENT_DOT: Record<Environment, string> = {
@@ -147,9 +155,9 @@ const ENVIRONMENT_DOT: Record<Environment, string> = {
 export function EnvironmentTag({ environment }: { environment: Environment }) {
   return (
     <span
-      className={`inline-flex items-center rounded-chip border px-1.5 py-px font-mono text-[11px] tracking-wide uppercase ${ENVIRONMENT_TAG[environment]}`}
+      className={`inline-flex items-center rounded-full border px-2 py-px text-[11.5px] font-semibold ${ENVIRONMENT_TAG[environment]}`}
     >
-      {environment}
+      {ENVIRONMENT_WORD[environment]}
     </span>
   )
 }
@@ -191,11 +199,14 @@ const BUTTON_VARIANT = {
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: keyof typeof BUTTON_VARIANT
   size?: keyof typeof BUTTON_SIZE
+  /** The template's pill: for a dialog's answer and a slab's actions. */
+  pill?: boolean
 }
 
 export function Button({
   variant = 'secondary',
   size = 'md',
+  pill = false,
   className,
   children,
   ...rest
@@ -203,7 +214,7 @@ export function Button({
   return (
     <button
       {...rest}
-      className={`inline-flex shrink-0 cursor-pointer items-center justify-center rounded-control font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${BUTTON_SIZE[size]} ${BUTTON_VARIANT[variant]} ${className ?? ''}`}
+      className={`inline-flex shrink-0 cursor-pointer items-center justify-center font-medium whitespace-nowrap transition-colors duration-300 disabled:cursor-not-allowed disabled:opacity-45 ${pill ? 'rounded-full px-4' : 'rounded-control'} ${BUTTON_SIZE[size]} ${BUTTON_VARIANT[variant]} ${className ?? ''}`}
     >
       {children}
     </button>
@@ -392,7 +403,7 @@ export function Segmented<T extends string>({
   return (
     <div
       id={id}
-      role="tablist"
+      role="group"
       aria-label={ariaLabel}
       className="inline-flex shrink-0 items-center gap-0.5 rounded-control border border-line bg-raised p-0.5"
     >
@@ -402,10 +413,9 @@ export function Segmented<T extends string>({
           <button
             key={option.value}
             type="button"
-            role="tab"
-            aria-selected={active}
+            aria-pressed={active}
             onClick={() => onChange(option.value)}
-            className={`inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[13px] transition-colors ${
+            className={`inline-flex h-7 items-center gap-1.5 rounded-chip px-2.5 text-[13px] transition-colors duration-300 ${
               active
                 ? 'bg-surface font-medium text-fg shadow-deck'
                 : 'text-muted hover:text-fg'
@@ -425,7 +435,7 @@ export function Segmented<T extends string>({
 
 export function KeyHint({ children }: { children: ReactNode }) {
   return (
-    <kbd className="rounded-[5px] border border-line bg-raised px-1.5 py-px font-mono text-[11px] text-faint">
+    <kbd className="rounded-chip border border-line bg-raised px-1.5 py-px font-mono text-[11px] text-faint">
       {children}
     </kbd>
   )
@@ -472,11 +482,18 @@ export function TextInput({ className, ...rest }: InputHTMLAttributes<HTMLInputE
   return <input {...rest} className={`${CONTROL} h-9 ${className ?? ''}`} />
 }
 
-export function TextArea({ className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function TextArea({
+  className,
+  prose = false,
+  ...rest
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & {
+  /** Set for words somebody writes — a reason, a note — rather than a manifest. */
+  prose?: boolean
+}) {
   return (
     <textarea
       {...rest}
-      className={`${CONTROL} resize-y py-2 font-mono text-[12.5px] leading-relaxed ${className ?? ''}`}
+      className={`${CONTROL} resize-y py-2 leading-relaxed ${prose ? 'text-[13.5px]' : 'font-mono text-[12.5px]'} ${className ?? ''}`}
     />
   )
 }
@@ -530,8 +547,10 @@ export function SearchInput({
         value={value}
         aria-label={label}
         placeholder={placeholder}
+        autoComplete="off"
+        spellCheck={false}
         onChange={(event) => onChange(event.target.value)}
-        className={`${CONTROL} h-8 pl-8 text-[13px]`}
+        className={`${CONTROL} h-9 pl-8 text-[13px]`}
       />
     </div>
   )
@@ -540,8 +559,9 @@ export function SearchInput({
 /* --------------------------------------------------------------- surfaces --- */
 
 /**
- * Panel is the standard surface: an eyebrow-and-title header, optional
- * description, actions on the right, content below.
+ * Panel is the standard surface: a 16px title (with a quiet eyebrow above it
+ * where the panel is one of a set), an optional 13px description, actions on
+ * the right, content below.
  */
 export function Panel({
   title,
@@ -563,12 +583,12 @@ export function Panel({
 }) {
   return (
     <section className={`card overflow-hidden ${className ?? ''}`}>
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line-soft px-4 py-3.5">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
         <div className="min-w-0">
           {eyebrow ? <p className="label mb-0.5">{eyebrow}</p> : null}
           <h2 className="truncate text-[16px] font-bold text-fg">{title}</h2>
           {description ? (
-            <p className="mt-1 max-w-2xl text-[12.5px] leading-relaxed text-muted">{description}</p>
+            <p className="mt-0.5 max-w-2xl text-[13px] leading-relaxed text-muted">{description}</p>
           ) : null}
         </div>
         {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
@@ -709,11 +729,11 @@ export function Disclosure({
       open={open}
       onToggle={(event) => onOpenChange(event.currentTarget.open)}
     >
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 px-4 py-3 text-[12.5px] font-medium text-muted hover:text-fg [&::-webkit-details-marker]:hidden">
-        <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 group-open:rotate-180" />
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-5 py-3.5 text-[13px] font-medium text-muted transition-colors duration-300 hover:text-fg [&::-webkit-details-marker]:hidden">
+        <ChevronDown aria-hidden="true" className="size-4 shrink-0 group-open:rotate-180" />
         {summary}
       </summary>
-      <div className="border-t border-line-soft px-4 py-3">{children}</div>
+      <div className="border-t border-line-soft px-5 py-4">{children}</div>
     </details>
   )
 }
@@ -730,7 +750,7 @@ export function SectionHeading({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <h2 className="text-[13px] font-semibold tracking-[0.02em] text-fg uppercase">{title}</h2>
+      <h2 className="text-[16px] font-bold text-fg">{title}</h2>
       {children}
       <span aria-hidden="true" className="h-px min-w-6 flex-1 bg-line" />
       {meta ? <span className="text-[12.5px] text-muted">{meta}</span> : null}
@@ -753,12 +773,12 @@ export function Notice({
   children: ReactNode
 }) {
   return (
-    <p
-      role={tone === 'error' ? 'alert' : undefined}
-      className={`rounded-control border px-3 py-2.5 text-[12.5px] leading-relaxed ${NOTICE_TONE[tone]}`}
+    <div
+      role={tone === 'error' ? 'alert' : 'status'}
+      className={`rounded-control border px-3.5 py-2.5 text-[13px] leading-relaxed ${NOTICE_TONE[tone]}`}
     >
       {children}
-    </p>
+    </div>
   )
 }
 
@@ -777,13 +797,13 @@ export function EmptyState({
   return (
     <div className="flex flex-col items-center px-6 py-14 text-center">
       {icon ? (
-        <span className="mb-3 grid size-10 place-items-center rounded-card border border-line bg-raised text-faint">
+        <span className="mb-4 grid size-12 place-items-center rounded-full border border-line-soft bg-surface text-muted shadow-deck">
           {icon}
         </span>
       ) : null}
-      <p className="text-[14.5px] font-medium text-fg">{title}</p>
+      <h3 className="text-[16px] font-bold text-fg">{title}</h3>
       {children ? (
-        <p className="mt-1.5 max-w-md text-[12.5px] leading-relaxed text-muted">{children}</p>
+        <p className="mt-1.5 max-w-md text-[13px] leading-relaxed text-muted">{children}</p>
       ) : null}
       {action ? <div className="mt-4">{action}</div> : null}
     </div>
@@ -1191,8 +1211,66 @@ const SHEET_WIDTH: Record<SheetWidth, string> = {
   wide: 'max-w-[85vw]',
 }
 
-/** Which sheets are open, oldest first. Only the last one answers Escape. */
+/** Which sheets and dialogs are open, oldest first. Only the last one answers. */
 const SHEET_STACK: object[] = []
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/*
+ * What every overlay owes the keyboard: Escape closes the topmost one only,
+ * focus moves into it when it opens (unless something inside already took it,
+ * as an `autoFocus` does), Tab and Shift+Tab stay inside it while it is the
+ * topmost, and focus goes back to whatever opened it when it closes.
+ */
+function useOverlay(panel: React.RefObject<HTMLElement | null>, onClose: () => void) {
+  // Escape must call the current onClose, not the one the overlay opened with.
+  const latest = useRef(onClose)
+  useEffect(() => {
+    latest.current = onClose
+  })
+
+  // Opened once: a new onClose identity must not re-run the focus move.
+  useEffect(() => {
+    const token = {}
+    SHEET_STACK.push(token)
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const node = panel.current
+    if (node && !node.contains(document.activeElement)) {
+      const first = node.querySelector<HTMLElement>(`[data-autofocus], ${FOCUSABLE}`)
+      ;(first ?? node).focus()
+    }
+
+    function onKey(event: KeyboardEvent) {
+      if (SHEET_STACK[SHEET_STACK.length - 1] !== token) return
+      if (event.key === 'Escape') {
+        latest.current()
+        return
+      }
+      if (event.key !== 'Tab' || !panel.current) return
+      const items = Array.from(panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (item) => item.offsetParent !== null || item === document.activeElement,
+      )
+      if (items.length === 0) return
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      const at = SHEET_STACK.indexOf(token)
+      if (at >= 0) SHEET_STACK.splice(at, 1)
+      window.removeEventListener('keydown', onKey)
+      if (opener && opener.isConnected) opener.focus()
+    }
+  }, [panel])
+}
 
 export function Sheet({
   title,
@@ -1213,6 +1291,7 @@ export function Sheet({
   width?: SheetWidth
 }) {
   const titleId = useId()
+  const panel = useRef<HTMLDivElement | null>(null)
 
   /*
    * Escape closes the **topmost** sheet and only that one.
@@ -1220,40 +1299,26 @@ export function Sheet({
    * One sheet at a time used to be the whole rule — a workload action and a
    * release's values are panels inside the detail drawer rather than surfaces
    * over it. A confirmation broke it: the question asked before a destructive
-   * act is itself a `Sheet`, and it opens over the sheet that asked. With every
-   * instance listening on the window, one Escape reached both — and in the
-   * detail drawer, whose own Escape *is* what asks the question, it re-asked it
-   * forever instead of answering it.
+   * act opens over the sheet that asked. With every instance listening on the
+   * window, one Escape reached both — and in the detail drawer, whose own
+   * Escape *is* what asks the question, it re-asked it forever instead of
+   * answering it.
    *
    * The stack is module-level rather than a context because it is about paint
-   * order, which no provider knows: what should answer Escape is whatever was
-   * mounted last.
+   * order, which no provider knows: what should answer is whatever was mounted
+   * last. See `useOverlay`, which also keeps focus inside the topmost one.
    */
-  useEffect(() => {
-    const token = {}
-    SHEET_STACK.push(token)
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== 'Escape') return
-      if (SHEET_STACK[SHEET_STACK.length - 1] !== token) return
-      onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => {
-      const at = SHEET_STACK.indexOf(token)
-      if (at >= 0) SHEET_STACK.splice(at, 1)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [onClose])
+  useOverlay(panel, onClose)
 
   const body = (
     <>
       {/* The sheet's body is its own scrollport, so a table in here pins at its
           top rather than under the page header it cannot see. */}
-      <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 [--table-heading-position:relative]">
+      <div className="flex flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-5 py-4 [--table-heading-position:relative]">
         {children}
       </div>
       {footer ? (
-        <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-line-soft bg-raised/40 px-4 py-3">
+        <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-line-soft bg-raised/40 px-5 py-3.5">
           {footer}
         </footer>
       ) : null}
@@ -1266,23 +1331,30 @@ export function Sheet({
         type="button"
         aria-label="Close"
         onClick={onClose}
-        className="scrim-in absolute inset-0 bg-black/55 backdrop-blur-[2px]"
+        tabIndex={-1}
+        className="scrim-in absolute inset-0 bg-scrim backdrop-blur-[2px]"
       />
 
       <div
+        ref={panel}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`sheet-in relative flex h-full w-full flex-col border-l border-line bg-surface lift ${SHEET_WIDTH[width]}`}
+        tabIndex={-1}
+        className={`sheet-in relative my-2 mr-2 flex h-[calc(100%-1rem)] w-full flex-col overflow-hidden rounded-card border border-line bg-surface shadow-lift outline-none max-sm:m-0 max-sm:h-full max-sm:rounded-none ${SHEET_WIDTH[width]}`}
       >
-        <header className="flex min-h-14 shrink-0 items-start justify-between gap-3 border-b border-line-soft px-4 py-3">
+        <header className="flex shrink-0 items-start justify-between gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
           <div className="min-w-0">
-            {eyebrow ? <p className="label mb-0.5">{eyebrow}</p> : null}
-            <h2 id={titleId} className="truncate text-[15px] font-semibold text-fg">
+            <h2 id={titleId} className="truncate text-[18px] font-bold text-fg">
               {title}
             </h2>
+            {/* What the sheet is about, said under its title rather than as a
+                micro-label above it. */}
+            {eyebrow ? (
+              <p className="mt-0.5 truncate text-[13px] text-muted">{eyebrow}</p>
+            ) : null}
           </div>
-          <IconButton label="Close" onClick={onClose} type="button">
+          <IconButton label="Close" onClick={onClose} type="button" className="rounded-full">
             <X aria-hidden="true" className="size-4" />
           </IconButton>
         </header>
@@ -1294,6 +1366,71 @@ export function Sheet({
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">{body}</div>
         )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Dialog is a question, centred: a title, a few lines, two answers. It is for
+ * the confirmation asked before an act, which is two buttons and not an
+ * editing surface — every editing surface is still a `Sheet`. It shares the
+ * sheet's overlay stack, so Escape and focus behave the same over either.
+ */
+export function Dialog({
+  title,
+  subject,
+  onClose,
+  children,
+  footer,
+  tone = 'default',
+}: {
+  title: ReactNode
+  /** What the question is about — a cluster, an object — under the title. */
+  subject?: string
+  onClose: () => void
+  children: ReactNode
+  footer: ReactNode
+  /** A destructive question is an alert dialog. */
+  tone?: 'default' | 'danger'
+}) {
+  const titleId = useId()
+  const bodyId = useId()
+  const panel = useRef<HTMLDivElement | null>(null)
+  useOverlay(panel, onClose)
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center p-4">
+      <button
+        type="button"
+        aria-label="Close"
+        tabIndex={-1}
+        onClick={onClose}
+        className="scrim-in absolute inset-0 bg-scrim backdrop-blur-[2px]"
+      />
+      <div
+        ref={panel}
+        role={tone === 'danger' ? 'alertdialog' : 'dialog'}
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={bodyId}
+        tabIndex={-1}
+        className="pop-in relative flex w-full max-w-[460px] flex-col rounded-card border border-line bg-surface shadow-lift outline-none"
+      >
+        <div className="px-6 pt-5 pb-4">
+          <h2 id={titleId} className="text-[18px] font-bold text-fg">
+            {title}
+          </h2>
+          {subject ? (
+            <p className="mt-0.5 truncate font-mono text-[13px] text-muted">{subject}</p>
+          ) : null}
+          <div id={bodyId} className="mt-3 text-[13.5px] leading-relaxed text-muted">
+            {children}
+          </div>
+        </div>
+        <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-line-soft px-6 py-4">
+          {footer}
+        </footer>
       </div>
     </div>
   )
@@ -1389,6 +1526,14 @@ export function Slab({ children, className }: { children: ReactNode; className?:
  * the denominator is unknown, since "using 40m, no limit set" is exactly the
  * thing an operator wants to notice.
  */
+const PERCENT = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 0 })
+const PERCENT_FINE = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 })
+
+/** A 0–100 reading as a percentage, one decimal below ten so a small one still moves. */
+function formatPercent(percent: number): string {
+  return (percent < 10 ? PERCENT_FINE : PERCENT).format(percent / 100)
+}
+
 export function Meter({
   label,
   value,
@@ -1412,11 +1557,12 @@ export function Meter({
   return (
     <div className={`min-w-0 ${className ?? ''}`}>
       <div className="flex items-baseline gap-2">
-        <span className="label">{label}</span>
-        <span className="ml-auto font-mono text-[12.5px] text-fg tabular-nums">{value}</span>
-        <span className="font-mono text-[12px] text-faint tabular-nums">
-          {bounded ? `/ ${capacity}` : 'no limit'}
-        </span>
+        <span className="text-[12.5px] text-muted">{label}</span>
+        {bounded ? (
+          <span className="ml-auto font-mono text-[13px] font-semibold text-fg tabular-nums">
+            {formatPercent(percent)}
+          </span>
+        ) : null}
       </div>
       <div
         role="meter"
@@ -1425,14 +1571,14 @@ export function Meter({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuetext={bounded ? `${value} of ${capacity}` : value}
-        className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-raised"
+        className="mt-1.5 h-2 overflow-hidden rounded-full bg-raised"
       >
         {/* An unbounded reading gets a hatch rather than a fill: a full-width
             bar would read as "at capacity", which is the opposite of unknown. */}
         {bounded ? (
           <span
             aria-hidden="true"
-            className={`block h-full rounded-full ${TONE_DOT[tone]}`}
+            className={`block h-full rounded-full ${TONE_FILL[tone]}`}
             style={{ width: `${fill}%` }}
           />
         ) : (
@@ -1446,11 +1592,10 @@ export function Meter({
           />
         )}
       </div>
-      {bounded ? (
-        <p className="mt-1 font-mono text-[11px] text-faint tabular-nums">
-          {percent.toFixed(percent < 10 ? 1 : 0)}%
-        </p>
-      ) : null}
+      <p className="mt-1.5 flex items-baseline gap-1.5 text-[12px] text-faint">
+        <span className="font-mono text-fg tabular-nums">{value}</span>
+        <span className="font-mono tabular-nums">{bounded ? `/ ${capacity}` : 'no limit'}</span>
+      </p>
     </div>
   )
 }
@@ -1488,9 +1633,9 @@ export function MiniMeter({
   return (
     <div
       title={title}
-      className={`grid grid-cols-[26px_minmax(0,1fr)_34px] items-center gap-x-2 ${className ?? ''}`}
+      className={`grid grid-cols-[30px_minmax(0,1fr)_36px] items-center gap-x-2 ${className ?? ''}`}
     >
-      <span className="font-mono text-[9.5px] tracking-[0.1em] text-faint uppercase">{label}</span>
+      <span className="text-[11.5px] font-medium text-faint">{label}</span>
       <span
         role="meter"
         aria-label={label}
@@ -1498,12 +1643,12 @@ export function MiniMeter({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuetext={title ?? (bounded ? `${Math.round(percent)}%` : 'not reported')}
-        className="h-[3px] overflow-hidden rounded-full bg-raised"
+        className="h-1.5 overflow-hidden rounded-full bg-raised"
       >
         {bounded ? (
           <span
             aria-hidden="true"
-            className={`block h-full rounded-full ${TONE_DOT[tone]}`}
+            className={`block h-full rounded-full ${TONE_FILL[tone]}`}
             style={{ width: `${fill}%` }}
           />
         ) : (
@@ -1517,8 +1662,8 @@ export function MiniMeter({
           />
         )}
       </span>
-      <span className="text-right font-mono text-[11px] text-muted tabular-nums">
-        {bounded ? `${percent.toFixed(percent < 10 ? 1 : 0)}%` : '—'}
+      <span className="text-right font-mono text-[11.5px] font-semibold text-fg tabular-nums">
+        {bounded ? formatPercent(percent) : '—'}
       </span>
     </div>
   )

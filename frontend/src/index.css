@@ -296,6 +296,8 @@
   --deck-on-state: #ffffff;
 
   --deck-shadow: 0 1px 2px rgb(15 19 26 / 0.05), 0 8px 24px -16px rgb(15 19 26 / 0.28);
+  /* What sits between the page and an overlay over it. */
+  --deck-scrim: rgb(15 19 26 / 0.45);
   --deck-shadow-lift: 0 2px 4px rgb(15 19 26 / 0.06), 0 18px 40px -20px rgb(15 19 26 / 0.35);
 
   /*
@@ -395,6 +397,7 @@
   --deck-on-state: #14161a;
 
   --deck-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  --deck-scrim: rgb(0 0 0 / 0.6);
   --deck-shadow-lift: 0 2px 6px rgb(0 0 0 / 0.45), 0 20px 44px -24px rgb(0 0 0 / 0.7);
 
   /* The same eight hues, stepped for the dark surface — a selected dark palette,
@@ -467,6 +470,8 @@
   --radius-card: 12px;
   --radius-control: 8px;
   --radius-chip: 6px;
+
+  --color-scrim: var(--deck-scrim);
 
   --shadow-deck: var(--deck-shadow);
   --shadow-lift: var(--deck-shadow-lift);
@@ -637,6 +642,7 @@
   background: var(--deck-surface);
   border: 1px solid var(--deck-border);
   border-radius: var(--radius-card);
+  box-shadow: var(--deck-shadow);
 }
 
 /* The slab's plate: ink into moss, a lime glow in the top-right corner. */
