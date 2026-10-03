@@ -240,7 +240,12 @@ asking why, and changing it is one investigation rather than three:
   says who grants it. On an Ingress, HTTPRoute,
   VirtualService or Service it opens with the **traffic map** — see
   [The traffic map](#the-traffic-map) below — because where a route sends its
-  traffic is the first thing a route is opened for.
+  traffic is the first thing a route is opened for. On a Deployment,
+  StatefulSet, DaemonSet, pod, Job, CronJob or volume claim it has an
+  **Alerts** panel: what the cluster's Alertmanager is firing for the object,
+  with **Silence**, and the alarms kubemg wrote for it. **Create alarm**, there
+  and in the drawer's footer, writes one — see
+  [Alerts and alarms](../observability/alerts.md).
 - **Describe & Events** — metadata, `status.conditions`, a bounded flatten of
   `spec`/`status`, and the cluster's own events against the object, newest
   first (unlike `kubectl describe`, which prints oldest first) — because a

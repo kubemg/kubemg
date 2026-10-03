@@ -1,6 +1,7 @@
 import { type ReactNode, Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import {
   Ban,
+  BellPlus,
   Box,
   Bug,
   CalendarClock,
@@ -19,6 +20,7 @@ import {
 import { errorMessage, fetchResourceDescribe } from '../api/client'
 import { useLiveTick } from '../lib/live'
 import type {
+  Alarm,
   Cluster,
   DebugContainerResult,
   HelmRelease,
@@ -34,6 +36,10 @@ import type { SelectedRow } from '../lib/selection'
 import { selectionKey } from '../lib/selection'
 import { podTone, type Tone } from '../lib/status'
 import { DebugContainerSheet } from './DebugContainerSheet'
+import { AlarmComposer } from './AlarmComposer'
+import type { AlarmTarget } from './AlarmComposer'
+import { ObjectAlertsPanel } from './ObjectAlertsPanel'
+import { supportsAlarms } from '../lib/alerting'
 import { HelmHistoryPanel } from './HelmHistoryPanel'
 import { HelmValuesPanel } from './HelmValuesPanel'
 import { LogExplorer } from './LogExplorer'
@@ -244,6 +250,22 @@ export function ResourceDetailDrawer({
   const capability = workloadCapability(target.kind)
 
   /*
+   * "Create an alarm for this": the composer opens over the tabs like Scale
+   * does, from the footer or from the Overview's Alerts panel. The revision
+   * re-reads that panel's alarm list once one is saved.
+   */
+  const alarmTarget: AlarmTarget | null =
+    supportsAlarms(target.kind) && target.namespace && !target.release
+      ? { kind: target.kind, label: target.label, name: target.name, namespace: target.namespace }
+      : null
+  const [alarmEditor, setAlarmEditor] = useState<{ editing: Alarm | null } | null>(null)
+  const [alarmRevision, setAlarmRevision] = useState(0)
+  const openAlarm = (editing: Alarm | null) => {
+    setAlarmEditor({ editing })
+    setAction(null)
+  }
+
+  /*
    * A workload's logs are its pods' logs. Almost nothing anyone asks of a log is
    * about one pod — a Deployment fails on one replica out of ten, and finding
    * which one meant opening ten drawers — so a workload gets the same tab, backed
@@ -411,6 +433,16 @@ export function ResourceDetailDrawer({
               Scale
             </Button>
           ) : null}
+          {alarmTarget ? (
+            <Button
+              type="button"
+              variant={alarmEditor ? 'primary' : 'secondary'}
+              onClick={() => (alarmEditor ? setAlarmEditor(null) : openAlarm(null))}
+            >
+              <BellPlus aria-hidden="true" className="size-4" />
+              Create alarm
+            </Button>
+          ) : null}
           {capability?.restart ? (
             <Button
               type="button"
@@ -533,6 +565,23 @@ export function ResourceDetailDrawer({
       {/* The pending write, above whichever tab is open rather than over it:
           the events and conditions that are the reason for acting stay on
           screen while the action is confirmed. */}
+      {alarmTarget && alarmEditor ? (
+        <AlarmComposer
+          key={alarmEditor.editing?.name ?? 'new'}
+          cluster={cluster}
+          target={alarmTarget}
+          editing={alarmEditor.editing}
+          conditions={describe?.conditions}
+          pod={pod}
+          onClose={() => setAlarmEditor(null)}
+          onSaved={() => {
+            setAlarmEditor(null)
+            setAlarmRevision((value) => value + 1)
+            if (tab !== 'overview') setTab('overview')
+          }}
+        />
+      ) : null}
+
       {actionTarget ? (
         <WorkloadActionPanel
           cluster={cluster}
@@ -591,6 +640,16 @@ export function ResourceDetailDrawer({
             onOpen?.({ kind: 'pods', label: 'Pod', name: row.name, namespace: row.namespace, pod: row })
           }
           onOpen={onOpen}
+          alarms={
+            alarmTarget
+              ? {
+                  target: alarmTarget,
+                  revision: alarmRevision,
+                  onCreate: () => openAlarm(null),
+                  onEdit: (alarm) => openAlarm(alarm),
+                }
+              : undefined
+          }
         />
       ) : null}
 
@@ -754,6 +813,7 @@ function OverviewTab({
   namespace,
   onOpenPod,
   onOpen,
+  alarms,
 }: {
   cluster: Cluster
   pod?: Pod
@@ -767,6 +827,13 @@ function OverviewTab({
   onOpenPod: (pod: Pod) => void
   /** Opens a hop of the traffic map in this same drawer. */
   onOpen?: (target: DetailTarget) => void
+  /** The Alerts panel, for a kind alarms can be written for. */
+  alarms?: {
+    target: AlarmTarget
+    revision: number
+    onCreate: () => void
+    onEdit: (alarm: Alarm) => void
+  }
 }) {
   if (loading && !describe) return <p className="text-[13px] text-muted">Reading the object…</p>
   if (!describe) return null
@@ -794,6 +861,19 @@ function OverviewTab({
           using against its own limit, and how often it has restarted. The list
           row already carries all of it. */}
       {pod ? <PodOverview cluster={cluster} pod={pod} /> : null}
+
+      {/* Whether anything is firing for this object is the question an
+          unhealthy object is opened with, so it sits with the facts — and it
+          is where "create an alarm for this" lives. */}
+      {alarms ? (
+        <ObjectAlertsPanel
+          cluster={cluster}
+          revision={alarms.revision}
+          target={alarms.target}
+          onCreate={alarms.onCreate}
+          onEdit={alarms.onEdit}
+        />
+      ) : null}
 
       {/* A ConfigMap or a Secret is opened for what it holds, not for its
           metadata — so that leads, one key at a time. */}

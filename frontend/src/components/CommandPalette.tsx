@@ -58,6 +58,13 @@ function clusterViewTargets(cluster: Cluster): CommandTarget[] {
       cluster,
     })
     views.push({
+      id: `cluster-${cluster.id}-alerts`,
+      label: `${cluster.name} — Alerts`,
+      hint: 'Cluster · Alerts',
+      to: clusterPageHref(cluster.id, 'alerts'),
+      cluster,
+    })
+    views.push({
       id: `cluster-${cluster.id}-capacity`,
       label: `${cluster.name} — Capacity`,
       hint: 'Cluster · Capacity',

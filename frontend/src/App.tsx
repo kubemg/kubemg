@@ -8,6 +8,7 @@ import { ClusterManagement } from './pages/ClusterManagement'
 import { ClusterSummary } from './pages/ClusterSummary'
 import { ClusterWizard } from './pages/ClusterWizard'
 import { EventsTimeline } from './pages/EventsTimeline'
+import { ClusterAlerts } from './pages/ClusterAlerts'
 import { Explore } from './pages/Explore'
 import { GroupManagement } from './pages/GroupManagement'
 import { Login } from './pages/Login'
@@ -302,6 +303,16 @@ export default function App() {
               element={
                 <RequireAuth>
                   <EventsTimeline />
+                </RequireAuth>
+              }
+            />
+            {/* What the cluster's Alertmanager is firing, the alarms kubemg
+                wrote into it and what is silenced — narrowed to the grant. */}
+            <Route
+              path="/clusters/:id/alerts"
+              element={
+                <RequireAuth>
+                  <ClusterAlerts />
                 </RequireAuth>
               }
             />

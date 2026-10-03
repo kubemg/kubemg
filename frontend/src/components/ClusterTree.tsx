@@ -16,6 +16,7 @@ import {
   ShieldAlert,
   SlidersHorizontal,
   Siren,
+  BellRing,
   Star,
   TriangleAlert,
   Waypoints,
@@ -98,6 +99,7 @@ function startsCollapsed(id: CategoryId): boolean {
 const PAGE_ROWS: readonly { page: ClusterPage; label: string; icon: typeof Gauge }[] = [
   { page: 'dashboard', label: 'Dashboard', icon: Gauge },
   { page: 'events', label: 'Events', icon: Siren },
+  { page: 'alerts', label: 'Alerts', icon: BellRing },
   { page: 'capacity', label: 'Capacity', icon: Cpu },
   { page: 'security', label: 'Security', icon: ShieldAlert },
   { page: 'audit', label: 'Audit trail', icon: ScrollText },

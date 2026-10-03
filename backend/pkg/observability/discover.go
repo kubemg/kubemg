@@ -116,6 +116,12 @@ var signatures = []signature{
 		names:    []string{"loki"},
 		ports:    []int32{3100, 80, 8080},
 	},
+	{
+		kind:     db.SourceAlerts,
+		provider: db.ProviderAlertmanager,
+		names:    []string{"alertmanager"},
+		ports:    []int32{9093},
+	},
 }
 
 // excluded are Services that carry a provider's name without serving its query
@@ -155,11 +161,11 @@ func Discover(services []ServiceRef) []Candidate {
 
 	for _, service := range services {
 		name := strings.ToLower(service.Name)
-		if isExcluded(name) {
-			continue
-		}
 
 		for _, sig := range signatures {
+			if isExcluded(name, sig.kind) {
+				continue
+			}
 			if !matchesName(name, sig.names) {
 				continue
 			}
@@ -205,8 +211,15 @@ func Discover(services []ServiceRef) []Candidate {
 	return out
 }
 
-func isExcluded(name string) bool {
+// isExcluded applies the list to the metrics and logs signatures. An
+// Alertmanager is excluded from those and is exactly what the alerts one is
+// looking for — though not its headless "-operated" twin, which the rest of
+// the list still catches.
+func isExcluded(name, kind string) bool {
 	for _, fragment := range excluded {
+		if kind == db.SourceAlerts && fragment == "alertmanager" {
+			continue
+		}
 		if strings.Contains(name, fragment) {
 			return true
 		}
