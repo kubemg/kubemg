@@ -6,15 +6,15 @@ Pin an explicit tag rather than tracking `latest`, in both places a version
 appears:
 
 - The management plane image, `KUBEMG_IMAGE`/`KUBEMG_VERSION`
-  (`ghcr.io/kubemg/kubemg:0.12.0`) in Compose, or the `image:` field of the
+  (`ghcr.io/kubemg/kubemg:0.13.0`) in Compose, or the `image:` field of the
   Deployment in Kubernetes.
-- The agent image, `KUBEMG_AGENT_IMAGE` (`ghcr.io/kubemg/kubemg-agent:0.12.0`),
+- The agent image, `KUBEMG_AGENT_IMAGE` (`ghcr.io/kubemg/kubemg-agent:0.13.0`),
   written into every rendered agent install manifest by the management
   plane, so bumping it here is what changes what a *future* `kubectl apply -k
   …` installs — it does not touch agents already running.
 
 - The browser shell image, `KUBEMG_SHELL_IMAGE`
-  (`ghcr.io/kubemg/kubemg-shell:0.12.0`), which a shell pod runs on a target
+  (`ghcr.io/kubemg/kubemg-shell:0.13.0`), which a shell pod runs on a target
   cluster. Like the agent image it is read when a shell is *started*, so
   bumping it changes the next shell rather than one already open.
 
@@ -176,6 +176,18 @@ page, written as the steps to take, in order:
     It also adds the [Helm chart](kubernetes.md) and an image pull secret for an
     authenticated mirror ([Air-gapped installs](air-gapped.md)). The secret
     reaches an agent through the same re-apply.
+- 0.13.0, from 0.12.x, needs no schema step — the new columns are added at
+  boot — and the agent binary is unchanged, but asks one thing:
+    - **Re-apply every agent's install package** if anyone will create
+      [alarms](../observability/alerts.md). The agent's roles gain
+      `prometheusrules` (see
+      [above](#when-agents-must-re-apply-their-manifests)); until you
+      re-apply, everything else works and creating an alarm fails with the
+      cluster's own `403`.
+
+    It also adds Alertmanager as a third datasource kind (*alerts*), Okta as
+    its own identity provider type, and the namespace block on Explore's
+    workload lists. None of them needs anything at upgrade time.
 
 An install that runs from a clone of the repository rather than from the
 published images has one more thing to get right. See
@@ -210,7 +222,7 @@ Two things a rollback does **not** undo:
 ## Documentation versioning
 
 This manual is versioned against release tags on Read the Docs: an install
-running `0.12.0` corresponds to the `0.12.0` version of these docs, not
+running `0.13.0` corresponds to the `0.13.0` version of these docs, not
 whatever `master` says today. If you're following a procedure here, check
 the version selector matches the version you're actually running.
 

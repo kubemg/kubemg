@@ -95,8 +95,8 @@ If you are **changing the code**, start at [Developer guide](dev/index.md) and
 ## Versions
 
 This manual is versioned against the release tags. The version selector at the
-bottom of the sidebar switches between them — an install running 0.12.0 should
-read the 0.12.0 pages, because a setting introduced after that tag is not a
+bottom of the sidebar switches between them — an install running 0.13.0 should
+read the 0.13.0 pages, because a setting introduced after that tag is not a
 setting that install has.
 
 ## Licensing
