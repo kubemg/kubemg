@@ -1380,6 +1380,7 @@ export function Sheet({
   footer,
   onSubmit,
   width = 'md',
+  canvas = false,
 }: {
   title: ReactNode
   eyebrow?: string
@@ -1389,6 +1390,12 @@ export function Sheet({
   /** When given, the body is wrapped in a form so Enter submits. */
   onSubmit?: (event: React.FormEvent<HTMLFormElement>) => void
   width?: SheetWidth
+  /**
+   * Lays the body on the page's own background rather than the sheet's
+   * surface, for a sheet whose body is a stack of cards — the object drawer —
+   * so each card reads as one on the deck instead of an outline on a sheet.
+   */
+  canvas?: boolean
 }) {
   const titleId = useId()
   const panel = useRef<HTMLDivElement | null>(null)
@@ -1414,7 +1421,11 @@ export function Sheet({
     <>
       {/* The sheet's body is its own scrollport, so a table in here pins at its
           top rather than under the page header it cannot see. */}
-      <div className="flex flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-5 py-4 [--table-heading-position:relative]">
+      <div
+        className={`flex flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-5 py-4 [--table-heading-position:relative] ${
+          canvas ? 'bg-bg' : ''
+        }`}
+      >
         {children}
       </div>
       {footer ? (
