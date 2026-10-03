@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import {
   AlertTriangle,
+  ArrowUpRight,
   Boxes,
   CalendarClock,
   ChevronRight,
@@ -38,15 +39,17 @@ import { JitRequestModal } from '../components/jit/JitRequestModal'
 import { KubeconfigDrawer } from '../components/KubeconfigDrawer'
 import {
   Age,
+  ArcGauge,
   Button,
   ClusterState,
   Disclosure,
-  Meter,
+  LinkButton,
   Notice,
   Panel,
   StatTile,
+  TickMeter,
 } from '../components/primitives'
-import { CardSkeleton, MeterGridSkeleton } from '../components/SkeletonLoader'
+import { CardSkeleton, SkeletonBlock } from '../components/SkeletonLoader'
 import { useDisclosureState } from '../lib/disclosures'
 import { isBehind, newestAgentVersion } from '../lib/fleet'
 import { useLiveTick } from '../lib/live'
@@ -465,47 +468,20 @@ function AdminDashboard({ cluster, username }: { cluster: Cluster; username: str
         <Notice tone="error">{cluster.status_message}</Notice>
       ) : null}
 
-      {/* Capacity only exists for a cluster KubeMG can actually read
-          through, which is the agent path. */}
-      {viaAgent ? <Capacity cluster={cluster} /> : null}
-
-      {/* Capacity above is a live sample and nothing more; this is where
-          the history behind it comes from, wired per cluster. */}
-      <DatasourcePanel cluster={cluster} />
-
-      {/* And where the questions this console does not answer are
-          answered. It sits under the datasource because that is what most
-          of it is derived from — and it is a link rather than an embed on
-          purpose: KubeMG stores no session for another tool. */}
-      <ConsolesPanel cluster={cluster} />
-
-      {/* And what everybody browsing this cluster is offered when they get
-          there. It only exists for a cluster KubeMG can read the CRDs of,
-          which is the agent path — and it curates the navigation, never the
-          access: the cluster's own RBAC still answers every read. */}
-      {viaAgent ? <CrdVisibilityPanel cluster={cluster} /> : null}
-
-      {/* And this is that history, once there is somewhere to read it
-          from. It sits directly under the datasource that answers it, so
-          a chart that says "no datasource" is next to the form that fixes
-          that rather than on some other page. */}
+      {/* Usage only exists for a cluster KubeMG can actually read through,
+          which is the agent path. The live sample leads, and the history
+          behind it sits directly under it — one question, "how loaded is
+          this cluster", answered now and then over time. */}
       {viaAgent ? (
         <section className="flex flex-col gap-3">
+          <Capacity cluster={cluster} />
           {/* CPU and memory are read together — a spike in one is only worth
               anything beside the other at the same instant — so where there is
               room they sit side by side rather than a screen apart. Below xl
               they stack: half of a narrow column is not a chart. */}
           <div className="grid gap-3 xl:grid-cols-2">
-            <MetricsChart
-              cluster={cluster}
-              title="Cluster CPU"
-              metric="cluster_cpu"
-            />
-            <MetricsChart
-              cluster={cluster}
-              title="Cluster memory"
-              metric="cluster_memory"
-            />
+            <MetricsChart cluster={cluster} title="Cluster CPU" metric="cluster_cpu" />
+            <MetricsChart cluster={cluster} title="Cluster memory" metric="cluster_memory" />
           </div>
           {/* The charts say what shape the cluster is in. This says what
               is worst inside it and whether that is new, which is the
@@ -515,6 +491,23 @@ function AdminDashboard({ cluster, username }: { cluster: Cluster; username: str
           <MetricComparison cluster={cluster} kinds={CLUSTER_READINGS} />
         </section>
       ) : null}
+
+      {/* Everything this cluster is wired to, in one card: where its history
+          and alerts are read from (the charts above say "no datasource" until
+          this is filled in), the other consoles it is operated from — links,
+          never embeds, since kubemg stores no session for another tool — and
+          what its Explore sidebar offers. The last only exists for a cluster
+          KubeMG can read the CRDs of, which is the agent path, and it curates
+          the navigation, never the access. */}
+      <Panel
+        title="Integrations"
+        description="What this cluster is wired to: where its history and alerts come from, the other tools it is operated from, and what its Explore sidebar offers."
+        bodyClassName="flex flex-col gap-7 p-5"
+      >
+        <DatasourcePanel cluster={cluster} bare />
+        <ConsolesPanel cluster={cluster} bare />
+        {viaAgent ? <CrdVisibilityPanel cluster={cluster} bare /> : null}
+      </Panel>
 
       <AccessPath cluster={cluster} username={username} />
 
@@ -662,13 +655,15 @@ function WorkloadDashboard({ cluster, username }: { cluster: Cluster; username: 
 /**
  * Capacity is what the cluster is actually using, read from its own Metrics
  * API through the same audited tunnel as everything else. It leads with the
- * cluster total, because the first question is whether the cluster has room;
- * the per-node rows underneath answer the second one, which is whether that
- * room is where the work is.
+ * cluster total as two dials, because the first question is whether the
+ * cluster has room; the node list beside them answers the second one, which is
+ * whether that room is where the work is — hottest node first, so the one that
+ * matters is never below the fold of a long list.
  *
  * There is no chart here on purpose: metrics-server keeps a sliding window of
  * a couple of minutes, so there is no series to draw and pretending otherwise
- * would invent history the cluster does not have.
+ * would invent history the cluster does not have. The dials are meters, one
+ * sample each; the history sits under this panel, read from a datasource.
  */
 function Capacity({ cluster }: { cluster: Cluster }) {
   const [metrics, setMetrics] = useState<NodeMetrics | null>(null)
@@ -713,80 +708,118 @@ function Capacity({ cluster }: { cluster: Cluster }) {
   useLiveTick(useCallback(() => read(true), [read]))
 
   const summary = metrics?.summary
+  const nodes = [...(metrics?.nodes ?? [])].sort(
+    (a, b) =>
+      Math.max(b.cpu_percent, b.memory_percent) - Math.max(a.cpu_percent, a.memory_percent) ||
+      a.name.localeCompare(b.name),
+  )
 
   return (
     <Panel
-      title="Capacity"
+      title="Usage"
       eyebrow="Live"
-      description="Current consumption against allocatable capacity, read from the cluster's Metrics API."
+      description="What the cluster is consuming right now against allocatable, read from its Metrics API. What has been reserved — which decides whether anything more will schedule — is on Capacity."
+      actions={
+        <LinkButton to={`/clusters/${cluster.id}/capacity`} size="sm">
+          Capacity
+          <ArrowUpRight aria-hidden="true" className="size-3.5" />
+        </LinkButton>
+      }
       bodyClassName="flex flex-col gap-4 p-4"
     >
       {error ? <Notice tone="error">{error}</Notice> : null}
       {!error && metrics && !metrics.available ? (
         <Notice tone="info">{metrics.reason}</Notice>
       ) : null}
-      {/* Two meters, at the height two meters occupy: the panel does not grow
-          when the first sample lands. */}
-      {loading && !metrics ? <MeterGridSkeleton count={2} /> : null}
+      {/* The dials and the list, at the height they occupy: the panel does
+          not grow when the first sample lands. */}
+      {loading && !metrics ? (
+        <div role="status" aria-busy="true" className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.7fr)]">
+          <span className="sr-only">Reading usage…</span>
+          <SkeletonBlock className="h-[252px] rounded-card" />
+          <SkeletonBlock className="h-[252px] rounded-card" />
+          <SkeletonBlock className="h-[252px] rounded-card" />
+        </div>
+      ) : null}
 
       {metrics?.available && summary ? (
-        <>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Meter
-              label={`CPU across ${summary.nodes} ${summary.nodes === 1 ? 'node' : 'nodes'}`}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.7fr)]">
+          <div className={GAUGE_CARD}>
+            <ArcGauge
+              label="CPU"
               value={formatCPU(summary.cpu_millicores)}
               percent={summary.cpu_percent}
               capacity={formatCPU(summary.cpu_capacity_millicores)}
+              free={formatCPU(summary.cpu_capacity_millicores - summary.cpu_millicores)}
             />
-            <Meter
+          </div>
+          <div className={GAUGE_CARD}>
+            <ArcGauge
               label="Memory"
               value={formatMemory(summary.memory_bytes)}
               percent={summary.memory_percent}
               capacity={formatMemory(summary.memory_capacity_bytes)}
+              free={formatMemory(summary.memory_capacity_bytes - summary.memory_bytes)}
             />
           </div>
 
-          <ul className="flex flex-col gap-3 border-t border-line-soft pt-4">
-            {metrics.nodes.map((node) => (
-              <li key={node.name} className="flex flex-col gap-2">
-                <span className="truncate font-data text-[13px] text-fg" title={node.name}>
-                  {node.name}
-                </span>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Meter
+          <section
+            aria-label="Usage per node"
+            className="flex min-w-0 flex-col rounded-card border border-line-soft sm:col-span-2 lg:col-span-1"
+          >
+            <header className="flex items-baseline gap-2 border-b border-line-soft px-4 py-3">
+              <span className="text-[13.5px] font-semibold text-fg">Nodes</span>
+              <span className="font-data text-[12.5px] text-muted tabular-nums">{summary.nodes}</span>
+              {nodes.length > 1 ? (
+                <span className="ml-auto text-[12px] text-faint">busiest first</span>
+              ) : null}
+            </header>
+            <ul className="flex max-h-[212px] flex-col overflow-y-auto">
+              {nodes.map((node) => (
+                <li
+                  key={node.name}
+                  className="flex flex-col gap-2 border-t border-line-soft px-4 py-3 first:border-t-0"
+                >
+                  <span className="truncate font-data text-[13px] font-medium text-fg" title={node.name}>
+                    {node.name}
+                  </span>
+                  <TickMeter
                     label="CPU"
-                    value={formatCPU(node.cpu_millicores)}
                     percent={node.cpu_percent}
-                    capacity={formatCPU(node.cpu_capacity_millicores)}
+                    detail={`${formatCPU(node.cpu_millicores)} / ${formatCPU(node.cpu_capacity_millicores)}`}
+                    title={`${formatCPU(node.cpu_millicores)} of ${formatCPU(node.cpu_capacity_millicores)}`}
                   />
-                  <Meter
+                  <TickMeter
                     label="Memory"
-                    value={formatMemory(node.memory_bytes)}
                     percent={node.memory_percent}
-                    capacity={formatMemory(node.memory_capacity_bytes)}
+                    detail={`${formatMemory(node.memory_bytes)} / ${formatMemory(node.memory_capacity_bytes)}`}
+                    title={`${formatMemory(node.memory_bytes)} of ${formatMemory(node.memory_capacity_bytes)}`}
                   />
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          {/* Consumption is half the story and the half that explains least: a
-              node idle here can still be one the scheduler will not place
-              anything on. The page that answers that is one hop away rather
-              than folded in, because it is a different question. */}
-          <p className="border-t border-line-soft pt-4 text-[12px] leading-relaxed text-muted">
-            This is what the cluster is using.{' '}
-            <Link to={`/clusters/${cluster.id}/capacity`} className="text-accent hover:underline">
-              Capacity
-            </Link>{' '}
-            shows what has already been reserved, which is what decides whether anything more will
-            schedule.
-          </p>
-        </>
+                </li>
+              ))}
+            </ul>
+            {/* The dials mark their thresholds on the rim; this says what the
+                marks are, once, rather than leaving two dots to be guessed. */}
+            <p className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line-soft px-4 py-2.5 text-[12px] text-faint">
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden="true" className="size-1.5 rounded-full bg-warn" />
+                75% worth a look
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden="true" className="size-1.5 rounded-full bg-danger" />
+                90% near full
+              </span>
+            </p>
+          </section>
+        </div>
       ) : null}
     </Panel>
   )
 }
+
+/** The plate a dial sits on: the stat tile's fade, without its glyph. */
+const GAUGE_CARD =
+  'flex min-w-0 items-center justify-center rounded-card border border-line-soft bg-linear-to-b from-raised/70 to-surface px-4 pt-3 pb-4'
 
 /**
  * AccessPath is the chain that decides what access to this cluster can do: who

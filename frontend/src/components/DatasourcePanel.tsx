@@ -48,6 +48,7 @@ import {
 } from '../lib/datasources'
 import { datasourceUILabel } from '../lib/consoles'
 import { relativeAge } from '../lib/time'
+import { INTEGRATION_GRID, IntegrationGroup, IntegrationTile } from './IntegrationTile'
 import {
   Button,
   Field,
@@ -79,10 +80,13 @@ export function DatasourcePanel({
   cluster,
   eyebrow = 'Observability',
   className,
+  bare = false,
 }: {
   cluster: Cluster
   eyebrow?: string
   className?: string
+  /** Drawn as a group inside somebody else's panel rather than as its own. */
+  bare?: boolean
 }) {
   const [state, setState] = useState<ObservabilityResponse | null>(null)
   const [candidates, setCandidates] = useState<DatasourceCandidate[] | null>(null)
@@ -158,33 +162,24 @@ export function DatasourcePanel({
 
   const editable = state?.editable ?? false
 
-  return (
-    <Panel
-      eyebrow={eyebrow}
-      title="Metrics, logs & alerts"
-      description="Where this cluster's history and alerts live. kubemg's live meters read the cluster's own Metrics API, which keeps about two minutes — anything over time comes from here."
-      className={className}
-      actions={
-        editable && viaTunnel ? (
-          <Button onClick={scan} disabled={scanning}>
-            <Search aria-hidden="true" className={`size-4 ${scanning ? 'animate-pulse' : ''}`} />
-            {scanning ? 'Scanning…' : 'Scan cluster'}
-          </Button>
-        ) : null
-      }
-    >
-      <div className="flex flex-col">
-        {error ? (
-          <div className="p-4 pb-0">
-            <Notice tone="error">{error}</Notice>
-          </div>
-        ) : null}
+  const scanButton =
+    editable && viaTunnel ? (
+      <Button size={bare ? 'sm' : 'md'} onClick={scan} disabled={scanning}>
+        <Search aria-hidden="true" className={`size-4 ${scanning ? 'animate-pulse' : ''}`} />
+        {scanning ? 'Scanning…' : 'Scan cluster'}
+      </Button>
+    ) : null
 
-        {loading ? (
-          <p className="px-4 py-6 text-[13px] text-muted">Loading…</p>
-        ) : (
-          DATASOURCE_KINDS.map((kind) => (
-            <SourceRow
+  const body = (
+    <>
+      {error ? <Notice tone="error">{error}</Notice> : null}
+
+      {loading ? (
+        <p className="py-2 text-[13px] text-muted">Loading…</p>
+      ) : (
+        <div className={INTEGRATION_GRID}>
+          {DATASOURCE_KINDS.map((kind) => (
+            <SourceTile
               key={kind}
               kind={kind}
               source={sources.get(kind)}
@@ -194,49 +189,82 @@ export function DatasourcePanel({
               onCheck={() => recheck(kind)}
               onRemove={() => remove(kind)}
             />
-          ))
-        )}
+          ))}
+        </div>
+      )}
 
-        {candidates ? (
-          <Discovered
-            candidates={candidates}
-            onDismiss={() => setCandidates(null)}
-            onPick={(candidate) => setEditing(candidate.kind)}
-            picked={editing}
-          />
-        ) : null}
-
-        {!loading && !viaTunnel && editable ? (
-          <p className="border-t border-line-soft px-4 py-3 text-[12px] leading-relaxed text-muted">
-            {cluster.connection_mode === 'agent'
-              ? 'No agent is attached right now, so kubemg cannot scan this cluster or reach a backend inside it. An external address still works.'
-              : 'This cluster is registered in direct mode and has no tunnel, so a datasource has to be one kubemg can dial itself.'}
-          </p>
-        ) : null}
-      </div>
-
-      {editing ? (
-        <DatasourceSheet
-          cluster={cluster}
-          kind={editing}
-          source={sources.get(editing) ?? null}
-          candidates={(candidates ?? []).filter((candidate) => candidate.kind === editing)}
-          canUseTunnel={viaTunnel}
-          onClose={() => setEditing(null)}
-          onSaved={async () => {
-            setEditing(null)
-            await load()
-          }}
+      {candidates ? (
+        <Discovered
+          candidates={candidates}
+          onDismiss={() => setCandidates(null)}
+          onPick={(candidate) => setEditing(candidate.kind)}
+          picked={editing}
         />
       ) : null}
+
+      {!loading && !viaTunnel && editable ? (
+        <p className="text-[12px] leading-relaxed text-muted">
+          {cluster.connection_mode === 'agent'
+            ? 'No agent is attached right now, so kubemg cannot scan this cluster or reach a backend inside it. An external address still works.'
+            : 'This cluster is registered in direct mode and has no tunnel, so a datasource has to be one kubemg can dial itself.'}
+        </p>
+      ) : null}
+    </>
+  )
+
+  const sheet = editing ? (
+    <DatasourceSheet
+      cluster={cluster}
+      kind={editing}
+      source={sources.get(editing) ?? null}
+      candidates={(candidates ?? []).filter((candidate) => candidate.kind === editing)}
+      canUseTunnel={viaTunnel}
+      onClose={() => setEditing(null)}
+      onSaved={async () => {
+        setEditing(null)
+        await load()
+      }}
+    />
+  ) : null
+
+  // Inside a panel that holds more than this — the cluster dashboard's
+  // integrations — the set is a group under its own heading, with the scan
+  // beside the tiles it fills in rather than at the top of somebody else's card.
+  if (bare) {
+    return (
+      <IntegrationGroup
+        title="Metrics, logs & alerts"
+        description="History and alerts past the two minutes the cluster’s own Metrics API keeps."
+        actions={scanButton}
+      >
+        {body}
+        {sheet}
+      </IntegrationGroup>
+    )
+  }
+
+  return (
+    <Panel
+      eyebrow={eyebrow}
+      title="Metrics, logs & alerts"
+      description={DESCRIPTION}
+      className={className}
+      actions={scanButton}
+      bodyClassName="flex flex-col gap-3 p-4"
+    >
+      {body}
+      {sheet}
     </Panel>
   )
 }
 
+const DESCRIPTION =
+  "Where this cluster's history and alerts live. kubemg's live meters read the cluster's own Metrics API, which keeps about two minutes — anything over time comes from here."
+
 const KIND_ICON = { metrics: Activity, logs: ScrollText, alerts: BellRing } as const
 
-/** SourceRow is one kind of datasource: connected, or the offer to connect it. */
-function SourceRow({
+/** SourceTile is one kind of datasource: connected, or the offer to connect it. */
+function SourceTile({
   kind,
   source,
   editable,
@@ -253,90 +281,95 @@ function SourceRow({
   onCheck: () => void
   onRemove: () => void
 }) {
-  const Icon = KIND_ICON[kind]
+  if (!source) {
+    return (
+      <IntegrationTile
+        icon={KIND_ICON[kind]}
+        title={KIND_LABEL[kind]}
+        wired={false}
+        state={
+          <Pill tone="idle" dot={false}>
+            Not connected
+          </Pill>
+        }
+        actions={
+          editable ? (
+            <Button size="sm" onClick={onEdit}>
+              <Plug aria-hidden="true" className="size-3.5" />
+              Connect
+            </Button>
+          ) : null
+        }
+      >
+        <p className="text-muted">{KIND_PURPOSE[kind]}</p>
+      </IntegrationTile>
+    )
+  }
 
   return (
-    <div className="flex flex-wrap items-center gap-3 border-t border-line-soft px-4 py-3 first:border-t-0">
-      <Icon aria-hidden="true" className="size-4 shrink-0 text-muted" />
-
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[13.5px] font-medium text-fg">{KIND_LABEL[kind]}</span>
-          {source ? (
-            <>
-              <span className="font-data text-[12.5px] text-muted">{source.provider_label}</span>
-              <Pill tone={sourceTone(source)} title={source.last_message}>
-                {sourceStateLabel(source)}
-              </Pill>
-              {source.detected_version ? (
-                <span className="font-data text-[11.5px] text-faint">{source.detected_version}</span>
-              ) : null}
-            </>
-          ) : (
-            <Pill tone="idle" dot={false}>
-              Not connected
-            </Pill>
-          )}
-        </div>
-
-        {source?.ui_url ? (
+    <IntegrationTile
+      icon={KIND_ICON[kind]}
+      title={KIND_LABEL[kind]}
+      wired
+      meta={
+        <>
+          <span className="font-data">{source.provider_label}</span>
+          {source.detected_version ? (
+            <span className="font-data text-faint"> · {source.detected_version}</span>
+          ) : null}
+        </>
+      }
+      state={
+        <Pill tone={sourceTone(source)} title={source.last_message}>
+          {sourceStateLabel(source)}
+        </Pill>
+      }
+      link={
+        source.ui_url ? (
           <a
             href={source.ui_url}
             target="_blank"
             rel="noreferrer noopener"
-            className="mt-1 inline-flex items-center gap-1.5 text-[12px] text-muted transition-colors hover:text-fg"
+            className="inline-flex max-w-full items-center gap-1.5 text-[12.5px] font-medium text-accent transition-colors hover:text-accent-hover"
             title={source.ui_url}
           >
-            <ExternalLink aria-hidden="true" className="size-3.5" />
-            Open {datasourceUILabel(source.provider)}
+            <span className="truncate">Open {datasourceUILabel(source.provider)}</span>
+            <ExternalLink aria-hidden="true" className="size-3.5 shrink-0" />
           </a>
-        ) : null}
-
-        {source ? (
-          <p className="mt-1 truncate font-data text-[12px] text-faint" title={source.endpoint}>
-            {source.endpoint}
-            {source.access_mode === 'in-cluster' ? ' · via tunnel' : ' · dialled from kubemg'}
-            {source.last_checked_at ? ` · checked ${relativeAge(source.last_checked_at)}` : null}
-          </p>
-        ) : (
-          <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted">
-            {KIND_PURPOSE[kind]}
-          </p>
-        )}
-
-        {source && source.last_status === 'unhealthy' && source.last_message ? (
-          <p className="mt-1.5 text-[12px] leading-relaxed text-warn">{source.last_message}</p>
-        ) : null}
-      </div>
-
-      {editable ? (
-        <div className="flex shrink-0 items-center gap-2">
-          {source ? (
-            <>
-              <IconButton label={`Check the ${kind} source`} onClick={onCheck} disabled={busy}>
-                <RefreshCw aria-hidden="true" className={`size-3.5 ${busy ? 'animate-spin' : ''}`} />
-              </IconButton>
-              <IconButton label={`Edit the ${kind} source`} onClick={onEdit} disabled={busy}>
-                <Pencil aria-hidden="true" className="size-3.5" />
-              </IconButton>
-              <IconButton
-                label={`Remove the ${kind} source`}
-                tone="danger"
-                onClick={onRemove}
-                disabled={busy}
-              >
-                <Trash2 aria-hidden="true" className="size-3.5" />
-              </IconButton>
-            </>
-          ) : (
-            <Button onClick={onEdit}>
-              <Plug aria-hidden="true" className="size-4" />
-              Connect
-            </Button>
-          )}
-        </div>
+        ) : null
+      }
+      actions={
+        editable ? (
+          <>
+            <IconButton label={`Check the ${kind} source`} onClick={onCheck} disabled={busy}>
+              <RefreshCw aria-hidden="true" className={`size-3.5 ${busy ? 'animate-spin' : ''}`} />
+            </IconButton>
+            <IconButton label={`Edit the ${kind} source`} onClick={onEdit} disabled={busy}>
+              <Pencil aria-hidden="true" className="size-3.5" />
+            </IconButton>
+            <IconButton
+              label={`Remove the ${kind} source`}
+              tone="danger"
+              onClick={onRemove}
+              disabled={busy}
+            >
+              <Trash2 aria-hidden="true" className="size-3.5" />
+            </IconButton>
+          </>
+        ) : null
+      }
+    >
+      <p className="truncate font-data text-fg" title={source.endpoint}>
+        {source.endpoint}
+      </p>
+      <p className="mt-0.5 text-faint">
+        {source.access_mode === 'in-cluster' ? 'via tunnel' : 'dialled from kubemg'}
+        {source.last_checked_at ? ` · checked ${relativeAge(source.last_checked_at)}` : null}
+      </p>
+      {source.last_status === 'unhealthy' && source.last_message ? (
+        <p className="mt-1.5 text-warn">{source.last_message}</p>
       ) : null}
-    </div>
+    </IntegrationTile>
   )
 }
 
@@ -357,7 +390,7 @@ function Discovered({
   picked: DatasourceKind | null
 }) {
   return (
-    <div className="border-t border-line-soft bg-raised/40">
+    <div className="rounded-card border border-line-soft bg-raised/40">
       <div className="flex items-center gap-2 px-4 py-2.5">
         <span className="label">Found in this cluster</span>
         <span className="ml-auto">
