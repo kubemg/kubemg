@@ -101,9 +101,8 @@ func TestRetireClosesTheTunnelAndSaysWhy(t *testing.T) {
 		t.Fatal("the retired agent was not hung up on")
 	}
 
-	states := h.store.recordedStates()
-	last := states[len(states)-1]
-	if last.Connected || !strings.Contains(last.StatusMessage, "rotated") {
+	last := waitForState(t, h, func(state db.AgentState) bool { return !state.Connected })
+	if !strings.Contains(last.StatusMessage, "rotated") {
 		t.Fatalf("the cluster should say its token was rotated, got %+v", last)
 	}
 	if h.gateway.Retire(1) {
