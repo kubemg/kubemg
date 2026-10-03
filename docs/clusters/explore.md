@@ -165,6 +165,31 @@ table beneath it.
   deriving one from endpoints it does not own would be a claim the list
   cannot back up.
 
+### The namespace block
+
+With **one namespace** selected, every list under *Workloads* (Pods,
+Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, ReplicaSets) adds a row
+under the bar that answers five questions about that namespace's pods. It is
+not drawn under *All namespaces*: these are readings of one namespace, and a
+cluster-wide equivalent would answer a different question.
+
+| Cell | What it shows | Where it comes from |
+|---|---|---|
+| **Consumption by workload** | A donut of live CPU or memory, one slice per workload — a Deployment's replicas are summed into the Deployment. Seven slices are named; the rest fold into *N more*. | The live Metrics API (metrics-server). No metrics-server → the cell says *No live sample* and why. |
+| **Restarts** | Total container restarts, how many pods they are spread across, and the worst three pods. On the pod list the figure narrows the table to restarting pods. | The pod list. |
+| **Image pull** | Pods with a container in `ImagePullBackOff`, `ErrImagePull` or `InvalidImageName`. | The pod list. |
+| **Throttled** | Pods throttled in more than **25%** of their CPU (CFS) periods over the header's time range — the threshold kube-prometheus's `CPUThrottlingHigh` alert uses. | The cluster's registered metrics datasource (cadvisor counters). No datasource → the cell says so instead of showing zero. |
+| **At limit** | Pods whose container's previous run ended `OOMKilled`, or whose live usage is at **90%** or more of a container's own CPU or memory limit. | The pod list, plus the live Metrics API for the usage half. A namespace where no pod declares a limit says so. |
+
+**Show usage history**, under the donut, opens the namespace's CPU and memory
+curve per pod over the header's time range, read from the cluster's metrics
+datasource. It is closed until opened, and the console remembers the choice in
+your browser. On a cluster with no datasource the opened region says so.
+
+Every pod a cell names opens in the same drawer as a row of the pod list.
+Where the block is drawn, the header's own restart count, live-usage figure and
+restart/image-pull alerts step aside, so nothing is said twice.
+
 ## Filters and paging
 
 A name filter narrows client-side over the loaded page. Every list read

@@ -55,6 +55,20 @@ type containerView struct {
 	CPULimitMillicores   int64 `json:"cpu_limit_millicores"`
 	MemoryRequestBytes   int64 `json:"memory_request_bytes"`
 	MemoryLimitBytes     int64 `json:"memory_limit_bytes"`
+	// LastTerminationReason is why the previous run of this container ended —
+	// `OOMKilled`, `Error`, `Completed` — and is empty for a container that has
+	// never been restarted. It is what "reached its limit" reads from when the
+	// container is Running again by the time anybody looks: a memory limit is
+	// enforced by the kernel killing the process, so the evidence is the
+	// previous run's ending, not the current state.
+	LastTerminationReason string `json:"last_termination_reason,omitempty"`
+}
+
+// podOwnerView names the workload a pod belongs to, so a namespace's usage can
+// be read per workload rather than per pod.
+type podOwnerView struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
 }
 
 type podView struct {
@@ -73,6 +87,9 @@ type podView struct {
 	// has started without opening an exec against it first and reading the
 	// failure. Always present, empty for a pod with none.
 	EphemeralContainers []ephemeralContainerView `json:"ephemeral_containers"`
+	// Owner is the pod's controlling workload, absent for a bare pod. See
+	// podOwner for the one step it takes past the controller reference.
+	Owner *podOwnerView `json:"owner,omitempty"`
 }
 
 // ephemeralContainerView reports one debug container's state. Kubernetes
@@ -531,9 +548,11 @@ func (s *server) scopedNamespace(c *gin.Context, grant db.UserClusterAccess, nam
 // podObject is the slice of a Kubernetes Pod the UI needs.
 type podObject struct {
 	Metadata struct {
-		Name              string    `json:"name"`
-		Namespace         string    `json:"namespace"`
-		CreationTimestamp time.Time `json:"creationTimestamp"`
+		Name              string            `json:"name"`
+		Namespace         string            `json:"namespace"`
+		CreationTimestamp time.Time         `json:"creationTimestamp"`
+		Labels            map[string]string `json:"labels"`
+		OwnerReferences   []ownerRef        `json:"ownerReferences"`
 	} `json:"metadata"`
 	Spec struct {
 		NodeName   string `json:"nodeName"`
@@ -557,6 +576,11 @@ type podObject struct {
 			State        map[string]struct {
 				Reason string `json:"reason"`
 			} `json:"state"`
+			LastState struct {
+				Terminated *struct {
+					Reason string `json:"reason"`
+				} `json:"terminated"`
+			} `json:"lastState"`
 		} `json:"containerStatuses"`
 		// EphemeralContainerStatuses is absent entirely until the first debug
 		// container is added — see debugPodContainer — and, unlike an ordinary
@@ -580,6 +604,7 @@ func (p podObject) view() podView {
 		Node:      p.Spec.NodeName,
 		PodIP:     p.Status.PodIP,
 		Created:   p.Metadata.CreationTimestamp,
+		Owner:     podOwner(p.Metadata.OwnerReferences, p.Metadata.Labels),
 	}
 
 	// Containers come from the spec so a pod that has not started yet still
@@ -594,13 +619,17 @@ func (p podObject) view() podView {
 			}
 			break
 		}
-		states[status.Name] = containerView{
+		view := containerView{
 			Name:     status.Name,
 			Image:    status.Image,
 			Ready:    status.Ready,
 			Restarts: status.RestartCount,
 			State:    state,
 		}
+		if status.LastState.Terminated != nil {
+			view.LastTerminationReason = status.LastState.Terminated.Reason
+		}
+		states[status.Name] = view
 		out.Restarts += status.RestartCount
 		if status.Ready {
 			out.Ready++
@@ -637,6 +666,30 @@ func (p podObject) view() podView {
 		out.EphemeralContainers = append(out.EphemeralContainers, view)
 	}
 	return out
+}
+
+// podOwner resolves a pod's controlling reference to the workload an operator
+// would name. It takes exactly one step past the reference, and only where the
+// step is certain without a read: a ReplicaSet whose pods carry
+// `pod-template-hash` was made by a Deployment, and the Deployment controller
+// names it `<deployment>-<hash>` — so trimming that suffix *is* the
+// Deployment's name. A ReplicaSet whose name does not end in its pods' hash was
+// made some other way and stays a ReplicaSet. A Job is never guessed up to a
+// CronJob: its name suffix is a schedule time, and a hand-made Job can look the
+// same.
+func podOwner(refs []ownerRef, labels map[string]string) *podOwnerView {
+	ref := controllerOf(refs)
+	if ref.Kind == "" {
+		return nil
+	}
+	if ref.Kind == "ReplicaSet" {
+		if hash := labels["pod-template-hash"]; hash != "" {
+			if trimmed, ok := strings.CutSuffix(ref.Name, "-"+hash); ok && trimmed != "" {
+				return &podOwnerView{Kind: "Deployment", Name: trimmed}
+			}
+		}
+	}
+	return &podOwnerView{Kind: ref.Kind, Name: ref.Name}
 }
 
 // kubeErrorMessage pulls the message out of a Kubernetes Status object, so a

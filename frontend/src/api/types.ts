@@ -645,6 +645,10 @@ export interface PodContainer {
   cpu_limit_millicores: number
   memory_request_bytes: number
   memory_limit_bytes: number
+  /** Why the previous run ended (`OOMKilled`, `Error`…); absent for a container
+      that has never restarted. A memory limit is enforced by the kernel killing
+      the process, so this is where "reached its limit" is read from. */
+  last_termination_reason?: string
 }
 
 /**
@@ -675,6 +679,14 @@ export interface Pod {
   /** Every debug container ever added to this pod, in whatever state it is
       currently in. Always present, empty for a pod with none. */
   ephemeral_containers: EphemeralContainerStatus[]
+  /** The controlling workload, absent for a bare pod. A Deployment's
+      ReplicaSet is resolved up to the Deployment by the server. */
+  owner?: PodOwner
+}
+
+export interface PodOwner {
+  kind: string
+  name: string
 }
 
 /**

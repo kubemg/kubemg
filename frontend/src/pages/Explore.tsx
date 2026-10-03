@@ -49,6 +49,7 @@ import { HelmUninstallSheet } from '../components/HelmUninstallSheet'
 import { SecretRevealSheet } from '../components/SecretRevealSheet'
 import { TemplateSheet } from '../components/TemplateSheet'
 import { InsightTrend } from '../components/InsightTrend'
+import { NamespaceSignals } from '../components/NamespaceSignals'
 import { LiveRefresh } from '../components/LiveRefresh'
 import { NetworkPolicyCoveragePanel } from '../components/NetworkPolicyCoveragePanel'
 import { ResourceDetailDrawer } from '../components/ResourceDetailDrawer'
@@ -454,6 +455,29 @@ function narrowToBucket(loaded: LoadedResource, bucket: InsightBucket | null): L
 }
 
 /**
+ * Whether the namespace's usage history is drawn under the pilot header. Closed
+ * until somebody opens it, then remembered the way the header's fold is: it is a
+ * statement about how much chrome somebody wants over a table, not page state.
+ */
+const TREND_KEY = 'kubemg_explore_trend_open'
+
+function readTrendOpen(): boolean {
+  try {
+    return localStorage.getItem(TREND_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeTrendOpen(open: boolean) {
+  try {
+    localStorage.setItem(TREND_KEY, open ? '1' : '0')
+  } catch {
+    /* a refused write costs only the memory of the choice */
+  }
+}
+
+/**
  * The namespace an operator last chose, kept across sessions. Someone working in
  * one namespace goes back to it every time they open Explore, and re-picking it
  * on every visit is the kind of friction a console should absorb. It is stored
@@ -565,6 +589,12 @@ export function Explore() {
   // both a way of reading one list, and neither is worth a link the way the
   // cluster, the resource and the namespace are.
   const [bucket, setBucket] = useState<InsightBucket | null>(null)
+  const [trendOpen, setTrendOpen] = useState(readTrendOpen)
+  function toggleTrend() {
+    const next = !trendOpen
+    setTrendOpen(next)
+    writeTrendOpen(next)
+  }
 
   /*
    * The checkbox column, and what is ticked in it.
@@ -941,16 +971,50 @@ export function Explore() {
    * A cluster with no datasource is deliberately *not* on that list: the region
    * appears and says so, because a band that changes shape depending on which
    * cluster is open is the thing this header was rebuilt to stop.
+   *
+   * Earning the region is not the same as drawing it: it stays closed until
+   * the namespace block's "Show usage history" opens it (`trendOpen`), because
+   * a full-width curve is the slowest read here and the least often wanted.
    */
-  const charts = loaded?.kind === 'pods' || loaded?.kind === 'workloads'
-  const trend =
-    cluster && charts && namespaced && namespace && !allNamespaces ? (
-      <InsightTrend
-        cluster={cluster}
-        namespace={namespace}
-        onConfigure={() => navigate(clusterPageHref(cluster.id, 'dashboard'))}
-      />
-    ) : undefined
+  const charts =
+    loaded?.kind === 'pods' ||
+    loaded?.kind === 'workloads' ||
+    loaded?.kind === 'jobs' ||
+    loaded?.kind === 'cronjobs' ||
+    loaded?.kind === 'replicasets'
+  const oneNamespace = cluster && charts && namespaced && namespace && !allNamespaces
+  const trend = oneNamespace && trendOpen ? (
+    <InsightTrend
+      cluster={cluster}
+      namespace={namespace}
+      onConfigure={() => navigate(clusterPageHref(cluster.id, 'dashboard'))}
+    />
+  ) : undefined
+  // The namespace block goes wherever the trend does, over every list whose
+  // objects own pods. Over the pod list it is handed the rows and the live
+  // sample already on screen; over the others it reads the namespace's pods
+  // itself. Its rows are pods whichever list is open, so they open as pods.
+  const signals = oneNamespace ? (
+    <NamespaceSignals
+      cluster={cluster}
+      namespace={namespace}
+      loaded={
+        loaded?.kind === 'pods'
+          ? { pods: loaded.rows, usage: loaded.usage, usageReason: loaded.usageReason }
+          : undefined
+      }
+      onOpenPod={(pod) =>
+        setDetail({ kind: 'pods', label: 'Pod', name: pod.name, namespace: pod.namespace, pod })
+      }
+      onRestarting={
+        loaded?.kind === 'pods'
+          ? () => setBucket(bucket === 'restarting' ? null : 'restarting')
+          : undefined
+      }
+      restartingActive={bucket === 'restarting'}
+      history={{ open: trendOpen, onToggle: toggleTrend }}
+    />
+  ) : undefined
   // The active narrowing named in the list header, so a reading clicked at the
   // top of the page is still explained after scrolling down to the rows — and
   // so there is somewhere to undo it that is not back up there.
@@ -1086,6 +1150,7 @@ export function Explore() {
             bucket={bucket}
             onBucket={setBucket}
             trend={trend}
+            signals={signals}
             // The next question after the header names something: what has the
             // cluster actually been saying about it. The header can raise
             // `CrashLoopBackOff` because a container status says so, but only the

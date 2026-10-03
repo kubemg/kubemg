@@ -104,6 +104,12 @@ export interface InsightAlert {
   /** Why it is here, in the cluster's own words where there are any. */
   reason: string
   tone: 'warn' | 'bad'
+  /**
+   * Which namespace signal already names this object, where one does. The
+   * namespace block under the bar has a column for restarts and one for image
+   * pulls, so an alert for either would say the same thing twice.
+   */
+  cause?: 'restarts' | 'image'
 }
 
 /**
@@ -158,6 +164,8 @@ export interface ResourceInsight {
   alerts: InsightAlert[]
   /** How many objects are in an alerting state, which is more than `alerts` holds. */
   alerting: number
+  /** How many of those carry a `cause` — the ones the namespace block names. */
+  covered?: number
   /** Aggregate live consumption, when the cluster serves the Metrics API. */
   usage?: { cpu: number; memory: number; sampled: number }
   /**
@@ -186,6 +194,9 @@ const CONTAINER_FAILURES = new Set([
   'OOMKilled',
   'Error',
 ])
+
+/** The subset of those that mean the image never arrived. */
+const IMAGE_FAILURES = new Set(['ImagePullBackOff', 'ErrImagePull', 'InvalidImageName'])
 
 /**
  * Restarts worth naming a pod over. A pod that restarted once during a rollout
@@ -516,7 +527,13 @@ export function podInsights(
     const failure = podFailureReason(pod)
 
     if (failure) {
-      alerts.push({ ...base, reason: failure, tone: 'bad', rank: 0 })
+      alerts.push({
+        ...base,
+        reason: failure,
+        tone: 'bad',
+        rank: 0,
+        cause: IMAGE_FAILURES.has(failure) ? 'image' : undefined,
+      })
     } else if (bucket === 'failed') {
       alerts.push({ ...base, reason: 'Failed', tone: 'bad', rank: 0 })
     } else if (bucket === 'unknown') {
@@ -526,7 +543,13 @@ export function podInsights(
     } else if (bucket === 'pending') {
       alerts.push({ ...base, reason: 'Pending', tone: 'warn', rank: 2 })
     } else if (pod.restarts >= RESTART_ALERT) {
-      alerts.push({ ...base, reason: `${pod.restarts} restarts`, tone: 'warn', rank: 3 })
+      alerts.push({
+        ...base,
+        reason: `${pod.restarts} restarts`,
+        tone: 'warn',
+        rank: 3,
+        cause: 'restarts',
+      })
     }
   }
 
@@ -595,6 +618,7 @@ export function podInsights(
     readings,
     alerts: rankAlerts(alerts).slice(0, MAX_ALERTS),
     alerting: alerts.length,
+    covered: alerts.filter((alert) => alert.cause).length,
     usage: aggregate,
     summary,
   }
