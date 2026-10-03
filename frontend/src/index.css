@@ -519,6 +519,31 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* Everything that does something under a click wears the pointer, without
+     each control having to ask for it. Tailwind v4's preflight left a button
+     on the arrow, so a raw `<button>` showed the arrow beside a link and a
+     `Button` that showed the hand — moving across a sidebar, a tab row or a
+     table read as the cursor flickering between the two. A utility still
+     overrides this (`disabled:cursor-not-allowed`, `cursor-col-resize`):
+     the base layer sits below the utilities. */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='tab']:not([aria-disabled='true']),
+  [role='menuitem']:not([aria-disabled='true']),
+  [role='option']:not([aria-disabled='true']),
+  summary,
+  select:not(:disabled),
+  input:is([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color']):not(:disabled),
+  label:has(input:is([type='checkbox'], [type='radio']):not(:disabled)) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  input:disabled {
+    cursor: not-allowed;
+  }
+
   :focus-visible {
     outline: 2px solid var(--deck-accent);
     outline-offset: 2px;
