@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -57,6 +59,10 @@ type sourceResponse struct {
 	GrafanaDatasource string `json:"grafana_datasource,omitempty"`
 	UIURL             string `json:"ui_url,omitempty"`
 
+	// RuleLabels are what an alerts source's alarms are labelled with so the
+	// cluster's Prometheus loads them.
+	RuleLabels map[string]string `json:"rule_labels,omitempty"`
+
 	// Endpoint is the address this resolves to, rendered for display.
 	Endpoint        string     `json:"endpoint"`
 	LastStatus      string     `json:"last_status"`
@@ -85,6 +91,7 @@ func toSourceResponse(source db.ObservabilitySource) sourceResponse {
 		Enabled:            source.Enabled,
 		GrafanaDatasource:  source.GrafanaDatasource,
 		UIURL:              observability.DatasourceUI(source),
+		RuleLabels:         ruleLabelsOf(source),
 		Endpoint:           observability.TargetOf(source).Endpoint(),
 		LastStatus:         source.LastStatus,
 		LastMessage:        source.LastMessage,
@@ -124,6 +131,46 @@ type sourceRequest struct {
 	// Enabled defaults to true: a source someone just filled in is one they want
 	// used.
 	Enabled *bool `json:"enabled"`
+	// RuleLabels applies to an alerts source only.
+	RuleLabels map[string]string `json:"rule_labels"`
+}
+
+// labelKeyPattern and labelValuePattern are Kubernetes' label grammar. A value
+// can then carry neither "," nor "=", which is what lets the stored form be a
+// plain k=v list.
+var (
+	labelKeyPattern   = regexp.MustCompile(`^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$`)
+	labelValuePattern = regexp.MustCompile(`^([A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?)?$`)
+)
+
+// ruleLabels validates an alerts source's rule labels and renders them for
+// storage. The managed-by label is KubeMG's own and cannot be overridden.
+func ruleLabels(labels map[string]string) (string, error) {
+	clean := map[string]string{}
+	for key, value := range labels {
+		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
+		if key == "" {
+			continue
+		}
+		if !labelKeyPattern.MatchString(key) || len(key) > 316 {
+			return "", fmt.Errorf("%q is not a label key", key)
+		}
+		if !labelValuePattern.MatchString(value) {
+			return "", fmt.Errorf("%q is not a label value", value)
+		}
+		if key == observability.ManagedByLabel || strings.HasPrefix(key, "kubemg.io/") {
+			return "", fmt.Errorf("%q is a label KubeMG sets itself", key)
+		}
+		clean[key] = value
+	}
+	return db.FormatLabelPairs(clean), nil
+}
+
+func ruleLabelsOf(source db.ObservabilitySource) map[string]string {
+	if source.Kind != db.SourceAlerts {
+		return nil
+	}
+	return source.RuleLabelMap()
 }
 
 // target renders the request as something callable, folding in the stored
@@ -167,7 +214,7 @@ func sourceKind(c *gin.Context) (string, bool) {
 	kind := c.Param("kind")
 	if !db.ValidSourceKind(kind) {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "a datasource is either metrics or logs",
+			"error": "a datasource is metrics, logs or alerts",
 		})
 		return "", false
 	}
@@ -256,7 +303,16 @@ func (s *server) putObservabilitySource(c *gin.Context) {
 		return
 	}
 
+	storedLabels := ""
+	if kind == db.SourceAlerts {
+		if storedLabels, err = ruleLabels(req.RuleLabels); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	source := db.ObservabilitySource{
+		RuleLabels:         storedLabels,
 		ClusterID:          cluster.ID,
 		Kind:               kind,
 		Provider:           target.Provider,

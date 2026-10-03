@@ -96,10 +96,10 @@ All unauthenticated by necessity — nobody has a session yet.
 | Method & path | Auth | Notes |
 | --- | --- | --- |
 | `GET /admin/sso/providers` | Admin | Full config, including `has_client_secret`/`has_bind_password` rather than the secrets themselves, plus computed `redirect_url`/`entity_id`/`metadata_url`. |
-| `POST /admin/sso/providers` | Admin | `409` on a name conflict. |
+| `POST /admin/sso/providers` | Admin | `409` on a name conflict. `vendor` is absent or `okta`; Okta is refused over LDAP, and its issuer/metadata URL is refused when it is the `-admin` console host, an endpoint rather than an issuer (path other than empty or `/oauth2/{id}`), or not `https` — `400` naming the URL to use. |
 | `PUT /admin/sso/providers/:id` | Admin | `404` if not found. |
 | `DELETE /admin/sso/providers/:id` | Admin | `204`. Accounts already provisioned through this IdP are not removed. |
-| `POST /admin/sso/providers/:id/check` | Admin | Live probe against the IdP (OIDC discovery, SAML metadata, or an LDAP bind); records health. |
+| `POST /admin/sso/providers/:id/check` | Admin | Live probe against the IdP (OIDC discovery, SAML metadata, or an LDAP bind); records health. A configured scope the discovery document's `scopes_supported` omits fails an Okta provider and is a note on any other. |
 | `GET /admin/sso/mappings` | Admin | IdP-group-to-kubemg-grant rules. |
 | `POST /admin/sso/mappings` | Admin | Body: `{provider_id, external_group_pattern, target_group_id?, target_k8s_role?, environment_filter?, namespaces[], target_system_role?}`. `400` if the rule grants nothing, or a namespace/environment filter is given with no `target_k8s_role`. |
 | `PUT /admin/sso/mappings/:id` | Admin | |
@@ -133,7 +133,7 @@ curl -sk -X POST https://localhost:8443/api/v1/clusters/3/kubeconfig/generate \
 | Method & path | Auth | Notes |
 | --- | --- | --- |
 | `GET /clusters/:id/observability` | Session | `{sources, agent_attached, connection_mode, editable}`. Readable by anyone the cluster is granted to. |
-| `PUT /clusters/:id/observability/sources/:kind` | Admin | `kind` is `metrics` or `logs`. `409` registering an in-cluster source on a direct-mode cluster. Probes live on save. |
+| `PUT /clusters/:id/observability/sources/:kind` | Admin | `kind` is `metrics`, `logs` or `alerts`. `409` registering an in-cluster source on a direct-mode cluster. Probes live on save. An `alerts` source takes `rule_labels` (`{key: value}`, Kubernetes label grammar; `app.kubernetes.io/managed-by` and `kubemg.io/*` refused). |
 | `DELETE /clusters/:id/observability/sources/:kind` | Admin | `204`; `404` no such source. |
 | `POST /clusters/:id/observability/sources/:kind/test` | Admin | Probes a draft nobody has saved yet — what makes the wizard's "check connection" honest. |
 | `POST /clusters/:id/observability/sources/:kind/check` | Admin | Re-probes the stored source and records the verdict. |
@@ -141,6 +141,12 @@ curl -sk -X POST https://localhost:8443/api/v1/clusters/3/kubeconfig/generate \
 | `GET /clusters/:id/observability/metrics/query` | Session | Query params `metric, namespace?, pod?, container?, start?/end?/range?` — never a raw query. `404` `unconfigured` if no datasource, `409` disabled, `400` a cluster-wide chart requested by a scoped grant. |
 | `GET /clusters/:id/observability/metrics/compare` | Session | Same as above plus `topk`. |
 | `GET /clusters/:id/observability/logs/query` | Session | Adds `filter, limit`; the filter is quoted as a literal so a caller can search for a quote without it becoming query syntax. |
+| `GET /clusters/:id/observability/alerts` | Session | The Alertmanager's active alerts, narrowed server-side: a scoped grant sees only its namespaces' alerts and never one without a `namespace` label. Optional `namespace, kind, name` narrow to one object (its kube-state-metrics label, `kubemg_kind`/`kubemg_name`, or its pods by name shape). Each alert carries `can_silence`. `404 unconfigured` with no alerts source. |
+| `GET /clusters/:id/observability/silences` | Session | Active and pending silences; a scoped grant sees only those pinned to one of its namespaces by an exact `namespace` matcher. Each carries `can_expire`. |
+| `POST /clusters/:id/observability/silences` | Session | Body `{fingerprint, duration, comment}`; `duration` one of `1h 4h 12h 1d 3d 7d`, `comment` required. Matchers are the alert's own labels, exact — never sent by the caller. `403` without an edit grant over the alert's namespace (unscoped edit for a cluster-level alert); `404` an alert no longer firing or outside the grant. Audited `silence-create`. |
+| `DELETE /clusters/:id/observability/silences/:sid` | Session | Ends a silence. Same rule as creating one, against the namespace it is pinned to. Audited `silence-expire`. |
+| `GET /clusters/:id/observability/alerting/rule-selectors` | Admin | Reads the cluster's Prometheus CRs: `match_labels`, whether match `expressions` exist, and `rule_namespaces` (`all`/`own`/`selected`). |
+| `GET /alerting/conditions` | Session | The alarm catalogue: `conditions` by resource key, `durations`, `severities`. |
 
 ## CRD visibility
 
@@ -230,6 +236,10 @@ fan-out limit) rather than listing the whole cluster.
 | `GET /posture` | Fixed posture rules per workload; `findings` are never dropped, only acknowledged. |
 | `POST` / `DELETE .../posture/ack` | Requires an edit-or-above grant (`403` for `view`). `reason` is mandatory. Audited. |
 | `GET /counts?keys=a,b,c` | Batched, read at `limit=1` against `remainingItemCount` so cost is flat regardless of cluster size. `400` past 48 keys, or past 96 effective calls once namespaces multiply in. |
+| `GET /alarms` | PrometheusRules labelled `app.kubernetes.io/managed-by=kubemg`, read as the caller (`namespace` / `all_namespaces`, optional `kind, name` for one object). A cluster without the Prometheus operator, or a role refused the read, is `available:false` + `reason`. |
+| `POST /alarms` | Body `{namespace, kind, name, condition, threshold?, for?, severity?, note?}` — a condition from `GET /alerting/conditions`, never an expression. Posted to the namespace's `prometheusrules` as the caller, so the cluster's RBAC decides. Carries the alerts source's `rule_labels`. `409 unconfigured` with no alerts source; `409` + `existing` when that object already has the condition; `409` no operator. |
+| `PUT /alarms` | Body `{namespace, name, threshold?, for?, severity?, note?}` — the object and condition are fixed. Read-modify-write with `resourceVersion`; `409` on a concurrent change. `404` for a rule kubemg did not write. |
+| `DELETE /alarms?namespace=&name=` | `204`; `404` for a rule kubemg did not write. |
 
 ```bash
 curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=payments" \

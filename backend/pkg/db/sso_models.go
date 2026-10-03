@@ -37,6 +37,22 @@ var SSOProtocols = []string{ProtocolOIDC, ProtocolSAML, ProtocolLDAP}
 // ValidSSOProtocol reports whether a protocol is one KubeMG speaks.
 func ValidSSOProtocol(protocol string) bool { return slices.Contains(SSOProtocols, protocol) }
 
+// VendorOkta marks a provider as Okta. A vendor never changes how a sign-in is
+// spoken — Okta is OIDC or SAML like any other directory — it changes what is
+// checked on save and what the defaults are, because Okta refuses a request a
+// generic provider would quietly accept (an unknown scope) and has a URL an
+// operator reliably pastes by mistake (its admin console's).
+const VendorOkta = "okta"
+
+// OktaCustomAuthServer reports whether an Okta issuer is a custom authorization
+// server (https://org.okta.com/oauth2/{id}) rather than the org server. The two
+// deliver groups differently: the org server answers a "groups" scope, a custom
+// one carries groups as a claim configured on the server and refuses the whole
+// authorization if asked for a scope it has not declared.
+func OktaCustomAuthServer(issuer string) bool {
+	return strings.Contains(issuer, "/oauth2/")
+}
+
 // Where an account's credentials live. A local account is the Phase 1 shape:
 // a bcrypt hash in this database. A federated account has no usable password at
 // all, so password sign-in is refused for it rather than merely failing.
@@ -75,7 +91,10 @@ type SSOProviderConfig struct {
 	// Name is what the login button says, so it is the operator's own words.
 	Name     string `gorm:"size:120;uniqueIndex;not null" json:"name"`
 	Protocol string `gorm:"size:20;not null" json:"protocol"`
-	Enabled  bool   `gorm:"not null;default:true" json:"enabled"`
+	// Vendor is empty for a generic provider and "okta" for Okta. The console
+	// fixes it, with the protocol, once the row is created.
+	Vendor  string `gorm:"size:20" json:"vendor,omitempty"`
+	Enabled bool   `gorm:"not null;default:true" json:"enabled"`
 
 	// OIDC. The issuer is discovered rather than configured field by field: an
 	// operator pastes the issuer URL and KubeMG reads its well-known document.
@@ -172,6 +191,7 @@ func (p SSOProviderConfig) Interactive() bool { return p.Protocol != ProtocolLDA
 func (p *SSOProviderConfig) Normalize() {
 	p.Name = strings.TrimSpace(p.Name)
 	p.Protocol = strings.ToLower(strings.TrimSpace(p.Protocol))
+	p.Vendor = strings.ToLower(strings.TrimSpace(p.Vendor))
 
 	// A directory must never be able to mint a super admin: that tier exists to
 	// be the account an IdP outage cannot lock you out of.
@@ -186,7 +206,12 @@ func (p *SSOProviderConfig) Normalize() {
 			// profile and email are what the username and email claims come
 			// from; groups is what most directories call the group claim, and a
 			// provider that does not know it ignores it rather than failing.
+			// Okta's custom authorization servers are the exception: they fail
+			// the sign-in instead, and carry groups as a claim anyway.
 			p.Scopes = "profile email groups"
+			if p.Vendor == VendorOkta && OktaCustomAuthServer(p.IssuerURL) {
+				p.Scopes = "profile email"
+			}
 		}
 		p.UsernameClaim = defaultClaim(p.UsernameClaim, "preferred_username")
 		p.EmailClaim = defaultClaim(p.EmailClaim, "email")

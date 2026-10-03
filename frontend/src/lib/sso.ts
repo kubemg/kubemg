@@ -9,7 +9,7 @@
  * attribute only a directory administrator writes) is the claim that cannot.
  */
 
-import type { SSOProtocol } from '../api/types'
+import type { SSOProtocol, SSOVendor } from '../api/types'
 
 // Claims many IdPs let the signed-in person edit, or that are display strings
 // rather than identifiers. `email` is here because not every provider verifies
@@ -36,4 +36,41 @@ export function usernameClaimIsEditable(protocol: SSOProtocol, claim: string): b
   const effective = claim.trim() || (protocol === 'oidc' ? 'preferred_username' : '')
   if (effective === '') return true
   return EDITABLE_CLAIMS.has(effective)
+}
+
+/*
+ * What the provider form offers. Okta is OIDC or SAML underneath — the vendor
+ * only changes the defaults, the hints and what the server checks on save — so
+ * one choice carries both halves rather than asking for them separately.
+ */
+export type ProviderKind = 'okta-oidc' | 'okta-saml' | SSOProtocol
+
+export const PROVIDER_KINDS: { kind: ProviderKind; label: string; group: 'Okta' | 'Any provider' }[] = [
+  { kind: 'okta-oidc', label: 'Okta — OpenID Connect', group: 'Okta' },
+  { kind: 'okta-saml', label: 'Okta — SAML 2.0', group: 'Okta' },
+  { kind: 'oidc', label: 'OpenID Connect', group: 'Any provider' },
+  { kind: 'saml', label: 'SAML 2.0', group: 'Any provider' },
+  { kind: 'ldap', label: 'LDAP', group: 'Any provider' },
+]
+
+export function kindOf(protocol: SSOProtocol, vendor?: SSOVendor): ProviderKind {
+  if (vendor === 'okta' && protocol !== 'ldap') return `okta-${protocol}`
+  return protocol
+}
+
+export function splitKind(kind: ProviderKind): { protocol: SSOProtocol; vendor?: SSOVendor } {
+  if (kind === 'okta-oidc') return { protocol: 'oidc', vendor: 'okta' }
+  if (kind === 'okta-saml') return { protocol: 'saml', vendor: 'okta' }
+  return { protocol: kind }
+}
+
+/**
+ * The scopes the server asks for when the field is left empty. An Okta custom
+ * authorization server (`/oauth2/{id}`) refuses a sign-in that asks for a scope
+ * it has not declared, and carries groups as a claim instead, so it is not
+ * asked for `groups`.
+ */
+export function defaultScopes(vendor: SSOVendor | undefined, issuer: string): string {
+  if (vendor === 'okta' && issuer.includes('/oauth2/')) return 'profile email'
+  return 'profile email groups'
 }

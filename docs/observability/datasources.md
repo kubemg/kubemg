@@ -9,7 +9,8 @@ that backend exists.
 
 ## Per cluster, per kind
 
-A datasource is stored per cluster **and per kind** (`metrics` or `logs`),
+A datasource is stored per cluster **and per kind** (`metrics`, `logs` or
+`alerts`),
 one row each, in `observability_sources`. It is not a server-wide setting:
 two clusters have two Prometheuses, and registering the second one must not
 mean editing a global config file. A cluster has *the* metrics backend and
@@ -65,6 +66,7 @@ a kind replaces whatever was there.
 | metrics | Mimir | `8080` | `/prometheus` |
 | logs | VictoriaLogs | `9428` | none |
 | logs | Loki | `3100` | none (point at the gateway or the query frontend, not an ingester) |
+| alerts | Alertmanager | `9093` | none (the Service, not the headless `alertmanager-operated`) |
 
 The four metrics providers all speak the Prometheus query API
 (`/api/v1/query`, `/api/v1/query_range`), which is why they share one probe
@@ -94,6 +96,7 @@ configured:
 | VictoriaMetrics, Prometheus, Thanos, Mimir | `GET /api/v1/query?query=1`, then `GET /api/v1/status/buildinfo` for the version |
 | VictoriaLogs | `GET /select/logsql/query?limit=1&query=%2A` |
 | Loki | `GET /loki/api/v1/labels`, then `GET /loki/api/v1/status/buildinfo` for the version |
+| Alertmanager | `GET /api/v2/status`, which carries the version too |
 
 A non-2xx answer is turned into the next thing to try rather than a bare
 status code: `401`/`403` names the missing or wrong credential, `503`/`502`
@@ -141,8 +144,31 @@ write endpoints, or infrastructure components — a node-exporter answers on
 `/metrics` and would look alive while returning nothing anyone asked kubemg
 for. Offering one as "the metrics backend" is worse than offering nothing.
 
+An Alertmanager is excluded from the metrics and logs candidates and offered
+as the `alerts` one — except its headless `alertmanager-operated` twin, which
+the list above still catches.
+
 A match is a **suggestion, never a configuration**: nothing is stored until
 an operator picks a candidate and saves it.
+
+## Alerts (Alertmanager)
+
+The `alerts` kind is the cluster's Alertmanager. It is what the
+[Alerts page and an object's Alerts panel](alerts.md) read, and alarms cannot
+be created without it.
+
+It carries one setting the other kinds do not: **rule labels**, the labels
+every alarm's `PrometheusRule` is given so the cluster's Prometheus loads it.
+They are the Prometheus custom resource's `spec.ruleSelector` —
+kube-prometheus-stack selects `release=<its release name>`. **Read from
+cluster** fills the field from the cluster's own Prometheus resource and says
+when labels alone are not enough: a selector with match expressions, a
+Prometheus that loads rules only from its own namespace, or several Prometheus
+resources. Enter them as `key=value, key=value`. `app.kubernetes.io/managed-by`
+and anything under `kubemg.io/` are kubemg's own and are refused.
+
+An alarm written without the right labels is a valid object that nothing ever
+evaluates, which is why the field is read from the cluster rather than guessed.
 
 ## Who may read, who may write
 

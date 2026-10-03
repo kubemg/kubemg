@@ -28,7 +28,7 @@ import {
   X,
 } from 'lucide-react'
 import type { Cluster, Environment } from '../api/types'
-import { TONE_FILL, TONE_SOFT, clusterStateLabel, clusterTone } from '../lib/status'
+import { TONE_FILL, TONE_SOFT, TONE_TEXT, clusterStateLabel, clusterTone } from '../lib/status'
 import { formatInstant, relativeAge } from '../lib/time'
 import type { Tone } from '../lib/status'
 import { usageTone } from '../lib/units'
@@ -1777,6 +1777,253 @@ export function MiniMeter({
         {bounded ? formatPercent(percent) : '—'}
       </span>
     </div>
+  )
+}
+
+const TONE_STROKE: Record<Tone, string> = {
+  ok: 'stroke-ok',
+  warn: 'stroke-warn',
+  bad: 'stroke-danger',
+  idle: 'stroke-faint',
+  accent: 'stroke-accent',
+}
+
+/** ArcGauge geometry, in SVG user units. */
+const GAUGE_SIZE = 168
+const GAUGE_TICKS = 44
+const GAUGE_SWEEP = 270
+const GAUGE_OUTER = 78
+const GAUGE_INNER = 62
+
+/** A point on the gauge's circle, `degrees` clockwise from twelve o'clock. */
+function gaugePoint(degrees: number, radius: number): [number, number] {
+  const radians = ((degrees - 90) * Math.PI) / 180
+  return [GAUGE_SIZE / 2 + radius * Math.cos(radians), GAUGE_SIZE / 2 + radius * Math.sin(radians)]
+}
+
+/**
+ * ArcGauge is `Meter` drawn as a dial: the same single live sample, the same
+ * `usageTone` thresholds, laid out as a ring of ticks with the reading in the
+ * middle. It exists for the one place a meter is the headline of its card —
+ * a cluster's total — where a hairline bar reads as a footnote. It is still a
+ * meter and not a chart: one value, no axis, no history.
+ *
+ * The sweep is 270° with the gap at the bottom, and the two thresholds are
+ * marked on the rim in their own tones, so where the colour changes is on the
+ * dial rather than only in the reader's head. The ticks are lit, not grown:
+ * nothing moves when a new sample lands except which ticks hold a colour.
+ */
+export function ArcGauge({
+  label,
+  value,
+  percent,
+  capacity,
+  free,
+  className,
+}: {
+  label: string
+  /** The reading itself, already formatted. */
+  value: string
+  /** Utilisation 0-100, or undefined when nothing bounds it. */
+  percent?: number
+  /** The denominator, already formatted. Omitted when there is none. */
+  capacity?: string
+  /** What is left, already formatted — the figure the next decision is made on. */
+  free?: string
+  className?: string
+}) {
+  const bounded = percent !== undefined && capacity !== undefined
+  const tone = bounded ? usageTone(percent) : 'idle'
+  const clamped = bounded ? Math.min(100, Math.max(0, percent)) : 0
+  // A reading above zero always lights one tick: 0.4% is not nothing.
+  const lit = bounded ? (clamped > 0 ? Math.max(1, Math.round((clamped / 100) * GAUGE_TICKS)) : 0) : 0
+  const start = -GAUGE_SWEEP / 2
+  const step = GAUGE_SWEEP / (GAUGE_TICKS - 1)
+
+  return (
+    <div className={`flex min-w-0 flex-col items-center ${className ?? ''}`}>
+      <div
+        role="meter"
+        aria-label={label}
+        aria-valuenow={bounded ? Math.round(percent) : undefined}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuetext={bounded ? `${value} of ${capacity}` : `${value}, no limit`}
+        className="relative w-full max-w-[184px]"
+      >
+        <svg aria-hidden="true" viewBox={`0 0 ${GAUGE_SIZE} ${GAUGE_SIZE}`} className="block w-full">
+          {Array.from({ length: GAUGE_TICKS }, (_, index) => {
+            const angle = start + index * step
+            const [x1, y1] = gaugePoint(angle, GAUGE_INNER)
+            const [x2, y2] = gaugePoint(angle, GAUGE_OUTER)
+            const on = index < lit
+            return (
+              <line
+                key={index}
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
+                strokeWidth={4.5}
+                strokeLinecap="round"
+                className={`transition-colors duration-300 motion-reduce:transition-none ${
+                  on ? TONE_STROKE[tone] : 'stroke-line'
+                } ${bounded ? '' : 'opacity-50'}`}
+              />
+            )
+          })}
+          {/* Where the dial changes colour, on the rim in that colour. */}
+          {bounded
+            ? ([
+                [75, 'fill-warn'],
+                [90, 'fill-danger'],
+              ] as const).map(([at, fill]) => {
+                const [cx, cy] = gaugePoint(start + (at / 100) * GAUGE_SWEEP, GAUGE_OUTER + 7)
+                return <circle key={at} cx={cx} cy={cy} r={2.25} className={fill} />
+              })
+            : null}
+        </svg>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span
+            className={`font-data text-[28px] leading-none font-bold tabular-nums ${
+              tone === 'ok' || tone === 'idle' ? 'text-fg' : TONE_TEXT[tone]
+            }`}
+          >
+            {bounded ? formatPercent(percent) : '—'}
+          </span>
+          <span className="mt-1.5 text-[12.5px] text-muted">{label}</span>
+        </div>
+      </div>
+      <p className="-mt-3 flex items-baseline gap-1.5 text-[12.5px] text-faint">
+        <span className="font-data font-semibold text-fg tabular-nums">{value}</span>
+        <span className="font-data tabular-nums">{bounded ? `/ ${capacity}` : 'no limit'}</span>
+      </p>
+      {free ? (
+        <p className="mt-0.5 text-[12px] text-muted">
+          <span className="font-data tabular-nums">{free}</span> free
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+const TICK_COUNT = 30
+
+/**
+ * TickMeter is `MiniMeter` as a strip of ticks: label, the lit share of thirty
+ * ticks, the percentage. It is the row form of `ArcGauge` — the dial's own
+ * vocabulary for a list of things under it — and keeps the same tones and the
+ * same hatch for a reading nothing bounds.
+ */
+export function TickMeter({
+  label,
+  percent,
+  title,
+  detail,
+  className,
+}: {
+  label: string
+  /** Utilisation 0-100, or undefined when nothing bounds it. */
+  percent?: number
+  /** The full reading, for the tooltip and a screen reader — `390m / 4.00 cores`. */
+  title?: string
+  /** The reading set beside the percentage, already formatted. */
+  detail?: string
+  className?: string
+}) {
+  const bounded = percent !== undefined
+  const tone = bounded ? usageTone(percent) : 'idle'
+  const clamped = bounded ? Math.min(100, Math.max(0, percent)) : 0
+  const lit = bounded ? (clamped > 0 ? Math.max(1, Math.round((clamped / 100) * TICK_COUNT)) : 0) : 0
+
+  return (
+    <div
+      title={title}
+      className={`grid grid-cols-[52px_minmax(0,1fr)_44px] items-center gap-x-3 sm:grid-cols-[52px_minmax(0,1fr)_44px_112px] ${className ?? ''}`}
+    >
+      <span className="text-[12px] text-muted">{label}</span>
+      <span
+        role="meter"
+        aria-label={label}
+        aria-valuenow={bounded ? Math.round(percent) : undefined}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuetext={title ?? (bounded ? `${Math.round(percent)}%` : 'not reported')}
+        className="grid h-4 gap-[3px]"
+        style={{ gridTemplateColumns: `repeat(${TICK_COUNT}, minmax(0, 1fr))` }}
+      >
+        {bounded ? (
+          Array.from({ length: TICK_COUNT }, (_, index) => (
+            <span
+              key={index}
+              aria-hidden="true"
+              className={`block rounded-full transition-colors duration-300 motion-reduce:transition-none ${
+                index < lit ? TONE_FILL[tone] : 'bg-line'
+              }`}
+            />
+          ))
+        ) : (
+          <span
+            aria-hidden="true"
+            className="col-span-full block h-full rounded-full text-faint opacity-30"
+            style={{
+              backgroundImage:
+                'repeating-linear-gradient(135deg, currentColor 0 2px, transparent 2px 6px)',
+            }}
+          />
+        )}
+      </span>
+      <span className="text-right font-data text-[12.5px] font-semibold text-fg tabular-nums">
+        {bounded ? formatPercent(percent) : '—'}
+      </span>
+      {detail ? (
+        <span className="hidden truncate text-right font-data text-[12px] text-faint tabular-nums sm:block">
+          {detail}
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * Switch is a setting that is on or off, drawn as one: a track that takes the
+ * accent when on. It is a real `role="switch"` button, so it is reached and
+ * flipped by keyboard like any other control, and its label is always named.
+ */
+export function Switch({
+  checked,
+  onChange,
+  label,
+  disabled,
+  className,
+}: {
+  checked: boolean
+  onChange: (next: boolean) => void
+  /** What the switch turns on — read by a screen reader, shown on hover. */
+  label: string
+  disabled?: boolean
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-300 motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-45 ${
+        checked ? 'border-accent bg-accent-fill' : 'border-line bg-raised'
+      } ${className ?? ''}`}
+    >
+      <span
+        aria-hidden="true"
+        className={`block size-3.5 rounded-full shadow-deck ${
+          checked ? 'translate-x-[18px] bg-on-accent' : 'translate-x-[2px] bg-faint'
+        }`}
+      />
+    </button>
   )
 }
 

@@ -1,6 +1,7 @@
 import { type ReactNode, Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import {
   Ban,
+  BellPlus,
   Box,
   Bug,
   CalendarClock,
@@ -16,9 +17,11 @@ import {
   ShieldCheck,
   SlidersHorizontal,
 } from 'lucide-react'
-import { errorMessage, fetchResourceDescribe } from '../api/client'
+import { errorMessage, fetchObservability, fetchResourceDescribe } from '../api/client'
+import { queryKey, useCachedQuery } from '../lib/query'
 import { useLiveTick } from '../lib/live'
 import type {
+  Alarm,
   Cluster,
   DebugContainerResult,
   HelmRelease,
@@ -34,6 +37,10 @@ import type { SelectedRow } from '../lib/selection'
 import { selectionKey } from '../lib/selection'
 import { podTone, type Tone } from '../lib/status'
 import { DebugContainerSheet } from './DebugContainerSheet'
+import { AlarmComposer } from './AlarmComposer'
+import type { AlarmTarget } from './AlarmComposer'
+import { ObjectAlertsPanel } from './ObjectAlertsPanel'
+import { hasAlerting, supportsAlarms } from '../lib/alerting'
 import { HelmHistoryPanel } from './HelmHistoryPanel'
 import { HelmValuesPanel } from './HelmValuesPanel'
 import { LogExplorer } from './LogExplorer'
@@ -242,6 +249,34 @@ export function ResourceDetailDrawer({
   // panel at the top of this drawer's body rather than a surface over it.
   const [action, setAction] = useState<WorkloadActionName | null>(target.action ?? null)
   const capability = workloadCapability(target.kind)
+
+  /*
+   * "Create an alarm for this". The button sits in the toolbar so it is in
+   * reach from any tab, but the composer and the Alerts panel live on the
+   * Overview under Dependencies — what the pods need to start is read first —
+   * so the button takes the operator down to them. The revision re-reads the
+   * panel's alarm list once one is saved.
+   *
+   * None of it is offered until the cluster has an Alertmanager registered:
+   * an alarm cannot be created without one, and a panel that only says so is
+   * noise on every drawer of a cluster that does not alert.
+   */
+  const alarmKind = supportsAlarms(target.kind) && Boolean(target.namespace) && !target.release
+  const observability = useCachedQuery(alarmKind ? queryKey('observability', cluster.id) : null, () =>
+    fetchObservability(cluster.id),
+  )
+  const alerting = hasAlerting(observability.data?.sources)
+  const alarmTarget: AlarmTarget | null =
+    alarmKind && alerting && target.namespace
+      ? { kind: target.kind, label: target.label, name: target.name, namespace: target.namespace }
+      : null
+  const [alarmEditor, setAlarmEditor] = useState<{ editing: Alarm | null } | null>(null)
+  const [alarmRevision, setAlarmRevision] = useState(0)
+  const openAlarm = (editing: Alarm | null) => {
+    setAlarmEditor({ editing })
+    setAction(null)
+    if (tab !== 'overview') setTab('overview')
+  }
 
   /*
    * A workload's logs are its pods' logs. Almost nothing anyone asks of a log is
@@ -474,6 +509,12 @@ export function ResourceDetailDrawer({
         ) : null}
 
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+          {alarmTarget ? (
+            <Button type="button" size="sm" variant="primary" onClick={() => openAlarm(null)}>
+              <BellPlus aria-hidden="true" className="size-4" />
+              Create alarm
+            </Button>
+          ) : null}
           {/* A failing condition is the headline: it is the object saying, in
               its own words, that it is not what it was asked to be — so it
               stays in view whichever tab is open. */}
@@ -591,6 +632,30 @@ export function ResourceDetailDrawer({
             onOpen?.({ kind: 'pods', label: 'Pod', name: row.name, namespace: row.namespace, pod: row })
           }
           onOpen={onOpen}
+          alarms={
+            alarmTarget
+              ? {
+                  target: alarmTarget,
+                  revision: alarmRevision,
+                  composer: alarmEditor ? (
+                    <AlarmComposer
+                      key={alarmEditor.editing?.name ?? 'new'}
+                      cluster={cluster}
+                      target={alarmTarget}
+                      editing={alarmEditor.editing}
+                      conditions={describe?.conditions}
+                      pod={pod}
+                      onClose={() => setAlarmEditor(null)}
+                      onSaved={() => {
+                        setAlarmEditor(null)
+                        setAlarmRevision((value) => value + 1)
+                      }}
+                    />
+                  ) : null,
+                  onEdit: (alarm) => openAlarm(alarm),
+                }
+              : undefined
+          }
         />
       ) : null}
 
@@ -754,6 +819,7 @@ function OverviewTab({
   namespace,
   onOpenPod,
   onOpen,
+  alarms,
 }: {
   cluster: Cluster
   pod?: Pod
@@ -767,6 +833,14 @@ function OverviewTab({
   onOpenPod: (pod: Pod) => void
   /** Opens a hop of the traffic map in this same drawer. */
   onOpen?: (target: DetailTarget) => void
+  /** The Alerts panel, for a kind alarms can be written for. */
+  alarms?: {
+    target: AlarmTarget
+    revision: number
+    /** The open composer, drawn above the Alerts panel. */
+    composer: ReactNode
+    onEdit: (alarm: Alarm) => void
+  }
 }) {
   if (loading && !describe) return <p className="text-[13px] text-muted">Reading the object…</p>
   if (!describe) return null
@@ -882,6 +956,21 @@ function OverviewTab({
             source="dependencies"
           />
         </Panel>
+      ) : null}
+
+      {/* What is firing, and the alarms written for this object — under the
+          dependencies, which are read first. The toolbar's Create alarm opens
+          its composer here. */}
+      {alarms ? (
+        <>
+          {alarms.composer}
+          <ObjectAlertsPanel
+            cluster={cluster}
+            revision={alarms.revision}
+            target={alarms.target}
+            onEdit={alarms.onEdit}
+          />
+        </>
       ) : null}
 
       {describe.conditions.length > 0 ? <Conditions conditions={describe.conditions} /> : null}

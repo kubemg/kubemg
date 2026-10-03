@@ -770,6 +770,10 @@ func NewRouter(opts Options) *gin.Engine {
 		// under one. It takes the same read/write split for the same reason:
 		// declaring one is administrative, and an install form that could not
 		// list what is available would be a form nobody could use.
+		// The conditions an alarm can be written for: a fixed catalogue, the
+		// same on every cluster, so it is not under /clusters/:id.
+		v1.GET("/alerting/conditions", requireAuth, s.listAlarmConditions)
+
 		templates := v1.Group("/app-templates", requireAuth)
 		templates.GET("", s.listAppTemplates)
 		// Registered before /:name so "draft" can never be mistaken for a
@@ -825,6 +829,18 @@ func NewRouter(opts Options) *gin.Engine {
 		// chart row and a table asks for both on every render.
 		sources.GET("/metrics/compare", s.cachedRead(), s.compareMetrics)
 		sources.GET("/logs/query", s.queryLogs)
+
+		// The cluster's Alertmanager: what is firing and what is muted, read as
+		// the datasource and narrowed to the caller's grant like the query path.
+		// A silence is the one write; KubeMG decides it (an edit grant over the
+		// alert's namespace) and records it, because no cluster RBAC sees it.
+		sources.GET("/alerts", s.cachedRead(), s.listFiringAlerts)
+		sources.GET("/silences", s.listSilences)
+		sources.POST("/silences", s.createSilence)
+		sources.DELETE("/silences/:sid", s.expireSilence)
+		// Which labels a rule needs for this cluster's Prometheus to load it —
+		// read for the administrator registering the Alertmanager.
+		sources.GET("/alerting/rule-selectors", requireAdmin, s.prometheusRuleSelectors)
 
 		if opts.Proxy != nil {
 			// Most clusters are already running one of these. Looking first is
@@ -1006,6 +1022,14 @@ func NewRouter(opts Options) *gin.Engine {
 			// own CRD list — so this one names the API instead, built from three
 			// validated components and read down the same impersonated tunnel.
 			resources.GET("/custom", s.listCustomResources)
+
+			// Alarms on an object: PrometheusRules KubeMG wrote, read and written
+			// as the caller, so the cluster's RBAC decides who may create one.
+			// Under /resources so a write invalidates this cluster's read cache.
+			resources.GET("/alarms", s.listAlarms)
+			resources.POST("/alarms", s.createAlarm)
+			resources.PUT("/alarms", s.updateAlarm)
+			resources.DELETE("/alarms", s.deleteAlarm)
 
 			// Helm keeps its releases as labelled Secrets and nothing else, so
 			// these are the secrets list read through the same impersonated

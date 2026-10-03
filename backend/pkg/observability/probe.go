@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -62,6 +63,9 @@ func specFor(provider string) probeSpec {
 		return probeSpec{ping: "/select/logsql/query?limit=1&query=%2A"}
 	case db.ProviderLoki:
 		return probeSpec{ping: "/loki/api/v1/labels", version: "/loki/api/v1/status/buildinfo"}
+	case db.ProviderAlertmanager:
+		// One read answers both: v2's status carries versionInfo.
+		return probeSpec{ping: "/api/v2/status", version: "/api/v2/status"}
 	default:
 		return probeSpec{ping: "/"}
 	}
@@ -122,21 +126,39 @@ func call(ctx context.Context, target Target, path string, tunnel TunnelCall) (i
 func callLimited(ctx context.Context, target Target, path string, tunnel TunnelCall,
 	maxBody int64, timeout time.Duration,
 ) (int, []byte, error) {
+	return callMethod(ctx, target, http.MethodGet, path, nil, tunnel, maxBody, timeout)
+}
+
+// callMethod is callLimited for a write: Alertmanager's silences are the one
+// datasource call that is not a read.
+func callMethod(ctx context.Context, target Target, method, path string, payload []byte,
+	tunnel TunnelCall, maxBody int64, timeout time.Duration,
+) (int, []byte, error) {
 	requestPath := target.requestPath(path)
 
 	if target.AccessMode == db.AccessInCluster {
-		status, body, err := tunnel(ctx, http.MethodGet, requestPath, nil)
+		if tunnel == nil {
+			return 0, nil, fmt.Errorf("an in-cluster datasource can only be reached through a connected agent")
+		}
+		status, body, err := tunnel(ctx, method, requestPath, payload)
 		if err != nil {
 			return 0, nil, fmt.Errorf("could not reach the Service through the cluster: %w", err)
 		}
 		return status, body, nil
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestPath, nil)
+	var reader io.Reader
+	if payload != nil {
+		reader = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, requestPath, reader)
 	if err != nil {
 		return 0, nil, fmt.Errorf("that address cannot be requested: %w", err)
 	}
 	applyAuth(req.Header, target)
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 
 	resp, err := directClientWithTimeout(target, timeout).Do(req)
 	if err != nil {
@@ -224,13 +246,19 @@ func parseVersion(body []byte) string {
 		Data struct {
 			Version string `json:"version"`
 		} `json:"data"`
-		Version string `json:"version"`
+		Version     string `json:"version"`
+		VersionInfo struct {
+			Version string `json:"version"`
+		} `json:"versionInfo"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return ""
 	}
 	if envelope.Data.Version != "" {
 		return envelope.Data.Version
+	}
+	if envelope.VersionInfo.Version != "" {
+		return envelope.VersionInfo.Version
 	}
 	return envelope.Version
 }
@@ -250,6 +278,8 @@ func providerLabel(provider string) string {
 		return "VictoriaLogs"
 	case db.ProviderLoki:
 		return "Loki"
+	case db.ProviderAlertmanager:
+		return "Alertmanager"
 	default:
 		return provider
 	}

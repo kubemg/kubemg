@@ -1,10 +1,10 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { Disclosure, Meter, OBJECT_NAME, Pill, Row } from './primitives'
+import { ArcGauge, Disclosure, Meter, OBJECT_NAME, Pill, Row, Switch, TickMeter } from './primitives'
 
 /*
  * The DOM half of the suite, kept deliberately small. What is worth rendering a
@@ -43,6 +43,77 @@ describe('Meter', () => {
     render(<Meter label="CPU" value="400m" percent={160} capacity="250m" />)
     const meter = screen.getByRole('meter', { name: 'CPU' })
     expect(meter.firstElementChild?.getAttribute('style')).toContain('width: 100%')
+  })
+})
+
+describe('ArcGauge', () => {
+  it('lights its share of the dial and says the reading in words', () => {
+    const { container } = render(
+      <ArcGauge label="CPU" value="2.00 cores" percent={50} capacity="4.00 cores" free="2.00 cores" />,
+    )
+    const gauge = screen.getByRole('meter', { name: 'CPU' })
+    expect(gauge.getAttribute('aria-valuenow')).toBe('50')
+    expect(gauge.getAttribute('aria-valuetext')).toBe('2.00 cores of 4.00 cores')
+    const ticks = [...container.querySelectorAll('line')]
+    expect(ticks.filter((tick) => tick.getAttribute('class')?.includes('stroke-ok'))).toHaveLength(
+      ticks.length / 2,
+    )
+    expect(screen.getByText('free')).toBeTruthy()
+  })
+
+  it('lights a tick for a reading above zero however small', () => {
+    const { container } = render(
+      <ArcGauge label="CPU" value="4m" percent={0.1} capacity="4.00 cores" />,
+    )
+    const lit = [...container.querySelectorAll('line')].filter((tick) =>
+      tick.getAttribute('class')?.includes('stroke-ok'),
+    )
+    expect(lit).toHaveLength(1)
+  })
+
+  it('takes the warning tone at the threshold the bar meter uses', () => {
+    const { container } = render(
+      <ArcGauge label="Memory" value="7 GiB" percent={80} capacity="8 GiB" />,
+    )
+    expect(container.querySelector('line.stroke-warn')).toBeTruthy()
+    expect(container.querySelector('line.stroke-ok')).toBeNull()
+  })
+
+  it('lights nothing and claims no percentage when nothing bounds it', () => {
+    const { container } = render(<ArcGauge label="Memory" value="64Mi" />)
+    const gauge = screen.getByRole('meter', { name: 'Memory' })
+    expect(gauge.getAttribute('aria-valuenow')).toBeNull()
+    expect(screen.getByText('no limit')).toBeTruthy()
+    expect(gauge.textContent).not.toContain('%')
+    expect(container.querySelector('line:not(.stroke-line)')).toBeNull()
+  })
+})
+
+describe('TickMeter', () => {
+  it('lights its share of thirty ticks', () => {
+    render(<TickMeter label="CPU" percent={50} detail="2.00 cores / 4.00 cores" />)
+    const meter = screen.getByRole('meter', { name: 'CPU' })
+    expect(meter.children).toHaveLength(30)
+    expect([...meter.children].filter((tick) => tick.className.includes('bg-ok'))).toHaveLength(15)
+    expect(screen.getByText('2.00 cores / 4.00 cores')).toBeTruthy()
+  })
+
+  it('draws a hatch rather than a full strip when nothing bounds it', () => {
+    render(<TickMeter label="Memory" />)
+    const meter = screen.getByRole('meter', { name: 'Memory' })
+    expect(meter.children).toHaveLength(1)
+    expect(meter.firstElementChild?.getAttribute('style')).toContain('repeating-linear-gradient')
+  })
+})
+
+describe('Switch', () => {
+  it('is a named switch that reports the flip rather than owning it', () => {
+    const onChange = vi.fn()
+    render(<Switch checked={false} onChange={onChange} label="Show Widget in the sidebar" />)
+    const control = screen.getByRole('switch', { name: 'Show Widget in the sidebar' })
+    expect(control.getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(control)
+    expect(onChange).toHaveBeenCalledWith(true)
   })
 })
 

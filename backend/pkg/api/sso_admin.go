@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -33,6 +34,7 @@ import (
 type ssoProviderRequest struct {
 	Name     string `json:"name" binding:"required"`
 	Protocol string `json:"protocol" binding:"required,oneof=oidc saml ldap"`
+	Vendor   string `json:"vendor" binding:"omitempty,oneof=okta"`
 	Enabled  *bool  `json:"enabled"`
 
 	IssuerURL string `json:"issuer_url"`
@@ -77,6 +79,7 @@ type ssoProviderRequest struct {
 func (r ssoProviderRequest) apply(provider *db.SSOProviderConfig) {
 	provider.Name = strings.TrimSpace(r.Name)
 	provider.Protocol = r.Protocol
+	provider.Vendor = r.Vendor
 	if r.Enabled != nil {
 		provider.Enabled = *r.Enabled
 	}
@@ -138,6 +141,12 @@ func validateProvider(provider *db.SSOProviderConfig) error {
 		return errors.New("a provider needs a name")
 	}
 
+	if provider.Vendor == db.VendorOkta {
+		if err := validateOkta(provider); err != nil {
+			return err
+		}
+	}
+
 	switch provider.Protocol {
 	case db.ProtocolOIDC:
 		if provider.IssuerURL == "" {
@@ -163,6 +172,75 @@ func validateProvider(provider *db.SSOProviderConfig) error {
 		}
 		if provider.LDAPBindDN != "" && provider.LDAPBindPassword == "" {
 			return errors.New("a bind DN needs a bind password")
+		}
+	}
+	return nil
+}
+
+// validateOkta refuses the Okta configurations that are recognisably wrong
+// before anybody is sent to Okta with them: the admin console's host, an
+// endpoint pasted where the issuer belongs, and a plain-http URL Okta never
+// serves. A custom URL domain is accepted — the host is not required to be
+// okta.com, only not to be the admin console.
+func validateOkta(provider *db.SSOProviderConfig) error {
+	switch provider.Protocol {
+	case db.ProtocolOIDC:
+		if provider.IssuerURL == "" {
+			return nil // the generic check names the missing field
+		}
+		u, err := url.Parse(provider.IssuerURL)
+		if err != nil || u.Host == "" {
+			return errors.New("the Okta issuer must be a URL such as https://your-org.okta.com/oauth2/default")
+		}
+		if err := oktaHost(u); err != nil {
+			return err
+		}
+		segments := strings.Split(strings.Trim(u.Path, "/"), "/")
+		switch {
+		case u.Path == "" || u.Path == "/":
+			// The org authorization server.
+		case len(segments) == 2 && segments[0] == "oauth2" && segments[1] != "v1":
+			// A custom authorization server.
+		default:
+			return fmt.Errorf(
+				"%s is not an Okta issuer — use https://%s for the org authorization server, "+
+					"or https://%s/oauth2/{server id} (for example /oauth2/default) for a custom one",
+				provider.IssuerURL, u.Host, u.Host,
+			)
+		}
+		if u.RawQuery != "" || u.Fragment != "" {
+			return errors.New("the Okta issuer carries no query string")
+		}
+	case db.ProtocolSAML:
+		if provider.SAMLMetadataURL == "" {
+			return nil // a pasted metadata document has no URL to check
+		}
+		u, err := url.Parse(provider.SAMLMetadataURL)
+		if err != nil || u.Host == "" {
+			return errors.New("the Okta metadata URL must be an absolute https URL")
+		}
+		return oktaHost(u)
+	default:
+		return errors.New("Okta is configured over OpenID Connect or SAML; for Okta's LDAP interface add a generic LDAP provider")
+	}
+	return nil
+}
+
+// oktaAdminSuffixes are the hosts of the admin console, one per Okta cell
+// family. "acme-admin.okta.com" serves no issuer and no metadata.
+var oktaAdminSuffixes = []string{"-admin.okta.com", "-admin.oktapreview.com", "-admin.okta-emea.com", "-admin.okta-gov.com"}
+
+func oktaHost(u *url.URL) error {
+	if u.Scheme != "https" {
+		return errors.New("Okta is only served over https")
+	}
+	host := strings.ToLower(u.Hostname())
+	for _, suffix := range oktaAdminSuffixes {
+		if org, ok := strings.CutSuffix(host, suffix); ok && org != "" {
+			return fmt.Errorf(
+				"%s is the Okta admin console — use your org's own domain, https://%s",
+				host, org+strings.TrimPrefix(suffix, "-admin"),
+			)
 		}
 	}
 	return nil

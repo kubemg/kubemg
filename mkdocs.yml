@@ -141,6 +141,7 @@ nav:
       - Metrics and logs:
           - Datasources: observability/datasources.md
           - Metrics and logs: observability/metrics-and-logs.md
+          - Alerts and alarms: observability/alerts.md
           - Linking other consoles: observability/consoles.md
       - Audit and compliance:
           - Audit trail: audit/trail.md

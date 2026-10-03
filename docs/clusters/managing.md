@@ -99,14 +99,19 @@ because those are things either kind of caller came to do.
 The cluster **as an installation**: name, environment, status, when it was
 last checked, the path traffic actually takes (cluster → kubemg → you, drawn
 as connected nodes rather than prose), API server / Kubernetes version /
-agent version or "direct API access" / when it was registered, live node
-**capacity** (agent mode only — a live sample, not a series, so it renders as
-meters rather than a chart), the [observability datasource
-panel](../observability/datasources.md), [other consoles](../observability/consoles.md),
-**CRD visibility curation** (agent mode only, see below), history charts
+agent version or "direct API access" / when it was registered, then **Usage**
+(agent mode only): the cluster's total CPU and memory as two dials, with each
+node's own reading beside them, busiest node first. It is a live sample, not
+a series — the dials are meters with no history behind them, and they change
+tone at 75% and 90%, marked on the rim. Under it sit the history charts
 (cluster CPU/memory) and a ranked comparison table (CPU/memory by namespace,
 restarts, not-ready containers, CPU throttling) once a datasource is wired
-up, and a mode-aware closing panel explaining exactly what "how this cluster
+up. Then one **Integrations** card gathers what the cluster is wired to: the
+[observability datasources](../observability/datasources.md) (metrics, logs,
+alerts), [other consoles](../observability/consoles.md) (Grafana, Argo CD,
+registry scanner), and **Explore sidebar** curation (agent mode only, see
+below) — one tile each, a dashed tile being one not connected yet. Last is a
+mode-aware closing panel explaining exactly what "how this cluster
 is reached" means for it — including, in agent mode, links into the
 cluster's own RBAC (`/clusters/:id/explore/clusterroles`) and its workload
 security posture (`/clusters/:id/security`); in direct mode, a reminder that
@@ -135,7 +140,7 @@ it summarises rather than duplicating a table of its own.
 
 `/clusters/:id/capacity` is its own address rather than a
 tab on the dashboard, because it answers a different question than the
-Capacity panel above: not "how much is this node using" but "what has the
+dashboard's Usage panel (whose **Capacity** button leads here): not "how much is this node using" but "what has the
 scheduler already promised away". It shows, per node, three numbers against
 the same allocatable denominator — reserved (requests), used (live, needs
 metrics-server), and the ceiling if every container spent its limit — plus
@@ -149,9 +154,13 @@ Deriving Explore's custom-resource sections from a cluster's own CRD list is
 what lets it browse an operator nobody at kubemg has heard of — and its cost
 is that a cluster running two or three operators can declare a hundred kinds,
 most of them one operator talking to itself (a lock object, an internal
-revision, a generated certificate request). `CrdVisibilityPanel` on the
-dashboard (agent mode only) is where an administrator says which of a
-cluster's CRDs are actually worth showing.
+revision, a generated certificate request). The **Explore sidebar** tile in
+the dashboard's Integrations card (agent mode only) is where an administrator
+says which of a cluster's CRDs are actually worth showing. The tile names the
+cluster's API groups with how many of each are shown; **Choose** opens the
+editor — one switch per kind, grouped by API group with a switch for the whole
+group, a filter, and *All* / *Shown* / *Hidden* views. Past 24 kinds the groups
+start folded, and a filter opens every group it matches.
 
 - **What is stored is the hidden set** (`cluster_crd_visibility`, keyed
   `plural.group`), never the shown one — so an install that has never opened

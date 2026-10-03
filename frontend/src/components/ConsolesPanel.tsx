@@ -10,6 +10,7 @@ import {
 import type { Cluster, ClusterConsole, ClusterConsolesResponse, ConsoleKind } from '../api/types'
 import { CONSOLES, CONSOLE_KINDS, datasourceUILabel } from '../lib/consoles'
 import { KIND_LABEL } from '../lib/datasources'
+import { INTEGRATION_GRID, IntegrationGroup, IntegrationTile } from './IntegrationTile'
 import { Button, Field, IconButton, Notice, Panel, Pill, Sheet, TextInput } from './primitives'
 
 /**
@@ -32,9 +33,12 @@ import { Button, Field, IconButton, Notice, Panel, Pill, Sheet, TextInput } from
 export function ConsolesPanel({
   cluster,
   className,
+  bare = false,
 }: {
   cluster: Cluster
   className?: string
+  /** Drawn as a group inside somebody else's panel rather than as its own. */
+  bare?: boolean
 }) {
   const [state, setState] = useState<ClusterConsolesResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -79,25 +83,19 @@ export function ConsolesPanel({
   // a reader would be looking at two empty rows they cannot act on.
   if (!loading && !editable && registered.size === 0 && datasourceUIs.length === 0) return null
 
-  return (
-    <Panel
-      eyebrow="Elsewhere"
-      title="Other consoles"
-      description="Where this cluster is operated from outside kubemg. These are links — kubemg stores no session for them and you sign in as yourself."
-      className={className}
-    >
-      <div className="flex flex-col">
-        {error ? (
-          <div className="p-4 pb-0">
-            <Notice tone="error">{error}</Notice>
-          </div>
-        ) : null}
+  // A reader with nothing to open and no way to register one has no tile.
+  const shown = CONSOLE_KINDS.filter((kind) => registered.has(kind) || editable)
 
-        {loading ? (
-          <p className="px-4 py-6 text-[13px] text-muted">Loading…</p>
-        ) : (
-          CONSOLE_KINDS.map((kind) => (
-            <ConsoleRow
+  const body = (
+    <>
+      {error ? <Notice tone="error">{error}</Notice> : null}
+
+      {loading ? (
+        <p className="py-2 text-[13px] text-muted">Loading…</p>
+      ) : shown.length > 0 ? (
+        <div className={INTEGRATION_GRID}>
+          {shown.map((kind) => (
+            <ConsoleTile
               key={kind}
               kind={kind}
               link={registered.get(kind)}
@@ -106,58 +104,88 @@ export function ConsolesPanel({
               onEdit={() => setEditing(kind)}
               onRemove={() => remove(kind)}
             />
-          ))
-        )}
-
-        {datasourceUIs.length > 0 ? (
-          <div className="border-t border-line-soft px-4 py-3">
-            <p className="label mb-2">The datasource’s own UI</p>
-            <div className="flex flex-wrap items-center gap-2">
-              {datasourceUIs.map((ui) => (
-                <a
-                  key={ui.kind}
-                  href={ui.url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="inline-flex items-center gap-1.5 rounded-chip border border-line bg-raised px-2 py-1 font-data text-[12px] text-muted transition-colors hover:text-fg"
-                  title={ui.url}
-                >
-                  <ExternalLink aria-hidden="true" className="size-3.5" />
-                  {KIND_LABEL[ui.kind]} · {datasourceUILabel(ui.provider)}
-                </a>
-              ))}
-            </div>
-            {/* Derived, never stored: it is the address the cluster already
-                declared with the provider's UI path on the end. */}
-            <p className="mt-2 text-[12px] leading-relaxed text-muted">
-              Built from the datasource address registered above. A datasource reached through the
-              agent tunnel has no such address — it is proxied by the cluster’s API server, not
-              opened by a browser.
-            </p>
-          </div>
-        ) : null}
-      </div>
-
-      {editing ? (
-        <ConsoleSheet
-          cluster={cluster}
-          kind={editing}
-          link={registered.get(editing) ?? null}
-          onClose={() => setEditing(null)}
-          onSaved={async () => {
-            setEditing(null)
-            await load()
-          }}
-        />
+          ))}
+        </div>
       ) : null}
+
+      {/* Beside the datasource tiles these links are already on each tile, so
+          the group form leaves them out rather than drawing them twice. */}
+      {!bare && datasourceUIs.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <p className="label">The datasource’s own UI</p>
+          <div className="flex flex-wrap items-center gap-2">
+            {datasourceUIs.map((ui) => (
+              <a
+                key={ui.kind}
+                href={ui.url}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex items-center gap-1.5 rounded-chip border border-line bg-raised px-2 py-1 font-data text-[12px] text-muted transition-colors hover:text-fg"
+                title={ui.url}
+              >
+                <ExternalLink aria-hidden="true" className="size-3.5" />
+                {KIND_LABEL[ui.kind]} · {datasourceUILabel(ui.provider)}
+              </a>
+            ))}
+          </div>
+          {/* Derived, never stored: it is the address the cluster already
+              declared with the provider's UI path on the end. */}
+          <p className="text-[12px] leading-relaxed text-muted">
+            Built from the cluster’s registered datasource address. A datasource reached through
+            the agent tunnel has no such address — it is proxied by the cluster’s API server, not
+            opened by a browser.
+          </p>
+        </div>
+      ) : null}
+    </>
+  )
+
+  const sheet = editing ? (
+    <ConsoleSheet
+      cluster={cluster}
+      kind={editing}
+      link={registered.get(editing) ?? null}
+      onClose={() => setEditing(null)}
+      onSaved={async () => {
+        setEditing(null)
+        await load()
+      }}
+    />
+  ) : null
+
+  if (bare) {
+    return (
+      <IntegrationGroup
+        title="Other consoles"
+        description="Links only — kubemg stores no session for them, and you sign in as yourself."
+      >
+        {body}
+        {sheet}
+      </IntegrationGroup>
+    )
+  }
+
+  return (
+    <Panel
+      eyebrow="Elsewhere"
+      title="Other consoles"
+      description={DESCRIPTION}
+      className={className}
+      bodyClassName="flex flex-col gap-3 p-4"
+    >
+      {body}
+      {sheet}
     </Panel>
   )
 }
 
+const DESCRIPTION =
+  'Where this cluster is operated from outside kubemg. These are links — kubemg stores no session for them and you sign in as yourself.'
+
 const CONSOLE_ICON = { grafana: BarChart3, argocd: GitBranch, registry: ShieldAlert } as const
 
-/** ConsoleRow is one console: where it is, or the offer to say where it is. */
-function ConsoleRow({
+/** ConsoleTile is one console: where it is, or the offer to say where it is. */
+function ConsoleTile({
   kind,
   link,
   editable,
@@ -173,70 +201,77 @@ function ConsoleRow({
   onRemove: () => void
 }) {
   const info = CONSOLES[kind]
-  const Icon = CONSOLE_ICON[kind]
 
-  // A reader with nothing to open and no way to register one has nothing here.
-  if (!link && !editable) return null
-
-  return (
-    <div className="flex flex-wrap items-center gap-3 border-t border-line-soft px-4 py-3 first:border-t-0">
-      <Icon aria-hidden="true" className="size-4 shrink-0 text-muted" />
-
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[13.5px] font-medium text-fg">{info.label}</span>
-          {link?.ref ? (
-            <Pill tone="idle" dot={false}>
-              {link.ref}
-            </Pill>
-          ) : null}
-          {!link ? (
-            <Pill tone="idle" dot={false}>
-              Not registered
-            </Pill>
-          ) : null}
-        </div>
-
-        {link ? (
-          <a
-            href={link.url}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="mt-1 inline-flex max-w-full items-center gap-1.5 font-data text-[12px] text-accent transition-colors hover:text-accent-hover"
-          >
-            <span className="truncate">{link.url}</span>
-            <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
-          </a>
-        ) : (
-          <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted">{info.purpose}</p>
-        )}
-      </div>
-
-      {editable ? (
-        <div className="flex shrink-0 items-center gap-2">
-          {link ? (
-            <>
-              <IconButton label={`Edit the ${info.label} address`} onClick={onEdit} disabled={busy}>
-                <Pencil aria-hidden="true" className="size-3.5" />
-              </IconButton>
-              <IconButton
-                label={`Remove the ${info.label} address`}
-                onClick={onRemove}
-                disabled={busy}
-                tone="danger"
-              >
-                <Trash2 aria-hidden="true" className="size-3.5" />
-              </IconButton>
-            </>
-          ) : (
+  if (!link) {
+    return (
+      <IntegrationTile
+        icon={CONSOLE_ICON[kind]}
+        title={info.label}
+        wired={false}
+        state={
+          <Pill tone="idle" dot={false}>
+            Not registered
+          </Pill>
+        }
+        actions={
+          editable ? (
             <Button size="sm" onClick={onEdit}>
               <Plus aria-hidden="true" className="size-3.5" />
               Add
             </Button>
-          )}
-        </div>
-      ) : null}
-    </div>
+          ) : null
+        }
+      >
+        <p className="text-muted">{info.purpose}</p>
+      </IntegrationTile>
+    )
+  }
+
+  return (
+    <IntegrationTile
+      icon={CONSOLE_ICON[kind]}
+      title={info.label}
+      wired
+      meta={link.ref ? <span className="font-data">{link.ref}</span> : undefined}
+      state={
+        // Only an address is stored and nothing is probed, so the state is
+        // neutral: "linked" says where it is, never that it is up.
+        <Pill tone="idle">Linked</Pill>
+      }
+      link={
+        <a
+          href={link.url}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="inline-flex max-w-full items-center gap-1.5 text-[12.5px] font-medium text-accent transition-colors hover:text-accent-hover"
+          title={link.url}
+        >
+          <span className="truncate">Open {info.label}</span>
+          <ExternalLink aria-hidden="true" className="size-3.5 shrink-0" />
+        </a>
+      }
+      actions={
+        editable ? (
+          <>
+            <IconButton label={`Edit the ${info.label} address`} onClick={onEdit} disabled={busy}>
+              <Pencil aria-hidden="true" className="size-3.5" />
+            </IconButton>
+            <IconButton
+              label={`Remove the ${info.label} address`}
+              onClick={onRemove}
+              disabled={busy}
+              tone="danger"
+            >
+              <Trash2 aria-hidden="true" className="size-3.5" />
+            </IconButton>
+          </>
+        ) : null
+      }
+    >
+      <p className="truncate font-data text-fg" title={link.url}>
+        {link.url}
+      </p>
+    </IntegrationTile>
   )
 }
 

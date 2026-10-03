@@ -31,10 +31,14 @@ import (
 const (
 	SourceMetrics = "metrics"
 	SourceLogs    = "logs"
+	// SourceAlerts is the cluster's Alertmanager: what is firing now, what is
+	// silenced, and — through its RuleLabels — how an alarm KubeMG writes as a
+	// PrometheusRule gets picked up by the Prometheus that routes to it.
+	SourceAlerts = "alerts"
 )
 
 // SourceKinds enumerates the datasource kinds a cluster can carry.
-var SourceKinds = []string{SourceMetrics, SourceLogs}
+var SourceKinds = []string{SourceMetrics, SourceLogs, SourceAlerts}
 
 // Providers KubeMG knows how to talk to. The metrics four all speak the
 // Prometheus query API, which is why they share one probe; the logs two do not
@@ -47,6 +51,8 @@ const (
 
 	ProviderVictoriaLogs = "victorialogs"
 	ProviderLoki         = "loki"
+
+	ProviderAlertmanager = "alertmanager"
 )
 
 // ProvidersFor lists the providers assignable to a datasource kind.
@@ -56,6 +62,8 @@ func ProvidersFor(kind string) []string {
 		return []string{ProviderVictoriaMetrics, ProviderPrometheus, ProviderThanos, ProviderMimir}
 	case SourceLogs:
 		return []string{ProviderVictoriaLogs, ProviderLoki}
+	case SourceAlerts:
+		return []string{ProviderAlertmanager}
 	default:
 		return nil
 	}
@@ -159,6 +167,13 @@ type ObservabilitySource struct {
 	// the logs one, and they are two different uids.
 	GrafanaDatasource string `gorm:"size:190" json:"grafana_datasource,omitempty"`
 
+	// RuleLabels applies to an alerts source only: the labels a PrometheusRule
+	// must carry for this cluster's Prometheus to load it (its CR's
+	// spec.ruleSelector — `release: kube-prom` on a kube-prometheus-stack).
+	// Stored as `k=v,k=v`; read through RuleLabelMap. An alarm written without
+	// them is a valid object that nothing ever evaluates.
+	RuleLabels string `gorm:"type:text" json:"-"`
+
 	LastCheckedAt *time.Time `json:"last_checked_at,omitempty"`
 	LastStatus    string     `gorm:"size:20;not null;default:pending" json:"last_status"`
 	LastMessage   string     `gorm:"type:text" json:"last_message,omitempty"`
@@ -173,6 +188,39 @@ type ObservabilitySource struct {
 
 // TableName pins the table name.
 func (ObservabilitySource) TableName() string { return "observability_sources" }
+
+// RuleLabelMap reads the stored rule labels.
+func (s ObservabilitySource) RuleLabelMap() map[string]string {
+	return ParseLabelPairs(s.RuleLabels)
+}
+
+// ParseLabelPairs reads a `k=v,k=v` list. Malformed pairs are skipped: the
+// value was validated when it was written.
+func ParseLabelPairs(raw string) map[string]string {
+	out := map[string]string{}
+	for _, pair := range strings.Split(raw, ",") {
+		key, value, ok := strings.Cut(strings.TrimSpace(pair), "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			continue
+		}
+		out[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+	return out
+}
+
+// FormatLabelPairs writes a label map as a sorted `k=v,k=v` list.
+func FormatLabelPairs(labels map[string]string) string {
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	pairs := make([]string, 0, len(keys))
+	for _, key := range keys {
+		pairs = append(pairs, key+"="+labels[key])
+	}
+	return strings.Join(pairs, ",")
+}
 
 // HasCredential reports whether a secret is stored for this source.
 func (s ObservabilitySource) HasCredential() bool { return strings.TrimSpace(s.Credential) != "" }
@@ -232,7 +280,7 @@ func (s *Store) PutObservabilitySource(ctx context.Context, source *Observabilit
 			"provider", "access_mode", "url",
 			"service_namespace", "service_name", "service_port", "service_scheme",
 			"path_prefix", "auth_mode", "username", "credential",
-			"insecure_skip_verify", "enabled", "grafana_datasource",
+			"insecure_skip_verify", "enabled", "grafana_datasource", "rule_labels",
 			"last_checked_at", "last_status", "last_message", "detected_version",
 			"updated_at",
 		}),

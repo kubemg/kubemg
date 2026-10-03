@@ -112,6 +112,7 @@ export function ResourceInsights({
   onOpen,
   alertHref,
   trend,
+  signals,
 }: {
   insight: ResourceInsight
   /** The bucket the list is currently narrowed to, or null for the whole list. */
@@ -141,6 +142,14 @@ export function ResourceInsights({
    * bar, which do not.
    */
   trend?: ReactNode
+  /**
+   * The namespace block — composition by workload, and the four signals the
+   * phase bar cannot show. A full-width row under the legend, like the trend.
+   * Where it is drawn it already names restarting and image-failing pods and
+   * carries live usage at the centre of its donut, so the band drops its own
+   * copies of those rather than saying each thing twice.
+   */
+  signals?: ReactNode
 }) {
   const [folded, setFolded] = useState(readFolded)
 
@@ -150,7 +159,13 @@ export function ResourceInsights({
     writeFolded(next)
   }
 
-  const { total, segments, readings, alerts, alerting, usage, headline, summary } = insight
+  const { total, segments, headline, summary } = insight
+  const readings = signals
+    ? insight.readings.filter((stat) => stat.id !== 'restarting')
+    : insight.readings
+  const usage = signals ? undefined : insight.usage
+  const alerts = signals ? insight.alerts.filter((alert) => !alert.cause) : insight.alerts
+  const alerting = signals ? insight.alerting - (insight.covered ?? 0) : insight.alerting
   const named = alerts.slice(0, NAMED_ALERTS)
   const rest = alerting - named.length
 
@@ -160,9 +175,9 @@ export function ResourceInsights({
         <Total stat={total} bucket={bucket} onBucket={onBucket} />
         <span aria-hidden="true" className="h-4 w-px shrink-0 bg-line" />
         <StateLine tone={insight.headlineTone} headline={headline} />
-        {alerting > 0 ? (
+        {insight.alerting > 0 ? (
           <span className="shrink-0 text-[12px] text-warn">
-            {alerting} need{alerting === 1 ? 's' : ''} attention
+            {insight.alerting} need{insight.alerting === 1 ? 's' : ''} attention
           </span>
         ) : null}
         {summary.length > 0 ? (
@@ -266,6 +281,8 @@ export function ResourceInsights({
           ) : null}
         </div>
       ) : null}
+
+      {signals ? <div className="border-t border-line-soft">{signals}</div> : null}
 
       {trend ? <div className="border-t border-line-soft">{trend}</div> : null}
     </section>
