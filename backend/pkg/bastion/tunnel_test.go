@@ -419,6 +419,7 @@ func TestAgentHandshakeMarksTheClusterHealthy(t *testing.T) {
 	}
 
 	waitFor(t, func() bool { return h.gateway.Registry().Connected(1) })
+	waitForState(t, h, func(state db.AgentState) bool { return state.Connected })
 
 	states := h.store.recordedStates()
 	if len(states) == 0 || !states[0].Connected {
@@ -463,12 +464,7 @@ func TestAgentDisconnectMarksTheClusterUnhealthy(t *testing.T) {
 
 	agent.close()
 	waitFor(t, func() bool { return !h.gateway.Registry().Connected(1) })
-
-	states := h.store.recordedStates()
-	last := states[len(states)-1]
-	if last.Connected {
-		t.Fatalf("expected a disconnect to be recorded, got %+v", last)
-	}
+	last := waitForState(t, h, func(state db.AgentState) bool { return !state.Connected })
 	if last.StatusMessage == "" {
 		t.Fatal("a dropped tunnel should say why the cluster is unreachable")
 	}
@@ -1016,4 +1012,24 @@ func waitFor(t *testing.T, condition func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("timed out waiting for the tunnel to settle")
+}
+
+// waitForState waits until the newest recorded agent state satisfies
+// condition, and returns it. The registry changes before the state is written —
+// a tunnel is deregistered and only then is the cluster marked down — so a test
+// that reads the states the moment the registry settles can catch the write
+// before it lands.
+func waitForState(t *testing.T, h *harness, condition func(db.AgentState) bool) db.AgentState {
+	t.Helper()
+
+	var last db.AgentState
+	waitFor(t, func() bool {
+		states := h.store.recordedStates()
+		if len(states) == 0 {
+			return false
+		}
+		last = states[len(states)-1]
+		return condition(last)
+	})
+	return last
 }
