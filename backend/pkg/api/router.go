@@ -903,6 +903,10 @@ func NewRouter(opts Options) *gin.Engine {
 			// never read), the ServiceAccount, volume claims and their volumes.
 			// See resources_dependencies.go.
 			resources.GET("/dependencies", s.showDependencyMap)
+			// A ConfigMap's keys and values, or a Secret's keys and sizes — never
+			// a Secret value, which only /secret/value hands out. See
+			// resources_config_entries.go.
+			resources.GET("/config/entries", s.showConfigEntries)
 
 			// The rest of the inventory behind the Explore sidebar: one route
 			// per list an operator can be looking at. The cluster-scoped ones

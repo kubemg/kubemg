@@ -206,7 +206,13 @@ a release is a labelled Secret rather than a kind the API server counts.
 One drawer, one object, four tabs — because finding out something is broken,
 asking why, and changing it is one investigation rather than three:
 
-- **Overview** — the object's own summary fields. On an Ingress, HTTPRoute,
+- **Overview** — the object's own summary fields. A **ConfigMap** opens on its
+  data: each key with its value (values over 64 KiB are cut, with the whole
+  object on the YAML tab; binary data is shown as a size). A **Secret** opens on
+  its keys and their sizes — never a value; if you hold the reveal-secrets
+  capability, each key has a **Reveal** button that reads that one value and
+  records it in the audit trail before it is shown, and otherwise the drawer
+  says who grants it. On an Ingress, HTTPRoute,
   VirtualService or Service it opens with the **traffic map** — see
   [The traffic map](#the-traffic-map) below — because where a route sends its
   traffic is the first thing a route is opened for.

@@ -23,6 +23,7 @@ import { HelmValuesPanel } from './HelmValuesPanel'
 import { LogExplorer } from './LogExplorer'
 import { ReachabilityTab } from './NetworkPolicyReachability'
 import { TrafficMapPanel } from './TrafficMap'
+import { ConfigDataPanel } from './ConfigDataPanel'
 import { PodLogView, PodOverview } from './PodPanels'
 import { WorkloadActionPanel } from './WorkloadActionPanel'
 import type { WorkloadActionName, WorkloadActionTarget } from './WorkloadActionPanel'
@@ -781,6 +782,15 @@ function OverviewTab({
           what each container is using against its own limit, and how often it
           has restarted. The list row already carries all of it. */}
       {pod ? <PodOverview cluster={cluster} pod={pod} /> : null}
+
+      {/* A ConfigMap or a Secret is opened for what it holds, not for its
+          metadata — so that leads, one key at a time. */}
+      {namespace && (kind === 'configmaps' || kind === 'secrets') ? (
+        <div className="flex flex-col gap-2">
+          <span className="label">Data</span>
+          <ConfigDataPanel cluster={cluster} kind={kind} name={name} namespace={namespace} />
+        </div>
+      ) : null}
 
       {/* Where a route's traffic goes is the first thing a route is opened
           for — "does this host reach anything, and is it healthy" — so it

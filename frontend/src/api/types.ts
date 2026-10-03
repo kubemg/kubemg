@@ -1185,6 +1185,27 @@ export interface StorageClass {
  * A ConfigMap or a Secret. Only the keys travel — a value is never in a
  * response, so no secret lands in a browser cache because someone opened a list.
  */
+/** One key of a ConfigMap or Secret, as its own detail reads it. */
+export interface DataEntry {
+  key: string
+  /** A ConfigMap's text value. Never present for a Secret, nor for binaryData. */
+  value?: string
+  bytes: number
+  binary: boolean
+  /** The value was cut at 64 KiB; the YAML tab has the whole object. */
+  truncated?: boolean
+}
+
+/** What a ConfigMap or Secret holds. A Secret's entries carry no value —
+    `values_shown` is false and a value comes only from the reveal route. */
+export interface DataEntries {
+  kind: 'ConfigMap' | 'Secret'
+  type?: string
+  immutable: boolean
+  entries: DataEntry[]
+  values_shown: boolean
+}
+
 export interface ConfigEntry {
   name: string
   namespace: string

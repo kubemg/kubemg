@@ -37,6 +37,7 @@ import type {
   ClusterListResponse,
   ClusterNode,
   ConfigEntry,
+  DataEntries,
   CronJob,
   CronJobRunResult,
   CustomResource,
@@ -1067,6 +1068,20 @@ export async function fetchDependencyMap(
     params: { kind, name, namespace },
   })
   return { ...data, nodes: data.nodes ?? [], edges: data.edges ?? [], notes: data.notes ?? [] }
+}
+
+/** A ConfigMap's keys and values, or a Secret's keys and sizes — never a
+    Secret value, which only `revealSecretValue` reads. */
+export async function fetchDataEntries(
+  clusterId: number,
+  kind: 'configmaps' | 'secrets',
+  name: string,
+  namespace: string,
+): Promise<DataEntries> {
+  const { data } = await http.get<DataEntries>(resourceURL(clusterId, 'config/entries'), {
+    params: { kind, name, namespace },
+  })
+  return { ...data, entries: data.entries ?? [] }
 }
 
 /** The namespace-level summary of what is and is not covered. */
