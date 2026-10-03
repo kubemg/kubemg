@@ -8,6 +8,7 @@ import { AuditForwardingPanel } from '../../components/settings/AuditForwardingP
 import { AuditSettingsPanel } from '../../components/settings/AuditSettingsPanel'
 import { settingSource } from '../../lib/settings'
 import { SettingsAside, SettingsLayout } from '../../components/settings/SettingsLayout'
+import { useUnsavedGuard } from '../../lib/unsavedGuard'
 
 /**
  * Blank means "use the default", so the form state is the override, not the
@@ -100,6 +101,12 @@ export function AuditSettings() {
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!retentionValid || !recordingRetentionValid) {
+      document
+        .getElementById(retentionValid ? 'session_recording_retention_days' : 'audit_retention_days')
+        ?.focus()
+      return
+    }
     setBusy(true)
     setError(null)
     setSaved(false)
@@ -139,12 +146,12 @@ export function AuditSettings() {
       ) ||
       draft.record_exec_sessions !== settings.effective.record_exec_sessions ||
       draft.record_manifest_diffs !== settings.effective.record_manifest_diffs)
-
-  const valid = retentionValid && recordingRetentionValid
+  useUnsavedGuard(dirty, 'these settings')
 
   return (
     <SettingsLayout
       title="Audit settings"
+      description="What the audit trail keeps and for how long, whether shells are recorded, and where the trail is forwarded. Refusals, streaming calls and replays are recorded whatever is selected here."
       aside={
         settings ? (
           <>
@@ -203,7 +210,7 @@ export function AuditSettings() {
               type="submit"
               form="audit-settings-form"
               variant="primary"
-              disabled={busy || !dirty || !valid}
+              disabled={busy || !dirty}
             >
               {busy ? 'Saving…' : 'Save settings'}
             </Button>
@@ -250,7 +257,7 @@ export function AuditSettings() {
           written, not by the page's Save button, and putting rows that already
           persisted behind a dirty-state save would be a lie about what is in
           force. */}
-      <div className="mt-4 flex min-w-0 max-w-3xl flex-col gap-4">
+      <div className="flex min-w-0 max-w-5xl flex-col gap-4">
         <AuditForwardingPanel />
       </div>
     </SettingsLayout>

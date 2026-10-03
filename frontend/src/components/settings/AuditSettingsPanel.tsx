@@ -96,7 +96,6 @@ export function AuditSettingsPanel({
   return (
     <>
       <Panel
-        eyebrow="Audit"
         title="What reaches the trail"
         description="Every proxied call is recorded. On a busy fleet most of those rows are reads nobody queries, so the table can be narrowed to the actions worth keeping — the structured log a SIEM tails stays complete either way."
         bodyClassName="flex flex-col gap-4 p-4"
@@ -118,7 +117,7 @@ export function AuditSettingsPanel({
             <div className="flex flex-wrap gap-2">
               {group.verbs.map((verb) => (
                 <Chip key={verb} active={active(verb)} onClick={() => toggle(verb)}>
-                  <span className="font-mono text-[12.5px]">{verb}</span>
+                  <span className="font-data text-[12.5px]">{verb}</span>
                 </Chip>
               ))}
             </div>
@@ -168,7 +167,7 @@ export function AuditSettingsPanel({
             max={3650}
             step={1}
             inputMode="numeric"
-            className="max-w-40 font-mono text-[12.5px]"
+            className="max-w-40 font-data text-[12.5px]"
             placeholder={String(defaults.audit_retention_days)}
             value={retentionDays}
             onChange={(event) => onRetentionChange(event.target.value)}
@@ -189,7 +188,7 @@ export function AuditSettingsPanel({
             max={3650}
             step={1}
             inputMode="numeric"
-            className="max-w-40 font-mono text-[12.5px]"
+            className="max-w-40 font-data text-[12.5px]"
             placeholder={String(effective.audit_retention_days)}
             value={recordingRetentionDays}
             onChange={(event) => onRecordingRetentionChange(event.target.value)}
@@ -275,7 +274,7 @@ function Effective({ label, value }: { label: string; value: string }) {
   return (
     <p className="flex flex-wrap items-baseline gap-2 rounded-control bg-raised px-3 py-2">
       <span className="label">{label}</span>
-      <span className="min-w-0 truncate font-mono text-[12.5px] text-fg">{value}</span>
+      <span className="min-w-0 truncate font-data text-[12.5px] text-fg">{value}</span>
     </p>
   )
 }

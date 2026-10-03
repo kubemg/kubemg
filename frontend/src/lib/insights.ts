@@ -161,7 +161,7 @@ export interface ResourceInsight {
   /** Aggregate live consumption, when the cluster serves the Metrics API. */
   usage?: { cpu: number; memory: number; sampled: number }
   /**
-   * The compact mono fragments the folded header carries on its right. Folding
+   * The compact data fragments the folded header carries on its right. Folding
    * has to cost the reader something, but it must not cost them the reason they
    * would have unfolded.
    */
@@ -305,7 +305,10 @@ export function bucketLabel(
 
 /** Plural without a lookup table, which is all these labels ever need. */
 function plural(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? '' : 's'}`
+  if (count === 1) return `${count} ${word}`
+  // "ingresss" and "classs" read as typos on the one line meant to be read at a
+  // glance, so a sibilant takes "es".
+  return `${count} ${word}${/(s|x|z|ch|sh)$/.test(word) ? 'es' : 's'}`
 }
 
 /**
@@ -820,7 +823,9 @@ export function ingressInsights(ingresses: Ingress[], label: string): ResourceIn
   return {
     headline:
       pending.length === 0
-        ? `All ${plural(ingresses.length, 'ingress')} have an address`
+        ? ingresses.length === 1
+          ? 'The ingress has an address'
+          : `All ${plural(ingresses.length, 'ingress')} have an address`
         : `${plural(pending.length, 'ingress')} without an address`,
     headlineTone: pending.length === 0 ? 'ok' : 'warn',
     total: reading(label, ingresses.length),
@@ -914,7 +919,9 @@ export function routeInsights(routes: Route[], label: string): ResourceInsight {
   return {
     headline:
       orphaned.length === 0
-        ? `All ${plural(routes.length, 'route')} are attached to a gateway`
+        ? routes.length === 1
+          ? 'The route is attached to a gateway'
+          : `All ${plural(routes.length, 'route')} are attached to a gateway`
         : `${plural(orphaned.length, 'route')} attached to no gateway`,
     headlineTone: orphaned.length === 0 ? 'ok' : 'warn',
     total: reading(label, routes.length),

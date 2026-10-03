@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Pod, PodContainer } from '../api/types'
-import { MAX_ALERTS, matchesPodBucket, podBucket, podFailureReason, podInsights } from './insights'
+import type { Ingress, Pod, PodContainer } from '../api/types'
+import {
+  MAX_ALERTS,
+  ingressInsights,
+  matchesPodBucket,
+  podBucket,
+  podFailureReason,
+  podInsights,
+} from './insights'
 
 /*
  * The bucketing is the one derivation two surfaces have to agree on: the pod
@@ -174,5 +181,22 @@ describe('podInsights', () => {
     expect(insight.usage).toEqual({ cpu: 120, memory: 64 * 1024 * 1024, sampled: 1 })
     // No sample at all is absent, not zero.
     expect(podInsights([pod()], new Map()).usage).toBeUndefined()
+  })
+})
+
+describe('ingress insights', () => {
+  const ingress = (name: string, addresses: string[]): Ingress => ({
+    name,
+    namespace: 'shop',
+    created_at: '2026-10-01T00:00:00Z',
+    class: 'nginx',
+    hosts: [`${name}.example.com`],
+    addresses,
+    rules: 1,
+  })
+
+  it('pluralises a sibilant as a word, not a typo', () => {
+    const insight = ingressInsights([ingress('a', []), ingress('b', [])], 'Ingresses')
+    expect(insight.headline).toBe('2 ingresses without an address')
   })
 })

@@ -25,7 +25,10 @@ export function AccessRequests() {
   const [params] = useSearchParams()
 
   return (
-    <AppShell title="Access requests">
+    <AppShell
+      title="Access requests"
+      description="Elevated access is asked for with a reason, decided by somebody other than the person asking, and ends by itself when its window runs out."
+    >
       <JitApprovalsPanel clusters={clusters} focusRequest={params.get('request')} />
     </AppShell>
   )

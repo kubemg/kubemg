@@ -8,8 +8,11 @@ export function AlertingSettings() {
   const { clusters } = useClusters()
 
   return (
-    <SettingsLayout title="Alerting">
-      <div className="flex min-w-0 max-w-3xl flex-col gap-4">
+    <SettingsLayout
+      title="Alerting"
+      description="Where kubemg sends what it notices — a cluster’s own events and kubemg’s audit records — and which of them are worth a message."
+    >
+      <div className="flex min-w-0 max-w-5xl flex-col gap-4">
         <AlarmSettingsPanel clusters={clusters} />
       </div>
     </SettingsLayout>

@@ -167,7 +167,7 @@ Refusing to disclose that difference would be worse than not shipping the button
 
 It is offered rather than done. Somebody rotating a password because they think it leaked wants the kubeconfigs gone with it; somebody rotating one on a schedule does not want every laptop on their team to stop working, and doing it silently would be the wrong answer to both. The trail records both acts separately — one `password-change`, and one `kubeconfig-revoke` per credential.
 
-In the console it is **Change password** on `/me/credentials`, beside the register it acts on. The button is absent for an account whose password is not held here: a federated account changes it with its provider, and a machine account has none at all — its credential is a [machine token](machine-accounts.md), with a revoke of its own.
+In the console it is **Change password** on your profile (`/me/profile`, reached from your name on the sidebar's person card) and on `/me/credentials`, beside the register it acts on. The button is absent for an account whose password is not held here: a federated account changes it with its provider, and a machine account has none at all — its credential is a [machine token](machine-accounts.md), with a revoke of its own.
 
 ## Embedded CA rules, summarized
 

@@ -69,6 +69,11 @@ environment — if an administrator changes the public URL or the
 agent image in **Settings → Agent**, every install command issued afterward
 reflects the change immediately, with no redeploy of the bastion.
 
+<figure markdown>
+  ![The agent install sheet](../assets/screenshots/agent-install-sheet.png)
+  <figcaption>The install sheet on a registered cluster. The apply command carries a single-use download URL, never the registration token, which stays masked until asked for.</figcaption>
+</figure>
+
 ## What lands in the cluster
 
 ```
@@ -188,7 +193,7 @@ no controller, no persistent volume.
 ## Upgrading the agent image
 
 The agent's image is set by `KUBEMG_AGENT_IMAGE` (default
-`ghcr.io/kubemg/kubemg-agent:0.11.1`), overridable at runtime from **Settings →
+`ghcr.io/kubemg/kubemg-agent:0.12.0`), overridable at runtime from **Settings →
 Agent** without restarting the bastion. Changing it affects **future** install
 and re-apply commands; an already-running agent keeps running its current
 image until the manifest is re-applied.
@@ -286,7 +291,7 @@ no route to `ghcr.io`, mirror the image into an internal registry and point
 `KUBEMG_AGENT_IMAGE` at it:
 
 ```dotenv
-KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.11.1
+KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.12.0
 ```
 
 This has to be reachable **from every cluster kubemg manages**, not from the
@@ -301,9 +306,9 @@ an install needs into one `docker load` tarball. Both are covered in
 Building the agent image yourself:
 
 ```bash
-make agent-image AGENT_VERSION=0.11.1     # builds ghcr.io/kubemg/kubemg-agent:0.11.1 locally
+make agent-image AGENT_VERSION=0.12.0     # builds ghcr.io/kubemg/kubemg-agent:0.12.0 locally
 make agent-image-check                    # proves the amd64+arm64 matrix builds
-make agent-push AGENT_VERSION=0.11.1       # requires docker login; pushes both arches
+make agent-push AGENT_VERSION=0.12.0       # requires docker login; pushes both arches
 ```
 
 `REGISTRY` in the `Makefile` (default `ghcr.io/kubemg`) is what an air-gapped

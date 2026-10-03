@@ -657,6 +657,9 @@ func NewRouter(opts Options) *gin.Engine {
 	{
 		v1.POST("/auth/login", s.login)
 		v1.GET("/auth/me", requireAuth, s.me)
+		// Editing your own details, beside reading them — PUT /users/:id is an
+		// administrator editing somebody else's account. See profile.go.
+		v1.PATCH("/auth/me", requireAuth, s.updateProfile)
 		// The console calls this over a header-authenticated request, then opens
 		// the WebSocket the ticket is for — see auth.Manager.IssueWSTicket.
 		v1.POST("/auth/ws-ticket", requireAuth, s.mintWSTicket)
@@ -889,6 +892,21 @@ func NewRouter(opts Options) *gin.Engine {
 			// ControllerRevisions it owns, resolved the same ownership-first
 			// way workload/pods is. See resources_rollout.go.
 			resources.GET("/workload/history", s.showWorkloadHistory)
+
+			// Where a route's traffic goes: an Ingress, HTTPRoute or
+			// VirtualService followed to its Services, their endpoints, the
+			// workloads behind them and their pods — or a Service followed back
+			// to the routes that send to it. Every hop is the caller's own
+			// impersonated read. See resources_traffic.go.
+			resources.GET("/traffic", s.showTrafficMap)
+			// What a workload's pod template names — ConfigMaps, Secrets (named,
+			// never read), the ServiceAccount, volume claims and their volumes.
+			// See resources_dependencies.go.
+			resources.GET("/dependencies", s.showDependencyMap)
+			// A ConfigMap's keys and values, or a Secret's keys and sizes — never
+			// a Secret value, which only /secret/value hands out. See
+			// resources_config_entries.go.
+			resources.GET("/config/entries", s.showConfigEntries)
 
 			// The rest of the inventory behind the Explore sidebar: one route
 			// per list an operator can be looking at. The cluster-scoped ones

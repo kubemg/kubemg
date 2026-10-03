@@ -228,7 +228,7 @@ function WorkloadFields({
               <Field label="Schedule" htmlFor={`${id}-schedule`} hint="Five-field cron.">
                 <TextInput
                   id={`${id}-schedule`}
-                  className="font-mono text-[12.5px]"
+                  className="font-data text-[12.5px]"
                   value={values.schedule}
                   placeholder="0 3 * * *"
                   onChange={(event) => set({ schedule: event.target.value })}
@@ -264,7 +264,7 @@ function WorkloadFields({
           <Field label="Image" htmlFor={`${id}-image`}>
             <TextInput
               id={`${id}-image`}
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               value={values.image}
               placeholder="nginx"
               onChange={(event) => set({ image: event.target.value })}
@@ -277,7 +277,7 @@ function WorkloadFields({
           >
             <TextInput
               id={`${id}-tag`}
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               value={values.tag}
               placeholder="1.27-alpine"
               onChange={(event) => set({ tag: event.target.value })}
@@ -316,7 +316,7 @@ function WorkloadFields({
               />
               <TextInput
                 aria-label="Container port"
-                className="w-28 font-mono text-[12.5px]"
+                className="w-28 font-data text-[12.5px]"
                 value={entry.port}
                 placeholder="8080"
                 onChange={(event) => update({ port: event.target.value })}
@@ -355,7 +355,7 @@ function WorkloadFields({
             <>
               <TextInput
                 aria-label="Variable name"
-                className="w-40 font-mono text-[12.5px]"
+                className="w-40 font-data text-[12.5px]"
                 value={entry.name}
                 placeholder="LOG_LEVEL"
                 onChange={(event) => update({ name: event.target.value })}
@@ -390,7 +390,7 @@ function WorkloadFields({
                   />
                   <TextInput
                     aria-label="Key"
-                    className="w-32 font-mono text-[12.5px]"
+                    className="w-32 font-data text-[12.5px]"
                     value={entry.refKey}
                     placeholder="password"
                     onChange={(event) => update({ refKey: event.target.value })}
@@ -410,7 +410,7 @@ function WorkloadFields({
           <Field label="CPU request" htmlFor={`${id}-cpureq`}>
             <TextInput
               id={`${id}-cpureq`}
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               value={values.cpuRequest}
               placeholder="50m"
               onChange={(event) => set({ cpuRequest: event.target.value })}
@@ -419,7 +419,7 @@ function WorkloadFields({
           <Field label="CPU limit" htmlFor={`${id}-cpulim`}>
             <TextInput
               id={`${id}-cpulim`}
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               value={values.cpuLimit}
               placeholder="250m"
               onChange={(event) => set({ cpuLimit: event.target.value })}
@@ -428,7 +428,7 @@ function WorkloadFields({
           <Field label="Memory request" htmlFor={`${id}-memreq`}>
             <TextInput
               id={`${id}-memreq`}
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               value={values.memoryRequest}
               placeholder="64Mi"
               onChange={(event) => set({ memoryRequest: event.target.value })}
@@ -437,7 +437,7 @@ function WorkloadFields({
           <Field label="Memory limit" htmlFor={`${id}-memlim`}>
             <TextInput
               id={`${id}-memlim`}
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               value={values.memoryLimit}
               placeholder="128Mi"
               onChange={(event) => set({ memoryLimit: event.target.value })}
@@ -534,14 +534,14 @@ function ServiceFields({
             <>
               <TextInput
                 aria-label="Label key"
-                className="w-40 font-mono text-[12.5px]"
+                className="w-40 font-data text-[12.5px]"
                 value={entry.key}
                 placeholder="app"
                 onChange={(event) => update({ key: event.target.value })}
               />
               <TextInput
                 aria-label="Label value"
-                className="w-44 font-mono text-[12.5px]"
+                className="w-44 font-data text-[12.5px]"
                 value={entry.value}
                 placeholder="payments-api"
                 onChange={(event) => update({ value: event.target.value })}
@@ -572,14 +572,14 @@ function ServiceFields({
               />
               <TextInput
                 aria-label="Service port"
-                className="w-24 font-mono text-[12.5px]"
+                className="w-24 font-data text-[12.5px]"
                 value={entry.port}
                 placeholder="80"
                 onChange={(event) => update({ port: event.target.value })}
               />
               <TextInput
                 aria-label="Target port"
-                className="w-28 font-mono text-[12.5px]"
+                className="w-28 font-data text-[12.5px]"
                 value={entry.targetPort}
                 placeholder="8080"
                 onChange={(event) => update({ targetPort: event.target.value })}
@@ -673,7 +673,7 @@ function IngressFields({
               />
               <TextInput
                 aria-label="Path"
-                className="w-28 font-mono text-[12.5px]"
+                className="w-28 font-data text-[12.5px]"
                 value={entry.path}
                 placeholder="/"
                 onChange={(event) => update({ path: event.target.value })}
@@ -700,7 +700,7 @@ function IngressFields({
               />
               <TextInput
                 aria-label="Service port"
-                className="w-24 font-mono text-[12.5px]"
+                className="w-24 font-data text-[12.5px]"
                 value={entry.servicePort}
                 placeholder="80"
                 onChange={(event) => update({ servicePort: event.target.value })}
@@ -831,7 +831,7 @@ function HTTPRouteFields({
               </Select>
               <TextInput
                 aria-label="Path"
-                className="w-28 font-mono text-[12.5px]"
+                className="w-28 font-data text-[12.5px]"
                 value={entry.path}
                 placeholder="/"
                 onChange={(event) => update({ path: event.target.value })}
@@ -845,7 +845,7 @@ function HTTPRouteFields({
               />
               <TextInput
                 aria-label="Backend port"
-                className="w-24 font-mono text-[12.5px]"
+                className="w-24 font-data text-[12.5px]"
                 value={entry.backendPort}
                 placeholder="80"
                 onChange={(event) => update({ backendPort: event.target.value })}
@@ -898,7 +898,7 @@ function ConfigMapFields({
             <>
               <TextInput
                 aria-label="Key"
-                className="w-44 self-start font-mono text-[12.5px]"
+                className="w-44 self-start font-data text-[12.5px]"
                 value={entry.key}
                 placeholder="app.conf"
                 onChange={(event) => update({ key: event.target.value })}

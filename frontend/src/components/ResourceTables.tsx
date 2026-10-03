@@ -48,7 +48,6 @@ import {
 import {
   Age,
   IconButton,
-  OBJECT_MARK,
   OBJECT_NAME,
   Pill,
   Row,
@@ -403,7 +402,7 @@ export function ResourceView({
 /* ------------------------------------------------------------- cell atoms --- */
 
 /**
- * Name is the first column of every list: mono, truncated, with a state dot. It
+ * Name is the first column of every list: data face, truncated, with a state dot. It
  * carries the name and nothing else — where the object lives is the namespace
  * column's job (`NamespaceHead`/`NamespaceCell`), because a qualifier drawn
  * inside this cell spends the name's own width on itself.
@@ -439,15 +438,9 @@ function Name({
   to?: string
 }) {
   const full = namespace && title ? `${namespace}/${title}` : title
-  // The bar is the affordance, so it is drawn for exactly the two branches that
-  // open something. A name with nowhere to go wears nothing, which is what
-  // makes the bar readable in the rows that do.
-  const addressable = Boolean(to || onOpen)
 
   return (
-    <span
-      className={`flex items-start gap-2.5 ${addressable ? OBJECT_MARK : 'border-l-2 border-transparent -ml-2 pl-2'}`}
-    >
+    <span className="flex items-start gap-2.5">
       {tone ? (
         // `mt` rather than `items-center`: the dot belongs beside the name's
         // first line, not floating at the middle of a two-line name.
@@ -466,7 +459,7 @@ function Name({
         </button>
       ) : (
         <span
-          className="block min-w-0 font-mono font-medium text-fg [overflow-wrap:anywhere]"
+          className="block min-w-0 font-data font-medium text-fg [overflow-wrap:anywhere]"
           title={full}
         >
           {children}
@@ -508,7 +501,7 @@ function NamespaceHead({ show }: { show: boolean }) {
 function NamespaceCell({ show, namespace }: { show: boolean; namespace?: string }) {
   if (!show) return null
   return (
-    <Td className="truncate font-mono text-[12.5px] text-muted" title={namespace}>
+    <Td className="truncate font-data text-[12.5px] text-muted" title={namespace}>
       {namespace || '—'}
     </Td>
   )
@@ -538,7 +531,7 @@ function List({ values, empty = '—' }: { values: string[] | undefined; empty?:
   )
 }
 
-const MONO = 'truncate font-mono text-[12.5px] text-muted'
+const DATA = 'truncate font-data text-[12.5px] text-muted'
 const AGE = 'text-[12.5px] text-muted'
 
 /**
@@ -920,15 +913,16 @@ function HelmReleaseTable({
                 tone={helmTone(release.status)}
                 title={release.description || release.name}
                 namespace={release.namespace}
+                onOpen={onValues ? () => onValues(release, 'values') : undefined}
               >
                 {release.name}
               </Name>
             </Td>
             <NamespaceCell show={showNamespace} namespace={release.namespace} />
-            <Td className={`hidden md:table-cell ${MONO}`}>{release.chart_name || '—'}</Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>{release.chart_version || '—'}</Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>{release.app_version || '—'}</Td>
-            <Td className="font-mono text-[12.5px] text-muted">{release.revision}</Td>
+            <Td className={`hidden md:table-cell ${DATA}`}>{release.chart_name || '—'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{release.chart_version || '—'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{release.app_version || '—'}</Td>
+            <Td className="font-data text-[12.5px] text-muted">{release.revision}</Td>
             <Td>
               <Pill tone={helmTone(release.status)}>{release.status || 'unknown'}</Pill>
             </Td>
@@ -1179,7 +1173,7 @@ function PodTable({
                 <Pill tone={podTone(pod)} title={pod.phase}>
                   {pod.phase}
                 </Pill>
-                <span className="shrink-0 font-mono text-[12.5px] text-muted">
+                <span className="shrink-0 font-data text-[12.5px] text-muted">
                   {pod.ready}/{pod.total}
                 </span>
               </span>
@@ -1199,13 +1193,13 @@ function PodTable({
               format={formatMemory}
             />
             <Td
-              className={`hidden font-mono text-[12.5px] md:table-cell ${
+              className={`hidden font-data text-[12.5px] md:table-cell ${
                 pod.restarts > 0 ? 'text-warn' : 'text-muted'
               }`}
             >
               {pod.restarts}
             </Td>
-            <Td className={`hidden xl:table-cell ${MONO}`}>{pod.node || '—'}</Td>
+            <Td className={`hidden xl:table-cell ${DATA}`}>{pod.node || '—'}</Td>
             <Td className={`whitespace-nowrap ${AGE}`}><Age iso={pod.created_at} /></Td>
             <ManifestCell
               onManifest={onManifest}
@@ -1251,7 +1245,7 @@ function UsageCell({
   const sample = usage?.get(`${pod.namespace}/${pod.name}`)
   if (!sample) {
     return (
-      <Td className="hidden font-mono text-[12.5px] text-faint sm:table-cell">
+      <Td className="hidden font-data text-[12.5px] text-faint sm:table-cell">
         <span title={usage ? 'No sample for this pod yet' : 'This cluster serves no Metrics API'}>
           —
         </span>
@@ -1266,7 +1260,7 @@ function UsageCell({
   return (
     <Td className="hidden whitespace-nowrap sm:table-cell">
       <span
-        className={`font-mono text-[12.5px] ${
+        className={`font-data text-[12.5px] ${
           percent === null ? 'text-muted' : USAGE_TEXT[usageTone(percent)]
         }`}
         title={limit > 0 ? `${format(used)} of a ${format(limit)} limit` : `${format(used)}, no limit`}
@@ -1274,7 +1268,7 @@ function UsageCell({
         {format(used)}
       </span>
       {percent === null ? null : (
-        <span className="ml-1.5 font-mono text-[11.5px] text-faint">{Math.round(percent)}%</span>
+        <span className="ml-1.5 font-data text-[11.5px] text-faint">{Math.round(percent)}%</span>
       )}
     </Td>
   )
@@ -1392,13 +1386,13 @@ function WorkloadTable({
             <NamespaceCell show={showNamespace} namespace={workload.namespace} />
             <Td className="text-[12.5px] text-muted">{workload.kind}</Td>
             <Td
-              className={`font-mono text-[12.5px] ${
+              className={`font-data text-[12.5px] ${
                 workload.ready === workload.desired ? 'text-muted' : 'text-warn'
               }`}
             >
               {workload.ready}/{workload.desired}
             </Td>
-            <Td className={`hidden lg:table-cell ${MONO}`} title={workload.images?.join(', ')}>
+            <Td className={`hidden lg:table-cell ${DATA}`} title={workload.images?.join(', ')}>
               {workload.images?.[0] ?? '—'}
             </Td>
             <Td className={AGE}><Age iso={workload.created_at} /></Td>
@@ -1472,17 +1466,17 @@ function JobTable({
             <Td>
               <Pill tone={jobTone(job.state)}>{job.state}</Pill>
             </Td>
-            <Td className="font-mono text-[12.5px] text-muted">
+            <Td className="font-data text-[12.5px] text-muted">
               {job.succeeded}/{job.completions}
             </Td>
             <Td
-              className={`hidden font-mono text-[12.5px] md:table-cell ${
+              className={`hidden font-data text-[12.5px] md:table-cell ${
                 job.failed > 0 ? 'text-danger' : 'text-muted'
               }`}
             >
               {job.failed}
             </Td>
-            <Td className={`hidden lg:table-cell ${MONO}`} title={job.images?.join(', ')}>
+            <Td className={`hidden lg:table-cell ${DATA}`} title={job.images?.join(', ')}>
               {job.images?.[0] ?? '—'}
             </Td>
             <Td className={AGE}><Age iso={job.created_at} /></Td>
@@ -1508,7 +1502,7 @@ function JobTable({
  */
 function NextRun({ cronjob }: { cronjob: CronJob }) {
   if (cronjob.suspended) {
-    return <span className="font-mono text-[12.5px] text-faint">suspended</span>
+    return <span className="font-data text-[12.5px] text-faint">suspended</span>
   }
   if (cronjob.schedule_error) {
     return (
@@ -1519,7 +1513,7 @@ function NextRun({ cronjob }: { cronjob: CronJob }) {
   }
   if (!cronjob.next_schedule_at) {
     return (
-      <span className="font-mono text-[12.5px] text-faint" title="This schedule has no further run">
+      <span className="font-data text-[12.5px] text-faint" title="This schedule has no further run">
         never
       </span>
     )
@@ -1527,7 +1521,7 @@ function NextRun({ cronjob }: { cronjob: CronJob }) {
 
   const at = new Date(cronjob.next_schedule_at)
   return (
-    <span className="font-mono text-[12.5px] text-fg" title={formatInstant(at, { seconds: true })}>
+    <span className="font-data text-[12.5px] text-fg" title={formatInstant(at, { seconds: true })}>
       {formatCountdown(secondsUntil(cronjob.next_schedule_at))}
     </span>
   )
@@ -1609,7 +1603,7 @@ function CronJobTable({
               </Name>
             </Td>
             <NamespaceCell show={showNamespace} namespace={cronjob.namespace} />
-            <Td className="hidden truncate font-mono text-[12.5px] text-fg md:table-cell">
+            <Td className="hidden truncate font-data text-[12.5px] text-fg md:table-cell">
               {cronjob.schedule}
               {cronjob.time_zone ? (
                 <span className="ml-1.5 font-sans text-faint">{cronjob.time_zone}</span>
@@ -1623,7 +1617,7 @@ function CronJobTable({
                 {cronjob.suspended ? 'Suspended' : 'Active'}
               </Pill>
             </Td>
-            <Td className="hidden font-mono text-[12.5px] text-muted md:table-cell">
+            <Td className="hidden font-data text-[12.5px] text-muted md:table-cell">
               {cronjob.active}
             </Td>
             <Td className={`hidden md:table-cell ${AGE}`}>
@@ -1732,14 +1726,14 @@ function ReplicaSetTable({
               </Name>
             </Td>
             <NamespaceCell show={showNamespace} namespace={replicaset.namespace} />
-            <Td className={`hidden md:table-cell ${MONO}`} title={replicaset.owner}>
+            <Td className={`hidden md:table-cell ${DATA}`} title={replicaset.owner}>
               {replicaset.owner || '—'}
             </Td>
-            <Td className="font-mono text-[12.5px] text-muted">{replicaset.revision || '—'}</Td>
-            <Td className="font-mono text-[12.5px] text-fg">
+            <Td className="font-data text-[12.5px] text-muted">{replicaset.revision || '—'}</Td>
+            <Td className="font-data text-[12.5px] text-fg">
               {replicaset.ready}/{replicaset.desired}
             </Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>
+            <Td className={`hidden lg:table-cell ${DATA}`}>
               <List values={replicaset.images} />
             </Td>
             <Td className={AGE}><Age iso={replicaset.created_at} /></Td>
@@ -1830,16 +1824,16 @@ function AutoscalerTable({
               </Name>
             </Td>
             <NamespaceCell show={showNamespace} namespace={hpa.namespace} />
-            <Td className={`hidden md:table-cell ${MONO}`}>
+            <Td className={`hidden md:table-cell ${DATA}`}>
               {hpa.target_kind}/{hpa.target_name}
             </Td>
-            <Td className="font-mono text-[12.5px] text-fg">
+            <Td className="font-data text-[12.5px] text-fg">
               {hpa.current_replicas} → {hpa.desired_replicas}
             </Td>
-            <Td className="font-mono text-[12.5px] text-muted">
+            <Td className="font-data text-[12.5px] text-muted">
               {hpa.min_replicas}–{hpa.max_replicas}
             </Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>
+            <Td className={`hidden lg:table-cell ${DATA}`}>
               <List values={hpa.metrics.map(metricText)} empty="none declared" />
             </Td>
             <Td className={AGE}><Age iso={hpa.created_at} /></Td>
@@ -1905,10 +1899,10 @@ function QuotaTable({
               </Name>
             </Td>
             <NamespaceCell show={showNamespace} namespace={quota.namespace} />
-            <Td className={`hidden md:table-cell ${MONO}`}>
+            <Td className={`hidden md:table-cell ${DATA}`}>
               <List values={quota.scopes} empty="everything" />
             </Td>
-            <Td className={MONO}>
+            <Td className={DATA}>
               <List
                 values={quota.entries.map(
                   (entry) => `${entry.resource} ${entry.used || '—'}/${entry.hard}`,
@@ -1961,7 +1955,7 @@ function LimitRangeTable({
               </Name>
             </Td>
             <NamespaceCell show={showNamespace} namespace={range.namespace} />
-            <Td className={MONO}>
+            <Td className={DATA}>
               <List values={range.entries.map(limitText)} empty="nothing declared" />
             </Td>
             <Td className={AGE}><Age iso={range.created_at} /></Td>
@@ -2039,11 +2033,11 @@ function DisruptionBudgetTable({
               </Name>
             </Td>
             <NamespaceCell show={showNamespace} namespace={budget.namespace} />
-            <Td className={`hidden lg:table-cell ${MONO}`} title={budget.selector}>
+            <Td className={`hidden lg:table-cell ${DATA}`} title={budget.selector}>
               {budget.selector || 'nothing'}
             </Td>
-            <Td className={`hidden md:table-cell ${MONO}`}>{budgetRule(budget)}</Td>
-            <Td className="font-mono text-[12.5px] text-fg">
+            <Td className={`hidden md:table-cell ${DATA}`}>{budgetRule(budget)}</Td>
+            <Td className="font-data text-[12.5px] text-fg">
               {budget.current_healthy}/{budget.desired_healthy}
             </Td>
             <Td>
@@ -2119,11 +2113,11 @@ function ServiceTable({
             </Td>
             <NamespaceCell show={showNamespace} namespace={service.namespace} />
             <Td className="text-[12.5px] text-muted">{service.type}</Td>
-            <Td className={`hidden md:table-cell ${MONO}`}>{service.cluster_ip || '—'}</Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>
+            <Td className={`hidden md:table-cell ${DATA}`}>{service.cluster_ip || '—'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>
               <List values={service.external_ips} />
             </Td>
-            <Td className={MONO}>
+            <Td className={DATA}>
               <List values={service.ports} />
             </Td>
             <Td className={AGE}><Age iso={service.created_at} /></Td>
@@ -2185,14 +2179,14 @@ function IngressTable({
               </Name>
             </Td>
             <NamespaceCell show={showNamespace} namespace={ingress.namespace} />
-            <Td className={MONO}>{ingress.class || '—'}</Td>
-            <Td className={MONO}>
+            <Td className={DATA}>{ingress.class || '—'}</Td>
+            <Td className={DATA}>
               <List values={ingress.hosts} empty="*" />
             </Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>
+            <Td className={`hidden lg:table-cell ${DATA}`}>
               <List values={ingress.addresses} />
             </Td>
-            <Td className="hidden font-mono text-[12.5px] text-muted md:table-cell">
+            <Td className="hidden font-data text-[12.5px] text-muted md:table-cell">
               {ingress.rules}
             </Td>
             <Td className={AGE}><Age iso={ingress.created_at} /></Td>
@@ -2257,7 +2251,7 @@ function NetworkPolicyTable({
               </Name>
             </Td>
             <NamespaceCell show={showNamespace} namespace={policy.namespace} />
-            <Td className={`hidden md:table-cell ${MONO}`}>
+            <Td className={`hidden md:table-cell ${DATA}`}>
               {/* An empty selector is a real answer — every pod in the
                   namespace — and it is worth saying so rather than leaving
                   the cell looking like the read came back with nothing. */}
@@ -2266,7 +2260,7 @@ function NetworkPolicyTable({
             <Td className="text-[12.5px] text-muted">
               <List values={policy.policy_types} />
             </Td>
-            <Td className="hidden font-mono text-[12.5px] text-muted lg:table-cell">
+            <Td className="hidden font-data text-[12.5px] text-muted lg:table-cell">
               {policy.ingress_rules} in / {policy.egress_rules} out
             </Td>
             <Td className={AGE}><Age iso={policy.created_at} /></Td>
@@ -2316,18 +2310,18 @@ function RouteTable({
         {routes.map((route) => (
           <Row key={`${route.namespace}/${route.name}`}>
             <Td>
-              <Name title={route.name} namespace={route.namespace}>
+              <Name title={route.name} namespace={route.namespace} onOpen={opener(onManifest, route)}>
                 {route.name}
               </Name>
             </Td>
             <NamespaceCell show={showNamespace} namespace={route.namespace} />
-            <Td className={MONO}>
+            <Td className={DATA}>
               <List values={route.hostnames} empty="*" />
             </Td>
-            <Td className={`hidden md:table-cell ${MONO}`}>
+            <Td className={`hidden md:table-cell ${DATA}`}>
               <List values={route.parents} />
             </Td>
-            <Td className="hidden font-mono text-[12.5px] text-muted md:table-cell">
+            <Td className="hidden font-data text-[12.5px] text-muted md:table-cell">
               {route.rules}
             </Td>
             <Td className={AGE}><Age iso={route.created_at} /></Td>
@@ -2383,12 +2377,12 @@ function PersistentVolumeTable({
             <Td>
               <Pill tone={phaseTone(volume.status)}>{volume.status}</Pill>
             </Td>
-            <Td className="font-mono text-[12.5px] text-fg">{volume.capacity || '—'}</Td>
-            <Td className={`hidden md:table-cell ${MONO}`}>
+            <Td className="font-data text-[12.5px] text-fg">{volume.capacity || '—'}</Td>
+            <Td className={`hidden md:table-cell ${DATA}`}>
               <List values={volume.access_modes} />
             </Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>{volume.claim || '—'}</Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>{volume.storage_class || '—'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{volume.claim || '—'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{volume.storage_class || '—'}</Td>
             <Td className={AGE}><Age iso={volume.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={volume.name} />
           </Row>
@@ -2451,12 +2445,12 @@ function ClaimTable({
             <Td>
               <Pill tone={phaseTone(claim.status)}>{claim.status}</Pill>
             </Td>
-            <Td className="font-mono text-[12.5px] text-fg">{claim.capacity || '—'}</Td>
-            <Td className={`hidden md:table-cell ${MONO}`}>
+            <Td className="font-data text-[12.5px] text-fg">{claim.capacity || '—'}</Td>
+            <Td className={`hidden md:table-cell ${DATA}`}>
               <List values={claim.access_modes} />
             </Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>{claim.storage_class || '—'}</Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>{claim.volume || '—'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{claim.storage_class || '—'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{claim.volume || '—'}</Td>
             <Td className={AGE}><Age iso={claim.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={claim.name} namespace={claim.namespace} />
           </Row>
@@ -2506,9 +2500,9 @@ function StorageClassTable({
                 ) : null}
               </span>
             </Td>
-            <Td className={MONO}>{entry.provisioner}</Td>
-            <Td className={`hidden md:table-cell ${MONO}`}>{entry.reclaim_policy || '—'}</Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>{entry.binding_mode || '—'}</Td>
+            <Td className={DATA}>{entry.provisioner}</Td>
+            <Td className={`hidden md:table-cell ${DATA}`}>{entry.reclaim_policy || '—'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{entry.binding_mode || '—'}</Td>
             <Td className={AGE}><Age iso={entry.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={entry.name} />
           </Row>
@@ -2568,7 +2562,7 @@ function ConfigTable({
           <Row key={`${entry.namespace}/${entry.name}`}>
             <Td>
               <span className="flex items-start gap-2">
-                <Name title={entry.name} namespace={entry.namespace}>
+                <Name title={entry.name} namespace={entry.namespace} onOpen={opener(onManifest, entry)}>
                   {entry.name}
                 </Name>
                 {entry.immutable ? (
@@ -2579,10 +2573,10 @@ function ConfigTable({
               </span>
             </Td>
             <NamespaceCell show={showNamespace} namespace={entry.namespace} />
-            {secrets ? <Td className={`hidden md:table-cell ${MONO}`}>{entry.type || '—'}</Td> : null}
-            <Td className="font-mono text-[12.5px] text-muted">{entry.keys?.length ?? 0}</Td>
+            {secrets ? <Td className={`hidden md:table-cell ${DATA}`}>{entry.type || '—'}</Td> : null}
+            <Td className="font-data text-[12.5px] text-muted">{entry.keys?.length ?? 0}</Td>
             {/* Key names, never values: a value is not in the response at all. */}
-            <Td className={`hidden lg:table-cell ${MONO}`}>
+            <Td className={`hidden lg:table-cell ${DATA}`}>
               <List values={entry.keys} empty="none" />
             </Td>
             <Td className={AGE}><Age iso={entry.created_at} /></Td>
@@ -2644,9 +2638,9 @@ function CRDTable({
               <Name title={crd.name} onOpen={opener(onManifest, crd)}>{crd.name}</Name>
             </Td>
             <Td className="truncate text-[12.5px] text-fg">{crd.kind}</Td>
-            <Td className={`hidden md:table-cell ${MONO}`}>{crd.group || 'core'}</Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>{crd.scope}</Td>
-            <Td className={MONO}>
+            <Td className={`hidden md:table-cell ${DATA}`}>{crd.group || 'core'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{crd.scope}</Td>
+            <Td className={DATA}>
               <List values={crd.versions} />
             </Td>
             <ManifestCell onManifest={onManifest} name={crd.name} />
@@ -2729,11 +2723,11 @@ function RoleTable({
               </span>
             </Td>
             <NamespaceCell show={showNamespace} namespace={role.namespace} />
-            <Td className="font-mono text-[12.5px] text-muted">{role.rule_count}</Td>
-            <Td className={`hidden md:table-cell ${MONO}`}>
+            <Td className="font-data text-[12.5px] text-muted">{role.rule_count}</Td>
+            <Td className={`hidden md:table-cell ${DATA}`}>
               <List values={role.verbs} empty="none" />
             </Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>
+            <Td className={`hidden lg:table-cell ${DATA}`}>
               <List values={role.resources} empty="none" />
             </Td>
             <Td className={AGE}><Age iso={role.created_at} /></Td>
@@ -2838,15 +2832,15 @@ function BindingTable({
                 <span className="shrink-0 text-[11px] text-faint">
                   {binding.role_kind === 'ClusterRole' ? 'ClusterRole' : 'Role'}
                 </span>
-                <span className="truncate font-mono text-[12.5px] text-fg" title={binding.role_name}>
+                <span className="truncate font-data text-[12.5px] text-fg" title={binding.role_name}>
                   {binding.role_name}
                 </span>
               </span>
             </Td>
-            <Td className={`hidden md:table-cell ${MONO}`}>
+            <Td className={`hidden md:table-cell ${DATA}`}>
               <Subjects binding={binding} />
             </Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>
+            <Td className={`hidden lg:table-cell ${DATA}`}>
               <List values={binding.kinds} empty="none" />
             </Td>
             <Td className={AGE}><Age iso={binding.created_at} /></Td>
@@ -2918,13 +2912,13 @@ function ServiceAccountTable({
               </span>
             </Td>
             <NamespaceCell show={showNamespace} namespace={account.namespace} />
-            <Td className="font-mono text-[12.5px] text-muted">{account.secrets}</Td>
-            <Td className="hidden font-mono text-[12.5px] text-muted md:table-cell">
+            <Td className="font-data text-[12.5px] text-muted">{account.secrets}</Td>
+            <Td className="hidden font-data text-[12.5px] text-muted md:table-cell">
               {account.image_pull_secrets}
             </Td>
             {/* Three states, not two: unset is the common case and means the pod
                 spec decides, which is a different answer from either. */}
-            <Td className={`hidden lg:table-cell ${MONO}`}>
+            <Td className={`hidden lg:table-cell ${DATA}`}>
               {account.automount_token === undefined
                 ? 'pod decides'
                 : account.automount_token
@@ -2982,7 +2976,7 @@ function CustomResourceTable({
         {rows.map((row) => (
           <Row key={`${row.namespace}/${row.name}`}>
             <Td>
-              <Name title={row.name} namespace={row.namespace}>
+              <Name title={row.name} namespace={row.namespace} onOpen={opener(onManifest, row)}>
                 {row.name}
               </Name>
             </Td>
@@ -2990,7 +2984,7 @@ function CustomResourceTable({
             <Td className="hidden truncate text-[12.5px] text-fg md:table-cell">
               {row.kind || '—'}
             </Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>{row.api_version || '—'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{row.api_version || '—'}</Td>
             <Td className={AGE}><Age iso={row.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={row.name} namespace={row.namespace} />
           </Row>
@@ -3054,12 +3048,12 @@ function NodeTable({
                 {node.unschedulable ? <Pill tone="warn">Cordoned</Pill> : null}
               </div>
             </Td>
-            <Td className={`hidden md:table-cell ${MONO}`}>
+            <Td className={`hidden md:table-cell ${DATA}`}>
               <List values={node.roles} />
             </Td>
-            <Td className={MONO}>{node.version}</Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>{node.internal_ip || '—'}</Td>
-            <Td className={`hidden lg:table-cell ${MONO}`}>{node.cpu || '—'}</Td>
+            <Td className={DATA}>{node.version}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{node.internal_ip || '—'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{node.cpu || '—'}</Td>
             <Td className={AGE}><Age iso={node.created_at} /></Td>
             <ManifestCell
               onManifest={onManifest}

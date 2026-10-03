@@ -24,6 +24,11 @@ import { Button, EmptyState, Notice } from './primitives'
  * the semantic four — a container is not amber for being third in the legend.
  * Identity never rests on colour alone, so every series is written out in the
  * legend beside its key.
+ *
+ * The look follows the console's dashboards: each line sits on an area that
+ * fades from its own colour to nothing, gridlines are dashed and recessive,
+ * the latest sample of every series is marked, and the axis is read in the
+ * data face at a size somebody can actually read.
  */
 
 /*
@@ -103,12 +108,19 @@ export function MetricsChart({
   const empty = !loading && series.every((entry) => entry.points.length === 0)
 
   return (
-    <div className="card flex min-w-0 flex-col gap-3 p-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h3 className="text-[13px] font-semibold text-fg">{title}</h3>
+    <div className="card flex min-w-0 flex-col gap-3 px-5 pt-4 pb-4">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0">
+          <h3 className="text-[16px] font-bold text-fg">{title}</h3>
+          {result?.description ? (
+            <p className="mt-0.5 text-[13px] text-muted">{result.description}</p>
+          ) : null}
+        </div>
 
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-[12px] text-muted">{queryRangeLabel(range)}</span>
+          <span className="rounded-full border border-line px-2.5 py-0.5 text-[12px] text-muted">
+            {queryRangeLabel(range)}
+          </span>
           {/* Where the question outgrows the catalogue. It carries this query
               and this window, so the next question starts where this one
               stopped rather than on Grafana's front page. */}
@@ -117,23 +129,26 @@ export function MetricsChart({
               href={explore}
               target="_blank"
               rel="noreferrer noopener"
-              className="inline-flex items-center gap-1.5 text-[12px] text-muted transition-colors hover:text-fg"
+              className="inline-flex items-center gap-1.5 text-[12.5px] text-muted transition-colors duration-300 hover:text-accent"
               title="Open this query in the cluster's Grafana"
             >
               <ExternalLink aria-hidden="true" className="size-3.5" />
               Grafana
             </a>
           ) : null}
-          <Button type="button" size="sm" onClick={() => void load()} disabled={loading}>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void load()}
+            disabled={loading}
+            className="size-8 rounded-full px-0"
+            title="Refresh"
+          >
             <RefreshCw aria-hidden="true" className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span className="sr-only">Refresh</span>
           </Button>
         </div>
       </div>
-
-      {result?.description ? (
-        <p className="text-[12px] text-muted">{result.description}</p>
-      ) : null}
 
       {error && !missing ? <Notice tone="error">{error}</Notice> : null}
 
@@ -141,10 +156,10 @@ export function MetricsChart({
         <>
           {/* Refetching holds the previous render at reduced opacity rather than
               collapsing to a skeleton — no layout jump between windows. */}
+          <Legend series={series} unit={result.unit} />
           <div className={loading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
             <Plot result={result} />
           </div>
-          <Legend series={series} />
 
           {result.truncated ? (
             <p className="text-[12px] text-warn">
@@ -158,8 +173,9 @@ export function MetricsChart({
           <div>
             <button
               type="button"
+              aria-expanded={showTable}
               onClick={() => setShowTable((open) => !open)}
-              className="text-[12px] text-muted underline-offset-2 transition-colors hover:text-fg hover:underline"
+              className="text-[12.5px] font-medium text-muted underline-offset-2 transition-colors duration-300 hover:text-accent hover:underline"
             >
               {showTable ? 'Hide the numbers' : 'Show the numbers'}
             </button>
@@ -183,7 +199,10 @@ export function MetricsChart({
             <summary className="cursor-pointer text-center text-[12px] text-faint">
               What kubemg asked for
             </summary>
-            <pre className="mt-2 overflow-x-auto rounded-control border border-line bg-sunken p-2.5 font-mono text-[11.5px] text-muted">
+            <pre
+              translate="no"
+              className="mt-2 overflow-x-auto rounded-control border border-line bg-sunken p-2.5 font-mono text-[11.5px] text-muted"
+            >
               {result?.query}
             </pre>
           </details>
@@ -281,6 +300,17 @@ export function Plot({
   // Four ticks is enough to read a magnitude and few enough to stay recessive.
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((fraction) => fraction * ceiling)
 
+  // Five times along the bottom, the date written only when the window spans
+  // more than a day — a clock alone is ambiguous on a seven-day chart.
+  const clock = spanX > 24 * 3_600_000 ? DAY_CLOCK : CLOCK
+  const timeTicks = [0, 0.25, 0.5, 0.75, 1].map((fraction) => times[0] + fraction * spanX)
+
+  // An area under every line fades from the series' colour to nothing. With
+  // more than two lines the fills are kept faint so they do not go muddy where
+  // they overlap.
+  const areaOpacity = series.length === 1 ? 0.28 : series.length === 2 ? 0.16 : 0.07
+  const baseline = yFor(0)
+
   function locate(event: React.PointerEvent<SVGSVGElement> | React.FocusEvent<SVGSVGElement>) {
     const svg = svgRef.current
     if (!svg) return
@@ -319,7 +349,7 @@ export function Plot({
         viewBox={`0 0 ${width} ${geometry.height}`}
         width={width}
         height={geometry.height}
-        className="block max-w-full touch-none rounded-control focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        className="block max-w-full touch-pan-y rounded-control"
         onPointerMove={locate}
         onPointerLeave={() => setCursor(null)}
         onFocus={locate}
@@ -327,20 +357,40 @@ export function Plot({
         onKeyDown={onKey}
       >
         <title id={titleId}>
-          {result.series.length} series between {formatInstant(result.start)} and{' '}
-          {formatInstant(result.end)}
+          {series.length} series between {formatInstant(result.start)} and{' '}
+          {formatInstant(result.end)}. Use the left and right arrow keys to read a sample.
         </title>
 
-        {/* Gridlines: hairline, solid, one step off the surface. */}
-        {ticks.map((value) => (
+        {/* One fade per series slot. A gradient stop's `currentColor` is the
+            gradient's own colour, so the slot class goes on the gradient. */}
+        <defs>
+          {series.map((entry, index) => (
+            <linearGradient
+              key={`fade-${entry.name}`}
+              id={`${titleId}-fade-${index}`}
+              x1="0"
+              x2="0"
+              y1="0"
+              y2="1"
+              className={SERIES_STROKE[index]}
+            >
+              <stop offset="0%" stopColor="currentColor" stopOpacity={areaOpacity} />
+              <stop offset="100%" stopColor="currentColor" stopOpacity={0} />
+            </linearGradient>
+          ))}
+        </defs>
+
+        {/* Gridlines dashed and one step off the surface; the baseline solid. */}
+        {ticks.map((value, index) => (
           <line
             key={value}
             x1={geometry.left}
             x2={width - geometry.right}
             y1={yFor(value)}
             y2={yFor(value)}
-            className="stroke-line-soft"
+            className={index === 0 ? 'stroke-line' : 'stroke-line-soft'}
             strokeWidth={1}
+            strokeDasharray={index === 0 ? undefined : '3 4'}
             vectorEffect="non-scaling-stroke"
           />
         ))}
@@ -348,10 +398,10 @@ export function Plot({
         {ticks.map((value) => (
           <text
             key={`label-${value}`}
-            x={geometry.left - 6}
-            y={yFor(value) + 3}
+            x={geometry.left - 8}
+            y={yFor(value) + 3.5}
             textAnchor="end"
-            className="fill-faint font-mono text-[9px]"
+            className="fill-faint font-data text-[10.5px] tabular-nums"
           >
             {tick(value)}
           </text>
@@ -359,16 +409,48 @@ export function Plot({
 
         {series.map((entry, index) => (
           <path
+            key={`area-${entry.name}`}
+            d={areaFor(entry, xFor, yFor, baseline)}
+            fill={`url(#${titleId}-fade-${index})`}
+            stroke="none"
+          />
+        ))}
+
+        {series.map((entry, index) => (
+          <path
             key={entry.name}
             d={pathFor(entry, xFor, yFor)}
             fill="none"
-            strokeWidth={2}
+            strokeWidth={series.length === 1 ? 2.5 : 2}
             strokeLinejoin="round"
             strokeLinecap="round"
             vectorEffect="non-scaling-stroke"
             className={`${SERIES_STROKE[index]} stroke-current`}
           />
         ))}
+
+        {/* Every series' latest sample, marked: where the line is now. */}
+        {!cursor
+          ? series.map((entry, index) => {
+              const last = entry.points[entry.points.length - 1]
+              if (!last) return null
+              const cx = xFor(new Date(last.at).getTime())
+              const cy = yFor(last.value)
+              return (
+                <g key={`end-${entry.name}`} className={SERIES_STROKE[index]}>
+                  <circle cx={cx} cy={cy} r={8} className="fill-current" opacity={0.15} />
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={4}
+                    className="fill-current stroke-surface"
+                    strokeWidth={2}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </g>
+              )
+            })
+          : null}
 
         {cursor ? (
           <line
@@ -378,6 +460,7 @@ export function Plot({
             y2={geometry.top + plotHeight}
             className="stroke-faint"
             strokeWidth={1}
+            strokeDasharray="2 3"
             vectorEffect="non-scaling-stroke"
           />
         ) : null}
@@ -395,7 +478,7 @@ export function Plot({
                   key={`dot-${entry.name}`}
                   cx={cursor.x}
                   cy={yFor(point.value)}
-                  r={3.5}
+                  r={4}
                   className={`${SERIES_STROKE[index]} fill-current stroke-surface`}
                   strokeWidth={2}
                   vectorEffect="non-scaling-stroke"
@@ -404,25 +487,19 @@ export function Plot({
             })
           : null}
 
-        {axisLabels ? (
-          <>
-            <text
-              x={geometry.left}
-              y={geometry.height - 6}
-              className="fill-faint font-mono text-[9px]"
-            >
-              {formatClock(times[0])}
-            </text>
-            <text
-              x={width - geometry.right}
-              y={geometry.height - 6}
-              textAnchor="end"
-              className="fill-faint font-mono text-[9px]"
-            >
-              {formatClock(times[times.length - 1])}
-            </text>
-          </>
-        ) : null}
+        {axisLabels
+          ? timeTicks.map((at, index) => (
+              <text
+                key={`time-${at}`}
+                x={xFor(at)}
+                y={geometry.height - 7}
+                textAnchor={index === 0 ? 'start' : index === timeTicks.length - 1 ? 'end' : 'middle'}
+                className="fill-faint font-data text-[10.5px] tabular-nums"
+              >
+                {clock.format(at)}
+              </text>
+            ))
+          : null}
       </svg>
 
       {cursor ? (
@@ -443,6 +520,27 @@ function tickCPU(millicores: number): string {
   if (millicores < 1000) return `${Math.round(millicores)}m`
   const cores = millicores / 1000
   return cores < 10 ? cores.toFixed(1) : String(Math.round(cores))
+}
+
+const CLOCK = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
+const DAY_CLOCK = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
+/** areaFor is a series' line closed down to the baseline, for its fade. */
+function areaFor(
+  entry: MetricSeries,
+  xFor: (at: number) => number,
+  yFor: (value: number) => number,
+  baseline: number,
+): string {
+  if (entry.points.length === 0) return ''
+  const first = xFor(new Date(entry.points[0].at).getTime())
+  const last = xFor(new Date(entry.points[entry.points.length - 1].at).getTime())
+  return `${pathFor(entry, xFor, yFor)} L${last.toFixed(1)} ${baseline.toFixed(1)} L${first.toFixed(1)} ${baseline.toFixed(1)} Z`
 }
 
 /** pathFor draws one series, breaking the line where the series has no sample. */
@@ -500,26 +598,25 @@ function Readout({
 
   return (
     <div
-      className={`pointer-events-none absolute top-2 z-10 min-w-40 rounded-control border border-line bg-surface px-2.5 py-2 lift ${
+      aria-live="polite"
+      className={`pointer-events-none absolute top-2 z-10 min-w-48 rounded-card border border-line bg-surface px-3.5 py-3 shadow-lift ${
         rightHalf ? 'left-2' : 'right-2'
       }`}
     >
-      <p className="mb-1.5 font-mono text-[11px] text-faint">
-        {formatClock(at, { seconds: true })}
-      </p>
-      <ul className="flex flex-col gap-1">
+      <p className="mb-2 text-[12px] font-semibold text-fg">{formatClock(at, { seconds: true })}</p>
+      <ul className="flex flex-col gap-1.5">
         {rows.map((row) => (
           <li key={row.name} className="flex items-center gap-2">
-            {/* A short stroke rather than a filled box: at this density a swatch
-                is data-weight ink doing a label's job. */}
             <span
               aria-hidden="true"
-              className={`h-0.5 w-3 shrink-0 rounded-full ${SERIES_STROKE[row.slot]} bg-current`}
+              className={`size-2 shrink-0 rounded-full ${SERIES_STROKE[row.slot]} bg-current`}
             />
-            <span className="font-mono text-[12px] font-semibold text-fg">
+            <span className="min-w-0 truncate font-data text-[12px] text-muted" translate="no">
+              {row.name}
+            </span>
+            <span className="ml-auto pl-3 font-data text-[12.5px] font-bold text-fg tabular-nums">
               {format(row.point!.value)}
             </span>
-            <span className="ml-auto truncate font-mono text-[11px] text-muted">{row.name}</span>
           </li>
         ))}
       </ul>
@@ -532,21 +629,37 @@ function Readout({
  * rest on colour alone — and on the light deck three of the eight slots sit below
  * 3:1 against white, which the written name is the relief for.
  */
-function Legend({ series }: { series: MetricSeries[] }) {
+function Legend({ series, unit }: { series: MetricSeries[]; unit: MetricResult['unit'] }) {
   const shown = series.slice(0, MAX_SERIES)
-  if (shown.length < 2) return null
+  if (shown.length === 0) return null
+  const format = unit === 'millicores' ? formatCPU : formatMemory
 
+  // Each name with its latest reading — the number a reader looks for first.
   return (
-    <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-      {shown.map((entry, index) => (
-        <li key={entry.name} className="flex items-center gap-1.5">
-          <span
-            aria-hidden="true"
-            className={`h-0.5 w-3.5 shrink-0 rounded-full ${SERIES_STROKE[index]} bg-current`}
-          />
-          <span className="font-mono text-[12px] text-muted">{entry.name}</span>
-        </li>
-      ))}
+    <ul className="flex flex-wrap items-center gap-x-5 gap-y-2">
+      {shown.map((entry, index) => {
+        const last = entry.points[entry.points.length - 1]
+        return (
+          <li key={entry.name} className="flex min-w-0 items-center gap-2">
+            <span
+              aria-hidden="true"
+              className={`size-2.5 shrink-0 rounded-full ${SERIES_STROKE[index]} bg-current`}
+            />
+            <span
+              className="max-w-56 truncate font-data text-[12px] text-muted"
+              translate="no"
+              title={entry.name}
+            >
+              {entry.name}
+            </span>
+            {last ? (
+              <span className="font-data text-[12.5px] font-bold text-fg tabular-nums">
+                {format(last.value)}
+              </span>
+            ) : null}
+          </li>
+        )
+      })}
     </ul>
   )
 }
@@ -579,16 +692,19 @@ function SeriesTable({ result }: { result: MetricResult }) {
               values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : 0
             return (
               <tr key={entry.name} className="border-t border-line-soft">
-                <td className="truncate px-3 py-1.5 font-mono text-[12.5px] text-fg">
+                <td
+                  className="max-w-64 truncate px-3 py-1.5 font-data text-[12.5px] text-fg"
+                  translate="no"
+                >
                   {entry.name}
                 </td>
-                <td className="px-3 py-1.5 text-right font-mono text-[12.5px] text-fg">
+                <td className="px-3 py-1.5 text-right font-data text-[12.5px] text-fg">
                   {format(latest)}
                 </td>
-                <td className="px-3 py-1.5 text-right font-mono text-[12.5px] text-muted">
+                <td className="px-3 py-1.5 text-right font-data text-[12.5px] text-muted">
                   {format(peak)}
                 </td>
-                <td className="px-3 py-1.5 text-right font-mono text-[12.5px] text-muted">
+                <td className="px-3 py-1.5 text-right font-data text-[12.5px] text-muted">
                   {format(mean)}
                 </td>
               </tr>

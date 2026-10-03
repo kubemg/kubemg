@@ -6,15 +6,15 @@ Pin an explicit tag rather than tracking `latest`, in both places a version
 appears:
 
 - The management plane image, `KUBEMG_IMAGE`/`KUBEMG_VERSION`
-  (`ghcr.io/kubemg/kubemg:0.11.1`) in Compose, or the `image:` field of the
+  (`ghcr.io/kubemg/kubemg:0.12.0`) in Compose, or the `image:` field of the
   Deployment in Kubernetes.
-- The agent image, `KUBEMG_AGENT_IMAGE` (`ghcr.io/kubemg/kubemg-agent:0.11.1`),
+- The agent image, `KUBEMG_AGENT_IMAGE` (`ghcr.io/kubemg/kubemg-agent:0.12.0`),
   written into every rendered agent install manifest by the management
   plane, so bumping it here is what changes what a *future* `kubectl apply -k
   …` installs — it does not touch agents already running.
 
 - The browser shell image, `KUBEMG_SHELL_IMAGE`
-  (`ghcr.io/kubemg/kubemg-shell:0.11.1`), which a shell pod runs on a target
+  (`ghcr.io/kubemg/kubemg-shell:0.12.0`), which a shell pod runs on a target
   cluster. Like the agent image it is read when a shell is *started*, so
   bumping it changes the next shell rather than one already open.
 
@@ -152,6 +152,24 @@ page, written as the steps to take, in order:
   [Debug action](../clusters/terminals-and-logs.md#debugging-a-pod-with-no-shell),
   whose container runs `busybox:1.36` by default: an air-gapped install
   should mirror an image with a shell and point `debug_image` at it.
+- 0.12.0, from 0.11.x, needs no schema step, but asks three things:
+    - **Re-apply every agent's install package.** The agent in 0.12.0 sends
+      each interactive message to the API server as one frame. An older
+      agent silently drops `kubectl exec -i` stdin past 4 KiB and truncates
+      `kubectl cp` into a pod, and only the upgraded agent fixes that. The
+      tunnel protocol is unchanged, so an old agent stays attached until you
+      do.
+    - **Run exactly one replica.** An agent's tunnel lives in the memory of
+      the replica it reached, so a second replica answers `503` for the
+      clusters whose agents chose the other one. Scale to one and use
+      `strategy: Recreate`.
+    - **Keep the TLS volume for the first boot.** A minted certificate is now
+      kept in the database too, and an existing install copies its pair in
+      on that boot ([TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too)).
+
+    It also adds the [Helm chart](kubernetes.md) and an image pull secret for an
+    authenticated mirror ([Air-gapped installs](air-gapped.md)). The secret
+    reaches an agent through the same re-apply.
 
 An install that runs from a clone of the repository rather than from the
 published images has one more thing to get right. See
@@ -186,7 +204,7 @@ Two things a rollback does **not** undo:
 ## Documentation versioning
 
 This manual is versioned against release tags on Read the Docs: an install
-running `0.11.1` corresponds to the `0.11.1` version of these docs, not
+running `0.12.0` corresponds to the `0.12.0` version of these docs, not
 whatever `master` says today. If you're following a procedure here, check
 the version selector matches the version you're actually running.
 

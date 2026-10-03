@@ -31,7 +31,7 @@ export function EventGroupRow({
   const warning = group.type === 'Warning'
 
   return (
-    <li>
+    <li className="defer-row">
       <button
         type="button"
         onClick={onToggle}
@@ -50,7 +50,7 @@ export function EventGroupRow({
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex flex-wrap items-baseline gap-x-2">
             <span className="text-[11px] text-faint">{group.object.kind}</span>
-            <span className="truncate font-mono text-[13px] text-fg">
+            <span className="truncate font-data text-[13px] text-fg">
               {group.object.namespace ? (
                 <span className="text-faint">{group.object.namespace}/</span>
               ) : null}
@@ -67,7 +67,7 @@ export function EventGroupRow({
         {/* A count of firings, not of rows: 41 means the cluster said it 41
             times, which is the number that tells a flake from a loop. */}
         {group.count > 1 ? (
-          <span className="shrink-0 font-mono text-[12px] text-faint">×{group.count}</span>
+          <span className="shrink-0 font-data text-[12px] text-faint">×{group.count}</span>
         ) : null}
         <span className="shrink-0 text-[12px] text-muted"><Age iso={group.last_seen} /></span>
       </button>
@@ -85,7 +85,7 @@ export function EventGroupRow({
                   {entry.reason}
                 </span>
                 {entry.count > 1 ? (
-                  <span className="font-mono text-[11.5px] text-faint">×{entry.count}</span>
+                  <span className="font-data text-[11.5px] text-faint">×{entry.count}</span>
                 ) : null}
                 {entry.source ? (
                   <span className="text-[11.5px] text-faint">{entry.source}</span>

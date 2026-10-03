@@ -42,6 +42,7 @@ export function DeploymentSettings() {
   return (
     <SettingsLayout
       title="Deployment"
+      description="What this server read from its environment when it started. Nothing here changes from the console — each line names what to change and where, and a restart picks it up."
       actions={
         <Button type="button" variant="ghost" onClick={() => void load()} disabled={loading}>
           <RotateCcw aria-hidden="true" className="size-4" />
@@ -49,7 +50,7 @@ export function DeploymentSettings() {
         </Button>
       }
     >
-      <div className="flex min-w-0 max-w-3xl flex-col gap-4">
+      <div className="flex min-w-0 max-w-5xl flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
         {loading ? <p className="text-[13px] text-muted">Loading…</p> : null}
 

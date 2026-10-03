@@ -95,6 +95,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const replaceUser = useCallback((next: User) => setUser(next), [])
+
   const value = useMemo<AuthState>(
     () => ({
       user,
@@ -102,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signIn,
       adoptSession,
       signOut,
+      replaceUser,
       setupRequired,
       setupLoading,
       refreshSetupState,
@@ -112,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signIn,
       adoptSession,
       signOut,
+      replaceUser,
       setupRequired,
       setupLoading,
       refreshSetupState,

@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Activity,
   ArrowLeft,
   Bell,
   Bot,
-  ChevronDown,
   ChevronRight,
+  ChevronsUpDown,
+  CircleUserRound,
   FileKey,
   Gauge,
   KeyRound,
@@ -21,6 +22,7 @@ import {
   PanelLeftOpen,
   Plus,
   ScrollText,
+  Search,
   Server,
   Shield,
   SlidersHorizontal,
@@ -41,6 +43,7 @@ import { useTheme } from '../lib/theme'
 import {
   ACCESS_HOME,
   CREDENTIALS_HOME,
+  PROFILE_HOME,
   ADMIN_HOME,
   clusterHref,
   clusterIdFromPath,
@@ -153,7 +156,7 @@ const ADMIN_GROUPS: readonly AdminGroup[] = [
 ] as const
 
 /* The palette answers to both chords; the hint shows the one this keyboard has. */
-const PALETTE_HINT = /mac/i.test(navigator.platform) ? '⌘K' : 'Ctrl K'
+const PALETTE_HINT = /mac/i.test(navigator.platform) ? '⌘K' : 'Ctrl\u00a0K'
 
 /**
  * How many clusters the rail carries. Past this the rail would become the fleet
@@ -174,9 +177,20 @@ const RAIL_CLUSTERS = 8
  */
 type PanelMode = 'full' | 'hidden'
 
+/*
+ * The sidebar is one card floating 12px in from the window: a 64px rail and,
+ * when the tree is showing, a 240px panel beside it. The work surface starts
+ * 16px past the card's right edge. `MAIN_INSET` is the same figure in the unit
+ * the shell dock reads it in (see `--deck-main-inset`).
+ */
 const MAIN_OFFSET: Record<PanelMode, string> = {
-  full: 'lg:ml-75',
-  hidden: 'lg:ml-15',
+  full: 'lg:ml-[332px]',
+  hidden: 'lg:ml-[92px]',
+}
+
+const MAIN_INSET: Record<PanelMode, string> = {
+  full: '20.75rem',
+  hidden: '5.75rem',
 }
 
 /**
@@ -206,6 +220,98 @@ const PANEL_COLLAPSED_KEY = 'kubemg_panel_collapsed'
  */
 let lastClusterId: number | null = null
 
+/**
+ * Where each sidebar list was scrolled to, by what it is listing.
+ *
+ * Module state for the same reason as `lastClusterId`: every page mounts its
+ * own AppShell, so a row picked far down the Administration list or a cluster
+ * tree used to land the reader back at the top of that list on the page it
+ * opened — the list they had just scrolled was a new one. Keyed by the list's
+ * content (Administration, one cluster's tree, the fleet, the rail), so moving
+ * into another cluster starts its own tree at its own position.
+ *
+ * A row picked in the list also leaves an anchor: how far down the list it sat
+ * when it was clicked. The next page puts its lit row back at that height,
+ * which survives the two lists not being the same height — Explore's panel
+ * carries its resource tree, a dashboard's does not — where a bare scroll
+ * offset lands the row somewhere else.
+ */
+const keptScroll = new Map<string, { top: number; anchor?: number; href?: string | null }>()
+
+/** The room left above or below the current row when it is brought into view. */
+const SCROLL_MARGIN = 24
+
+function useKeptScroll(key: string) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  // Layout, not a plain effect: restoring after paint would draw the list at
+  // the top for a frame and then jump.
+  useLayoutEffect(() => {
+    const list = ref.current
+    if (!list) return
+    const kept = keptScroll.get(key)
+    // The anchor is spent by the page it was left for.
+    if (kept) keptScroll.set(key, { top: kept.top })
+    // Until the reader scrolls it themselves, the position is still ours to
+    // place. A cluster tree is not at its full height on the frame it mounts —
+    // its sections open from stored state, its counts arrive — so a position
+    // set then is clamped short, and was being remembered as the clamp.
+    let touched = false
+
+    const place = () => {
+      const box = list.getBoundingClientRect()
+      const current = list.querySelector<HTMLElement>('[aria-current="page"]')
+      // Only for the row that was clicked: a list left any other way — the
+      // palette, a link in the body — has no anchor that means anything.
+      if (current && kept?.anchor !== undefined && current.getAttribute('href') === kept.href) {
+        const offset = current.getBoundingClientRect().top - box.top + list.scrollTop
+        list.scrollTop = offset - kept.anchor
+        return
+      }
+      list.scrollTop = kept?.top ?? 0
+      // A page reached some other way — the palette, a link in the body — can
+      // light a row the kept position does not show. Bring it in, by the least
+      // movement, inside the list only: scrollIntoView would also move the page.
+      if (!current) return
+      const row = current.getBoundingClientRect()
+      if (row.top < box.top) list.scrollTop -= box.top - row.top + SCROLL_MARGIN
+      else if (row.bottom > box.bottom) list.scrollTop += row.bottom - box.bottom + SCROLL_MARGIN
+    }
+    place()
+
+    const grown = new ResizeObserver(() => {
+      if (!touched) place()
+    })
+    for (const child of Array.from(list.children)) grown.observe(child)
+
+    const take = () => {
+      touched = true
+    }
+    const remember = () => {
+      if (touched) keptScroll.set(key, { top: list.scrollTop })
+    }
+    const leave = (event: MouseEvent) => {
+      const link = (event.target as Element | null)?.closest('a')
+      if (!link || !list.contains(link)) return
+      keptScroll.set(key, {
+        top: list.scrollTop,
+        anchor: link.getBoundingClientRect().top - list.getBoundingClientRect().top,
+        href: link.getAttribute('href'),
+      })
+    }
+    const intents = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const
+    for (const intent of intents) list.addEventListener(intent, take, { passive: true })
+    list.addEventListener('scroll', remember, { passive: true })
+    list.addEventListener('click', leave)
+    return () => {
+      grown.disconnect()
+      for (const intent of intents) list.removeEventListener(intent, take)
+      list.removeEventListener('scroll', remember)
+      list.removeEventListener('click', leave)
+    }
+  }, [key])
+  return ref
+}
+
 function storedPanelCollapsed(): boolean {
   try {
     return localStorage.getItem(PANEL_COLLAPSED_KEY) === '1'
@@ -217,6 +323,7 @@ function storedPanelCollapsed(): boolean {
 
 export function AppShell({
   title,
+  description,
   parent,
   actions,
   timeRange = false,
@@ -226,6 +333,12 @@ export function AppShell({
   children,
 }: {
   title: string
+  /**
+   * One or two sentences under the title: what this page is for, said once.
+   * It replaces the info notice a page used to open its body with, which read
+   * as a warning box on a page that had nothing to warn about.
+   */
+  description?: ReactNode
   /** Rendered ahead of the title as a breadcrumb, for pages nested under another. */
   parent?: { label: string; to: string }
   actions?: ReactNode
@@ -267,6 +380,12 @@ export function AppShell({
   const { theme, toggle } = useTheme()
   const { pathname } = useLocation()
 
+  const railScroll = useKeptScroll('rail')
+  const panelCluster = clusterIdFromPath(pathname)
+  const panelScroll = useKeptScroll(
+    isAdminPath(pathname) ? 'admin' : panelCluster !== null ? `cluster:${panelCluster}` : 'fleet',
+  )
+
   const [navOpen, setNavOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(storedPanelCollapsed)
@@ -298,6 +417,7 @@ export function AppShell({
   const pages = useMemo<CommandTarget[]>(() => {
     const targets: CommandTarget[] = [
       { id: 'page-fleet', label: 'All clusters', hint: 'Fleet', to: '/' },
+      { id: 'page-profile', label: 'My profile', hint: 'You', to: PROFILE_HOME },
       { id: 'page-access', label: 'My access', hint: 'You', to: ACCESS_HOME },
       { id: 'page-credentials', label: 'My credentials', hint: 'You', to: CREDENTIALS_HOME },
     ]
@@ -339,10 +459,7 @@ export function AppShell({
   // work surface starts. This is the one fact it needs, published where CSS can
   // read it rather than through a context that would exist for one number.
   useEffect(() => {
-    document.documentElement.style.setProperty(
-      '--deck-main-inset',
-      mode === 'full' ? '18.75rem' : '3.75rem',
-    )
+    document.documentElement.style.setProperty('--deck-main-inset', MAIN_INSET[mode])
   }, [mode])
 
   function togglePanel() {
@@ -357,169 +474,176 @@ export function AppShell({
 
   return (
     <div className="min-h-svh bg-bg">
-      {/* Level one: the fleet. */}
-      <nav
-        aria-label="Clusters"
-        className="fixed inset-y-0 left-0 z-30 hidden w-15 flex-col items-center gap-1 border-r border-rail-line bg-rail pb-3 lg:flex"
-      >
-        {/* The mark sits in a slot exactly as tall as the tree's own header, so
-            it shares a centreline with whatever the tree names beside it rather
-            than floating two pixels above it. */}
-        <Link to="/" title="All clusters" className="grid h-14 w-full shrink-0 place-items-center">
-          {/* The hit target matches a chip's; only the slot around it is taller,
-              so the mark lands on the tree header's line. */}
-          <span className="grid size-10 place-items-center rounded-control transition-colors hover:bg-rail-raised">
-            <MarkChip className="size-7" />
-          </span>
-          <span className="sr-only">All clusters</span>
-        </Link>
-
-        <span aria-hidden="true" className="my-1 h-px w-6 shrink-0 bg-rail-line" />
-
-        <div className="flex min-h-0 flex-col items-center gap-1 overflow-y-auto">
-          {railClusters.map((cluster) => {
-            const active = isClusterPath(pathname, cluster.id)
-            return (
-              <Link
-                key={cluster.id}
-                to={clusterHref(cluster)}
-                title={cluster.name}
-                aria-current={active ? 'page' : undefined}
-                className={`relative grid size-10 shrink-0 place-items-center rounded-control border font-mono text-[10.5px] font-semibold transition-colors ${
-                  active
-                    ? 'border-accent bg-rail-raised text-rail-fg'
-                    : 'border-transparent text-rail-muted hover:bg-rail-raised/60 hover:text-rail-fg'
-                }`}
-              >
-                {railChip(cluster)}
-                <span className="absolute top-1 right-1">
-                  <EnvironmentDot environment={cluster.environment} />
-                </span>
-                <span className="sr-only">{cluster.name}</span>
-              </Link>
-            )
-          })}
-        </div>
-
-        {/* A plus below a column of clusters reads as "add one to this column",
-            so that is what it does. It used to be a second link to the fleet
-            overview, which the mark above already is — a button whose glyph
-            promises a new thing and delivers the page you are on. Only an
-            administrator may register a cluster, so nobody else is offered it:
-            the rail's rule is that every row in it resolves for whoever sees it. */}
-        {isAdmin ? (
-          <Link
-            to="/admin/clusters/new"
-            title="Register a cluster"
-            className="grid size-10 shrink-0 place-items-center rounded-control text-rail-muted transition-colors hover:bg-rail-raised hover:text-rail-fg"
-          >
-            <Plus aria-hidden="true" className="size-4" />
-            <span className="sr-only">Register a cluster</span>
+      {/* The sidebar: one floating card holding both levels. It is not
+          `overflow-hidden` — the cluster chooser opens out of its right edge —
+          so each half rounds its own corners instead. */}
+      <div className="fixed top-3 bottom-3 left-3 z-30 hidden rounded-card border border-rail-line bg-rail shadow-deck lg:flex">
+        {/* Level one: the fleet. */}
+        <nav
+          aria-label="Clusters"
+          className="flex w-16 shrink-0 flex-col items-center gap-2 rounded-l-card border-r border-rail-line pb-3"
+        >
+          {/* The mark sits in a slot exactly as tall as the panel's brand row,
+              so the two share a centreline. */}
+          <Link to="/" title="All clusters" className="grid h-16 w-full shrink-0 place-items-center">
+            <span className="grid size-10 place-items-center rounded-control transition-colors duration-300 hover:bg-rail-raised">
+              <MarkChip className="size-8" />
+            </span>
+            <span className="sr-only">All clusters</span>
           </Link>
+
+          {/* Padded wider than the chips so the current one's corner arc,
+              which sits outside it, is not clipped by the scroll box. */}
+          <div
+            ref={railScroll}
+            className="flex min-h-0 w-full flex-col items-center gap-2.5 overflow-x-hidden overflow-y-auto px-3 pt-1 pb-2"
+          >
+            {railClusters.map((cluster) => {
+              const active = isClusterPath(pathname, cluster.id)
+              return (
+                <Link
+                  key={cluster.id}
+                  to={clusterHref(cluster)}
+                  title={cluster.name}
+                  aria-current={active ? 'page' : undefined}
+                  className={`relative grid size-10 shrink-0 place-items-center rounded-control font-data text-[11px] font-semibold transition-colors duration-500 ${
+                    active
+                      ? 'rail-arc bg-rail-raised text-rail-fg'
+                      : 'text-rail-muted hover:bg-rail-raised hover:text-accent'
+                  }`}
+                >
+                  {railChip(cluster)}
+                  <span className="absolute top-1 right-1">
+                    <EnvironmentDot environment={cluster.environment} />
+                  </span>
+                  <span className="sr-only">{cluster.name}</span>
+                </Link>
+              )
+            })}
+
+            {/* A plus below a column of clusters reads as "add one to this
+                column", so that is what it does. Only an administrator may
+                register a cluster, so nobody else is offered it: the rail's
+                rule is that every row in it resolves for whoever sees it. */}
+            {isAdmin ? (
+              <Link
+                to="/admin/clusters/new"
+                title="Register a cluster"
+                className="grid size-10 shrink-0 place-items-center rounded-control border border-dashed border-rail-line text-rail-muted transition-colors duration-500 hover:bg-rail-raised hover:text-accent"
+              >
+                <Plus aria-hidden="true" className="size-4.5" />
+                <span className="sr-only">Register a cluster</span>
+              </Link>
+            ) : null}
+          </div>
+
+          <span className="flex-1" />
+
+          <button
+            type="button"
+            onClick={signOut}
+            title="Sign out"
+            className="grid size-10 place-items-center rounded-control text-rail-muted transition-colors duration-500 hover:bg-rail-raised hover:text-danger"
+          >
+            <LogOut aria-hidden="true" className="size-4.5" />
+            <span className="sr-only">Sign out</span>
+          </button>
+        </nav>
+
+        {/* Level two: what inside it. */}
+        {mode === 'full' ? (
+          <aside className="flex w-60 shrink-0 flex-col rounded-r-card">
+            <Link
+              to="/"
+              className="flex h-16 shrink-0 items-center px-5 text-rail-fg"
+              title="All clusters"
+              aria-label="kubemg — all clusters"
+            >
+              <Wordmark className="text-[22px]" />
+            </Link>
+
+            {inAdmin ? (
+              <AdminHeader cluster={returnCluster} />
+            ) : (
+              <PanelContext cluster={openCluster} clusters={clusters} />
+            )}
+
+            <div
+              ref={panelScroll}
+              className="min-h-0 flex-1 overflow-y-auto px-3 pt-4 pb-3 [scrollbar-color:var(--deck-accent)_transparent]"
+            >
+              {inAdmin ? (
+                <AdminNav />
+              ) : openCluster ? (
+                <ClusterTree
+                  cluster={openCluster}
+                  categories={categories}
+                  selected={selectedResource}
+                />
+              ) : (
+                <FleetNav clusters={clusters} pathname={pathname} />
+              )}
+            </div>
+
+            {/* The template's plan card, about the person instead: who is
+                signed in, and the doors that are theirs. The name is the door
+                to the account itself — where everyone looks for it. */}
+            <div className="m-3 mt-0 flex shrink-0 flex-col gap-1 rounded-card border border-accent-line bg-linear-to-b from-accent-soft to-rail p-2">
+              <NavLink
+                to={PROFILE_HOME}
+                title="Your profile"
+                className="nav-pill group flex items-center gap-2.5 rounded-control px-1.5 pt-1 pb-1.5"
+              >
+                <span className="grid size-9 shrink-0 place-items-center rounded-full border border-accent-line bg-rail font-data text-[12px] font-semibold text-rail-fg group-hover:bg-transparent group-focus-visible:bg-transparent group-aria-[current=page]:bg-transparent">
+                  {initials}
+                </span>
+                <span className="min-w-0 flex-1 leading-tight">
+                  <span className="block truncate text-[13.5px] font-semibold text-rail-fg">
+                    {user?.username}
+                  </span>
+                  <span className="block truncate text-[12px] text-rail-faint">
+                    {isAdmin ? 'Administrator' : 'Developer'}
+                  </span>
+                </span>
+              </NavLink>
+              {inAdmin ? (
+                <Link to={returnCluster ? clusterHref(returnCluster) : '/'} className={FOOTER_ROW}>
+                  <ArrowLeft aria-hidden="true" className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {returnCluster ? `Back to ${returnCluster.name}` : 'Back to the fleet'}
+                  </span>
+                </Link>
+              ) : (
+                <>
+                  <NavLink to={ACCESS_HOME} className={FOOTER_ROW}>
+                    <Timer aria-hidden="true" className="size-4 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">My access</span>
+                  </NavLink>
+                  {/* Beside it rather than under Administration: these are the
+                      credentials this person holds — the kubeconfigs and the
+                      password — and neither is somebody else's to manage. */}
+                  <NavLink to={CREDENTIALS_HOME} className={FOOTER_ROW}>
+                    <FileKey aria-hidden="true" className="size-4 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">My credentials</span>
+                  </NavLink>
+                  {/* The one door. Absent, not disabled, for a non-admin: every
+                      row behind it would refuse, and a door that never opens is
+                      worse than no door. */}
+                  {isAdmin ? (
+                    <NavLink to={ADMIN_HOME} className={FOOTER_ROW}>
+                      <SlidersHorizontal aria-hidden="true" className="size-4 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate">Administration</span>
+                      <ChevronRight aria-hidden="true" className="size-3.5 shrink-0" />
+                    </NavLink>
+                  ) : null}
+                </>
+              )}
+            </div>
+          </aside>
         ) : null}
 
-        <span className="flex-1" />
-
-        <span
-          title={`${user?.username ?? ''} · ${user?.role ?? ''}`}
-          className="grid size-8 shrink-0 place-items-center rounded-full bg-rail-raised font-mono text-[11px] font-semibold text-rail-fg"
-        >
-          {initials}
-        </span>
-        <button
-          type="button"
-          onClick={toggle}
-          title={theme === 'dark' ? 'Switch to the light deck' : 'Switch to the dark deck'}
-          className="grid size-9 place-items-center rounded-control text-rail-muted transition-colors hover:bg-rail-raised hover:text-rail-fg"
-        >
-          {theme === 'dark' ? (
-            <Sun aria-hidden="true" className="size-4" />
-          ) : (
-            <Moon aria-hidden="true" className="size-4" />
-          )}
-          <span className="sr-only">
-            {theme === 'dark' ? 'Switch to the light deck' : 'Switch to the dark deck'}
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={signOut}
-          title="Sign out"
-          className="grid size-9 place-items-center rounded-control text-rail-muted transition-colors hover:bg-rail-raised hover:text-danger"
-        >
-          <LogOut aria-hidden="true" className="size-4" />
-          <span className="sr-only">Sign out</span>
-        </button>
-      </nav>
-
-      {openCluster && !inAdmin ? <EnvironmentEdge environment={openCluster.environment} /> : null}
-
-      {/* Level two: what inside it. */}
-      {mode === 'full' ? (
-        <aside className="fixed inset-y-0 left-15 z-20 hidden w-60 flex-col border-r border-rail-line bg-rail lg:flex">
-          {inAdmin ? (
-            <AdminHeader cluster={returnCluster} />
-          ) : (
-            <PanelContext cluster={openCluster} clusters={clusters} />
-          )}
-
-          <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pt-3 pb-3">
-            {inAdmin ? (
-              <AdminNav />
-            ) : openCluster ? (
-              <ClusterTree
-                cluster={openCluster}
-                categories={categories}
-                selected={selectedResource}
-              />
-            ) : (
-              <FleetNav clusters={clusters} pathname={pathname} />
-            )}
-          </div>
-
-          <div className="flex shrink-0 flex-col gap-px border-t border-rail-line p-2">
-            {inAdmin ? (
-              <Link
-                to={returnCluster ? clusterHref(returnCluster) : '/'}
-                className={`${FOOTER_ROW_BASE} text-rail-muted hover:bg-rail-raised/60 hover:text-rail-fg`}
-              >
-                <ArrowLeft aria-hidden="true" className="size-4 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">
-                  {returnCluster ? `Back to ${returnCluster.name}` : 'Back to the fleet'}
-                </span>
-              </Link>
-            ) : (
-              <>
-                <NavLink to={ACCESS_HOME} className={footerRow}>
-                  <Timer aria-hidden="true" className="size-4 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">My access</span>
-                </NavLink>
-                {/* Beside it rather than under Administration: these are the
-                    credentials this person holds — the kubeconfigs and the
-                    password — and neither is somebody else's to manage. */}
-                <NavLink to={CREDENTIALS_HOME} className={footerRow}>
-                  <FileKey aria-hidden="true" className="size-4 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">My credentials</span>
-                </NavLink>
-                {/* The one door. Absent, not disabled, for a non-admin: every
-                    row behind it would refuse, and a door that never opens is
-                    worse than no door. */}
-                {isAdmin ? (
-                  <NavLink to={ADMIN_HOME} className={footerRow}>
-                    <SlidersHorizontal aria-hidden="true" className="size-4 shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">Administration</span>
-                    <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-rail-faint" />
-                  </NavLink>
-                ) : null}
-              </>
-            )}
-            <button type="button" onClick={togglePanel} className={`${FOOTER_ROW_BASE} text-rail-faint hover:text-rail-fg`}>
-              <PanelLeftClose aria-hidden="true" className="size-4 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">Collapse the tree</span>
-            </button>
-          </div>
-        </aside>
-      ) : null}
+        {openCluster && !inAdmin ? <EnvironmentEdge environment={openCluster.environment} /> : null}
+      </div>
 
       {navOpen ? (
         <MobileNav
@@ -536,105 +660,135 @@ export function AppShell({
       ) : null}
 
       <div className={`flex min-w-0 flex-col ${MAIN_OFFSET[mode]}`}>
-        <header className="sticky top-0 z-10 border-b border-line bg-bg/85 backdrop-blur">
+        <header className="sticky top-0 z-10 bg-bg/85 backdrop-blur">
           {/* Inside the sticky header rather than above it, so the one line
               saying which installation this is does not scroll away from the
               operator who is about to act on it. */}
           <EnvironmentBanner />
-          <div className="flex h-14 items-center gap-3 px-4 xl:px-6">
+          <div className="flex h-16 items-center gap-2.5 border-b border-line-soft px-4 lg:pl-0 xl:pr-6">
             <IconButton
               label="Open navigation"
               onClick={() => setNavOpen(true)}
-              className="lg:hidden"
+              className={`${ROUND} lg:hidden`}
             >
               <Menu aria-hidden="true" className="size-4.5" />
             </IconButton>
-
-            {/* With the tree hidden this is the only way back to it, so it lives
-                beside the breadcrumb rather than in the tree it would reopen. */}
-            {mode === 'hidden' ? (
-              <IconButton label="Show the tree" onClick={togglePanel} className="hidden lg:flex">
-                <PanelLeftOpen aria-hidden="true" className="size-4.5" />
-              </IconButton>
-            ) : null}
-
-            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2">
-              {/* A cluster is a place, not a page below one — the switcher takes
-                  the slot the parent breadcrumb would have, and the view is
-                  named after it. The heading stays a real `h1` in the accessible
-                  tree at every width: narrow it is only visually hidden, because
-                  a page whose outline starts at nothing is a page a screen
-                  reader cannot navigate. */}
-              {openCluster && !inAdmin ? (
-                <>
-                  <ClusterSwitcher cluster={openCluster} />
-                  <ChevronRight
-                    aria-hidden="true"
-                    className="hidden size-3.5 shrink-0 text-faint sm:block"
-                  />
-                  <h1 className="sr-only min-w-0 truncate text-[15px] font-semibold text-fg sm:not-sr-only">
-                    {title}
-                  </h1>
-                </>
+            <IconButton
+              label={mode === 'full' ? 'Hide the tree' : 'Show the tree'}
+              onClick={togglePanel}
+              className={`${ROUND} hidden lg:inline-grid`}
+            >
+              {mode === 'full' ? (
+                <PanelLeftClose aria-hidden="true" className="size-4.5" />
               ) : (
-                <>
-                  {parent ? (
-                    <>
-                      <Link
-                        to={parent.to}
-                        className="hidden shrink-0 text-[13px] text-muted transition-colors hover:text-fg sm:block"
-                      >
-                        {parent.label}
-                      </Link>
-                      <ChevronRight
-                        aria-hidden="true"
-                        className="hidden size-3.5 shrink-0 text-faint sm:block"
-                      />
-                    </>
-                  ) : null}
-                  <h1 className="min-w-0 truncate text-[15px] font-semibold text-fg">{title}</h1>
-                </>
+                <PanelLeftOpen aria-hidden="true" className="size-4.5" />
               )}
-            </nav>
+            </IconButton>
 
-            <div className="ml-auto flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setPaletteOpen(true)}
-                className="hidden h-9 items-center gap-2 rounded-control border border-line bg-surface px-3 text-[13px] text-muted transition-colors hover:border-faint/60 hover:text-fg md:flex"
-              >
-                Jump to…
+            <button
+              type="button"
+              onClick={() => setPaletteOpen(true)}
+              className="flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-control border border-line bg-surface px-3 text-[13.5px] text-faint transition-colors duration-300 hover:border-faint/60 hover:text-muted sm:max-w-sm"
+            >
+              <Search aria-hidden="true" className="size-4 shrink-0" />
+              <span className="min-w-0 flex-1 truncate text-left">
+                Search clusters, workloads, pages…
+              </span>
+              <span className="hidden sm:inline">
                 <KeyHint>{PALETTE_HINT}</KeyHint>
-              </button>
-              {/* A shell is not a page you browse to — it is a thing you reach
-                  for mid-question, from whatever page raised the question. So it
-                  is one control in the header that opens a dock over the page,
-                  drawn only where there is a cluster to open one on and a tunnel
-                  to reach it through. It takes the header's own button shape:
-                  beside a bordered h-9 control, a bare icon reads as debris. */}
-              {openCluster && !inAdmin && hasTunnel(openCluster) ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  aria-pressed={shellDock.open}
-                  onClick={() => shellDock.toggle(openCluster.id, openCluster.name)}
-                  className={shellDock.open ? 'border-faint/60 bg-raised' : ''}
-                >
-                  <SquareTerminal aria-hidden="true" className="size-4" />
-                  <span className="hidden sm:inline">Shell</span>
-                  <span className="sr-only sm:hidden">Shell</span>
-                </Button>
-              ) : null}
-              {scope}
-              {scopeAction}
-              {timeRange ? <TimeRangeControl /> : null}
-              {actions}
-            </div>
+              </span>
+            </button>
+
+            <span className="hidden flex-1 sm:block" />
+
+            {/* A shell is not a page you browse to — it is a thing you reach
+                for mid-question, from whatever page raised the question. So it
+                is one control in the header that opens a dock over the page,
+                drawn only where there is a cluster to open one on and a tunnel
+                to reach it through. */}
+            {openCluster && !inAdmin && hasTunnel(openCluster) ? (
+              <Button
+                type="button"
+                variant="secondary"
+                aria-pressed={shellDock.open}
+                onClick={() => shellDock.toggle(openCluster.id, openCluster.name)}
+                className={`h-10 ${shellDock.open ? 'border-faint/60 bg-raised' : ''}`}
+              >
+                <SquareTerminal aria-hidden="true" className="size-4" />
+                <span className="hidden sm:inline">Shell</span>
+                <span className="sr-only sm:hidden">Shell</span>
+              </Button>
+            ) : null}
+            <IconButton
+              label={theme === 'dark' ? 'Switch to the light deck' : 'Switch to the dark deck'}
+              onClick={toggle}
+              className={`${ROUND} hidden lg:inline-grid`}
+            >
+              {theme === 'dark' ? (
+                <Sun aria-hidden="true" className="size-4.5" />
+              ) : (
+                <Moon aria-hidden="true" className="size-4.5" />
+              )}
+            </IconButton>
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 p-4 xl:p-6">
-          <div className={`mx-auto min-w-0 ${fullWidth ? '' : 'max-w-[1440px]'}`}>{children}</div>
+        <main className="min-w-0 flex-1 px-4 pt-5 pb-4 lg:pl-0 xl:pr-6 xl:pb-6">
+          <div className={`mx-auto min-w-0 ${fullWidth ? '' : 'max-w-[1440px]'}`}>
+            {/* The page's own heading row: where you are, and what this page
+                is scoped by and offers. It scrolls with the page; only the
+                search bar above it stays. */}
+            <div
+              className={`mb-5 flex flex-wrap justify-between gap-x-4 gap-y-3 ${
+                description ? 'items-start' : 'items-center'
+              }`}
+            >
+              <div className="min-w-0">
+              <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2">
+                {/* A cluster is a place, not a page below one — the switcher
+                    takes the slot the parent breadcrumb would have, and the
+                    view is named after it. */}
+                {openCluster && !inAdmin ? (
+                  <>
+                    <ClusterSwitcher cluster={openCluster} />
+                    <span aria-hidden="true" className="text-faint">
+                      /
+                    </span>
+                  </>
+                ) : parent ? (
+                  <>
+                    <Link
+                      to={parent.to}
+                      className="shrink-0 text-[14px] text-muted transition-colors hover:text-fg"
+                    >
+                      {parent.label}
+                    </Link>
+                    <span aria-hidden="true" className="text-faint">
+                      /
+                    </span>
+                  </>
+                ) : null}
+                <h1 className="min-w-0 truncate text-[20px] font-bold text-fg">{title}</h1>
+              </nav>
+              {description ? (
+                <p className="mt-1 max-w-3xl text-[13.5px] leading-relaxed text-muted">
+                  {description}
+                </p>
+              ) : null}
+              </div>
+
+              {scope || scopeAction || timeRange || actions ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  {scope}
+                  {scopeAction}
+                  {timeRange ? <TimeRangeControl /> : null}
+                  {actions}
+                </div>
+              ) : null}
+            </div>
+
+            {children}
+          </div>
         </main>
 
         {/* Below the work rather than beside it, on every page: what release
@@ -652,21 +806,25 @@ export function AppShell({
   )
 }
 
-const FOOTER_ROW_BASE =
-  'flex items-center gap-2.5 rounded-control px-2 py-1.5 text-left text-[13px] transition-colors'
+/* A row in the footer card: the navigation pill, a size down. */
+const FOOTER_ROW =
+  'nav-pill flex h-9 items-center gap-2.5 rounded-control px-2.5 text-left text-[13px] font-medium text-rail-muted'
 
-function footerRow({ isActive }: { isActive: boolean }) {
-  return isActive
-    ? `${FOOTER_ROW_BASE} bg-rail-raised font-medium text-rail-fg`
-    : `${FOOTER_ROW_BASE} text-rail-muted hover:bg-rail-raised/60 hover:text-rail-fg`
-}
+/* A row in the panel. `NavLink` sets `aria-current`, which is what lights the
+   pill, so the class does not branch on whether the row is current. */
+const RAIL_LINK =
+  'nav-pill flex h-10 items-center gap-2.5 rounded-control px-3 text-[14px] font-medium text-rail-muted'
 
-function railLinkClass({ isActive }: { isActive: boolean }) {
-  const base =
-    'flex items-center gap-2.5 rounded-control px-2 py-1.5 text-[13.5px] transition-colors'
-  return isActive
-    ? `${base} bg-rail-raised font-medium text-rail-fg`
-    : `${base} text-rail-muted hover:bg-rail-raised/60 hover:text-rail-fg`
+/* A top-bar control: round, bordered, the template's shape. */
+const ROUND = 'size-10 rounded-full border border-line bg-surface hover:text-accent'
+
+/** The `kubemg` wordmark on its own — the mark already sits in the rail. */
+function Wordmark({ className }: { className?: string }) {
+  return (
+    <span className={`font-brand font-bold tracking-[-0.045em] lowercase ${className ?? ''}`}>
+      kubemg
+    </span>
+  )
 }
 
 /**
@@ -680,13 +838,13 @@ function railLinkClass({ isActive }: { isActive: boolean }) {
  *
  * It adds **nothing to the layout**: it is the hairline that already divides the
  * rail from the tree, taking a tint. It sits *on* the rail's own `border-r`
- * (`left-15 -ml-px`) rather than beside it — a second line one pixel over is
+ * (`left-16 -ml-px`, inside the sidebar card) rather than beside it — a second line one pixel over is
  * what made the earlier versions read as a stripe — and the mask fades it out
  * over the top and bottom fifth so it has no endpoints to notice.
  *
- * It is a sibling of the tree rather than a child of it because the rail is
- * `z-30` and the tree `z-20`: drawn inside the tree, the one pixel that overlaps
- * the rail's border is painted over by the rail and the tint vanishes.
+ * It is a sibling of the rail and the tree inside the card rather than a child
+ * of either, and drawn last on its own layer: inside the tree, the one pixel
+ * that overlaps the rail's border would be painted over and the tint vanish.
  *
  * Two earlier attempts are worth naming so they are not tried again. A 3px slab
  * of solid colour is the loudest thing on the deck, and the chrome is meant to
@@ -700,7 +858,7 @@ function EnvironmentEdge({ environment }: { environment: Environment }) {
   return (
     <span
       aria-hidden="true"
-      className={`pointer-events-none fixed inset-y-0 left-15 z-40 -ml-px hidden w-px bg-current [mask-image:linear-gradient(to_bottom,transparent,black_20%,black_80%,transparent)] lg:block ${ENVIRONMENT_EDGE[environment]}`}
+      className={`pointer-events-none absolute inset-y-0 left-16 z-10 -ml-px w-px bg-current [mask-image:linear-gradient(to_bottom,transparent,black_20%,black_80%,transparent)] ${ENVIRONMENT_EDGE[environment]}`}
     />
   )
 }
@@ -744,51 +902,47 @@ function PanelContext({
   const slot = cluster ? currentClusterSlot(pathname, cluster.id) : null
 
   return (
-    <div ref={rootRef} className="relative shrink-0 border-b border-rail-line">
+    <div ref={rootRef} className="relative mx-3 shrink-0">
       <button
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className="flex h-14 w-full items-center gap-2.5 px-4 text-left transition-colors hover:bg-rail-raised/60"
+        className="flex min-h-14 w-full items-center gap-2.5 rounded-control border border-rail-line bg-rail-raised px-3 py-2 text-left transition-colors duration-300 hover:border-accent-line"
       >
         {cluster ? (
           <>
-            <span className="shrink-0">
-              <EnvironmentDot environment={cluster.environment} />
-            </span>
+            {/* The link leads the card, at the size of an avatar: the
+                environment already has its tag on the line below. */}
+            <LinkStatus state={linkState(cluster)} variant="glyph" surface="rail" size="lg" />
             <span className="min-w-0 flex-1 leading-tight">
-              <span className="block truncate font-mono text-[13.5px] font-semibold text-rail-fg">
+              <span className="block truncate font-data text-[13.5px] font-semibold text-rail-fg">
                 {cluster.name}
               </span>
               <span className="mt-1 flex items-center gap-1.5">
                 <EnvironmentTag environment={cluster.environment} />
                 {cluster.kubernetes_version ? (
-                  <span className="truncate font-mono text-[11px] text-rail-faint">
+                  <span className="truncate font-data text-[11px] text-rail-faint">
                     {cluster.kubernetes_version}
                   </span>
                 ) : null}
-                <LinkStatus state={linkState(cluster)} variant="glyph" surface="rail" />
               </span>
             </span>
           </>
         ) : (
           <>
-            <Layers aria-hidden="true" className="size-4 shrink-0 text-rail-muted" />
+            <Layers aria-hidden="true" className="size-4.5 shrink-0 text-accent" />
             <span className="min-w-0 flex-1 leading-tight">
               <span className="block truncate text-[14px] font-semibold tracking-[-0.02em] text-rail-fg">
                 All clusters
               </span>
-              <span className="label block text-rail-faint">{clusters.length} registered</span>
+              <span className="block text-[12px] text-rail-faint">
+                {clusters.length} registered
+              </span>
             </span>
           </>
         )}
-        <ChevronDown
-          aria-hidden="true"
-          className={`size-3.5 shrink-0 text-rail-faint transition-transform ${
-            open ? 'rotate-180' : ''
-          }`}
-        />
+        <ChevronsUpDown aria-hidden="true" className="size-3.5 shrink-0 text-rail-faint" />
       </button>
 
       {open ? (
@@ -814,13 +968,13 @@ function PanelContext({
 /** The tree's head inside Administration: what this space is, and the way out. */
 function AdminHeader({ cluster }: { cluster: Cluster | undefined }) {
   return (
-    <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-rail-line px-4">
-      <SlidersHorizontal aria-hidden="true" className="size-4 shrink-0 text-rail-muted" />
+    <div className="mx-3 flex min-h-14 shrink-0 items-center gap-2.5 rounded-control border border-rail-line bg-rail-raised px-3 py-2">
+      <SlidersHorizontal aria-hidden="true" className="size-4.5 shrink-0 text-accent" />
       <span className="min-w-0 flex-1 leading-tight">
         <span className="block truncate text-[14px] font-semibold tracking-[-0.02em] text-rail-fg">
           Administration
         </span>
-        <span className="label block truncate text-rail-faint">
+        <span className="block truncate text-[12px] text-rail-faint">
           {cluster ? `from ${cluster.name}` : 'the whole fleet'}
         </span>
       </span>
@@ -833,15 +987,18 @@ function AdminNav() {
   return (
     <>
       {ADMIN_GROUPS.map((group, index) => (
-        <div key={group.id} className={index === 0 ? '' : 'mt-5'}>
-          <p className="label px-2 pb-2 text-rail-faint">{group.label}</p>
+        <div
+          key={group.id}
+          className={index === 0 ? '' : 'mt-4 border-t border-rail-line pt-4'}
+        >
+          <p className="nav-title px-1 pb-2">{group.label}</p>
           <ul className="flex flex-col gap-0.5">
             {group.items.map((item) => (
               <li key={item.to}>
                 <NavLink
                   to={item.to}
                   end={item.to === '/admin/clusters'}
-                  className={railLinkClass}
+                  className={RAIL_LINK}
                 >
                   <item.icon aria-hidden="true" className="size-4 shrink-0" />
                   <span className="min-w-0 truncate">{item.label}</span>
@@ -866,17 +1023,19 @@ function FleetNav({ clusters, pathname }: { clusters: Cluster[]; pathname: strin
     <>
       <ul className="flex flex-col gap-0.5">
         <li>
-          <NavLink to="/" end className={railLinkClass}>
+          <NavLink to="/" end className={RAIL_LINK}>
             <Gauge aria-hidden="true" className="size-4 shrink-0" />
             <span className="min-w-0 truncate">Fleet overview</span>
           </NavLink>
         </li>
       </ul>
 
-      <div className="mt-5">
-        <p className="label flex items-center justify-between px-2 pb-2 text-rail-faint">
+      <div className="mt-4 border-t border-rail-line pt-4">
+        <p className="nav-title flex items-center justify-between px-1 pb-2">
           <span>Clusters</span>
-          <span className="font-mono">{clusters.length}</span>
+          <span className="font-data text-[12px] font-normal text-rail-faint">
+            {clusters.length}
+          </span>
         </p>
 
         {clusters.length === 0 ? (
@@ -888,18 +1047,10 @@ function FleetNav({ clusters, pathname }: { clusters: Cluster[]; pathname: strin
                 <Link
                   to={clusterHref(cluster)}
                   aria-current={isClusterPath(pathname, cluster.id) ? 'page' : undefined}
-                  className={`flex items-center gap-2 rounded-control px-2 py-1.5 transition-colors ${
-                    isClusterPath(pathname, cluster.id)
-                      ? 'bg-rail-raised'
-                      : 'hover:bg-rail-raised/60'
-                  }`}
+                  className="nav-pill flex h-10 items-center gap-2.5 rounded-control px-3 text-rail-muted"
                 >
                   <EnvironmentDot environment={cluster.environment} />
-                  <span
-                    className={`min-w-0 flex-1 truncate font-mono text-[12.5px] ${
-                      isClusterPath(pathname, cluster.id) ? 'text-rail-fg' : 'text-rail-muted'
-                    }`}
-                  >
+                  <span className="min-w-0 flex-1 truncate font-data text-[13px]">
                     {cluster.name}
                   </span>
                   <LinkStatus state={linkState(cluster)} variant="glyph" surface="rail" />
@@ -954,7 +1105,7 @@ function MobileNav({
         type="button"
         aria-label="Close navigation"
         onClick={onClose}
-        className="scrim-in absolute inset-0 bg-black/55"
+        className="scrim-in absolute inset-0 bg-scrim"
       />
 
       <div
@@ -975,20 +1126,26 @@ function MobileNav({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-4">
           <FleetNav clusters={clusters} pathname={pathname} />
 
           <div className="mt-5">
-            <p className="label px-2 pb-2 text-rail-faint">You</p>
+            <p className="nav-title px-1 pb-2">You</p>
             <ul className="flex flex-col gap-0.5">
               <li>
-                <NavLink to={ACCESS_HOME} className={railLinkClass}>
+                <NavLink to={PROFILE_HOME} className={RAIL_LINK}>
+                  <CircleUserRound aria-hidden="true" className="size-4 shrink-0" />
+                  My profile
+                </NavLink>
+              </li>
+              <li>
+                <NavLink to={ACCESS_HOME} className={RAIL_LINK}>
                   <Timer aria-hidden="true" className="size-4 shrink-0" />
                   My access
                 </NavLink>
               </li>
               <li>
-                <NavLink to={CREDENTIALS_HOME} className={railLinkClass}>
+                <NavLink to={CREDENTIALS_HOME} className={RAIL_LINK}>
                   <FileKey aria-hidden="true" className="size-4 shrink-0" />
                   My credentials
                 </NavLink>
@@ -999,14 +1156,14 @@ function MobileNav({
           {isAdmin
             ? ADMIN_GROUPS.map((group) => (
                 <div key={group.id} className="mt-5">
-                  <p className="label px-2 pb-2 text-rail-faint">{group.label}</p>
+                  <p className="nav-title px-1 pb-2">{group.label}</p>
                   <ul className="flex flex-col gap-0.5">
                     {group.items.map((item) => (
                       <li key={item.to}>
                         <NavLink
                           to={item.to}
                           end={item.to === '/admin/clusters'}
-                          className={railLinkClass}
+                          className={RAIL_LINK}
                         >
                           <item.icon aria-hidden="true" className="size-4 shrink-0" />
                           {item.label}
@@ -1020,13 +1177,20 @@ function MobileNav({
         </div>
 
         <div className="flex shrink-0 items-center gap-2.5 border-t border-rail-line px-3 py-3">
-          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-rail-raised font-mono text-[12px] font-semibold text-rail-fg">
-            {username.slice(0, 2).toUpperCase()}
-          </span>
-          <span className="min-w-0 flex-1 leading-tight">
-            <span className="block truncate text-[13px] text-rail-fg">{username}</span>
-            <span className="label block text-rail-faint">{role}</span>
-          </span>
+          {/* The name is the door to the account, as on the desktop card. */}
+          <Link
+            to={PROFILE_HOME}
+            title="Your profile"
+            className="-m-1 flex min-w-0 flex-1 items-center gap-2.5 rounded-control p-1 transition-colors hover:bg-rail-raised"
+          >
+            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-rail-raised font-data text-[12px] font-semibold text-rail-fg">
+              {username.slice(0, 2).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1 leading-tight">
+              <span className="block truncate text-[13px] text-rail-fg">{username}</span>
+              <span className="block text-[12px] text-rail-faint">{role}</span>
+            </span>
+          </Link>
           <button
             type="button"
             onClick={onToggleTheme}

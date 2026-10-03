@@ -19,21 +19,18 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router'
 import { Plus, RefreshCw, Server } from 'lucide-react'
 import { checkCluster, errorMessage, fetchJitRequests } from '../api/client'
-import type { Cluster, JitRequest } from '../api/types'
+import type { JitRequest } from '../api/types'
 import { AppShell } from '../components/AppShell'
-import { ConnectionChain } from '../components/ConnectionChain'
 import { FleetDeveloperBody } from '../components/FleetDeveloperBody'
 import { FleetOperatorBody } from '../components/FleetOperatorBody'
 import { JitRequestModal } from '../components/jit/JitRequestModal'
 import { LiveChip } from '../components/LiveRefresh'
-import { Button, EmptyState, Notice } from '../components/primitives'
+import { Button, EmptyState, LinkButton, Notice } from '../components/primitives'
 import { useFleetCounts } from '../lib/fleetCounts'
 import type { Count, StripCounts } from '../lib/fleetStrip'
 import { FLEET_INTERVAL } from '../lib/live'
-import { clusterHref } from '../lib/navigation'
 import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
 
@@ -45,7 +42,6 @@ export function Overview() {
   const [requesting, setRequesting] = useState(false)
 
   const isAdmin = user?.role === 'admin'
-  const username = user?.username ?? 'you'
   const { pending, elevation, reloadRequests } = useAccessRequests(isAdmin)
   const { refused, expiring } = useFleetCounts(isAdmin)
   const counts = useMemo<StripCounts>(
@@ -106,12 +102,10 @@ export function Overview() {
               title={isAdmin ? 'No clusters yet' : 'No clusters granted to you'}
               action={
                 isAdmin ? (
-                  <Link to="/admin/clusters/new">
-                    <Button variant="primary">
+                  <LinkButton to="/admin/clusters/new" variant="primary">
                       <Plus aria-hidden="true" className="size-4" />
                       Register a cluster
-                    </Button>
-                  </Link>
+                  </LinkButton>
                 ) : (
                   <Button variant="primary" onClick={() => setRequesting(true)}>
                     Request access
@@ -128,12 +122,6 @@ export function Overview() {
 
         {clusters.length > 0 ? (
           <>
-            {/* The product's thesis, stated once as a picture rather than in
-                the sign-in page's words, and the first thing anyone signed in
-                sees. Reads the same `Cluster` list either body below already
-                has — no new read, no capacity, so it costs a developer's body
-                nothing to draw it too. */}
-            <FleetConnectionChains clusters={clusters} username={username} />
             {isAdmin ? (
               <FleetOperatorBody clusters={clusters} counts={counts} />
             ) : (
@@ -159,36 +147,6 @@ export function Overview() {
         />
       ) : null}
     </AppShell>
-  )
-}
-
-/**
- * The fleet's own masthead: the same chain the cluster dashboard promotes to
- * its own top (see ConnectionChain), once per cluster. It is quiet on
- * purpose — no card, no border, a single divider between rows — because the
- * drawing is the point and a frame around it would compete with it. Clicking
- * a row is the only interaction it offers, straight to the cluster it names.
- */
-export function FleetConnectionChains({
-  clusters,
-  username,
-}: {
-  clusters: Cluster[]
-  username: string
-}) {
-  return (
-    <ul className="flex flex-col divide-y divide-line-soft">
-      {clusters.map((cluster) => (
-        <li key={cluster.id}>
-          <Link
-            to={clusterHref(cluster)}
-            className="block rounded-card px-1 py-3 transition-colors hover:bg-raised/60"
-          >
-            <ConnectionChain cluster={cluster} username={username} />
-          </Link>
-        </li>
-      ))}
-    </ul>
   )
 }
 

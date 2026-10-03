@@ -252,12 +252,12 @@ function rowIsLive(row: Row, live: boolean): boolean {
 }
 
 const ROW_BASE =
-  'relative flex w-full items-center gap-2 rounded-control py-1.5 pr-2 pl-6 text-left text-[13px] transition-colors'
+  'flex w-full items-center gap-2 rounded-control py-1.5 pr-2 pl-6 text-left text-[13.5px]'
 
+/* The current row and the hovered one fill with the navigation pill (see
+   `nav-pill`); `aria-current` is what lights it, so the class does not branch. */
 function rowClass(active: boolean): string {
-  return active
-    ? `${ROW_BASE} bg-rail-raised font-medium text-rail-fg`
-    : `${ROW_BASE} text-rail-muted hover:bg-rail-raised/60 hover:text-rail-fg`
+  return `${ROW_BASE} nav-pill ${active ? 'font-medium' : 'text-rail-muted'}`
 }
 
 export function ClusterTree({
@@ -365,9 +365,12 @@ export function ClusterTree({
           type="search"
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
-          placeholder="Filter resources"
+          placeholder="Filter resources…"
           aria-label="Filter resources"
-          className="h-8 w-full rounded-control border border-rail-line bg-rail-raised pr-2 pl-8 text-[13px] text-rail-fg transition-colors placeholder:text-rail-faint hover:border-rail-muted/40 focus:border-accent focus:outline-none"
+          name="resource-filter"
+          autoComplete="off"
+          spellCheck={false}
+          className="h-9 w-full rounded-control border border-rail-line bg-rail-raised pr-2 pl-8 text-[13px] text-rail-fg transition-colors placeholder:text-rail-faint hover:border-rail-muted/40 focus:border-accent focus:outline-none"
         />
       </div>
 
@@ -449,16 +452,6 @@ export function ClusterTree({
   )
 }
 
-/** The active marker, drawn inside the row's left padding. */
-function Marker() {
-  return (
-    <span
-      aria-hidden="true"
-      className="absolute top-1/2 left-2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-accent"
-    />
-  )
-}
-
 function TreeRow({
   row,
   cluster,
@@ -502,12 +495,7 @@ function TreeRow({
         title={row.label}
         className={({ isActive }) => rowClass(isActive)}
       >
-        {({ isActive }) => (
-          <>
-            {isActive ? <Marker /> : null}
-            <span className="min-w-0 flex-1 truncate">{row.label}</span>
-          </>
-        )}
+        <span className="min-w-0 flex-1 truncate">{row.label}</span>
       </NavLink>
     )
   }
@@ -524,22 +512,21 @@ function TreeRow({
         title={row.label}
         className={`${rowClass(active)} min-w-0 flex-1`}
       >
-        {active ? <Marker /> : null}
         <span className="min-w-0 flex-1 truncate">{row.label}</span>
         {/* The count reads before the scope word: it is the thing the eye is
-            scanning the column for, and it is data, so it is mono like every
+            scanning the column for, and it is data, so it is set as data like every
             other number in the console. A row with no count draws nothing — the
             space simply stays empty rather than holding a placeholder that
             would read as a zero. */}
         {count === null ? null : (
-          <span className="shrink-0 font-mono text-[11px] text-rail-muted tabular-nums">
+          <span className="shrink-0 font-data text-[11px] text-rail-muted tabular-nums">
             {count}
           </span>
         )}
         {/* Cluster-scoped lists ignore the namespace picker; saying so here is
             why it disappears. */}
         {row.item.scope === 'cluster' ? (
-          <span className="shrink-0 font-mono text-[10px] text-rail-faint">cluster</span>
+          <span className="shrink-0 font-data text-[10px] text-rail-faint">cluster</span>
         ) : null}
       </Link>
       <PinButton item={row.item} pinned={pinned} onPin={onPin} />

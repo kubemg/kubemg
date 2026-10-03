@@ -123,6 +123,18 @@ export function GuardrailSettingsPanel({ clusters }: { clusters: Cluster[] }) {
   const silent = armed - enforcing
 
   async function toggle(policy: GuardrailPolicy) {
+    // Turning a safety rule off is asked first; turning one on is not.
+    if (
+      policy.enabled &&
+      !(await confirm({
+        eyebrow: policy.name,
+        title: `Disable ${policy.name}`,
+        body: 'Calls this rule blocks or warns about go through unchecked from now, until it is enabled again.',
+        confirmLabel: 'Disable',
+        tone: 'danger',
+      }))
+    )
+      return
     setBusyRow(policy.id)
     try {
       await updateGuardrailPolicy(policy.id, {
@@ -168,7 +180,6 @@ export function GuardrailSettingsPanel({ clusters }: { clusters: Cluster[] }) {
   return (
     <>
       <Panel
-        eyebrow="Safety"
         title="Command guardrails"
         description="Rules that refuse a call whatever the cluster’s RBAC allows — because the person who deletes the wrong namespace is usually the person entitled to delete it. They cover proxied API calls and what is typed into a container."
         bodyClassName="flex flex-col"
@@ -251,10 +262,14 @@ export function GuardrailSettingsPanel({ clusters }: { clusters: Cluster[] }) {
                   )}
                   {policy.enabled ? 'Disable' : 'Enable'}
                 </Button>
-                <IconButton label="Edit rule" onClick={() => setEditing(policy)}>
+                <IconButton label={`Edit ${policy.name}`} onClick={() => setEditing(policy)}>
                   <Pencil aria-hidden="true" className="size-4" />
                 </IconButton>
-                <IconButton label="Delete rule" onClick={() => void remove(policy)}>
+                <IconButton
+                  label={`Delete ${policy.name}`}
+                  tone="danger"
+                  onClick={() => void remove(policy)}
+                >
                   <Trash2 aria-hidden="true" className="size-4" />
                 </IconButton>
               </div>

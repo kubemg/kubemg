@@ -6,6 +6,7 @@ import type { SettingsResponse } from '../../api/types'
 import { Button, Field, Notice, Panel, TextInput } from '../../components/primitives'
 import { settingSource } from '../../lib/settings'
 import { SettingsAside, SettingsLayout } from '../../components/settings/SettingsLayout'
+import { useUnsavedGuard } from '../../lib/unsavedGuard'
 
 type Draft = {
   agent_image: string
@@ -120,10 +121,12 @@ export function AgentSettings() {
       draft.shell_max_lifetime_hours.trim() !==
         numberField(settings.overrides.shell_max_lifetime_hours) ||
       draft.debug_image.trim() !== settings.overrides.debug_image)
+  useUnsavedGuard(dirty, 'these settings')
 
   return (
     <SettingsLayout
       title="Agent settings"
+      description="What gets installed into a cluster: the agent, the browser shell and the debug container. A change reaches install packages rendered from now on; an agent already running keeps what it was installed with until its manifests are re-applied."
       aside={
         settings ? (
           <>
@@ -212,7 +215,7 @@ export function AgentSettings() {
               >
                 <TextInput
                   id="agent_image"
-                  className="font-mono text-[12.5px]"
+                  className="font-data text-[12.5px]"
                   placeholder={settings.defaults.agent_image}
                   value={draft.agent_image}
                   onChange={(event) => set('agent_image', event.target.value)}
@@ -226,7 +229,7 @@ export function AgentSettings() {
               >
                 <TextInput
                   id="agent_namespace"
-                  className="font-mono text-[12.5px]"
+                  className="font-data text-[12.5px]"
                   placeholder={settings.defaults.agent_namespace}
                   value={draft.agent_namespace}
                   onChange={(event) => set('agent_namespace', event.target.value)}
@@ -240,7 +243,7 @@ export function AgentSettings() {
               >
                 <TextInput
                   id="agent_image_pull_secret"
-                  className="font-mono text-[12.5px]"
+                  className="font-data text-[12.5px]"
                   placeholder={settings.defaults.agent_image_pull_secret || 'none'}
                   value={draft.agent_image_pull_secret}
                   onChange={(event) => set('agent_image_pull_secret', event.target.value)}
@@ -287,7 +290,7 @@ export function AgentSettings() {
               >
                 <TextInput
                   id="shell_image"
-                  className="font-mono text-[12.5px]"
+                  className="font-data text-[12.5px]"
                   placeholder={settings.defaults.shell_image}
                   value={draft.shell_image}
                   onChange={(event) => set('shell_image', event.target.value)}
@@ -346,7 +349,7 @@ export function AgentSettings() {
               >
                 <TextInput
                   id="debug_image"
-                  className="font-mono text-[12.5px]"
+                  className="font-data text-[12.5px]"
                   placeholder={settings.defaults.debug_image}
                   value={draft.debug_image}
                   onChange={(event) => set('debug_image', event.target.value)}

@@ -94,6 +94,7 @@ export function AppTemplates() {
   return (
     <AppShell
       title="App templates"
+      description="A template renders to YAML and stops there: filling in its parameters produces manifests in an editor, and creating them is the same per-object create every manifest editor here makes. Listed to everyone signed in; only an admin writes one."
       actions={
         <Button variant="primary" onClick={() => setEditing('new')}>
           <Plus aria-hidden="true" className="size-4" />
@@ -104,12 +105,6 @@ export function AppTemplates() {
       <div className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
 
-        <Notice tone="info">
-          A template renders to YAML and stops there — filling in its parameters produces manifests
-          that land in an editor, and creating them is the same per-object create call every manifest
-          editor here already makes. Listed to everyone signed in; only an admin writes one, here or
-          by saving one from an object already in a cluster.
-        </Notice>
 
         <div className="card min-w-0 overflow-hidden">
           <Table>
@@ -132,22 +127,30 @@ export function AppTemplates() {
                     <Td className="truncate">
                       <button
                         type="button"
-                        className="flex flex-col items-start gap-0.5 text-left"
+                        className="flex min-w-0 items-center gap-3 text-left"
                         onClick={() => setEditing(template)}
                       >
-                        <span className="flex items-center gap-1.5 truncate text-[13.5px] font-medium text-fg hover:text-accent">
+                        <span
+                          aria-hidden="true"
+                          className="grid size-8 shrink-0 place-items-center rounded-full border border-line-soft bg-raised text-muted"
+                        >
+                          <LayoutTemplate className="size-4" />
+                        </span>
+                        <span className="flex min-w-0 flex-col items-start gap-0.5">
+                        <span className="truncate text-[13.5px] font-semibold text-fg transition-colors group-hover/row:text-accent">
                           {templateDisplayName(template)}
                         </span>
                         <span className="flex items-center gap-1.5">
-                          <span className="font-mono text-[11.5px] text-faint">{template.name}</span>
+                          <span className="font-data text-[11.5px] text-faint">{template.name}</span>
                           {template.seeded ? <Pill tone="idle">seeded</Pill> : null}
+                        </span>
                         </span>
                       </button>
                     </Td>
                     <Td className="hidden truncate text-[12.5px] text-muted md:table-cell">
                       {template.description ?? '—'}
                     </Td>
-                    <Td className="font-mono text-[12.5px] text-muted">{template.parameters.length}</Td>
+                    <Td className="font-data text-[12.5px] text-muted">{template.parameters.length}</Td>
                     <Td className="text-[12.5px] text-muted"><Age iso={template.updated_at} /></Td>
                     <Td className="text-right">
                       <span className="flex justify-end gap-1">
@@ -275,7 +278,7 @@ function TemplateEditorSheet({
         >
           <TextInput
             id="tpl_admin_name"
-            className="font-mono text-[12.5px]"
+            className="font-data text-[12.5px]"
             value={name}
             disabled={template !== null}
             onChange={(event) => setName(event.target.value)}

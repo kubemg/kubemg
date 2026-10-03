@@ -90,13 +90,16 @@ export function MetricComparison({
   }
 
   const rows = result?.rows ?? []
+  const peak = rows.reduce((top, row) => Math.max(top, row.current, row.previous ?? 0), 0)
 
   return (
     <section className="card overflow-hidden">
-      <header className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
+      <header className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
         <div className="min-w-0">
-          <h3 className="text-[13px] font-semibold text-fg">Top {result?.topk ?? 5}</h3>
-          <p className="mt-0.5 text-[12px] text-muted">
+          <h3 className="text-[16px] font-bold text-fg">
+            Top {result?.topk ?? 5} by {kinds.find((entry) => entry.kind === kind)?.label.toLowerCase()}
+          </h3>
+          <p className="mt-0.5 text-[13px] text-muted">
             {queryRangeLabel(range)}, against the window before it
           </p>
         </div>
@@ -137,7 +140,7 @@ export function MetricComparison({
           <Table>
             <thead>
               <tr>
-                <Th>{result?.legend ?? 'name'}</Th>
+                <Th>{result?.legend ?? 'Name'}</Th>
                 <Th align="right" className="w-28">
                   Now
                 </Th>
@@ -152,13 +155,29 @@ export function MetricComparison({
             <tbody>
               {rows.map((row) => (
                 <Row key={row.name}>
-                  <Td className="truncate font-mono text-[13px] text-fg" title={row.name}>
-                    {row.name}
+                  <Td className="font-data text-[13px] text-fg" title={row.name}>
+                    {/* The rank, drawn: each row's reading against the largest
+                        in the list, with a tick where it stood before. */}
+                    <span className="block max-w-[28rem] truncate" translate="no">
+                      {row.name}
+                    </span>
+                    <span aria-hidden="true" className="relative mt-1.5 block h-1.5 rounded-full bg-raised">
+                      <span
+                        className="block h-full rounded-full bg-chart-1"
+                        style={{ width: `${peak > 0 ? Math.min(100, (row.current / peak) * 100) : 0}%` }}
+                      />
+                      {row.previous !== undefined && peak > 0 ? (
+                        <span
+                          className="absolute -top-0.5 block h-2.5 w-0.5 rounded-full bg-fg/60"
+                          style={{ left: `${Math.min(100, (row.previous / peak) * 100)}%` }}
+                        />
+                      ) : null}
+                    </span>
                   </Td>
-                  <Td className="text-right font-mono tabular-nums text-fg">
+                  <Td className="text-right font-data font-semibold tabular-nums text-fg">
                     {formatMetric(result?.unit ?? 'count', row.current)}
                   </Td>
-                  <Td className="hidden text-right font-mono tabular-nums text-muted sm:table-cell">
+                  <Td className="hidden text-right font-data tabular-nums text-muted sm:table-cell">
                     {row.previous === undefined
                       ? '—'
                       : formatMetric(result?.unit ?? 'count', row.previous)}
@@ -238,7 +257,11 @@ function Delta({
 
   const rising = delta > 0
   const Arrow = rising ? ArrowUp : ArrowDown
-  const tone = !worseWhenRising ? 'text-muted' : rising ? 'text-danger' : 'text-ok'
+  const tone = !worseWhenRising
+    ? 'bg-raised text-muted'
+    : rising
+      ? 'bg-danger-soft text-danger'
+      : 'bg-ok-soft text-ok'
 
   // The percentage is the readable half of a change and the absolute is the
   // true one, so the figure leads and the amount follows it.
@@ -246,7 +269,7 @@ function Delta({
 
   return (
     <span
-      className={`inline-flex items-center justify-end gap-1 font-mono text-[12.5px] tabular-nums ${tone}`}
+      className={`inline-flex items-center justify-end gap-1 rounded-chip px-1.5 py-0.5 font-data text-[12.5px] font-semibold tabular-nums ${tone}`}
     >
       <Arrow aria-hidden="true" className="size-3.5 shrink-0" />
       <span className="sr-only">{rising ? 'up' : 'down'} </span>

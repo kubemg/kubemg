@@ -27,7 +27,7 @@ import { Button, CodeBlock, Notice, Sheet } from './primitives'
 const REVEAL_BLURB =
   'Each value is read on its own and recorded on its own: the audit trail gets a line naming ' +
   'you, this Secret and the key, written before the value is sent. Nothing caches it — closing ' +
-  'this sheet is the end of the copy here.'
+  'this view is the end of the copy here.'
 
 export function SecretRevealSheet({
   cluster,
@@ -38,6 +38,46 @@ export function SecretRevealSheet({
   entry: ConfigEntry
   onClose: () => void
 }) {
+  return (
+    <Sheet
+      onClose={onClose}
+      eyebrow={`${entry.namespace} · ${entry.type || 'Opaque'}`}
+      title={entry.name}
+      width="lg"
+      footer={
+        <Button variant="ghost" onClick={onClose}>
+          Close
+        </Button>
+      }
+    >
+      <SecretKeyValues
+        cluster={cluster}
+        namespace={entry.namespace}
+        name={entry.name}
+        keys={(entry.keys ?? []).map((key) => ({ key }))}
+      />
+    </Sheet>
+  )
+}
+
+/**
+ * One Secret's keys, each revealable on its own. The row menu's sheet and the
+ * Secret's own drawer draw the same list, so a reveal is the same request,
+ * the same audit record and the same nothing-kept-afterwards wherever it
+ * starts from.
+ */
+export function SecretKeyValues({
+  cluster,
+  namespace,
+  name,
+  keys,
+}: {
+  cluster: Cluster
+  namespace: string
+  name: string
+  /** Each key, with its size when the caller already knows it. */
+  keys: Array<{ key: string; bytes?: number }>
+}) {
   const [values, setValues] = useState<Record<string, SecretValue>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<string | null>(null)
@@ -47,7 +87,7 @@ export function SecretRevealSheet({
     setBusy(key)
     setErrors((current) => ({ ...current, [key]: '' }))
     try {
-      const answer = await revealSecretValue(cluster.id, entry.namespace, entry.name, key)
+      const answer = await revealSecretValue(cluster.id, namespace, name, key)
       setValues((current) => ({ ...current, [key]: answer }))
     } catch (err) {
       // The server's own words. A ServiceAccount token and KubeMG's own agent
@@ -63,37 +103,26 @@ export function SecretRevealSheet({
     }
   }
 
-  const keys = entry.keys ?? []
+  if (keys.length === 0) return <p className="text-[13px] text-muted">This secret holds no keys.</p>
 
   return (
-    <Sheet
-      onClose={onClose}
-      eyebrow={`${entry.namespace} · ${entry.type || 'Opaque'}`}
-      title={entry.name}
-      width="lg"
-      footer={
-        <Button variant="ghost" onClick={onClose}>
-          Close
-        </Button>
-      }
-    >
-      <div className="flex flex-col gap-3">
-        <Notice tone="warn">{REVEAL_BLURB}</Notice>
-
-        {keys.length === 0 ? (
-          <p className="text-[13px] text-muted">This secret holds no keys.</p>
-        ) : null}
-
-        {keys.map((key) => {
-          const value = values[key]
-          const failure = errors[key]
-          return (
-            <div key={key} className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="truncate font-mono text-[12.5px] text-fg">{key}</span>
-                {value ? (
-                  <span className="shrink-0 text-[12px] text-faint">{value.bytes} bytes</span>
-                ) : (
+    <div className="flex flex-col gap-3">
+      {/* What a reveal costs, said before the first click wherever the list is. */}
+      <Notice tone="warn">{REVEAL_BLURB}</Notice>
+      {keys.map(({ key, bytes }) => {
+        const value = values[key]
+        const failure = errors[key]
+        return (
+          <div key={key} className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="truncate font-data text-[12.5px] text-fg">{key}</span>
+              {value ? (
+                <span className="shrink-0 text-[12px] text-faint">{value.bytes} bytes</span>
+              ) : (
+                <span className="flex shrink-0 items-center gap-2">
+                  {bytes !== undefined ? (
+                    <span className="text-[12px] text-faint">{bytes} bytes</span>
+                  ) : null}
                   <Button
                     variant="ghost"
                     onClick={() => reveal(key)}
@@ -107,31 +136,29 @@ export function SecretRevealSheet({
                     )}
                     Reveal
                   </Button>
-                )}
-              </div>
-
-              {failure ? <Notice tone="error">{failure}</Notice> : null}
-
-              {/* A value that is not text is handed back base64 rather than
-                  mangled into replacement characters: "is this the right
-                  certificate" is not answerable from a broken decode. */}
-              {value?.binary ? (
-                <>
-                  <Notice tone="info">
-                    This value is not text. It is shown base64-encoded, exactly as the cluster
-                    stores it.
-                  </Notice>
-                  <CodeBlock value={value.encoded ?? ''} wrap />
-                </>
-              ) : null}
-
-              {value && !value.binary ? (
-                <CodeBlock value={value.value ?? ''} wrap />
-              ) : null}
+                </span>
+              )}
             </div>
-          )
-        })}
-      </div>
-    </Sheet>
+
+            {failure ? <Notice tone="error">{failure}</Notice> : null}
+
+            {/* A value that is not text is handed back base64 rather than
+                mangled into replacement characters: "is this the right
+                certificate" is not answerable from a broken decode. */}
+            {value?.binary ? (
+              <>
+                <Notice tone="info">
+                  This value is not text. It is shown base64-encoded, exactly as the cluster
+                  stores it.
+                </Notice>
+                <CodeBlock value={value.encoded ?? ''} wrap />
+              </>
+            ) : null}
+
+            {value && !value.binary ? <CodeBlock value={value.value ?? ''} wrap /> : null}
+          </div>
+        )
+      })}
+    </div>
   )
 }

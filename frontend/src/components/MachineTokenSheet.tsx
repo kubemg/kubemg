@@ -4,7 +4,7 @@ import { Check, Copy, Download } from 'lucide-react'
 import { errorMessage, issueMachineToken } from '../api/client'
 import type { Cluster, IssuedMachineToken, MachineAccount } from '../api/types'
 import { formatTTL } from '../lib/time'
-import { Button, Field, Notice, Segmented, Sheet, TextInput } from './primitives'
+import { Button, Field, Notice, Segmented, Select, Sheet, TextInput } from './primitives'
 import { YamlView } from './YamlView'
 
 /**
@@ -47,10 +47,17 @@ export function IssueMachineTokenSheet({
 
   const cluster = eligible.find((entry) => String(entry.id) === clusterId)
   const grant = account.access.find((entry) => String(entry.cluster_id) === clusterId)
+  // Set by the first submit: from then a missing field says so under itself.
+  const [tried, setTried] = useState(false)
   const direct = cluster?.connection_mode === 'direct'
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setTried(true)
+    if (name.trim() === '' || clusterId === '') {
+      document.getElementById(name.trim() === '' ? 'token-name' : 'token-cluster')?.focus()
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -76,7 +83,7 @@ export function IssueMachineTokenSheet({
       width="lg"
       title={
         <>
-          Credential for <span className="font-mono text-accent">{account.username}</span>
+          Credential for <span className="font-data text-accent">{account.username}</span>
         </>
       }
       onClose={onClose}
@@ -89,7 +96,7 @@ export function IssueMachineTokenSheet({
           <Button
             type="submit"
             variant="primary"
-            disabled={busy || name.trim() === '' || clusterId === '' || direct}
+            disabled={busy || direct}
           >
             {busy ? 'Issuing…' : issued ? 'Issue another' : 'Issue credential'}
           </Button>
@@ -107,19 +114,21 @@ export function IssueMachineTokenSheet({
         label="What holds it"
         htmlFor="token-name"
         hint="The system this credential is going into. It is what you will read when deciding which one to revoke."
+        error={tried && name.trim() === '' ? 'Name what will hold this credential.' : undefined}
       >
         <TextInput
           id="token-name"
-          placeholder="jenkins release pipeline"
+          name="token-name"
+          autoComplete="off"
+          placeholder="e.g. jenkins release pipeline…"
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
       </Field>
 
       <Field label="Cluster" htmlFor="token-cluster">
-        <select
+        <Select
           id="token-cluster"
-          className="control w-full"
           value={clusterId}
           onChange={(event) => setClusterId(event.target.value)}
         >
@@ -128,7 +137,7 @@ export function IssueMachineTokenSheet({
               {entry.name}
             </option>
           ))}
-        </select>
+        </Select>
       </Field>
 
       {/* Direct mode is refused by the server rather than served, and the reason
@@ -172,7 +181,7 @@ export function IssueMachineTokenSheet({
       >
         <TextInput
           id="token-namespace"
-          className="font-mono"
+          className="font-data"
           placeholder={grant?.namespaces[0] ?? 'default'}
           value={namespace}
           onChange={(event) => setNamespace(event.target.value)}
@@ -244,7 +253,7 @@ function IssuedCredential({
         </div>
         <p className="text-[12px] text-muted">
           A CI job can use this as a bearer token against{' '}
-          <span className="font-mono">{issued.server}</span>, but the kubeconfig below is the form
+          <span className="font-data">{issued.server}</span>, but the kubeconfig below is the form
           kubectl and most tooling expect.
         </p>
       </div>
@@ -287,8 +296,8 @@ function IssuedCredential({
           numbered={false}
         />
         <p className="text-[12px] text-muted">
-          It acts as <span className="font-mono">{account.username}</span> with the{' '}
-          <span className="font-mono">{issued.k8s_role}</span> role, and every call it makes is in
+          It acts as <span className="font-data">{account.username}</span> with the{' '}
+          <span className="font-data">{issued.k8s_role}</span> role, and every call it makes is in
           the audit trail under that name. In a pipeline, keep the file in the runner&rsquo;s own
           secret store — kubemg cannot hand it out a second time.
         </p>

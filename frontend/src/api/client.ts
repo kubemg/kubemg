@@ -37,6 +37,7 @@ import type {
   ClusterListResponse,
   ClusterNode,
   ConfigEntry,
+  DataEntries,
   CronJob,
   CronJobRunResult,
   CustomResource,
@@ -64,6 +65,7 @@ import type {
   NewMachineToken,
   PasswordChange,
   PasswordChangeResult,
+  ProfileUpdate,
   HelmChartList,
   HelmHistory,
   HelmRelease,
@@ -139,6 +141,7 @@ import type {
   RecordingPolicy,
   TerminalSession,
   TerminalSessionPage,
+  TrafficMap,
   TerminalSessionQuery,
   User,
   UserPatch,
@@ -604,6 +607,13 @@ export async function revokeAllIssuedKubeconfigs(
  * because that route is an administrator editing somebody else's account; this
  * one refuses without the current password, so a live session is not enough.
  */
+/** Edits the caller's own account — not PUT /users/:id, which is an
+    administrator editing somebody else's. */
+export async function updateOwnProfile(body: ProfileUpdate): Promise<User> {
+  const { data } = await http.patch<User>('/auth/me', body)
+  return data
+}
+
 export async function changeOwnPassword(body: PasswordChange): Promise<PasswordChangeResult> {
   const { data } = await http.post<PasswordChangeResult>('/auth/password', body)
   return data
@@ -1024,6 +1034,54 @@ export async function fetchNetworkPolicyReachability(
     { params: { kind, name, namespace } },
   )
   return data
+}
+
+/**
+ * Where a route's traffic goes — or, for a Service, which routes send to it.
+ * Every hop is the caller's own read; one the cluster refuses is drawn as
+ * refused rather than failing the map.
+ */
+export async function fetchTrafficMap(
+  clusterId: number,
+  kind: string,
+  name: string,
+  namespace: string,
+): Promise<TrafficMap> {
+  const { data } = await http.get<TrafficMap>(resourceURL(clusterId, 'traffic'), {
+    params: { kind, name, namespace },
+  })
+  return { ...data, nodes: data.nodes ?? [], edges: data.edges ?? [], notes: data.notes ?? [] }
+}
+
+/**
+ * What a workload's pod template names — ConfigMaps (read for their keys),
+ * Secrets (named, never read), its ServiceAccount, volume claims and the
+ * volumes they bound — drawn the way a traffic map is.
+ */
+export async function fetchDependencyMap(
+  clusterId: number,
+  kind: string,
+  name: string,
+  namespace: string,
+): Promise<TrafficMap> {
+  const { data } = await http.get<TrafficMap>(resourceURL(clusterId, 'dependencies'), {
+    params: { kind, name, namespace },
+  })
+  return { ...data, nodes: data.nodes ?? [], edges: data.edges ?? [], notes: data.notes ?? [] }
+}
+
+/** A ConfigMap's keys and values, or a Secret's keys and sizes — never a
+    Secret value, which only `revealSecretValue` reads. */
+export async function fetchDataEntries(
+  clusterId: number,
+  kind: 'configmaps' | 'secrets',
+  name: string,
+  namespace: string,
+): Promise<DataEntries> {
+  const { data } = await http.get<DataEntries>(resourceURL(clusterId, 'config/entries'), {
+    params: { kind, name, namespace },
+  })
+  return { ...data, entries: data.entries ?? [] }
 }
 
 /** The namespace-level summary of what is and is not covered. */

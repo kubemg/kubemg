@@ -86,7 +86,7 @@ export function Login() {
         </div>
 
         <div className="relative max-w-md">
-          <h1 className="text-[34px] leading-[1.1] font-semibold tracking-[-0.03em] text-rail-fg">
+          <h1 className="text-[34px] leading-[1.1] font-bold tracking-[-0.03em] text-rail-fg">
             No inbound ports.
             <br />
             Every call on the record.
@@ -97,13 +97,13 @@ export function Login() {
           </p>
         </div>
 
-        <p className="relative font-mono text-[11.5px] text-rail-faint">
+        <p className="relative text-[12px] text-rail-faint">
           kubemg · centralized Kubernetes access
         </p>
       </section>
 
       {/* The right half keeps the left half's three rails — a top row, the
-          content, a mono line at the foot — on one 400px column, so the toggle
+          content, a data line at the foot — on one 400px column, so the toggle
           sits on the card's right edge, the footnote on its left, and the card
           is centred between two things rather than floating in what was left
           over. The toggle is in the flow rather than fixed, so it can never sit
@@ -137,7 +137,7 @@ export function Login() {
                 <OrganisationIdentity tone="page" />
               </div>
 
-              <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-fg">Sign in</h2>
+              <h2 className="text-[22px] font-bold tracking-[-0.02em] text-fg">Sign in</h2>
               <p className="mt-1.5 text-[13px] text-muted">
                 {setupRequired
                   ? 'This bastion has not been set up yet. Sign in as the administrator to configure it.'
@@ -198,7 +198,7 @@ export function Login() {
 
           {/* The page's counterpart to the rail's footnote, and the thing a
               sign-in page at an enterprise is expected to say. */}
-          <p className="font-mono text-[11.5px] text-faint">
+          <p className="text-[12px] text-faint">
             Cluster calls made through kubemg are recorded under your identity.
           </p>
         </div>

@@ -96,13 +96,64 @@ moving the token, never by adding an exception in a component.**
 Charts use the categorical palette `--chart-1` through `--chart-8`. Slot order is
 the colour-blindness mechanism: never reorder it and never add a ninth.
 
-Animation is close to banned. `LinkStatus` uses four static icons for live,
-direct, down and idle. There is no travelling pulse, no marquee, and nothing else
-animates except a single breathing indicator on a genuinely open stream.
+Nothing loops. `LinkStatus` uses four static icons for live, direct, down and
+idle, With its word the state is a badge — a soft plate in its tone with a hairline
+edge. Alone, the glyph is a seal: a solid disc in the state's tone, the glyph in
+`on-state` on it, ringed twice in the same tone fading outwards; the neutral
+states keep only the rings. There is no travelling pulse and no marquee; the only repeating motion is a
+single breathing indicator on a genuinely open stream. The chrome's state
+changes — the navigation pill filling, a rail chip on hover — ease over 300 to
+500ms on colour and opacity only, and switch off under `prefers-reduced-motion`.
 
-Two typefaces, Archivo for text and Commit Mono for code, both self-hosted from
-`public/fonts`. There are no font CDN calls, and adding one would be a privacy
-regression rather than a convenience.
+Three typefaces, all self-hosted from `public/fonts`: Inter for the interface and
+for data (`font-data` — identifiers and figures; a figure compared down a column
+adds `tabular-nums`, which is never set on a name because Inter's widens the
+hyphen), Archivo
+only for the `kubemg` wordmark, and Commit Mono (`font-mono`) only for code:
+YAML, logs, commands, patterns and diff values, where characters have to line up.
+There are no font CDN calls, and adding one would be a privacy regression rather
+than a convenience.
+
+The sidebar is one card floating 12px in from the window: the cluster rail and
+the panel side by side. The row you are on, and the row under the pointer, fill
+with the `nav-pill` utility (a lime gradient with an ink label, lit by
+`aria-current`); the rail's current cluster carries the `rail-arc` corner.
+
+A dashboard opens on a `slab` — the one dark plate on a page, ink into moss on
+both decks, with its own `slab-*` text and state tokens and `Button`'s `slab`
+variant for actions on it — and states its facts as `StatTile`s, which take a
+tone's soft fill only when the reading is asking for something.
+A `StatTile` can also be a link onto what it counts, or a toggle that filters
+the list under it, and can carry a bar or a breakdown below its reading.
+
+A list page (the Administration pages are the pattern) says what it is for in
+`AppShell`'s `description`, under the title, rather than in an info `Notice` at
+the top of its body; opens on a row of `StatTile`s counted from the rows it
+holds; and draws a person as an `Avatar`. A `Notice` is for something the
+reader should act on or know right now, and leads with its tone's glyph.
+
+Every overlay is one family. A `Sheet` is the editing surface; a `Dialog` is a
+centred question with two answers, which is what a confirmation is. Both join
+the same overlay stack: only the topmost answers Escape and holds Tab, focus
+moves in when it opens and back to the opener when it closes. A destructive
+`Dialog` is an `alertdialog` and opens on Cancel. Navigation that should look
+like a button is a `LinkButton`, never a `Button` inside a `Link`.
+
+Charts are drawn by hand in SVG (`MetricsChart`'s `Plot`): each series is a
+line over an area fading from its own slot colour, the latest sample is
+marked, gridlines are dashed, and the legend carries each series' latest
+reading.
+
+A list page keeps its filters in the query string through `lib/urlState`
+(`useUrlText`, `useUrlFlag`, `useUrlList`), so a narrowed list survives a
+reload and is a link. Writes replace the history entry and read the address as
+it is now, so two in one handler compose. A form with unsaved edits calls
+`useUnsavedGuard(dirty)`: leaving the console is asked about by the browser,
+and following a link inside it is asked about on the console's own dialog.
+A form's submit button stays enabled until the request starts; a field that
+cannot be saved is pointed at — its error shown, focus moved to it — when the
+form is submitted. A row in a list that can run to hundreds takes the
+`defer-row` utility, so the browser skips laying out the rows off screen.
 
 ## Testing
 

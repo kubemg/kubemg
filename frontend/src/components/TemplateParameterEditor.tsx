@@ -51,7 +51,7 @@ export function TemplateParameterEditor({
             >
               <TextInput
                 aria-label="Parameter name"
-                className="w-40 font-mono text-[12.5px]"
+                className="w-40 font-data text-[12.5px]"
                 value={parameter.name}
                 placeholder="name"
                 onChange={(event) => update(index, { name: event.target.value })}
@@ -60,7 +60,7 @@ export function TemplateParameterEditor({
                 aria-label="Label"
                 className="w-40"
                 value={parameter.label ?? ''}
-                placeholder="Label shown to the caller"
+                placeholder="Label shown to the caller…"
                 onChange={(event) => update(index, { label: event.target.value })}
               />
               <Select

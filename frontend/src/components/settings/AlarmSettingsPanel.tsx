@@ -210,7 +210,6 @@ export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
   return (
     <>
       <Panel
-        eyebrow="Alarms"
         title="Where alarms are delivered"
         description="A channel is one destination and holds its own credential. Alertmanager composes with a fleet that already routes alerts; a webhook receives the raw signal, which is what a SIEM wants."
         bodyClassName="flex flex-col"
@@ -259,7 +258,7 @@ export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
                     {channel.enabled ? null : <Pill tone="idle">disabled</Pill>}
                     {channel.has_secret ? <Pill tone="ok">credential stored</Pill> : null}
                   </div>
-                  <p className="mt-1 truncate font-mono text-[12px] text-muted">{channel.url}</p>
+                  <p className="mt-1 truncate font-data text-[12px] text-muted">{channel.url}</p>
 
                   {/* Delivery health. An integration that quietly stopped working
                       is the failure mode that matters: nobody notices a page that
@@ -317,7 +316,6 @@ export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
       </Panel>
 
       <Panel
-        eyebrow="Alarms"
         title="What is worth sending"
         description="Cluster events are read down the agent tunnel — nothing is polled until a cluster-event rule exists. Audit rules cover the half no cluster-side alerting can see: a request kubemg refused never reached the API server, so no cluster has an event for it."
         bodyClassName="flex flex-col"
@@ -359,7 +357,7 @@ export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
                   <p className="mt-1 text-[12px] text-faint">{rule.description}</p>
                 ) : null}
                 {rule.fire_count > 0 ? (
-                  <p className="mt-1 font-mono text-[11.5px] text-faint">
+                  <p className="mt-1 font-data text-[11.5px] text-faint">
                     fired {rule.fire_count}× · last <Age iso={rule.last_fired_at} />
                   </p>
                 ) : null}
@@ -546,7 +544,7 @@ function ChannelSheet({
         >
           <TextInput
             id="channel_url"
-            className="font-mono text-[12.5px]"
+            className="font-data text-[12.5px]"
             value={draft.url}
             onChange={(event) => set('url', event.target.value)}
             placeholder="https://alertmanager.example.com/api/v2/alerts"
@@ -608,7 +606,7 @@ function ChannelSheet({
               id="channel_secret"
               type="password"
               autoComplete="new-password"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
               value={draft.secret ?? ''}
               onChange={(event) => set('secret', event.target.value)}
               placeholder={channel?.has_secret ? '••••••••' : ''}
@@ -829,7 +827,7 @@ function RuleSheet({
         >
           <TextInput
             id="rule_namespaces"
-            className="font-mono text-[12.5px]"
+            className="font-data text-[12.5px]"
             value={namespaces}
             onChange={(event) => setNamespaces(event.target.value)}
             placeholder="payments,checkout"
@@ -859,7 +857,7 @@ function RuleSheet({
                     active={reasons.includes(reason)}
                     onClick={() => toggleReason(reason)}
                   >
-                    <span className="font-mono text-[12.5px]">{reason}</span>
+                    <span className="font-data text-[12.5px]">{reason}</span>
                   </Chip>
                 ))}
               </div>
@@ -877,7 +875,7 @@ function RuleSheet({
               <div className="flex flex-wrap gap-2">
                 {AUDIT_VERBS.map((verb) => (
                   <Chip key={verb} active={verbs.includes(verb)} onClick={() => toggleVerb(verb)}>
-                    <span className="font-mono text-[12.5px]">{verb}</span>
+                    <span className="font-data text-[12.5px]">{verb}</span>
                   </Chip>
                 ))}
               </div>
@@ -912,7 +910,7 @@ function RuleSheet({
                 type="number"
                 min={100}
                 max={599}
-                className="max-w-32 font-mono text-[12.5px]"
+                className="max-w-32 font-data text-[12.5px]"
                 value={minStatus}
                 onChange={(event) => setMinStatus(event.target.value)}
               />
@@ -944,7 +942,7 @@ function RuleSheet({
             type="number"
             min={0}
             max={86400}
-            className="max-w-32 font-mono text-[12.5px]"
+            className="max-w-32 font-data text-[12.5px]"
             value={cooloff}
             onChange={(event) => setCooloff(event.target.value)}
             placeholder="300"

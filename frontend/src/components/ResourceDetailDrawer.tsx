@@ -1,5 +1,21 @@
 import { type ReactNode, Suspense, lazy, useCallback, useEffect, useState } from 'react'
-import { Ban, Bug, CircleCheck, ExternalLink, RefreshCw, RotateCcw, SlidersHorizontal } from 'lucide-react'
+import {
+  Ban,
+  Box,
+  Bug,
+  CalendarClock,
+  CircleCheck,
+  ExternalLink,
+  FolderTree,
+  Layers,
+  type LucideIcon,
+  Network,
+  RefreshCw,
+  RotateCcw,
+  Server,
+  ShieldCheck,
+  SlidersHorizontal,
+} from 'lucide-react'
 import { errorMessage, fetchResourceDescribe } from '../api/client'
 import { useLiveTick } from '../lib/live'
 import type {
@@ -16,12 +32,14 @@ import { ARGO_INSTANCE_LABEL, argoApplicationHref, useClusterConsole } from '../
 import type { ResourceKey } from '../lib/resources'
 import type { SelectedRow } from '../lib/selection'
 import { selectionKey } from '../lib/selection'
-import type { Tone } from '../lib/status'
+import { podTone, type Tone } from '../lib/status'
 import { DebugContainerSheet } from './DebugContainerSheet'
 import { HelmHistoryPanel } from './HelmHistoryPanel'
 import { HelmValuesPanel } from './HelmValuesPanel'
 import { LogExplorer } from './LogExplorer'
 import { ReachabilityTab } from './NetworkPolicyReachability'
+import { TrafficMapPanel } from './TrafficMap'
+import { ConfigDataPanel } from './ConfigDataPanel'
 import { PodLogView, PodOverview } from './PodPanels'
 import { WorkloadActionPanel } from './WorkloadActionPanel'
 import type { WorkloadActionName, WorkloadActionTarget } from './WorkloadActionPanel'
@@ -40,9 +58,8 @@ import { YamlPanel } from './YamlPanel'
 import {
   Age,
   Button,
-  DetailList,
-  EmptyState,
   Notice,
+  Panel,
   Pill,
   Row,
   Segmented,
@@ -74,6 +91,26 @@ export type DetailTab =
   | 'values'
   | 'history'
   | 'reachability'
+
+/** The kinds whose Overview leads with a traffic map: the three routes
+    forward, a Service back to the routes that reach it. */
+const TRAFFIC_KINDS: ReadonlySet<string> = new Set([
+  'ingresses',
+  'httproutes',
+  'virtualservices',
+  'services',
+])
+
+/** The kinds whose Overview draws what their pods need in order to start. */
+const DEPENDENCY_KINDS: ReadonlySet<string> = new Set([
+  'deployments',
+  'statefulsets',
+  'daemonsets',
+  'replicasets',
+  'jobs',
+  'cronjobs',
+  'pods',
+])
 
 /** Which stream the logs tab is showing. */
 type StreamView = 'logs' | 'history' | 'terminal'
@@ -354,8 +391,9 @@ export function ResourceDetailDrawer({
   return (
     <Sheet
       width="wide"
+      canvas
       eyebrow={`${cluster.name}${target.namespace ? ` · ${target.namespace}` : ''} · ${target.label}`}
-      title={<span className="font-mono">{target.name}</span>}
+      title={<span className="font-data">{target.name}</span>}
       onClose={close}
       footer={
         <>
@@ -424,66 +462,70 @@ export function ResourceDetailDrawer({
         </>
       }
     >
-      <div className="flex flex-wrap items-center gap-3">
+      {/* The tab bar is the drawer's own toolbar: pinned under the title while
+          the body scrolls, so moving from a long overview to the events never
+          means scrolling back up to find the control. It sits on the sheet's
+          surface, across the full width, the way the page's own header sits
+          over the canvas. What kind the object is lives in the summary card
+          below and the line under the title — not a third time here. */}
+      <div className="sticky -top-4 z-10 -mx-5 -mt-4 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line-soft bg-surface px-5 py-2.5">
         {tabs.length > 1 ? (
           <Segmented<DetailTab> ariaLabel="Resource view" value={tab} onChange={setTab} options={tabs} />
         ) : null}
 
-        {describe?.kind ? (
-          <Pill tone="idle" dot={false}>
-            {describe.kind}
-          </Pill>
-        ) : null}
-        {/* What deployed this. A workload that keeps reverting was reverted by
-            something, and the label Argo writes on everything it owns is the one
-            thing needed to open the application that owns it. A path, so it is
-            built here — unlike Grafana's Explore link, which carries a query and
-            is therefore always the server's to write. */}
-        {argoApp ? (
-          <a
-            href={argoApp}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="inline-flex items-center gap-1.5 text-[12px] text-muted transition-colors hover:text-fg"
-            title="Open the Argo CD application that owns this object"
-          >
-            <ExternalLink aria-hidden="true" className="size-3.5" />
-            Argo CD
-          </a>
-        ) : null}
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+          {/* A failing condition is the headline: it is the object saying, in
+              its own words, that it is not what it was asked to be — so it
+              stays in view whichever tab is open. */}
+          {failing(describe?.conditions).map((condition) => (
+            <Pill key={condition.type} tone="bad">
+              {condition.type}: {condition.status}
+            </Pill>
+          ))}
 
-        {/* A failing condition is the headline: it is the object saying, in its
-            own words, that it is not what it was asked to be. */}
-        {failing(describe?.conditions).map((condition) => (
-          <Pill key={condition.type} tone="bad">
-            {condition.type}: {condition.status}
-          </Pill>
-        ))}
-
-        {/* The container picker only applies to the streams, and only where
-            there is more than one container to pick between. A debug
-            container the pod's own list does not know about yet — the
-            drawer opened before the read that would show it — stays
-            addressable all the same, appended rather than lost. */}
-        {pod && containerOptions.length > 1 && tab === 'logs' ? (
-          <div className="ml-auto w-44">
-            <Select
-              aria-label="Container"
-              size="sm"
-              value={container}
-              onChange={(event) => {
-                setContainer(event.target.value)
-                setDebugContainer(null)
-              }}
+          {/* What deployed this. A workload that keeps reverting was reverted by
+              something, and the label Argo writes on everything it owns is the
+              one thing needed to open the application that owns it. A path, so
+              it is built here — unlike Grafana's Explore link, which carries a
+              query and is therefore always the server's to write. */}
+          {argoApp ? (
+            <a
+              href={argoApp}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="inline-flex items-center gap-1.5 rounded-control border border-line px-2.5 py-1 text-[12.5px] text-muted transition-colors duration-300 hover:border-faint/60 hover:text-fg"
+              title="Open the Argo CD application that owns this object"
             >
-              {containerOptions.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </Select>
-          </div>
-        ) : null}
+              <ExternalLink aria-hidden="true" className="size-3.5" />
+              Argo CD
+            </a>
+          ) : null}
+
+          {/* The container picker only applies to the streams, and only where
+              there is more than one container to pick between. A debug
+              container the pod's own list does not know about yet — the
+              drawer opened before the read that would show it — stays
+              addressable all the same, appended rather than lost. */}
+          {pod && containerOptions.length > 1 && tab === 'logs' ? (
+            <div className="w-44">
+              <Select
+                aria-label="Container"
+                size="sm"
+                value={container}
+                onChange={(event) => {
+                  setContainer(event.target.value)
+                  setDebugContainer(null)
+                }}
+              >
+                {containerOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {error ? <Notice tone="error">{error}</Notice> : null}
@@ -548,6 +590,7 @@ export function ResourceDetailDrawer({
           onOpenPod={(row) =>
             onOpen?.({ kind: 'pods', label: 'Pod', name: row.name, namespace: row.namespace, pod: row })
           }
+          onOpen={onOpen}
         />
       ) : null}
 
@@ -710,6 +753,7 @@ function OverviewTab({
   name,
   namespace,
   onOpenPod,
+  onOpen,
 }: {
   cluster: Cluster
   pod?: Pod
@@ -721,6 +765,8 @@ function OverviewTab({
   name: string
   namespace?: string
   onOpenPod: (pod: Pod) => void
+  /** Opens a hop of the traffic map in this same drawer. */
+  onOpen?: (target: DetailTarget) => void
 }) {
   if (loading && !describe) return <p className="text-[13px] text-muted">Reading the object…</p>
   if (!describe) return null
@@ -732,30 +778,64 @@ function OverviewTab({
    * usage meters buries the reading somebody opened the drawer for behind a
    * wall of chips.
    *
-   * A pod's own facts — node, IP, ready, restarts — come from PodOverview, which
-   * also carries the namespace and the age. So those two are dropped from the
-   * identity list when there is a pod, rather than being printed twice a few
-   * pixels apart.
+   * Every band is a card on the drawer's canvas, the way a page is cards on
+   * the deck: the facts used to be a bare two-column grid stretched across
+   * 85vw, a term on the far left and its pair on the far right, which read
+   * as loose text rather than as the object's identity.
    */
-  const identity: Array<{ term: string; value: ReactNode }> = [
-    { term: 'Kind', value: describe.kind || '—' },
-    { term: 'API version', value: describe.api_version || '—' },
-  ]
-  if (!pod) {
-    identity.push(
-      { term: 'Namespace', value: describe.namespace || 'cluster-scoped' },
-      { term: 'Age', value: describe.created_at ? <Age iso={describe.created_at} /> : '—' },
-    )
-  }
-
+  // A wrapper rather than a fragment: the sheet's body is a flex column, and
+  // a card that clips its own corners would otherwise be squeezed to its
+  // header instead of the body scrolling.
   return (
-    <>
-      <DetailList columns={2} rows={identity} />
+    <div className="flex shrink-0 flex-col gap-4">
+      <ObjectSummary describe={describe} pod={pod} />
 
-      {/* A pod has more to say than any other kind: what it is scheduled on,
-          what each container is using against its own limit, and how often it
-          has restarted. The list row already carries all of it. */}
+      {/* A pod has more to say than any other kind: what each container is
+          using against its own limit, and how often it has restarted. The list
+          row already carries all of it. */}
       {pod ? <PodOverview cluster={cluster} pod={pod} /> : null}
+
+      {/* A ConfigMap or a Secret is opened for what it holds, not for its
+          metadata — so that leads, one key at a time. */}
+      {namespace && (kind === 'configmaps' || kind === 'secrets') ? (
+        <Panel
+          title="Data"
+          eyebrow={kind === 'secrets' ? 'Keys' : 'Values'}
+          description={
+            kind === 'secrets'
+              ? 'Each key and its size. A value leaves only through the audited reveal.'
+              : 'Each key and the value the cluster holds for it.'
+          }
+          bodyClassName="px-5 py-4"
+        >
+          <ConfigDataPanel cluster={cluster} kind={kind} name={name} namespace={namespace} />
+        </Panel>
+      ) : null}
+
+      {/* Where a route's traffic goes is the first thing a route is opened
+          for — "does this host reach anything, and is it healthy" — so it
+          leads the overview rather than waiting behind a tab, the way a
+          workload's pods do below. */}
+      {!pod && namespace && TRAFFIC_KINDS.has(kind) ? (
+        <Panel
+          title="Traffic"
+          eyebrow={kind === 'services' ? 'Reached by' : 'Routes to'}
+          description={
+            kind === 'services'
+              ? 'The routes in this namespace that send traffic here, and the pods behind it.'
+              : 'Where this route sends traffic, followed to the pods that answer it.'
+          }
+          bodyClassName="px-5 py-4"
+        >
+          <TrafficMapPanel
+            cluster={cluster}
+            kind={kind}
+            name={name}
+            namespace={namespace}
+            onOpen={onOpen}
+          />
+        </Panel>
+      ) : null}
 
       {/* A workload's health is its pods' health — what it owns right now, and
           whether each one is ready, is answered here rather than behind a tab
@@ -766,8 +846,12 @@ function OverviewTab({
           the same fact in the controller's vocabulary ("MinimumReplicasAvailable"),
           which is worth having and is not what anybody reads first. */}
       {!pod && workloadPods && namespace ? (
-        <div className="flex flex-col gap-2">
-          <span className="label">Pods</span>
+        <Panel
+          title="Pods"
+          eyebrow="Owned now"
+          description="What this workload is running right now, and whether each one is ready."
+          bodyClassName="px-5 py-4"
+        >
           <WorkloadPodsView
             cluster={cluster}
             kind={kind}
@@ -776,22 +860,178 @@ function OverviewTab({
             label={describe.kind || kind}
             onOpenPod={onOpenPod}
           />
-        </div>
+        </Panel>
+      ) : null}
+
+      {/* What the pods need in order to start, under the pods themselves: a
+          pod stuck in CreateContainerConfigError is answered by the ConfigMap
+          or Secret drawn broken here. */}
+      {namespace && DEPENDENCY_KINDS.has(kind) ? (
+        <Panel
+          title="Dependencies"
+          eyebrow="To start"
+          description="The ConfigMaps, Secrets, service account and volume claims the pods need before they can run."
+          bodyClassName="px-5 py-4"
+        >
+          <TrafficMapPanel
+            cluster={cluster}
+            kind={kind}
+            name={name}
+            namespace={namespace}
+            onOpen={onOpen}
+            source="dependencies"
+          />
+        </Panel>
       ) : null}
 
       {describe.conditions.length > 0 ? <Conditions conditions={describe.conditions} /> : null}
 
-      <KeyValues title="Labels" values={describe.labels} />
-      <KeyValues title="Annotations" values={describe.annotations} />
-    </>
+      <Metadata labels={describe.labels} annotations={describe.annotations} />
+    </div>
+  )
+}
+
+/** One fact in the summary card: its glyph, its name, and the reading. */
+interface SummaryFact {
+  icon: LucideIcon
+  term: string
+  value: ReactNode
+  tone?: 'default' | 'warn' | 'bad'
+  /** A reading that is a phrase rather than an identifier or a figure. */
+  phrase?: boolean
+}
+
+const FACT_GLYPH = { default: 'text-muted', warn: 'text-warn', bad: 'text-danger' }
+const FACT_VALUE = { default: 'text-fg', warn: 'text-warn', bad: 'text-danger' }
+
+/**
+ * The object's identity, as one card: what it is in the header, and the facts
+ * an operator reads before anything else as a row of glyphed readings under it.
+ *
+ * A pod's facts — node, IP, ready, restarts — come from the list row it was
+ * opened from rather than from the describe, which is why they are here at all
+ * for a pod and absent for every other kind. Everything else is read off the
+ * describe already on screen: no second call to fill a card.
+ */
+function ObjectSummary({ describe, pod }: { describe: ResourceDescribeResult; pod?: Pod }) {
+  const facts: SummaryFact[] = [
+    {
+      icon: FolderTree,
+      term: 'Namespace',
+      value: describe.namespace || pod?.namespace || 'Cluster-scoped',
+      phrase: !(describe.namespace || pod?.namespace),
+    },
+    {
+      icon: CalendarClock,
+      term: 'Age',
+      value: describe.created_at ? <Age iso={describe.created_at} /> : '—',
+    },
+  ]
+
+  // The header's state word: a pod's phase, or — for every other kind that
+  // reports conditions — whether any of them is failing. A kind with no
+  // conditions says nothing rather than claiming health it never reported.
+  const failingCount = failing(describe.conditions).length
+  const state: { tone: Tone; word: string } | null = pod
+    ? { tone: podTone(pod), word: pod.phase || 'Unknown' }
+    : describe.conditions.length > 0
+      ? failingCount > 0
+        ? { tone: 'bad', word: `${failingCount} failing` }
+        : { tone: 'ok', word: 'Healthy' }
+      : null
+
+  if (pod) {
+    facts.push(
+      { icon: Server, term: 'Node', value: pod.node || 'Unscheduled', phrase: !pod.node },
+      { icon: Network, term: 'Pod IP', value: pod.pod_ip || '—' },
+      {
+        icon: CircleCheck,
+        term: 'Ready',
+        value: `${pod.ready}/${pod.total}`,
+        tone: pod.total > 0 && pod.ready < pod.total ? 'warn' : 'default',
+      },
+      {
+        icon: RotateCcw,
+        term: 'Restarts',
+        value: String(pod.restarts),
+        tone: pod.restarts > 0 ? 'warn' : 'default',
+      },
+    )
+  } else {
+    // A workload's asked-for size, where the kind has one — the figure the
+    // Pods card below is measured against.
+    const replicas = numericField(describe.spec_summary, 'replicas')
+    if (replicas !== undefined) {
+      facts.push({ icon: Layers, term: 'Replicas', value: String(replicas) })
+    }
+    if (describe.conditions.length > 0) {
+      const bad = failingCount
+      facts.push({
+        icon: ShieldCheck,
+        term: 'Conditions',
+        value:
+          bad > 0
+            ? `${bad} of ${describe.conditions.length} failing`
+            : `${describe.conditions.length} healthy`,
+        tone: bad > 0 ? 'bad' : 'default',
+        phrase: true,
+      })
+    }
+  }
+
+  return (
+    <section className="card overflow-hidden">
+      <header className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 py-3.5">
+        <span
+          aria-hidden="true"
+          className="grid size-10 shrink-0 place-items-center rounded-full border border-line-soft bg-raised text-accent shadow-deck"
+        >
+          <Box className="size-4.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-[16px] font-bold text-fg">{describe.kind || 'Object'}</h3>
+          {describe.api_version ? (
+            <p className="truncate font-data text-[12.5px] text-muted">{describe.api_version}</p>
+          ) : null}
+        </div>
+        {state ? <Pill tone={state.tone}>{state.word}</Pill> : null}
+      </header>
+      <dl className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-4 p-5">
+        {facts.map((fact) => {
+          const tone = fact.tone ?? 'default'
+          const Icon = fact.icon
+          return (
+            <div key={fact.term} className="flex min-w-0 items-center gap-3">
+              <span
+                aria-hidden="true"
+                className={`grid size-9 shrink-0 place-items-center rounded-full border border-line-soft bg-surface shadow-deck ${FACT_GLYPH[tone]}`}
+              >
+                <Icon className="size-4" />
+              </span>
+              <div className="min-w-0">
+                <dt className="label">{fact.term}</dt>
+                <dd
+                  className={`truncate text-[14px] font-semibold ${fact.phrase ? '' : 'font-data'} ${FACT_VALUE[tone]}`}
+                >
+                  {fact.value}
+                </dd>
+              </div>
+            </div>
+          )
+        })}
+      </dl>
+    </section>
   )
 }
 
 function Conditions({ conditions }: { conditions: ResourceCondition[] }) {
   return (
-    <div className="flex flex-col gap-2">
-      <span className="label">Conditions</span>
-      <div className="overflow-x-auto rounded-card border border-line">
+    <Panel
+      title="Conditions"
+      eyebrow={String(conditions.length)}
+      description="What the object says about itself, in its controller's own words."
+    >
+      <div className="overflow-x-auto">
         <Table>
           <thead>
             <tr>
@@ -807,11 +1047,11 @@ function Conditions({ conditions }: { conditions: ResourceCondition[] }) {
               const tone = conditionTone(condition)
               return (
                 <Row key={condition.type}>
-                  <Td className="truncate font-mono text-[12.5px] text-fg">{condition.type}</Td>
+                  <Td className="truncate font-data text-[12.5px] text-fg">{condition.type}</Td>
                   <Td>
                     <Pill tone={tone}>{condition.status}</Pill>
                   </Td>
-                  <Td className="hidden truncate font-mono text-[12.5px] text-muted md:table-cell">
+                  <Td className="hidden truncate font-data text-[12.5px] text-muted md:table-cell">
                     {condition.reason || '—'}
                   </Td>
                   <Td className="text-[12.5px] text-muted" title={condition.message}>
@@ -826,7 +1066,7 @@ function Conditions({ conditions }: { conditions: ResourceCondition[] }) {
           </tbody>
         </Table>
       </div>
-    </div>
+    </Panel>
   )
 }
 
@@ -841,30 +1081,79 @@ function conditionTone(condition: ResourceCondition): Tone {
  * Labels and annotations, as the pairs they are. They are how objects are wired
  * to each other — a selector matching a label is most of how Kubernetes works —
  * so they are read far more often than their place in a manifest suggests.
+ *
+ * One card for both, drawn differently on purpose: a label is short and is
+ * matched against, so it stays a chip; an annotation is often a paragraph — a
+ * last-applied manifest, a JSON blob — and a chip for it was a sliver of text
+ * cut off after a dozen characters, so it is a row with the value given room.
  */
-function KeyValues({ title, values }: { title: string; values?: Record<string, string> }) {
-  const entries = Object.entries(values ?? {}).sort(([a], [b]) => a.localeCompare(b))
-  if (entries.length === 0) return null
+function Metadata({
+  labels,
+  annotations,
+}: {
+  labels?: Record<string, string>
+  annotations?: Record<string, string>
+}) {
+  const labelEntries = sortedEntries(labels)
+  const annotationEntries = sortedEntries(annotations)
+  if (labelEntries.length === 0 && annotationEntries.length === 0) return null
 
   return (
-    <div className="flex flex-col gap-2">
-      <span className="label">
-        {title} <span className="text-faint">{entries.length}</span>
-      </span>
-      <ul className="flex flex-wrap gap-1.5">
-        {entries.map(([key, value]) => (
-          <li
-            key={key}
-            className="flex max-w-full min-w-0 items-center gap-1 rounded-chip border border-line bg-raised px-2 py-1 font-mono text-[12px]"
-            title={`${key}: ${value}`}
-          >
-            <span className="shrink-0 text-muted">{key}</span>
-            <span className="truncate text-fg">{value || '—'}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <Panel title="Metadata" description="What the object is labelled and annotated with.">
+      {labelEntries.length > 0 ? (
+        <div className="flex flex-col gap-2 px-5 py-4">
+          <span className="label">
+            Labels <span className="font-data text-faint">{labelEntries.length}</span>
+          </span>
+          <ul className="flex flex-wrap gap-1.5">
+            {labelEntries.map(([key, value]) => (
+              <li
+                key={key}
+                className="flex max-w-full min-w-0 items-center overflow-hidden rounded-chip border border-line font-data text-[12px]"
+                title={`${key}: ${value}`}
+              >
+                <span className="shrink-0 border-r border-line bg-raised px-2 py-1 text-muted">
+                  {key}
+                </span>
+                <span className="truncate px-2 py-1 text-fg">{value || '—'}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {annotationEntries.length > 0 ? (
+        <div
+          className={`flex flex-col gap-2 px-5 py-4 ${
+            labelEntries.length > 0 ? 'border-t border-line-soft' : ''
+          }`}
+        >
+          <span className="label">
+            Annotations <span className="font-data text-faint">{annotationEntries.length}</span>
+          </span>
+          <dl className="flex flex-col divide-y divide-line-soft overflow-hidden rounded-control border border-line-soft">
+            {annotationEntries.map(([key, value]) => (
+              <div
+                key={key}
+                className="grid gap-x-4 gap-y-0.5 px-3 py-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"
+              >
+                <dt className="truncate font-data text-[12px] text-muted" title={key}>
+                  {key}
+                </dt>
+                <dd className="truncate font-data text-[12px] text-fg" title={value}>
+                  {value || '—'}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ) : null}
+    </Panel>
   )
+}
+
+function sortedEntries(values?: Record<string, string>): Array<[string, string]> {
+  return Object.entries(values ?? {}).sort(([a], [b]) => a.localeCompare(b))
 }
 
 function DescribeTab({
@@ -878,7 +1167,7 @@ function DescribeTab({
   if (!describe) return null
 
   return (
-    <>
+    <div className="flex shrink-0 flex-col gap-4">
       <Events describe={describe} />
       <Fields
         title="Spec"
@@ -890,7 +1179,7 @@ function DescribeTab({
         fields={describe.status_summary}
         truncated={describe.status_truncated ?? false}
       />
-    </>
+    </div>
   )
 }
 
@@ -913,19 +1202,22 @@ function Events({ describe }: { describe: ResourceDescribeResult }) {
 
   if (describe.events.length === 0) {
     return (
-      <EmptyState title="No events">
-        The cluster has nothing recorded against this object. Kubernetes keeps events for about an
-        hour, so a quiet object and an old one look the same here.
-      </EmptyState>
+      <Panel title="Events" eyebrow="0" bodyClassName="px-5 py-4">
+        <p className="text-[13px] text-muted">
+          The cluster has nothing recorded against this object. Kubernetes keeps events for about an
+          hour, so a quiet object and an old one look the same here.
+        </p>
+      </Panel>
     )
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <span className="label">
-        Events <span className="text-faint">{describe.events.length}</span>
-      </span>
-      <div className="overflow-x-auto rounded-card border border-line">
+    <Panel
+      title="Events"
+      eyebrow={String(describe.events.length)}
+      description="What the cluster recorded against this object, newest first."
+    >
+      <div className="overflow-x-auto">
         <Table>
           <thead>
             <tr>
@@ -943,15 +1235,15 @@ function Events({ describe }: { describe: ResourceDescribeResult }) {
                 <Td>
                   <Pill tone={eventTone(event)}>{event.type || 'Normal'}</Pill>
                 </Td>
-                <Td className="truncate font-mono text-[12.5px] text-fg">{event.reason || '—'}</Td>
+                <Td className="truncate font-data text-[12.5px] text-fg">{event.reason || '—'}</Td>
                 <Td className="text-[12.5px] text-muted" title={event.message}>
                   {event.message || '—'}
                 </Td>
-                <Td className="hidden truncate font-mono text-[12.5px] text-muted lg:table-cell">
+                <Td className="hidden truncate font-data text-[12.5px] text-muted lg:table-cell">
                   {event.source || '—'}
                 </Td>
                 <Td
-                  className={`font-mono text-[12.5px] ${event.count > 1 ? 'text-warn' : 'text-muted'}`}
+                  className={`font-data text-[12.5px] ${event.count > 1 ? 'text-warn' : 'text-muted'}`}
                 >
                   {event.count}
                 </Td>
@@ -963,7 +1255,7 @@ function Events({ describe }: { describe: ResourceDescribeResult }) {
           </tbody>
         </Table>
       </div>
-    </div>
+    </Panel>
   )
 }
 
@@ -989,23 +1281,30 @@ function Fields({
   if (fields.length === 0) return null
 
   return (
-    <div className="flex flex-col gap-2">
-      <span className="label">{title}</span>
-      <dl className="grid gap-x-6 gap-y-2 rounded-card border border-line px-3 py-3 sm:grid-cols-2">
+    <Panel
+      title={title}
+      eyebrow={String(fields.length)}
+      description={
+        truncated
+          ? 'Only the first fields are summarised here — the YAML tab has the whole object.'
+          : undefined
+      }
+    >
+      <dl className="grid sm:grid-cols-2">
         {fields.map((field) => (
-          <div key={field.path} className="flex min-w-0 items-baseline gap-2">
-            <dt className="shrink-0 font-mono text-[12px] text-muted">{field.path}</dt>
-            <dd className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-fg" title={field.value}>
+          <div
+            key={field.path}
+            className="flex min-w-0 items-baseline gap-3 border-b border-line-soft px-5 py-2 last:border-b-0 sm:odd:border-r sm:[&:nth-last-child(2):nth-child(odd)]:border-b-0"
+          >
+            <dt className="max-w-[55%] shrink-0 truncate font-data text-[12px] text-muted" title={field.path}>
+              {field.path}
+            </dt>
+            <dd className="min-w-0 flex-1 truncate font-data text-[12.5px] text-fg" title={field.value}>
               {field.value}
             </dd>
           </div>
         ))}
       </dl>
-      {truncated ? (
-        <p className="text-[12px] text-muted">
-          Only the first fields are summarised here — the YAML tab has the whole object.
-        </p>
-      ) : null}
-    </div>
+    </Panel>
   )
 }

@@ -31,11 +31,14 @@ import { AppShell } from '../AppShell'
  */
 export function SettingsLayout({
   title,
+  description,
   actions,
   aside,
   children,
 }: {
   title: string
+  /** What this group of settings governs, said once under the title. */
+  description?: ReactNode
   actions?: ReactNode
   /** The right column: what is in force, where it came from, what it reaches.
       A page with nothing to say there passes nothing and the form takes the
@@ -44,7 +47,12 @@ export function SettingsLayout({
   children: ReactNode
 }) {
   return (
-    <AppShell title={title} parent={{ label: 'Settings', to: '/admin/settings/general' }} actions={actions}>
+    <AppShell
+      title={title}
+      description={description}
+      parent={{ label: 'Settings', to: '/admin/settings/general' }}
+      actions={actions}
+    >
       <div className="flex min-w-0 flex-col gap-6 xl:flex-row xl:items-start">
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           {/* A page with no second column still has to carry this: it is the
@@ -93,7 +101,7 @@ export function SettingsAside({
   return (
     <div className="flex flex-col gap-1.5 rounded-card border border-line bg-surface p-3">
       <p className="label text-faint">{label}</p>
-      <p className="min-w-0 font-mono text-[12.5px] break-words text-fg">{value}</p>
+      <p className="min-w-0 font-data text-[12.5px] break-words text-fg">{value}</p>
       {source ? <p className="text-[12px] text-muted">{SOURCE_COPY[source]}</p> : null}
       {reach ? <p className="text-[12px] text-muted">{reach}</p> : null}
     </div>

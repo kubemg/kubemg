@@ -56,6 +56,8 @@ import {
 import { StepActions, Stepper } from '../components/WizardChrome'
 import { MAX_SHORT_NAME, deriveChip, normalizeShortName, railChip } from '../lib/branding'
 import { useClusters } from '../state/clusters-context'
+import { useConfirm } from '../state/confirm-context'
+import { useUnsavedGuard } from '../lib/unsavedGuard'
 
 const ENVIRONMENTS: Environment[] = ['prod', 'staging', 'dev']
 const K8S_ROLES: K8sRole[] = ['cluster-admin', 'edit', 'view']
@@ -101,6 +103,13 @@ export function ClusterWizard() {
 
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  // Until the cluster exists, what has been typed into the first two steps
+  // lives only here.
+  useUnsavedGuard(
+    cluster === null && (identity.name.trim() !== '' || direct !== BLANK_DIRECT),
+    'this cluster',
+  )
 
   // The install URL is single-use and expires, and the wizard can sit open while
   // somebody finds the right kube context. A fresh one is a re-render, never a
@@ -157,6 +166,7 @@ export function ClusterWizard() {
   return (
     <AppShell
       title="Register cluster"
+      description="Five steps: name the cluster, choose how kubemg reaches it, watch it connect, point it at metrics and logs if it has them, and grant access. The cluster is created when you leave step two."
       parent={{ label: 'Clusters', to: '/admin/clusters' }}
       actions={
         cluster ? (
@@ -275,7 +285,7 @@ function IdentityStep({
               autoFocus
               disabled={locked}
               placeholder="prod-eu"
-              className="font-mono"
+              className="font-data"
               value={value.name}
               onChange={(event) => update('name', event.target.value)}
             />
@@ -324,13 +334,13 @@ function IdentityStep({
                 disabled={locked}
                 maxLength={MAX_SHORT_NAME}
                 placeholder={deriveChip(value.name) || 'EU1'}
-                className="max-w-24 font-mono uppercase"
+                className="max-w-24 font-data uppercase"
                 value={value.short_name}
                 onChange={(event) => update('short_name', normalizeShortName(event.target.value))}
               />
               <span
                 aria-hidden="true"
-                className="grid size-10 shrink-0 place-items-center rounded-control border border-line bg-rail font-mono text-[10.5px] font-semibold text-rail-fg"
+                className="grid size-10 shrink-0 place-items-center rounded-control border border-line bg-rail font-data text-[10.5px] font-semibold text-rail-fg"
               >
                 {railChip({ name: value.name, short_name: value.short_name })}
               </span>
@@ -438,7 +448,7 @@ function ConnectionStep({
                 id="api_url"
                 type="url"
                 required
-                className="font-mono text-[12.5px]"
+                className="font-data text-[12.5px]"
                 placeholder="https://prod-eu.example.com:6443"
                 value={direct.api_url}
                 onChange={(event) => updateDirect('api_url', event.target.value)}
@@ -550,6 +560,7 @@ function ModeCard({
 
       <LinkStatus
         state={shape}
+        className="self-start"
         label={shape === 'live' ? 'Cluster dials out to kubemg' : 'kubemg dials the API server'}
       />
 
@@ -837,6 +848,7 @@ function AccessStep({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const confirm = useConfirm()
 
   const [subjectType, setSubjectType] = useState<SubjectType>('group')
   const [subjectId, setSubjectId] = useState('')
@@ -905,6 +917,14 @@ function AccessStep({
   }
 
   async function revoke(permission: Permission) {
+    const ok = await confirm({
+      eyebrow: cluster.name,
+      title: `Revoke ${permission.subject_name}'s access`,
+      body: `${permission.subject_name} loses ${permission.k8s_role} on ${cluster.name} now. Kubeconfigs issued under this grant stop being accepted at their next call.`,
+      confirmLabel: 'Revoke',
+      tone: 'danger',
+    })
+    if (!ok) return
     setBusy(true)
     setError(null)
     try {
@@ -1004,11 +1024,11 @@ function AccessStep({
                 className="flex items-center gap-3 border-b border-line-soft px-4 py-2.5 last:border-b-0"
               >
                 <span className="label w-14 shrink-0">{permission.subject_type}</span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-fg">
+                <span className="min-w-0 flex-1 truncate font-data text-[13px] text-fg">
                   {permission.subject_name}
                 </span>
-                <span className="font-mono text-[12.5px] text-muted">{permission.k8s_role}</span>
-                <span className="hidden truncate font-mono text-[12px] text-faint sm:block">
+                <span className="font-data text-[12.5px] text-muted">{permission.k8s_role}</span>
+                <span className="hidden truncate font-data text-[12px] text-faint sm:block">
                   {permission.namespaces.length > 0
                     ? permission.namespaces.join(', ')
                     : 'all namespaces'}

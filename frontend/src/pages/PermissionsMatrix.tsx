@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router'
-import { KeyRound, Timer } from 'lucide-react'
+import { KeyRound, Plus, Timer, UsersRound } from 'lucide-react'
 import {
   assignPermission,
   errorMessage,
@@ -15,6 +15,7 @@ import { AppShell } from '../components/AppShell'
 import { useDisclosureState } from '../lib/disclosures'
 import { formatInstant } from '../lib/time'
 import {
+  Avatar,
   Button,
   DetailList,
   Disclosure,
@@ -29,15 +30,17 @@ import {
 } from '../components/primitives'
 import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
+import { useConfirm } from '../state/confirm-context'
+import { useUrlText } from '../lib/urlState'
 
 const K8S_ROLES: K8sRole[] = ['cluster-admin', 'edit', 'view']
 
 /* cluster-admin is the only grant that can wreck a cluster, so it is the only
    one that reads as a warning. */
 const ROLE_STYLE: Record<string, string> = {
-  'cluster-admin': 'bg-danger-soft text-danger',
-  edit: 'bg-accent-soft text-accent',
-  view: 'bg-ok-soft text-ok',
+  'cluster-admin': 'border-danger/40 bg-danger-soft text-danger',
+  edit: 'border-accent/40 bg-accent-soft text-accent',
+  view: 'border-ok/40 bg-ok-soft text-ok',
 }
 
 /** A row of the matrix: one user or one group. */
@@ -59,7 +62,10 @@ export function PermissionsMatrix() {
     'permissions-matrix.scope',
     viewer?.id ?? null,
   )
-  const [tab, setTab] = useState<SubjectType>('user')
+  // Which matrix is showing is part of the address, so a link opens on it.
+  const [tabParam, setTabParam] = useUrlText('subjects', 'user')
+  const tab: SubjectType = tabParam === 'group' ? 'group' : 'user'
+  const setTab = (next: SubjectType) => setTabParam(next)
   const [users, setUsers] = useState<User[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const [permissions, setPermissions] = useState<Permission[]>([])
@@ -138,7 +144,10 @@ export function PermissionsMatrix() {
     null
 
   return (
-    <AppShell title="Permissions">
+    <AppShell
+      title="Permissions"
+      description="Which cluster, which role and which namespaces each account or group is carried to. A group grant reaches every member; where a user holds both, the more permissive one applies."
+    >
       <div className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
 
@@ -221,7 +230,7 @@ export function PermissionsMatrix() {
                   <tr>
                     <th
                       scope="col"
-                      className="label sticky left-0 z-2 min-w-[180px] border-b border-line bg-surface px-4 py-3 text-left"
+                      className="sticky left-0 z-2 min-w-[200px] border-b border-line bg-raised px-5 py-3 text-left align-bottom text-[12.5px] font-semibold text-fg"
                     >
                       {tab === 'user' ? 'User' : 'Group'}
                     </th>
@@ -229,14 +238,14 @@ export function PermissionsMatrix() {
                       <th
                         key={cluster.id}
                         scope="col"
-                        className="min-w-[140px] border-b border-l border-line-soft bg-surface px-3 py-3 text-left align-bottom"
+                        className="min-w-[150px] border-b border-l border-line border-l-line-soft bg-raised px-3 py-3 text-left align-bottom"
                       >
-                        <span className="block truncate font-mono text-[12.5px] font-normal text-fg">
+                        <span className="block truncate font-data text-[13px] font-semibold text-fg">
                           {cluster.name}
                         </span>
                         <span className="mt-1 flex items-center gap-1.5">
                           <EnvironmentTag environment={cluster.environment} />
-                          <span className="font-mono text-[10.5px] text-faint">
+                          <span className="font-data text-[10.5px] text-faint">
                             {cluster.connection_mode}
                           </span>
                         </span>
@@ -249,11 +258,27 @@ export function PermissionsMatrix() {
                     <tr key={subject.id} className="border-t border-line-soft">
                       <th
                         scope="row"
-                        className="sticky left-0 z-1 max-w-[240px] bg-surface px-4 py-2.5 text-left font-normal"
+                        className="sticky left-0 z-1 max-w-[260px] bg-surface px-5 py-3 text-left font-normal"
                       >
-                        <span className="block truncate font-mono text-fg">{subject.name}</span>
-                        <span className="block truncate text-[11.5px] text-muted">
-                          {subject.detail}
+                        <span className="flex min-w-0 items-center gap-2.5">
+                          {tab === 'user' ? (
+                            <Avatar name={subject.name} />
+                          ) : (
+                            <span
+                              aria-hidden="true"
+                              className="grid size-8 shrink-0 place-items-center rounded-full border border-line-soft bg-raised text-muted"
+                            >
+                              <UsersRound className="size-4" />
+                            </span>
+                          )}
+                          <span className="min-w-0">
+                            <span className="block truncate font-data font-semibold text-fg">
+                              {subject.name}
+                            </span>
+                            <span className="block truncate text-[12px] text-muted">
+                              {subject.detail}
+                            </span>
+                          </span>
                         </span>
                       </th>
                       {clusters.map((cluster) => {
@@ -266,25 +291,36 @@ export function PermissionsMatrix() {
                               type="button"
                               onClick={() => setEditing({ subject, cluster })}
                               title={`Edit ${subject.name}'s access to ${cluster.name}`}
-                              className="w-full rounded-control border border-transparent px-2 py-1.5 text-left transition-colors hover:border-accent-line hover:bg-raised"
+                              className="group/cell w-full rounded-control border border-transparent px-2 py-1.5 text-left transition-colors hover:border-accent-line hover:bg-raised"
                             >
                               {permission ? (
                                 <>
                                   <span
-                                    className={`inline-flex rounded-chip px-1.5 py-px font-mono text-[11px] ${
+                                    className={`inline-flex rounded-full border px-2 py-px text-[12px] font-medium ${
                                       ROLE_STYLE[permission.k8s_role] ?? ROLE_STYLE.view
                                     }`}
                                   >
                                     {permission.k8s_role}
                                   </span>
-                                  <span className="mt-1 block truncate text-[11.5px] text-muted">
+                                  <span className="mt-1 block truncate text-[12px] text-muted">
                                     {permission.namespaces.length > 0
                                       ? permission.namespaces.join(', ')
                                       : 'all namespaces'}
                                   </span>
                                 </>
                               ) : (
-                                <span className="text-[13px] text-faint">—</span>
+                                // An empty cell says what clicking it does, but
+                                // only under the pointer: a matrix of "Grant"
+                                // words would read as a form nobody filled in.
+                                <>
+                                  <span className="text-[13px] text-faint group-hover/cell:hidden group-focus-visible/cell:hidden">
+                                    —
+                                  </span>
+                                  <span className="hidden items-center gap-1 text-[12.5px] font-medium text-accent group-hover/cell:inline-flex group-focus-visible/cell:inline-flex">
+                                    <Plus aria-hidden="true" className="size-3.5" />
+                                    Grant
+                                  </span>
+                                </>
                               )}
                               {/* An elevation in force, marked rather than merged:
                                   it ends by itself and is not this page's to edit. */}
@@ -298,7 +334,7 @@ export function PermissionsMatrix() {
                                   } — granted by an approved access request.`}
                                 >
                                   <Timer aria-hidden="true" className="size-3 shrink-0" />
-                                  <span className="truncate font-mono">
+                                  <span className="truncate font-data">
                                     +{temporary.k8s_role}
                                   </span>
                                 </span>
@@ -317,10 +353,6 @@ export function PermissionsMatrix() {
 
         {loading ? <p className="text-[13px] text-muted">Loading…</p> : null}
 
-        <p className="text-[12px] text-muted">
-          A group grant reaches every member. Where a user holds both, the more permissive one
-          applies.
-        </p>
       </div>
 
       {editing ? (
@@ -356,6 +388,7 @@ function GrantSheet({
   const [namespaces, setNamespaces] = useState(current?.namespaces.join(', ') ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const confirm = useConfirm()
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -380,6 +413,14 @@ function GrantSheet({
   }
 
   async function revoke() {
+    const ok = await confirm({
+      eyebrow: cluster.name,
+      title: `Revoke ${subject.name}'s access`,
+      body: `${subject.name} loses ${current?.k8s_role ?? 'its grant'} on ${cluster.name} now. Kubeconfigs issued under this grant stop being accepted at their next call.`,
+      confirmLabel: 'Revoke',
+      tone: 'danger',
+    })
+    if (!ok) return
     setBusy(true)
     setError(null)
     try {

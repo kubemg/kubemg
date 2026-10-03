@@ -69,8 +69,14 @@ export function SaveAsTemplateSheet({
   }, [yaml, kind, objectName])
 
   const nameValid = TEMPLATE_NAME.test(name)
+  const [tried, setTried] = useState(false)
 
   async function save() {
+    if (!nameValid) {
+      setTried(true)
+      document.getElementById('tpl_save_name')?.focus()
+      return
+    }
     setSaving(true)
     setSaveError(null)
     try {
@@ -105,7 +111,7 @@ export function SaveAsTemplateSheet({
             type="button"
             variant="primary"
             onClick={() => void save()}
-            disabled={saving || loading || !nameValid || manifests.trim() === ''}
+            disabled={saving || loading || manifests.trim() === ''}
           >
             {saving ? <Spinner className="size-3.5" /> : <Plus aria-hidden="true" className="size-3.5" />}
             Save template
@@ -130,12 +136,16 @@ export function SaveAsTemplateSheet({
             <Field
               label="Name"
               htmlFor="tpl_save_name"
-              error={name && !nameValid ? 'Lowercase letters, digits, dashes and dots.' : undefined}
+              error={
+                (name || tried) && !nameValid
+                  ? 'Lowercase letters, digits, dashes and dots.'
+                  : undefined
+              }
               hint="The address this template is stored and rendered from."
             >
               <TextInput
                 id="tpl_save_name"
-                className="font-mono text-[12.5px]"
+                className="font-data text-[12.5px]"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
               />

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, ShieldCheck, Trash2, UserCheck, Users as UsersIcon, Waypoints } from 'lucide-react'
 import {
   createUser,
   deleteUser,
@@ -15,15 +15,19 @@ import { AppShell } from '../components/AppShell'
 import {
   Age,
   ActivityTag,
+  Avatar,
   Button,
   Chip,
   Field,
   IconButton,
   Notice,
+  OBJECT_NAME,
+  Pill,
   Row,
   SearchInput,
   Select,
   Sheet,
+  StatTile,
   Table,
   Td,
   Th,
@@ -187,6 +191,7 @@ export function UserManagement() {
   return (
     <AppShell
       title="Users"
+      description="The people who sign in to kubemg. Disabling an account keeps its cluster grants and group memberships, and takes effect on the next request rather than at token expiry."
       actions={
         <Button variant="primary" onClick={() => setSheetOpen(true)}>
           <Plus aria-hidden="true" className="size-4" />
@@ -198,13 +203,36 @@ export function UserManagement() {
         {error ? <Notice tone="error">{error}</Notice> : null}
         {rowError ? <Notice tone="error">{rowError}</Notice> : null}
 
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <StatTile icon={UsersIcon} label="Accounts" value={users.length} />
+          <StatTile
+            icon={UserCheck}
+            label="Active"
+            value={users.filter((entry) => entry.is_active).length}
+            sub={`of ${users.length}`}
+            tone="ok"
+          />
+          <StatTile
+            icon={ShieldCheck}
+            label="Administrators"
+            value={users.filter((entry) => entry.system_role !== 'user').length}
+            sub={`${users.filter((entry) => entry.system_role === 'superadmin').length} super`}
+          />
+          <StatTile
+            icon={Waypoints}
+            label="Federated"
+            value={users.filter((entry) => entry.auth_source !== 'local').length}
+            sub="signed in through a provider"
+          />
+        </div>
+
         <div className="card min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
             <SearchInput
               value={filter}
               onChange={setFilter}
               label="Filter users"
-              placeholder="Filter by name or email"
+              placeholder="Filter by name or email…"
             />
             <span className="ml-auto text-[13px] text-muted">
               {visible.length === users.length
@@ -248,22 +276,22 @@ export function UserManagement() {
                 const busy = busyRow === row.id
                 return (
                   <Row key={row.id}>
-                    <Td className="truncate font-mono text-fg">
+                    <Td>
                       {/* The row opens onto the access review, which is what
                           this list was previously missing a destination for:
                           "what can this person reach today" had to be assembled
                           from the matrix, the group list and the JIT queue. */}
-                      <Link
-                        to={`/admin/users/${row.id}`}
-                        className="text-fg underline-offset-2 hover:underline"
-                      >
-                        {row.username}
-                      </Link>
-                      {isSelf ? (
-                        <span className="ml-2 rounded-chip bg-accent-soft px-1.5 py-px text-[11px] text-accent">
-                          you
-                        </span>
-                      ) : null}
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        <Avatar name={row.username} />
+                        <Link to={`/admin/users/${row.id}`} className={`${OBJECT_NAME} truncate`}>
+                          {row.username}
+                        </Link>
+                        {isSelf ? (
+                          <Pill tone="accent" dot={false}>
+                            you
+                          </Pill>
+                        ) : null}
+                      </span>
                     </Td>
                     <Td
                       className="hidden truncate text-[12.5px] text-muted md:table-cell"
@@ -299,7 +327,18 @@ export function UserManagement() {
                       <button
                         type="button"
                         disabled={isSelf || busy}
-                        onClick={() =>
+                        onClick={async () => {
+                          if (
+                            row.is_active &&
+                            !(await confirm({
+                              eyebrow: row.username,
+                              title: `Disable ${row.username}`,
+                              body: 'They cannot sign in from now, and kubeconfigs they hold stop being accepted. Their grants and group memberships are kept for when the account is activated again.',
+                              confirmLabel: 'Disable',
+                              tone: 'danger',
+                            }))
+                          )
+                            return
                           run(
                             row.id,
                             `Could not update ${row.username}.`,
@@ -313,7 +352,7 @@ export function UserManagement() {
                                 : undefined,
                             },
                           )
-                        }
+                        }}
                         title={
                           isSelf
                             ? 'You cannot disable your own account'
@@ -435,11 +474,6 @@ export function UserManagement() {
             </p>
           ) : null}
         </div>
-
-        <p className="text-[12px] text-muted">
-          Disabling an account keeps its cluster grants and group memberships, and takes effect on
-          the next request rather than at token expiry.
-        </p>
       </div>
 
       {sheetOpen ? (

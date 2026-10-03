@@ -1,14 +1,17 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { Boxes, ChevronRight, Siren } from 'lucide-react'
+import { Activity, Boxes, CalendarClock, ChevronRight, KeyRound, Siren } from 'lucide-react'
 import { errorMessage, fetchClusterEvents, fetchLimitRanges, fetchNamespaces, fetchResourceQuotas } from '../api/client'
 import type { EventGroup, Namespace } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { ClusterWorkloadSummary } from '../components/ClusterWorkloadSummary'
 import { EventGroupRow } from '../components/EventGroupRow'
 import { NetworkPolicyCoveragePanel } from '../components/NetworkPolicyCoveragePanel'
+import { ResourceDetailDrawer } from '../components/ResourceDetailDrawer'
+import type { DetailTarget } from '../components/ResourceDetailDrawer'
+import { TrafficMapPanel } from '../components/TrafficMap'
 import { ResourceView } from '../components/ResourceTables'
-import { Age, EmptyState, Notice, Panel, Pill } from '../components/primitives'
+import { Age, EmptyState, Notice, Panel, StatTile } from '../components/primitives'
 import { CardSkeleton } from '../components/SkeletonLoader'
 import { clusterPageHref, hasTunnel, resourceHref } from '../lib/navigation'
 import { queryKey, useCachedQuery } from '../lib/query'
@@ -54,6 +57,8 @@ export function NamespaceDetail() {
 
   const cluster = clusters.find((entry) => entry.id === clusterId)
   const live = cluster ? hasTunnel(cluster) : false
+  // A hop opened from the traffic map, read in the same drawer Explore uses.
+  const [detail, setDetail] = useState<DetailTarget | null>(null)
 
   // The namespace list is the one read that says what this object *is* — its
   // phase, its age, and whether the caller's grant covers it. It is the same
@@ -145,6 +150,24 @@ export function NamespaceDetail() {
             developer dashboard draws, scoped to here. */}
         <ClusterWorkloadSummary cluster={cluster} namespace={name} />
 
+        {/* Every route here at once — how traffic enters this namespace and
+            where it breaks. "Only what needs a look" narrows it to the broken
+            hops and everything they reach or are reached by. */}
+        <Panel
+          title="Traffic"
+          eyebrow="Every route here"
+          description="Each Ingress, HTTPRoute and VirtualService in this namespace, followed to its pods."
+          bodyClassName="p-4"
+        >
+          <TrafficMapPanel
+            cluster={cluster}
+            kind="namespaces"
+            name={name}
+            namespace={name}
+            onOpen={setDetail}
+          />
+        </Panel>
+
         {/* What the namespace is allowed to grow to. A quota is the reason a
             pod that never appeared never appeared, and it lived two clicks
             away from the list that does not show it. */}
@@ -211,6 +234,16 @@ export function NamespaceDetail() {
           />
         </Panel>
       </div>
+
+      {detail ? (
+        <ResourceDetailDrawer
+          key={`${detail.kind}/${detail.namespace ?? ''}/${detail.name}`}
+          cluster={cluster}
+          target={detail}
+          onClose={() => setDetail(null)}
+          onOpen={setDetail}
+        />
+      ) : null}
     </AppShell>
   )
 }
@@ -219,9 +252,9 @@ export function NamespaceDetail() {
 function NamespaceIdentity({ entry, loading }: { entry?: Namespace; loading: boolean }) {
   if (!entry) {
     return (
-      <div className="card flex items-center gap-3 p-4 text-[13px] text-muted">
+      <div role="status" className="card flex items-center gap-3 px-5 py-4 text-[13px] text-muted">
         {loading
-          ? 'Reading this namespace.'
+          ? 'Reading this namespace…'
           : // A scoped grant answers the namespace list from the grant itself, so
             // a namespace outside it is simply not in the answer. Saying that is
             // more useful than an empty header.
@@ -230,17 +263,29 @@ function NamespaceIdentity({ entry, loading }: { entry?: Namespace; loading: boo
     )
   }
 
+  const tone = phaseTone(entry.status)
   return (
-    <div className="card flex flex-wrap items-center gap-3 p-4">
-      <Pill tone={phaseTone(entry.status)}>{entry.status}</Pill>
-      {entry.granted ? (
-        <span className="text-[12.5px] text-muted">granted to you</span>
-      ) : (
-        <span className="text-[12.5px] text-faint">not granted to you</span>
-      )}
-      {entry.created_at ? (
-        <span className="text-[12.5px] text-faint">created <Age iso={entry.created_at} /></span>
-      ) : null}
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <StatTile
+        icon={Activity}
+        label="Phase"
+        data={false}
+        value={entry.status}
+        tone={tone === 'ok' ? 'ok' : tone === 'bad' ? 'danger' : tone === 'warn' ? 'warn' : 'neutral'}
+      />
+      <StatTile
+        icon={KeyRound}
+        label="Your grant"
+        data={false}
+        value={entry.granted ? 'Granted to you' : 'Not granted'}
+        sub={entry.granted ? undefined : 'what is below is what the cluster lets you read'}
+      />
+      <StatTile
+        icon={CalendarClock}
+        label="Created"
+        value={entry.created_at ? <Age iso={entry.created_at} /> : '—'}
+        dim={!entry.created_at}
+      />
     </div>
   )
 }

@@ -377,7 +377,7 @@ export function WorkloadLogView({
           className="min-w-40 flex-1"
           value={filter}
           onChange={setFilter}
-          placeholder="Filter lines or pods"
+          placeholder="Filter lines or pods…"
           label="Filter log lines"
         />
 
@@ -431,7 +431,7 @@ export function WorkloadLogView({
                 )
               }
               title={reading ? `Stop reading ${pod.name}` : `Read ${pod.name}`}
-              className={`inline-flex h-7 max-w-56 min-w-0 items-center gap-1.5 rounded-chip border px-2 font-mono text-[11.5px] transition-colors ${
+              className={`inline-flex h-7 max-w-56 min-w-0 items-center gap-1.5 rounded-chip border px-2 font-data text-[11.5px] transition-colors ${
                 reading
                   ? 'border-line bg-raised text-fg'
                   : 'border-line-soft bg-surface text-faint hover:text-muted'
@@ -474,7 +474,7 @@ export function WorkloadLogView({
             {targets.length === 1 ? 'pod' : 'pods'}
           </span>
         )}
-        <span className="ml-auto font-mono text-[11.5px] text-faint tabular-nums">
+        <span className="ml-auto font-data text-[11.5px] text-faint tabular-nums">
           {filter.trim() !== '' ? `${matched} of ${total} lines` : `${total} lines`}
           {matched > VISIBLE_LINES ? ` · showing the last ${VISIBLE_LINES}` : ''}
         </span>

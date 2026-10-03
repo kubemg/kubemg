@@ -3,13 +3,18 @@ import type { ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import {
   AlertTriangle,
+  Boxes,
+  CalendarClock,
   ChevronRight,
   KeyRound,
   Layers,
   PackageOpen,
   RefreshCw,
   RotateCcwKey,
+  ScrollText,
+  Server,
   Timer,
+  Waypoints,
 } from 'lucide-react'
 import {
   checkCluster,
@@ -18,7 +23,7 @@ import {
   fetchNodeMetrics,
   rotateAgentToken,
 } from '../api/client'
-import type { AgentInstall, Cluster, NodeMetrics } from '../api/types'
+import type { AgentInstall, Cluster, Environment, NodeMetrics } from '../api/types'
 import { AgentInstallSheet } from '../components/AgentInstallSheet'
 import { AppShell } from '../components/AppShell'
 import { ClusterWorkloadSummary } from '../components/ClusterWorkloadSummary'
@@ -35,21 +40,23 @@ import {
   Age,
   Button,
   ClusterState,
-  DetailList,
   Disclosure,
-  EnvironmentTag,
   Meter,
   Notice,
   Panel,
+  StatTile,
 } from '../components/primitives'
 import { CardSkeleton, MeterGridSkeleton } from '../components/SkeletonLoader'
 import { useDisclosureState } from '../lib/disclosures'
+import { isBehind, newestAgentVersion } from '../lib/fleet'
 import { useLiveTick } from '../lib/live'
 import { DEFAULT_RESOURCE, resourceHref } from '../lib/navigation'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { formatInstant } from '../lib/time'
+import { LINK_LABEL, linkState } from '../lib/status'
 import { formatCPU, formatMemory } from '../lib/units'
 import { useAuth } from '../state/auth-context'
+import { useClusters } from '../state/clusters-context'
 import { useConfirm } from '../state/confirm-context'
 
 /*
@@ -190,16 +197,16 @@ export function ClusterSummary() {
   const admin = user?.role === 'admin'
 
   /*
-   * What can be done to this cluster, drawn on the cluster's own card rather
+   * What can be done to this cluster, drawn on the cluster's own slab rather
    * than in the header.
    *
    * The header is the console's chrome — where you are, the ⌘K jump, the shell,
    * the time window — and it is shared by every page. Four page-specific buttons
    * in it turned this one into a toolbar with a breadcrumb in it, and pushed the
    * time range and the shell out to the edge of a crowded row. These are all acts
-   * *on this cluster*, and the cluster's card is where its name, its state and
-   * "checked 2h ago" already are, so that is where they belong: beside the thing
-   * they act on rather than above the page that happens to show it.
+   * *on this cluster*, and the slab is where its name, its state and "last probe
+   * 2h ago" already are, so that is where they belong: beside the thing they act
+   * on rather than above the page that happens to show it.
    */
   const actions = cluster ? (
     <>
@@ -209,19 +216,21 @@ export function ClusterSummary() {
         <Button
           variant="primary"
           onClick={() => navigate(resourceHref(cluster.id, DEFAULT_RESOURCE))}
+          className={SLAB_BUTTON}
         >
           <Layers aria-hidden="true" className="size-4" />
           Pods
         </Button>
       ) : null}
       <Button
-        variant={viaAgent && cluster.agent_attached ? undefined : 'primary'}
+        variant={viaAgent && cluster.agent_attached ? 'slab' : 'primary'}
         onClick={() => setDrawerOpen(true)}
+        className={SLAB_BUTTON}
       >
         <KeyRound aria-hidden="true" className="size-4" />
         Generate kubeconfig
       </Button>
-      <Button onClick={() => setRequesting(true)}>
+      <Button variant="slab" onClick={() => setRequesting(true)} className={SLAB_BUTTON}>
         <Timer aria-hidden="true" className="size-4" />
         Request access
       </Button>
@@ -230,19 +239,19 @@ export function ClusterSummary() {
            that first showed them cannot be walked back into. Offered whether or
            not the agent is attached: a tunnel that is down is exactly when
            somebody needs the command again. */
-        <Button onClick={() => setInstallOpen(true)}>
+        <Button variant="slab" onClick={() => setInstallOpen(true)} className={SLAB_BUTTON}>
           <PackageOpen aria-hidden="true" className="size-4" />
           Agent install
         </Button>
       ) : null}
       {admin && viaAgent ? (
-        <Button onClick={rotate} disabled={rotating}>
+        <Button variant="slab" onClick={rotate} disabled={rotating} className={SLAB_BUTTON}>
           <RotateCcwKey aria-hidden="true" className="size-4" />
           {rotating ? 'Rotating…' : 'Rotate agent token'}
         </Button>
       ) : null}
       {admin ? (
-        <Button onClick={check} disabled={checking}>
+        <Button variant="slab" onClick={check} disabled={checking} className={SLAB_BUTTON}>
           <RefreshCw aria-hidden="true" className={`size-4 ${checking ? 'animate-spin' : ''}`} />
           {checking ? 'Checking…' : 'Run check'}
         </Button>
@@ -283,24 +292,13 @@ export function ClusterSummary() {
                 is quiet on purpose: a cluster's name, its environment and its
                 last probe are still worth knowing, but none of them competes
                 with this row for the eye. */}
-            <div className="flex flex-col gap-2">
-              <ConnectionChain cluster={cluster} username={username} />
-              <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
-                <EnvironmentTag environment={cluster.environment} />
-                <ClusterState cluster={cluster} />
-                <span
-                  className="ml-auto"
-                  title={formatInstant(cluster.last_checked_at, { seconds: true })}
-                >
-                  last probe <Age iso={cluster.last_checked_at} />
-                </span>
-              </div>
-            </div>
+            <ClusterSlab cluster={cluster} admin={admin} actions={actions} />
+            <ConnectionChain cluster={cluster} username={username} />
 
             {admin ? (
-              <AdminDashboard cluster={cluster} username={username} actions={actions} />
+              <AdminDashboard cluster={cluster} username={username} />
             ) : (
-              <WorkloadDashboard cluster={cluster} username={username} actions={actions} />
+              <WorkloadDashboard cluster={cluster} username={username} />
             )}
           </>
         ) : null}
@@ -335,6 +333,70 @@ export function ClusterSummary() {
   )
 }
 
+/* A button on the slab: the template's pill shape, a touch taller. */
+const SLAB_BUTTON = 'h-10 rounded-full px-4'
+
+/* The environment on the dark plate, in the slab's own state tones: the
+   page's EnvironmentTag is text on nothing, and its light-deck rust and amber
+   are taken dark for a white page, not for this one. */
+const SLAB_ENVIRONMENT: Record<Environment, string> = {
+  prod: 'border-slab-danger/50 text-slab-danger',
+  staging: 'border-slab-warn/50 text-slab-warn',
+  dev: 'border-slab-muted/50 text-slab-muted',
+}
+
+/**
+ * The cluster's masthead: its name, its environment, whether it can be reached
+ * and how old that reading is, what it is for, and what can be done to it.
+ * Everything below it is a reading of the cluster; this is the cluster.
+ */
+function ClusterSlab({
+  cluster,
+  admin,
+  actions,
+}: {
+  cluster: Cluster
+  admin: boolean
+  actions: ReactNode
+}) {
+  return (
+    <section aria-labelledby="cluster-slab-name" className="slab rounded-card px-5 py-6 sm:px-7">
+      <p className="text-[12.5px] font-semibold text-slab-muted">
+        {cluster.connection_mode === 'agent' ? 'Cluster · agent tunnel' : 'Cluster · direct'}
+      </p>
+      <h2
+        id="cluster-slab-name"
+        className="mt-1 truncate font-data text-[24px] font-bold tracking-normal text-slab-text sm:text-[28px]"
+        translate="no"
+      >
+        {cluster.name}
+      </h2>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[13px] text-slab-muted">
+        <span
+          className={`inline-flex items-center rounded-chip border px-1.5 py-px font-data text-[11px] tracking-wide uppercase ${SLAB_ENVIRONMENT[cluster.environment]}`}
+        >
+          {cluster.environment}
+        </span>
+        <ClusterState cluster={cluster} />
+        <span title={formatInstant(cluster.last_checked_at, { seconds: true })}>
+          last probe <Age iso={cluster.last_checked_at} />
+        </span>
+        {admin && cluster.api_url ? (
+          <span className="min-w-0 truncate font-data text-[12.5px]" translate="no">
+            · {cluster.api_url}
+          </span>
+        ) : null}
+      </div>
+      {cluster.description ? (
+        <p className="mt-3 max-w-2xl text-[14px] leading-relaxed text-slab-muted">
+          {cluster.description}
+        </p>
+      ) : null}
+      {actions ? <div className="mt-5 flex flex-wrap items-center gap-2">{actions}</div> : null}
+    </section>
+  )
+}
+
 /**
  * The administrator's dashboard: this cluster as an installation.
  *
@@ -344,17 +406,16 @@ export function ClusterSummary() {
  * administrator can act on. That is exactly why it is not what a developer is
  * shown: see WorkloadDashboard below.
  */
-function AdminDashboard({
-  cluster,
-  username,
-  actions,
-}: {
-  cluster: Cluster
-  username: string
-  actions: ReactNode
-}) {
+function AdminDashboard({ cluster, username }: { cluster: Cluster; username: string }) {
   const { user } = useAuth()
+  const { clusters } = useClusters()
   const viaAgent = cluster.connection_mode === 'agent'
+  const link = linkState(cluster)
+  // Drift is measured against the newest agent the fleet runs, never a
+  // hard-coded release — the same reading the fleet's own "agents behind" takes.
+  const newest = newestAgentVersion(clusters)
+  const behind =
+    viaAgent && cluster.agent_version && newest ? isBehind(cluster.agent_version, newest) : false
   const [adminExplainerOpen, setAdminExplainerOpen] = useDisclosureState(
     'cluster-summary.admin.connection',
     user?.id ?? null,
@@ -362,43 +423,42 @@ function AdminDashboard({
 
   return (
     <>
-      <section className="card p-5">
-        {/* The cluster's name, its environment and its last probe now live in
-            the masthead above — see ClusterSummary — so this card opens
-            directly on what it is telling you, rather than saying the name a
-            second time. */}
-        {cluster.description ? (
-          <p className="max-w-2xl text-[13px] leading-relaxed text-muted">
-            {cluster.description}
-          </p>
-        ) : null}
-
-        <div className={cluster.description ? 'mt-5 border-t border-line-soft pt-4' : ''}>
-          <DetailList
-            columns={2}
-            rows={[
-              { term: 'API server', value: cluster.api_url || 'via agent tunnel' },
-              { term: 'Kubernetes', value: cluster.kubernetes_version ?? 'unknown' },
-              {
-                term: viaAgent ? 'Agent' : 'Connection',
-                value: viaAgent
-                  ? (cluster.agent_version ?? 'not seen yet')
-                  : 'direct API access',
-              },
-              {
-                term: 'Registered',
-                value: formatInstant(cluster.created_at),
-              },
-            ]}
+      {/* The installation's facts, one tile each. Only the two that are a
+          state — the link and the agent's version against the fleet — take a
+          colour, and only when they are asking for something. */}
+      <section aria-label="This installation" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatTile
+          icon={Waypoints}
+          label="Link"
+          data={false}
+          value={LINK_LABEL[link]}
+          sub={viaAgent ? 'outbound agent tunnel' : 'kubemg dials the API server'}
+          tone={link === 'live' ? 'ok' : link === 'down' ? 'danger' : 'neutral'}
+        />
+        <StatTile
+          icon={Boxes}
+          label="Kubernetes"
+          value={cluster.kubernetes_version ?? 'unknown'}
+          dim={!cluster.kubernetes_version}
+        />
+        {viaAgent ? (
+          <StatTile
+            icon={Server}
+            label="Agent"
+            value={cluster.agent_version ?? 'not seen yet'}
+            dim={!cluster.agent_version}
+            sub={behind && newest ? `behind ${newest}` : undefined}
+            tone={behind ? 'warn' : 'neutral'}
           />
-        </div>
-        {/* What can be done to this cluster, at the foot of the cluster it acts
-            on. */}
-        {actions ? (
-          <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line-soft pt-4">
-            {actions}
-          </div>
-        ) : null}
+        ) : (
+          <StatTile icon={Server} label="Connection" data={false} value="Direct API access" />
+        )}
+        <StatTile
+          icon={CalendarClock}
+          label="Registered"
+          value={<Age iso={cluster.created_at} />}
+          title={formatInstant(cluster.created_at)}
+        />
       </section>
 
       {cluster.status === 'unhealthy' && cluster.status_message ? (
@@ -525,15 +585,7 @@ function AdminDashboard({
  * the grant they hold — and the connection's own mechanics are left to the
  * administrator's view rather than repeated here as prose nobody can act on.
  */
-function WorkloadDashboard({
-  cluster,
-  username,
-  actions,
-}: {
-  cluster: Cluster
-  username: string
-  actions: ReactNode
-}) {
+function WorkloadDashboard({ cluster, username }: { cluster: Cluster; username: string }) {
   const { user } = useAuth()
   const viaAgent = cluster.connection_mode === 'agent'
   const [kubeconfigExplainerOpen, setKubeconfigExplainerOpen] = useDisclosureState(
@@ -543,44 +595,32 @@ function WorkloadDashboard({
 
   return (
     <>
-      <section className="card p-5">
-        {/* The cluster's name, its environment and its last probe now live in
-            the masthead above — see ClusterSummary — so this card opens
-            directly on what it is telling you, rather than saying the name a
-            second time. */}
-        {cluster.description ? (
-          <p className="max-w-2xl text-[13px] leading-relaxed text-muted">
-            {cluster.description}
-          </p>
-        ) : null}
-
-        <div className={cluster.description ? 'mt-5 border-t border-line-soft pt-4' : ''}>
-          <DetailList
-            columns={2}
-            rows={[
-              { term: 'Kubernetes', value: cluster.kubernetes_version ?? 'unknown' },
-              { term: 'Your role', value: cluster.k8s_role },
-              {
-                term: 'Namespaces',
-                value:
-                  cluster.namespaces.length > 0
-                    ? cluster.namespaces.join(', ')
-                    : 'every namespace',
-              },
-              {
-                term: 'Every call',
-                value: viaAgent ? 'proxied and audited' : 'kubeconfig, not proxied',
-              },
-            ]}
-          />
-        </div>
-        {/* What can be done to this cluster, at the foot of the cluster it acts
-            on. */}
-        {actions ? (
-          <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line-soft pt-4">
-            {actions}
-          </div>
-        ) : null}
+      {/* The facts that decide what this person can do here, one tile each.
+          A kubeconfig that is not proxied is the one gap, so it is the one
+          tile that takes a colour. */}
+      <section aria-label="Your access" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatTile icon={KeyRound} label="Your role" value={cluster.k8s_role} />
+        <StatTile
+          icon={Layers}
+          label="Namespaces"
+          value={cluster.namespaces.length > 0 ? cluster.namespaces.length : 'All'}
+          sub={cluster.namespaces.length > 0 ? cluster.namespaces.join(', ') : 'every namespace'}
+          title={cluster.namespaces.length > 0 ? cluster.namespaces.join(', ') : undefined}
+        />
+        <StatTile
+          icon={Boxes}
+          label="Kubernetes"
+          value={cluster.kubernetes_version ?? 'unknown'}
+          dim={!cluster.kubernetes_version}
+        />
+        <StatTile
+          icon={ScrollText}
+          label="Every call"
+          data={false}
+          value={viaAgent ? 'Proxied and audited' : 'Not proxied'}
+          sub={viaAgent ? undefined : 'calls made with a kubeconfig'}
+          tone={viaAgent ? 'neutral' : 'warn'}
+        />
       </section>
 
       {cluster.status === 'unhealthy' && cluster.status_message ? (
@@ -709,7 +749,7 @@ function Capacity({ cluster }: { cluster: Cluster }) {
           <ul className="flex flex-col gap-3 border-t border-line-soft pt-4">
             {metrics.nodes.map((node) => (
               <li key={node.name} className="flex flex-col gap-2">
-                <span className="truncate font-mono text-[13px] text-fg" title={node.name}>
+                <span className="truncate font-data text-[13px] text-fg" title={node.name}>
                   {node.name}
                 </span>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -778,13 +818,13 @@ function AccessPath({ cluster, username }: { cluster: Cluster; username: string 
         {hops.map((hop, index) => (
           <li
             key={hop.label}
-            className={`relative flex min-w-0 flex-1 flex-col gap-1 border-b border-line-soft px-4 py-3 last:border-b-0 md:border-r md:border-b-0 md:last:border-r-0 ${
+            className={`relative flex min-w-0 flex-1 flex-col gap-1 border-b border-line-soft px-5 pt-4 pb-3.5 last:border-b-0 md:border-r md:border-b-0 md:last:border-r-0 ${
               hop.gap ? 'bg-warn-soft' : ''
             }`}
           >
             <span className="label">{hop.label}</span>
             <span
-              className={`flex items-center gap-1.5 truncate font-mono text-[13.5px] ${
+              className={`flex items-center gap-1.5 truncate font-data text-[13.5px] ${
                 hop.gap ? 'text-warn' : 'text-fg'
               }`}
               title={hop.value}

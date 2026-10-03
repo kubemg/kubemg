@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router'
-import { FileKey, KeyRound, ShieldOff, X } from 'lucide-react'
+import { FileKey, Hourglass, KeyRound, ShieldOff, Unlink, Users, X } from 'lucide-react'
 import {
   errorMessage,
   fetchIssuedKubeconfigs,
@@ -10,6 +10,7 @@ import {
 import type { IssuedKubeconfig, KubeconfigRevokeAllResult } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { PasswordSheet } from '../components/PasswordSheet'
+import { profileAbilities } from '../lib/profile'
 import {
   Age,
   Button,
@@ -20,6 +21,7 @@ import {
   Row,
   SearchInput,
   Segmented,
+  StatTile,
   Table,
   Td,
   Th,
@@ -30,6 +32,7 @@ import { relativeAge } from '../lib/time'
 import { useAuth } from '../state/auth-context'
 import { useConfirm } from '../state/confirm-context'
 import { useResult } from '../state/result-context'
+import { useUrlText } from '../lib/urlState'
 
 /**
  * IssuedCredentials is the register: every kubeconfig this console has handed
@@ -68,8 +71,11 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
   const [error, setError] = useState<string | null>(null)
   const [rowError, setRowError] = useState<string | null>(null)
   const [busyRow, setBusyRow] = useState<number | null>(null)
-  const [status, setStatus] = useState<StatusFilter>('active')
-  const [filter, setFilter] = useState('')
+  // Kept in the address, so a narrowed register is a link (see lib/urlState).
+  const [statusParam, setStatusParam] = useUrlText('status', 'active')
+  const status: StatusFilter = statusParam === 'all' ? 'all' : 'active'
+  const setStatus = (next: StatusFilter) => setStatusParam(next)
+  const [filter, setFilter] = useUrlText('q')
   const [blanket, setBlanket] = useState<KubeconfigRevokeAllResult | null>(null)
   const [changingPassword, setChangingPassword] = useState(false)
   // `?expiring=24h` is how the fleet's figure opens this page on the rows it
@@ -104,6 +110,14 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
   }, [load])
 
   async function revokeOne(row: IssuedKubeconfig) {
+    const ok = await confirm({
+      eyebrow: row.cluster_name,
+      title: `Revoke ${row.username}'s kubeconfig`,
+      body: `It stops being accepted at its next call. Whoever uses it needs a new one.`,
+      confirmLabel: 'Revoke',
+      tone: 'danger',
+    })
+    if (!ok) return
     setBusyRow(row.id)
     setRowError(null)
     setBlanket(null)
@@ -166,16 +180,34 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
       )
     : rows
 
+  // The figures describe the rows this page holds — the live register unless
+  // "All" or an expiry window says otherwise — so a tile never counts a row
+  // the table under it is not showing.
+  const live = rows.filter((row) => row.status === 'active')
+  const soon = Date.now() + 24 * 60 * 60 * 1000
+  const expiringSoon = live.filter((row) => new Date(row.expires_at).getTime() <= soon).length
+  const unrevocable = live.filter((row) => !row.revocable).length
+  const holders = new Set(live.map((row) => row.username)).size
+
   return (
     <AppShell
       title={mine ? 'My credentials' : 'Issued credentials'}
+      description={
+        <>
+          A kubeconfig for a cluster reached through an agent carries a kubemg token, so revoking
+          it here stops the next call. One for a cluster registered for direct API access carries a
+          token that cluster minted, which kubemg cannot withdraw — those rows say so, and the only
+          lever is deleting the account’s <code className="font-mono text-[12.5px]">kubemg-…</code>{' '}
+          ServiceAccount on the cluster.
+        </>
+      }
       actions={
         <>
           {/* Only on the operator's own reading, and only for an account whose
               password actually lives here: a federated account's is held by its
               provider and a machine account has none at all, so the button would
               open a form that can only refuse. */}
-          {mine && user?.auth_source === 'local' && user?.account_type !== 'service' ? (
+          {mine && user && profileAbilities(user).changePassword ? (
             <Button onClick={() => setChangingPassword(true)}>
               <KeyRound aria-hidden="true" className="size-4" />
               Change password
@@ -205,16 +237,28 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
         {error ? <Notice tone="error">{error}</Notice> : null}
         {rowError ? <Notice tone="error">{rowError}</Notice> : null}
 
-        {/* Said once, at the top, because it is what makes this register worth
-            reading rather than a log: the two credentials it holds stop by
-            completely different means. */}
-        <Notice tone="info">
-          A kubeconfig for a cluster reached through an agent carries a KubeMG token, so revoking it
-          here stops the next call. A kubeconfig for a cluster registered for direct API access
-          carries a token that cluster minted, which KubeMG cannot withdraw — those rows say so, and
-          the only lever is deleting the account’s <code>kubemg-…</code> ServiceAccount on the
-          cluster.
-        </Notice>
+        <div className={`grid grid-cols-2 gap-4 ${mine ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`}>
+          <StatTile
+            icon={FileKey}
+            label="Live"
+            value={live.length}
+            tone={live.length > 0 ? 'ok' : 'neutral'}
+          />
+          <StatTile
+            icon={Hourglass}
+            label="Expiring · 24h"
+            value={expiringSoon}
+            tone={expiringSoon > 0 ? 'warn' : 'neutral'}
+          />
+          <StatTile
+            icon={Unlink}
+            label="Not revocable here"
+            value={unrevocable}
+            sub={unrevocable > 0 ? 'direct API access' : undefined}
+            tone={unrevocable > 0 ? 'warn' : 'neutral'}
+          />
+          {mine ? null : <StatTile icon={Users} label="Holders" value={holders} />}
+        </div>
 
         {blanket ? (
           <Notice tone={blanket.still_valid > 0 ? 'warn' : 'ok'}>
@@ -230,7 +274,7 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
         ) : null}
 
         <div className="card min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
             <Segmented
               value={status}
               onChange={setStatus}
@@ -260,7 +304,7 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
               value={filter}
               onChange={setFilter}
               label="Filter credentials"
-              placeholder="Filter by holder or cluster"
+              placeholder="Filter by holder or cluster…"
             />
             <span className="ml-auto text-[13px] text-muted">
               {visible.length === rows.length
@@ -286,12 +330,12 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
             <tbody>
               {visible.map((row) => (
                 <Row key={row.id}>
-                  {mine ? null : <Td className="truncate font-mono text-fg">{row.username}</Td>}
+                  {mine ? null : <Td className="truncate font-data text-fg">{row.username}</Td>}
                   <Td className="truncate">
                     <span className="text-fg">{row.cluster_name}</span>
                     <span className="ml-1.5 text-[12px] text-muted">{row.connection_mode}</span>
                   </Td>
-                  <Td className="hidden font-mono text-[12.5px] text-muted md:table-cell">
+                  <Td className="hidden font-data text-[12.5px] text-muted md:table-cell">
                     {row.namespace || 'all'}
                     {row.k8s_role ? ` · ${row.k8s_role}` : ''}
                   </Td>

@@ -68,17 +68,21 @@ export function InsightTrend({
   const empty = Boolean(result) && !reading
 
   return (
-    <div className="flex min-w-0 flex-col gap-2 px-4 py-3.5">
+    <div className="flex min-w-0 flex-col gap-2.5 px-5 pt-4 pb-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <p className="label">{axis === 'cpu' ? 'Namespace CPU' : 'Namespace memory'}</p>
-        <span className="font-mono text-[11.5px] text-faint">{queryRangeLabel(range)}</span>
+        <p className="text-[14px] font-semibold text-fg">
+          {axis === 'cpu' ? 'Namespace CPU' : 'Namespace memory'}
+        </p>
+        <span className="rounded-full border border-line px-2.5 py-0.5 text-[12px] text-muted">
+          {queryRangeLabel(range)}
+        </span>
         {explore ? (
           <a
             href={explore}
             target="_blank"
             rel="noreferrer noopener"
             title="Open this query in the cluster's Grafana"
-            className="inline-flex items-center gap-1 text-[11.5px] text-muted transition-colors hover:text-fg"
+            className="inline-flex items-center gap-1 text-[12px] text-muted transition-colors duration-300 hover:text-accent"
           >
             <ExternalLink aria-hidden="true" className="size-3" />
             Grafana
@@ -91,7 +95,7 @@ export function InsightTrend({
             onChange={setAxis}
             options={[
               { value: 'cpu', label: 'CPU' },
-              { value: 'memory', label: 'MEM' },
+              { value: 'memory', label: 'Memory' },
             ]}
           />
         </div>
@@ -101,18 +105,20 @@ export function InsightTrend({
           which is what lets the plot's own gutter stay narrow. */}
       {reading ? (
         <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-          <span className="font-mono text-[19px] leading-none font-semibold text-fg tabular-nums">
+          <span className="font-data text-[22px] leading-none font-bold text-fg tabular-nums">
             {format(reading.latest)}
           </span>
           {/* A namespace burning more CPU is a fact, not a fault — the catalogue
               calls these readings neutral — so the delta carries its direction in
               the glyph and spends no state colour on it. */}
           {reading.delta !== null ? (
-            <span className="font-mono text-[11.5px] font-semibold text-muted tabular-nums">
-              {reading.delta >= 0 ? '▲' : '▼'} {Math.abs(Math.round(reading.delta))}%
+            <span className="rounded-chip bg-raised px-1.5 py-0.5 font-data text-[12px] font-semibold text-muted tabular-nums">
+              <span aria-hidden="true">{reading.delta >= 0 ? '▲' : '▼'}</span>
+              <span className="sr-only">{reading.delta >= 0 ? 'up' : 'down'}</span>{' '}
+              {Math.abs(Math.round(reading.delta))}%
             </span>
           ) : null}
-          <span className="text-[11.5px] text-faint">
+          <span className="text-[12px] text-faint">
             peak {format(reading.peak)} · {reading.series} series
           </span>
         </div>
@@ -124,7 +130,9 @@ export function InsightTrend({
         // A failed read is a sentence, not a Notice: the band is chrome over a
         // table somebody is reading, and a red panel in it would outrank the
         // list it sits above.
-        <p className="py-6 text-center text-[12px] text-warn">{error}</p>
+        <p role="status" className="py-6 text-center text-[12.5px] text-warn">
+          {error}
+        </p>
       ) : empty ? (
         <p className="py-6 text-center text-[12px] text-muted">
           The datasource answered with nothing for this window.
@@ -134,7 +142,9 @@ export function InsightTrend({
           <Plot result={result} geometry={PLOT_COMPACT} axisLabels={false} />
         </div>
       ) : (
-        <p className="py-6 text-center text-[12px] text-muted">Reading the series…</p>
+        <p role="status" className="py-6 text-center text-[12.5px] text-muted">
+          Reading the series…
+        </p>
       )}
     </div>
   )
@@ -162,6 +172,11 @@ function Unconfigured({ onConfigure }: { onConfigure?: () => void }) {
         className="absolute inset-0 size-full text-chart-1 opacity-30 blur-[5px]"
       >
         <path
+          d="M0 78 L30 66 L60 71 L90 44 L120 52 L150 30 L180 38 L210 20 L240 33 L270 24 L300 12 L300 104 L0 104 Z"
+          fill="currentColor"
+          opacity={0.35}
+        />
+        <path
           d="M0 78 L30 66 L60 71 L90 44 L120 52 L150 30 L180 38 L210 20 L240 33 L270 24 L300 12"
           fill="none"
           stroke="currentColor"
@@ -174,7 +189,7 @@ function Unconfigured({ onConfigure }: { onConfigure?: () => void }) {
         <div className="flex flex-col items-center gap-1.5 text-center">
           <span className="inline-flex items-center gap-1.5 rounded-chip border border-line bg-surface/85 px-2.5 py-1 text-[12px] font-medium text-muted">
             <LineChart aria-hidden="true" className="size-3.5" />
-            No data source
+            No datasource
           </span>
           <span className="text-[11.5px] text-faint">
             This cluster has no metrics backend, so there is no history to read.

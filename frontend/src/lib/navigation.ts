@@ -189,6 +189,12 @@ export function isAdminPath(pathname: string): boolean {
 export const ACCESS_HOME = '/me/access'
 
 /**
+ * The operator's own account: who they are signed in as, the details they may
+ * edit, and the password. Reached from their name on the sidebar's person card.
+ */
+export const PROFILE_HOME = '/me/profile'
+
+/**
  * The operator's own credentials: the kubeconfigs they hold, and the password
  * that opens their sessions. Not admin-only for the same reason ACCESS_HOME is
  * not — revoking a file you know you lost, or rotating a password you think has

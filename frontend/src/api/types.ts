@@ -56,7 +56,7 @@ export interface User {
   created_at: string
 }
 
-export type AccountType = 'user' | 'service'
+export type AccountType = 'user' | 'machine'
 
 /** `local`, or the federation protocol that authenticates the account. */
 export type AuthSource = 'local' | SSOProtocol
@@ -194,6 +194,15 @@ export interface KubeconfigRevokeAllResult {
  * formality: a stolen session is exactly the case the route must not serve, and
  * re-authenticating is the one thing a session cannot do on its holder's behalf.
  */
+/**
+ * Editing your own account. Only the email: the username is the identity the
+ * gateway impersonates and every audit record's name, so renaming it stays an
+ * administrator's act.
+ */
+export interface ProfileUpdate {
+  email?: string
+}
+
 export interface PasswordChange {
   current_password: string
   new_password: string
@@ -754,6 +763,53 @@ export interface Ingress {
   rules: number
 }
 
+/**
+ * Where a hop on a traffic map stands. `unchecked` with no problem is a node
+ * drawn without reading it (a mesh, an external host) and reads as neutral.
+ */
+export type TrafficState = 'ok' | 'warn' | 'bad' | 'unchecked' | 'denied' | 'outside'
+
+/** One hop: a host, a route, a Service, a workload, a pod. */
+export interface TrafficNode {
+  id: string
+  kind: string
+  /** The inventory key to open it with; absent when there is nothing to open. */
+  resource?: string
+  /** Set for a custom resource outside the fixed inventory; the served version
+      comes from the cluster's own CRD list. */
+  api_group?: string
+  namespace?: string
+  name: string
+  /** 0 entry · 1 route · 2 Service · 3 workload · 4 pod. */
+  column: number
+  detail: string[]
+  state: TrafficState
+  problem?: string
+  /** The row, for a pod, so it opens on the full pod drawer. */
+  pod?: Pod
+}
+
+export interface TrafficEdge {
+  from: string
+  to: string
+  /** The matches that send traffic down it — host and path, weight, port. */
+  labels: string[]
+  state: TrafficState
+  problem?: string
+}
+
+/** A route followed to its pods, or a Service followed back to its routes. */
+export interface TrafficMap {
+  root: string
+  /** Titles of the columns `column` indexes. A traffic map's are entry →
+      pods; a dependency map's are workload → bound volume. */
+  columns?: string[]
+  nodes: TrafficNode[]
+  edges: TrafficEdge[]
+  /** What the map did not look at. */
+  notes: string[]
+}
+
 /** A Gateway API HTTPRoute or an Istio VirtualService, which read the same way. */
 export interface Route {
   name: string
@@ -1129,6 +1185,27 @@ export interface StorageClass {
  * A ConfigMap or a Secret. Only the keys travel — a value is never in a
  * response, so no secret lands in a browser cache because someone opened a list.
  */
+/** One key of a ConfigMap or Secret, as its own detail reads it. */
+export interface DataEntry {
+  key: string
+  /** A ConfigMap's text value. Never present for a Secret, nor for binaryData. */
+  value?: string
+  bytes: number
+  binary: boolean
+  /** The value was cut at 64 KiB; the YAML tab has the whole object. */
+  truncated?: boolean
+}
+
+/** What a ConfigMap or Secret holds. A Secret's entries carry no value —
+    `values_shown` is false and a value comes only from the reveal route. */
+export interface DataEntries {
+  kind: 'ConfigMap' | 'Secret'
+  type?: string
+  immutable: boolean
+  entries: DataEntry[]
+  values_shown: boolean
+}
+
 export interface ConfigEntry {
   name: string
   namespace: string

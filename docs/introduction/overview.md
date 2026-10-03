@@ -103,10 +103,10 @@ card plus the counts and alerts drawn from the resource lists they can already
 read — see [Browsing resources](../clusters/explore.md).
 
 !!! info "Screenshot pending — `fleet-overview.png`"
-    The fleet overview: the connection chain — cluster, tunnel, kubemg, proxy,
-    you — as the page's own heading, one row per cluster, followed by the
-    queue naming what is waiting for an administrator, the four-figure strip
-    of decisions, and the table banded by environment.
+    The fleet overview: the banner naming what is waiting for an
+    administrator (or how many clusters are linked, when nothing is), the four
+    figures beside the fleet's capacity, then the table banded by environment
+    with how the fleet's links read and the newest audit records beside it.
 
 ## What an administrator sees
 
@@ -122,7 +122,16 @@ link onto the rows it counts:
 
 A figure kubemg could not read shows a dash rather than a zero, so "nothing
 waiting" and "could not tell" never look alike. The counts are read when the
-page opens, not on its live refresh. A developer's fleet page shows only the two
+page opens, not on its live refresh.
+
+Above the figures, a banner lists what is waiting on an administrator — a tunnel
+that closed, a cluster that never dialled in, a request to approve, an agent
+behind the rest — each with its action. When nothing is waiting, the banner says
+how many clusters are linked instead. Beside the figures, **Fleet capacity**
+shows each cluster's live CPU and memory use against what it has. Beside the
+clusters table, **Links across the fleet** counts how each cluster reaches
+kubemg right now, and **Recent activity** shows the newest records of the audit
+trail, read once when the page opens. A developer's fleet page shows only the two
 that are theirs to act on: their own requests waiting and their own kubeconfigs
 about to expire.
 

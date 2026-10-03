@@ -104,7 +104,11 @@ export function UserDetail() {
   const title = review?.user.username ?? 'Account'
 
   return (
-    <AppShell title={title} parent={{ label: 'Users', to: '/admin/users' }}>
+    <AppShell
+      title={title}
+      description="What this account can reach today and through which grants, the kubeconfigs it holds, and the shells it opened."
+      parent={{ label: 'Users', to: '/admin/users' }}
+    >
       <div className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
         {loading && !review ? <p className="text-[13px] text-muted">Loading…</p> : null}
@@ -135,8 +139,7 @@ function Identity({ review }: { review: UserAccessReview }) {
 
   return (
     <Panel
-      eyebrow="Identity"
-      title={user.username}
+      title="Identity"
       description="Where this account's credentials live, and when it was last used."
       bodyClassName="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-4"
       actions={
@@ -146,7 +149,7 @@ function Identity({ review }: { review: UserAccessReview }) {
         </>
       }
     >
-      <Fact label="Email" value={user.email || 'None recorded'} mono={Boolean(user.email)} />
+      <Fact label="Email" value={user.email || 'None recorded'} data={Boolean(user.email)} />
       <Fact
         label="Signs in through"
         value={
@@ -175,7 +178,7 @@ function Identity({ review }: { review: UserAccessReview }) {
               'Not recorded for that sign-in'
             : '—')
         }
-        mono={Boolean(user.last_login_addr)}
+        data={Boolean(user.last_login_addr)}
       />
 
       <div className="sm:col-span-2 xl:col-span-4">
@@ -226,7 +229,6 @@ function Identity({ review }: { review: UserAccessReview }) {
 function Reach({ review }: { review: UserAccessReview }) {
   return (
     <Panel
-      eyebrow="Access"
       title={
         review.clusters.length === 0
           ? 'Reaches no cluster'
@@ -251,12 +253,12 @@ function Reach({ review }: { review: UserAccessReview }) {
           {review.clusters.map((entry) => (
             <li key={entry.cluster_id} className="flex flex-col gap-2 px-4 py-3">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-[11px] font-semibold text-faint">
+                <span className="font-data text-[11px] font-semibold text-faint">
                   {railChip({ name: entry.cluster, short_name: entry.short_name })}
                 </span>
                 <Link
                   to={`/clusters/${entry.cluster_id}`}
-                  className="font-mono text-[13.5px] text-fg hover:underline"
+                  className="font-data text-[13.5px] text-fg hover:underline"
                 >
                   {entry.cluster}
                 </Link>
@@ -332,7 +334,6 @@ function grantOrigin(origin: string, source?: string, group?: string): string {
 function Credentials({ rows, live }: { rows: IssuedKubeconfig[]; live: number }) {
   return (
     <Panel
-      eyebrow="Credentials"
       title={live === 0 ? 'No live kubeconfig' : `${live} live kubeconfig${live === 1 ? '' : 's'}`}
       description="A kubeconfig is a file somebody already has. Removing a grant does not take one back — revoking it does."
       actions={
@@ -362,7 +363,7 @@ function Credentials({ rows, live }: { rows: IssuedKubeconfig[]; live: number })
           <tbody>
             {rows.map((row) => (
               <Row key={row.id}>
-                <Td className="truncate font-mono text-fg">{row.cluster_name}</Td>
+                <Td className="truncate font-data text-fg">{row.cluster_name}</Td>
                 <Td className="text-[12.5px] text-muted">
                   {row.k8s_role ?? '—'}
                   {row.namespace ? ` · ${row.namespace}` : ''}
@@ -392,7 +393,6 @@ function Credentials({ rows, live }: { rows: IssuedKubeconfig[]; live: number })
 function Sessions({ rows }: { rows: TerminalSession[] }) {
   return (
     <Panel
-      eyebrow="Activity"
       title="Recent sessions"
       description="The last ten interactive sessions this account opened. The full trail, and any recording, is in Activity."
       actions={
@@ -421,8 +421,8 @@ function Sessions({ rows }: { rows: TerminalSession[] }) {
           <tbody>
             {rows.map((row) => (
               <Row key={row.id}>
-                <Td className="truncate font-mono text-fg">{row.cluster}</Td>
-                <Td className="truncate font-mono text-[12.5px] text-muted">
+                <Td className="truncate font-data text-fg">{row.cluster}</Td>
+                <Td className="truncate font-data text-[12.5px] text-muted">
                   {row.namespace ? `${row.namespace}/` : ''}
                   {row.pod_name ?? '—'}
                   {row.container_name ? ` · ${row.container_name}` : ''}
@@ -446,12 +446,12 @@ function Sessions({ rows }: { rows: TerminalSession[] }) {
 function Fact({
   label,
   value,
-  mono,
+  data,
   title,
 }: {
   label: string
   value: string
-  mono?: boolean
+  data?: boolean
   title?: string
 }) {
   return (
@@ -459,7 +459,7 @@ function Fact({
       <p className="label text-faint">{label}</p>
       <p
         title={title}
-        className={`mt-1 min-w-0 truncate text-[13px] text-fg ${mono ? 'font-mono text-[12.5px]' : ''}`}
+        className={`mt-1 min-w-0 truncate text-[13px] text-fg ${data ? 'font-data text-[12.5px]' : ''}`}
       >
         {value}
       </p>

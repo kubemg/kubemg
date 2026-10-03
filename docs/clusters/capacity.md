@@ -103,8 +103,8 @@ why than any arithmetic here could invent.
 
 ## Fleet overview capacity fan-out
 
-The Overview page's fleet cards each show a capacity row, which is the one
-place this console fans a read out across the whole fleet rather than
+The Overview page's **Fleet capacity** card shows a row per cluster, which is
+the one place this console fans a read out across the whole fleet rather than
 reading one cluster at a time — one tunnel round trip per attached cluster.
 That fan-out is capped at `FLEET_METRICS_LIMIT` (12) attached clusters, and
 the page says so past the cap, rather than turning the landing page into N

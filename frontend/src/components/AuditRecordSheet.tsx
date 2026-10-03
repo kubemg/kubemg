@@ -67,7 +67,7 @@ export function AuditRecordSheet({
       eyebrow="Audit record"
       title={
         <span className="flex items-center gap-2">
-          <span className="font-mono">{event.verb}</span>
+          <span className="font-data">{event.verb}</span>
           <Pill tone={statusTone(event)}>{statusLabel(event)}</Pill>
         </span>
       }

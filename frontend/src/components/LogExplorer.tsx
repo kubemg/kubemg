@@ -145,21 +145,21 @@ export function LogExplorer({
       </form>
 
       <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted">
-        <span className="font-mono">{entries.length}</span>
+        <span className="font-data">{entries.length}</span>
         <span>lines</span>
         {/* The window is set in the header now, so the results say which one
             they are — a count with no span is a number without a question. */}
         <span>over {queryRangeLabel(range).toLowerCase()}</span>
         {namespace ? (
           <span>
-            in <span className="font-mono text-fg">{namespace}</span>
+            in <span className="font-data text-fg">{namespace}</span>
           </span>
         ) : (
           <span>across every namespace you are granted</span>
         )}
         {applied ? (
           <span>
-            matching <span className="font-mono text-fg">{applied}</span>
+            matching <span className="font-data text-fg">{applied}</span>
           </span>
         ) : null}
         {explore ? (
@@ -241,7 +241,7 @@ function LogLines({
         {entries.map((entry, index) => (
           <li
             key={`${entry.at}/${entry.pod ?? ''}/${index}`}
-            className="flex gap-3 px-3 py-1.5 font-mono text-[12px] leading-relaxed"
+            className="defer-row flex gap-3 px-3 py-1.5 font-mono text-[12px] leading-relaxed [contain-intrinsic-size:auto_28px]"
           >
             <span className="shrink-0 text-faint tabular-nums">{clockTime(entry.at)}</span>
 

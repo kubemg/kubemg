@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Bot, Check, ChevronRight, KeyRound, Plus, Trash2 } from 'lucide-react'
+import { Bot, Check, KeyRound, Network, Plus, PowerOff, Trash2 } from 'lucide-react'
 import {
   assignPermission,
   createMachineAccount,
@@ -24,13 +24,13 @@ import {
   Field,
   IconButton,
   Notice,
-  OBJECT_MARK,
   OBJECT_NAME,
   Panel,
   Row,
   SearchInput,
   Select,
   Sheet,
+  StatTile,
   Table,
   Td,
   Th,
@@ -153,6 +153,7 @@ export function MachineAccounts() {
   return (
     <AppShell
       title="Machine accounts"
+      description="A machine account acts under its own name inside the cluster, so the cluster’s own RBAC decides what it may do and every call it makes is in the audit trail. Its credential is stored here rather than signed: revoking one stops the next call, with no expiry to wait for."
       actions={
         <Button variant="primary" onClick={() => setCreateOpen(true)}>
           <Plus aria-hidden="true" className="size-4" />
@@ -164,25 +165,37 @@ export function MachineAccounts() {
         {error ? <Notice tone="error">{error}</Notice> : null}
         {rowError ? <Notice tone="error">{rowError}</Notice> : null}
 
-        {/* Said once, at the top, because it is the thing that makes this
-            surface different from every other credential in the console: what
-            it hands out outlives the session that handed it out. */}
-        <Notice tone="info">
-          A machine account acts under its own name inside the cluster, so the cluster’s own RBAC
-          decides what it may do and every call it makes is in the audit trail. Its credential is
-          stored here rather than signed, which means revoking one stops the next call — you do not
-          have to wait for it to expire.
-        </Notice>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <StatTile icon={Bot} label="Accounts" value={accounts.length} />
+          <StatTile
+            icon={Network}
+            label="With cluster access"
+            value={accounts.filter((entry) => entry.access.length > 0).length}
+            sub={`of ${accounts.length}`}
+          />
+          <StatTile
+            icon={KeyRound}
+            label="Live credentials"
+            value={accounts.reduce((sum, entry) => sum + entry.active_tokens, 0)}
+            tone={accounts.some((entry) => entry.active_tokens > 0) ? 'ok' : 'neutral'}
+          />
+          <StatTile
+            icon={PowerOff}
+            label="Disabled"
+            value={accounts.filter((entry) => !entry.is_active).length}
+            tone={accounts.some((entry) => !entry.is_active) ? 'warn' : 'neutral'}
+          />
+        </div>
 
         <SetupPath accounts={accounts} />
 
         <div className="card min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
             <SearchInput
               value={filter}
               onChange={setFilter}
               label="Filter machine accounts"
-              placeholder="Filter by name"
+              placeholder="Filter by name…"
             />
             <span className="ml-auto text-[13px] text-muted">
               {visible.length === accounts.length
@@ -210,7 +223,7 @@ export function MachineAccounts() {
                 return (
                   <Row key={row.id}>
                     <Td>
-                      <span className={`flex ${OBJECT_MARK}`}>
+                      <span className="flex">
                         <button
                           type="button"
                           className={OBJECT_NAME}
@@ -233,7 +246,7 @@ export function MachineAccounts() {
                         </span>
                       )}
                     </Td>
-                    <Td className="font-mono text-[12.5px] text-muted">
+                    <Td className="font-data text-[12.5px] text-muted">
                       {row.token_count === 0
                         ? '—'
                         : `${row.active_tokens} live / ${row.token_count}`}
@@ -245,7 +258,20 @@ export function MachineAccounts() {
                       <button
                         type="button"
                         disabled={busy}
-                        onClick={() =>
+                        onClick={async () => {
+                          // Disabling stops every credential the account holds;
+                          // that is asked first. Activating is not.
+                          if (
+                            row.is_active &&
+                            !(await confirm({
+                              eyebrow: row.username,
+                              title: `Disable ${row.username}`,
+                              body: 'Every token this machine account holds stops being accepted now, and whatever runs on them starts failing. Activating it again brings them back.',
+                              confirmLabel: 'Disable',
+                              tone: 'danger',
+                            }))
+                          )
+                            return
                           run(
                             row.id,
                             `Could not update ${row.username}.`,
@@ -259,7 +285,7 @@ export function MachineAccounts() {
                                 : undefined,
                             },
                           )
-                        }
+                        }}
                         title={
                           row.is_active
                             ? `Disable ${row.username} and every credential it holds`
@@ -379,27 +405,30 @@ export function SetupPath({ accounts }: { accounts: MachineAccount[] }) {
 
   return (
     <Panel title="What a machine account needs, in order" eyebrow="Path">
-      <ol className="flex flex-col md:flex-row">
+      <ol className="grid gap-3 p-5 md:grid-cols-3">
         {steps.map((step, index) => (
           <li
             key={step.label}
-            className="relative flex min-w-0 flex-1 flex-col gap-1 border-b border-line-soft px-4 py-3 last:border-b-0 md:border-r md:border-b-0 md:last:border-r-0"
+            className={`flex min-w-0 gap-3 rounded-card border p-4 ${
+              step.done ? 'border-accent-line bg-surface' : 'border-line-soft bg-raised/40'
+            }`}
           >
-            <span className="label flex items-center gap-1.5">
-              {step.done ? (
-                <Check aria-hidden="true" className="size-3.5 text-ok" />
-              ) : (
-                <span className="font-mono text-faint">{index + 1}</span>
-              )}
-              {step.label}
+            {/* A step taken trades its number for a check: the strip reads as
+                where this installation is, not as a tutorial that never ends. */}
+            <span
+              aria-hidden="true"
+              className={`grid size-8 shrink-0 place-items-center rounded-full text-[13px] font-semibold ${
+                step.done
+                  ? 'bg-accent-fill text-on-accent'
+                  : 'border border-line bg-surface font-data text-muted'
+              }`}
+            >
+              {step.done ? <Check className="size-4" /> : index + 1}
             </span>
-            <span className="text-[12.5px] leading-relaxed text-muted">{step.body}</span>
-            {index < steps.length - 1 ? (
-              <ChevronRight
-                aria-hidden="true"
-                className="absolute top-1/2 right-0 hidden size-4 -translate-y-1/2 translate-x-1/2 rounded-full bg-surface text-faint md:block"
-              />
-            ) : null}
+            <span className="flex min-w-0 flex-col gap-1">
+              <span className="text-[14px] font-semibold text-fg">{step.label}</span>
+              <span className="text-[13px] leading-relaxed text-muted">{step.body}</span>
+            </span>
           </li>
         ))}
       </ol>
@@ -457,7 +486,7 @@ function CreateMachineAccountSheet({
       >
         <TextInput
           id="machine-username"
-          className="font-mono"
+          className="font-data"
           placeholder="jenkins-release"
           value={username}
           onChange={(event) => setUsername(event.target.value)}
@@ -550,7 +579,15 @@ function MachineAccountSheet({
     }
   }
 
-  async function revokeGrant(id: number) {
+  async function revokeGrant(id: number, clusterName: string) {
+    const ok = await confirm({
+      eyebrow: account.username,
+      title: `Revoke access to ${clusterName}`,
+      body: `${account.username} loses its grant on ${clusterName} now, and its tokens stop reaching that cluster.`,
+      confirmLabel: 'Revoke',
+      tone: 'danger',
+    })
+    if (!ok) return
     setBusy(true)
     setError(null)
     try {
@@ -595,7 +632,7 @@ function MachineAccountSheet({
     <Sheet
       eyebrow="Machine account"
       width="lg"
-      title={<span className="font-mono text-accent">{account.username}</span>}
+      title={<span className="font-data text-accent">{account.username}</span>}
       onClose={onClose}
       footer={
         <>
@@ -624,7 +661,7 @@ function MachineAccountSheet({
                 key={entry.cluster_id}
                 className="flex items-center gap-3 rounded-control border border-line-soft px-3 py-2"
               >
-                <span className="font-mono text-[13px] text-fg">{entry.cluster_name}</span>
+                <span className="font-data text-[13px] text-fg">{entry.cluster_name}</span>
                 <Pill tone="idle" dot={false}>{entry.k8s_role}</Pill>
                 <span className="truncate text-[12.5px] text-muted">
                   {entry.namespaces.length > 0
@@ -636,7 +673,7 @@ function MachineAccountSheet({
                     label={`Revoke access to ${entry.cluster_name}`}
                     tone="danger"
                     disabled={busy}
-                    onClick={() => revokeGrant(entry.cluster_id)}
+                    onClick={() => void revokeGrant(entry.cluster_id, entry.cluster_name)}
                   >
                     <Trash2 aria-hidden="true" className="size-4" />
                   </IconButton>
@@ -682,7 +719,7 @@ function MachineAccountSheet({
           >
             <TextInput
               id="machine-namespaces"
-              className="font-mono"
+              className="font-data"
               placeholder="payments, payments-staging"
               value={namespaces}
               onChange={(event) => setNamespaces(event.target.value)}
@@ -712,7 +749,7 @@ function MachineAccountSheet({
                 className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-control border border-line-soft px-3 py-2"
               >
                 <span className="text-[13px] text-fg">{token.name}</span>
-                <span className="font-mono text-[12px] text-faint">{token.hint}…</span>
+                <span className="font-data text-[12px] text-faint">{token.hint}…</span>
                 <Pill tone={token.status === 'active' ? 'ok' : 'idle'}>{token.status}</Pill>
                 <span className="text-[12.5px] text-muted">
                   {token.cluster_name ?? `cluster ${token.cluster_id}`}

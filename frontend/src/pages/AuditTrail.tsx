@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Activity,
   CalendarClock,
   ChevronLeft,
   ChevronRight,
@@ -9,8 +10,10 @@ import {
   Radio,
   RefreshCw,
   ScrollText,
+  ShieldX,
+  SquareTerminal,
 } from 'lucide-react'
-import { useParams, useSearchParams } from 'react-router'
+import { useParams } from 'react-router'
 import {
   errorMessage,
   exportAudit,
@@ -23,6 +26,7 @@ import { AppShell } from '../components/AppShell'
 import { AuditRecordSheet } from '../components/AuditRecordSheet'
 import { ManifestDiffView } from '../components/ManifestDiffView'
 import { timeRangeLabel } from '../lib/timerange'
+import { useUrlFlag, useUrlList, useUrlText } from '../lib/urlState'
 import { useTimeRange } from '../state/timerange-context'
 import {
   Age,
@@ -37,6 +41,7 @@ import {
   SearchInput,
   Select,
   Sheet,
+  StatTile,
   Table,
   Td,
   Th,
@@ -130,19 +135,22 @@ export function AuditTrail() {
   const [error, setError] = useState<string | null>(null)
   const [users, setUsers] = useState<User[]>([])
 
-  const [clusterId, setClusterId] = useState(routeClusterId ?? '')
-  const [userId, setUserId] = useState('')
+  // Every filter lives in the address (see lib/urlState), so a narrowed trail
+  // is a link somebody can paste into a ticket. A cluster named in the route
+  // always wins over the `cluster` parameter: the address already answers
+  // "which cluster", and the picker is locked to it.
+  const [clusterParam, setClusterId] = useUrlText('cluster')
+  const clusterId = routeClusterId ?? clusterParam
+  const [userId, setUserId] = useUrlText('user')
   // A set rather than one value: an auditor narrowing to "the writes" is picking
   // four verbs, not making four consecutive single-verb queries.
-  const [verbs, setVerbs] = useState<string[]>([])
-  const [status, setStatus] = useState('')
-  const [search, setSearch] = useState('')
-  // `?failed=true` is how the fleet's refusals figure opens this page on the
-  // rows it counted; the window rides the console's own `range` parameter. Read
-  // once, as the starting filter — the chip owns it from there.
-  const [searchParams] = useSearchParams()
-  const [failedOnly, setFailedOnly] = useState(() => searchParams.get('failed') === 'true')
-  const [streamsOnly, setStreamsOnly] = useState(false)
+  const [verbs, setVerbs] = useUrlList('verb')
+  const [status, setStatus] = useUrlText('status')
+  const [search, setSearch] = useUrlText('q')
+  // `?failed=true` is also how the fleet's refusals figure opens this page on
+  // the rows it counted; the window rides the console's own `range` parameter.
+  const [failedOnly, setFailedOnly] = useUrlFlag('failed')
+  const [streamsOnly, setStreamsOnly] = useUrlFlag('streams')
   // The window. The preset is the console's, set in the header and carried in
   // the address, because "the last hour" has to mean one span in the trail and
   // in the charts beside it. The two boxes below are for the case a preset
@@ -150,9 +158,9 @@ export function AuditTrail() {
   // start and an end, not a duration ending now — and they beat the preset on
   // the server as well as here.
   const { range } = useTimeRange()
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
-  const [showWindow, setShowWindow] = useState(false)
+  const [from, setFrom] = useUrlText('from')
+  const [to, setTo] = useUrlText('to')
+  const [showWindow, setShowWindow] = useState(() => from !== '' || to !== '')
   const [offset, setOffset] = useState(0)
   // The session being replayed, addressed by the id its audit rows carry.
   const [replaying, setReplaying] = useState<AuditEvent | null>(null)
@@ -205,13 +213,10 @@ export function AuditTrail() {
     void load()
   }, [load])
 
-  // A cluster named in the address always wins: switching from one cluster's
-  // trail to another's through the entity switcher remounts the same route
-  // rather than the same component instance in most navigations, but this
-  // keeps the filter honest on the ones that do not.
+  // Moving to another cluster's trail is a new list, so it starts on its first
+  // page; the cluster itself is read straight from the route.
   useEffect(() => {
     if (!routeClusterId) return
-    setClusterId(routeClusterId)
     setOffset(0)
   }, [routeClusterId])
 
@@ -243,7 +248,7 @@ export function AuditTrail() {
     setOffset(0)
     setFrom('')
     setTo('')
-  }, [range])
+  }, [range, setFrom, setTo])
 
   // Any filter change invalidates the current page offset.
   function narrow(apply: () => void) {
@@ -297,6 +302,7 @@ export function AuditTrail() {
   return (
     <AppShell
       title="Audit trail"
+      description="Every call that went through kubemg — allowed, refused or failed — with who made it, on which cluster, and what it touched."
       timeRange
       actions={
         <>
@@ -324,10 +330,23 @@ export function AuditTrail() {
         ) : null}
 
         {summary ? (
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Stat label={`Calls · last ${summary.window_hours}h`} value={summary.total} />
-            <Stat label="Refused or failed" value={summary.failed} tone="bad" />
-            <Stat label="Sessions opened" value={summary.streams} tone="accent" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <StatTile
+              icon={Activity}
+              label={`Calls · last ${summary.window_hours}h`}
+              value={COUNT.format(summary.total)}
+            />
+            <StatTile
+              icon={ShieldX}
+              label="Refused or failed"
+              value={COUNT.format(summary.failed)}
+              tone={summary.failed > 0 ? 'danger' : 'neutral'}
+            />
+            <StatTile
+              icon={SquareTerminal}
+              label="Sessions opened"
+              value={COUNT.format(summary.streams)}
+            />
           </div>
         ) : null}
 
@@ -338,17 +357,17 @@ export function AuditTrail() {
             and a heading pinning against the card instead of the window is
             pushed down into the rows rather than held above them. */}
         <div className="card min-w-0 overflow-clip [--table-heading-position:sticky] [--table-sticky-top:var(--deck-header-h)]">
-          <div className="flex flex-wrap items-center gap-2.5 border-b border-line-soft px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2.5 border-b border-line-soft px-5 pt-4 pb-3.5">
             <SearchInput
               value={search}
               onChange={(next) => narrow(() => setSearch(next))}
               label="Search the audit trail"
-              placeholder="Path, user, resource"
+              placeholder="Path, user, resource…"
               className="w-full sm:w-56"
             />
 
             {routeClusterId ? (
-              <span className="flex h-8 items-center rounded-control border border-line-soft bg-raised px-3 font-mono text-[12.5px] text-fg">
+              <span className="flex h-8 items-center rounded-control border border-line-soft bg-raised px-3 font-data text-[12.5px] text-fg">
                 {clusters.find((cluster) => cluster.id === Number(routeClusterId))?.name ??
                   `cluster ${routeClusterId}`}
               </span>
@@ -437,7 +456,7 @@ export function AuditTrail() {
             </Chip>
 
             {from || to ? (
-              <span className="font-mono text-[12px] text-accent">
+              <span className="font-data text-[12px] text-accent">
                 {from ? formatInstant(from, { seconds: true }) : 'anything'} →{' '}
                 {to ? formatInstant(to, { seconds: true }) : 'now'}
               </span>
@@ -445,13 +464,13 @@ export function AuditTrail() {
           </div>
 
           {showWindow ? (
-            <div className="flex flex-wrap items-end gap-3 border-b border-line-soft px-4 py-3">
+            <div className="flex flex-wrap items-end gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
               <div className="w-56">
                 <Field label="From" htmlFor="audit-from">
                   <TextInput
                     id="audit-from"
                     type="datetime-local"
-                    className="font-mono text-[12.5px]"
+                    className="font-data text-[12.5px]"
                     value={from}
                     onChange={(event) => narrow(() => setFrom(event.target.value))}
                   />
@@ -462,7 +481,7 @@ export function AuditTrail() {
                   <TextInput
                     id="audit-to"
                     type="datetime-local"
-                    className="font-mono text-[12.5px]"
+                    className="font-data text-[12.5px]"
                     value={to}
                     onChange={(event) => narrow(() => setTo(event.target.value))}
                   />
@@ -504,7 +523,7 @@ export function AuditTrail() {
                   )
                 }
               >
-                <span className="font-mono text-[12.5px]">{value}</span>
+                <span className="font-data text-[12.5px]">{value}</span>
               </Chip>
             ))}
             {verbs.length > 0 ? (
@@ -556,15 +575,15 @@ export function AuditTrail() {
                       <Age iso={event.at} />
                     </button>
                   </Td>
-                  <Td className="truncate font-mono text-[12.5px] text-fg">
+                  <Td className="truncate font-data text-[12.5px] text-fg">
                     {event.username || '—'}
                   </Td>
-                  <Td className="hidden truncate font-mono text-[12.5px] text-muted md:table-cell">
+                  <Td className="hidden truncate font-data text-[12.5px] text-muted md:table-cell">
                     {event.cluster || '—'}
                   </Td>
                   <Td>
                     <span
-                      className={`flex items-center gap-1.5 font-mono text-[12.5px] ${
+                      className={`flex items-center gap-1.5 font-data text-[12.5px] ${
                         MUTATING.has(event.verb) ? 'text-warn' : 'text-fg'
                       }`}
                     >
@@ -574,7 +593,7 @@ export function AuditTrail() {
                       {event.verb}
                     </span>
                   </Td>
-                  <Td className="hidden truncate font-mono text-[12px] text-muted lg:table-cell">
+                  <Td className="hidden truncate font-data text-[12px] text-muted lg:table-cell">
                     {event.path}
                   </Td>
                   <Td>
@@ -707,7 +726,7 @@ export function AuditTrail() {
           title="Manifest diff"
           onClose={() => setViewingDiff(null)}
         >
-          <p className="font-mono text-[12.5px] text-muted">{viewingDiff.path}</p>
+          <p className="font-data text-[12.5px] text-muted">{viewingDiff.path}</p>
           <ManifestDiffView diff={viewingDiff.diff} />
         </Sheet>
       ) : null}
@@ -715,20 +734,4 @@ export function AuditTrail() {
   )
 }
 
-function Stat({
-  label,
-  value,
-  tone = 'default',
-}: {
-  label: string
-  value: number
-  tone?: 'default' | 'bad' | 'accent'
-}) {
-  const accent = tone === 'bad' ? 'text-danger' : tone === 'accent' ? 'text-accent' : 'text-fg'
-  return (
-    <div className="card px-4 py-3.5">
-      <p className="label">{label}</p>
-      <p className={`mt-1 font-mono text-[26px] leading-none font-semibold ${accent}`}>{value}</p>
-    </div>
-  )
-}
+const COUNT = new Intl.NumberFormat()

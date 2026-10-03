@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDownToLine, Pause, Play, RefreshCw, WrapText } from 'lucide-react'
+import { ArrowDownToLine, Container, Pause, Play, RefreshCw, WrapText } from 'lucide-react'
 import {
   errorMessage,
   fetchPodLogs,
@@ -9,7 +9,7 @@ import {
 } from '../api/client'
 import type { Cluster, ContainerUsage, Pod, PodContainer, PodUsage } from '../api/types'
 import { MetricsChart } from './MetricsChart'
-import { Age, Button, Chip, DetailList, Meter, Notice, Pill, SearchInput } from './primitives'
+import { Button, Chip, Meter, Notice, Panel, Pill, SearchInput } from './primitives'
 import { useLiveTick } from '../lib/live'
 import { formatCPU, formatMemory, podLimit, ratio } from '../lib/units'
 
@@ -78,7 +78,12 @@ function usePodUsage(cluster: Cluster, pod: Pod, enabled: boolean) {
   return { usage, unavailable, error }
 }
 
-/** PodOverview is a pod's live state: what it is scheduled on, and what it is using. */
+/**
+ * PodOverview is a pod's live state: what it is using, and what each of its
+ * containers is. Its scheduling facts — node, IP, ready, restarts — are the
+ * drawer's summary card, so they are said once, in the card every kind leads
+ * with, rather than in a second grid of their own under it.
+ */
 export function PodOverview({ cluster, pod }: { cluster: Cluster; pod: Pod }) {
   // A pod that is not running has nothing to sample, and asking would only
   // spend a round trip to be told so.
@@ -87,34 +92,13 @@ export function PodOverview({ cluster, pod }: { cluster: Cluster; pod: Pod }) {
 
   return (
     <>
-      <DetailList
-        columns={2}
-        rows={[
-          { term: 'Namespace', value: pod.namespace },
-          { term: 'Node', value: pod.node || 'unscheduled' },
-          { term: 'Pod IP', value: pod.pod_ip || '—' },
-          { term: 'Age', value: <Age iso={pod.created_at} /> },
-          { term: 'Ready', value: `${pod.ready}/${pod.total}` },
-          {
-            term: 'Restarts',
-            value: String(pod.restarts),
-            tone: pod.restarts > 0 ? 'warn' : 'default',
-          },
-        ]}
-      />
-
       {running ? (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <span className="label">Usage</span>
-            {usage ? (
-              <span className="flex items-center gap-1.5 text-[11px] text-faint">
-                <span aria-hidden="true" className="size-1 rounded-full bg-ok" />
-                sampled every {USAGE_POLL_MS / 1000}s
-              </span>
-            ) : null}
-          </div>
-
+        <Panel
+          title="Usage"
+          eyebrow="Live"
+          description={`What the pod is using now, against its limits — sampled every ${USAGE_POLL_MS / 1000}s.`}
+          bodyClassName="flex flex-col gap-3 px-5 py-4"
+        >
           {error ? <Notice tone="error">{error}</Notice> : null}
           {unavailable ? <Notice tone="info">{unavailable}</Notice> : null}
           {!usage && !unavailable && !error ? (
@@ -122,7 +106,7 @@ export function PodOverview({ cluster, pod }: { cluster: Cluster; pod: Pod }) {
           ) : null}
 
           {usage ? (
-            <div className="grid gap-4 rounded-card border border-line px-3 py-3 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2">
               <Meter
                 label="CPU"
                 value={formatCPU(usage.cpu_millicores)}
@@ -135,55 +119,64 @@ export function PodOverview({ cluster, pod }: { cluster: Cluster; pod: Pod }) {
               />
             </div>
           ) : null}
-        </div>
+        </Panel>
       ) : null}
 
       {/* History, where the cluster has somewhere to keep it. The meters above
           are a two-minute window — enough to say "this is at its limit" and
           never enough to say "since when", which is the question anyone asks
-          next. A cluster with no metrics datasource simply says so here. */}
-      <div className="flex flex-col gap-3">
-        <span className="label">Over time</span>
-        {/* Paired, the way the meters above them are: CPU throttling and a
-            working set climbing are the same investigation, and stacked they
-            were a scroll apart inside a drawer. */}
-        <div className="grid gap-3 xl:grid-cols-2">
-          <MetricsChart
-            cluster={cluster}
-            title="CPU per container"
-            metric="pod_cpu"
-            namespace={pod.namespace}
-            pod={pod.name}
-          />
-          <MetricsChart
-            cluster={cluster}
-            title="Memory per container"
-            metric="pod_memory"
-            namespace={pod.namespace}
-            pod={pod.name}
-          />
-        </div>
+          next. A cluster with no metrics datasource simply says so here.
+
+          Paired, the way the meters above them are: CPU throttling and a
+          working set climbing are the same investigation, and stacked they
+          were a scroll apart inside a drawer. Each chart is a card already. */}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <MetricsChart
+          cluster={cluster}
+          title="CPU per container"
+          metric="pod_cpu"
+          namespace={pod.namespace}
+          pod={pod.name}
+        />
+        <MetricsChart
+          cluster={cluster}
+          title="Memory per container"
+          metric="pod_memory"
+          namespace={pod.namespace}
+          pod={pod.name}
+        />
       </div>
 
-      <div className="flex flex-col gap-2">
-        <span className="label">Containers</span>
-        <ul className="flex flex-col gap-2">
+      <Panel
+        title="Containers"
+        eyebrow={String(pod.containers.length)}
+        description="Each container's image and state, and what it is using against its own limits."
+      >
+        <ul className="flex flex-col divide-y divide-line-soft">
           {pod.containers.map((entry) => (
-            <li key={entry.name} className="rounded-card border border-line px-3 py-2.5">
-              <div className="flex items-center gap-2.5">
-                <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-fg">
-                  {entry.name}
+            <li key={entry.name} className="px-5 py-3.5">
+              <div className="flex items-center gap-3">
+                <span
+                  aria-hidden="true"
+                  className={`grid size-8 shrink-0 place-items-center rounded-full border border-line-soft bg-surface shadow-deck ${
+                    entry.ready ? 'text-ok' : 'text-warn'
+                  }`}
+                >
+                  <Container className="size-4" />
                 </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-data text-[13px] font-semibold text-fg">{entry.name}</p>
+                  <p className="truncate font-data text-[12px] text-muted" title={entry.image}>
+                    {entry.image}
+                  </p>
+                </div>
                 {entry.restarts > 0 ? (
-                  <span className="font-mono text-[12px] text-warn">
+                  <span className="shrink-0 font-data text-[12px] text-warn">
                     {entry.restarts} restarts
                   </span>
                 ) : null}
                 <Pill tone={entry.ready ? 'ok' : 'warn'}>{entry.state}</Pill>
               </div>
-              <p className="mt-1 truncate font-mono text-[12px] text-muted" title={entry.image}>
-                {entry.image}
-              </p>
               <ContainerUsageBars
                 container={entry}
                 usage={usage?.containers.find((sample) => sample.name === entry.name)}
@@ -191,7 +184,7 @@ export function PodOverview({ cluster, pod }: { cluster: Cluster; pod: Pod }) {
             </li>
           ))}
         </ul>
-      </div>
+      </Panel>
     </>
   )
 }
@@ -207,7 +200,7 @@ function ContainerUsageBars({
   if (!usage) return null
 
   return (
-    <div className="mt-2.5 grid gap-3 border-t border-line-soft pt-2.5 sm:grid-cols-2">
+    <div className="mt-3 ml-11 grid gap-3 sm:grid-cols-2">
       <Meter
         label="CPU"
         value={formatCPU(usage.cpu_millicores)}
@@ -368,7 +361,7 @@ export function PodLogView({
           className="min-w-40 flex-1"
           value={filter}
           onChange={setFilter}
-          placeholder="Filter lines"
+          placeholder="Filter lines…"
           label="Filter log lines"
         />
 
@@ -393,7 +386,7 @@ export function PodLogView({
         ) : (
           <span>last 200 lines</span>
         )}
-        <span className="ml-auto font-mono text-[11.5px] text-faint tabular-nums">
+        <span className="ml-auto font-data text-[11.5px] text-faint tabular-nums">
           {filter.trim() !== '' ? `${matched} of ${total} lines` : `${total} lines`}
         </span>
       </div>

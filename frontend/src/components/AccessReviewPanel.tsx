@@ -237,7 +237,7 @@ export function AccessReviewPanel({
               value={subject}
               onChange={(event) => setSubject(event.target.value)}
               placeholder="system:serviceaccount:payments:deployer"
-              className="font-mono text-[12.5px]"
+              className="font-data text-[12.5px]"
             />
           </Field>
         </div>
@@ -267,7 +267,7 @@ export function AccessReviewPanel({
             value={resource}
             onChange={(event) => pickResource(event.target.value)}
             placeholder="pods"
-            className="font-mono text-[12.5px]"
+            className="font-data text-[12.5px]"
           />
           <datalist id="review-resources">
             {COMMON_RESOURCES.map((entry) => (
@@ -289,7 +289,7 @@ export function AccessReviewPanel({
               setGroup(event.target.value)
             }}
             placeholder="apps"
-            className="font-mono text-[12.5px]"
+            className="font-data text-[12.5px]"
           />
         </Field>
 
@@ -307,7 +307,7 @@ export function AccessReviewPanel({
       <p className="text-[12px] text-muted">
         {scope ? (
           <>
-            Asked in <span className="font-mono">{scope}</span> — the namespace this page is open
+            Asked in <span className="font-data">{scope}</span> — the namespace this page is open
             on.
           </>
         ) : (
@@ -330,15 +330,15 @@ export function AccessReviewPanel({
 function AccessReviewVerdict({ result }: { result: AccessReviewResult }) {
   const question = (
     <>
-      <span className="font-mono">{result.subject}</span>
+      <span className="font-data">{result.subject}</span>
       {' — '}
-      <span className="font-mono">
+      <span className="font-data">
         {result.verb} {result.resource}
       </span>
       {result.namespace ? (
         <>
           {' in '}
-          <span className="font-mono">{result.namespace}</span>
+          <span className="font-data">{result.namespace}</span>
         </>
       ) : (
         ' cluster-wide'
@@ -359,7 +359,7 @@ function AccessReviewVerdict({ result }: { result: AccessReviewResult }) {
           </span>
         </Notice>
         <p className="text-[12.5px] text-muted">{question}</p>
-        <p className="font-mono text-[12px] text-muted">{result.evaluation_error}</p>
+        <p className="font-data text-[12px] text-muted">{result.evaluation_error}</p>
       </div>
     )
   }
@@ -385,7 +385,7 @@ function AccessReviewVerdict({ result }: { result: AccessReviewResult }) {
       {/* The authorizer's own explanation, which usually names the binding that
           decided it — the one piece of this that no inventory could produce. */}
       {result.reason ? (
-        <p className="font-mono text-[12px] leading-relaxed text-muted">{result.reason}</p>
+        <p className="font-data text-[12px] leading-relaxed text-muted">{result.reason}</p>
       ) : null}
     </div>
   )

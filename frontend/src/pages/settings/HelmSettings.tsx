@@ -5,8 +5,11 @@ import { SettingsLayout } from '../../components/settings/SettingsLayout'
     per-cluster. See `HelmRepositoriesPanel`. */
 export function HelmSettings() {
   return (
-    <SettingsLayout title="Helm">
-      <div className="flex min-w-0 max-w-3xl flex-col gap-4">
+    <SettingsLayout
+      title="Helm"
+      description="The chart repositories every cluster’s Helm catalogue is built from. They are server-wide: anyone signed in reads the catalogue, and only an administrator adds or removes a repository."
+    >
+      <div className="flex min-w-0 max-w-5xl flex-col gap-4">
         <HelmRepositoriesPanel />
       </div>
     </SettingsLayout>

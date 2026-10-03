@@ -1119,9 +1119,9 @@ export function Explore() {
         ) : null}
 
         <div className="card min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-4 py-3">
-            <h2 className="text-[14px] font-semibold text-fg">{item.label}</h2>
-            <span className="font-mono text-[12.5px] text-faint">
+          <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
+            <h2 className="text-[16px] font-bold text-fg">{item.label}</h2>
+            <span className="font-data text-[12.5px] text-faint">
               {count !== totalCount ? `${count} of ${totalCount}` : count}
             </span>
             {namespaced && namespace ? (
@@ -1134,7 +1134,7 @@ export function Explore() {
                   )
                 ) : (
                   <>
-                    in <span className="font-mono">{namespace}</span>
+                    in <span className="font-data">{namespace}</span>
                   </>
                 )}
               </span>
@@ -1248,7 +1248,7 @@ export function Explore() {
               absent one. */}
           {selection ? (
             <div className="flex flex-wrap items-center gap-2 border-b border-line-soft bg-raised/40 px-4 py-2.5">
-              <span className="font-mono text-[12.5px] text-fg">
+              <span className="font-data text-[12.5px] text-fg">
                 {selected.length} selected
               </span>
               {selected.length === 0 ? (
@@ -1404,7 +1404,7 @@ export function Explore() {
               ) : (
                 <>
                   {' '}
-                  in <span className="font-mono">{namespace}</span>
+                  in <span className="font-data">{namespace}</span>
                 </>
               )}
               .
@@ -1433,7 +1433,11 @@ export function Explore() {
       </div>
 
       {detail && cluster ? (
+        // Keyed by the object, so opening another one from inside the drawer —
+        // a pod from the Pods tab, a hop from the Traffic map — starts it fresh
+        // on that object's own first tab rather than on a tab it may not have.
         <ResourceDetailDrawer
+          key={`${detail.kind}/${detail.namespace ?? ''}/${detail.name}`}
           cluster={cluster}
           target={detail}
           onClose={() => setDetail(null)}

@@ -51,13 +51,13 @@ describe('asking before something irreversible', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete account' }))
     // The act, its consequence and the control's own word — none of which the
     // operating system's box could carry.
-    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.getByRole('alertdialog')).toBeTruthy()
     expect(screen.getByText('Delete alice?')).toBeTruthy()
     expect(screen.getByText(/group memberships go with them/)).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(answers).toEqual([true]))
-    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
   })
 
   it('answers no on cancel', async () => {
@@ -78,7 +78,17 @@ describe('asking before something irreversible', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete account' }))
     fireEvent.keyDown(window, { key: 'Escape' })
     await waitFor(() => expect(answers).toEqual([false]))
-    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+  })
+})
+
+describe('where a destructive question opens', () => {
+  it('opens on Cancel, so a reflexive Enter answers no', async () => {
+    ask(() => {})
+    fireEvent.click(screen.getByRole('button', { name: 'Delete account' }))
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' })),
+    )
   })
 })
 

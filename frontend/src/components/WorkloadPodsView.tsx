@@ -15,7 +15,6 @@ import {
   Button,
   EmptyState,
   Notice,
-  OBJECT_MARK,
   OBJECT_NAME,
   Pill,
   Row,
@@ -156,7 +155,7 @@ export function WorkloadPodsView({
           <span className="truncate text-[12.5px] text-muted">{insight.headline}</span>
         </p>
         {insight.summary.length > 0 ? (
-          <span className="font-mono text-[11.5px] text-faint tabular-nums">
+          <span className="font-data text-[11.5px] text-faint tabular-nums">
             {insight.summary.join(' · ')}
           </span>
         ) : null}
@@ -224,7 +223,7 @@ export function WorkloadPodsView({
               return (
                 <Row key={`${pod.namespace}/${pod.name}`}>
                   <Td>
-                    <span className={`flex items-start gap-2.5 ${OBJECT_MARK}`}>
+                    <span className="flex items-start gap-2.5">
                       <span
                         aria-hidden="true"
                         className={`mt-1.5 size-1.5 shrink-0 rounded-full ${TONE_FILL[podTone(pod)]}`}
@@ -252,13 +251,13 @@ export function WorkloadPodsView({
                   <Td className="whitespace-nowrap">
                     <span className="flex items-center gap-1.5">
                       <Pill tone={podTone(pod)}>{pod.phase}</Pill>
-                      <span className="font-mono text-[12px] text-muted">
+                      <span className="font-data text-[12px] text-muted">
                         {pod.ready}/{pod.total}
                       </span>
                     </span>
                   </Td>
                   <Td
-                    className="hidden truncate font-mono text-[12px] text-muted lg:table-cell"
+                    className="hidden truncate font-data text-[12px] text-muted lg:table-cell"
                     title={podImages(pod).join('\n')}
                   >
                     {podImageLabel(pod)}
@@ -278,16 +277,16 @@ export function WorkloadPodsView({
                     format={formatMemory}
                   />
                   <Td
-                    className={`hidden font-mono text-[12.5px] md:table-cell ${
+                    className={`hidden font-data text-[12.5px] md:table-cell ${
                       pod.restarts > 0 ? 'text-warn' : 'text-muted'
                     }`}
                   >
                     {pod.restarts}
                   </Td>
-                  <Td className="hidden truncate font-mono text-[12.5px] text-muted xl:table-cell">
+                  <Td className="hidden truncate font-data text-[12.5px] text-muted xl:table-cell">
                     {pod.node || '—'}
                   </Td>
-                  <Td className="whitespace-nowrap font-mono text-[12px] text-muted">
+                  <Td className="whitespace-nowrap font-data text-[12px] text-muted">
                     <Age iso={pod.created_at} />
                   </Td>
                 </Row>
@@ -329,7 +328,7 @@ function StatePlates({
   return (
     <div className="flex flex-wrap items-stretch gap-2">
       <div className="flex shrink-0 flex-col justify-center pr-1">
-        <span className="font-mono text-[19px] leading-none font-semibold text-fg tabular-nums">
+        <span className="font-data text-[19px] leading-none font-semibold text-fg tabular-nums">
           {total}
         </span>
         <span className="label mt-1">{total === 1 ? 'Pod' : 'Pods'}</span>
@@ -396,7 +395,7 @@ function StatePlate({
         TONE_SOFT[tone]
       } ${active ? 'ring-2 ring-accent-line ring-inset' : 'ring-1 ring-transparent hover:ring-line'}`}
     >
-      <span className="font-mono text-[20px] leading-none font-semibold tabular-nums">{value}</span>
+      <span className="font-data text-[20px] leading-none font-semibold tabular-nums">{value}</span>
       <span className="min-w-0">
         <span className="block truncate text-[12px] font-medium">{label}</span>
         {detail ? <span className="block truncate text-[11px]">{detail}</span> : null}
@@ -453,7 +452,7 @@ function UsageCell({
   const sample = usage?.get(`${pod.namespace}/${pod.name}`)
   if (!sample) {
     return (
-      <Td className="hidden font-mono text-[12.5px] text-faint sm:table-cell">
+      <Td className="hidden font-data text-[12.5px] text-faint sm:table-cell">
         <span title={usage ? 'No sample for this pod yet' : 'This cluster serves no Metrics API'}>
           —
         </span>
@@ -468,7 +467,7 @@ function UsageCell({
   return (
     <Td className="hidden whitespace-nowrap sm:table-cell">
       <span
-        className={`font-mono text-[12.5px] ${
+        className={`font-data text-[12.5px] ${
           percent === null ? 'text-muted' : USAGE_TEXT[usageTone(percent)]
         }`}
         title={limit > 0 ? `${format(used)} of a ${format(limit)} limit` : `${format(used)}, no limit`}
@@ -476,7 +475,7 @@ function UsageCell({
         {format(used)}
       </span>
       {percent === null ? null : (
-        <span className="ml-1.5 font-mono text-[11.5px] text-faint">{Math.round(percent)}%</span>
+        <span className="ml-1.5 font-data text-[11.5px] text-faint">{Math.round(percent)}%</span>
       )}
     </Td>
   )

@@ -5,8 +5,10 @@ import {
   Lock,
   MonitorPlay,
   PlayCircle,
+  Eye,
   RefreshCw,
   ShieldAlert,
+  SquareTerminal,
   Trash2,
 } from 'lucide-react'
 import {
@@ -29,6 +31,7 @@ import {
   SearchInput,
   Select,
   Sheet,
+  StatTile,
   Table,
   Td,
   Th,
@@ -40,6 +43,7 @@ import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
 import { useConfirm } from '../state/confirm-context'
 import { useResult } from '../state/result-context'
+import { useUrlFlag, useUrlText } from '../lib/urlState'
 
 // The player carries the terminal emulator, which is the heaviest thing in the
 // app. Even on the page that exists to replay sessions it is loaded on the first
@@ -116,10 +120,11 @@ export function SessionRecordings() {
   const [error, setError] = useState<string | null>(null)
   const [users, setUsers] = useState<User[]>([])
 
-  const [clusterId, setClusterId] = useState('')
-  const [userId, setUserId] = useState('')
-  const [search, setSearch] = useState('')
-  const [openOnly, setOpenOnly] = useState(false)
+  // Kept in the address, so a narrowed list is a link (see lib/urlState).
+  const [clusterId, setClusterId] = useUrlText('cluster')
+  const [userId, setUserId] = useUrlText('user')
+  const [search, setSearch] = useUrlText('q')
+  const [openOnly, setOpenOnly] = useUrlFlag('open')
   const [offset, setOffset] = useState(0)
 
   // The recording being watched. The row is handed to the player, so opening one
@@ -206,6 +211,7 @@ export function SessionRecordings() {
   return (
     <AppShell
       title="Session recordings"
+      description="Every exec and attach through kubemg, recorded as it happened and replayable here. Watching a recording is itself written to the audit trail."
       actions={
         <Button onClick={() => void load()} disabled={loading}>
           <RefreshCw aria-hidden="true" className={`size-4 ${loading ? 'animate-spin' : ''}`} />
@@ -215,6 +221,24 @@ export function SessionRecordings() {
     >
       <div className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatTile icon={SquareTerminal} label="Recorded sessions" value={total} />
+          <StatTile
+            icon={MonitorPlay}
+            label="Recording"
+            value={enabled ? 'On' : 'Off'}
+            data={false}
+            tone={enabled ? 'ok' : 'warn'}
+            sub={enabled ? 'every new exec and attach' : 'nothing new is recorded'}
+          />
+          <StatTile
+            icon={Eye}
+            label="You can replay"
+            value={scopedToSelf ? 'Your own sessions' : 'Every session'}
+            data={false}
+          />
+        </div>
 
         {/* An empty list means two entirely different things, and the server says
             which: nobody opened a shell, or nobody was recording when they did. */}
@@ -235,12 +259,12 @@ export function SessionRecordings() {
         ) : null}
 
         <div className="card min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-2.5 border-b border-line-soft px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2.5 border-b border-line-soft px-5 pt-4 pb-3.5">
             <SearchInput
               value={search}
               onChange={(next) => narrow(() => setSearch(next))}
               label="Search recorded sessions"
-              placeholder="Pod, namespace, user"
+              placeholder="Pod, namespace, user…"
               className="w-full sm:w-56"
             />
 
@@ -310,19 +334,19 @@ export function SessionRecordings() {
                   <Td className="truncate text-[12.5px] text-muted">
                     <Age iso={session.started_at} />
                   </Td>
-                  <Td className="truncate font-mono text-[12.5px] text-fg">
+                  <Td className="truncate font-data text-[12.5px] text-fg">
                     {session.username || '—'}
                   </Td>
-                  <Td className="hidden truncate font-mono text-[12.5px] text-muted md:table-cell">
+                  <Td className="hidden truncate font-data text-[12.5px] text-muted md:table-cell">
                     {session.cluster || '—'}
                   </Td>
-                  <Td className="hidden truncate font-mono text-[12px] text-muted lg:table-cell">
+                  <Td className="hidden truncate font-data text-[12px] text-muted lg:table-cell">
                     {sessionTarget(session)}
                   </Td>
-                  <Td className="truncate font-mono text-[12.5px] text-muted">
+                  <Td className="truncate font-data text-[12.5px] text-muted">
                     {session.open ? 'running' : formatDuration(session.duration_seconds)}
                   </Td>
-                  <Td className="hidden truncate font-mono text-[12.5px] text-muted md:table-cell">
+                  <Td className="hidden truncate font-data text-[12.5px] text-muted md:table-cell">
                     {formatMemory(session.byte_count)}
                   </Td>
                   <Td>

@@ -156,7 +156,7 @@ export function ResourceInsights({
 
   if (folded) {
     return (
-      <section className="card flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
+      <section className="card flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
         <Total stat={total} bucket={bucket} onBucket={onBucket} />
         <span aria-hidden="true" className="h-4 w-px shrink-0 bg-line" />
         <StateLine tone={insight.headlineTone} headline={headline} />
@@ -166,7 +166,7 @@ export function ResourceInsights({
           </span>
         ) : null}
         {summary.length > 0 ? (
-          <span className="ml-auto font-mono text-[11.5px] text-faint tabular-nums">
+          <span className="ml-auto font-data text-[11.5px] text-faint tabular-nums">
             {summary.join(' · ')}
           </span>
         ) : null}
@@ -179,8 +179,8 @@ export function ResourceInsights({
     <section className="card overflow-hidden">
       {/* 1 — the line. */}
       <div
-        className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-4 pt-3 ${
-          segments.length > 0 ? '' : 'pb-3'
+        className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-5 pt-4 ${
+          segments.length > 0 ? '' : 'pb-4'
         }`}
       >
         <Total stat={total} bucket={bucket} onBucket={onBucket} />
@@ -198,9 +198,9 @@ export function ResourceInsights({
           {usage ? (
             <span
               title={`Sampled on ${usage.sampled} of ${total.value}`}
-              className="font-mono text-[11.5px] text-faint tabular-nums"
+              className="font-data text-[11.5px] text-faint tabular-nums"
             >
-              CPU {formatCPU(usage.cpu)} · MEM {formatMemory(usage.memory)}
+              CPU {formatCPU(usage.cpu)} · Memory {formatMemory(usage.memory)}
             </span>
           ) : null}
           <FoldButton folded={false} onClick={toggleFold} />
@@ -211,21 +211,22 @@ export function ResourceInsights({
         <>
           {/* 2 — the bar. Decoration to a screen reader: the legend below is the
               readable version of exactly the same numbers. */}
-          <div aria-hidden="true" className="mx-4 mt-3 flex h-1.5 gap-0.5 overflow-hidden rounded-chip">
+          <div aria-hidden="true" className="mx-5 mt-3.5 flex h-2 gap-0.5 overflow-hidden rounded-full bg-raised">
             {segments.map((segment) => (
               <span
                 key={segment.label}
-                className={segmentFill(segment)}
+                className={`min-w-1.5 ${segmentFill(segment)}`}
                 // Geometry, not colour: a share is a number the deck has no
-                // token for, so it is the one thing here set inline. The floor
-                // keeps a single failing pod out of a thousand visible.
-                style={{ width: `${Math.max(segment.share * 100, 1.5)}%` }}
+                // token for, so it is the one thing here set inline. It grows
+                // by share with a floor, so a single failing pod out of a
+                // thousand stays visible without the bar overrunning its track.
+                style={{ flexGrow: segment.share }}
               />
             ))}
           </div>
 
           {/* 3 — the legend, which is where the clicking happens. */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 pt-2.5 pb-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-5 pt-3 pb-4">
             {segments.map((segment) => (
               <SegmentChip
                 key={segment.label}
@@ -306,7 +307,7 @@ function Total({
 }) {
   const body = (
     <>
-      <span className="font-mono text-[19px] leading-none font-semibold text-fg tabular-nums">
+      <span className="font-data text-[22px] leading-none font-bold text-fg tabular-nums">
         {stat.value}
       </span>
       <span className="label">{stat.label}</span>
@@ -359,7 +360,7 @@ function SegmentChip({
   const body = (
     <>
       <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${segmentFill(segment)}`} />
-      <span className="font-mono text-[13px] font-semibold text-fg tabular-nums">
+      <span className="font-data text-[13px] font-semibold text-fg tabular-nums">
         {segment.value}
       </span>
       <span className="min-w-0 truncate text-[12.5px] text-muted">
@@ -405,7 +406,7 @@ function Reading({
   const body = (
     <>
       <span
-        className={`font-mono text-[12.5px] font-semibold tabular-nums ${
+        className={`font-data text-[12.5px] font-semibold tabular-nums ${
           stat.tone ? TONE_TEXT[stat.tone] : 'text-fg'
         }`}
       >
@@ -460,7 +461,7 @@ function Alert({
 
   const body = (
     <>
-      <span className="min-w-0 truncate font-mono text-[12px] text-fg">{alert.name}</span>
+      <span className="min-w-0 truncate font-data text-[12px] text-fg">{alert.name}</span>
       <span className={`shrink-0 text-[12px] ${tint}`}>{alert.reason}</span>
     </>
   )
@@ -472,7 +473,7 @@ function Alert({
           type="button"
           onClick={() => onOpen(alert.name, alert.namespace)}
           title={title}
-          className="flex min-w-0 items-baseline gap-1.5 rounded-control transition-opacity hover:opacity-70"
+          className="flex min-w-0 items-baseline gap-1.5 rounded-control transition-colors duration-300 hover:text-accent"
         >
           {body}
         </button>
@@ -485,7 +486,7 @@ function Alert({
         <Link
           to={href}
           title={`What the cluster recorded about ${alert.name}`}
-          className={`shrink-0 transition-opacity hover:opacity-70 ${tint}`}
+          className={`shrink-0 transition-colors duration-300 hover:text-accent ${tint}`}
         >
           <Siren aria-hidden="true" className="size-3.5" />
           <span className="sr-only">Events for {alert.name}</span>

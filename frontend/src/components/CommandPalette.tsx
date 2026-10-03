@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { CornerDownLeft, Search } from 'lucide-react'
 import { useNavigate } from 'react-router'
 import type { Cluster } from '../api/types'
@@ -102,6 +102,7 @@ export function CommandPalette({
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
   const listRef = useRef<HTMLUListElement | null>(null)
+  const listId = useId()
 
   const targets = useMemo<CommandTarget[]>(
     () => [
@@ -184,7 +185,7 @@ export function CommandPalette({
         type="button"
         aria-label="Close"
         onClick={onClose}
-        className="scrim-in absolute inset-0 bg-black/55 backdrop-blur-[2px]"
+        className="scrim-in absolute inset-0 bg-scrim backdrop-blur-[2px]"
       />
 
       <div
@@ -192,32 +193,53 @@ export function CommandPalette({
         aria-modal="true"
         aria-label="Jump to"
         onKeyDown={onKeyDown}
-        className="pop-in card relative flex max-h-[60vh] w-full max-w-[560px] flex-col overflow-hidden lift"
+        className="pop-in relative flex max-h-[60vh] w-full max-w-[600px] flex-col overflow-hidden rounded-card border border-line bg-surface shadow-lift"
       >
-        <div className="flex items-center gap-2.5 border-b border-line-soft px-4">
-          <Search aria-hidden="true" className="size-4 shrink-0 text-faint" />
+        <div className="flex items-center gap-3 border-b border-line-soft px-5">
+          <Search aria-hidden="true" className="size-4.5 shrink-0 text-faint" />
           <input
             autoFocus
+            role="combobox"
+            aria-expanded="true"
+            aria-controls={listId}
+            aria-autocomplete="list"
+            aria-activedescendant={matches[cursor] ? `${listId}-${cursor}` : undefined}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Jump to a cluster or a page"
+            placeholder="Jump to a cluster or a page…"
             aria-label="Jump to a cluster or a page"
-            className="h-12 min-w-0 flex-1 bg-transparent text-[14px] text-fg placeholder:text-faint focus:outline-none"
+            name="palette-query"
+            autoComplete="off"
+            spellCheck={false}
+            className="h-14 min-w-0 flex-1 bg-transparent text-[15px] text-fg placeholder:text-faint focus:outline-none"
           />
           <KeyHint>esc</KeyHint>
         </div>
 
-        <ul ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-1.5">
+        <ul
+          ref={listRef}
+          id={listId}
+          role="listbox"
+          aria-label="Destinations"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
+        >
           {matches.map((target, index) => {
             const active = index === cursor
+            // A cluster's own view is labelled "name — View": the name is an
+            // identifier and set as data, the view is a word and is not.
+            const [name, view] = target.cluster ? target.label.split(' — ') : [target.label]
             return (
-              <li key={target.id}>
+              <li key={target.id} role="presentation">
                 <button
                   type="button"
+                  id={`${listId}-${index}`}
+                  role="option"
+                  aria-selected={active}
+                  tabIndex={-1}
                   data-active={active}
                   onMouseEnter={() => setCursor(index)}
                   onClick={() => go(target)}
-                  className={`flex w-full items-center gap-3 rounded-control px-2.5 py-2 text-left transition-colors ${
+                  className={`flex w-full items-center gap-3 rounded-control px-3 py-2.5 text-left transition-colors duration-300 ${
                     active ? 'bg-accent-soft' : 'hover:bg-raised'
                   }`}
                 >
@@ -229,13 +251,20 @@ export function CommandPalette({
 
                   <span className="min-w-0 flex-1">
                     <span
-                      className={`block truncate text-[13.5px] ${
-                        target.cluster ? 'font-mono' : ''
-                      } ${active ? 'text-accent' : 'text-fg'}`}
+                      className={`block truncate text-[14px] font-medium ${active ? 'text-accent' : 'text-fg'}`}
                     >
-                      {target.label}
+                      {target.cluster ? (
+                        <>
+                          <span className="font-data" translate="no">
+                            {name}
+                          </span>
+                          {view ? ` — ${view}` : null}
+                        </>
+                      ) : (
+                        target.label
+                      )}
                     </span>
-                    <span className="block truncate text-[11.5px] text-muted">{target.hint}</span>
+                    <span className="block truncate text-[12px] text-muted">{target.hint}</span>
                   </span>
 
                   {target.cluster ? (
@@ -251,7 +280,7 @@ export function CommandPalette({
           })}
 
           {matches.length === 0 ? (
-            <li className="px-3 py-6 text-center text-[12.5px] text-muted">
+            <li role="presentation" className="px-3 py-6 text-center text-[13px] text-muted">
               Nothing matches “{query}”.
             </li>
           ) : null}

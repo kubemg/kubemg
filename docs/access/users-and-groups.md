@@ -4,6 +4,11 @@ Managing accounts, group membership, and the permission matrix — the console s
 
 ## Users
 
+<figure markdown>
+  ![The user list](../assets/screenshots/users-table.png)
+  <figcaption>Admin → Users. System role and status change in the row itself; an account's name opens its own page, where the access review lives.</figcaption>
+</figure>
+
 `GET|POST /api/v1/users`, `PUT|DELETE /api/v1/users/:id`, `PATCH /api/v1/users/:id/status`.
 
 ### The user record
@@ -77,6 +82,17 @@ Managing accounts, group membership, and the permission matrix — the console s
 | **Create** | A row with `is_active: true` and no cluster grants. | Sign-in. Nothing else — no grants means no cluster is reachable yet. | — |
 | **Disable** (`is_active: false`) | `currentUser` starts rejecting the account's JWT and its machine-token verifier on every subsequent request (see [Disabled accounts](model.md#disabled-accounts)). | Nothing for this account — a live session's next call is rejected immediately, not at token expiry. Grants, group memberships, and JIT history are untouched and restored the instant the account is re-enabled. | Sign-in, and every already-issued JWT for this account, immediately. |
 | **Delete** | The row and everything that references it by foreign key are removed in one operation: cluster grants (`user_cluster_access`), group memberships, machine tokens if the row happened to be a machine account, and JIT requests the account made. | Nothing involving this account. | Any kubeconfig or machine token this account had issued stops working the next time it is presented — the identity it authenticates as no longer exists. Audit rows referencing the user id are **not** deleted; the trail keeps the numeric id so history is not rewritten. |
+
+### Your own profile
+
+Everyone has a profile page at `/me/profile`, reached by clicking your own name on the person card at the bottom of the sidebar (on a narrow screen, **You → My profile** in the navigation drawer; it is also in ⌘K). It shows the account you are signed in as — username, role, email, how you sign in, when and from where you last signed in, and any capability an administrator has granted you — and offers the two acts that are yours rather than an administrator's:
+
+- **Edit profile** changes your **email**, and only that. Leave it empty to remove the address. The username is shown but cannot be changed here: it is the name every cluster sees you as and every audit record carries, so renaming an account stays an administrator's edit on **Users**. Your role and capabilities are granted, not chosen.
+- **Change password** is the same sheet as on **My credentials** — it asks for the current password and can revoke your issued kubeconfigs with the rotation. See [Rotating a password can take them with it](kubeconfigs.md#rotating-a-password-can-take-them-with-it).
+
+Both are **absent** for an account whose details do not live in kubemg. A federated account's email belongs to its identity provider, which writes it back at every sign-in, so an edit here would be silently undone; its password is the provider's too. A machine account is administered on [Machine accounts](machine-accounts.md). The API refuses either with `409` and says why.
+
+An email edit is recorded in the audit trail as `profile-update` (the act, not the address). Saving the address you already have records nothing.
 
 ## The access review
 

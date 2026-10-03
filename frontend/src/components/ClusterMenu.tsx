@@ -3,7 +3,7 @@ import { Check, Layers, Search } from 'lucide-react'
 import type { Cluster, Environment } from '../api/types'
 import { linkState } from '../lib/status'
 import { LinkStatus } from './LinkStatus'
-import { EnvironmentTag } from './primitives'
+import { EnvironmentDot } from './primitives'
 
 /**
  * Which environment comes first. It is the order of consequence, not the
@@ -107,30 +107,33 @@ export function ClusterMenu({
       role="menu"
       aria-label="Switch cluster"
       onKeyDown={onKeyDown}
-      className={`pop-in card flex max-h-[70vh] w-76 flex-col overflow-hidden lift ${className ?? ''}`}
+      className={`pop-in flex max-h-[70vh] w-80 flex-col overflow-hidden rounded-card border border-line bg-surface shadow-lift ${className ?? ''}`}
     >
-      <div className="flex shrink-0 items-center gap-2.5 border-b border-line-soft px-3">
-        <Search aria-hidden="true" className="size-3.5 shrink-0 text-faint" />
+      <div className="flex shrink-0 items-center gap-2.5 border-b border-line-soft px-4">
+        <Search aria-hidden="true" className="size-4 shrink-0 text-faint" />
         <input
           autoFocus
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Filter clusters"
+          placeholder="Filter clusters…"
           aria-label="Filter clusters"
-          className="h-10 min-w-0 flex-1 bg-transparent text-[13px] text-fg placeholder:text-faint focus:outline-none"
+          name="cluster-filter"
+          autoComplete="off"
+          spellCheck={false}
+          className="h-12 min-w-0 flex-1 bg-transparent text-[14px] text-fg placeholder:text-faint focus:outline-none"
         />
       </div>
 
-      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-1.5">
+      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
         {ENVIRONMENTS.map(({ id, label }) => {
           const rows = ordered.filter((cluster) => cluster.environment === id)
           if (rows.length === 0) return null
           return (
             <div key={id} className="mb-1 last:mb-0">
-              <p className="flex items-center gap-2 px-2 pt-2 pb-1.5">
-                <EnvironmentTag environment={id} />
-                <span className="label text-faint">{label}</span>
-                <span className="ml-auto font-mono text-[11px] text-faint">{rows.length}</span>
+              <p className="flex items-center gap-2 px-2.5 pt-2 pb-1.5">
+                <EnvironmentDot environment={id} />
+                <span className="label">{label}</span>
+                <span className="ml-auto font-data text-[11.5px] text-faint">{rows.length}</span>
               </p>
               <ul className="flex flex-col gap-0.5">
                 {rows.map((entry) => {
@@ -145,19 +148,19 @@ export function ClusterMenu({
                         data-active={index === cursor}
                         onMouseEnter={() => setCursor(index)}
                         onClick={() => onPick(entry)}
-                        className={`flex w-full items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left transition-colors ${
+                        className={`flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left transition-colors duration-300 ${
                           index === cursor ? 'bg-accent-soft' : 'hover:bg-raised'
                         }`}
                       >
                         <span
-                          className={`min-w-0 flex-1 truncate font-mono text-[13px] ${
+                          className={`min-w-0 flex-1 truncate font-data text-[13px] ${
                             active ? 'text-accent' : 'text-fg'
                           }`}
                         >
                           {entry.name}
                         </span>
                         {entry.kubernetes_version ? (
-                          <span className="shrink-0 font-mono text-[11px] text-faint">
+                          <span className="shrink-0 font-data text-[11px] text-faint">
                             {entry.kubernetes_version}
                           </span>
                         ) : null}
