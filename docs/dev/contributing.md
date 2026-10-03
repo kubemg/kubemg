@@ -29,15 +29,21 @@ working around it in the diff.
 
 ## Branch and pull request
 
-Never commit to `master`. One branch per task, off `master`:
+Work lands on `dev`, and releases are cut from `master`. Never commit to either
+directly. Create one branch per task, off `dev`, and open its pull request back
+into `dev`:
 
 ```bash
+git switch dev && git pull
 git switch -c feature/short-description
 # …
 make verify
 git push -u origin feature/short-description
-gh pr create
+gh pr create --base dev
 ```
+
+The same checks run on a pull request into `dev` as on one into `master`. A red
+check is fixed on the branch, before it merges, not left for the release.
 
 The pull request body carries a summary and a test plan: what you changed, and
 how you proved it. If a change needed an end-to-end pass against a real cluster,
@@ -141,6 +147,51 @@ email. A commit or a pull request carries no attribution to a tool. That means:
 Once a trailer like that is pushed, the only way to remove it is to rewrite
 published history. Use whatever tools you like to write the change; the record
 names the person responsible for it.
+
+## How dev reaches master
+
+A release takes everything on `dev` to `master` in one pull request. This is
+the maintainers' sequence:
+
+1. **Cut the version on `dev`.** Move every version string to the new
+   version: the `Makefile`'s three versions, the agent and shell default
+   images, both compose files, `Chart.yaml`'s `version` and `appVersion`, and
+   the docs that name the current version. Add an entry to the
+   [upgrade notes](../install/upgrading.md#upgrade-notes-by-release). Lines that
+   name an earlier version as history stay as they are.
+2. **Open `dev` → `master`.** `master` requires one approving review and
+   dismisses an approval when the branch moves. Land the cut first, so the
+   review covers what will be tagged.
+3. **Tag the merge commit on `master`** with an annotated `vX.Y.Z`. The
+   message is the release notes. Pushing the tag runs
+   `.github/workflows/release.yml`, which scans and publishes the three images
+   and the chart, then drafts the GitHub release from the tag's message.
+   Publish the draft once the workflow is green.
+4. **Fast-forward `dev` to `master`.** The merge commit exists only on
+   `master`, so without this step the two branches diverge by one commit per
+   release:
+
+    ```bash
+    git fetch origin
+    git push origin origin/master:dev
+    ```
+
+### A fix that cannot wait for dev
+
+When `master` needs a fix while `dev` carries unreleased work, branch off
+`master` instead, and open the pull request into `master`. Once it merges, take
+it back to `dev`, so the next release does not revert it:
+
+```bash
+git switch -c fix/short-description origin/master
+# … pull request into master, review, merge, tag a patch release …
+git switch dev && git pull
+git merge origin/master
+git push origin dev
+```
+
+If `dev` is protected and refuses that push, open the merge as a pull request
+from `master` into `dev` instead.
 
 ## Licence of a contribution
 

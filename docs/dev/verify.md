@@ -21,7 +21,7 @@ docker compose -f docker-compose.ci.yml run --rm frontend-build
 
 **This is not a local-only convenience.** `.github/workflows/pr-checks.yml`
 runs every one of those twelve services as its own check, `make verify (<service>)`,
-on every pull request into `master` and again on push — the exact command a
+on every pull request into `dev` or `master` and again on push — the exact command a
 contributor runs locally, nothing duplicated into the workflow itself. A PR
 that fails to compile, fails `go vet`, breaks a test, or fails lint shows a red
 check with that service's name; a clean PR shows all twelve green. This runs
