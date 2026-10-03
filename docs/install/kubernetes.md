@@ -62,7 +62,7 @@ server refuses to start without it. The same Secret can also carry
 
 ```bash
 helm install kubemg oci://ghcr.io/kubemg/charts/kubemg \
-  --version 0.11.1 --namespace kubemg \
+  --version 0.12.0 --namespace kubemg \
   --set publicURL=https://kubemg.example.com \
   --set database.host=postgres.example.internal \
   --set database.existingSecret=kubemg-db \
@@ -268,7 +268,7 @@ It also means the chart can be rendered and applied without Helm on the
 cluster:
 
 ```bash
-helm template kubemg oci://ghcr.io/kubemg/charts/kubemg --version 0.11.1 \
+helm template kubemg oci://ghcr.io/kubemg/charts/kubemg --version 0.12.0 \
   --namespace kubemg -f values.yaml > kubemg.yaml
 kubectl apply -n kubemg -f kubemg.yaml
 ```
@@ -303,7 +303,7 @@ too — `agent.imagePullSecret` names it; see
 which also covers carrying the images across on physical media.
 
 Carry the chart itself across with `helm pull
-oci://ghcr.io/kubemg/charts/kubemg --version 0.11.1` and install from the
+oci://ghcr.io/kubemg/charts/kubemg --version 0.12.0` and install from the
 `.tgz`.
 
 ## Replicas
