@@ -96,10 +96,10 @@ All unauthenticated by necessity — nobody has a session yet.
 | Method & path | Auth | Notes |
 | --- | --- | --- |
 | `GET /admin/sso/providers` | Admin | Full config, including `has_client_secret`/`has_bind_password` rather than the secrets themselves, plus computed `redirect_url`/`entity_id`/`metadata_url`. |
-| `POST /admin/sso/providers` | Admin | `409` on a name conflict. |
+| `POST /admin/sso/providers` | Admin | `409` on a name conflict. `vendor` is absent or `okta`; Okta is refused over LDAP, and its issuer/metadata URL is refused when it is the `-admin` console host, an endpoint rather than an issuer (path other than empty or `/oauth2/{id}`), or not `https` — `400` naming the URL to use. |
 | `PUT /admin/sso/providers/:id` | Admin | `404` if not found. |
 | `DELETE /admin/sso/providers/:id` | Admin | `204`. Accounts already provisioned through this IdP are not removed. |
-| `POST /admin/sso/providers/:id/check` | Admin | Live probe against the IdP (OIDC discovery, SAML metadata, or an LDAP bind); records health. |
+| `POST /admin/sso/providers/:id/check` | Admin | Live probe against the IdP (OIDC discovery, SAML metadata, or an LDAP bind); records health. A configured scope the discovery document's `scopes_supported` omits fails an Okta provider and is a note on any other. |
 | `GET /admin/sso/mappings` | Admin | IdP-group-to-kubemg-grant rules. |
 | `POST /admin/sso/mappings` | Admin | Body: `{provider_id, external_group_pattern, target_group_id?, target_k8s_role?, environment_filter?, namespaces[], target_system_role?}`. `400` if the rule grants nothing, or a namespace/environment filter is given with no `target_k8s_role`. |
 | `PUT /admin/sso/mappings/:id` | Admin | |

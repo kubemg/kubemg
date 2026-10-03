@@ -227,5 +227,46 @@ func CheckOIDC(ctx context.Context, config *db.SSOProviderConfig) (string, error
 	if endpoint.AuthURL == "" || endpoint.TokenURL == "" {
 		return "", errors.New("the issuer's discovery document names no authorization or token endpoint")
 	}
-	return fmt.Sprintf("Discovery succeeded; authorization endpoint %s", endpoint.AuthURL), nil
+	message := fmt.Sprintf("Discovery succeeded; authorization endpoint %s", endpoint.AuthURL)
+
+	var document struct {
+		ScopesSupported []string `json:"scopes_supported"`
+	}
+	if err := provider.Claims(&document); err == nil {
+		if missing := unofferedScopes(config.Scopes, document.ScopesSupported); len(missing) > 0 {
+			list := strings.Join(missing, " ")
+			// Okta refuses the whole authorization for a scope its server has
+			// not declared, so for Okta this is a sign-in that cannot succeed.
+			// Most other issuers ignore an unknown scope; there it is a note.
+			if config.Vendor == db.VendorOkta {
+				return "", fmt.Errorf(
+					"this authorization server does not offer the scope %q, and Okta refuses every sign-in "+
+						"that asks for it — remove it from Scopes (a custom server carries groups as a claim, not a scope) "+
+						"or add the scope to the server", list,
+				)
+			}
+			message += fmt.Sprintf("; the issuer does not advertise the scope %q, so it may be ignored", list)
+		}
+	}
+	return message, nil
+}
+
+// unofferedScopes lists the configured scopes an issuer's discovery document
+// does not advertise. An issuer that advertises nothing is not second-guessed:
+// scopes_supported is optional, and its absence says nothing.
+func unofferedScopes(configured string, supported []string) []string {
+	if len(supported) == 0 {
+		return nil
+	}
+	offered := make(map[string]bool, len(supported))
+	for _, scope := range supported {
+		offered[scope] = true
+	}
+	var missing []string
+	for _, scope := range strings.Fields(configured) {
+		if scope != oidc.ScopeOpenID && !offered[scope] {
+			missing = append(missing, scope)
+		}
+	}
+	return missing
 }

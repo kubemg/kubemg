@@ -1,12 +1,13 @@
 # Single sign-on
 
-kubemg speaks three federation protocols — OIDC, SAML 2.0, and LDAP — configured at **Admin → Settings → SSO**. Local accounts keep working exactly as before; federation is additive. Everything a provider is worth in terms of kubemg access is decided by [group mappings](#group-mappings), not by the protocol engine itself — that split is what lets the console and a chat callback agree about authorization without either one re-implementing it.
+kubemg speaks three federation protocols — OIDC, SAML 2.0, and LDAP — configured at **Admin → Settings → SSO**, and knows [Okta](#okta) by name on top of the first two. Local accounts keep working exactly as before; federation is additive. Everything a provider is worth in terms of kubemg access is decided by [group mappings](#group-mappings), not by the protocol engine itself — that split is what lets the console and a chat callback agree about authorization without either one re-implementing it.
 
 ## Setting one up
 
 1. Sign in as an administrator and open **Admin → Settings → SSO**.
-2. Add a provider and pick its protocol — [OIDC](#oidc), [SAML 2.0](#saml-20)
-   or [LDAP](#ldap). The fields differ per protocol and are listed below.
+2. Add a provider and pick its type — [Okta](#okta) over OIDC or SAML, or any
+   [OIDC](#oidc), [SAML 2.0](#saml-20) or [LDAP](#ldap) provider. The fields
+   differ per protocol and are listed below.
 3. Register kubemg's **redirect URI** (OIDC) or **SP metadata** (SAML) with the
    identity provider. Both are shown on the provider's own form.
 4. Run **Check** on the saved provider. It performs a real read against the
@@ -49,7 +50,7 @@ Flow: authorization code with PKCE, always — even though kubemg holds a client
 
 === "Okta"
 
-    Issuer URL is the org's authorization server, e.g. `https://your-org.okta.com/oauth2/default`. Add an OIDC Web app with the redirect URI above; add the `groups` scope to the authorization server's scope list and a groups claim in its claims configuration if it is not already the default `groups` name.
+    Pick the **Okta — OpenID Connect** type rather than plain OIDC; see [Okta](#okta) for what it checks and which issuer to use.
 
 === "Google"
 
@@ -80,7 +81,33 @@ kubemg is the service provider, SP-initiated, `HTTP-Redirect` out and `HTTP-POST
 
 === "Okta (SAML)"
 
-    Okta's SAML apps typically send `Groups` (capitalized) when a Group Attribute Statement is configured on the app — matches kubemg's candidate list already. Upload kubemg's SP metadata into the app's SAML settings, or fill the ACS URL and entity ID manually.
+    Pick the **Okta — SAML 2.0** type; see [Okta](#okta). Okta's SAML apps typically send `Groups` (capitalized) when a Group Attribute Statement is configured on the app — matches kubemg's candidate list already. Upload kubemg's SP metadata into the app's SAML settings, or fill the ACS URL and entity ID manually.
+
+### Okta
+
+Okta is not a fourth protocol — it signs in over OIDC or SAML exactly as any other provider does — but it is offered as its own type, **Okta — OpenID Connect** or **Okta — SAML 2.0**, because Okta refuses requests a generic provider quietly accepts and has addresses that are easy to paste by mistake. Choosing it changes three things: the defaults, the hints on the form, and what is refused when the provider is saved. The type is fixed once the provider is created, like the protocol.
+
+**Creating the app in Okta.** In the Okta Admin Console, create an app integration of type **OIDC — Web Application** (or **SAML 2.0**), save the provider in kubemg, and give Okta the redirect URI (or single sign-on URL and audience URI) that the saved provider shows.
+
+**Which issuer.** Okta has two kinds of authorization server, and they deliver groups differently:
+
+| Issuer | Server | Groups |
+| --- | --- | --- |
+| `https://your-org.okta.com` | Org authorization server | Asked for with the `groups` scope; the app needs a **Groups claim filter** (for example *Matches regex* `.*`) under its sign-on settings, or the claim is empty. Default scopes: `profile email groups`. |
+| `https://your-org.okta.com/oauth2/default` (or `/oauth2/{server id}`) | Custom authorization server | Carried as a claim you add under the server's **Claims** tab (name `groups`, type *Groups*, include in the ID token). The server **refuses the whole sign-in** if asked for a scope it has not declared, so the default scopes drop `groups`: `profile email`. |
+
+A custom URL domain (`https://login.example.com/oauth2/default`) is accepted the same way.
+
+**Refused on save**, with the field named, rather than at the first person's sign-in:
+
+- the admin console's address (`your-org-admin.okta.com`) — the message gives the org address to use instead;
+- an endpoint pasted where the issuer belongs (`…/oauth2/v1/authorize`, `…/oauth2/default/v1/token`);
+- anything that is not `https`;
+- Okta over LDAP — Okta's LDAP interface is added as a generic [LDAP](#ldap) provider.
+
+**Check** on an Okta OIDC provider also compares the configured scopes with the ones the authorization server advertises, and fails if one is missing, because Okta would refuse every sign-in that asked for it. On a generic OIDC provider the same finding is a note on a healthy result, since most providers ignore a scope they do not know.
+
+The username defaults to `preferred_username`, which on Okta is the person's Okta username — set by an administrator unless the org lets people edit their own profile. If yours does, use `sub`.
 
 ### LDAP
 
