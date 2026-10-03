@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { BellOff, BellPlus, Pencil, Trash2 } from 'lucide-react'
+import { BellOff, Pencil, Trash2 } from 'lucide-react'
 import {
   createSilence,
   deleteAlarm,
@@ -36,14 +36,12 @@ export function ObjectAlertsPanel({
   cluster,
   target,
   revision = 0,
-  onCreate,
   onEdit,
 }: {
   cluster: Cluster
   target: AlarmTarget
   /** Bumped when an alarm was saved elsewhere, so the list is read again. */
   revision?: number
-  onCreate: () => void
   onEdit: (alarm: Alarm) => void
 }) {
   const confirm = useConfirm()
@@ -90,12 +88,6 @@ export function ObjectAlertsPanel({
       title="Alerts"
       eyebrow={firing.length > 0 ? `${firing.filter((a) => a.state === 'firing').length} firing` : 'Alerting'}
       description="What the cluster's Alertmanager is firing for this object, and the alarms kubemg wrote for it."
-      actions={
-        <Button type="button" variant="primary" onClick={onCreate}>
-          <BellPlus aria-hidden="true" className="size-4" />
-          Create alarm
-        </Button>
-      }
       bodyClassName="flex flex-col gap-4 px-5 py-4"
     >
       <section aria-label="Firing" className="flex flex-col gap-2">
@@ -142,7 +134,8 @@ export function ObjectAlertsPanel({
           <p className="text-[12.5px] text-muted">Reading the alarms…</p>
         ) : own.length === 0 ? (
           <p className="text-[12.5px] text-muted">
-            None yet. <span className="text-fg">Create alarm</span> writes one for this {target.label.toLowerCase()}.
+            None yet. <span className="text-fg">Create alarm</span> at the top of this drawer writes one for this{' '}
+            {target.label.toLowerCase()}.
           </p>
         ) : (
           <ul className="flex flex-col divide-y divide-line-soft rounded-control border border-line-soft">

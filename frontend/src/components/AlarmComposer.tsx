@@ -69,11 +69,11 @@ export function AlarmComposer({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Opened from the Overview's panel, the composer lands above the tabs — out
-  // of view on a long drawer — so it brings itself into view once.
+  // Opened from the toolbar, the composer lands under Dependencies — out of
+  // view on a long drawer — so it brings itself into view once.
   const formRef = useRef<HTMLFormElement>(null)
   useEffect(() => {
-    formRef.current?.scrollIntoView?.({ block: 'nearest' })
+    formRef.current?.scrollIntoView?.({ block: 'center' })
   }, [])
 
   const effectiveFor = duration || condition?.default_for || '5m'

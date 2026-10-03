@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import type { AlarmCondition, FiringAlert, Pod, PodContainer } from '../api/types'
+import type { AlarmCondition, FiringAlert, ObservabilitySource, Pod, PodContainer } from '../api/types'
 import {
   alarmSentence,
   alertObject,
   alertStateLabel,
   alertTone,
   forWords,
+  hasAlerting,
   suggestCondition,
   supportsAlarms,
 } from './alerting'
@@ -76,6 +77,16 @@ describe('suggestCondition', () => {
   it('falls back to the first condition when nothing is wrong', () => {
     expect(suggestCondition('pods', podConditions, [], pod({}))).toBe('not-ready')
     expect(suggestCondition('pods', [], [], pod({}))).toBeUndefined()
+  })
+})
+
+describe('hasAlerting', () => {
+  it('offers alarms only with an Alertmanager registered and switched on', () => {
+    const source = (kind: string, enabled: boolean) => ({ kind, enabled }) as ObservabilitySource
+    expect(hasAlerting(undefined)).toBe(false)
+    expect(hasAlerting([source('metrics', true)])).toBe(false)
+    expect(hasAlerting([source('alerts', false)])).toBe(false)
+    expect(hasAlerting([source('metrics', true), source('alerts', true)])).toBe(true)
   })
 })
 

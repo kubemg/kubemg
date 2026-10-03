@@ -88,7 +88,7 @@ afterEach(cleanup)
 describe('ObjectAlertsPanel', () => {
   it('silences a firing alert with a reason, and offers it only where the grant allows', async () => {
     firing = [alert({}), alert({ fingerprint: 'a2', can_silence: false, annotations: { summary: 'other' } })]
-    render(<ObjectAlertsPanel cluster={cluster} target={target} onCreate={() => {}} onEdit={() => {}} />)
+    render(<ObjectAlertsPanel cluster={cluster} target={target} onEdit={() => {}} />)
 
     expect(await screen.findByText('api-7f9c5-x2kq9 is crash looping')).toBeTruthy()
     const buttons = screen.getAllByRole('button', { name: /Silence/ })
@@ -107,7 +107,7 @@ describe('ObjectAlertsPanel', () => {
       isAxiosError: true,
       response: { status: 404, data: { unconfigured: true } },
     })
-    render(<ObjectAlertsPanel cluster={cluster} target={target} onCreate={() => {}} onEdit={() => {}} />)
+    render(<ObjectAlertsPanel cluster={cluster} target={target} onEdit={() => {}} />)
     expect(await screen.findByText(/No Alertmanager is registered/)).toBeTruthy()
     expect(screen.queryByText(/Nothing is firing/)).toBeNull()
   })

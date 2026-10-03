@@ -17,7 +17,8 @@ import {
   ShieldCheck,
   SlidersHorizontal,
 } from 'lucide-react'
-import { errorMessage, fetchResourceDescribe } from '../api/client'
+import { errorMessage, fetchObservability, fetchResourceDescribe } from '../api/client'
+import { queryKey, useCachedQuery } from '../lib/query'
 import { useLiveTick } from '../lib/live'
 import type {
   Alarm,
@@ -39,7 +40,7 @@ import { DebugContainerSheet } from './DebugContainerSheet'
 import { AlarmComposer } from './AlarmComposer'
 import type { AlarmTarget } from './AlarmComposer'
 import { ObjectAlertsPanel } from './ObjectAlertsPanel'
-import { supportsAlarms } from '../lib/alerting'
+import { hasAlerting, supportsAlarms } from '../lib/alerting'
 import { HelmHistoryPanel } from './HelmHistoryPanel'
 import { HelmValuesPanel } from './HelmValuesPanel'
 import { LogExplorer } from './LogExplorer'
@@ -250,12 +251,23 @@ export function ResourceDetailDrawer({
   const capability = workloadCapability(target.kind)
 
   /*
-   * "Create an alarm for this": the composer opens over the tabs like Scale
-   * does, from the footer or from the Overview's Alerts panel. The revision
-   * re-reads that panel's alarm list once one is saved.
+   * "Create an alarm for this". The button sits in the toolbar so it is in
+   * reach from any tab, but the composer and the Alerts panel live on the
+   * Overview under Dependencies — what the pods need to start is read first —
+   * so the button takes the operator down to them. The revision re-reads the
+   * panel's alarm list once one is saved.
+   *
+   * None of it is offered until the cluster has an Alertmanager registered:
+   * an alarm cannot be created without one, and a panel that only says so is
+   * noise on every drawer of a cluster that does not alert.
    */
+  const alarmKind = supportsAlarms(target.kind) && Boolean(target.namespace) && !target.release
+  const observability = useCachedQuery(alarmKind ? queryKey('observability', cluster.id) : null, () =>
+    fetchObservability(cluster.id),
+  )
+  const alerting = hasAlerting(observability.data?.sources)
   const alarmTarget: AlarmTarget | null =
-    supportsAlarms(target.kind) && target.namespace && !target.release
+    alarmKind && alerting && target.namespace
       ? { kind: target.kind, label: target.label, name: target.name, namespace: target.namespace }
       : null
   const [alarmEditor, setAlarmEditor] = useState<{ editing: Alarm | null } | null>(null)
@@ -263,6 +275,7 @@ export function ResourceDetailDrawer({
   const openAlarm = (editing: Alarm | null) => {
     setAlarmEditor({ editing })
     setAction(null)
+    if (tab !== 'overview') setTab('overview')
   }
 
   /*
@@ -433,16 +446,6 @@ export function ResourceDetailDrawer({
               Scale
             </Button>
           ) : null}
-          {alarmTarget ? (
-            <Button
-              type="button"
-              variant={alarmEditor ? 'primary' : 'secondary'}
-              onClick={() => (alarmEditor ? setAlarmEditor(null) : openAlarm(null))}
-            >
-              <BellPlus aria-hidden="true" className="size-4" />
-              Create alarm
-            </Button>
-          ) : null}
           {capability?.restart ? (
             <Button
               type="button"
@@ -506,6 +509,12 @@ export function ResourceDetailDrawer({
         ) : null}
 
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+          {alarmTarget ? (
+            <Button type="button" size="sm" variant="primary" onClick={() => openAlarm(null)}>
+              <BellPlus aria-hidden="true" className="size-4" />
+              Create alarm
+            </Button>
+          ) : null}
           {/* A failing condition is the headline: it is the object saying, in
               its own words, that it is not what it was asked to be — so it
               stays in view whichever tab is open. */}
@@ -565,23 +574,6 @@ export function ResourceDetailDrawer({
       {/* The pending write, above whichever tab is open rather than over it:
           the events and conditions that are the reason for acting stay on
           screen while the action is confirmed. */}
-      {alarmTarget && alarmEditor ? (
-        <AlarmComposer
-          key={alarmEditor.editing?.name ?? 'new'}
-          cluster={cluster}
-          target={alarmTarget}
-          editing={alarmEditor.editing}
-          conditions={describe?.conditions}
-          pod={pod}
-          onClose={() => setAlarmEditor(null)}
-          onSaved={() => {
-            setAlarmEditor(null)
-            setAlarmRevision((value) => value + 1)
-            if (tab !== 'overview') setTab('overview')
-          }}
-        />
-      ) : null}
-
       {actionTarget ? (
         <WorkloadActionPanel
           cluster={cluster}
@@ -645,7 +637,21 @@ export function ResourceDetailDrawer({
               ? {
                   target: alarmTarget,
                   revision: alarmRevision,
-                  onCreate: () => openAlarm(null),
+                  composer: alarmEditor ? (
+                    <AlarmComposer
+                      key={alarmEditor.editing?.name ?? 'new'}
+                      cluster={cluster}
+                      target={alarmTarget}
+                      editing={alarmEditor.editing}
+                      conditions={describe?.conditions}
+                      pod={pod}
+                      onClose={() => setAlarmEditor(null)}
+                      onSaved={() => {
+                        setAlarmEditor(null)
+                        setAlarmRevision((value) => value + 1)
+                      }}
+                    />
+                  ) : null,
                   onEdit: (alarm) => openAlarm(alarm),
                 }
               : undefined
@@ -831,7 +837,8 @@ function OverviewTab({
   alarms?: {
     target: AlarmTarget
     revision: number
-    onCreate: () => void
+    /** The open composer, drawn above the Alerts panel. */
+    composer: ReactNode
     onEdit: (alarm: Alarm) => void
   }
 }) {
@@ -861,19 +868,6 @@ function OverviewTab({
           using against its own limit, and how often it has restarted. The list
           row already carries all of it. */}
       {pod ? <PodOverview cluster={cluster} pod={pod} /> : null}
-
-      {/* Whether anything is firing for this object is the question an
-          unhealthy object is opened with, so it sits with the facts — and it
-          is where "create an alarm for this" lives. */}
-      {alarms ? (
-        <ObjectAlertsPanel
-          cluster={cluster}
-          revision={alarms.revision}
-          target={alarms.target}
-          onCreate={alarms.onCreate}
-          onEdit={alarms.onEdit}
-        />
-      ) : null}
 
       {/* A ConfigMap or a Secret is opened for what it holds, not for its
           metadata — so that leads, one key at a time. */}
@@ -962,6 +956,21 @@ function OverviewTab({
             source="dependencies"
           />
         </Panel>
+      ) : null}
+
+      {/* What is firing, and the alarms written for this object — under the
+          dependencies, which are read first. The toolbar's Create alarm opens
+          its composer here. */}
+      {alarms ? (
+        <>
+          {alarms.composer}
+          <ObjectAlertsPanel
+            cluster={cluster}
+            revision={alarms.revision}
+            target={alarms.target}
+            onEdit={alarms.onEdit}
+          />
+        </>
       ) : null}
 
       {describe.conditions.length > 0 ? <Conditions conditions={describe.conditions} /> : null}

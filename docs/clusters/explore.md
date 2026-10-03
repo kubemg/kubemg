@@ -241,10 +241,11 @@ asking why, and changing it is one investigation rather than three:
   VirtualService or Service it opens with the **traffic map** — see
   [The traffic map](#the-traffic-map) below — because where a route sends its
   traffic is the first thing a route is opened for. On a Deployment,
-  StatefulSet, DaemonSet, pod, Job, CronJob or volume claim it has an
-  **Alerts** panel: what the cluster's Alertmanager is firing for the object,
-  with **Silence**, and the alarms kubemg wrote for it. **Create alarm**, there
-  and in the drawer's footer, writes one — see
+  StatefulSet, DaemonSet, pod, Job, CronJob or volume claim of a cluster with
+  an Alertmanager registered, it has an **Alerts** panel below
+  **Dependencies**: what the Alertmanager is firing for the object, with
+  **Silence**, and the alarms kubemg wrote for it. **Create alarm** in the
+  drawer's toolbar opens the form there — see
   [Alerts and alarms](../observability/alerts.md).
 - **Describe & Events** — metadata, `status.conditions`, a bounded flatten of
   `spec`/`status`, and the cluster's own events against the object, newest

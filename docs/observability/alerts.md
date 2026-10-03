@@ -42,9 +42,12 @@ it like any other object.
 
 ## Creating an alarm
 
-Open the object in Explore. Its **Overview** has an **Alerts** panel. **Create
-alarm** is in that panel and in the drawer's footer. The form offers a fixed
-list of conditions for the object's kind:
+Open the object in Explore. **Create alarm** sits in the drawer's toolbar, beside
+the tabs, so it is in reach from any tab. It takes you to the Overview's
+**Alerts** panel, below **Dependencies**, and opens the form there. Neither the
+button nor the panel appears until the cluster has an Alertmanager registered
+and switched on. The form offers a fixed list of conditions for the object's
+kind:
 
 | Kind | Conditions |
 | --- | --- |

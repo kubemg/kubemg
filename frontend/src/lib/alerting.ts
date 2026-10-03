@@ -1,4 +1,4 @@
-import type { Alarm, AlarmCondition, FiringAlert, Pod, SilenceDuration } from '../api/types'
+import type { Alarm, AlarmCondition, FiringAlert, ObservabilitySource, Pod, SilenceDuration } from '../api/types'
 import type { Tone } from './status'
 
 /*
@@ -22,6 +22,14 @@ export const ALARM_KINDS: ReadonlySet<string> = new Set([
 
 export function supportsAlarms(kind: string): boolean {
   return ALARM_KINDS.has(kind)
+}
+
+/**
+ * Whether a cluster alerts at all: an Alertmanager registered and switched on.
+ * Without one an alarm cannot be created, so the drawer offers none of it.
+ */
+export function hasAlerting(sources: ObservabilitySource[] | undefined): boolean {
+  return Boolean(sources?.some((source) => source.kind === 'alerts' && source.enabled))
 }
 
 export const SILENCE_DURATIONS: { value: SilenceDuration; label: string }[] = [
