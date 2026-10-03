@@ -2,10 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Activity,
-  ArrowLeft,
   Bell,
   Bot,
-  ChevronRight,
   ChevronsUpDown,
   CircleUserRound,
   FileKey,
@@ -44,7 +42,6 @@ import {
   ACCESS_HOME,
   CREDENTIALS_HOME,
   PROFILE_HOME,
-  ADMIN_HOME,
   clusterHref,
   clusterIdFromPath,
   clusterSlotHref,
@@ -59,6 +56,7 @@ import { linkState } from '../lib/status'
 import { ClusterMenu } from './ClusterMenu'
 import { ClusterSwitcher } from './ClusterSwitcher'
 import { ClusterTree } from './ClusterTree'
+import { AccountCard } from './AccountCard'
 import { AppFooter } from './AppFooter'
 import { CommandPalette } from './CommandPalette'
 import { EnvironmentBanner } from './EnvironmentBanner'
@@ -451,7 +449,6 @@ export function AppShell({
     setNavOpen(false)
   }, [pathname])
 
-  const initials = (user?.username ?? '').slice(0, 2).toUpperCase()
   const mode: PanelMode = collapsed ? 'hidden' : 'full'
 
   // The shell dock is drawn outside this component — above the router, so a
@@ -585,60 +582,17 @@ export function AppShell({
               )}
             </div>
 
-            {/* The template's plan card, about the person instead: who is
-                signed in, and the doors that are theirs. The name is the door
-                to the account itself — where everyone looks for it. */}
-            <div className="m-3 mt-0 flex shrink-0 flex-col gap-1 rounded-card border border-accent-line bg-linear-to-b from-accent-soft to-rail p-2">
-              <NavLink
-                to={PROFILE_HOME}
-                title="Your profile"
-                className="nav-pill group flex items-center gap-2.5 rounded-control px-1.5 pt-1 pb-1.5"
-              >
-                <span className="grid size-9 shrink-0 place-items-center rounded-full border border-accent-line bg-rail font-data text-[12px] font-semibold text-rail-fg group-hover:bg-transparent group-focus-visible:bg-transparent group-aria-[current=page]:bg-transparent">
-                  {initials}
-                </span>
-                <span className="min-w-0 flex-1 leading-tight">
-                  <span className="block truncate text-[13.5px] font-semibold text-rail-fg">
-                    {user?.username}
-                  </span>
-                  <span className="block truncate text-[12px] text-rail-faint">
-                    {isAdmin ? 'Administrator' : 'Developer'}
-                  </span>
-                </span>
-              </NavLink>
-              {inAdmin ? (
-                <Link to={returnCluster ? clusterHref(returnCluster) : '/'} className={FOOTER_ROW}>
-                  <ArrowLeft aria-hidden="true" className="size-4 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">
-                    {returnCluster ? `Back to ${returnCluster.name}` : 'Back to the fleet'}
-                  </span>
-                </Link>
-              ) : (
-                <>
-                  <NavLink to={ACCESS_HOME} className={FOOTER_ROW}>
-                    <Timer aria-hidden="true" className="size-4 shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">My access</span>
-                  </NavLink>
-                  {/* Beside it rather than under Administration: these are the
-                      credentials this person holds — the kubeconfigs and the
-                      password — and neither is somebody else's to manage. */}
-                  <NavLink to={CREDENTIALS_HOME} className={FOOTER_ROW}>
-                    <FileKey aria-hidden="true" className="size-4 shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">My credentials</span>
-                  </NavLink>
-                  {/* The one door. Absent, not disabled, for a non-admin: every
-                      row behind it would refuse, and a door that never opens is
-                      worse than no door. */}
-                  {isAdmin ? (
-                    <NavLink to={ADMIN_HOME} className={FOOTER_ROW}>
-                      <SlidersHorizontal aria-hidden="true" className="size-4 shrink-0" />
-                      <span className="min-w-0 flex-1 truncate">Administration</span>
-                      <ChevronRight aria-hidden="true" className="size-3.5 shrink-0" />
-                    </NavLink>
-                  ) : null}
-                </>
-              )}
-            </div>
+            <AccountCard
+              userId={user?.id ?? null}
+              username={user?.username ?? ''}
+              isAdmin={isAdmin}
+              inAdmin={inAdmin}
+              pathname={pathname}
+              back={{
+                to: returnCluster ? clusterHref(returnCluster) : '/',
+                label: returnCluster ? `Back to ${returnCluster.name}` : 'Back to the fleet',
+              }}
+            />
           </aside>
         ) : null}
 
@@ -806,9 +760,6 @@ export function AppShell({
   )
 }
 
-/* A row in the footer card: the navigation pill, a size down. */
-const FOOTER_ROW =
-  'nav-pill flex h-9 items-center gap-2.5 rounded-control px-2.5 text-left text-[13px] font-medium text-rail-muted'
 
 /* A row in the panel. `NavLink` sets `aria-current`, which is what lights the
    pill, so the class does not branch on whether the row is current. */
