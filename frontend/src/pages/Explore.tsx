@@ -455,6 +455,29 @@ function narrowToBucket(loaded: LoadedResource, bucket: InsightBucket | null): L
 }
 
 /**
+ * Whether the namespace's usage history is drawn under the pilot header. Closed
+ * until somebody opens it, then remembered the way the header's fold is: it is a
+ * statement about how much chrome somebody wants over a table, not page state.
+ */
+const TREND_KEY = 'kubemg_explore_trend_open'
+
+function readTrendOpen(): boolean {
+  try {
+    return localStorage.getItem(TREND_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeTrendOpen(open: boolean) {
+  try {
+    localStorage.setItem(TREND_KEY, open ? '1' : '0')
+  } catch {
+    /* a refused write costs only the memory of the choice */
+  }
+}
+
+/**
  * The namespace an operator last chose, kept across sessions. Someone working in
  * one namespace goes back to it every time they open Explore, and re-picking it
  * on every visit is the kind of friction a console should absorb. It is stored
@@ -566,6 +589,12 @@ export function Explore() {
   // both a way of reading one list, and neither is worth a link the way the
   // cluster, the resource and the namespace are.
   const [bucket, setBucket] = useState<InsightBucket | null>(null)
+  const [trendOpen, setTrendOpen] = useState(readTrendOpen)
+  function toggleTrend() {
+    const next = !trendOpen
+    setTrendOpen(next)
+    writeTrendOpen(next)
+  }
 
   /*
    * The checkbox column, and what is ticked in it.
@@ -942,6 +971,10 @@ export function Explore() {
    * A cluster with no datasource is deliberately *not* on that list: the region
    * appears and says so, because a band that changes shape depending on which
    * cluster is open is the thing this header was rebuilt to stop.
+   *
+   * Earning the region is not the same as drawing it: it stays closed until
+   * the namespace block's "Show usage history" opens it (`trendOpen`), because
+   * a full-width curve is the slowest read here and the least often wanted.
    */
   const charts =
     loaded?.kind === 'pods' ||
@@ -950,7 +983,7 @@ export function Explore() {
     loaded?.kind === 'cronjobs' ||
     loaded?.kind === 'replicasets'
   const oneNamespace = cluster && charts && namespaced && namespace && !allNamespaces
-  const trend = oneNamespace ? (
+  const trend = oneNamespace && trendOpen ? (
     <InsightTrend
       cluster={cluster}
       namespace={namespace}
@@ -979,6 +1012,7 @@ export function Explore() {
           : undefined
       }
       restartingActive={bucket === 'restarting'}
+      history={{ open: trendOpen, onToggle: toggleTrend }}
     />
   ) : undefined
   // The active narrowing named in the list header, so a reading clicked at the

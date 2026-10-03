@@ -115,6 +115,36 @@ describe('the namespace block', () => {
     expect(await screen.findByText(/No datasource/)).toBeTruthy()
   })
 
+  it('keeps the usage history behind a door the composition carries', () => {
+    const onToggle = vi.fn()
+    const { rerender } = render(
+      <NamespaceSignals
+        cluster={cluster}
+        namespace="shop"
+        loaded={{ pods, usage }}
+        onOpenPod={() => {}}
+        history={{ open: false, onToggle }}
+      />,
+    )
+    const door = screen.getByRole('button', { name: /Show usage history/ })
+    expect(door.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(door)
+    expect(onToggle).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <NamespaceSignals
+        cluster={cluster}
+        namespace="shop"
+        loaded={{ pods, usage }}
+        onOpenPod={() => {}}
+        history={{ open: true, onToggle }}
+      />,
+    )
+    expect(
+      screen.getByRole('button', { name: /Hide usage history/ }).getAttribute('aria-expanded'),
+    ).toBe('true')
+  })
+
   it('says a namespace with no live sample is unmeasured, not idle', () => {
     const { container: root } = render(
       <NamespaceSignals

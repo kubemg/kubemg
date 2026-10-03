@@ -26,7 +26,7 @@
 
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ArrowUpToLine, ChartPie, Gauge, ImageOff, RotateCcw } from 'lucide-react'
+import { ArrowUpToLine, ChartPie, ChevronDown, Gauge, ImageOff, LineChart, RotateCcw } from 'lucide-react'
 import {
   compareMetrics,
   fetchPodListMetrics,
@@ -51,7 +51,7 @@ import { queryRangeLabel } from '../lib/timerange'
 import { formatCPU, formatMemory, podUsageIndex } from '../lib/units'
 import type { PodUsageIndex } from '../lib/units'
 import { useTimeRange } from '../state/timerange-context'
-import { Segmented } from './primitives'
+import { Button, Segmented } from './primitives'
 
 /**
  * The eight composition slots as literal class names — Tailwind reads the source
@@ -96,6 +96,7 @@ export function NamespaceSignals({
   onOpenPod,
   onRestarting,
   restartingActive = false,
+  history,
 }: {
   cluster: Cluster
   namespace: string
@@ -110,6 +111,13 @@ export function NamespaceSignals({
   /** Narrows the list to restarting pods. Only the pod list has that matcher. */
   onRestarting?: () => void
   restartingActive?: boolean
+  /**
+   * The namespace's usage history — the trend region under this block. It is
+   * not drawn until asked for: a curve over the whole range is the slowest
+   * read on the page and the least often needed one, so the composition
+   * carries the door to it rather than the band carrying the chart.
+   */
+  history?: { open: boolean; onToggle: () => void }
 }) {
   const { range } = useTimeRange()
 
@@ -168,7 +176,13 @@ export function NamespaceSignals({
     // the line colour are the dividers.
     <div className="grid grid-cols-1 gap-px bg-line-soft sm:grid-cols-2 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1fr)]">
       <div className="bg-surface sm:col-span-2 lg:col-span-1 lg:row-span-2">
-        <Composition pods={pods} usage={source.usage} reason={source.usageReason} />
+        <Composition
+          pods={pods}
+          usage={source.usage}
+          reason={source.usageReason}
+          history={history}
+          range={queryRangeLabel(range)}
+        />
       </div>
 
       <SignalCell
@@ -245,10 +259,14 @@ function Composition({
   pods,
   usage,
   reason,
+  history,
+  range,
 }: {
   pods: Pod[]
   usage: PodUsageIndex | null
   reason?: string
+  history?: { open: boolean; onToggle: () => void }
+  range: string
 }) {
   const [axis, setAxis] = useState<ConsumptionAxis>('cpu')
   const [hover, setHover] = useState<string | null>(null)
@@ -321,6 +339,28 @@ function Composition({
           </ul>
         </div>
       )}
+
+      {history ? (
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-line-soft pt-3">
+          <Button
+            type="button"
+            size="sm"
+            variant={history.open ? 'secondary' : 'primary'}
+            onClick={history.onToggle}
+            aria-expanded={history.open}
+          >
+            <LineChart aria-hidden="true" className="size-3.5" />
+            {history.open ? 'Hide usage history' : 'Show usage history'}
+            <ChevronDown
+              aria-hidden="true"
+              className={`size-3.5 transition-transform duration-300 motion-reduce:transition-none ${
+                history.open ? 'rotate-180' : ''
+              }`}
+            />
+          </Button>
+          <span className="text-[11.5px] text-faint">{range} · CPU and memory per pod</span>
+        </div>
+      ) : null}
     </div>
   )
 }

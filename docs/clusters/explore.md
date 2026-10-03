@@ -170,7 +170,8 @@ table beneath it.
 With **one namespace** selected, every list under *Workloads* (Pods,
 Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, ReplicaSets) adds a row
 under the bar that answers five questions about that namespace's pods. It is
-not drawn under *All namespaces*, for the same reason the trend chart is not.
+not drawn under *All namespaces*: these are readings of one namespace, and a
+cluster-wide equivalent would answer a different question.
 
 | Cell | What it shows | Where it comes from |
 |---|---|---|
@@ -179,6 +180,11 @@ not drawn under *All namespaces*, for the same reason the trend chart is not.
 | **Image pull** | Pods with a container in `ImagePullBackOff`, `ErrImagePull` or `InvalidImageName`. | The pod list. |
 | **Throttled** | Pods throttled in more than **25%** of their CPU (CFS) periods over the header's time range — the threshold kube-prometheus's `CPUThrottlingHigh` alert uses. | The cluster's registered metrics datasource (cadvisor counters). No datasource → the cell says so instead of showing zero. |
 | **At limit** | Pods whose container's previous run ended `OOMKilled`, or whose live usage is at **90%** or more of a container's own CPU or memory limit. | The pod list, plus the live Metrics API for the usage half. A namespace where no pod declares a limit says so. |
+
+**Show usage history**, under the donut, opens the namespace's CPU and memory
+curve per pod over the header's time range, read from the cluster's metrics
+datasource. It is closed until opened, and the console remembers the choice in
+your browser. On a cluster with no datasource the opened region says so.
 
 Every pod a cell names opens in the same drawer as a row of the pod list.
 Where the block is drawn, the header's own restart count, live-usage figure and
