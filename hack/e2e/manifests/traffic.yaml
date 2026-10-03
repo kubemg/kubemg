@@ -343,3 +343,15 @@ spec:
               memory: 8Mi
             limits:
               memory: 16Mi
+---
+# A Secret to open: its drawer lists the keys and their sizes, and reveals a
+# value one key at a time for a caller with the capability. Fixture values.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: shop-api-keys
+  namespace: e2e-apps
+type: Opaque
+stringData:
+  stripe-key: sk_test_e2e_fixture_only
+  webhook-secret: whsec_e2e_fixture

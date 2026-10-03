@@ -913,6 +913,7 @@ function HelmReleaseTable({
                 tone={helmTone(release.status)}
                 title={release.description || release.name}
                 namespace={release.namespace}
+                onOpen={onValues ? () => onValues(release, 'values') : undefined}
               >
                 {release.name}
               </Name>
@@ -2561,7 +2562,7 @@ function ConfigTable({
           <Row key={`${entry.namespace}/${entry.name}`}>
             <Td>
               <span className="flex items-start gap-2">
-                <Name title={entry.name} namespace={entry.namespace}>
+                <Name title={entry.name} namespace={entry.namespace} onOpen={opener(onManifest, entry)}>
                   {entry.name}
                 </Name>
                 {entry.immutable ? (
@@ -2975,7 +2976,7 @@ function CustomResourceTable({
         {rows.map((row) => (
           <Row key={`${row.namespace}/${row.name}`}>
             <Td>
-              <Name title={row.name} namespace={row.namespace}>
+              <Name title={row.name} namespace={row.namespace} onOpen={opener(onManifest, row)}>
                 {row.name}
               </Name>
             </Td>
