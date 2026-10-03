@@ -8,6 +8,10 @@ admin-only, because a channel is an outbound destination for records that
 may include audit data — adding one is a data-egress decision, not a
 preference.
 
+These rules are kubemg's own, delivered by kubemg. An alarm on an object's
+health — written from its drawer and evaluated by the cluster's Prometheus —
+is something else: see [Alerts and alarms](../observability/alerts.md).
+
 ## Channels and rules
 
 Two tables, split the way the responsibility splits:

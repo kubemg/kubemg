@@ -67,6 +67,13 @@ export const PROVIDERS: Record<DatasourceProvider, ProviderInfo> = {
     defaultPrefix: '',
     hint: 'Point at the gateway or the query frontend, not at an ingester.',
   },
+  alertmanager: {
+    label: 'Alertmanager',
+    kind: 'alerts',
+    defaultPort: '9093',
+    defaultPrefix: '',
+    hint: 'The Service kube-prometheus-stack installs next to Prometheus — not the headless alertmanager-operated one.',
+  },
 }
 
 export const METRICS_PROVIDERS: DatasourceProvider[] = [
@@ -78,13 +85,17 @@ export const METRICS_PROVIDERS: DatasourceProvider[] = [
 
 export const LOGS_PROVIDERS: DatasourceProvider[] = ['victorialogs', 'loki']
 
+export const ALERTS_PROVIDERS: DatasourceProvider[] = ['alertmanager']
+
 export function providersFor(kind: DatasourceKind): DatasourceProvider[] {
+  if (kind === 'alerts') return ALERTS_PROVIDERS
   return kind === 'metrics' ? METRICS_PROVIDERS : LOGS_PROVIDERS
 }
 
 export const KIND_LABEL: Record<DatasourceKind, string> = {
   metrics: 'Metrics',
   logs: 'Logs',
+  alerts: 'Alerts',
 }
 
 /** What each kind is *for*, said once rather than in every panel. */
@@ -92,9 +103,27 @@ export const KIND_PURPOSE: Record<DatasourceKind, string> = {
   metrics:
     'History behind the live meters. Without it kubemg can only show the last couple of minutes the cluster keeps itself.',
   logs: 'Searchable logs across pods. Without it a log is only readable while the pod that wrote it is still alive.',
+  alerts:
+    'What is firing and what is silenced, on every object. It is also what alarms need: an alarm is a PrometheusRule carrying the labels the cluster\'s Prometheus loads rules by.',
 }
 
-export const DATASOURCE_KINDS: DatasourceKind[] = ['metrics', 'logs']
+export const DATASOURCE_KINDS: DatasourceKind[] = ['metrics', 'logs', 'alerts']
+
+/** `k=v, k=v` as an operator types it, read into a label map. */
+export function parseRuleLabels(text: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const pair of text.split(',')) {
+    const [key, ...rest] = pair.split('=')
+    if (key.trim()) out[key.trim()] = rest.join('=').trim()
+  }
+  return out
+}
+
+export function formatRuleLabels(labels: Record<string, string> | undefined): string {
+  return Object.entries(labels ?? {})
+    .map(([key, value]) => `${key}=${value}`)
+    .join(', ')
+}
 
 /** How a source's last check reads on the deck. */
 export function sourceTone(source: ObservabilitySource): Tone {

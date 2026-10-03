@@ -2538,11 +2538,12 @@ export interface LogQueryResponse {
  * now"; a datasource is what answers "since when", and it belongs to the
  * cluster rather than to the server — two clusters have two Prometheuses.
  */
-export type DatasourceKind = 'metrics' | 'logs'
+export type DatasourceKind = 'metrics' | 'logs' | 'alerts'
 
 export type MetricsProvider = 'victoriametrics' | 'prometheus' | 'thanos' | 'mimir'
 export type LogsProvider = 'victorialogs' | 'loki'
-export type DatasourceProvider = MetricsProvider | LogsProvider
+export type AlertsProvider = 'alertmanager'
+export type DatasourceProvider = MetricsProvider | LogsProvider | AlertsProvider
 
 /** How KubeMG reaches it: down the agent tunnel, or dialled from here. */
 export type DatasourceAccess = 'in-cluster' | 'direct'
@@ -2573,6 +2574,9 @@ export interface ObservabilitySource {
       in-cluster source has none by construction — it is reached by asking the
       API server to proxy to a Service, not by opening a URL. */
   ui_url?: string
+  /** An alerts source only: the labels an alarm's PrometheusRule carries so
+      the cluster's Prometheus loads it. */
+  rule_labels?: Record<string, string>
   /** The address this resolves to, rendered for display. */
   endpoint: string
   last_status: ClusterStatus
@@ -2601,6 +2605,7 @@ export interface DatasourceInput {
   insecure_skip_verify?: boolean
   enabled?: boolean
   grafana_datasource?: string
+  rule_labels?: Record<string, string>
 }
 
 /** The verdict of one datasource check, written for the person who typed it. */
@@ -3097,4 +3102,137 @@ export interface AuditForwarderTest {
   ok: boolean
   message: string
   note?: string
+}
+
+/* ------------------------------------------------------------- alerting --- */
+
+/**
+ * What the cluster's Alertmanager holds, narrowed by the server to the caller's
+ * grant. `silenced` is a person's decision and `inhibited` another alert's —
+ * Alertmanager calls both "suppressed", which hides the difference.
+ */
+export interface FiringAlert {
+  fingerprint: string
+  name: string
+  namespace?: string
+  severity?: string
+  state: 'firing' | 'silenced' | 'inhibited'
+  starts_at: string
+  labels: Record<string, string>
+  annotations: Record<string, string>
+  silenced_by?: string[]
+  /** Raised by a rule KubeMG wrote. */
+  kubemg: boolean
+  /** Whether this caller may mute it: an edit grant over its namespace. */
+  can_silence: boolean
+}
+
+export interface FiringAlertsResponse {
+  alerts: FiringAlert[]
+  endpoint: string
+  can_silence: boolean
+}
+
+export interface SilenceMatcher {
+  name: string
+  value: string
+  isRegex: boolean
+  isEqual?: boolean
+}
+
+export interface AlertSilence {
+  id: string
+  state: string
+  namespace?: string
+  matchers: SilenceMatcher[]
+  starts_at: string
+  ends_at: string
+  created_by: string
+  comment: string
+  can_expire: boolean
+}
+
+export type SilenceDuration = '1h' | '4h' | '12h' | '1d' | '3d' | '7d'
+
+export interface AlarmThreshold {
+  label: string
+  unit?: string
+  default: number
+  min: number
+  max: number
+}
+
+/** One condition from the server's fixed catalogue. */
+export interface AlarmCondition {
+  key: string
+  label: string
+  description: string
+  threshold?: AlarmThreshold
+  default_for: string
+  default_severity: AlarmSeverity
+}
+
+export interface AlarmCatalogue {
+  /** By resource key: deployments, pods, persistentvolumeclaims… */
+  conditions: Record<string, AlarmCondition[]>
+  durations: string[]
+  severities: AlarmSeverity[]
+}
+
+/** A PrometheusRule KubeMG wrote, read back from the cluster. */
+export interface Alarm {
+  namespace: string
+  name: string
+  kind: string
+  target: string
+  condition: string
+  condition_label: string
+  threshold?: number
+  threshold_unit?: string
+  for: string
+  severity: AlarmSeverity
+  expr: string
+  note?: string
+  created_by?: string
+  updated_by?: string
+  created_at: string
+  resource_version?: string
+}
+
+export interface AlarmListResponse {
+  items: Alarm[]
+  available: boolean
+  reason?: string
+  namespace?: string
+  all_namespaces?: boolean
+}
+
+export interface AlarmInput {
+  namespace: string
+  kind: string
+  name: string
+  condition: string
+  threshold?: number
+  for: string
+  severity: AlarmSeverity
+  note?: string
+}
+
+export interface AlarmUpdate {
+  namespace: string
+  /** The rule's own name. */
+  name: string
+  threshold?: number
+  for: string
+  severity: AlarmSeverity
+  note?: string
+}
+
+/** One Prometheus CR's rule selector, for filling an alerts source's labels. */
+export interface PrometheusRuleSelector {
+  namespace: string
+  name: string
+  match_labels: Record<string, string>
+  expressions: boolean
+  rule_namespaces: 'all' | 'own' | 'selected'
 }

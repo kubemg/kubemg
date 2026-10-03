@@ -86,7 +86,7 @@ do, **existing agent installs must re-apply their manifests** to pick up the
 new grants; until they do, the symptom is silent and specific rather than a
 tunnel that visibly fails.
 
-It has happened four times so far:
+It has happened five times so far:
 
 - **CRD discovery and custom-resource read/write RBAC.** Without it, CRD
   discovery answers `403` and the Explore sidebar simply shows no custom
@@ -111,6 +111,12 @@ It has happened four times so far:
   the wider one, so an agent that is not re-applied keeps a privilege kubemg
   no longer needs. Re-apply. See the next section for the part of this
   release that can change what your own bindings match.
+
+- **Alarms on an object.** `kubemg-custom-resource-view` and `-edit` gain
+  read and write on `monitoring.coreos.com/prometheusrules` (that resource
+  only), so a grant can create [alarms](../observability/alerts.md). Until
+  you re-apply, everything else works; creating an alarm fails with the
+  cluster's own `403`, and a drawer's alarm list says it cannot read them.
 
 Re-applying is the same command as installing. The console renders it for a
 cluster that already exists: open the cluster's dashboard and choose **Agent

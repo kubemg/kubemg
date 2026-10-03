@@ -4,6 +4,15 @@ import { ALL_NAMESPACES } from '../lib/resources'
 import type { TimeRangeId } from '../lib/timerange'
 import type {
   AccessReviewQuestion,
+  Alarm,
+  AlarmCatalogue,
+  AlarmInput,
+  AlarmListResponse,
+  AlarmUpdate,
+  AlertSilence,
+  FiringAlertsResponse,
+  PrometheusRuleSelector,
+  SilenceDuration,
   AccessReviewResult,
   AgentInstall,
   AgentTokenRotation,
@@ -2344,6 +2353,88 @@ export async function testDatasource(
     input,
   )
   return data
+}
+
+/** The labels the cluster's Prometheus CRs load rules by (admin). */
+export async function fetchRuleSelectors(
+  clusterId: number,
+): Promise<{ available: boolean; reason?: string; prometheuses: PrometheusRuleSelector[] }> {
+  const { data } = await http.get(`/clusters/${clusterId}/observability/alerting/rule-selectors`)
+  return data
+}
+
+/** fetchFiringAlerts reads the cluster's Alertmanager, optionally for one object. */
+export async function fetchFiringAlerts(
+  clusterId: number,
+  filter: { namespace?: string; kind?: string; name?: string } = {},
+): Promise<FiringAlertsResponse> {
+  const { data } = await http.get<FiringAlertsResponse>(`/clusters/${clusterId}/observability/alerts`, {
+    params: {
+      namespace: filter.namespace || undefined,
+      kind: filter.kind || undefined,
+      name: filter.name || undefined,
+    },
+  })
+  return data
+}
+
+export async function fetchSilences(clusterId: number): Promise<AlertSilence[]> {
+  const { data } = await http.get<{ silences: AlertSilence[] }>(`/clusters/${clusterId}/observability/silences`)
+  return data.silences
+}
+
+/** createSilence mutes one firing alert; the server builds the matchers from it. */
+export async function createSilence(
+  clusterId: number,
+  fingerprint: string,
+  duration: SilenceDuration,
+  comment: string,
+): Promise<string> {
+  const { data } = await http.post<{ id: string }>(`/clusters/${clusterId}/observability/silences`, {
+    fingerprint,
+    duration,
+    comment,
+  })
+  return data.id
+}
+
+export async function expireSilence(clusterId: number, id: string): Promise<void> {
+  await http.delete(`/clusters/${clusterId}/observability/silences/${encodeURIComponent(id)}`)
+}
+
+export async function fetchAlarmCatalogue(): Promise<AlarmCatalogue> {
+  const { data } = await http.get<AlarmCatalogue>('/alerting/conditions')
+  return data
+}
+
+/** fetchAlarms reads the PrometheusRules KubeMG wrote, as the caller. */
+export async function fetchAlarms(
+  clusterId: number,
+  options: { namespace?: string; allNamespaces?: boolean; kind?: string; name?: string } = {},
+): Promise<AlarmListResponse> {
+  const { data } = await http.get<AlarmListResponse>(resourceURL(clusterId, 'alarms'), {
+    params: {
+      namespace: options.allNamespaces ? undefined : options.namespace || undefined,
+      all_namespaces: options.allNamespaces ? 'true' : undefined,
+      kind: options.kind || undefined,
+      name: options.name || undefined,
+    },
+  })
+  return data
+}
+
+export async function createAlarm(clusterId: number, input: AlarmInput): Promise<Alarm> {
+  const { data } = await http.post<{ alarm: Alarm }>(resourceURL(clusterId, 'alarms'), input)
+  return data.alarm
+}
+
+export async function updateAlarm(clusterId: number, input: AlarmUpdate): Promise<Alarm> {
+  const { data } = await http.put<{ alarm: Alarm }>(resourceURL(clusterId, 'alarms'), input)
+  return data.alarm
+}
+
+export async function deleteAlarm(clusterId: number, namespace: string, name: string): Promise<void> {
+  await http.delete(resourceURL(clusterId, 'alarms'), { params: { namespace, name } })
 }
 
 /** checkDatasource re-checks the stored source and records the verdict. */

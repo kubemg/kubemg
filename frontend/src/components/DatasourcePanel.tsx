@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
   Activity,
+  BellRing,
   Check,
   ExternalLink,
   Pencil,
@@ -18,6 +19,7 @@ import {
   discoverDatasources,
   errorMessage,
   fetchObservability,
+  fetchRuleSelectors,
   saveDatasource,
   testDatasource,
 } from '../api/client'
@@ -38,6 +40,8 @@ import {
   KIND_LABEL,
   KIND_PURPOSE,
   PROVIDERS,
+  formatRuleLabels,
+  parseRuleLabels,
   providersFor,
   sourceStateLabel,
   sourceTone,
@@ -157,8 +161,8 @@ export function DatasourcePanel({
   return (
     <Panel
       eyebrow={eyebrow}
-      title="Metrics & logs sources"
-      description="Where this cluster's history lives. kubemg's live meters read the cluster's own Metrics API, which keeps about two minutes — anything over time comes from here."
+      title="Metrics, logs & alerts"
+      description="Where this cluster's history and alerts live. kubemg's live meters read the cluster's own Metrics API, which keeps about two minutes — anything over time comes from here."
       className={className}
       actions={
         editable && viaTunnel ? (
@@ -229,7 +233,7 @@ export function DatasourcePanel({
   )
 }
 
-const KIND_ICON = { metrics: Activity, logs: ScrollText } as const
+const KIND_ICON = { metrics: Activity, logs: ScrollText, alerts: BellRing } as const
 
 /** SourceRow is one kind of datasource: connected, or the offer to connect it. */
 function SourceRow({
@@ -417,6 +421,8 @@ interface Draft {
   insecure_skip_verify: boolean
   enabled: boolean
   grafana_datasource: string
+  /** An alerts source only, as typed: `release=kube-prom, team=sre`. */
+  rule_labels: string
 }
 
 function blankDraft(kind: DatasourceKind, canUseTunnel: boolean): Draft {
@@ -436,6 +442,7 @@ function blankDraft(kind: DatasourceKind, canUseTunnel: boolean): Draft {
     insecure_skip_verify: false,
     enabled: true,
     grafana_datasource: '',
+    rule_labels: '',
   }
 }
 
@@ -455,6 +462,7 @@ function draftFrom(source: ObservabilitySource): Draft {
     insecure_skip_verify: source.insecure_skip_verify,
     enabled: source.enabled,
     grafana_datasource: source.grafana_datasource ?? '',
+    rule_labels: formatRuleLabels(source.rule_labels),
   }
 }
 
@@ -463,7 +471,7 @@ function draftFrom(source: ObservabilitySource): Draft {
  * already stored: editing a port must not mean re-typing a token, and an empty
  * field is far more likely to mean "leave it alone" than "clear it".
  */
-function toInput(draft: Draft, hasStoredCredential: boolean): DatasourceInput {
+function toInput(draft: Draft, hasStoredCredential: boolean, kind: DatasourceKind): DatasourceInput {
   const shared = {
     provider: draft.provider,
     access_mode: draft.access_mode,
@@ -471,7 +479,8 @@ function toInput(draft: Draft, hasStoredCredential: boolean): DatasourceInput {
     auth_mode: draft.auth_mode,
     username: draft.auth_mode === 'basic' ? draft.username.trim() : '',
     enabled: draft.enabled,
-    grafana_datasource: draft.grafana_datasource.trim(),
+    grafana_datasource: kind === 'alerts' ? '' : draft.grafana_datasource.trim(),
+    ...(kind === 'alerts' ? { rule_labels: parseRuleLabels(draft.rule_labels) } : {}),
   }
 
   const credential =
@@ -569,7 +578,7 @@ export function DatasourceSheet({
     setTesting(true)
     setError(null)
     try {
-      setCheck(await testDatasource(cluster.id, kind, toInput(draft, hasStoredCredential)))
+      setCheck(await testDatasource(cluster.id, kind, toInput(draft, hasStoredCredential, kind)))
     } catch (err) {
       setCheck(null)
       setError(errorMessage(err, 'Could not check that datasource.'))
@@ -583,7 +592,7 @@ export function DatasourceSheet({
     setBusy(true)
     setError(null)
     try {
-      await saveDatasource(cluster.id, kind, toInput(draft, hasStoredCredential))
+      await saveDatasource(cluster.id, kind, toInput(draft, hasStoredCredential, kind))
       await onSaved()
     } catch (err) {
       setError(errorMessage(err, 'Could not save that datasource.'))
@@ -792,10 +801,20 @@ export function DatasourceSheet({
         />
       </Field>
 
+      {kind === 'alerts' ? (
+        <RuleLabelsField
+          cluster={cluster}
+          canUseTunnel={canUseTunnel}
+          value={draft.rule_labels}
+          onChange={(next) => update('rule_labels', next)}
+        />
+      ) : null}
+
       {/* The one thing an Explore deep link cannot be built without. It sits on
           the datasource rather than on the Grafana row because it identifies
           *this* backend: one Grafana holds the metrics datasource and the logs
           one, and they are two different uids. */}
+      {kind === 'alerts' ? null : (
       <Field
         label="Grafana datasource uid"
         htmlFor="grafana_datasource"
@@ -809,6 +828,7 @@ export function DatasourceSheet({
           onChange={(event) => update('grafana_datasource', event.target.value)}
         />
       </Field>
+      )}
 
       <Field label="Authentication" htmlFor="auth_mode">
         <Select
@@ -872,5 +892,77 @@ export function DatasourceSheet({
         Use this source
       </label>
     </Sheet>
+  )
+}
+
+/**
+ * RuleLabelsField is the one alerts-only setting: what an alarm's PrometheusRule
+ * is labelled with so this cluster's Prometheus loads it. It reads the answer
+ * off the Prometheus CR rather than asking the operator to go and find it.
+ */
+function RuleLabelsField({
+  cluster,
+  canUseTunnel,
+  value,
+  onChange,
+}: {
+  cluster: Cluster
+  canUseTunnel: boolean
+  value: string
+  onChange: (next: string) => void
+}) {
+  const [reading, setReading] = useState(false)
+  const [note, setNote] = useState<{ tone: 'info' | 'warn'; text: string } | null>(null)
+
+  async function detect() {
+    setReading(true)
+    setNote(null)
+    try {
+      const answer = await fetchRuleSelectors(cluster.id)
+      if (!answer.available || answer.prometheuses.length === 0) {
+        setNote({ tone: 'warn', text: answer.reason ?? 'No Prometheus custom resource was found in this cluster.' })
+        return
+      }
+      const [first] = answer.prometheuses
+      onChange(formatRuleLabels(first.match_labels))
+      const caveats: string[] = []
+      if (answer.prometheuses.length > 1) caveats.push(`${answer.prometheuses.length} Prometheus resources exist; this is ${first.namespace}/${first.name}'s selector.`)
+      if (first.expressions) caveats.push('Its selector also has match expressions, which labels alone cannot satisfy.')
+      if (first.rule_namespaces === 'own') caveats.push(`It only loads rules from its own namespace, ${first.namespace}, so alarms in other namespaces will not be evaluated.`)
+      if (first.rule_namespaces === 'selected') caveats.push('It only loads rules from namespaces its namespace selector picks.')
+      setNote({
+        tone: caveats.length ? 'warn' : 'info',
+        text: caveats.length ? caveats.join(' ') : `Read from ${first.namespace}/${first.name}.`,
+      })
+    } catch (err) {
+      setNote({ tone: 'warn', text: errorMessage(err, 'Could not read the cluster\'s Prometheus.') })
+    } finally {
+      setReading(false)
+    }
+  }
+
+  return (
+    <Field
+      label="Rule labels"
+      htmlFor="rule_labels"
+      hint="Labels every alarm's PrometheusRule carries, so the cluster's Prometheus loads it — its spec.ruleSelector. kube-prometheus-stack selects release=<its release name>."
+    >
+      <div className="flex flex-col gap-2">
+        <div className="flex gap-2">
+          <TextInput
+            id="rule_labels"
+            className="min-w-0 flex-1 font-data text-[12.5px]"
+            placeholder="release=kube-prometheus-stack"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+          />
+          <Button type="button" onClick={() => void detect()} disabled={reading || !canUseTunnel}>
+            <RefreshCw aria-hidden="true" className={`size-4 ${reading ? 'animate-spin' : ''}`} />
+            Read from cluster
+          </Button>
+        </div>
+        {note ? <Notice tone={note.tone}>{note.text}</Notice> : null}
+      </div>
+    </Field>
   )
 }
