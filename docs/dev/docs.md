@@ -73,7 +73,7 @@ Rules that keep them worth having:
 
 - **A screenshot supplements the words, it never carries them.** Anything a
   reader must do has to be readable with images off.
-- Capture the console at a **1440-pixel-wide window**, dark deck, so the set
+- Capture the console at a **1440-pixel-wide window**, light deck, so the set
   looks like one product.
 - No real hostnames, no real user names, no real tokens. The dev stack's seeded
   admin and a cluster called `prod-eu-west-1` are the house fixtures.
@@ -86,21 +86,6 @@ A page that wants an image it does not have yet carries a placeholder rather
 than a broken link, because a missing image file fails the strict build:
 
 ```markdown
-!!! info "Screenshot pending — `agent-install-sheet.png`"
-    The install package sheet, with the rendered apply command.
+!!! info "Screenshot pending — `helm-install-sheet.png`"
+    The Helm install sheet, with a chart picked and its values open.
 ```
-
-### The shots this manual is waiting for
-
-Two slots have no image yet. Their placeholders were removed rather than left in
-the page, so the pages read cleanly until the pictures exist. Capture one, drop
-the file in `docs/assets/screenshots/` under that name, and add the figure where
-the row says.
-
-| File | Goes in | What to capture |
-|---|---|---|
-| `agent-install-sheet.png` | `docs/clusters/agent.md`, above `## What lands in the cluster` | The install package sheet with the rendered apply command |
-| `users-table.png` | `docs/access/users-and-groups.md`, above `## The access review` | The user list, with the grant editor sheet open on one account |
-
-Both pages sit one directory below `docs/`, so the path in the figure is
-`../assets/screenshots/<file>`, the same as every figure already in the manual.

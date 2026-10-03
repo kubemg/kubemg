@@ -69,6 +69,11 @@ environment — if an administrator changes the public URL or the
 agent image in **Settings → Agent**, every install command issued afterward
 reflects the change immediately, with no redeploy of the bastion.
 
+<figure markdown>
+  ![The agent install sheet](../assets/screenshots/agent-install-sheet.png)
+  <figcaption>The install sheet on a registered cluster. The apply command carries a single-use download URL, never the registration token, which stays masked until asked for.</figcaption>
+</figure>
+
 ## What lands in the cluster
 
 ```
