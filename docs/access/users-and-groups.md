@@ -4,6 +4,11 @@ Managing accounts, group membership, and the permission matrix — the console s
 
 ## Users
 
+<figure markdown>
+  ![The user list](../assets/screenshots/users-table.png)
+  <figcaption>Admin → Users. System role and status change in the row itself; an account's name opens its own page, where the access review lives.</figcaption>
+</figure>
+
 `GET|POST /api/v1/users`, `PUT|DELETE /api/v1/users/:id`, `PATCH /api/v1/users/:id/status`.
 
 ### The user record
