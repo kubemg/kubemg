@@ -1,19 +1,24 @@
 name: PR checks
 
-# Runs on every pull request into master (and again on push to master as a
-# post-merge safety net) so a fast-moving PR flow still gets five things
+# Runs on every pull request into dev or master (and again on push to either
+# as a post-merge safety net) so a fast-moving PR flow still gets five things
 # checked automatically: the code actually compiles, vets and passes its own
 # tests (`make verify`, below); the PR is actually mergeable; no credential
 # slipped into the diff; nothing newly added carries a known-vulnerable
 # dependency or a risky container/K8s misconfiguration; and nothing this code
 # actually calls has a known vulnerability — including in the Go standard
 # library, which is the part a dependency scanner cannot see.
+#
+# dev is where work lands and master is what releases are cut from, so both are
+# gated. Checking only master meant a failure introduced on dev — a flaky test,
+# a dependency an advisory had just named — surfaced only in the release PR,
+# a dozen merges after the change that caused it.
 on:
   pull_request:
-    branches: [master]
+    branches: [dev, master]
     types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches: [master]
+    branches: [dev, master]
   workflow_dispatch:
 
 # A new push to the same PR supersedes the previous run rather than queuing
@@ -56,7 +61,7 @@ jobs:
             if (mergeable === false) {
               core.setFailed(
                 `PR #${number} has merge conflicts with the base branch. ` +
-                'Rebase or merge master into this branch to resolve them before it can be merged.'
+                `Rebase or merge ${context.payload.pull_request.base.ref} into this branch to resolve them before it can be merged.`
               )
             } else if (mergeable === null) {
               core.warning(
@@ -106,7 +111,7 @@ jobs:
         run: docker compose -f docker-compose.ci.yml run --rm ${{ matrix.service }}
 
   # Catches a committed credential (API key, private key, cluster token,
-  # database password, ...) before it reaches master. Runs against full
+  # database password, ...) before it reaches dev or master. Runs against full
   # history on the PR's own commits so a secret added and then "fixed" in a
   # later commit is still caught.
   secret-scan:
