@@ -49,6 +49,7 @@ import { HelmUninstallSheet } from '../components/HelmUninstallSheet'
 import { SecretRevealSheet } from '../components/SecretRevealSheet'
 import { TemplateSheet } from '../components/TemplateSheet'
 import { InsightTrend } from '../components/InsightTrend'
+import { NamespaceSignals } from '../components/NamespaceSignals'
 import { LiveRefresh } from '../components/LiveRefresh'
 import { NetworkPolicyCoveragePanel } from '../components/NetworkPolicyCoveragePanel'
 import { ResourceDetailDrawer } from '../components/ResourceDetailDrawer'
@@ -942,15 +943,44 @@ export function Explore() {
    * appears and says so, because a band that changes shape depending on which
    * cluster is open is the thing this header was rebuilt to stop.
    */
-  const charts = loaded?.kind === 'pods' || loaded?.kind === 'workloads'
-  const trend =
-    cluster && charts && namespaced && namespace && !allNamespaces ? (
-      <InsightTrend
-        cluster={cluster}
-        namespace={namespace}
-        onConfigure={() => navigate(clusterPageHref(cluster.id, 'dashboard'))}
-      />
-    ) : undefined
+  const charts =
+    loaded?.kind === 'pods' ||
+    loaded?.kind === 'workloads' ||
+    loaded?.kind === 'jobs' ||
+    loaded?.kind === 'cronjobs' ||
+    loaded?.kind === 'replicasets'
+  const oneNamespace = cluster && charts && namespaced && namespace && !allNamespaces
+  const trend = oneNamespace ? (
+    <InsightTrend
+      cluster={cluster}
+      namespace={namespace}
+      onConfigure={() => navigate(clusterPageHref(cluster.id, 'dashboard'))}
+    />
+  ) : undefined
+  // The namespace block goes wherever the trend does, over every list whose
+  // objects own pods. Over the pod list it is handed the rows and the live
+  // sample already on screen; over the others it reads the namespace's pods
+  // itself. Its rows are pods whichever list is open, so they open as pods.
+  const signals = oneNamespace ? (
+    <NamespaceSignals
+      cluster={cluster}
+      namespace={namespace}
+      loaded={
+        loaded?.kind === 'pods'
+          ? { pods: loaded.rows, usage: loaded.usage, usageReason: loaded.usageReason }
+          : undefined
+      }
+      onOpenPod={(pod) =>
+        setDetail({ kind: 'pods', label: 'Pod', name: pod.name, namespace: pod.namespace, pod })
+      }
+      onRestarting={
+        loaded?.kind === 'pods'
+          ? () => setBucket(bucket === 'restarting' ? null : 'restarting')
+          : undefined
+      }
+      restartingActive={bucket === 'restarting'}
+    />
+  ) : undefined
   // The active narrowing named in the list header, so a reading clicked at the
   // top of the page is still explained after scrolling down to the rows — and
   // so there is somewhere to undo it that is not back up there.
@@ -1086,6 +1116,7 @@ export function Explore() {
             bucket={bucket}
             onBucket={setBucket}
             trend={trend}
+            signals={signals}
             // The next question after the header names something: what has the
             // cluster actually been saying about it. The header can raise
             // `CrashLoopBackOff` because a container status says so, but only the
