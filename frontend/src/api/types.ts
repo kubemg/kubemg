@@ -2684,6 +2684,9 @@ export interface DatasourceCandidate {
 
 export type SSOProtocol = 'oidc' | 'saml' | 'ldap'
 
+/** A directory KubeMG knows by name. Absent is a generic provider. */
+export type SSOVendor = 'okta'
+
 /** One provider as the login page sees it. */
 export interface SSOProviderSummary {
   id: number
@@ -2698,6 +2701,7 @@ export interface SSOProvider {
   id: number
   name: string
   protocol: SSOProtocol
+  vendor?: SSOVendor
   enabled: boolean
 
   issuer_url?: string
@@ -2749,6 +2753,7 @@ export interface SSOProvider {
 export interface SSOProviderInput {
   name: string
   protocol: SSOProtocol
+  vendor?: SSOVendor
   enabled?: boolean
 
   issuer_url?: string

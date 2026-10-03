@@ -9,9 +9,10 @@ import {
   fetchSSOAdminProviders,
   updateSSOProvider,
 } from '../api/client'
-import type { SSOProtocol, SSOProvider, SSOProviderInput } from '../api/types'
+import type { SSOProtocol, SSOProvider, SSOProviderInput, SSOVendor } from '../api/types'
 import { GroupMappingEditor } from './GroupMappingEditor'
-import { usernameClaimIsEditable } from '../lib/sso'
+import { PROVIDER_KINDS, defaultScopes, kindOf, splitKind, usernameClaimIsEditable } from '../lib/sso'
+import type { ProviderKind } from '../lib/sso'
 import {
   Button,
   EmptyState,
@@ -42,10 +43,9 @@ import { useResult } from '../state/result-context'
  * LDAP port and re-typing a bind password nobody has written down.
  */
 
-const PROTOCOL_LABEL: Record<SSOProtocol, string> = {
-  oidc: 'OpenID Connect',
-  saml: 'SAML 2.0',
-  ldap: 'LDAP',
+function kindLabel(protocol: SSOProtocol, vendor?: SSOVendor): string {
+  const kind = kindOf(protocol, vendor)
+  return PROVIDER_KINDS.find((entry) => entry.kind === kind)?.label ?? protocol
 }
 
 const PROTOCOL_ICON: Record<SSOProtocol, typeof KeyRound> = {
@@ -58,6 +58,7 @@ const PROTOCOL_ICON: Record<SSOProtocol, typeof KeyRound> = {
 type Draft = {
   name: string
   protocol: SSOProtocol
+  vendor?: SSOVendor
   enabled: boolean
 
   issuer_url: string
@@ -131,6 +132,7 @@ function draftOf(provider: SSOProvider): Draft {
     ...EMPTY,
     name: provider.name,
     protocol: provider.protocol,
+    vendor: provider.vendor,
     enabled: provider.enabled,
     issuer_url: provider.issuer_url ?? '',
     client_id: provider.client_id ?? '',
@@ -168,6 +170,7 @@ function toInput(draft: Draft): SSOProviderInput {
   const input: SSOProviderInput = {
     name: draft.name.trim(),
     protocol: draft.protocol,
+    vendor: draft.vendor,
     enabled: draft.enabled,
     allow_jit: draft.allow_jit,
     default_system_role: draft.default_system_role,
@@ -290,8 +293,8 @@ export function SsoSettingsPanel() {
 
         {!loading && providers.length === 0 ? (
           <EmptyState icon={<KeyRound className="size-4" />} title="No identity providers">
-            kubemg is using local accounts only. Add an OIDC, SAML or LDAP provider to let people
-            sign in with the credentials they already have.
+            kubemg is using local accounts only. Add Okta, or any OIDC, SAML or LDAP provider, to let
+            people sign in with the credentials they already have.
           </EmptyState>
         ) : null}
 
@@ -304,7 +307,7 @@ export function SsoSettingsPanel() {
                   <Icon aria-hidden="true" className="size-4 shrink-0 text-muted" />
                   <div className="min-w-0">
                     <p className="truncate text-[14px] font-medium text-fg">{provider.name}</p>
-                    <p className="label mt-0.5">{PROTOCOL_LABEL[provider.protocol]}</p>
+                    <p className="label mt-0.5">{kindLabel(provider.protocol, provider.vendor)}</p>
                   </div>
                 </div>
 
@@ -430,6 +433,8 @@ function ProviderSheet({
     setDraft((current) => ({ ...current, [key]: value }))
   }
 
+  const okta = draft.vendor === 'okta'
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setBusy(true)
@@ -476,23 +481,38 @@ function ProviderSheet({
         />
       </Field>
 
-      <Field label="Protocol" htmlFor="sso-protocol">
+      <Field label="Type" htmlFor="sso-protocol">
         <Select
           id="sso-protocol"
           // Changing the protocol of a saved provider would leave a
           // configuration describing a different kind of thing, so it is fixed
           // once created — delete it and add the other one.
           disabled={provider !== null}
-          value={draft.protocol}
-          onChange={(event) => set('protocol', event.target.value as SSOProtocol)}
+          value={kindOf(draft.protocol, draft.vendor)}
+          onChange={(event) => {
+            const { protocol, vendor } = splitKind(event.target.value as ProviderKind)
+            setDraft((current) => ({ ...current, protocol, vendor }))
+          }}
         >
-          {(Object.keys(PROTOCOL_LABEL) as SSOProtocol[]).map((protocol) => (
-            <option key={protocol} value={protocol}>
-              {PROTOCOL_LABEL[protocol]}
-            </option>
+          {(['Okta', 'Any provider'] as const).map((group) => (
+            <optgroup key={group} label={group}>
+              {PROVIDER_KINDS.filter((entry) => entry.group === group).map((entry) => (
+                <option key={entry.kind} value={entry.kind}>
+                  {entry.label}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </Select>
       </Field>
+
+      {!provider && okta ? (
+        <Notice tone="info">
+          {draft.protocol === 'oidc'
+            ? 'In the Okta Admin Console, create an app integration of type OIDC — Web Application and copy its client ID and secret here. The sign-in redirect URI to give Okta appears on this provider once it is saved.'
+            : 'In the Okta Admin Console, create an app integration of type SAML 2.0 and paste its metadata URL here. The single sign-on URL and audience URI to give Okta appear on this provider once it is saved.'}
+        </Notice>
+      ) : null}
 
       {provider && provider.protocol !== 'ldap' ? (
         <Notice tone="info">
@@ -514,12 +534,16 @@ function ProviderSheet({
           <Field
             label="Issuer URL"
             htmlFor="sso-issuer"
-            hint="kubemg reads the provider's discovery document from here; no endpoint has to be entered by hand."
+            hint={
+              okta
+                ? 'Your org domain alone for the org authorization server, or /oauth2/{server id} after it for a custom one — not the -admin console address.'
+                : "kubemg reads the provider's discovery document from here; no endpoint has to be entered by hand."
+            }
           >
             <TextInput
               id="sso-issuer"
               className="font-data text-[12.5px]"
-              placeholder="https://login.example.com/realms/main"
+              placeholder={okta ? 'https://your-org.okta.com/oauth2/default' : 'https://login.example.com/realms/main'}
               value={draft.issuer_url}
               onChange={(event) => set('issuer_url', event.target.value)}
             />
@@ -553,7 +577,11 @@ function ProviderSheet({
           <Field
             label="Scopes"
             htmlFor="sso-scopes"
-            hint="Space separated, on top of openid. Leave empty for profile email groups."
+            hint={
+              okta && draft.issuer_url.includes('/oauth2/')
+                ? 'Space separated, on top of openid. Leave empty for profile email: a custom authorization server carries groups as a claim you add on the server, and refuses a groups scope it has not declared.'
+                : `Space separated, on top of openid. Leave empty for ${defaultScopes(draft.vendor, draft.issuer_url)}.`
+            }
           >
             <TextInput
               id="sso-scopes"
@@ -575,7 +603,11 @@ function ProviderSheet({
             <TextInput
               id="sso-saml-url"
               className="font-data text-[12.5px]"
-              placeholder="https://idp.example.com/app/exk1/sso/saml/metadata"
+              placeholder={
+                okta
+                  ? 'https://your-org.okta.com/app/exk1/sso/saml/metadata'
+                  : 'https://idp.example.com/app/exk1/sso/saml/metadata'
+              }
               value={draft.saml_metadata_url}
               onChange={(event) => set('saml_metadata_url', event.target.value)}
             />
