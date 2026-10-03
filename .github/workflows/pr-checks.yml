@@ -31,6 +31,37 @@ permissions:
   contents: read
 
 jobs:
+  # Every change reaches master by way of dev: features merge into dev, and dev
+  # goes to master as a release. The one exception is a hotfix/* branch, for a
+  # fix master needs while dev holds work that is not ready to release. A pull
+  # request into master from anything else is refused here, by name, rather
+  # than merged and then found to have skipped dev. Into dev, anything goes.
+  #
+  # The refs arrive through env rather than being written into the script: a
+  # branch name is chosen by whoever opened the pull request.
+  source-branch:
+    name: Only dev reaches master
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check where this pull request comes from
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+          HEAD: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$BASE" != "master" ]; then
+            echo "Into $BASE: no restriction on the source branch."
+            exit 0
+          fi
+          if [ "$HEAD_REPO" = "$REPO" ] && { [ "$HEAD" = "dev" ] || [[ "$HEAD" == hotfix/* ]]; }; then
+            echo "Into master from $HEAD: allowed."
+            exit 0
+          fi
+          echo "::error::master takes pull requests from dev (a release) or a hotfix/* branch only, not from $HEAD_REPO:$HEAD. Open this pull request into dev instead."
+          exit 1
+
   # GitHub computes mergeability asynchronously, so a single read right after
   # the event can still show `mergeable: null`; poll a few times before
   # reporting. This job only makes the conflict visible as a failed check —
