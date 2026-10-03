@@ -29,9 +29,10 @@ working around it in the diff.
 
 ## Branch and pull request
 
-Work lands on `dev`, and releases are cut from `master`. Never commit to either
-directly. Create one branch per task, off `dev`, and open its pull request back
-into `dev`:
+Work lands on `dev`, and releases are cut from `master`. **Every change reaches
+`master` by way of `dev`.** Features never go to `master` directly. Never commit
+to either branch directly. Create one branch per task, off `dev`, and open its
+pull request back into `dev`:
 
 ```bash
 git switch dev && git pull
@@ -42,8 +43,14 @@ git push -u origin feature/short-description
 gh pr create --base dev
 ```
 
-The same checks run on a pull request into `dev` as on one into `master`. A red
-check is fixed on the branch, before it merges, not left for the release.
+The same checks run on a pull request into `dev` as on one into `master`, and
+`dev` will not merge a pull request until they are green. A red check is fixed
+on the branch, before it merges, not left for the release.
+
+A pull request into `master` from any branch other than `dev` fails the
+**Only dev reaches master** check, which `master` requires. The one exception
+is a `hotfix/*` branch (see [A fix that cannot wait for dev](#a-fix-that-cannot-wait-for-dev)).
+If you opened a feature against `master` by mistake, change its base to `dev`.
 
 The pull request body carries a summary and a test plan: what you changed, and
 how you proved it. If a change needed an end-to-end pass against a real cluster,
@@ -179,11 +186,12 @@ the maintainers' sequence:
 ### A fix that cannot wait for dev
 
 When `master` needs a fix while `dev` carries unreleased work, branch off
-`master` instead, and open the pull request into `master`. Once it merges, take
+`master` instead. The branch must be named `hotfix/…`, which is the only name
+besides `dev` that `master` accepts a pull request from. Once it merges, take
 it back to `dev`, so the next release does not revert it:
 
 ```bash
-git switch -c fix/short-description origin/master
+git switch -c hotfix/short-description origin/master
 # … pull request into master, review, merge, tag a patch release …
 git switch dev && git pull
 git merge origin/master
