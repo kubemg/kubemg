@@ -282,7 +282,7 @@ func TestApplyCommandFetchesInsecurelyWhenSelfSigned(t *testing.T) {
 // which is the container runtime's reading of the reference, not a guess.
 func TestImageRegistryHostReadsTheReferenceAsTheRuntimeDoes(t *testing.T) {
 	cases := map[string]string{
-		"ghcr.io/kubemg/kubemg-agent:0.12.0":            "ghcr.io",
+		"ghcr.io/kubemg/kubemg-agent:0.13.0":            "ghcr.io",
 		"registry.corp.example:5000/kubemg/agent:1.0":   "registry.corp.example:5000",
 		"mirror:5000/agent":                             "mirror:5000",
 		"localhost/kubemg-agent":                        "localhost",
