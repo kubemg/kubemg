@@ -9,8 +9,8 @@ a port. Developers reach clusters through kubemg — from the console or their o
 call is audited.
 
 <figure markdown>
-  ![Explore, showing a cluster's Deployments](assets/screenshots/explore-sidebar.png)
-  <figcaption>Explore: live cluster state, read through the agent tunnel under your own identity.</figcaption>
+  ![The fleet overview](assets/screenshots/fleet-overview.png)
+  <figcaption>The fleet overview: what needs you, fleet capacity, and how each cluster reaches kubemg.</figcaption>
 </figure>
 
 ## Get going in three steps
