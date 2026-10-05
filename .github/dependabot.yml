@@ -7,3 +7,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Work lands on dev and master takes only dev or a hotfix branch, so an
+    # update opened against master fails "Only dev reaches master" and cannot
+    # merge. Open them where every other change goes.
+    target-branch: dev
