@@ -6,7 +6,7 @@ tunnel to a KubeMG bastion, and replays the requests that arrive down it against
 your own API server. That is the whole job.
 
 The full manual lives at <https://kubemg.readthedocs.io/>; the agent's own page
-is [The agent](https://kubemg.readthedocs.io/en/latest/reference/agent/).
+is [The agent](https://kubemg.readthedocs.io/en/latest/clusters/agent/).
 
 It is called *dumb* on purpose:
 

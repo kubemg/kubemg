@@ -1,60 +1,25 @@
 # Datasources
 
-kubemg's own live reads answer "what is this using *right now*" — the
-Kubernetes Metrics API keeps about two minutes of history and nothing older.
-Anything with a longer memory — a chart over an hour, a log line from a pod
-that no longer exists — has to come from a series backend the cluster already
-runs, or a central one it reports to. A **datasource** is where kubemg is told
-that backend exists.
+A datasource tells kubemg where a cluster's metrics, logs or alerts backend lives, so the console can draw history. An administrator registers one per cluster and kind; everyone granted the cluster then sees the charts and log searches it feeds.
+
+The Kubernetes Metrics API keeps about two minutes of history. Anything older, such as an hour-long chart or a log line from a pod that is gone, has to come from a backend the cluster already runs.
 
 ## Per cluster, per kind
 
-A datasource is stored per cluster **and per kind** (`metrics`, `logs` or
-`alerts`),
-one row each, in `observability_sources`. It is not a server-wide setting:
-two clusters have two Prometheuses, and registering the second one must not
-mean editing a global config file. A cluster has *the* metrics backend and
-*the* logs backend — not a list of candidates — so registering a new one for
-a kind replaces whatever was there.
+A datasource is stored per cluster **and per kind**: `metrics`, `logs` or `alerts`. A cluster has one of each, not a list of candidates. Registering a new one for a kind replaces the old one.
 
 ## The two access shapes
 
 === "in-cluster"
 
-    Reached down the cluster's own agent tunnel, by asking the cluster's API
-    server to proxy to a Service. The request path is:
+    kubemg asks the cluster's API server to proxy to a Service, down the agent tunnel. Nothing has to be exposed outside the cluster, and the call is impersonated and audited like every other tunnel read. This is the usual shape for kube-prometheus-stack or a VictoriaMetrics cluster install.
 
-    ```
-    /api/v1/namespaces/{namespace}/services/{scheme}:{name}:{port}/proxy{prefix}{path}
-    ```
-
-    Nothing has to be exposed outside the cluster — the Service can sit on a
-    ClusterIP with no route from anywhere else — and the call is
-    **impersonated and audited exactly like every other tunnel read**. This is
-    the shape a kube-prometheus-stack or a VictoriaMetrics cluster install
-    takes: the series live where the cluster put them.
-
-    A credential on an in-cluster source is pointless and is flagged as such:
-    the cluster's own API server makes the onward call, so there is nowhere
-    for kubemg to attach an `Authorization` header. If the backend needs
-    auth, it has to be reached in `direct` mode instead.
-
-    In-cluster access needs a connected agent. Registering (or reading) one
-    against a **direct-mode** cluster is refused with `409 Conflict`:
-
-    > *"an in-cluster datasource is reached through the agent tunnel, which a
-    > direct-mode cluster does not have — give its external address
-    > instead"*
+    - A credential is pointless here and is flagged: the cluster's API server makes the onward call, so kubemg cannot attach an `Authorization` header. If the backend needs auth, use `direct`.
+    - It needs a connected agent. Registering one on a **direct-mode** cluster is refused with `409 Conflict`: *"an in-cluster datasource is reached through the agent tunnel, which a direct-mode cluster does not have — give its external address instead"*.
 
 === "direct"
 
-    Dialled straight from the bastion at a stored URL. This is the shape a
-    central Thanos or a hosted Mimir takes, where the series live outside the
-    cluster they describe. A credential — bearer token or basic auth — is
-    valid here and is applied as an `Authorization` header on the outgoing
-    request. `insecure_skip_verify` is available for an internal certificate
-    the bastion process does not trust; it is a per-source opt-in, never a
-    default.
+    kubemg dials a stored URL straight from the server. This is the shape for a central Thanos or hosted Mimir. A bearer token or basic-auth credential is valid and is sent as an `Authorization` header. `insecure_skip_verify` accepts an internal certificate the server does not trust. It is a per-source opt-in, never a default.
 
 ## Providers
 
@@ -68,28 +33,11 @@ a kind replaces whatever was there.
 | logs | Loki | `3100` | none (point at the gateway or the query frontend, not an ingester) |
 | alerts | Alertmanager | `9093` | none (the Service, not the headless `alertmanager-operated`) |
 
-The four metrics providers all speak the Prometheus query API
-(`/api/v1/query`, `/api/v1/query_range`), which is why they share one probe
-and one query engine. VictoriaLogs speaks LogsQL and Loki speaks LogQL — two
-unrelated languages, each with its own query builder and decoder (see
-[Metrics and logs](metrics-and-logs.md)).
-
-A path prefix is the single most common reason a correctly-addressed
-datasource answers 404: vmselect serves the Prometheus API per tenant
-(`/select/0/prometheus` for the default tenant), and Mimir's gateway serves
-it under `/prometheus`. Get the prefix wrong and the address still answers —
-just not on the path being asked.
+A wrong path prefix is the most common reason a correctly addressed datasource answers `404`. vmselect serves the Prometheus API per tenant (`/select/0/prometheus` for the default tenant), and Mimir's gateway serves it under `/prometheus`.
 
 ## What a save checks
 
-A save does not require the backend to already exist — an operator may be
-configuring a datasource ahead of installing it — but every `PUT` runs a
-**probe** anyway, and the verdict is stored, so nothing is quietly assumed to
-work.
-
-The probe is a real read of the provider's own API, not a port check —
-something listening on the port is not proof it is the backend anyone
-configured:
+A save does not require the backend to exist yet. Every save still runs a **probe**, a real read of the provider's own API rather than a port check, and stores the verdict.
 
 | Provider | Probed with |
 |---|---|
@@ -98,98 +46,43 @@ configured:
 | Loki | `GET /loki/api/v1/labels`, then `GET /loki/api/v1/status/buildinfo` for the version |
 | Alertmanager | `GET /api/v2/status`, which carries the version too |
 
-A non-2xx answer is turned into the next thing to try rather than a bare
-status code: `401`/`403` names the missing or wrong credential, `503`/`502`
-says the backend is reachable but not serving, and **`404` is explained as a
-path-prefix problem** — "answered, but not on `/api/v1/query?query=1`; check
-the path prefix, and that this really is Prometheus."
+A failed probe says what to try next:
 
-## Testing a draft before saving
+- `401`/`403` names the missing or wrong credential.
+- `502`/`503` means the backend is reachable but not serving.
+- `404` is explained as a path-prefix problem.
 
-`POST /api/v1/clusters/:id/observability/sources/:kind/test` runs the same
-probe against a body that has **not been saved** — the registration
-wizard's whole reason for existing: an operator finds out an address is
-wrong while still looking at the field holding it. Omitting the credential
-in a test body probes the one already stored, so "check this again" works
-without re-typing a token.
+**Test** in the form runs the same probe against what is on screen, before you save. Leaving the credential blank probes the one already stored. **Check** re-probes the stored datasource and records when it was last known good.
 
-`POST .../sources/:kind/check` re-probes the **stored** datasource and
-records the result, so the cluster page can say when it was last known good.
+## Credentials
 
-## Credential handling
-
-A credential is treated exactly like a cluster's service account token:
-**stored, never serialised.** The API never returns the value — only
-`has_credential`, a boolean. Saving a source with the credential field
-omitted keeps whatever is stored, so an operator can fix a port number
-without re-typing a bearer token; sending it as an empty string clears it.
+The console and API never return the credential, only a `has_credential` flag. Saving with the field omitted keeps the stored value, so you can fix a port without re-typing a token. Sending an empty string clears it.
 
 ## Discovery
 
-`GET /api/v1/clusters/:id/observability/discover` reads the cluster's own
-Services (through the same tunnel, impersonation and audit trail as every
-other read — discovery is not a privileged back door) and matches their
-names and ports against a table of signatures: a Service named `vmselect`
-answering on `8481` scores higher than one merely containing "prometheus" in
-its name on a non-standard port. Every candidate carries its `score` and a
-`reason`, so a low-confidence guess is visibly a guess rather than presented
-as a fact.
+**Discover** reads the cluster's Services through the same tunnel, impersonation and audit as any other read, and suggests matches by name and port. Each candidate shows a `score` and a `reason`, so a weak guess looks like a guess. Nothing is stored until you pick a candidate and save.
 
-Deliberately excluded: `node-exporter`, `kube-state-metrics`, `alertmanager`,
-`pushgateway`, `vmagent`, `vminsert`, `vlinsert`, `promtail`, `grafana`,
-`metrics-server`, `vmalert`, `ruler`, `compactor`, `distributor`, `ingester`,
-`store-gateway`, and anything named `operator`, `operated`, `headless`,
-`canary`, `agent`, `exporter`, or `memberlist`. These are scrape targets,
-write endpoints, or infrastructure components — a node-exporter answers on
-`/metrics` and would look alive while returning nothing anyone asked kubemg
-for. Offering one as "the metrics backend" is worse than offering nothing.
-
-An Alertmanager is excluded from the metrics and logs candidates and offered
-as the `alerts` one — except its headless `alertmanager-operated` twin, which
-the list above still catches.
-
-A match is a **suggestion, never a configuration**: nothing is stored until
-an operator picks a candidate and saves it.
+??? info "What discovery leaves out"
+    Scrape targets, write endpoints and infrastructure pieces are never offered: `node-exporter`, `kube-state-metrics`, `pushgateway`, `vmagent`, `vminsert`, `vlinsert`, `promtail`, `grafana`, `metrics-server`, `vmalert`, `ruler`, `compactor`, `distributor`, `ingester`, `store-gateway`, and anything named `operator`, `operated`, `headless`, `canary`, `agent`, `exporter` or `memberlist`. A node-exporter would look alive while returning nothing kubemg asks for. An Alertmanager is offered as the `alerts` candidate, not for metrics or logs.
 
 ## Alerts (Alertmanager)
 
-The `alerts` kind is the cluster's Alertmanager. It is what the
-[Alerts page and an object's Alerts panel](alerts.md) read, and alarms cannot
-be created without it.
+The `alerts` kind is the cluster's Alertmanager. The [Alerts page and an object's Alerts panel](alerts.md) read it, and alarms cannot be created without it.
 
-It carries one setting the other kinds do not: **rule labels**, the labels
-every alarm's `PrometheusRule` is given so the cluster's Prometheus loads it.
-They are the Prometheus custom resource's `spec.ruleSelector` —
-kube-prometheus-stack selects `release=<its release name>`. **Read from
-cluster** fills the field from the cluster's own Prometheus resource and says
-when labels alone are not enough: a selector with match expressions, a
-Prometheus that loads rules only from its own namespace, or several Prometheus
-resources. Enter them as `key=value, key=value`. `app.kubernetes.io/managed-by`
-and anything under `kubemg.io/` are kubemg's own and are refused.
+It has one extra setting, **rule labels**: the labels given to every alarm's `PrometheusRule` so the cluster's Prometheus loads it. They are the Prometheus resource's `spec.ruleSelector`. kube-prometheus-stack selects `release=<its release name>`.
 
-An alarm written without the right labels is a valid object that nothing ever
-evaluates, which is why the field is read from the cluster rather than guessed.
+- **Read from cluster** fills the field from the cluster's Prometheus resource. It says so when labels alone are not enough: a selector with match expressions, a Prometheus that loads rules only from its own namespace, or several Prometheus resources.
+- Enter labels as `key=value, key=value`.
+- `app.kubernetes.io/managed-by` and anything under `kubemg.io/` are kubemg's own and are refused.
+
+An alarm with the wrong labels is a valid object that nothing evaluates, which is why the field is read from the cluster rather than guessed.
 
 ## Who may read, who may write
 
-Reading the registered datasources (`GET .../observability`, which returns
-`sources`, `agent_attached`, `connection_mode` and `editable`) is open to
-**anyone the cluster is granted to** — a developer has to know a series
-backend exists before they can be shown a chart drawn from it. Writing
-(`PUT`/`DELETE .../sources/:kind`) is **admin only**. This is the same split
-[consoles](consoles.md) uses, for the same reason: a link, or a datasource
-address, is not itself access to anything — the credential behind it never
-leaves the server either way.
+Anyone granted the cluster can read its registered datasources. Writing (add, edit, delete) is admin-only. Neither exposes the credential. The split is the same as for [other consoles](../clusters/managing.md).
 
 ## The wizard's optional step
 
-The registration wizard's fourth step is this same panel, reused verbatim,
-and it is explicitly **optional**: a cluster is usable without a series
-backend registered, and the step says so rather than blocking the wizard.
-The live Metrics API meters still work with nothing configured here — what
-is missing is history.
+The registration wizard's fourth step is this same panel and is optional. Without a datasource the live Metrics API meters still work. What is missing is history.
 
-See also [Metrics and logs](metrics-and-logs.md) for how a chart or a log
-search is built from a registered datasource, and [Linking other
-consoles](consoles.md) for how a datasource's Grafana UID turns a chart into
-an Explore link.
+See [Metrics and logs](metrics-and-logs.md) for how charts and log searches are built from a datasource.

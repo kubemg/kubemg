@@ -1,251 +1,209 @@
 # Security model
 
 What is trusted where, and what limits a compromise of each part. Read this
-before putting kubemg in front of anything that matters — [connection modes](../clusters/connection-modes.md),
-[the access model](../access/model.md) and [command guardrails](../access/guardrails.md)
-cover the same ground in more operational detail; this page is the threat
-picture that motivates them.
+before putting kubemg in front of anything that matters. For what an attacker
+reaches in each incident, see the [threat model](threat-model.md); for the
+operational detail, see [connection modes](../clusters/connection-modes.md),
+[the access model](../access/model.md) and [command guardrails](../access/guardrails.md).
 
 ## Trust boundaries and what is stored where
 
 | Held by | What | Notes |
 | --- | --- | --- |
-| kubemg's Postgres | Users, groups, grants, cluster registrations, settings, audit records, session-recording metadata | Direct-mode clusters additionally have their `service_account_token` here — a real, standing cluster credential. Agent-mode clusters have only a registration token. Every stored credential — these, the generated signing key, and datasource, Helm, alarm and SSO secrets — is encrypted under `KUBEMG_SECRET_KEY` when one is set; see [the database is the crown jewel](#the-database-is-the-crown-jewel). |
+| kubemg's Postgres | Users, groups, grants, cluster registrations, settings, audit records, session-recording metadata | Direct-mode clusters also have their `service_account_token` here, a real standing cluster credential. Agent-mode clusters have only a registration token. Every stored credential is encrypted under `KUBEMG_SECRET_KEY` when one is set; see [the database is the crown jewel](#the-database-is-the-crown-jewel). |
 | A generated kubeconfig (agent mode) | A kubemg-issued JWT scoped to one cluster's proxy route, plus the bastion's CA if it is self-signed | Never a cluster-native credential. |
-| A generated kubeconfig (direct mode) | A short-lived token minted straight from the target cluster's own TokenRequest API | A real cluster credential, on a laptop. |
-| A machine account | A `kmgm_`-prefixed opaque secret; only its SHA-256 hash is stored | Revocation is a database write, effective on the token's next use — not a wait for expiry. |
-| The agent | Its cluster registration token (`kmg_`-prefixed) and, if the bastion is self-signed, the bastion's CA certificate | Nothing else; it holds no session, no user identity, no long-lived cluster credential of its own beyond the service account it already runs as. |
-| An install URL | A `kmgi_`-prefixed single-use download ticket; only its SHA-256 hash is stored | Spent by the first download, expired after 15 minutes unused. It is **not** the registration token — the package it downloads is what carries that. |
+| A generated kubeconfig (direct mode) | A short-lived token minted by the target cluster's own TokenRequest API | A real cluster credential, on a laptop. |
+| A machine account | A `kmgm_`-prefixed opaque secret; only its SHA-256 hash is stored | Revocation is a database write, effective on the next use. |
+| The agent | Its registration token (`kmg_`-prefixed) and, if the bastion is self-signed, the bastion's CA certificate | No session, no user identity, no long-lived cluster credential beyond the service account it already runs as. |
+| An install URL | A `kmgi_`-prefixed single-use download ticket; only its SHA-256 hash is stored | Spent by the first download, expires after 15 minutes. It is **not** the registration token; the package it downloads carries that. |
 
-## Agent mode stores no Kubernetes credential — and what that does not mean
+## Agent mode stores no Kubernetes credential, and what that does not mean
 
-In agent mode, kubemg's database holds only the registration token the agent
-presents when it dials in — no Kubernetes credential that would let anyone
-who stole the database call the cluster's API server directly. The agent is
-the one holding a service account token, and it only ever uses it to talk to
-its own local API server. Compare direct mode, where kubemg stores a real
-service account token for the target cluster in its own database — a
-strictly larger blast radius if that database is ever read.
+In agent mode the database holds only the registration token the agent presents
+when it dials in. Someone who steals the database cannot call the cluster's API
+server with it. Direct mode stores a real service account token instead, a
+strictly larger blast radius.
 
-That is true, and on its own it is misleading. The agent's service account
-may **impersonate**, and the agent forwards whatever the bastion sends. Its
-grant is narrowed to kubemg's own four groups, so it cannot claim
-`system:masters` by name — but one of those groups is bound to
-`cluster-admin`, and the user name it asserts can be any name. **The bastion
-plus the tunnel is, in effect, `system:masters` on every agent-mode
-cluster.** That is the same trust model as any central access product with
-an in-cluster agent; the [threat model](threat-model.md) says what bounds it,
-and what each other leaked part reaches.
+That is true, and on its own misleading. The agent's service account may
+**impersonate**, and the agent forwards whatever the bastion sends. Its grant is
+narrowed to kubemg's own four groups, so it cannot claim `system:masters`, but
+one of those groups is bound to `cluster-admin` and the user name can be any
+name. **The bastion plus the tunnel is, in effect, `system:masters` on every
+agent-mode cluster.** The [threat model](threat-model.md#what-the-bastion-is)
+says what bounds it.
 
 ## The database is the crown jewel
 
-The generated signing key signs every session and every agent-mode
-kubeconfig, so anyone who can read it can mint a super-admin token — and,
-through the tunnel, that is cluster-admin on every agent-mode cluster. The
-agent registration tokens beside it are every agent's identity. With
-`KUBEMG_SECRET_KEY` set, both, and every other stored credential, are
-AES-256-GCM ciphertext under a key that lives in the server's environment,
-not in the database: a stolen dump, replica or backup is no longer the keys
-to the fleet on its own. The server refuses to start over ciphertext it
-cannot open rather than guess. Setting `JWT_SECRET` as well keeps the signing
-key out of the database entirely. What is encrypted, and what losing the key
-costs, is on the [Database](../install/database.md#credentials-encrypted-at-rest)
-page.
+The generated signing key signs every session and every agent-mode kubeconfig.
+Anyone who can read it can mint a super-admin token, which through the tunnel is
+cluster-admin on every agent-mode cluster. The agent registration tokens beside
+it are every agent's identity.
+
+- With `KUBEMG_SECRET_KEY` set, both and every other stored credential are
+  AES-256-GCM ciphertext under a key held in the server's environment. A stolen
+  dump, replica or backup is no longer the keys to the fleet.
+- The server refuses to start over ciphertext it cannot open rather than guess.
+- Setting `JWT_SECRET` as well keeps the signing key out of the database.
+
+What is encrypted, and what losing the key costs, is on the
+[Database](../install/database.md#credentials-encrypted-at-rest) page.
 
 ## The agent's registration token
 
-The registration token is what the agent presents on every tunnel handshake,
-so whoever holds it can be that cluster's agent: receive the traffic the
-bastion sends down the tunnel and answer it. It cannot reach the cluster's API
-server, but it would see request bodies and exec keystrokes. Three things
-bound that:
+Whoever holds the registration token can be that cluster's agent: receive the
+traffic the bastion sends down the tunnel and answer it. They cannot reach the
+cluster's API server, but they would see request bodies and exec keystrokes.
+Three things bound that:
 
-- **The install URL is not the token.** The URL an administrator pastes
-  carries a single-use download ticket that dies after the first download or
-  15 minutes; a URL left in shell history or a CI log is not a credential.
-  URLs from before this change answer `410 Gone` whatever they carry.
-- **The token can be rotated** from the cluster's dashboard. There is no
-  grace window: the attached agent is disconnected at once, the old token is
-  refused at every handshake after, and the agent stays down until the new
-  package is applied. The rotation is audited as `agent-token-rotate`.
+- **The install URL is not the token.** It carries a single-use download ticket
+  that dies after the first download or 15 minutes. A URL left in shell history
+  or a CI log is not a credential. Older URLs answer `410 Gone`.
+- **The token can be rotated** from the cluster's dashboard. The attached agent
+  is disconnected at once, the old token is refused at every later handshake,
+  and the agent stays down until the new package is applied. Audited as
+  `agent-token-rotate`.
 - **A takeover is recorded.** A cluster has one tunnel and the newest
-  connection wins — which is what a rolling agent Deployment needs, and also
-  what an impostor holding the token would do. Every takeover is audited as
-  `agent-displaced`, with the new connection's address and agent version and
-  the previous connection's, and can drive an alarm. See
+  connection wins, which a rolling Deployment needs and an impostor would also
+  do. Every takeover is audited as `agent-displaced` and can drive an alarm. See
   [When a connection displaces the agent](../clusters/agent.md#when-a-connection-displaces-the-agent).
 
 ## Impersonation instead of per-user service accounts
 
-The proxy never creates or manages a Kubernetes credential per user. Every
-call is forwarded with `Impersonate-User: kubemg:u:<username>` and
-`Impersonate-Group: kubemg:<role>, kubemg:users`, and the cluster's own RBAC
-— through the `kubemg:view`/`kubemg:edit`/`kubemg:cluster-admin`
-ClusterRoleBindings the agent manifests install — decides what that identity
-may actually do. A `view` grant is read-only because the cluster says so, not
-because kubemg remembered to check on every code path. Client-supplied
-`Authorization` and `Impersonate-*` headers on the incoming request are
-stripped before kubemg's own are set, so nothing a caller sends can widen
-what it is impersonated as.
+The proxy never creates a Kubernetes credential per user. Every call is
+forwarded with `Impersonate-User: kubemg:u:<username>` and
+`Impersonate-Group: kubemg:<role>, kubemg:users`. The cluster's own RBAC,
+through the `kubemg:view`/`kubemg:edit`/`kubemg:cluster-admin` bindings the
+agent manifests install, decides what that identity may do. A `view` grant is
+read-only because the cluster says so. Any `Authorization` or `Impersonate-*`
+header the client sends is stripped first, so a caller cannot widen what it is
+impersonated as.
 
-The `kubemg:u:` prefix is what stops a *username* from widening it instead: an
-account named like a ServiceAccount or a `system:` identity would otherwise be
-that identity to the cluster. Usernames containing `:` are refused, and the
-agent may impersonate only kubemg's own four groups and no ServiceAccount — see
+The `kubemg:u:` prefix stops a *username* from widening it: an account named
+like a ServiceAccount or a `system:` identity would otherwise be that identity
+to the cluster. Usernames containing `:` are refused, and the agent may
+impersonate only kubemg's four groups and no ServiceAccount. See
 [Why the username is prefixed](../access/model.md#why-the-username-is-prefixed).
 
 ## The confined proxy-scoped JWT
 
-A generated kubeconfig lives on a laptop, potentially for weeks, so the token
-inside it is deliberately not a general session credential. It carries
-`Scope: "proxy"` and a `ClusterID`, and `RequireAuth` enforces both: the token
-is only valid against `/api/v1/clusters/:id/proxy/*path` for that one cluster
-ID, matched against the request's *registered route* rather than the raw
-URL. A stolen file cannot be replayed against the users API, the audit trail,
-or any other cluster's proxy — see [the worked threat note](#a-stolen-kubeconfig-agent-mode)
-below.
+A generated kubeconfig lives on a laptop, possibly for weeks, so its token is
+not a general session credential. It is valid only against that one cluster's
+proxy route, matched against the request's registered route rather than the raw
+URL. A stolen file cannot be replayed against the users API, the audit trail or
+any other cluster. See [a stolen kubeconfig](threat-model.md#a-leaked-kubeconfig).
 
 ## Namespace scope vs. role: enforced in two different places, on purpose
 
-A grant's **role** (`view`/`edit`/`cluster-admin`) is deliberately *not*
-re-checked locally — it is resolved into an impersonation group and handed to
-the cluster, whose RBAC is the one place that already has to get "may `view`
-write" right. Duplicating that decision inside kubemg would only create a
-second place for the two to disagree.
+??? info "Why it works this way"
+    A grant's **role** is resolved into an impersonation group and handed to
+    the cluster, whose RBAC already has to get "may `view` write" right.
+    Duplicating that inside kubemg would only create a second place to disagree.
 
-A grant's **namespace scope** has no equivalent in Kubernetes impersonation —
-there is no `Impersonate-Group` that means "only these three namespaces" — so
-it is enforced by the proxy itself, on every call, before anything reaches
-the tunnel. A scoped grant is refused outright on a request that names no
-namespace or one outside its list, discovery paths excepted.
+    A grant's **namespace scope** has no Kubernetes impersonation equivalent
+    (no group means "only these three namespaces"), so the proxy enforces it
+    itself, on every call, before anything reaches the tunnel.
+
+| Part of a grant | Enforced by |
+| --- | --- |
+| Role (`view`/`edit`/`cluster-admin`) | The cluster's own RBAC, not re-checked locally |
+| Namespace scope | The proxy. A scoped grant is refused on a request that names no namespace or one outside its list, discovery paths excepted |
 
 ## The direct-mode gap, stated plainly
 
-In **direct** connection mode, kubemg mints tokens through TokenRequest but
-provisions **no RoleBinding** for them. A generated kubeconfig there
-authenticates against the cluster without the cluster having any opinion on
-what that identity may do — whatever the stored service account was already
-bound to is what a caller gets, and the permission matrix governs *kubemg's
-own* authorization rather than the target cluster's RBAC. This is exactly why
-[machine accounts](../access/machine-accounts.md) refuse direct-mode clusters
-outright: a credential kubemg cannot see authorized on the cluster is not one
-it should hand out for unattended, months-long use. Agent mode is where this
-closes, because impersonation plus the installed ClusterRoleBindings put the
-decision back with the cluster. The cluster detail page, the permissions
-page and the registration wizard's last step all disclose which mode a given
-cluster is in — this is treated as load-bearing, not a decoration.
+In **direct** mode kubemg mints tokens through TokenRequest but provisions **no
+RoleBinding** for them. A generated kubeconfig authenticates against the cluster
+without the cluster having any opinion on what that identity may do. Whatever
+the stored service account was already bound to is what a caller gets, and the
+permission matrix governs kubemg's own authorization, not the target cluster's
+RBAC.
+
+- This is why [machine accounts](../access/machine-accounts.md) refuse
+  direct-mode clusters outright.
+- Agent mode closes the gap: impersonation plus the installed bindings put the
+  decision back with the cluster.
+- The cluster detail page, the permissions page and the registration wizard's
+  last step all say which mode a cluster is in.
 
 ## What is redacted, and what never leaves the server
 
-- **ConfigMap and Secret listings return keys only.** No value ever enters a
-  response, so nothing lands in a browser cache, a browser history entry, or
-  a log line just because someone opened a list.
-- **One Secret value can be revealed, and only under its own capability.**
-  `GET .../resources/secret/value?name=&key=` returns one key of one Secret.
-  It exists because the alternative was not "the value stays in the cluster" —
-  it was an operator running `kubectl get secret -o jsonpath`, where the reveal
-  happens with no record at all. It needs `can_reveal_secrets` on the account,
-  which only a super admin may grant (so an administrator cannot grant it to
-  itself), *and* the cluster's own RBAC on the impersonated read. It is
-  recorded under its own audit verb, naming the caller, the Secret and the key,
-  **before the value is written**, and no audit selection can suppress it. A
-  ServiceAccount token and KubeMG's own agent registration secret are refused
-  outright, and nothing caches the response at any layer. An install that does
-  not want this grants the capability to nobody.
-- **Helm's rendered manifest never leaves the server.** A release's stored
-  object also carries the chart's fully rendered manifest, which for many
-  charts holds generated passwords — only chart metadata and `values` are
-  returned. Writing new values renders the chart stored on the release and
-  applies the result, and the manifest that produces is recorded on the new
-  revision, never returned.
+- **ConfigMap and Secret listings return keys only.** No value enters a list
+  response, so none lands in a browser cache, history or log line.
+- **One Secret value can be revealed, only under its own capability.** It needs
+  `can_reveal_secrets` on the account, which only a super admin may grant (an
+  administrator cannot grant it to themselves), *and* the cluster's own RBAC on
+  the impersonated read. It is audited under its own verb, naming the caller,
+  Secret and key, **before the value is written**, and no audit selection can
+  suppress it. ServiceAccount tokens and kubemg's own agent registration secret
+  are refused, and nothing caches the response. An install that does not want
+  this grants the capability to nobody.
+- **Helm's rendered manifest never leaves the server.** It can hold generated
+  passwords; only chart metadata and `values` are returned.
 - **The core Kubernetes API group is refused on the custom-resource route.**
-  `GET .../resources/custom` lets a caller name any `group/version/plural`
-  to read a CRD kubemg does not know about first-class — but the core group
-  (no dot in its name) is refused outright, because that is where Secrets
-  live and their lists are served by handlers that redact first. Naming an
-  API is not the same as reaching one, and this route must never become the
-  way around the redaction above.
+  That is where Secrets live, and their lists are redacted elsewhere; this route
+  must never become the way around it.
+
+??? info "Why the reveal exists at all"
+    The alternative was not "the value stays in the cluster". It was an operator
+    running `kubectl get secret -o jsonpath`, where the reveal happens with no
+    record at all.
 
 ## Recordings: the most sensitive artefact kubemg writes
 
-A session recording is a transcript of everything typed into and printed
-from a production shell — passwords a prompt never echoed included, if
-keystroke capture is on. Four controls follow from that:
+A session recording is a transcript of everything typed into and printed from a
+production shell, including passwords a prompt never echoed if keystroke
+capture is on. Four controls follow:
 
-- **Encrypted at rest**, chunked AES-256-GCM rather than one seal over the
-  whole file, so a recording that is truncated, reordered or altered fails
-  to decrypt rather than replaying short.
-- **Keystrokes are optional** (`KUBEMG_SESSION_RECORDING_INPUT=false`) — a
-  pty already echoes what was typed, so dropping input capture loses
-  precisely the part a prompt refuses to echo, which is the part worth not
-  storing.
-- **Watching a recording is itself audited**, before the bytes go out, with
-  the viewer and the subject's session recorded as two different identities
-  — "who watched whose shell" needs both halves to answer.
-- **Reaching someone else's recording is a capability of its own**
-  (`CanViewRecordings`), separate from the admin role and grantable only by
-  a super admin — an administrator cannot grant it to themselves, which is
-  what keeps the control from being theatre.
+- **Encrypted at rest** in chunks, so a truncated, reordered or altered
+  recording fails to decrypt rather than replaying short.
+- **Keystrokes are optional** (`KUBEMG_SESSION_RECORDING_INPUT=false`). A pty
+  already echoes what was typed, so dropping input loses only the part a prompt
+  refuses to echo, which is the part worth not storing.
+- **Watching a recording is itself audited**, before the bytes go out, with the
+  viewer and the session's owner recorded as two identities.
+- **Reaching someone else's recording is its own capability**, separate from
+  the admin role and grantable only by a super admin.
 
-See [Session recording](../audit/session-recording.md) for the full mechanism.
+See [Session recording](../audit/session-recording.md).
 
 ## Audit floors nothing suppresses
 
-The audit trail can be narrowed to fewer verbs on a busy fleet, but three
-things are never suppressed regardless of that setting: **any refusal or
-error**, **any streaming call**, and kubemg's own `replay`/
-`recording-get`/`recording-delete` actions. An empty selection means "record
-every verb again," never "record nothing" — the floor holds even then. See
+The audit trail can be narrowed to fewer verbs, but three things are never
+suppressed: **any refusal or error**, **any streaming call**, and kubemg's own
+`replay`/`recording-get`/`recording-delete` actions. An empty selection means
+"record every verb again", never "record nothing". See
 [Audit trail](../audit/trail.md).
 
 ## Threat notes
 
+Each scenario is worked through in the [threat model](threat-model.md). The
+short form:
+
 ### A stolen kubeconfig (agent mode)
 
-The file carries a proxy-scoped JWT
-good for exactly one cluster's proxy route. It cannot reach the users API,
-the audit trail, or any other cluster. Revoking the underlying grant takes
-effect on the file's very next call, because the proxy re-reads the user and
-the grant on every request rather than trusting what the token claimed at
-mint time.
+Valid for one cluster's proxy route only, and cut off on its next call once the
+grant is revoked. See [A leaked kubeconfig](threat-model.md#a-leaked-kubeconfig).
 
 ### A stolen kubeconfig (direct mode)
 
-The file carries a real,
-cluster-minted token. It works until that token's own expiry, however the
-grant changes in the meantime — there is no tunnel re-check to cut it off
-early. This is the sharpest practical difference between the two modes.
+A real cluster-minted token that works until its own expiry, however the grant
+changes. This is the sharpest difference between the two modes. See
+[A leaked kubeconfig](threat-model.md#a-leaked-kubeconfig).
 
 ### A stolen machine token
 
-The secret is never stored in the clear — only
-its SHA-256 hash — so a database compromise does not hand over a usable
-credential retroactively (though a live secret in a CI store is a live
-credential regardless). Revoking it is a row write, effective on its next
-use. It is refused outright against a direct-mode cluster, against a cluster
-the account holds no grant on, and against any namespace outside that grant.
+Only its hash is stored; revoking it takes effect on the next use; it is
+refused against direct-mode clusters. See
+[A leaked machine token](threat-model.md#a-leaked-machine-token).
 
 ### A compromised agent
 
-An attacker running code as the agent holds its service account, and so its
-impersonation grant. The grant is named group by group — it cannot claim
-`system:masters` or impersonate a ServiceAccount — but it includes
-`kubemg:cluster-admin`, which the install binds to `cluster-admin`. Treat a
-compromised agent as cluster-admin **on that one cluster**. It reaches no
-other cluster, no other agent and nothing in kubemg's database.
+Treat it as cluster-admin on that one cluster, and nothing else. See
+[A compromised agent](threat-model.md#a-compromised-agent).
 
 ### A compromised bastion
 
-This is the highest-value target, by design and without disguising it: the
-bastion holds every grant, mints every impersonation header, and terminates
-the tunnel every agent trusts — in effect `system:masters` on every
-agent-mode cluster. Nothing inside a cluster bounds it; what does is outside
-it — records already [forwarded off the host](../audit/forwarding.md), the
-cluster's own API server audit log, and removing the agent. That is why the
-manual's install guidance treats the bastion's own host, database and TLS
-material as the thing to harden hardest — see the
+The highest-value target, by design: in effect `system:masters` on every
+agent-mode cluster. What bounds it is outside it: off-host audit forwarding, the
+cluster's own audit log, and removing the agent. See
+[A compromised bastion](threat-model.md#a-compromised-bastion) and the
 [production checklist](../install/production-checklist.md).
-
-The [threat model](threat-model.md) takes each of these scenarios, and a
-leaked install URL and a renamed identity-provider account besides, from
-the incident's side.

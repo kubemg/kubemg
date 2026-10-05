@@ -1,27 +1,12 @@
 # What kubemg is
 
-kubemg is a management plane for a fleet of Kubernetes clusters. It gives an
-operator one console over every cluster, gives a developer exactly the access
-somebody granted them, and keeps a record of every call either of them made —
-without opening a single inbound port on any cluster.
+kubemg is a management plane for a fleet of Kubernetes clusters: one console over every cluster, exactly the access somebody granted each developer, and a record of every call, with no inbound port opened on any cluster. This page says what it is, what it is not, and what each kind of user sees.
 
 ## The problem it answers
 
-A team running more than one or two clusters ends up choosing between three
-bad options. Hand out a kubeconfig, and it is long-lived, gets copied into
-somebody's `~/.kube`, outlives the project it was issued for, and revoking it
-means first remembering that it exists. Put a desktop tool like Lens in front
-of it, and it is very good at being one person's console but has never heard
-of the team — there is nowhere in it to say who may reach production, and no
-record afterwards of who did. Install a Rancher-class platform, and it arrives
-with controllers and dozens of CRDs and expects to own the cluster once it is
-in — its agent dials out too, so the tunnel is not what sets kubemg apart; what
-runs at the other end of it is.
+Long-lived kubeconfigs get copied around and are hard to revoke. Desktop tools serve one person, not a team: no record of who reached production. Rancher-class platforms install controllers and CRDs and expect to own the cluster.
 
-kubemg is built around a different trade: **a few megabytes in the cluster,
-everything else at the bastion.** The in-cluster piece opens one outbound
-connection and holds it; the bastion is where access, audit and observability
-actually live.
+kubemg's trade is **a few megabytes in the cluster, everything else at the bastion.** The in-cluster agent opens one outbound connection and holds it; access, audit and observability live at the bastion.
 
 ## What it is, and what it deliberately is not
 
@@ -73,73 +58,50 @@ It is **not**:
                 +----------------------------------------------------+
 ```
 
-No inbound firewall rule on any cluster. In **agent mode** kubemg stores no
-Kubernetes credential — only the registration token the agent presents when
-it dials in. That is not the same as holding no power over the cluster: the
-agent may impersonate, and forwards what the bastion sends, so **the bastion
-plus the tunnel is, in effect, `system:masters` on every agent-mode
-cluster** — the trust model every agent-based access product has, stated
-rather than implied. [Threat model](threat-model.md) says what that means for
-each thing that can leak. See [Connection modes](../clusters/connection-modes.md)
-and [How a request flows](../dev/request-flow.md) for the mechanics.
+No inbound firewall rule on any cluster. In **agent mode** kubemg stores no Kubernetes credential, only the registration token the agent presents.
 
-**Postgres** is the one piece of state kubemg itself owns: users, groups,
-grants, cluster registrations, settings, audit records and session-recording
-metadata. It holds no Kubernetes credential in agent mode, and in direct mode
-holds exactly the service account token an administrator registered — but in
-either mode it holds the key that signs every session, which is why stored
-credentials are encrypted under `KUBEMG_SECRET_KEY`. See
-[Credentials encrypted at rest](../install/database.md#credentials-encrypted-at-rest).
+!!! warning "The bastion plus the tunnel is `system:masters`"
+    The agent may impersonate, so the bastion plus the tunnel is in effect `system:masters` on every agent-mode cluster. [Threat model](threat-model.md) covers what that means for each thing that can leak.
+
+See [Connection modes](../clusters/connection-modes.md) and [How a request flows](../dev/request-flow.md).
+
+**Postgres** holds the state kubemg owns: users, groups, grants, cluster registrations, settings, audit records and recording metadata. It holds the key that signs every session, so stored credentials are encrypted under `KUBEMG_SECRET_KEY`. See [Credentials encrypted at rest](../install/database.md#credentials-encrypted-at-rest).
+
+## What it looks like
+
+<figure markdown>
+  ![Explore sidebar](../assets/screenshots/explore-sidebar.png)
+  <figcaption>Explore: a resource browser over live cluster state.</figcaption>
+</figure>
+
+<figure markdown>
+  ![Audit trail](../assets/screenshots/audit-trail.png)
+  <figcaption>The audit trail: every call, filterable.</figcaption>
+</figure>
+
+<figure markdown>
+  ![Users table](../assets/screenshots/users-table.png)
+  <figcaption>Users, with their groups and grants.</figcaption>
+</figure>
 
 ## What a developer sees
 
-A developer's rail is two sections with no dead ends: **Operate** (the
-cluster they're in, and the fleet it belongs to — fleet overview, Explore,
-terminal, logs, scale/restart, metrics) and **Activity** (their own access
-requests, their own audit trail, their own session recordings). Everything in
-both resolves for everyone; there is nothing to be an administrator to reach a
-row that isn't there. A cluster's dashboard for a non-admin is a slim identity
-card plus the counts and alerts drawn from the resource lists they can already
-read — see [Browsing resources](../clusters/explore.md).
-
-!!! info "Screenshot pending — `fleet-overview.png`"
-    The fleet overview: the banner naming what is waiting for an
-    administrator (or how many clusters are linked, when nothing is), the four
-    figures beside the fleet's capacity, then the table banded by environment
-    with how the fleet's links read and the newest audit records beside it.
+The rail has two sections: **Operate** (fleet overview, Explore, terminal, logs, scale/restart, metrics) and **Activity** (their own access requests, audit trail and session recordings). A non-admin's cluster dashboard is an identity card plus counts and alerts drawn from the resource lists they can already read; see [Browsing resources](../clusters/explore.md). Their fleet page shows only their own requests waiting and kubeconfigs about to expire.
 
 ## What an administrator sees
 
-The fleet page opens on what needs a decision today, as four figures, each a
-link onto the rows it counts:
+Everything a developer sees, plus **Admin**: cluster registration, users, groups, the permission matrix, SSO, guardrail rules, alarm routing and settings. The section disappears whole for non-admins.
+
+The fleet page opens on four figures, each a link onto the rows it counts:
 
 | Figure | Opens |
 | --- | --- |
 | Requests waiting | The access-request queue |
-| Refused · 24h | The audit trail, narrowed to refused or failed calls over the last 24 hours |
-| Kubeconfigs expiring · 24h | The issued-credentials register, narrowed to live credentials running out within a day |
-| Agents behind | The clusters table, narrowed to agents older than the newest one in the fleet |
+| Refused · 24h | The audit trail, narrowed to refused or failed calls over 24 hours |
+| Kubeconfigs expiring · 24h | The credentials register, narrowed to those running out within a day |
+| Agents behind | The clusters table, narrowed to agents older than the newest in the fleet |
 
-A figure kubemg could not read shows a dash rather than a zero, so "nothing
-waiting" and "could not tell" never look alike. The counts are read when the
-page opens, not on its live refresh.
-
-Above the figures, a banner lists what is waiting on an administrator — a tunnel
-that closed, a cluster that never dialled in, a request to approve, an agent
-behind the rest — each with its action. When nothing is waiting, the banner says
-how many clusters are linked instead. Beside the figures, **Fleet capacity**
-shows each cluster's live CPU and memory use against what it has. Beside the
-clusters table, **Links across the fleet** counts how each cluster reaches
-kubemg right now, and **Recent activity** shows the newest records of the audit
-trail, read once when the page opens. A developer's fleet page shows only the two
-that are theirs to act on: their own requests waiting and their own kubeconfigs
-about to expire.
-
-Everything a developer sees, plus **Admin**: cluster registration and
-inventory, users, groups, the permission matrix, SSO federation, guardrail
-rules, alarm routing, and runtime settings. The Admin section is gated once,
-at the rail, and disappears whole for anyone who isn't one — a developer's
-navigation does not hint at sections it cannot open.
+A figure kubemg could not read shows a dash, never a zero. Counts are read when the page opens. A banner above lists what waits on an administrator (a closed tunnel, a cluster that never dialled in, a request to approve, an agent behind), or says how many clusters are linked. **Fleet capacity**, **Links across the fleet** and **Recent activity** sit beside the clusters table.
 
 ## Feature tour
 
@@ -153,7 +115,7 @@ navigation does not hint at sections it cannot open.
 | Guardrails | Refuses destructive commands on kubemg's own authority, including inside an interactive shell | [Command guardrails](../access/guardrails.md) |
 | Audit | A queryable trail with session replay, and a recordings index | [Audit trail](../audit/trail.md), [Session recording](../audit/session-recording.md) |
 | Alarms | Routes cluster events and kubemg's own audit records to Alertmanager, Slack, Teams, PagerDuty, ServiceNow or a SIEM webhook | [Alarms and integrations](../audit/alarms.md) |
-| Audit forwarding | Pushes the complete trail to a syslog collector as RFC 5424 with a JSON message, for a SIEM that cannot tail the container's log stream | [Forwarding the trail](../audit/forwarding.md) |
+| Audit forwarding | Pushes the complete trail to a syslog collector as RFC 5424 with a JSON message, for a SIEM that cannot tail the container's log stream | [Forwarding the trail](../audit/trail.md#forwarding-the-trail) |
 
 Continue to [How a request flows](../dev/request-flow.md) for the mechanics behind
 all of this, or [Security model](security-model.md) for what is and is not
