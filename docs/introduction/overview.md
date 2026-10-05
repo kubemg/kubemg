@@ -70,6 +70,11 @@ See [Connection modes](../clusters/connection-modes.md) and [How a request flows
 ## What it looks like
 
 <figure markdown>
+  ![Fleet overview](../assets/screenshots/fleet-overview.png)
+  <figcaption>The fleet overview: what needs an administrator, capacity, and how each cluster is linked.</figcaption>
+</figure>
+
+<figure markdown>
   ![Explore sidebar](../assets/screenshots/explore-sidebar.png)
   <figcaption>Explore: a resource browser over live cluster state.</figcaption>
 </figure>
