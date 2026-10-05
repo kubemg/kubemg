@@ -219,7 +219,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # Keep in step with HELM_IMAGE in the Makefile, which is what verified it.
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: v4.2.3
 
