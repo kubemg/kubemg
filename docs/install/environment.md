@@ -1,32 +1,28 @@
 # Environment reference
 
-Every variable the management plane reads at boot. All of them are optional — the process starts
-with defaults if none are set, though several of those defaults are wrong for
-a real install (see [Production checklist](production-checklist.md)).
+Every environment variable the management plane reads at boot, with its
+default. Look here when you configure a deployment; all are optional, but
+several defaults are wrong for a real install (see the
+[Production checklist](production-checklist.md)).
 
 !!! tip "Boot-time default vs. runtime setting"
-    Four of these — marked below — are only the **boot-time default**. Once
-    the server is running, an administrator can override them from the
-    **Settings** page without a restart; the environment variable only
-    decides what an install starts with before anyone has configured
-    anything. See [Settings reference](../reference/settings.md) for the
-    runtime side of that split.
+    Four variables, marked below, are only the **boot-time default**. An
+    administrator can override them from **Settings** without a restart. See
+    the [Settings reference](../reference/settings.md).
 
 ## Parse rules
 
-These matter because a typo in an environment variable never fails the boot —
-it silently falls back to the default instead:
+A typo in an environment variable never fails the boot; it silently falls back
+to the default.
 
-- **Booleans**: anything other than `1`/`t`/`T`/`TRUE`/`true`/`True`/`0`/`f`/`F`/`FALSE`/
-  `false`/`False` falls back to the default rather than failing the boot.
-- **Integers**: must parse as a positive integer; anything else,
-  including zero or negative, falls back to the default.
-- **Durations** (`envDuration`): accepts a Go duration string (`30s`, `5m`,
-  `12h`) **or** a bare integer, which is interpreted as a number of seconds.
-  Anything else falls back to the default.
-- **Lists** (`envList`): comma-separated; each entry is trimmed, empty
-  entries are dropped, and if nothing is left after that the whole variable
-  falls back to the default.
+- **Booleans**: only `1`/`t`/`T`/`TRUE`/`true`/`True` and `0`/`f`/`F`/`FALSE`/`false`/`False`
+  are understood. Anything else uses the default.
+- **Integers**: must be a positive integer. Zero, negative or anything else uses
+  the default.
+- **Durations**: a duration string (`30s`, `5m`, `12h`) or a bare integer of
+  seconds. Anything else uses the default.
+- **Lists**: comma-separated, entries trimmed, empty ones dropped. If nothing is
+  left, the default is used.
 
 ## Core / server
 
@@ -45,13 +41,13 @@ it silently falls back to the default instead:
 | `DB_NAME` | `kubemg` | Database name. |
 | `DB_SSLMODE` | `disable` | libpq `sslmode`. Use `require` (or stricter) against anything but a loopback/private-network Postgres. |
 
-See [Database](database.md) for AutoMigrate behavior and the reference DDL.
+See [Database](database.md) for how the schema is applied.
 
 ## Auth / JWT / bootstrap
 
 | Variable | Default | What it is |
 |---|---|---|
-| `JWT_SECRET` | generated, kept in the database | Signs sessions, generated kubeconfigs and JIT approval callback tokens. Unset, the server mints a 32-byte random key on first boot and stores it with a conflict-safe insert, so several replicas booting at once converge on the same key rather than racing. Set it explicitly to supply your own key, or to be able to rotate it deliberately — which invalidates every issued token at once. |
+| `JWT_SECRET` | generated, kept in the database | Signs sessions, generated kubeconfigs and JIT approval callback tokens. Unset, the server mints a 32-byte random key on first boot and stores it in the database; replicas booting together converge on the same key. Set it explicitly to supply your own key, or to be able to rotate it deliberately — which invalidates every issued token at once. |
 | `JWT_TTL` | `12h` | Session token lifetime. |
 | `KUBEMG_SECRET_KEY` | — | 32 bytes, hex or base64 (`openssl rand -base64 32`). Encrypts the credentials stored in the database — the generated signing key, agent tunnel tokens, direct-mode ServiceAccount tokens, and datasource, Helm repository, alarm channel and SSO credentials — with AES-256-GCM. Unset, they are stored in plaintext and the server warns at boot. With a key set, every plaintext value is encrypted in place on the next boot. A key that is not exactly 32 bytes **refuses to boot**; so does a database holding values encrypted under a different key, or under a key that has since been removed. **Back it up separately from the database** — see [Database](database.md#credentials-encrypted-at-rest). |
 | `KUBEMG_ADMIN_USERNAME` | `admin` | Bootstrap administrator's username, created only when the users table is empty. |
@@ -70,7 +66,7 @@ overridable at runtime from Settings.*
 | `KUBEMG_AGENT_IMAGE` | pinned release image (`ghcr.io/kubemg/kubemg-agent:<version>`) | The agent container image rendered into every generated install manifest. Point this at an internal mirror for an air-gapped install. |
 | `KUBEMG_AGENT_NAMESPACE` | `kubemg-system` | Namespace the agent is installed into on target clusters. Browser shell pods run here too. |
 | `KUBEMG_AGENT_IMAGE_PULL_SECRET` | — | The name of a `docker-registry` Secret in that namespace, for a mirror that requires authentication. The agent and browser shell pods pull with it. Only the name — the Secret is created on each cluster, and the install sheet shows the command. See [Air-gapped installs](air-gapped.md#a-mirror-that-requires-authentication). |
-| `KUBEMG_SHELL_ENABLED` | `true` | Offer the [browser shell](../clusters/browser-shell.md) on agent-mode clusters. A settings row can turn this off; it cannot turn it on for a server with no shell image. |
+| `KUBEMG_SHELL_ENABLED` | `true` | Offer the [browser shell](../clusters/terminals-and-logs.md) on agent-mode clusters. A settings row can turn this off; it cannot turn it on for a server with no shell image. |
 | `KUBEMG_SHELL_IMAGE` | pinned release image (`ghcr.io/kubemg/kubemg-shell:<version>`) | The image a shell pod runs. Point this at an internal mirror for an air-gapped install; clearing it switches the feature off, since a shell with no image is a button that fails. |
 | `KUBEMG_DEBUG_IMAGE` | `busybox:1.36` | The image an [ephemeral debug container](../clusters/terminals-and-logs.md#debugging-a-pod-with-no-shell) runs, for a pod whose own containers have no shell to exec into. Point this at an internal mirror for an air-gapped install. Unlike the browser shell there is no enable switch — any grant that can already exec into a pod can already ask for one. |
 

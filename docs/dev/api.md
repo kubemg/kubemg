@@ -166,7 +166,7 @@ curl -sk -X POST https://localhost:8443/api/v1/clusters/3/kubeconfig/generate \
 ## Helm repositories
 
 Server-wide, not scoped to a cluster — see [Chart
-repositories](../clusters/helm-repositories.md).
+repositories](../clusters/helm.md#chart-repositories).
 
 | Method & path | Auth | Notes |
 | --- | --- | --- |
@@ -215,7 +215,7 @@ fan-out limit) rather than listing the whole cluster.
 | `GET /access-review/identity` | `{subject, groups, k8s_role, namespaces, cluster}` — the caller's actual impersonation identity. |
 | `GET /custom` | Query `group,version,plural,scope?`. Anchored-pattern validated; the **core group is refused** (must contain a dot). A 404 from the cluster answers `available:false`. |
 | `GET /helm/releases` | Deduplicated to the highest revision per release. |
-| `POST /helm/releases` | Installs from a registered [chart repository](../clusters/helm-repositories.md), version resolved against the stored catalogue. `409` if a release of that name already exists. Pre-flight refuses a cluster-scoped object or an out-of-grant namespace before the first write. |
+| `POST /helm/releases` | Installs from a registered [chart repository](../clusters/helm.md#chart-repositories), version resolved against the stored catalogue. `409` if a release of that name already exists. Pre-flight refuses a cluster-scoped object or an out-of-grant namespace before the first write. |
 | `POST /helm/releases/:name/upgrade` | Re-renders and three-way merges onto the live cluster. Objects the previous revision wrote and this one drops are deleted last, never fatally. |
 | `GET /helm/releases/:name/values` | |
 | `PUT /helm/releases/:name/values` | Renders and applies, the same as an upgrade, reading the chart back off the release itself — no repository needs to be reachable. `helmValuesWarning` appears only for a release whose stored object carries no chart, naming that reason. |

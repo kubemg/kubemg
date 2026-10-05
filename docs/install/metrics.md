@@ -1,6 +1,6 @@
 # Prometheus metrics
 
-KubeMG can expose a Prometheus scrape endpoint at `GET /metrics` on a **separate internal listener**. It is off by default because the endpoint discloses version, route inventory, and process details — information that must not be reachable from agent clusters on the public port.
+kubemg can expose a Prometheus scrape endpoint at `GET /metrics` on a **separate internal listener**. This page says how to turn it on and what it reports. It is off by default because it discloses version, route inventory and process details that agent clusters on the public port must not see.
 
 ## Enabling
 
@@ -32,13 +32,11 @@ Go runtime and process metrics (goroutines, GC pauses, file descriptors) come fr
 
 ## Dropped audit records
 
-Neither audit sink ever makes a `kubectl` wait: when the database or the
-collector falls behind, its queue fills and further records are dropped rather
-than held. A non-zero `kubemg_audit_records_dropped_total` therefore means the
-audit page (`store`) or your SIEM (`forward`) is missing records for that
-period. The records are not lost outright — the server's own log stream
-carries every one of them regardless, so recover the gap from there. Alert on
-any increase:
+Neither audit sink ever makes a `kubectl` wait. When the database or collector
+falls behind, its queue fills and further records are dropped. A non-zero
+`kubemg_audit_records_dropped_total` means the audit page (`store`) or your SIEM
+(`forward`) is missing records for that period. The server's own log stream
+still carries every one, so recover the gap from there. Alert on any increase:
 
 ```yaml
 - alert: KubemgAuditRecordsDropped

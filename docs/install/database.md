@@ -1,9 +1,11 @@
 # Database
 
-kubemg needs **PostgreSQL 16**. Every user, cluster, grant, group, setting,
-audit row and terminal-session record lives there — nothing is stored
-anywhere else except session recordings themselves (the `.cast.gz` files) and
-the TLS material on disk.
+kubemg needs **PostgreSQL 16**. This page says what is stored there, how the
+schema is applied, and how to back it up and protect the credentials in it.
+
+Every user, cluster, grant, group, setting, audit row and terminal-session
+record lives in Postgres. Only session recordings (the `.cast.gz` files) and the
+TLS material live on disk.
 
 ## Connecting
 
@@ -12,63 +14,26 @@ the TLS material on disk.
 | `DB_HOST` | `localhost` | Host. |
 | `DB_PORT` | `5432` | Port. |
 | `DB_USER` | `kubemg` | Role. |
-| `DB_PASSWORD` | `kubemg_secret` | Password — change this; it is a development placeholder. |
+| `DB_PASSWORD` | `kubemg_secret` | Password. Change this; it is a development placeholder. |
 | `DB_NAME` | `kubemg` | Database name. |
 | `DB_SSLMODE` | `disable` | libpq `sslmode`. |
 
-`Open` builds a standard `lib/pq` DSN from these and
-connects through GORM's Postgres driver. Set `DB_SSLMODE=require` (or
-`verify-full` if you're running a managed Postgres that supports it) against
-anything that isn't a loopback or otherwise trusted private network — the
-default of `disable` is a development convenience, not a production setting.
+Set `DB_SSLMODE=require` (or `verify-full` on a managed Postgres that supports
+it) against anything but a loopback or trusted private network. `disable` is a
+development convenience.
 
-## What runs at boot: `AutoMigrate`
+## Schema changes at boot
 
-The schema is applied at boot by GORM's `AutoMigrate` over every model kubemg
-defines:
+The schema is applied automatically on every boot, before the server accepts a
+request. There is no migration command to run. It adds missing tables and
+columns and never drops or renames anything; a few changes that need more than
+that (such as widening a uniqueness constraint) run right after, in a fixed
+order.
 
-```
-User, Cluster, UserClusterAccess, Group, UserGroup, GroupClusterAccess,
-AuditEvent, TerminalSession, MachineToken, Setting, ServerSecret,
-ObservabilitySource, ClusterConsole, SSOProviderConfig, SSOGroupMapping,
-AlarmChannel, AlarmRule, GuardrailPolicy, JitRequest, Lease,
-PostureAcknowledgement, ClusterCRDVisibility
-```
-
-This runs automatically, every boot, before the server accepts a request —
-there is no separate migration command to run and no migration state to
-track beyond what GORM's own `AutoMigrate` does (add missing tables and
-columns; it never drops or renames anything). A couple of migrations need
-more than a column add and are handled by small hand-written Go functions
-that run immediately after `AutoMigrate`, in a fixed order — for example
-widening the uniqueness constraint on `user_cluster_access` from
-`(user_id, cluster_id)` to `(user_id, cluster_id, source)` to support
-just-in-time grants existing alongside standing ones.
-
-## `backend/migrations/*.sql`: reference DDL, executed by nothing
-
-**Nothing in that directory runs.** The files exist because the schema is a
-deployment artefact for someone who is not running the binary: on an on-prem
-install, the database is frequently owned by a DBA who will not read Go
-struct tags, needs to review what an upgrade does to a table they're
-responsible for, and may want to pre-apply a change under change control
-before the new image starts.
-
-Two rules keep them trustworthy:
-
-- Every statement is **idempotent** (`IF NOT EXISTS`/`IF EXISTS`), because
-  `AutoMigrate` may already have applied it by the time anyone runs the file
-  by hand — running it again must be a no-op, never an error.
-- A file is written **from** what the boot migration actually does, never the
-  other way around. If a numbered file and the Go code ever disagree, the Go
-  code is what ran, and the file is a bug to fix — not a spec to make the
-  code match.
-
-If you're on a database with a DBA in the loop, hand them this directory: pre-
-applying `011_jit_access.sql` through `016_cluster_crd_visibility.sql` (and
-any that follow) under whatever change-control process your organization
-already uses is exactly what it's for. `AutoMigrate` then finds the columns
-and tables already present and leaves them alone.
+If a DBA must review or pre-apply schema changes under change control, the
+repository's `backend/migrations/` directory holds idempotent reference SQL. The
+server never runs it, and where it disagrees with what the server applies, the
+server wins.
 
 ## What data lives where
 
@@ -85,17 +50,15 @@ and tables already present and leaves them alone.
 | The alarm-watcher background-job lease | Postgres (`leases`) — see [Choosing a deployment](index.md#sizing-and-high-availability) |
 | The TLS certificate kubemg mints for itself | Postgres (`server_secrets`), with a working copy on disk under `/etc/kubemg/tls` that is written back from the database whenever it is missing — see [TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too). Encrypted under `KUBEMG_SECRET_KEY` when one is set. A certificate you supply is never copied here |
 
-This split is why backing up the database alone is not a full backup: the
-recordings volume holds audit evidence a database backup cannot reconstruct,
-and needs its own backup coverage. See
+Backing up the database alone is therefore not a full backup: the recordings
+volume holds audit evidence the database cannot reconstruct. See
 [Docker Compose](docker-compose.md#backup) and
 [Choosing a deployment](index.md#what-the-management-plane-needs-regardless-of-where-it-runs).
 
 ## Credentials encrypted at rest
 
-The database holds the credentials KubeMG has to present somewhere. With
-`KUBEMG_SECRET_KEY` set, each one is stored encrypted (AES-256-GCM, a fresh
-random nonce per value, written as `enc:v1:…`):
+With `KUBEMG_SECRET_KEY` set, every credential kubemg has to present somewhere
+is stored encrypted (AES-256-GCM, written as `enc:v1:…`):
 
 | Credential | Table.column |
 |---|---|
@@ -113,18 +76,16 @@ What is **not** encrypted, and why:
 - Local user passwords and machine-account tokens are already stored only as
   hashes (bcrypt and SHA-256) — there is nothing to decrypt.
 - Install download tickets and WebSocket tickets are stored as SHA-256 hashes.
-- Each agent token also has a SHA-256 **lookup hash** beside it
-  (`clusters.agent_token_hash`): a handshake finds the cluster by the hash,
-  then compares the decrypted token. The token is encrypted rather than only
-  hashed because the **Agent install** sheet re-renders the install package
-  from it without rotating the agent's credential — that needs the value
-  back.
+- Each agent token has a SHA-256 lookup hash beside it
+  (`clusters.agent_token_hash`). The token itself is encrypted, not only hashed,
+  because the **Agent install** sheet re-renders the package from it without
+  rotating the credential.
 - Cluster CA certificates, alarm channel headers, audit-forwarder CA bundles,
   the audit trail and everything else are not credentials and are stored as
   they are.
 
-**The key is now as important as the database backup.** A restored database
-is only usable with the key it was encrypted under:
+**The key is as important as the database backup.** A restored database is only
+usable with the key it was encrypted under:
 
 - **Key unset** — the server boots, stores credentials in plaintext, and
   warns at boot. The setup wizard and the Deployment posture page say so too.
@@ -151,26 +112,15 @@ production install alongside `KUBEMG_SECRET_KEY`.
 
 ## Backup and restore
 
-There's nothing kubemg-specific here beyond the split above — back up
-Postgres the way you back up any Postgres database that matters:
+Back up Postgres as you would any database that matters (`pg_dump`/`pg_restore`
+or your provider's snapshots), plus:
 
-- `pg_dump`/`pg_restore` (or your managed Postgres provider's snapshot
-  mechanism) on a regular schedule.
-- Restore into a database at the same major version (16) that the boot
-  migration can then run against — a restore from an older schema is
-  exactly the case `AutoMigrate` and the reference DDL exist to make safe:
-  bring the restored database up, boot kubemg against it, and `AutoMigrate`
-  brings the schema forward to whatever this build expects.
-- If your install predates a given migration and you'd rather review the DDL
-  before the server starts and applies it, pre-apply the relevant
-  `backend/migrations/*.sql` files under your own change control first —
-  they're written to be safe to run either before or after `AutoMigrate`
-  does the same work.
-- Back up the session-recordings volume on its own schedule alongside the
-  database — see the table above for why a database backup alone is
-  incomplete. The certificate kubemg minted is in the database backup.
-- Back up `KUBEMG_SECRET_KEY` separately. A database restored without it does
-  not boot — see [Credentials encrypted at rest](#credentials-encrypted-at-rest).
+- **Same major version.** Restore into Postgres 16. Boot kubemg against the
+  restored database and the schema is brought forward automatically.
+- **The recordings volume**, on its own schedule. The minted TLS certificate is
+  in the database backup.
+- **`KUBEMG_SECRET_KEY`**, separately. A database restored without it does not
+  boot; see [Credentials encrypted at rest](#credentials-encrypted-at-rest).
 
 ## Managed PostgreSQL
 
