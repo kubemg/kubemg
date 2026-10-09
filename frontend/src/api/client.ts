@@ -163,6 +163,7 @@ import type {
   WorkloadPods,
   WorkloadRollbackResult,
 } from './types'
+import { completeCapacity } from './capacity'
 
 const TOKEN_KEY = 'kubemg.token'
 
@@ -2017,51 +2018,14 @@ const EMPTY_USAGE = {
   memory_percent: 0,
 }
 
-const EMPTY_DIMENSION = {
-  allocatable: 0,
-  requested: 0,
-  limited: 0,
-  used: 0,
-  requested_percent: 0,
-  limited_percent: 0,
-  used_percent: 0,
-  unlimited_containers: 0,
-}
-
-const EMPTY_CAPACITY_SUMMARY = {
-  nodes: 0,
-  ready: 0,
-  schedulable: 0,
-  cpu: EMPTY_DIMENSION,
-  memory: EMPTY_DIMENSION,
-  pods: { allocatable: 0, scheduled: 0, percent: 0, without_requests: 0 },
-  qos: { guaranteed: 0, burstable: 0, best_effort: 0 },
-  severity_counts: {},
-  placement: {
-    placeable_nodes: 0,
-    free: { cpu: 0, memory: 0, pods: 0 },
-    largest_cpu: null,
-    largest_memory: null,
-  },
-}
-
 /**
  * Allocation against capacity, per node. Unlike the metrics reads above this
  * one is whole without metrics-server — `available` marks the missing live
  * column, not a missing answer — so a failure here is a real failure.
  */
 export async function fetchClusterCapacity(clusterId: number): Promise<ClusterCapacity> {
-  const { data } = await http.get<ClusterCapacity>(`/clusters/${clusterId}/metrics/capacity`)
-  return {
-    available: data.available ?? false,
-    reason: data.reason,
-    pod_usage_available: data.pod_usage_available ?? false,
-    pod_usage_reason: data.pod_usage_reason,
-    nodes: data.nodes ?? [],
-    summary: data.summary ?? EMPTY_CAPACITY_SUMMARY,
-    unscheduled: data.unscheduled ?? [],
-    unscheduled_pods: data.unscheduled_pods ?? 0,
-  }
+  const { data } = await http.get<Partial<ClusterCapacity>>(`/clusters/${clusterId}/metrics/capacity`)
+  return completeCapacity(data)
 }
 
 /**
