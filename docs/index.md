@@ -1,119 +1,93 @@
 # kubemg
 
-**Centralised Kubernetes access, visibility and audit. No inbound ports; every call on the record.**
+**Central, audited access to every Kubernetes cluster. No inbound ports; every call on the record.**
 
-kubemg is a management plane for a fleet of Kubernetes clusters. It gives an
-operator one console over every cluster, gives a developer exactly the access
-somebody granted them, and keeps a record of every call either of them made —
-without opening a single inbound port on any cluster.
+kubemg is a self-hosted access gateway and console for a fleet of Kubernetes
+clusters. A small agent in each cluster dials out to kubemg, so no cluster opens
+a port. Developers reach clusters through kubemg — from the console or their own
+`kubectl` — under their own identity, the cluster's own RBAC decides, and every
+call is audited.
+
+<figure markdown>
+  ![The fleet overview](assets/screenshots/fleet-overview.png)
+  <figcaption>The fleet overview: what needs you, fleet capacity, and how each cluster reaches kubemg.</figcaption>
+</figure>
+
+## Get going in three steps
+
+1. **Run kubemg** — [Quickstart](getting-started/quickstart.md) on a laptop, or
+   [Docker Compose](install/docker-compose.md) / [Kubernetes](install/kubernetes.md)
+   for a real install.
+2. **Attach a cluster** — register it in the console and run the one
+   `kubectl apply` it gives you. See [Adding a cluster](clusters/registering.md).
+3. **Give someone access** — grant a role on a cluster, and they get a
+   short-lived kubeconfig. See [The access model](access/model.md).
+
+## What you can do with it
 
 <div class="grid cards" markdown>
 
--   **Install it**
+-   **Work in a cluster**
 
     ---
 
-    Bring the stack up with Docker Compose or on Kubernetes, terminate TLS, and
-    work through the environment reference.
+    Browse resources, read logs, open a terminal, scale and restart, manage Helm
+    releases.
 
-    [Quickstart](getting-started/quickstart.md) ·
-    [Installation](install/index.md)
+    [Browsing resources](clusters/explore.md) ·
+    [Helm](clusters/helm.md)
 
--   **Attach a cluster**
-
-    ---
-
-    Register a cluster in agent or direct mode, deploy the agent, and understand
-    what differs between the two.
-
-    [Connection modes](clusters/connection-modes.md) ·
-    [Installing the agent](clusters/agent.md)
-
--   **Grant access**
+-   **Control access**
 
     ---
 
-    Users, groups, namespace scope, SSO, kubeconfigs, machine accounts and
-    just-in-time elevation.
+    Users, groups, SSO, expiring kubeconfigs, just-in-time elevation and
+    command guardrails.
 
-    [The access model](access/model.md) ·
+    [Users and groups](access/users-and-groups.md) ·
     [Single sign-on](access/sso.md)
 
 -   **Prove what happened**
 
     ---
 
-    The audit trail, session recordings, and alarms routed to the systems your
-    team already watches.
+    A queryable audit trail, recorded shell sessions, and alarms to the tools
+    your team already watches.
 
     [Audit trail](audit/trail.md) ·
-    [Alarms and integrations](audit/alarms.md)
+    [Session recording](audit/session-recording.md)
 
--   **Work on kubemg**
+-   **See how it is doing**
 
     ---
 
-    Build it, test it, understand how it is put together, and send a change
-    back.
+    Live utilisation, node capacity, and metrics and logs from your own
+    Prometheus- or Loki-style backend.
 
-    [Developer guide](dev/index.md) ·
-    [Local development](dev/setup.md)
+    [Datasources](observability/datasources.md) ·
+    [Node capacity](clusters/capacity.md)
 
 </div>
 
+## Before production
+
+Read the [Security model](introduction/security-model.md) and the
+[Threat model](introduction/threat-model.md): kubemg is the trust anchor for
+every cluster it reaches, and those two pages say what that means. Then work
+through the [Production checklist](install/production-checklist.md).
+
 ## Two guides
 
-The manual is split into two, and the two buttons at the top of the sidebar
-switch between them.
+This manual has two halves, switched by the buttons at the top of the sidebar.
+The **User guide** is for running an install. The **Developer guide** is for
+working on kubemg itself — start at [Developer guide](dev/index.md).
 
-The **User guide** is for running an install: attaching clusters, granting
-access, reading the audit trail, and everything else you do from the console.
-It names pages, fields and settings, and never a source file.
-
-The **Developer guide** is for working on kubemg itself: the repository layout,
-running a stack locally, how each subsystem is put together, the REST API, and
-how to get a change reviewed. Nothing in it is needed to operate an install.
-
-## Where to start
-
-If you are **evaluating**, read [What kubemg is](introduction/overview.md) and
-[Security model](introduction/security-model.md) — between them they say what
-the product does and what it deliberately does not do.
-
-If you are **installing it**, start at the [Quickstart](getting-started/quickstart.md)
-to get a stack running on a laptop, then read
-[Choosing a deployment](install/index.md) before putting one anywhere real.
-
-If you are **operating an install**, the [Environment reference](install/environment.md),
-[Runtime settings](reference/settings.md) and
-[Troubleshooting](reference/troubleshooting.md) are the three pages you will keep
-open.
-
-If you are **changing the code**, start at [Developer guide](dev/index.md) and
-[Local development](dev/setup.md).
-
-## Versions
-
-This manual is versioned against the release tags. The version selector at the
-bottom of the sidebar switches between them — an install running 0.13.0 should
-read the 0.13.0 pages, because a setting introduced after that tag is not a
-setting that install has.
+The manual is versioned against the release tags; the version selector at the
+bottom of the sidebar switches between them.
 
 ## Licensing
 
-kubemg is **open source in full**. There is no compiled core and no licence key
-— the whole tree is readable, buildable and self-hostable. Two licences, split
-by directory, because only one half runs inside somebody else's cluster.
-
-| Path | Licence | Why |
-|---|---|---|
-| Server, console, identity and authorisation | **AGPL-3.0** | This is a product people host for others, so running a *modified* kubemg as a network service means offering that modified source to its users. |
-| `agent/`, `deploy/kustomize/` | **Apache-2.0** | The only component that runs **inside a customer's cluster**. A SecOps team has to be able to read it, build it and vendor it into their own tooling without copyleft reaching their infrastructure — see [The agent](reference/agent.md) and [The agent module](dev/agent.md). |
-
-The AGPL does not forbid selling or reselling kubemg; what it forbids is keeping
-a modified, network-served fork private. A **commercial licence** is available
-alongside it — copyright is held in full by the author — for embedded or OEM
-deployments the source-offering obligation does not fit. That does not withdraw
-the AGPL grant; it stands for everyone else.
-
-Third-party dependency licences are listed in full in `NOTICE`.
+Open source in full: the server and console are **AGPL-3.0**, and the agent and
+its install manifests — the only part that runs inside your cluster — are
+**Apache-2.0**. A commercial licence is available for embedded or OEM use.
+Third-party licences are listed in `NOTICE`.

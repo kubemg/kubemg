@@ -1,27 +1,18 @@
 # Upgrading
 
+This page covers upgrading the management plane and its agents: pinning versions, when agents must re-apply their manifests, per-release notes, rollback, and the two special cases (0.11.0 and a git checkout). Start with the first sections, then jump to the release you are crossing.
+
 ## Version pinning
 
-Pin an explicit tag rather than tracking `latest`, in both places a version
-appears:
+Pin an explicit tag rather than tracking `latest`, in three places:
 
-- The management plane image, `KUBEMG_IMAGE`/`KUBEMG_VERSION`
-  (`ghcr.io/kubemg/kubemg:0.13.0`) in Compose, or the `image:` field of the
-  Deployment in Kubernetes.
-- The agent image, `KUBEMG_AGENT_IMAGE` (`ghcr.io/kubemg/kubemg-agent:0.13.0`),
-  written into every rendered agent install manifest by the management
-  plane, so bumping it here is what changes what a *future* `kubectl apply -k
-  …` installs — it does not touch agents already running.
+| Image | Set with | Read when |
+|---|---|---|
+| Management plane (`ghcr.io/kubemg/kubemg:0.14.0`) | `KUBEMG_IMAGE`/`KUBEMG_VERSION` in Compose, or the Deployment's `image:` in Kubernetes | The server starts |
+| Agent (`ghcr.io/kubemg/kubemg-agent:0.14.0`) | `KUBEMG_AGENT_IMAGE` | A package is rendered. Changing it affects *future* installs, not agents already running. |
+| Browser shell (`ghcr.io/kubemg/kubemg-shell:0.14.0`) | `KUBEMG_SHELL_IMAGE` | A shell is *started*. Changing it affects the next shell, not one already open. |
 
-- The browser shell image, `KUBEMG_SHELL_IMAGE`
-  (`ghcr.io/kubemg/kubemg-shell:0.13.0`), which a shell pod runs on a target
-  cluster. Like the agent image it is read when a shell is *started*, so
-  bumping it changes the next shell rather than one already open.
-
-All three images are published as multi-arch (amd64+arm64) manifest indexes by
-`.github/workflows/release.yml` on a `v*` tag, after a Trivy vulnerability
-gate, to `ghcr.io/kubemg/kubemg`, `ghcr.io/kubemg/kubemg-agent` and
-`ghcr.io/kubemg/kubemg-shell`.
+All three are published as multi-arch (amd64 and arm64) images on a `v*` tag, after a vulnerability scan gate.
 
 ## Upgrading the management plane
 
@@ -34,197 +25,263 @@ docker compose up -d
 kubectl set image deployment/kubemg kubemg=ghcr.io/kubemg/kubemg:<new-version> -n kubemg
 ```
 
-Schema migrations run automatically at boot —
-there is no separate migration step to run before or after the image swap.
-See [Database](database.md) for what that does and how the reference DDL in
-`backend/migrations/` fits in if a DBA wants to review or pre-apply a change
-under change control first.
+Schema migrations run automatically at boot. There is no separate migration step. See [Database](database.md) if a DBA wants to review the reference DDL first.
 
-**Keep the certificate across the upgrade.** Whether it's the self-signed
-pair kubemg minted or one you supplied, it must survive the upgrade
-unchanged — every already-installed agent has that specific certificate
-pinned into its trust bundle, and a fresh certificate (even a
-correctly-configured one) is a *different* certificate that every existing
-agent will refuse. A minted pair is kept in the database as well as on disk
-([TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too)); an install
-upgraded from a version that kept it only on disk copies it into the database
-on its first boot after the upgrade, so keep the volume for that boot.
+**Keep the certificate across the upgrade.** Every installed agent has the certificate pinned, and a fresh one is refused by all of them. A minted pair is also kept in the database ([TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too)); an install upgraded from a version that kept it only on disk copies it in on the first boot, so keep the volume for that boot.
 
 ## Agent and server version compatibility
 
-The tunnel handshake carries a `ProtocolVersion` that both sides must agree
-on exactly. The server and the agent each carry their own copy of it (the agent
-is a separate Apache-2.0 module and does not import the AGPL server, so the two
-copies are kept in sync by hand and only need to agree on JSON field names and
-this
-version number).
+Agent and server must agree on a tunnel protocol version exactly. The server **refuses a handshake at any other version**, so a mismatched agent fails to connect entirely rather than half working.
 
-The bastion **refuses a handshake at any other version** rather than
-attempting to guess compatibility — an agent whose protocol version doesn't
-match the server's will fail to connect entirely, not "half work." In
-practice this means:
-
-- Bumping `ProtocolVersion` is a **breaking change** to the wire format
-  between kubemg and its agents. It only happens across the kind of release
-  that would be flagged prominently (it added the v2 stream frames that carry
-  `watch`, `logs -f`, `exec`, and `port-forward`).
-- An agent significantly older than the management plane it's dialing may
-  need to be upgraded before it can reconnect. Watch the release notes for a
-  protocol bump when planning an upgrade across more than a couple of minor
-  versions.
-- There is no server-side compatibility shim across a protocol bump — the
-  fix is upgrading the agent, which is a `kubectl apply -k …` of the
-  install package rendered by the *upgraded* server (or updating
-  `KUBEMG_AGENT_IMAGE` and re-applying), not a config change.
+- A protocol bump is a breaking change and is flagged in the release notes. The last one added the streaming frames behind `watch`, `logs -f`, `exec` and `port-forward`.
+- An agent much older than the server may need upgrading before it can reconnect. Check the release notes when crossing more than a couple of minor versions.
+- The fix is upgrading the agent: re-apply the install package rendered by the *upgraded* server (or update `KUBEMG_AGENT_IMAGE` and re-apply). It is not a config change.
 
 ## When agents must re-apply their manifests
 
-Separately from the wire protocol, the agent's Kubernetes manifests
-(`ClusterRoleBindings`, and the `ClusterRole`s they bind to) can gain new
-permissions between releases without any protocol change at all. When they
-do, **existing agent installs must re-apply their manifests** to pick up the
-new grants; until they do, the symptom is silent and specific rather than a
-tunnel that visibly fails.
+The agent's Kubernetes manifests (ClusterRoles and bindings) can gain permissions between releases with no protocol change. Until an existing install **re-applies its manifests**, the symptom is silent and specific: one feature fails with the cluster's own `403` while the tunnel stays up.
 
-It has happened five times so far:
+| Release | What the manifests gained | Symptom without a re-apply |
+|---|---|---|
+| CRD discovery | CRD discovery and custom-resource read/write RBAC | Discovery answers `403`; Explore shows no custom resources |
+| 0.8.1 | Browser shell Role, bound to the `kubemg:shell-runner` user, in the agent namespace only | Opening a shell fails with `403` at pod creation |
+| 0.8.3 | `get` on `pods/exec` (exec opens as a GET over a WebSocket) | The shell pod starts, then `403` while writing its kubeconfig |
+| 0.11.0 | **Narrowed** impersonation: only the four `kubemg:` groups, no ServiceAccount | Nothing breaks, but the agent keeps a wider grant than needed. Re-apply anyway. |
+| Alarms on an object | `kubemg-custom-resource-view`/`-edit` gain `monitoring.coreos.com/prometheusrules` (that resource only) | Creating an [alarm](../observability/alerts.md) fails with `403`; a drawer's alarm list says it cannot read them |
 
-- **CRD discovery and custom-resource read/write RBAC.** Without it, CRD
-  discovery answers `403` and the Explore sidebar simply shows no custom
-  resources, with no error surfaced anywhere obvious.
-- **0.8.1, the browser shell.** The `kubemg-shell-runner` Role and its
-  binding to the `kubemg:shell-runner` user — what lets KubeMG create, seed,
-  stamp and delete shell pods **in the agent namespace only** — arrived with
-  that release. Without them nothing else changes: the tunnel stays up and
-  every existing surface keeps working, but opening a shell fails on the
-  cluster's own `403` at pod creation. Everything a KubeMG upgrade brings
-  except the shell works on an install that re-applies nothing.
-- **0.8.3, the shell's exec verb.** The same Role granted only `create` on
-  `pods/exec`. An exec is opened over a WebSocket, which begins as a GET, and
-  the API server authorizes that as `get` on the subresource — so on 0.8.1 and
-  0.8.2 the shell pod starts and then fails with `403 Forbidden` while writing
-  its kubeconfig. Re-applying the manifests adds the missing verb.
-- **0.11.0, the narrowed impersonation grant.** The only change so far
-  that *removes* a permission: the agent may now impersonate only kubemg's
-  four `kubemg:` groups and no ServiceAccount, where it could previously
-  impersonate any group or ServiceAccount. Nothing breaks if you do not
-  re-apply — kubemg sends the same groups either way — but the old grant is
-  the wider one, so an agent that is not re-applied keeps a privilege kubemg
-  no longer needs. Re-apply. See the next section for the part of this
-  release that can change what your own bindings match.
-
-- **Alarms on an object.** `kubemg-custom-resource-view` and `-edit` gain
-  read and write on `monitoring.coreos.com/prometheusrules` (that resource
-  only), so a grant can create [alarms](../observability/alerts.md). Until
-  you re-apply, everything else works; creating an alarm fails with the
-  cluster's own `403`, and a drawer's alarm list says it cannot read them.
-
-Re-applying is the same command as installing. The console renders it for a
-cluster that already exists: open the cluster's dashboard and choose **Agent
-install** (admin-only, agent-mode clusters), which re-renders the package
-from the cluster's stored registration token against the current settings —
-so it carries the new agent image as well as the new RBAC — and mints a
-**single-use** download URL for it: the first fetch of either form spends it,
-and an unused one expires after 15 minutes. The Kustomize form
-fetches and extracts the package first, because Kustomize accepts only local
-paths and Git specs as remote targets:
+Re-applying is the same command as installing. Open the cluster's dashboard and choose **Agent install** (admin-only, agent-mode clusters). It re-renders the package from the stored registration token against current settings, so it carries the new agent image too, and mints a **single-use** download URL: the first fetch of either form spends it, and an unused one expires after 15 minutes.
 
 ```bash
+# Kustomize form: fetch and extract first (Kustomize accepts only local paths and Git specs)
 curl -sfL https://your-kubemg/install/<download-ticket>/kustomize.tar.gz | tar -xz
 kubectl apply -k kubemg-agent
-```
 
-or apply the flat manifest, which is the one-liner the console shows first:
-
-```bash
+# or the flat manifest, the one-liner the console shows first
 kubectl apply -f https://your-kubemg/install/<download-ticket>/agent.yaml
 ```
 
-If you manage the manifests yourself rather than through the rendered
-package, diff `deploy/kustomize/base/rbac.yaml` at the new version against
-what's applied and reconcile. Both the cluster detail page and the wizard's
-last step in the console call out whether an attached cluster's RBAC is
-current.
+If you manage the manifests yourself, diff the agent's `rbac.yaml` (`deploy/kustomize/base/`) at the new version against what is applied. The cluster detail page and the wizard's last step show whether an attached cluster's RBAC is current.
 
 ## Upgrade notes by release
 
-A release that asks something of you beyond pulling the new image has its own
-page, written as the steps to take, in order:
+A release that asks something beyond pulling the image is listed here.
 
-- [Upgrading to 0.11.0](upgrading-0.11.md), from 0.10.x. Read it before you pull:
-  the identity every cluster sees changes, old install URLs stop working, and
-  credential encryption, once turned on, cannot be rolled back past.
-- 0.11.1, from 0.11.0, asks nothing beyond the image pull and needs no agent
-  re-apply. It adds the pod
-  [Debug action](../clusters/terminals-and-logs.md#debugging-a-pod-with-no-shell),
-  whose container runs `busybox:1.36` by default: an air-gapped install
-  should mirror an image with a shell and point `debug_image` at it.
-- 0.12.0, from 0.11.x, needs no schema step, but asks three things:
-    - **Re-apply every agent's install package.** The agent in 0.12.0 sends
-      each interactive message to the API server as one frame. An older
-      agent silently drops `kubectl exec -i` stdin past 4 KiB and truncates
-      `kubectl cp` into a pod, and only the upgraded agent fixes that. The
-      tunnel protocol is unchanged, so an old agent stays attached until you
-      do.
-    - **Run exactly one replica.** An agent's tunnel lives in the memory of
-      the replica it reached, so a second replica answers `503` for the
-      clusters whose agents chose the other one. Scale to one and use
-      `strategy: Recreate`.
-    - **Keep the TLS volume for the first boot.** A minted certificate is now
-      kept in the database too, and an existing install copies its pair in
-      on that boot ([TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too)).
+- **0.11.0**, from 0.10.x: [read the section below](#upgrading-to-0110) before you pull.
+- **0.11.1**, from 0.11.0: nothing beyond the pull, no re-apply. It adds the pod [Debug action](../clusters/terminals-and-logs.md#debugging-a-pod-with-no-shell), whose container runs `busybox:1.36` by default. An air-gapped install should mirror an image with a shell and point `debug_image` at it.
+- **0.12.0**, from 0.11.x: no schema step, but:
+    - **Re-apply every agent's install package.** An older agent silently drops `kubectl exec -i` stdin past 4 KiB and truncates `kubectl cp` into a pod. The protocol is unchanged, so old agents stay attached until you do.
+    - **Run exactly one replica.** An agent's tunnel lives in the memory of the replica it reached; a second replica answers `503` for the other's clusters. Scale to one and use `strategy: Recreate`.
+    - **Keep the TLS volume for the first boot** ([TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too)).
 
-    It also adds the [Helm chart](kubernetes.md) and an image pull secret for an
-    authenticated mirror ([Air-gapped installs](air-gapped.md)). The secret
-    reaches an agent through the same re-apply.
-- 0.13.0, from 0.12.x, needs no schema step — the new columns are added at
-  boot — and the agent binary is unchanged, but asks one thing:
-    - **Re-apply every agent's install package** if anyone will create
-      [alarms](../observability/alerts.md). The agent's roles gain
-      `prometheusrules` (see
-      [above](#when-agents-must-re-apply-their-manifests)); until you
-      re-apply, everything else works and creating an alarm fails with the
-      cluster's own `403`.
+    It also adds the [Helm chart](kubernetes.md) and an image pull secret for an authenticated mirror ([Air-gapped installs](air-gapped.md)); the secret reaches an agent through the same re-apply.
+- **0.13.0**, from 0.12.x: no schema step (new columns are added at boot) and the agent binary is unchanged. **Re-apply every agent's install package** if anyone will create [alarms](../observability/alerts.md) (see [above](#when-agents-must-re-apply-their-manifests)). It also adds Alertmanager as a third datasource kind (*alerts*), Okta as an identity provider type, and the namespace block on Explore's workload lists. None needs anything at upgrade time.
+- **0.14.0**, from 0.13.x: no schema step, no new setting, and the agent's roles are unchanged.
+    - **Re-apply every agent's install package** when convenient. The agent binary is rebuilt on Go 1.26.9 for the `net/http` fixes (GO-2026-6610 to 6617), and an agent keeps its old image until it is re-applied. Nothing stops working in the meantime.
+    - **A git checkout rebuilds its backend image with `--pull`** ([below](#the-backend-will-not-start-after-a-pull)), because the server now needs Go 1.26.9.
 
-    It also adds Alertmanager as a third datasource kind (*alerts*), Okta as
-    its own identity provider type, and the namespace block on Explore's
-    workload lists. None of them needs anything at upgrade time.
+    It also adds the [capacity heatmap](../clusters/capacity.md#heatmap), with placement, QoS and the pods using more than they reserved, and a notice before a write to an object [something else manages](../clusters/actions.md#something-else-manages-the-object). The list of pods using more than they reserved reads `pods.metrics.k8s.io`, which a metrics-server install grants to the built-in `view` role. Where a cluster refuses it, the page says so and shows everything else.
 
-An install that runs from a clone of the repository rather than from the
-published images has one more thing to get right. See
-[Upgrading a git checkout](upgrading-from-source.md).
+    The user guide was reorganised: the upgrading pages are now this one page, and the first-cluster pages are one [Quickstart](../getting-started/quickstart.md). A link into a removed page still works on the 0.13.0 docs.
+
+An install that runs from a clone of the repository has one more thing to get right: see [Upgrading a git checkout](#upgrading-a-git-checkout).
 
 ## Rollback
 
-There is no destructive migration to roll back — `AutoMigrate` only adds
-tables and columns, it never drops or renames them, so a database migrated
-forward by a newer version is still a valid schema for an older one to run
-against (it will simply not use the columns/tables it doesn't know about).
-Rolling back the management plane image is therefore safe from a schema
-perspective:
+Migrations only add tables and columns, never drop or rename, so a database migrated forward is still a valid schema for an older version. Rolling back the image is safe: pin the previous tag and run `docker compose pull && docker compose up -d`.
 
-```bash
-docker compose pull ... # (pin KUBEMG_IMAGE back to the previous tag)
-docker compose up -d
-```
+A rollback does **not** undo:
 
-Two things a rollback does **not** undo:
-
-- **A protocol bump.** If the version you're rolling back from introduced a
-  new `ProtocolVersion`, agents already re-applied against it will fail to
-  handshake against the older server until they are rolled back too (or, more
-  practically, re-applied against the older server's rendered manifest,
-  which pins the compatible agent image again).
-- **Data written under a newer schema's meaning** — this is a general
-  database caveat, not a kubemg-specific one, and is why testing an upgrade
-  against a restored copy of production before doing it for real is worth
-  the time it takes.
+- **A protocol bump.** Agents already re-applied against the newer version fail to handshake with the older server until re-applied against it.
+- **Data written under a newer schema's meaning.** Test an upgrade against a restored copy of production first.
 
 ## Documentation versioning
 
-This manual is versioned against release tags on Read the Docs: an install
-running `0.13.0` corresponds to the `0.13.0` version of these docs, not
-whatever `master` says today. If you're following a procedure here, check
-the version selector matches the version you're actually running.
+This manual is versioned against release tags. An install running `0.14.0` matches the `0.14.0` docs; check the version selector.
+
+## Upgrading to 0.11.0
+
+0.11.0 is a security release, from 0.10.x. Three changes alter what an existing install does, so this section goes in order: before you pull, the upgrade, what to re-apply, how to verify.
+
+| Change | What you do |
+|---|---|
+| Every account reaches the cluster as `kubemg:u:<username>` | Rebind any RoleBinding you wrote against a bare kubemg username. Before the upgrade. |
+| Usernames containing `:` are refused | Nothing. Existing ones keep working and are listed at boot. |
+| Old install URLs answer `410 Gone` | Replace stored install URLs in runbooks or automation. Rotate the token if one leaked. |
+| The agent's manifests changed | Re-apply on every agent-mode cluster. Each agent restarts once. |
+| Credentials can be encrypted at rest | Optional. Back up the database first, then set `KUBEMG_SECRET_KEY`. |
+| Three schema changes | Nothing. Applied at first boot. |
+
+### 1. Before you pull
+
+**Back up the database.** Everything here rolls back cleanly except the encryption in step 4. See [Database](database.md).
+
+**Find bindings to bare kubemg usernames.** Accounts are now impersonated as `kubemg:u:<username>`, so `ada` becomes `kubemg:u:ada` in the API server's audit log, in `kubectl auth can-i --as`, and in the **Impersonated as** field of kubemg's trail. This closes a privilege escalation (see [Why the username is prefixed](../access/model.md#why-the-username-is-prefixed)). On each cluster, list bindings whose subject is a user:
+
+```bash
+kubectl get rolebindings,clusterrolebindings -A -o json \
+  | jq -r '.items[] | select(any(.subjects[]?; .kind=="User"))
+           | "\(.metadata.namespace // "-")\t\(.metadata.name)\t\([.subjects[] | select(.kind=="User") | .name] | join(","))"'
+```
+
+A subject such as `kind: User, name: ada` stops matching after the upgrade. Add `kubemg:u:ada` beside it now and remove the old name afterwards. Bindings to the `kubemg:` groups and kubemg's fixed identities (`kubemg:alarm-watcher`, `kubemg:event-watcher`, `kubemg:shell-runner`) are unaffected.
+
+**Find stored install URLs.** Old URLs carried the cluster's registration token (`/install/kmg_.../agent.yaml`). They now carry a **single-use download ticket** ([What the install command fetches](../clusters/agent.md#what-the-install-command-fetches)) and every old URL answers `410 Gone`. Check runbooks, CI jobs, GitOps bootstrap scripts and wikis, and use a fresh URL from **Agent install**.
+
+**Update audit and SIEM rules** that match `impersonate_user` against a bare username. Old records keep the bare name; new ones carry the prefix.
+
+### 2. Upgrade the management plane
+
+Pin `0.11.0` and pull as in [Upgrading the management plane](#upgrading-the-management-plane):
+
+```bash
+# Docker Compose (KUBEMG_IMAGE=ghcr.io/kubemg/kubemg:0.11.0 in .env)
+docker compose pull
+docker compose up -d
+```
+
+First boot applies three schema changes: it widens the recorded impersonated identity to 190 characters, adds a table for install tickets, and adds a lookup column for agent tokens. Attached agents stay attached; the upgrade does not change their tokens.
+
+### 3. Re-apply the agent manifests
+
+On every agent-mode cluster, open the dashboard, choose **Agent install** and run the command ([above](#when-agents-must-re-apply-their-manifests)). The re-apply:
+
+- **Narrows the impersonation grant** to kubemg's four `kubemg:` groups and no ServiceAccount. Skipping it breaks nothing but leaves the wider grant.
+- **Restarts the agent pod once.** The pod template now carries a fingerprint of the agent Secret so a package applied after a token rotation restarts the agent. The tunnel is down for those seconds.
+- **Records `agent-displaced` once per cluster** in the trail. Expected here; see [When a connection displaces the agent](../clusters/agent.md#when-a-connection-displaces-the-agent).
+
+**If an old install URL may have been copied somewhere you do not control**, its token is still valid. On the cluster's dashboard choose **Rotate agent token**, then apply the package the console shows. The agent is down between the two steps ([Rotating the registration token](../clusters/agent.md#rotating-the-registration-token)).
+
+### 4. Optional: encrypt credentials at rest
+
+kubemg can encrypt the credentials it stores: its signing key, agent registration tokens, direct-mode ServiceAccount tokens, datasource, Helm repository and alarm credentials, the OIDC client secret and the LDAP bind password. Nothing changes until you set `KUBEMG_SECRET_KEY`; until then the server warns at every boot and the posture page flags it.
+
+1. Generate a key with `openssl rand -base64 32`. Store it **separately** from the database backup.
+2. Set `KUBEMG_SECRET_KEY` and restart. The first boot encrypts everything in place.
+3. Nothing else changes: agents reconnect with the same tokens, and sessions and kubeconfigs stay valid.
+
+**From here on the key is as important as the database.** A server with a different key, or none, over an encrypted database refuses to boot. **Rolling back to 0.10.x after setting the key does not work**; the way back is the step 1 backup ([Database](database.md#credentials-encrypted-at-rest)).
+
+### 5. Check that it worked
+
+- The console footer reads `kubemg 0.11.0`.
+- Every agent-mode cluster shows its agent attached after the re-apply.
+- After one call through the console or a kubeconfig, the audit trail's **Impersonated as** reads `kubemg:u:<your username>`.
+- The server log has no `accounts carry a username new accounts may no longer take` line. If it lists accounts, they contain `:`; they keep working and can be renamed in the user editor. A federated user with such a name who has never signed in is refused at first sign-in.
+- If you enabled encryption: the posture page no longer flags the secret key.
+- An old `/install/kmg_...` URL returns `410`.
+
+### Rolling back from 0.11.0
+
+Without `KUBEMG_SECRET_KEY` set, pin `0.10.0` again and pull; the schema changes only add. After a rollback the cluster sees bare usernames again, so keep both subjects in any rebound RoleBinding until you are sure. An agent re-applied from 0.11.0 keeps its narrowed grant and keeps working. With the key set, restore the database from the step 1 backup.
+
+## Upgrading a git checkout
+
+This section is for an install that runs from a clone of the repository (`git clone`, then `make up` or `docker compose up` at the repository root), which is the **dev stack** the [Quickstart](../getting-started/quickstart.md) uses. It is fine for evaluating, not for production. To move to a production install, see [Moving to the image-based install](#moving-to-the-image-based-install).
+
+### The dev stack's signing key is public
+
+The root `docker-compose.yml` sets `JWT_SECRET=kubemg_dev_secret_change_me`, readable in the repository. That key signs every session and agent-mode kubeconfig, so anyone who knows it can mint a super-admin session and reach every agent-mode cluster. **If a dev-stack install is reachable by anyone you would not hand cluster-admin to, treat its sessions as compromised.** Set your own value now:
+
+```bash
+# in .env at the repository root (gitignored, survives every pull)
+JWT_SECRET=$(openssl rand -base64 48)
+```
+
+Restart with `make up`. This signs everyone out and invalidates every issued **agent-mode kubeconfig**, so people download new ones. Machine-account tokens are stored, not signed, and keep working.
+
+### "You have divergent branches and need to specify how to reconcile them"
+
+`git pull` stops with this when the checkout's `master` has commits `origin/master` lacks. Either somebody committed on the install host (usually a port or env var edited into `docker-compose.yml`), or upstream history was rewritten and git counts every commit as yours.
+
+Find commits whose content `origin/master` lacks (this compares changes, not ids):
+
+```bash
+git fetch origin
+git cherry -v origin/master HEAD | grep '^+'
+```
+
+**No output**: nothing on the host is worth keeping. Keep a pointer and move to upstream:
+
+```bash
+git branch backup-before-upgrade
+git reset --hard origin/master
+```
+
+**Some output**: these are real local changes. Configuration belongs in `.env` at the repository root, not in a commit; move it there, then reset as above. A genuine code change can be carried with `git pull --rebase`.
+
+Do **not** answer the prompt with `git config pull.rebase true` before you know which case you are in. Rebasing rewritten history replays every upstream commit and ends in meaningless conflicts.
+
+### The backend will not start after a pull
+
+The dev stack builds its backend on the `golang:1.26-alpine` image Docker already has. When a release raises the Go version the server needs (0.14.0 needs 1.26.9), that cached image is too old, and the backend exits at start with:
+
+```text
+go: go.mod requires go >= 1.26.9 (running go 1.26.8; GOTOOLCHAIN=local)
+```
+
+Rebuild it on a fresh base, then start it again:
+
+```bash
+docker compose build --pull backend
+docker compose up -d backend
+```
+
+Agents reconnect on their own within about half a minute.
+
+### What a reset keeps
+
+`git reset --hard` only rewrites tracked files. Untouched: `.env` (gitignored) and the Docker volumes `postgres-data` (users, grants, clusters, audit trail), `tls-certs` (the certificate every agent pinned) and `session-recordings`.
+
+Bring the stack back with `make up` (or `docker compose up -d --build`) and follow the [release notes](#upgrade-notes-by-release).
+
+### Moving to the image-based install
+
+The production [Docker Compose](docker-compose.md) install builds nothing and has no git history to diverge. Carry these across unchanged:
+
+| Carry over | Why |
+|---|---|
+| The database | Everything kubemg knows. |
+| The certificate in `tls-certs` | Every installed agent pinned it. A new one is refused by all of them. |
+| The public address (`KUBEMG_PUBLIC_URL` and the hosts the certificate names) | Agents dial it and issued kubeconfigs point at it. |
+| `KUBEMG_SECRET_KEY` and `KUBEMG_SESSION_RECORDING_KEY`, if set | The database and recordings are encrypted under them. |
+
+Do **not** carry the dev `JWT_SECRET` across; set a new one. With the dev stack at the repository root and the new install in `deploy/compose/` on the same host:
+
+```bash
+# 1. Stop kubemg but keep the database up, and dump it.
+docker compose stop backend frontend
+docker compose exec -T postgres pg_dump -U kubemg -Fc kubemg > kubemg.dump
+
+# 2. Copy the certificate out of the dev stack's volume. The volume name is
+#    prefixed with the clone's directory, e.g. kubemg_tls-certs.
+docker volume ls | grep tls-certs
+docker run --rm -v kubemg_tls-certs:/from -v "$PWD":/to alpine \
+  sh -c 'mkdir -p /to/tls-backup && cp -a /from/. /to/tls-backup/'
+
+# 3. Prepare deploy/compose/.env from .env.example: the same public URL and
+#    TLS hosts, the same KUBEMG_SECRET_KEY / KUBEMG_SESSION_RECORDING_KEY,
+#    a new JWT_SECRET, and KUBEMG_IMAGE pinned to the release.
+
+# 4. Start only its database, restore into it, then seed the certificate
+#    volume before kubemg first boots. Otherwise it mints a new certificate.
+cd deploy/compose
+docker compose up -d postgres
+docker compose exec -T postgres pg_restore -U kubemg -d kubemg --clean --if-exists < ../../kubemg.dump
+docker volume ls | grep tls-certs      # e.g. compose_tls-certs
+docker run --rm -v compose_tls-certs:/to -v "$OLDPWD":/from alpine \
+  sh -c 'cp -a /from/tls-backup/. /to/'
+
+# 5. Start kubemg. The dev stack stays stopped; both would bind :8443.
+docker compose up -d
+```
+
+Use the database user and name from your `.env` if you changed them. Copy `session-recordings` the same way if you need the replays. Then check:
+
+- The server log does **not** say it generated a certificate. If it does, step 4's copy did not land and every agent will be refused. Stop and fix the volume; nothing is lost while the old one exists.
+- Every agent-mode cluster shows its agent attached, with no re-apply.
+- You can sign in with an existing account.
+
+Keep the dev stack's volumes until the new install has run a while. They are the way back.
 
 ## Next
 

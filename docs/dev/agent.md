@@ -7,7 +7,7 @@ cluster's own API server.
 
 What it is, what it refuses to do, its environment variables and the log lines
 worth watching are in the user guide's
-[The agent in your cluster](../reference/agent.md). This page is the half that
+[The agent](../clusters/agent.md). This page is the half that
 only matters if you are changing it.
 
 ## Why it is a module of its own

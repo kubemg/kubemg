@@ -1,8 +1,9 @@
 # Runtime settings
 
-Most of kubemg's environment-supplied configuration can be overridden at
-runtime from the Settings pages, without a redeploy. `GET /api/v1/settings`
-and `PUT /api/v1/settings` (both admin-only) are the surface behind them.
+The settings an administrator can change at runtime from the Settings pages,
+without a redeploy, with their defaults, ranges and refusals. Both
+`GET /api/v1/settings` and `PUT /api/v1/settings` are admin-only; see the
+[REST API](../dev/api.md).
 
 ## Resolution rule
 
@@ -14,10 +15,8 @@ Every setting below follows the same rule:
 3. **An empty override means "use the default"** — that is how a setting is
    cleared. Sending `""` (or, for a numeric setting, `0`) removes the
    override rather than storing an empty value.
-4. If the database cannot be reached, the resolution falls back to the
-   **boot-time environment value** rather than failing the request —
-   rendering an install command with a possibly-stale address is better than
-   not rendering one at all.
+4. If the database cannot be reached, the **boot-time environment value** is used
+   rather than failing the request.
 
 `GET /api/v1/settings` returns all three views at once:
 
@@ -41,16 +40,15 @@ Every setting below follows the same rule:
 | Validation | Must be an absolute `http://` or `https://` address with a host |
 | Unset behaviour | n/a — always resolves to the environment default when cleared |
 
-This is the outside view of the bastion, not its listen address — a
-loopback or private value here means an agent inside a target cluster can
-never dial back in.
+This is the outside view of the bastion, not its listen address. A loopback or
+private value means an agent inside a target cluster can never dial back in.
 
 ### `agent_image`
 
 | | |
 |---|---|
 | Meaning | The container image installed into a target cluster when it registers in agent mode. |
-| Environment default | `KUBEMG_AGENT_IMAGE` (falls back to the build's own default, currently `ghcr.io/kubemg/kubemg-agent:0.13.0`) |
+| Environment default | `KUBEMG_AGENT_IMAGE` (falls back to the build's own default, currently `ghcr.io/kubemg/kubemg-agent:0.14.0`) |
 | Validation | none beyond trimming |
 
 ### `agent_namespace`
@@ -91,7 +89,7 @@ See [Air-gapped installs](../install/air-gapped.md#a-mirror-that-requires-authen
 | Meaning | How many days a proxied call stays in the audit table before the background pruner removes it. |
 | Environment default | `KUBEMG_AUDIT_RETENTION_DAYS` (falls back to `30`) |
 | Range | 1–3650 |
-| Unusable stored value | Read as unset (falls back to the environment default) — a retention window read wrong is a trail deleted, so the read side treats a corrupted or out-of-range value as absent rather than guessing |
+| Unusable stored value | Read as unset (the environment default applies), never guessed at |
 | Clear with | `0` |
 
 The pruner re-reads this setting on every pass, so shortening retention
@@ -104,12 +102,10 @@ takes effect without a restart.
 | Meaning | How long a terminal session recording (the `.cast.gz` file plus its index row) is kept. |
 | Default | The **audit retention window** — not an independent environment variable |
 | Range | 1–3650 when set explicitly |
-| Ceiling | **Clamped down to `audit_retention_days` on read**, not refused on write. A stored value that was legal when saved must not turn into a validation error just because the audit window later shortened — see `clampRecordingRetention`. |
+| Ceiling | **Clamped down to `audit_retention_days` on read**, not refused on write, so a value that was legal when saved never becomes an error because the audit window later shortened. |
 | Clear with | `0` (falls back to following the audit window) |
 
-A recording is evidence *about* a line in the audit trail; letting it
-outlive the record that says the shell was opened at all would leave
-orphaned evidence.
+A recording must not outlive the audit record that says the shell was opened.
 
 ### `audit_verbs`
 
@@ -119,7 +115,7 @@ orphaned evidence.
 | Environment default | none — unset means every verb is recorded |
 | Validation | Each entry must be one of the suppressible verbs listed in [Audit trail](../audit/trail.md#selective-audit-audit_verbs); an unrecognised verb in a submitted list is refused |
 | Empty submission | Means **"back to every verb"**, never "record nothing" — the floor below still records regardless of this setting |
-| Applies to | `StoreAuditor` only, never the structured-log auditor — narrowing a queryable table is a storage decision; narrowing what a SIEM tails would be an audit decision |
+| Applies to | The audit table only. The structured log and any [forwarder](../audit/trail.md) still carry every verb |
 
 Three things this selection can never suppress, whatever verbs are chosen: a
 refusal or error, any streaming call (`exec`/`attach`/`portforward`/`log
@@ -139,20 +135,20 @@ refusal or error, any streaming call (`exec`/`attach`/`portforward`/`log
 | | |
 |---|---|
 | Meaning | Stores the field-level diff of a manifest write on its `update` audit row. |
-| Default | **off**, and there is no environment variable behind it — unlike every other setting here, this one starts disabled on purpose |
-| Why it defaults off | A manifest body can carry values as sensitive as a Secret's without being a Secret — an inlined token in a ConfigMap, a password in a Deployment's env — so recording diffs is a new class of retained data an operator opts into rather than one that quietly starts happening |
+| Default | **off**, with no environment variable behind it |
+| Why it defaults off | A manifest can carry values as sensitive as a Secret (an inlined token in a ConfigMap, a password in a Deployment's env), so recording diffs is retained data an operator opts into |
 
 ### `kubeconfig_max_ttl_hours`
 
 | | |
 |---|---|
 | Meaning | The longest a generated kubeconfig may be asked to live, in hours. |
-| Default | No environment variable — the build's own `k8s.DefaultMaxTTL` (24 hours) |
-| Absolute ceiling | `k8s.MaxTTL` (90 days / a quarter) — this setting can move the ceiling *within* that bound, never past it |
-| Range | 1 hour to `k8s.MaxTTL` in hours (2160) |
-| Unusable stored value | Read as unset (falls back to the 24-hour default) — the same "wrong read reads as absent" rule retention uses, because a ceiling read wrong is either every request refused or a credential that lives longer than this build is willing to sign for |
+| Default | 24 hours; no environment variable |
+| Absolute ceiling | 90 days. The setting moves the ceiling within that bound, never past it |
+| Range | 1 hour to 2160 hours |
+| Unusable stored value | Read as unset (the 24-hour default applies) |
 | Clear with | `0` |
-| Stored in | **Hours**, not days — the setting has to move in both directions (an install granting a quarter, and one refusing anything past an eight-hour shift, are the same kind of decision), and only hours can express the second |
+| Stored in | **Hours**, not days, so an install can go below a day (an eight-hour shift) as well as up to a quarter |
 
 ## Branding (a separate surface, on purpose)
 
@@ -165,29 +161,20 @@ banner, and a footer notice — is stored alongside the settings above but is
 | `GET /api/v1/branding` | **none** | What the console should draw. |
 | `PUT /api/v1/branding` | admin | Writes it. |
 
-Three things make it a different kind of thing from a setting, and they are why
-it is not folded into the shape above:
+Branding differs from a setting in three ways:
 
-1. **It has no environment default.** There is nothing sensible for a boot flag
-   to say about a customer's logo, so the resolution rule at the top of this page
-   does not apply: a branding value is either stored or absent.
-2. **It changes nothing the server does.** Every setting above is a knob on
-   behaviour; these five are drawn and nothing more.
-3. **The read is unauthenticated, and has to be.** An environment banner exists
-   to be read *before* somebody types a password into a console — one that
-   appeared only after sign-in would be warning people about a console they are
-   already inside. That is a deliberately different judgement from
-   `GET /api/v1/setup/state`, which answers one boolean because a stranger must
-   learn nothing: everything branding serves was typed into a form by an
-   administrator who could see the sign-in page while doing it. It carries no
-   version, no provider, no address and no cluster.
+- **No environment default.** A value is either stored or absent.
+- **It changes nothing the server does.** These five fields are only drawn.
+- **The read is unauthenticated**, so an environment banner shows on the
+  sign-in page, before anyone types a password. It carries no version, provider,
+  address or cluster.
 
 | Field | Bound | Notes |
 |---|---|---|
 | `organisation_name` | 60 characters | Drawn beside the `kubemg` lockup, never instead of it. |
-| `organisation_mark` | 64 KB decoded | A base64 `data:` URI. **A URL is refused** — an air-gapped console cannot fetch a remote image, and one that can turns its own sign-in page into a beacon for whoever hosts it. PNG, JPEG, GIF and WebP only: **SVG is refused** because it can carry script and this is rendered for people who have not signed in yet. |
+| `organisation_mark` | 64 KB decoded | A base64 `data:` URI. **A URL is refused** (an air-gapped console cannot fetch it, and a remote image would beacon from the sign-in page). PNG, JPEG, GIF and WebP only; **SVG is refused** because it can carry script. |
 | `banner_text` | 120 characters | Empty means no banner, which is the default. Whitespace runs are folded to one space — a pasted newline would push every page's content down. |
-| `banner_tone` | `neutral`, `caution`, `critical` | The deck's semantic colours. Lime is deliberately not offered: it is the interactive accent, and a banner is not something you press. A tone stored without text is not reported as a banner. |
+| `banner_tone` | `neutral`, `caution`, `critical` | A tone stored without text is not reported as a banner. |
 | `footer_notice` | 160 characters | The classification or handling line, beside the release number in the footer. |
 
 An omitted field is left alone and a field sent empty is cleared — the same
@@ -195,9 +182,8 @@ convention the settings routes use.
 
 ## Deployment posture (read-only, not a setting)
 
-`GET /api/v1/settings/deployment` (admin only) reports facts about *this*
-running process that no setting can change at runtime — they are fixed at
-boot from the environment and TLS material on disk:
+`GET /api/v1/settings/deployment` (admin only) reports facts about the running
+process that no setting can change; they are fixed at boot:
 
 - Whether HTTPS is enabled, and whether the certificate being served is
   self-signed, operator-supplied, or minted by kubemg itself.
@@ -207,37 +193,31 @@ boot from the environment and TLS material on disk:
 - Whether session recording is enabled, and whether the recording encryption
   key is configured.
 
-Each fact comes back as a `setupCheck` — `key`, `title`, `severity`
+Each fact comes back as a check with a `key`, `title`, `severity`
 (`ok`/`warn`/`blocked`), `detail`, and a literal `fix` line naming the
-environment variable or file to change. This is the same read the first-run
-setup wizard's preflight step (`GET /api/v1/setup/preflight`, admin only)
-shows — an install that inherited its configuration, or that took the fast
-path through setup, can still find these facts later, rather than only
-seeing them once during onboarding.
+environment variable or file to change. It is the same read the setup wizard's
+preflight step shows, so you can find these facts again after onboarding.
 
 ## First-run setup routes
 
 | Route | Auth | Purpose |
 |---|---|---|
-| `GET /api/v1/setup/state` | none | Reports `{"required": bool}` — whether this install still needs first-run setup. Unauthenticated by necessity: the sign-in page has to render before a session exists. A database failure reads as "not required", the safe direction, since the wizard overrides the whole console. |
+| `GET /api/v1/setup/state` | none | Reports `{"required": bool}`: whether this install still needs first-run setup. Unauthenticated because the sign-in page renders before a session exists. A database failure reads as "not required". |
 | `GET /api/v1/setup/preflight` | admin | Everything the wizard cannot fix through a form: `admin_password_pristine` (the seeded administrator still holds its original password), the deployment `checks` above, and the settings `warnings` below. |
-| `POST /api/v1/setup/complete` | admin | Stamps setup as finished. **Refuses (409)** while the bootstrap administrator's password is unchanged — every other thing the wizard collects is a preference; this one is the difference between an install that has actually been set up and one that merely looks like it has. |
+| `POST /api/v1/setup/complete` | admin | Stamps setup as finished. **Refuses (409)** while the bootstrap administrator's password is unchanged. |
 
 ## The kubeconfig policy endpoint
 
 `GET /api/v1/kubeconfig/policy` (any authenticated user) reports
 `min_ttl_seconds`, `default_ttl_seconds` and `max_ttl_seconds` — the
-resolved ceiling from `kubeconfig_max_ttl_hours` above. It is deliberately
-readable by anyone who can generate a kubeconfig, not admin-only: a form
-offering a choice must not have to discover the ceiling by being refused.
-The frontend's kubeconfig drawer filters a fixed TTL ladder (1h through 90d)
-against this response rather than offering a free-text field.
+resolved ceiling from `kubeconfig_max_ttl_hours` above. Anyone who can generate
+a kubeconfig can read it, so the form never learns the ceiling by being refused.
+The kubeconfig drawer offers a fixed ladder (1h through 90d) filtered by it.
 
 ## Warnings disclosed in the console
 
-`settingsWarnings` computes warnings from the **effective** settings, and
-they are surfaced in two places verbatim: the General Settings page, and the
-setup wizard's preflight step.
+Warnings are computed from the **effective** settings and shown verbatim on the
+General Settings page and in the setup wizard's preflight step.
 
 - **A raised kubeconfig ceiling.** Whenever the effective
   `kubeconfig_max_ttl_hours` exceeds the 24-hour default, the console shows:
@@ -247,10 +227,8 @@ setup wizard's preflight step.
     > but a direct-mode kubeconfig carries a token minted on the cluster,
     > which keeps working until it expires however the grant changes."
 
-    This is a **disclosure**, not a refusal — raising the ceiling is a
-    policy an administrator is allowed to choose, but the console states the
-    consequence every time it takes effect, because the two connection modes
-    differ on exactly the thing that matters about a long-lived credential.
+    This is a **disclosure**, not a refusal: the ceiling is yours to choose, and
+    the console states the consequence each time.
 
 - **A loopback public URL:**
 

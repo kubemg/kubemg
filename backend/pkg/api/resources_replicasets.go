@@ -35,18 +35,13 @@ type replicaSetView struct {
 	OwnerKind string   `json:"owner_kind,omitempty"`
 	Revision  string   `json:"revision,omitempty"`
 	Images    []string `json:"images,omitempty"`
+	// ManagedBy: see resources_managed.go.
+	ManagedBy *managedByView `json:"managed_by,omitempty"`
 }
 
 type replicaSetObject struct {
-	Metadata struct {
-		objectMeta
-		OwnerReferences []struct {
-			Kind       string `json:"kind"`
-			Name       string `json:"name"`
-			Controller *bool  `json:"controller"`
-		} `json:"ownerReferences"`
-	} `json:"metadata"`
-	Spec struct {
+	Metadata managedObjectMeta `json:"metadata"`
+	Spec     struct {
 		Replicas *int32 `json:"replicas"`
 		Template struct {
 			Spec struct {
@@ -64,10 +59,11 @@ type replicaSetObject struct {
 
 func (r replicaSetObject) view() replicaSetView {
 	view := replicaSetView{
-		listMeta: r.Metadata.meta(),
-		Current:  r.Status.Replicas,
-		Ready:    r.Status.ReadyReplicas,
-		Revision: r.Metadata.Annotations[deploymentRevisionAnnotation],
+		listMeta:  r.Metadata.meta(),
+		Current:   r.Status.Replicas,
+		Ready:     r.Status.ReadyReplicas,
+		Revision:  r.Metadata.Annotations[deploymentRevisionAnnotation],
+		ManagedBy: r.Metadata.managedBy("ReplicaSet"),
 	}
 	if r.Spec.Replicas != nil {
 		view.Desired = *r.Spec.Replicas

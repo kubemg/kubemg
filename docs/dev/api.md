@@ -166,7 +166,7 @@ curl -sk -X POST https://localhost:8443/api/v1/clusters/3/kubeconfig/generate \
 ## Helm repositories
 
 Server-wide, not scoped to a cluster — see [Chart
-repositories](../clusters/helm-repositories.md).
+repositories](../clusters/helm.md#chart-repositories).
 
 | Method & path | Auth | Notes |
 | --- | --- | --- |
@@ -215,7 +215,7 @@ fan-out limit) rather than listing the whole cluster.
 | `GET /access-review/identity` | `{subject, groups, k8s_role, namespaces, cluster}` — the caller's actual impersonation identity. |
 | `GET /custom` | Query `group,version,plural,scope?`. Anchored-pattern validated; the **core group is refused** (must contain a dot). A 404 from the cluster answers `available:false`. |
 | `GET /helm/releases` | Deduplicated to the highest revision per release. |
-| `POST /helm/releases` | Installs from a registered [chart repository](../clusters/helm-repositories.md), version resolved against the stored catalogue. `409` if a release of that name already exists. Pre-flight refuses a cluster-scoped object or an out-of-grant namespace before the first write. |
+| `POST /helm/releases` | Installs from a registered [chart repository](../clusters/helm.md#chart-repositories), version resolved against the stored catalogue. `409` if a release of that name already exists. Pre-flight refuses a cluster-scoped object or an out-of-grant namespace before the first write. |
 | `POST /helm/releases/:name/upgrade` | Re-renders and three-way merges onto the live cluster. Objects the previous revision wrote and this one drops are deleted last, never fatally. |
 | `GET /helm/releases/:name/values` | |
 | `PUT /helm/releases/:name/values` | Renders and applies, the same as an upgrade, reading the chart back off the release itself — no repository needs to be reachable. `helmValuesWarning` appears only for a release whose stored object carries no chart, naming that reason. |
@@ -231,7 +231,7 @@ fan-out limit) rather than listing the whole cluster.
 | `POST /restart` | Stamps `kubectl.kubernetes.io/restartedAt`. `409` a kind with no pod template. |
 | `POST /suspend` | CronJob only. A request for the state the object is already in is answered without a write. |
 | `POST /cronjob/run` | Body `{name,namespace?}`. Builds a Job from the CronJob's own `spec.jobTemplate` and posts it to the Jobs collection — `generateName`, `cronjob.kubernetes.io/instantiate: manual`, and deliberately **no** `ownerReferences` so the CronJob's history limits cannot reap it. `201` with the name the cluster generated. |
-| `GET /describe` | Metadata, `status.conditions`, a bounded flatten of spec/status, and the object's own events (both legacy and `events.k8s.io` shapes). |
+| `GET /describe` | Metadata, `status.conditions`, a bounded flatten of spec/status, the object's own events (both legacy and `events.k8s.io` shapes), and `managed_by` — what reconciles it (`controller`/`argocd`/`flux`/`helm`, its name, namespace, and `reverts`), absent when nothing does. The workload, Job, CronJob and ReplicaSet list rows carry the same field. |
 | `GET /events` | Filters `range/since/until, kind?, name?, type?`. |
 | `GET /posture` | Fixed posture rules per workload; `findings` are never dropped, only acknowledged. |
 | `POST` / `DELETE .../posture/ack` | Requires an edit-or-above grant (`403` for `view`). `reason` is mandatory. Audited. |
@@ -253,7 +253,7 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | `GET /clusters/:id/metrics/nodes` | Cluster-wide only — refused to a namespace-scoped grant. `404`/`503` from metrics-server answers `available:false`, not an error. |
 | `GET /clusters/:id/metrics/pods` | Scoped like any other list. |
 | `GET /clusters/:id/metrics/pods/:pod` | |
-| `GET /clusters/:id/metrics/capacity` | Allocation (requests/limits) against allocatable, not consumption. |
+| `GET /clusters/:id/metrics/capacity` | Allocation (requests/limits) against allocatable, plus usage, per node: taints and `placeable`, `headroom`, `qos`, and `top_borrowers` from the per-pod Metrics API (`pod_usage_available`; a 403 there is reported, not fatal). `summary.placement` is the fragmentation reading. |
 
 ## Machine accounts
 

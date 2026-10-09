@@ -1,109 +1,79 @@
 # Production checklist
 
-Expanded from the README's own checklist — each item says why, and where to
-read the full detail.
+Check these before real users or clusters depend on the install. Each item says
+why and links to the detail.
 
-- [ ] **Real TLS material in place**, either dropped into `/etc/kubemg/ssl`
-      (`ssl/` beside the compose file, or a mounted Secret in Kubernetes) or
-      `KUBEMG_AGENT_CA_BUNDLE` set behind an ingress that terminates TLS
-      itself. Without real TLS, every browser and every agent trusts a
-      self-signed certificate you'll need to re-pin fleet-wide the moment you
-      replace it. **Settings → Deployment** in the console reports which
-      certificate is actually in force at any time. See
+- [ ] **Real TLS in place**: material in `/etc/kubemg/ssl` (`ssl/` beside the
+      compose file, or a mounted Secret), or `KUBEMG_AGENT_CA_BUNDLE` set
+      behind an ingress that terminates TLS. Replacing a self-signed
+      certificate later means re-pinning the whole fleet. **Settings →
+      Deployment** reports the certificate in force. See
       [TLS and certificates](tls.md).
 
-- [ ] **Bootstrap admin password changed.** Setup refuses to finish while the
-      account created on first boot still holds the password that was
-      generated and logged — so getting through the setup wizard once is
-      what ticks this box; there's no separate step. See
+- [ ] **Bootstrap admin password changed.** Setup will not finish while the
+      generated password is unchanged, so completing setup ticks this box. See
       [Environment reference](environment.md#auth-jwt-bootstrap).
 
-- [ ] **Exactly one kubemg replica.** An agent's tunnel lives in the replica
-      it connected to; a second replica behind the same address answers
-      `503` for every cluster whose agent chose the other one. On
-      Kubernetes, `replicas: 1` with `strategy: Recreate`. See
+- [ ] **Exactly one kubemg replica** (on Kubernetes, `replicas: 1` with
+      `strategy: Recreate`). A second replica answers `503` for clusters whose
+      agent connected to the other. See
       [Choosing a deployment](index.md#sizing-and-high-availability).
 
-- [ ] **`JWT_SECRET` set explicitly** if you want a deliberate, known
-      signing key you control the rotation of — otherwise the server mints
-      one on first boot and keeps it in the database (safe across several
-      replicas booting at once; the write is a conflict-safe upsert). Setting
-      it explicitly is what gives you a way to invalidate every issued
-      session and kubeconfig at once, by rotating it yourself. See
+- [ ] **`JWT_SECRET` set explicitly**, if you want a known signing key.
+      Otherwise the server mints one and keeps it in the database. Rotating
+      your own key invalidates every issued session and kubeconfig at once. See
       [Choosing a deployment](index.md#sizing-and-high-availability).
 
-- [ ] **`KUBEMG_SECRET_KEY` generated per install**, and backed up
-      separately from the database. Without it, a copy of the database —
-      a backup, a replica, a support bundle — holds the session signing key
-      and every agent's tunnel credential in the clear, which is super-admin
-      on the console and cluster-admin through every tunnel. With it, that
-      copy is useless alone; but a restored database will not boot without
-      the key either, so it is now as important as the backup itself. Set
-      `JWT_SECRET` too, so the signing key is not stored in the database at
-      all. See [Database](database.md#credentials-encrypted-at-rest).
+- [ ] **`KUBEMG_SECRET_KEY` generated per install**, backed up apart from the
+      database. Without it a database copy holds the session signing key and
+      every agent's tunnel credential in the clear. With it, a restored
+      database will not boot without the key. Set `JWT_SECRET` too so the
+      signing key is not stored in the database at all. See
+      [Database](database.md#credentials-encrypted-at-rest).
 
-- [ ] **`KUBEMG_SESSION_RECORDING_KEY` generated per install**, and kept
-      *out of* whatever backs up the recordings volume. Every interactive
-      `exec`/`attach` session is recorded for replay, and what a recording
-      holds is everything a shell saw — up to and including credentials that
-      never should have been typed there in the first place. Storing the key
-      alongside the ciphertext it protects defends against nothing. See
+- [ ] **`KUBEMG_SESSION_RECORDING_KEY` generated per install**, kept *out of*
+      the recordings volume's backup. Recordings hold everything a shell saw,
+      including credentials typed by mistake. See
       [Environment reference](environment.md#session-recording).
 
-- [ ] **`KUBEMG_SESSION_RECORDING_DIR` on a persistent volume.** An
-      unmounted recordings directory means every replay vanishes on the next
-      restart — which is the audit evidence an incident review or an
-      auditor will ask for. See
+- [ ] **`KUBEMG_SESSION_RECORDING_DIR` on a persistent volume**, or every replay
+      vanishes on restart. See
       [Choosing a deployment](index.md#what-the-management-plane-needs-regardless-of-where-it-runs).
 
-- [ ] **`KUBEMG_PUBLIC_URL` set to the address your clusters actually
-      dial, over HTTPS.** This is baked into every generated agent install
-      command and every issued kubeconfig; `localhost` or the container's own
-      address produces an agent that dials itself and never connects. See
+- [ ] **`KUBEMG_PUBLIC_URL` is the HTTPS address your clusters dial.** It is
+      baked into agent commands and kubeconfigs; `localhost` makes an agent that
+      dials itself. See
       [Environment reference](environment.md#public-url-agent).
 
-- [ ] **Managed PostgreSQL with `DB_SSLMODE=require`** (or stricter). The
-      default (`disable`) is a development convenience — every user, grant,
-      cluster and audit row is in this database, so its own transport should
-      not be plaintext on any network you don't fully trust. See
-      [Database](database.md).
+- [ ] **Managed PostgreSQL with `DB_SSLMODE=require`** or stricter. The default
+      (`disable`) is for development, and every user, grant and audit row is in
+      this database. See [Database](database.md).
 
-- [ ] **Retention window set to whatever your auditors need**
-      (`KUBEMG_AUDIT_RETENTION_DAYS`, or the equivalent Settings page field
-      at runtime) — the audit trail and, by default, session recordings are
-      pruned on this window in the background. A window shorter than your
-      compliance requirement quietly deletes evidence before anyone asks for
-      it. See [Environment reference](environment.md#audit-retention).
+- [ ] **Retention matches your auditors**
+      (`KUBEMG_AUDIT_RETENTION_DAYS` or the Settings field). The trail and, by
+      default, recordings are pruned on this window; too short quietly deletes
+      evidence. See [Environment reference](environment.md#audit-retention).
 
-- [ ] **The database backed up, with `KUBEMG_SECRET_KEY` kept apart
-      from the backup.** The certificate kubemg minted is kept there, and
-      every already-installed agent pinned it: a database restored without
-      it — or not restored at all — is a fleet-wide re-install, not a config
-      fix. See [TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too)
-      and [Database](database.md#backup-and-restore).
+- [ ] **Database backed up, `KUBEMG_SECRET_KEY` kept apart.** The minted
+      certificate lives there and every installed agent pinned it; restoring
+      without it means a fleet-wide re-install. See
+      [TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too) and
+      [Database](database.md#backup-and-restore).
 
-- [ ] **Agent manifests are current on every attached cluster.** Agent RBAC
-      has gained permissions between releases without a protocol bump (CRD
-      discovery and custom-resource read/write); an agent that hasn't
-      re-applied answers CRD discovery with a silent `403` and an empty
-      Explore sidebar for custom resources. See
+- [ ] **Agent manifests current on every cluster.** Agent RBAC has gained
+      permissions between releases; a stale agent answers CRD discovery with a
+      silent `403` and an empty custom-resource sidebar. See
       [Upgrading](upgrading.md#when-agents-must-re-apply-their-manifests).
 
-- [ ] **You understand which connection mode each cluster uses, and what
-      that means for RBAC.** In direct mode, kubemg mints tokens but
-      provisions no RoleBinding on the target cluster — a generated
-      kubeconfig authenticates without authorizing, and the permission
-      matrix governs kubemg's own authorization only. Agent mode is where
-      the cluster's own RBAC decides. This is a deliberate, disclosed
-      limitation, not a bug to work around — the cluster detail page, the
-      permissions page and the registration wizard all say which applies.
-      See [Connection modes](../clusters/connection-modes.md).
+- [ ] **You know each cluster's connection mode.** In direct mode kubemg mints
+      tokens but creates no RoleBinding, so a kubeconfig authenticates without
+      authorizing and the permission matrix governs only kubemg's own checks.
+      In agent mode the cluster's own RBAC decides. This is a disclosed
+      limitation. See [Connection modes](../clusters/connection-modes.md).
 
-- [ ] **`CORS_ALLOWED_ORIGINS` is unset (or irrelevant)** in a real
-      deployment. If you're seeing a CORS error in production, it's almost
-      always a sign the console is being served from somewhere other than
-      the same origin as the API — which the single-image deployment
-      (Compose or Kubernetes) doesn't need to do at all. See
+- [ ] **`CORS_ALLOWED_ORIGINS` unset.** A CORS error in production means the
+      console is served from a different origin than the API, which the
+      single-image deployment never does. See
       [Environment reference](environment.md#cors).
 
 ## Next

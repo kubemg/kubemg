@@ -60,7 +60,7 @@ func TestBuildCapacityMatchesKubectlDescribeNode(t *testing.T) {
 	if len(nodes) != 1 {
 		t.Fatalf("the capture is a single-node cluster, got %d nodes", len(nodes))
 	}
-	rows, summary, unscheduled := buildCapacity(nodes, pods, nil)
+	rows, summary, unscheduled := buildCapacity(nodes, pods, nil, nil)
 	node := rows[0]
 
 	// The decode first: a node whose allocatable did not come through would
@@ -96,6 +96,16 @@ func TestBuildCapacityMatchesKubectlDescribeNode(t *testing.T) {
 	}
 	if len(unscheduled.sample) == 1 && unscheduled.sample[0].Reason == "" {
 		t.Error("the scheduler's own explanation must survive the decode")
+	}
+
+	// The QoS class is the API server's own, read off the pod rather than
+	// re-derived — and only the scheduled pods count against a node.
+	if node.QOS != (qosCounts{Burstable: 10, BestEffort: 8}) {
+		t.Errorf("qos = %+v, want 10 Burstable and 8 BestEffort — the pending pod holds no node", node.QOS)
+	}
+	if !node.Placeable || len(node.Taints) != 0 {
+		t.Errorf("the captured node carries no taint and takes ordinary pods, got placeable=%v taints=%v",
+			node.Placeable, node.Taints)
 	}
 
 	// And the summary of a single-node cluster is that node.

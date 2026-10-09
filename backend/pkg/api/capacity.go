@@ -1,12 +1,16 @@
 package api
 
 import (
+	"encoding/json"
+	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
@@ -32,6 +36,22 @@ import (
  * comes from metrics.k8s.io and is optional: a cluster with no metrics-server
  * still gets the two numbers that matter most for scheduling, and says so,
  * rather than failing a page over a component that is not installed.
+ *
+ * Beside the three numbers, each node says three more things the heatmap needs:
+ *
+ *   qos        how its pods split across Guaranteed, Burstable and BestEffort —
+ *              the class the API server wrote, never re-derived here
+ *   headroom   what is still unreserved, and whether an ordinary pod could be
+ *              placed here at all (ready, not cordoned, no NoSchedule/NoExecute
+ *              taint), which is what turns a free core into a usable one
+ *   borrowers  pods using more than they reserved, from the per-pod Metrics API
+ *              — the noisy neighbours, and under memory pressure the first pods
+ *              the kubelet evicts
+ *
+ * Placement is deliberately the scheduler's simplest question only: requests,
+ * slots, cordons and taints. Node selectors, affinity, topology spread and
+ * tolerations are not read, and the page says so — a "this pod would fit"
+ * answer that ignored them would be wrong exactly when somebody trusts it.
  *
  * The read is cluster-wide by nature — node capacity says nothing about a
  * namespace and reaches well past one — so a namespace-scoped grant is refused
@@ -77,7 +97,16 @@ const (
 	// than a warning — it is money, not an outage.
 	reservedIdleFloorPercent = 50
 	reservedIdleSpentPercent = 50
+
+	// usagePressurePercent is where live consumption, rather than reservation,
+	// becomes the node's problem. It needs the Metrics API, so a cluster without
+	// one never sees it.
+	usagePressurePercent = 90
 )
+
+// topBorrowersPerNode is how many pods a node names as using more than they
+// reserved. Five for the same reason as topRequestersPerNode.
+const topBorrowersPerNode = 5
 
 // restartAlways marks a native sidecar: an init container that starts during
 // initialisation and then keeps running for the life of the pod.
@@ -133,6 +162,47 @@ type podRequest struct {
 	SharePercent  float64 `json:"share_percent"`
 }
 
+// qosCounts is how the pods on a node split across the three QoS classes. The
+// class is the one the API server wrote on the pod (`status.qosClass`); a pod
+// that carries none is left out rather than guessed into one.
+type qosCounts struct {
+	Guaranteed int `json:"guaranteed"`
+	Burstable  int `json:"burstable"`
+	BestEffort int `json:"best_effort"`
+}
+
+func (q *qosCounts) add(class string) {
+	switch class {
+	case "Guaranteed":
+		q.Guaranteed++
+	case "Burstable":
+		q.Burstable++
+	case "BestEffort":
+		q.BestEffort++
+	}
+}
+
+// nodeHeadroom is what a node has not yet promised away: allocatable less
+// requested, never below zero, and the pod slots still free.
+type nodeHeadroom struct {
+	CPU    int64 `json:"cpu"`
+	Memory int64 `json:"memory"`
+	Pods   int64 `json:"pods"`
+}
+
+// podBorrow is one pod using more than it reserved. Excess is measured against
+// the node's allocatable, so pods on different nodes compare on one scale.
+type podBorrow struct {
+	Name          string  `json:"name"`
+	Namespace     string  `json:"namespace"`
+	QOS           string  `json:"qos"`
+	CPUUsed       int64   `json:"cpu_used"`
+	CPURequest    int64   `json:"cpu_request"`
+	MemoryUsed    int64   `json:"memory_used"`
+	MemoryRequest int64   `json:"memory_request"`
+	ExcessPercent float64 `json:"excess_percent"`
+}
+
 // nodeCapacityRow is one row of the heatmap.
 type nodeCapacityRow struct {
 	Name        string   `json:"name"`
@@ -140,15 +210,30 @@ type nodeCapacityRow struct {
 	Ready       bool     `json:"ready"`
 	Schedulable bool     `json:"schedulable"`
 
+	// Taints are written as kubectl writes them (`key=value:Effect`), and
+	// Placeable is whether an ordinary pod — one with no tolerations — could
+	// land here at all: ready, not cordoned, and no NoSchedule/NoExecute taint.
+	Taints    []string `json:"taints"`
+	Placeable bool     `json:"placeable"`
+
 	CPU    capacityDimension `json:"cpu"`
 	Memory capacityDimension `json:"memory"`
 	Pods   podSlots          `json:"pods"`
+
+	QOS      qosCounts    `json:"qos"`
+	Headroom nodeHeadroom `json:"headroom"`
 
 	Concerns []capacityConcern `json:"concerns"`
 	Severity string            `json:"severity"`
 
 	// TopRequests is why this node reads the way it does, in one hop.
 	TopRequests []podRequest `json:"top_requests"`
+
+	// Borrowing counts the pods here using more CPU or memory than they
+	// reserved; TopBorrowers names the largest of them. Both stay empty when
+	// per-pod usage could not be read, which the payload reports separately.
+	Borrowing    int         `json:"borrowing_pods"`
+	TopBorrowers []podBorrow `json:"top_borrowers"`
 }
 
 func (n nodeCapacityRow) sortKey() (string, string) { return "", n.Name }
@@ -164,9 +249,38 @@ type capacitySummary struct {
 	Memory capacityDimension `json:"memory"`
 	Pods   podSlots          `json:"pods"`
 
+	QOS qosCounts `json:"qos"`
+
 	// SeverityCounts is how many nodes landed in each verdict, so the page can
 	// lead with "two nodes need attention" rather than with a wall of bars.
 	SeverityCounts map[string]int `json:"severity_counts"`
+
+	Placement placementSummary `json:"placement"`
+}
+
+// placementSlot is the most one node can still take of one resource, with what
+// it has of the other beside it: a node with four free cores and 200 MiB free
+// takes a four-core pod only if that pod asks for almost no memory.
+type placementSlot struct {
+	Node   string `json:"node"`
+	CPU    int64  `json:"cpu"`
+	Memory int64  `json:"memory"`
+}
+
+/*
+ * placementSummary is the fragmentation reading: the unreserved capacity added
+ * up across every node an ordinary pod could land on, beside the most any one
+ * of them can take. Twelve free cores spread as twelve single cores do not
+ * schedule a two-core pod, and the total alone would say they do.
+ *
+ * Only placeable nodes with a free pod slot count. The largest slots are nil
+ * when there is no such node, which is a different answer from a slot of zero.
+ */
+type placementSummary struct {
+	PlaceableNodes int            `json:"placeable_nodes"`
+	Free           nodeHeadroom   `json:"free"`
+	LargestCPU     *placementSlot `json:"largest_cpu"`
+	LargestMemory  *placementSlot `json:"largest_memory"`
 }
 
 // unscheduledPod is a pod the scheduler has not placed. It is the other half of
@@ -207,14 +321,26 @@ func (s *server) clusterCapacity(c *gin.Context) {
 		return
 	}
 
-	rows, summary, unscheduled := buildCapacity(nodes, pods, usage)
+	// Per-pod usage only means anything beside node usage, so it is not asked
+	// for when the Metrics API is absent.
+	var podUsage map[podKey]nodeSize
+	podUsageReason := capacityUsageUnavailableReason
+	if metricsAvailable {
+		podUsage, podUsageReason, ok = s.fetchPodUsage(c, user, cluster, grant)
+		if !ok {
+			return
+		}
+	}
+
+	rows, summary, unscheduled := buildCapacity(nodes, pods, usage, podUsage)
 
 	payload := gin.H{
-		"available":        metricsAvailable,
-		"nodes":            rows,
-		"summary":          summary,
-		"unscheduled":      unscheduled.sample,
-		"unscheduled_pods": unscheduled.count,
+		"available":           metricsAvailable,
+		"pod_usage_available": podUsage != nil,
+		"nodes":               rows,
+		"summary":             summary,
+		"unscheduled":         unscheduled.sample,
+		"unscheduled_pods":    unscheduled.count,
 	}
 	if !metricsAvailable {
 		// The word "available" means the same thing here as on the metrics
@@ -222,12 +348,74 @@ func (s *server) clusterCapacity(c *gin.Context) {
 		// without it, so the reason says which part is missing.
 		payload["reason"] = capacityUsageUnavailableReason
 	}
+	if podUsage == nil {
+		payload["pod_usage_reason"] = podUsageReason
+	}
 	listResponse(c, payload)
 }
 
-// capacityUsageUnavailableReason explains the one column that can be absent.
+// podKey addresses one pod across the spec list and the metrics list.
+type podKey struct{ namespace, name string }
+
+/*
+ * fetchPodUsage reads live consumption per pod, cluster-wide, for the borrower
+ * reading. It is the one read on this page whose refusal does not fail it: a
+ * role can be granted node metrics and not pod metrics, and the rest of the
+ * report is whole without borrowers. So a 403 answers "unavailable, because"
+ * in the cluster's own words, exactly as an absent Metrics API does. Anything
+ * else — a tunnel failure, an unreadable body — still fails the request.
+ */
+func (s *server) fetchPodUsage(c *gin.Context, user *db.User, cluster *db.Cluster,
+	grant db.UserClusterAccess,
+) (map[podKey]nodeSize, string, bool) {
+	resp, ok := s.callResource(c, user, cluster, grant, metricsAPIGroup+"/pods")
+	if !ok {
+		return nil, "", false
+	}
+	usage, reason, answered := podUsageAnswer(resp)
+	if !answered {
+		// decodeResource writes the cluster's own error, or a 502 for a body
+		// that does not decode — the same answer every other read gives.
+		s.decodeResource(c, resp, &metricsList{})
+		return nil, "", false
+	}
+	return usage, reason, true
+}
+
+// podUsageAnswer reads the per-pod Metrics API response. answered is false
+// only for a response that should fail the request; an absent or refused read
+// is an answer with a reason and no usage.
+func podUsageAnswer(resp *bastion.Response) (usage map[podKey]nodeSize, reason string, answered bool) {
+	switch resp.Status {
+	case http.StatusNotFound, http.StatusServiceUnavailable:
+		return nil, capacityPodUsageUnavailableReason, true
+	case http.StatusForbidden:
+		return nil, "The cluster refused the per-pod Metrics API read: " +
+			kubeErrorMessage(resp.Body, resp.Status), true
+	}
+	if resp.Status < 200 || resp.Status >= 300 {
+		return nil, "", false
+	}
+
+	var list metricsList
+	if err := json.Unmarshal(resp.Body, &list); err != nil {
+		return nil, "", false
+	}
+	out := make(map[podKey]nodeSize, len(list.Items))
+	for _, item := range list.Items {
+		pod := podUsageOf(item.Metadata.Name, item.Metadata.Namespace, item.Containers)
+		out[podKey{pod.Namespace, pod.Name}] = nodeSize{cpu: pod.CPUMillicores, memory: pod.MemoryBytes}
+	}
+	return out, "", true
+}
+
 const capacityUsageUnavailableReason = "This cluster does not serve the Kubernetes Metrics API, " +
 	"so live usage is missing. Requests and limits are read from the pod specs and are unaffected."
+
+// capacityPodUsageUnavailableReason is the narrower absence: node usage
+// answered and per-pod usage did not.
+const capacityPodUsageUnavailableReason = "The Metrics API did not answer for pods, so which pods " +
+	"use more than they reserved cannot be shown. Node usage is unaffected."
 
 // nodeRecord is a node reduced to what capacity arithmetic needs.
 type nodeRecord struct {
@@ -235,8 +423,40 @@ type nodeRecord struct {
 	Roles         []string
 	Ready         bool
 	Unschedulable bool
+	Taints        []nodeTaint
 	Allocatable   nodeSize
 	PodSlots      int64
+}
+
+// nodeTaint is one entry of `spec.taints`.
+type nodeTaint struct {
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+	Effect string `json:"effect"`
+}
+
+// String writes the taint the way kubectl does: `key=value:Effect`, with the
+// `=value` dropped when there is none.
+func (t nodeTaint) String() string {
+	out := t.Key
+	if t.Value != "" {
+		out += "=" + t.Value
+	}
+	return out + ":" + t.Effect
+}
+
+// repels says whether this taint keeps a pod with no tolerations off the node.
+// PreferNoSchedule is a preference the scheduler may override, so it does not.
+func (t nodeTaint) repels() bool {
+	return t.Effect == "NoSchedule" || t.Effect == "NoExecute"
+}
+
+// placeable is whether an ordinary pod could be scheduled onto this node.
+func (n nodeRecord) placeable() bool {
+	if !n.Ready || n.Unschedulable {
+		return false
+	}
+	return !slices.ContainsFunc(n.Taints, nodeTaint.repels)
 }
 
 // nodeList is the API server's node list in the fields capacity arithmetic
@@ -251,7 +471,8 @@ type nodeList struct {
 			Labels map[string]string `json:"labels"`
 		} `json:"metadata"`
 		Spec struct {
-			Unschedulable bool `json:"unschedulable"`
+			Unschedulable bool        `json:"unschedulable"`
+			Taints        []nodeTaint `json:"taints"`
 		} `json:"spec"`
 		Status struct {
 			Allocatable map[string]string `json:"allocatable"`
@@ -275,6 +496,7 @@ func (l nodeList) records() []nodeRecord {
 			Name:          item.Metadata.Name,
 			Roles:         nodeRoles(item.Metadata.Labels),
 			Unschedulable: item.Spec.Unschedulable,
+			Taints:        item.Spec.Taints,
 			Allocatable: nodeSize{
 				cpu:    parseCPUMillicores(item.Status.Allocatable["cpu"]),
 				memory: parseMemoryBytes(item.Status.Allocatable["memory"]),
@@ -352,6 +574,7 @@ type capacityPod struct {
 	} `json:"spec"`
 	Status struct {
 		Phase      string `json:"phase"`
+		QOSClass   string `json:"qosClass"`
 		Conditions []struct {
 			Type    string `json:"type"`
 			Status  string `json:"status"`
@@ -503,13 +726,16 @@ type unscheduledReport struct {
 	sample []unscheduledPod
 }
 
-// buildCapacity turns three reads into the report. It is a pure function of
+// buildCapacity turns four reads into the report. It is a pure function of
 // them so the arithmetic — which is the whole feature — is testable without a
-// cluster or an HTTP round trip.
+// cluster or an HTTP round trip. podUsage is nil when per-pod usage could not
+// be read, which leaves every borrower reading empty rather than zero.
 func buildCapacity(nodes []nodeRecord, pods []capacityPod, usage map[string]nodeSize,
+	podUsage map[podKey]nodeSize,
 ) ([]nodeCapacityRow, capacitySummary, unscheduledReport) {
 	rows := make(map[string]*nodeCapacityRow, len(nodes))
 	requesters := make(map[string][]podRequest, len(nodes))
+	borrowers := make(map[string][]podBorrow, len(nodes))
 
 	order := make([]string, 0, len(nodes))
 	for _, node := range nodes {
@@ -521,6 +747,8 @@ func buildCapacity(nodes []nodeRecord, pods []capacityPod, usage map[string]node
 			CPU:         capacityDimension{Allocatable: node.Allocatable.cpu},
 			Memory:      capacityDimension{Allocatable: node.Allocatable.memory},
 			Pods:        podSlots{Allocatable: node.PodSlots},
+			Taints:      taintStrings(node.Taints),
+			Placeable:   node.placeable(),
 			TopRequests: []podRequest{},
 		}
 		if used, known := usage[node.Name]; known {
@@ -563,6 +791,13 @@ func buildCapacity(nodes []nodeRecord, pods []capacityPod, usage map[string]node
 		if !demand.requested {
 			row.Pods.WithoutRequests++
 		}
+		row.QOS.add(pod.Status.QOSClass)
+
+		if used, measured := podUsage[podKey{pod.Metadata.Namespace, pod.Metadata.Name}]; measured {
+			if borrow, over := borrowOf(pod, demand, used, *row); over {
+				borrowers[pod.Spec.NodeName] = append(borrowers[pod.Spec.NodeName], borrow)
+			}
+		}
 
 		requesters[pod.Spec.NodeName] = append(requesters[pod.Spec.NodeName], podRequest{
 			Name:          pod.Metadata.Name,
@@ -583,7 +818,10 @@ func buildCapacity(nodes []nodeRecord, pods []capacityPod, usage map[string]node
 		finishDimension(&row.CPU)
 		finishDimension(&row.Memory)
 		row.Pods.Percent = percent(row.Pods.Scheduled, row.Pods.Allocatable)
+		row.Headroom = headroomOf(*row)
 		row.TopRequests = topRequesters(requesters[name])
+		row.Borrowing = len(borrowers[name])
+		row.TopBorrowers = topBorrowers(borrowers[name])
 		row.Concerns = concernsFor(*row)
 		row.Severity = highestSeverity(row.Concerns)
 
@@ -600,6 +838,12 @@ func buildCapacity(nodes []nodeRecord, pods []capacityPod, usage map[string]node
 		summary.Pods.Allocatable += row.Pods.Allocatable
 		summary.Pods.Scheduled += row.Pods.Scheduled
 		summary.Pods.WithoutRequests += row.Pods.WithoutRequests
+		summary.QOS.Guaranteed += row.QOS.Guaranteed
+		summary.QOS.Burstable += row.QOS.Burstable
+		summary.QOS.BestEffort += row.QOS.BestEffort
+		if row.Placeable && row.Headroom.Pods > 0 {
+			summary.Placement.add(*row)
+		}
 
 		out = append(out, *row)
 	}
@@ -609,6 +853,101 @@ func buildCapacity(nodes []nodeRecord, pods []capacityPod, usage map[string]node
 
 	sortResources(out)
 	return out, summary, unscheduled
+}
+
+// taintStrings writes a node's taints for the payload, never nil.
+func taintStrings(taints []nodeTaint) []string {
+	out := make([]string, 0, len(taints))
+	for _, taint := range taints {
+		out = append(out, taint.String())
+	}
+	return out
+}
+
+// headroomOf is what a node has left to promise. An over-reserved node — which
+// a static pod or a node shrunk under its pods can produce — has none, not a
+// negative amount.
+func headroomOf(row nodeCapacityRow) nodeHeadroom {
+	return nodeHeadroom{
+		CPU:    max(0, row.CPU.Allocatable-row.CPU.Requested),
+		Memory: max(0, row.Memory.Allocatable-row.Memory.Requested),
+		Pods:   max(0, row.Pods.Allocatable-row.Pods.Scheduled),
+	}
+}
+
+// add folds one placeable node into the fragmentation reading. Ties keep the
+// first node seen.
+func (p *placementSummary) add(row nodeCapacityRow) {
+	p.PlaceableNodes++
+	p.Free.CPU += row.Headroom.CPU
+	p.Free.Memory += row.Headroom.Memory
+	p.Free.Pods += row.Headroom.Pods
+
+	slot := placementSlot{Node: row.Name, CPU: row.Headroom.CPU, Memory: row.Headroom.Memory}
+	if p.LargestCPU == nil || slot.CPU > p.LargestCPU.CPU {
+		p.LargestCPU = &slot
+	}
+	if p.LargestMemory == nil || slot.Memory > p.LargestMemory.Memory {
+		memorySlot := slot
+		p.LargestMemory = &memorySlot
+	}
+}
+
+/*
+ * borrowOf reads one pod against what it reserved. A pod is borrowing when its
+ * live use of either resource is above its request — a BestEffort pod, which
+ * requests nothing, borrows everything it uses.
+ *
+ * Excess is measured against the node's allocatable rather than against the
+ * pod's own request, because the question is what the pod takes from its
+ * neighbours: a pod at ten times a 10m request is not a noisy neighbour, and
+ * one 2 GiB over a 4 GiB request on an 8 GiB node is.
+ */
+func borrowOf(pod capacityPod, demand podDemand, used nodeSize, row nodeCapacityRow) (podBorrow, bool) {
+	cpuOver := max(0, used.cpu-demand.cpuRequest)
+	memoryOver := max(0, used.memory-demand.memoryRequest)
+	if cpuOver == 0 && memoryOver == 0 {
+		return podBorrow{}, false
+	}
+	return podBorrow{
+		Name:          pod.Metadata.Name,
+		Namespace:     pod.Metadata.Namespace,
+		QOS:           pod.Status.QOSClass,
+		CPUUsed:       used.cpu,
+		CPURequest:    demand.cpuRequest,
+		MemoryUsed:    used.memory,
+		MemoryRequest: demand.memoryRequest,
+		ExcessPercent: max(
+			percent(cpuOver, row.CPU.Allocatable),
+			percent(memoryOver, row.Memory.Allocatable),
+		),
+	}, true
+}
+
+// topBorrowers names the pods taking the most beyond their reservation,
+// largest first. A borrow too small to register as a tenth of a percent of the
+// node is still counted in Borrowing but is not worth a line.
+func topBorrowers(all []podBorrow) []podBorrow {
+	slices.SortFunc(all, func(a, b podBorrow) int {
+		if a.ExcessPercent != b.ExcessPercent {
+			if a.ExcessPercent > b.ExcessPercent {
+				return -1
+			}
+			return 1
+		}
+		if order := strings.Compare(a.Namespace, b.Namespace); order != 0 {
+			return order
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+	out := slices.DeleteFunc(slices.Clone(all), func(entry podBorrow) bool { return entry.ExcessPercent <= 0 })
+	if len(out) > topBorrowersPerNode {
+		out = out[:topBorrowersPerNode]
+	}
+	if out == nil {
+		return []podBorrow{}
+	}
+	return out
 }
 
 // unschedulableReason lifts the scheduler's own sentence off the pod, which
@@ -740,6 +1079,8 @@ func concernsFor(node nodeCapacityRow) []capacityConcern {
 		})
 	}
 
+	out = append(out, pressureConcerns(node)...)
+
 	if node.Pods.WithoutRequests > 0 {
 		out = append(out, capacityConcern{
 			Code: "requests-unset", Severity: severityNote,
@@ -814,6 +1155,49 @@ func dimensionConcerns(code, label string, d capacityDimension, overcommitPercen
 		})
 	}
 	return out
+}
+
+/*
+ * pressureConcerns read live usage against the node, which is the other half of
+ * a noisy-neighbour reading: who is borrowing only matters once there is too
+ * little left to lend. The two resources get different severities for the
+ * reason the overcommit thresholds differ — a CPU shortage slows the pods above
+ * their request and leaves every request honoured; a memory shortage evicts.
+ */
+func pressureConcerns(node nodeCapacityRow) []capacityConcern {
+	out := []capacityConcern{}
+	if node.Memory.Allocatable > 0 && node.Memory.Used > 0 && node.Memory.UsedPercent >= usagePressurePercent {
+		out = append(out, capacityConcern{
+			Code: "memory-pressure", Severity: severityWarn,
+			Title: "Memory in use is near the node's size",
+			Detail: "Live memory use is close to what this node can allocate. If it runs out, the " +
+				"kubelet evicts BestEffort pods first, then the pods using the most above their " +
+				"request — not necessarily the one that grew." + borrowerHint(node),
+		})
+	}
+	if node.CPU.Allocatable > 0 && node.CPU.Used > 0 && node.CPU.UsedPercent >= usagePressurePercent {
+		out = append(out, capacityConcern{
+			Code: "cpu-contended", Severity: severityNote,
+			Title: "CPU in use is near the node's size",
+			Detail: "Live CPU use is close to what this node can allocate. Every pod still gets the " +
+				"CPU it requested; what is above that is shared, so pods running above their " +
+				"request slow each other down." + borrowerHint(node),
+		})
+	}
+	return out
+}
+
+// borrowerHint points a pressure concern at the list that explains it, when
+// there is one to point at.
+func borrowerHint(node nodeCapacityRow) string {
+	switch node.Borrowing {
+	case 0:
+		return ""
+	case 1:
+		return " One pod here is using more than it reserved."
+	default:
+		return " " + strconv.Itoa(node.Borrowing) + " pods here are using more than they reserved."
+	}
 }
 
 // overcommitDetail says why the same ratio means different things for the two

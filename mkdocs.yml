@@ -91,45 +91,31 @@ plugins:
 nav:
   - Home: index.md
   - User guide:
-      - Introduction:
+      - Get started:
           - What kubemg is: introduction/overview.md
-          - Security model: introduction/security-model.md
-          - Threat model: introduction/threat-model.md
-      - Getting started:
           - Quickstart: getting-started/quickstart.md
-          - Attach your first cluster: getting-started/first-cluster.md
-          - Give someone access: getting-started/first-access.md
-      - Installing kubemg:
+      - Install:
           - Choosing a deployment: install/index.md
           - Docker Compose: install/docker-compose.md
           - Kubernetes: install/kubernetes.md
           - TLS and certificates: install/tls.md
-          - Database: install/database.md
-          - Environment reference: install/environment.md
-          - Prometheus metrics: install/metrics.md
           - Air-gapped installs: install/air-gapped.md
-          - Upgrading:
-              - Upgrading: install/upgrading.md
-              - Upgrading to 0.11.0: install/upgrading-0.11.md
-              - Upgrading a git checkout: install/upgrading-from-source.md
+          - Upgrading: install/upgrading.md
           - Production checklist: install/production-checklist.md
-      - Managing clusters:
+      - Clusters:
           - Connection modes: clusters/connection-modes.md
           - Adding a cluster: clusters/registering.md
-          - Installing the agent: clusters/agent.md
+          - The agent: clusters/agent.md
           - Managing a cluster: clusters/managing.md
-          - The agent in your cluster: reference/agent.md
       - Working in a cluster:
           - Browsing resources: clusters/explore.md
           - Workload actions: clusters/actions.md
-          - Terminals and logs: clusters/terminals-and-logs.md
-          - The browser shell: clusters/browser-shell.md
-          - Helm releases: clusters/helm.md
-          - Chart repositories: clusters/helm-repositories.md
+          - Terminals, shells and logs: clusters/terminals-and-logs.md
+          - Helm: clusters/helm.md
           - Events timeline: clusters/events.md
           - Node capacity: clusters/capacity.md
           - Security posture: clusters/security-posture.md
-      - Users and access:
+      - Access:
           - The access model: access/model.md
           - Users and groups: access/users-and-groups.md
           - Single sign-on: access/sso.md
@@ -137,19 +123,22 @@ nav:
           - Machine accounts: access/machine-accounts.md
           - Just-in-time access: access/jit.md
           - Command guardrails: access/guardrails.md
-          - Cluster RBAC visibility: access/rbac-visibility.md
-      - Metrics and logs:
+          - Cluster RBAC: access/rbac-visibility.md
+      - Metrics and alerts:
           - Datasources: observability/datasources.md
           - Metrics and logs: observability/metrics-and-logs.md
-          - Alerts and alarms: observability/alerts.md
-          - Linking other consoles: observability/consoles.md
-      - Audit and compliance:
+          - Cluster alerts: observability/alerts.md
+      - Audit:
           - Audit trail: audit/trail.md
-          - Forwarding the trail: audit/forwarding.md
           - Session recording: audit/session-recording.md
           - Alarms and integrations: audit/alarms.md
       - Reference:
+          - Security model: introduction/security-model.md
+          - Threat model: introduction/threat-model.md
+          - Environment variables: install/environment.md
           - Runtime settings: reference/settings.md
+          - Database: install/database.md
+          - Prometheus metrics: install/metrics.md
           - Troubleshooting: reference/troubleshooting.md
   - Developer guide:
       - Start here: dev/index.md

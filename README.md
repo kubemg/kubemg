@@ -5,46 +5,54 @@
 Central, audited access to every Kubernetes cluster — one small agent that dials out,
 no CRDs, and a bastion that says plainly what it is trusted with.
 
-[![Docs](https://img.shields.io/badge/docs-kubemg.readthedocs.io-BFF23C?style=flat-square&labelColor=14161A)](https://kubemg.readthedocs.io/) [![Release](https://img.shields.io/github/v/release/kubemg/kubemg?style=flat-square&label=release&labelColor=14161A&color=BFF23C)](https://github.com/kubemg/kubemg/releases) [![Agent](https://img.shields.io/badge/agent-~7_MB_·_amd64_+_arm64-BFF23C?style=flat-square&labelColor=14161A)](agent/) [![Backend](https://img.shields.io/badge/backend-Go_1.26-3A4033?style=flat-square&labelColor=14161A)](backend/) [![Console](https://img.shields.io/badge/console-React_·_Vite_·_TS-3A4033?style=flat-square&labelColor=14161A)](frontend/) [![Store](https://img.shields.io/badge/store-PostgreSQL_16-3A4033?style=flat-square&labelColor=14161A)](backend/pkg/db/) [![Build](https://img.shields.io/badge/build-fully_containerized-3A4033?style=flat-square&labelColor=14161A)](Makefile) [![License](https://img.shields.io/badge/license-AGPL--3.0-D1553C?style=flat-square&labelColor=14161A)](LICENSE)
+**[Documentation](https://kubemg.readthedocs.io/)** ·
+[Quickstart](https://kubemg.readthedocs.io/en/latest/getting-started/quickstart/) ·
+[Install on Kubernetes](https://kubemg.readthedocs.io/en/latest/install/kubernetes/) ·
+[Security model](https://kubemg.readthedocs.io/en/latest/introduction/security-model/) ·
+[Threat model](https://kubemg.readthedocs.io/en/latest/introduction/threat-model/) ·
+[Developer guide](https://kubemg.readthedocs.io/en/latest/dev/)
+
+[![Docs](https://img.shields.io/badge/docs-kubemg.readthedocs.io-BFF23C?style=flat-square&labelColor=14161A)](https://kubemg.readthedocs.io/) [![Release](https://img.shields.io/github/v/release/kubemg/kubemg?style=flat-square&label=release&labelColor=14161A&color=BFF23C)](https://github.com/kubemg/kubemg/releases) [![Agent](https://img.shields.io/badge/agent-~7_MB_·_amd64_+_arm64-BFF23C?style=flat-square&labelColor=14161A)](agent/) [![Backend](https://img.shields.io/badge/backend-Go-3A4033?style=flat-square&labelColor=14161A)](backend/) [![Console](https://img.shields.io/badge/console-React_·_Vite_·_TS-3A4033?style=flat-square&labelColor=14161A)](frontend/) [![Store](https://img.shields.io/badge/store-PostgreSQL_16-3A4033?style=flat-square&labelColor=14161A)](backend/pkg/db/) [![License](https://img.shields.io/badge/license-AGPL--3.0-D1553C?style=flat-square&labelColor=14161A)](LICENSE)
 
 </div>
 
 ---
 
-There are three ways to give a developer access to a production cluster today.
+<p align="center">
+  <img src="docs/assets/screenshots/fleet-overview.png" width="100%" alt="The fleet overview: four things waiting on an administrator, refused calls in the last 24 hours, agents behind the newest version, fleet capacity per cluster, and how each cluster reaches kubemg.">
+  <br><sub><b>The fleet overview</b> — what needs you, what was refused, fleet capacity, and how every cluster is linked right now.</sub>
+</p>
 
-**Hand out a kubeconfig, and hope.** It is long-lived, it gets copied into somebody's `~/.kube`, it
-outlives the project it was issued for, and revoking it means first remembering that it exists.
+## What kubemg is
 
-**Put a desktop tool in front of it.** Lens is very good at being one person's console, and it has
-never heard of your team. There is nowhere in it to say who may reach production, and no record
-afterwards of who did.
+There are three common ways to give a developer access to a production cluster, and each has a
+cost:
 
-**Install a platform.** Rancher-class tools arrive with controllers and CRDs, and expect to own the
-cluster once they are in it. Their agents already dial out — Rancher's through `remotedialer`,
-Portainer's Edge Agent through a reverse tunnel — so "no inbound ports" is table stakes, not a
-difference.
+- **Hand out a kubeconfig.** It is long-lived, it gets copied, and revoking it means first
+  remembering that it exists.
+- **Put a desktop tool in front of it.** Lens is a good console for one person, but there is
+  nowhere in it to say who may reach production, and no record of who did.
+- **Install a platform.** Rancher-class tools arrive with controllers and CRDs and expect to own
+  the cluster.
 
-kubemg is the fourth way, and the trade it makes is the whole product: **7 MB in the cluster,
-everything else at the bastion.** The agent opens one outbound WebSocket and holds it, and runs
-nothing else — no controllers, no CRDs. In agent mode kubemg stores no Kubernetes credential, only
-the registration token the agent presents when it dials in.
+kubemg is a fourth way: **~7 MB in the cluster, everything else at the bastion.**
 
-That last sentence is true and, on its own, misleading, so here is the part it leaves out: the agent
-may impersonate, and it forwards what the bastion sends. **The bastion plus the tunnel is, in effect,
-`system:masters` on every agent-mode cluster.** That is the same trust model as Rancher's
-`cattle-cluster-agent` or Teleport's Kubernetes Service — a central point that can grant anyone
-access can grant itself access — with a far smaller surface inside the cluster: one Deployment, an
-impersonation grant limited to kubemg's own four groups, and an audit trail that can be forwarded
-off the host as it is written. The [threat model](docs/introduction/threat-model.md)
-says what a compromised bastion, a read of its database, a leaked install URL, kubeconfig or machine
-token, and a renamed IdP identity each reach, and what bounds each one.
+| kubemg is | kubemg is not |
+|---|---|
+| A self-hosted access gateway and console for a fleet of Kubernetes clusters | A cluster provisioner or lifecycle manager |
+| One small agent per cluster that dials **out** — no inbound port, no CRDs, no controllers | A monitoring stack — it reads the Prometheus/Loki-style backend you already run |
+| Every call under the caller's own impersonated identity, decided by **the cluster's own RBAC** | A replacement for Kubernetes RBAC — it builds on it |
+| A record of every call, refusals included, and every shell session replayable | A desktop app — it is one server and a browser console, open source in full |
 
-Every call a developer then makes — from the console or from their own `kubectl` — travels that
-tunnel under their own impersonated identity, and **the cluster's own RBAC makes the decision**. The
-trail records it either way, refusals included. The interactive calls are recorded and replayable,
-which is the half no cluster-side audit can see at all: a shell is one already-allowed API call, and
-everything typed inside it is invisible to the API server.
+> [!IMPORTANT]
+> **The bastion is the trust anchor.** The agent may impersonate and forwards what the bastion
+> sends, so the bastion plus the tunnel is, in effect, `system:masters` on every agent-mode
+> cluster — the same trust model as Rancher's cluster agent or Teleport's Kubernetes Service, with
+> far less running inside the cluster. Harden the bastion, its database and its signing key first.
+> The [threat model](https://kubemg.readthedocs.io/en/latest/introduction/threat-model/) goes
+> through each compromise scenario and what bounds it.
+
+## How it works
 
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{
@@ -62,7 +70,7 @@ flowchart TB
 
     subgraph bastion["kubemg · the bastion"]
         direction TB
-        C["Console<br/><i>fleet · explore · IAM · audit</i>"]
+        C["Console<br/><i>fleet · explore · access · audit</i>"]
         P["Gateway proxy<br/><i>impersonation · namespace scope · guardrails</i>"]
         R["Session recorder<br/><i>asciinema v2, encrypted at rest</i>"]
         T["Tunnel listener<br/><i>WebSocket pool</i>"]
@@ -86,32 +94,17 @@ flowchart TB
     class C,P,R,T core
     class A,K,U1,U2 quiet
 
-    %% Lime marks exactly one thing in this diagram: the arrow that points the
-    %% other way. It is the reason the product exists, so it is the only edge
-    %% carrying the accent.
     linkStyle 5 stroke:#BFF23C,stroke-width:2.5px,color:#BFF23C
 ```
 
-No inbound firewall rule on the cluster. No in-cluster controller. The bastion is the trust anchor
-— in effect cluster-admin on every agent-mode cluster — which is why it, its database and its signing
-key are what to harden first.
-
-## Why
-
-| The problem | What kubemg does |
-|---|---|
-| **Heavy agents.** Rancher-class platforms install controllers and CRDs, then want to own the cluster. | Installs a tunnel and nothing else — one Deployment, one Secret, one ServiceAccount, whose only grant is impersonation. |
-| **Desktop tools don't manage teams.** Lens is per-laptop; there is no central place to say who may reach production. | Users, groups, effective-permission merging, and a fleet-wide permission matrix. |
-| **Handing out access is an operational wound.** Long-lived kubeconfigs get copied, shared, never revoked. | Short-lived scoped kubeconfigs that point at kubemg, so revoking access actually revokes it. |
-| **"Who ran that in prod?"** has no answer. | Every call audited, refusals included; every shell recorded and replayable. |
-| **Standing admin access** because someone needs it twice a quarter. | Just-in-time elevation: a role, a cluster, a mandatory reason and a clock. |
-| **Nothing stops `kubectl delete ns prod`** typed at 03:00 by exactly the person allowed to run it. | Guardrails that refuse on kubemg's own authority — including line-by-line inside an interactive shell, which the cluster's own audit cannot see at all. |
-| **A pod list is a list.** Whether anything is wrong in it is read out of a hundred rows by eye. | Explore's pilot header: state, failures and the cluster's own reason, above the table and derived from rows already loaded. |
-
-## How a request flows
-
-Every read the console does takes the same path a `kubectl` call does. The UI gets no privileged
-shortcut — that is the whole design.
+1. The agent opens **one outbound WebSocket** to kubemg and holds it. In agent mode kubemg stores
+   no Kubernetes credential — only the registration token the agent presents when it dials in.
+2. A developer calls kubemg — from the console, or with their own `kubectl` and a short-lived
+   kubeconfig that points at kubemg rather than at the cluster.
+3. kubemg resolves who they are and what they were granted, strips any client-supplied
+   `Authorization`/`Impersonate-*` headers, checks the guardrails, and records the call.
+4. The call goes down the tunnel as `Impersonate-User: kubemg:u:<username>` in kubemg's own groups.
+   **The cluster's RBAC decides**, and the result — allowed or refused — is recorded either way.
 
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{
@@ -127,14 +120,11 @@ sequenceDiagram
     autonumber
     participant D as Developer
     participant B as kubemg bastion
-    participant G as Grant + policy
     participant A as kubemg-agent
     participant K as kube-apiserver
 
     D->>B: kubectl get pods -n payments
-    B->>G: who is this, what may they reach,<br/>and does a guardrail refuse it?
-    G-->>B: view · namespaces[payments] · allowed
-    Note over B: strips client Authorization<br/>and Impersonate-* headers
+    Note over B: who is this, what may they reach,<br/>does a guardrail refuse it?
     B->>B: audit record (open)
     B->>A: over the existing outbound tunnel
     A->>K: Impersonate-User: kubemg:u:dev@corp<br/>Impersonate-Group: kubemg:view
@@ -144,719 +134,308 @@ sequenceDiagram
     B-->>D: pods
 ```
 
-The two things worth noticing: the **cluster's own RBAC** makes the authorization decision, and a
-refusal is audited just as loudly as a success.
+The console gets no privileged shortcut: every read it makes takes the same path a `kubectl` call
+does.
 
-## Security model
+**Two connection modes.** *Agent* mode is the one described above and the one to use. *Direct*
+mode stores an API URL and a service-account token and dials the cluster itself; it needs no agent,
+but it provisions no RoleBinding, so a kubeconfig there authenticates without authorizing — the UI
+says so wherever it applies. See
+[Connection modes](https://kubemg.readthedocs.io/en/latest/clusters/connection-modes/).
 
-The parts worth reading before trusting it with production.
-
-<table>
-<tr><th align="left">Control</th><th align="left">What it actually means</th></tr>
-<tr><td><b>The bastion is the trust anchor</b></td>
-<td>The agent may impersonate and forwards what the bastion sends, so the bastion plus the tunnel is, in effect, <code>system:masters</code> on every agent-mode cluster. The agent's grant is narrowed to kubemg's own four groups, the database's credentials are encrypted under <code>KUBEMG_SECRET_KEY</code>, and the audit trail can be forwarded off the host — but the bastion is what to harden first. The <a href="docs/introduction/threat-model.md">threat model</a> goes scenario by scenario.</td></tr>
-<tr><td><b>Impersonation, not shared service accounts</b></td>
-<td>The proxy calls the API server with <code>Impersonate-User</code>/<code>Impersonate-Group</code> derived from the caller's grant. A <code>view</code> grant is read-only because the cluster says so, not because kubemg remembered to check. Client-supplied impersonation and <code>Authorization</code> headers are stripped.</td></tr>
-<tr><td><b>Namespace scope enforced in the proxy</b></td>
-<td>A kubemg concept impersonation groups cannot express, so it is enforced locally: a scoped grant is refused on anything reaching past it, cluster-wide lists included.</td></tr>
-<tr><td><b>Command guardrails — the one refusal kubemg makes on its own authority</b></td>
-<td>Every other check resolves <i>who</i> the caller is; the substantive "may they" is the cluster's. A guardrail is deliberately not that — it stops calls the caller is fully entitled to make, because <code>kubectl delete ns prod</code> succeeds <i>precisely</i> for the person privileged to run it, and RBAC cannot express "an admin may do this, but not by typing it into a terminal at 03:00". Rules are global or per-cluster, <code>block</code> or <code>warn</code>, and enforcement sits in <b>three</b> places because a destructive act arrives in three shapes: the proxied call, the argv of a non-interactive <code>exec</code>, and a <b>line editor over the stdin of an interactive shell</b> — the half nothing cluster-side can see, since a shell is one already-allowed API call and everything typed inside it is invisible to the cluster's own audit.</td></tr>
-<tr><td><b>Everything audited, refusals included</b></td>
-<td>A long-lived call (<code>exec</code>, <code>attach</code>, <code>watch</code>, <code>logs -f</code>, <code>port-forward</code>) is recorded twice — at open and at close — so an hour-long session is visible while it is still running. Verbs are named after the subresource: a shell in a production pod reads as <code>exec</code>, never as a <code>get</code>.</td></tr>
-<tr><td><b>Sessions recorded and replayable</b></td>
-<td>Every <code>exec</code>/<code>attach</code> is teed into a gzipped <a href="https://asciinema.org">asciinema</a> v2 cast, replayed from the audit row it belongs to or from the Recordings index — which lists sessions rather than calls, and shows which shells are open right now.</td></tr>
-<tr><td><b>Recordings are the most sensitive artefact here</b></td>
-<td>Encrypted at rest (chunked AES-256-GCM, so a trimmed or altered file fails to authenticate rather than replaying short). Keystroke capture is switchable off where operators type credentials. <b>Watching one is itself audited.</b> Reaching somebody else's needs a capability separate from the admin role, grantable only by a super admin. Everyone may always replay their own.</td></tr>
-<tr><td><b>Disclosure before the first keystroke</b></td>
-<td>The in-browser terminal states what is captured, whether keystrokes are included, whether it is encrypted and how long it is kept — as a persistent line, not a dialog that gets dismissed by reflex.</td></tr>
-<tr><td><b>Scoped kubeconfig tokens</b></td>
-<td>A kubeconfig lives on a laptop, so the token inside one is minted for exactly one cluster's proxy route and is not a session key for the rest of the API. Revocation works because every proxied call re-reads the user and the grant.</td></tr>
-<tr><td><b>The bastion terminates its own TLS</b></td>
-<td>Mints a self-signed certificate on first boot when none is configured, and pins it into every rendered agent package. Not decoration: client-go refuses to send a bearer token over plain HTTP, so <code>kubectl exec</code> through the gateway requires TLS.</td></tr>
-<tr><td><b>Reads never widen a grant</b></td>
-<td>Resource, metrics and Helm reads all go down the same impersonated, audited tunnel. Secret and ConfigMap listings return <b>keys only</b> — no value enters a response.</td></tr>
-</table>
-
-### Two connection modes
+## What it does
 
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{
   'fontFamily':'-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif','fontSize':'14px',
-  'primaryColor':'#1B1E22','primaryTextColor':'#F2F3EF','primaryBorderColor':'#3A4033',
-  'lineColor':'#8A9080','textColor':'#F2F3EF',
-  'clusterBkg':'#14161A','clusterBorder':'#3A4033'
+  'primaryColor':'#BFF23C','primaryTextColor':'#14161A','primaryBorderColor':'#BFF23C',
+  'lineColor':'#8A9080',
+  'cScale0':'#1B1E22','cScaleLabel0':'#F2F3EF',
+  'cScale1':'#242B14','cScaleLabel1':'#F2F3EF',
+  'cScale2':'#3A4033','cScaleLabel2':'#F2F3EF',
+  'cScale3':'#1B1E22','cScaleLabel3':'#F2F3EF',
+  'cScale4':'#242B14','cScaleLabel4':'#F2F3EF',
+  'cScale5':'#3A4033','cScaleLabel5':'#F2F3EF',
+  'cScale6':'#1B1E22','cScaleLabel6':'#F2F3EF'
 }}}%%
-flowchart LR
-    subgraph agentmode["agent · recommended"]
-        direction LR
-        AM1["stores no Kubernetes credential;<br/>the bastion is the trust anchor"]
-        AM2["the cluster dials out"]
-        AM3["impersonation →<br/>cluster RBAC decides"]
-        AM1 --> AM2 --> AM3
-    end
-    subgraph directmode["direct · the Phase 1 path"]
-        direction LR
-        DM1["stores an API URL<br/>+ service account token"]
-        DM2["kubemg dials the cluster"]
-        DM3["tokens minted, but<br/><b>no RoleBinding provisioned</b>"]
-        DM1 --> DM2 --> DM3
-    end
-
-    %% No edge runs between the two modes, so mermaid is free to stack them in
-    %% either order — and it led with `direct`, which is the path carrying the
-    %% caveat. An invisible link fixes the order without drawing anything.
-    AM3 ~~~ DM1
-
-    %% State colours, not brand colours: one path is sound and the other carries
-    %% a caveat, which is what sage and amber mean everywhere else here.
-    classDef good fill:#1B1E22,stroke:#7FB069,color:#F2F3EF
-    classDef caveat fill:#1B1E22,stroke:#E8A33D,color:#F2F3EF
-    class AM1,AM2,AM3 good
-    class DM1,DM2,DM3 caveat
+mindmap
+  root((kubemg))
+    Operate
+      Fleet overview
+      Registration wizard
+      Explore · CRDs
+      Traffic map
+      Terminal · logs
+      port-forward
+      Browser kubectl shell
+      Scale · restart · create
+      Helm lifecycle
+    Observe
+      Live utilisation
+      Node capacity
+      Metrics and logs
+      Alerts and silences
+      Events timeline
+    Access
+      Users and groups
+      OIDC · SAML · LDAP
+      Expiring kubeconfigs
+      Machine accounts
+      JIT elevation
+    Audit
+      Audit trail
+      Session replay
+      SIEM forwarding
+      Alarms
+    Protect
+      Command guardrails
+      Security posture
+      Cluster RBAC review
+      Secrets encrypted
 ```
-
-The direct-mode limitation is **deliberate and disclosed in the UI**: a generated kubeconfig there
-authenticates without authorizing, and the permission matrix governs kubemg's own authorization
-rather than the cluster's. Agent mode is where the RBAC story closes.
-
-## How it compares
-
-"No inbound ports" is not what sets kubemg apart — every serious product here has an agent that
-dials out. What differs is how much runs in the cluster, how identity reaches it, and what is
-recorded. The two closest comparisons are not Rancher and Lens.
-
-| | What it is | How it reaches a cluster |
-|---|---|---|
-| **Teleport** | The closest comparison, and the more mature product: an access plane for Kubernetes, SSH, databases and more, with SSO, `kubectl` session recording and just-in-time access requests (the full access-request workflow is in the Enterprise edition). Source is AGPL-3.0; the Community Edition binaries carry a commercial licence with use restrictions. | A Teleport agent opens a reverse tunnel out to the Teleport proxy, and its Kubernetes Service sends requests to the API server with impersonation headers — the same shape kubemg has. |
-| **Paralus** | A CNCF sandbox project, Apache-2.0: zero-trust access to Kubernetes with SSO integration, per-user kubeconfigs and audit logs. | A relay agent in the cluster connects out to the relay server, and access lands as just-in-time service accounts created per user. |
-| **Rancher** | A cluster-management platform — provisioning, lifecycle, apps — of which access is one part. | `cattle-cluster-agent` dials out through `remotedialer` and runs under a ServiceAccount with full control of the cluster; the Rancher server impersonates each user through it. |
-| **Portainer** | A container and Kubernetes management UI. | The Edge Agent dials out and opens a reverse tunnel to the Portainer server. |
-| **kubemg** | A Kubernetes-only access gateway and console. Audit forwarding, JIT elevation, session recording and SSO are in the one AGPL-3.0 tree, with no licence key; the agent is Apache-2.0. | One ~7 MB agent dials out; the bastion impersonates `kubemg:u:<username>` in kubemg's own groups, and the cluster's RBAC decides. |
-
-Every row in that table trusts its central server with the clusters it reaches. kubemg does not
-claim otherwise — see the [threat model](docs/introduction/threat-model.md).
-
-## What it does
-
-The console splits on **the job being done, not on how kubemg is built** — the cluster you are in
-and the fleet it belongs to; what has been happening; and everything administrative. Operate and
-Activity are open to everyone and every row in them resolves for everyone, so a developer's rail is
-two icons with no dead ends.
 
 <table>
 <tr>
-<th align="left" width="34%">Operate<br><sub>the cluster you are in, and the fleet it belongs to</sub></th>
-<th align="left" width="33%">Activity<br><sub>what has been happening</sub></th>
-<th align="left" width="33%">Admin<br><sub>everything administrative</sub></th>
+<td width="50%"><img src="docs/assets/screenshots/explore-sidebar.png" alt="Explore: a cluster's Deployments, with the resource tree on the left and replica health above the list."><br><sub><b>Explore</b> — workloads, networking, storage, config, RBAC and each cluster's own CRDs, with one detail drawer per object.</sub></td>
+<td width="50%"><img src="docs/assets/screenshots/cluster-wizard-handshake.png" alt="Registering a cluster: step three of five, the agent has dialled in and the tunnel is open."><br><sub><b>Register a cluster</b> — one <code>kubectl apply</code>, and the wizard waits live for the tunnel.</sub></td>
 </tr>
-<tr valign="top">
-<td>
-Fleet overview · environment bands<br>
-Registration wizard · live attach wait<br>
-Explore · live cluster state<br>
-Pilot header · is anything wrong in here<br>
-Terminal · pooled logs · port-forward<br>
-Scale · restart · YAML · Helm values<br>
-Metrics &amp; logs from your datasource<br>
-Capacity · reserved vs used per node
-</td>
-<td>
-Access requests · JIT approvals<br>
-Queryable audit trail<br>
-Session recordings index<br>
-Replay from a call or from a session
-</td>
-<td>
-Cluster inventory &amp; registration<br>
-Users · groups · permission matrix<br>
-OIDC · SAML · LDAP federation<br>
-Guardrails · alarms · audit policy
-</td>
+<tr>
+<td width="50%"><img src="docs/assets/screenshots/users-table.png" alt="The users page: accounts, roles, status and last sign-in."><br><sub><b>Users and access</b> — local and federated accounts, groups, per-cluster and per-namespace grants.</sub></td>
+<td width="50%"><img src="docs/assets/screenshots/recording-replay.png" alt="Replaying a recorded shell session."><br><sub><b>Session replay</b> — every <code>exec</code> and <code>attach</code> recorded, encrypted at rest, and replayable.</sub></td>
 </tr>
 </table>
 
-**Fleet** — environment-banded cluster cards leading with the connection state, an admin inventory,
-and a five-step registration wizard that waits live for the agent to attach.
+**Operate.** A resource browser over live cluster state — the sidebar is built from each cluster's
+own CRD list, with first-class tables for Gateway API and Istio. Pod and workload lists open on a
+summary of what is wrong in them, in the cluster's own words (`CrashLoopBackOff`, `OOMKilled`).
+From the detail drawer: describe and events, YAML, logs pooled across a workload's pods, a terminal,
+`port-forward`, scale and restart, and Helm releases installed, upgraded, rolled back and uninstalled
+down the same tunnel.
 
-**Explore** — a resource browser over live cluster state: namespaces, workloads, pods, services,
-ingresses, storage, config, nodes, plus the custom resources a particular cluster actually serves
-(the sidebar is built from its own CRD list, with first-class tables for Gateway API and Istio).
-One detail drawer per object carries Overview, Describe & Events, YAML and Logs & Terminal, because
-finding out something is broken, asking why, and changing it is one investigation.
+**Observe.** Live utilisation from the cluster's Metrics API, node capacity as reserved vs used vs
+limits, and history from the datasource each cluster registers — VictoriaMetrics, Prometheus,
+Thanos or Mimir for metrics, VictoriaLogs or Loki for logs. **The browser never sends a query**:
+the server writes the PromQL/LogsQL around the scope the caller's grant allows.
 
-Pod and workload lists open on a **pilot header** — what the list *is*, above what it contains:
+**Access.** Users and groups with effective-permission merging, namespace-scoped grants, SSO over
+OIDC, SAML and LDAP with IdP group mapping, machine accounts for pipelines, and kubeconfigs that
+expire and can be revoked. For access someone needs twice a quarter, **just-in-time elevation**: a
+role, a cluster, a mandatory reason and a clock, approved by somebody other than the requester.
 
-<p align="center">
-  <img src="docs/assets/pilot-header.svg" width="880" alt="Explore's pilot header: 34 pods, 29 running, 3 not ready, 2 failed, 1.4 cores and 6 GiB in use of 4 cores and 16 GiB; below a divider, five pods not running normally, with named alerts for payments-api-7f9 in CrashLoopBackOff and ledger-worker-2 OOMKilled, and three more.">
-</p>
+**Audit.** Every call is recorded — refusals included, and long-lived calls (`exec`, `logs -f`,
+`port-forward`) at both open and close. Shells are recorded and replayable, which is the half no
+cluster-side audit can see: everything typed inside a shell is invisible to the API server. The
+trail can be forwarded to a SIEM over syslog, and alarms route cluster events and kubemg's own
+audit records to Alertmanager, Slack, Teams, PagerDuty, ServiceNow or a webhook.
 
-It is derived from rows already in the browser, so it costs no read and cannot disagree with the
-table under it. Running is not treated as working — a pod whose readiness probe is failing stays
-`Running` indefinitely, which is exactly what a phase-only count calls healthy — and an alert
-carries the cluster's own word (`CrashLoopBackOff`, `ImagePullBackOff`, `OOMKilled`) rather than a
-generic "not ready". Empty buckets are not drawn at all, so a healthy namespace is two readings and
-one line. Every reading is also a **narrowing**: clicking *Failed* filters the list to those rows.
+**Protect.** Command guardrails refuse a destructive call — `kubectl delete ns prod` at 03:00 —
+even from someone entitled to make it, including line by line inside an interactive shell.
 
-**Operate** — in-browser terminal and logs (pooled across a workload's pods), scale and restart as
-conditional read-modify-writes, a YAML editor, `port-forward` over the tunnel, and Helm releases —
-install, upgrade, values, rollback and uninstall, all down the same tunnel.
+## Install
 
-**Observability** — live utilisation from the cluster's own Metrics API, and history from the
-datasource each cluster registers. **The browser never sends a query**: a caller names a chart from
-a fixed catalogue and the server writes the PromQL/LogsQL around the scope their grant allows,
-because a metrics backend has never heard of the caller and will answer whatever it is asked.
+Everything runs in containers; there is no toolchain to install.
 
-| Metrics | Logs |
-|---|---|
-| VictoriaMetrics · Prometheus · Thanos · Mimir | VictoriaLogs · Loki |
+### Try it with Docker Compose
 
-Reached either **in-cluster** (through the tunnel, via the API server's service proxy — nothing
-exposed) or **direct** (dialled from the bastion, the shape a central Thanos takes).
-
-**Capacity** — allocation rather than consumption, per node, which is the question the utilisation
-figures above cannot answer: a node at 30% CPU can be one the scheduler will refuse to place
-another pod on, because placement is decided on **requests** — a reservation nobody is obliged to
-spend. Every bar carries three numbers against the same allocatable denominator — what is reserved,
-what is being used, and what the ceiling would be if every container spent its limit — and
-**limits are stated rather than drawn**, because they routinely exceed a node's own size and a bar
-clamped to its track would misreport by exactly the amount that matters. The reserved figure is the
-scheduler's own arithmetic, sidecars and pod overhead included, and is pinned in CI against what
-`kubectl describe node` reports for the same cluster. Pod slots are the third ceiling and the one
-that binds first on a node full of small pods. Pods the scheduler could not place are listed with
-its own explanation of why. Live usage needs metrics-server and is the only column that can be
-missing; the page says so and stays whole without it. It estimates no cost and changes nothing.
-
-**Access** — local users and groups with effective-permission merging, a permission matrix,
-federation with OIDC, SAML and LDAP including IdP group mapping, and just-in-time elevation:
-
-```mermaid
-%%{init: {'theme':'base','themeVariables':{
-  'fontFamily':'-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif','fontSize':'13px',
-  'primaryColor':'#1B1E22','primaryTextColor':'#F2F3EF','primaryBorderColor':'#3A4033',
-  'lineColor':'#8A9080','textColor':'#F2F3EF',
-  'clusterBkg':'#14161A','clusterBorder':'#3A4033'
-}}}%%
-stateDiagram-v2
-    [*] --> pending: request<br/>(role · cluster · reason · duration)
-    pending --> approved: two-party approval<br/><i>never your own request</i>
-    pending --> rejected: declined or withdrawn
-    approved --> active: grant inserted<br/><i>source='jit', outranks standing</i>
-    active --> expired: clock runs out<br/><i>enforced on every read</i>
-    active --> revoked: handed back early<br/><i>needs no permission</i>
-    expired --> [*]
-    rejected --> [*]
-    revoked --> [*]
-```
-
-An elevation is a **grant of its own, never an edit of the standing one** — so expiry needs no
-restore step and nobody loses access they permanently hold.
-
-**Audit** — a queryable trail (verb sets, exact status, saved ranges) with session replay, and a
-recordings index beside it for the sessions themselves. Both are readable by everyone, and both
-narrow a non-admin to their own activity. On a busy fleet the trail is overwhelmingly `list` and
-`get`, so the table can be **narrowed to the verbs worth keeping** — with a floor nothing
-suppresses: refusals, streaming calls, and kubemg's own replay and delete.
-
-**Audit forwarding** — the complete trail pushed to a syslog collector (Logsign, Splunk, QRadar,
-anything that speaks RFC 5424) as JSON, for a SIEM that cannot come and tail the container's own log
-stream. Every record, no deduplication, and the verb selection above does not narrow it — which is
-what makes it a forwarder rather than an alarm.
-
-**Alarms** — rules route Kubernetes events read down the tunnel *and* kubemg's own audit records to
-Alertmanager, Slack, Teams, PagerDuty, ServiceNow or a raw SIEM webhook. The second stream is the
-one no cluster-side alerting can ever see: a refused `kubectl` never reached the API server, so
-there is no event for it anywhere but here.
-
-**Settings** — six pages rather than one: general, agent, audit, guardrails, alerting and SSO. The
-agent image, the public URL, the retention window, the guardrail rules and the audit policy are all
-editable at runtime, without a restart.
-
-### The console itself
-
-One 60px icon rail for *which part of kubemg*, one 240px panel for *what inside it*, and
-deliberately no third level — a page whose navigation goes deeper puts it in the panel rather than
-in a column beside it. Which cluster you are reading is **in the address, not in page state**, so a
-link carries it and the highlight, the heading and the reads cannot disagree. `⌘K` opens a jump
-list, which is the only navigation that scales past a screenful of clusters. Light and dark are
-peers, and every tone that is ever text clears 4.5:1 on both — **measured in CI**, not asserted in a
-comment, because the light deck once shipped a whole phase with its quiet text at 2.78:1.
-
-## Quick start
-
-Everything builds and runs in containers. **No Go, Node or npm on the host** — Docker and `make`
-are the only requirements.
-
-```mermaid
-%%{init: {'theme':'base','themeVariables':{
-  'fontFamily':'-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif','fontSize':'13px',
-  'primaryColor':'#1B1E22','primaryTextColor':'#F2F3EF','primaryBorderColor':'#3A4033',
-  'lineColor':'#8A9080','textColor':'#F2F3EF'
-}}}%%
-flowchart LR
-    S1["make up"] --> S2["sign in on<br/>localhost:5173"] --> S3["Admin →<br/>Register a cluster"] --> S4["kubectl apply -k …<br/>on the target cluster"] --> S5["the tunnel attaches<br/>and the wizard says so"]
-
-    %% The last step is the one you do not do: the cluster reaches back on its
-    %% own, which is the step the accent belongs on.
-    classDef step fill:#1B1E22,stroke:#3A4033,color:#F2F3EF
-    classDef done fill:#242B14,stroke:#BFF23C,color:#F2F3EF
-    class S1,S2,S3,S4 step
-    class S5 done
-```
-
-### 1. Bring the stack up
+The production image, pulled ready-made — no source build:
 
 ```bash
 git clone https://github.com/kubemg/kubemg.git
-cd kubemg
-cp .env.example .env      # optional: only if the defaults are wrong for your machine
-make up                   # backend + frontend + PostgreSQL 16
-make logs                 # follow
+cd kubemg/deploy/compose
+docker compose up -d
+docker compose logs kubemg | grep -A6 'not configured yet'   # the generated admin password
 ```
 
-| Service | Address |
-|---|---|
-| Console | <http://localhost:5173> |
-| API / bastion | `https://localhost:8443` (self-signed cert, minted at first boot) |
-| PostgreSQL | `localhost:5432` |
+Open `https://<your-host>:8443` and sign in. The certificate is self-signed on first boot, so the
+browser warns once. A **setup wizard** then asks for a new administrator password, the address
+clusters will dial, where the agent image comes from, what the audit trail keeps and, optionally, an
+SSO provider. Everything it collects is editable later from **Settings**.
 
-Sign in as `admin` / `admin`. **Change it** — it is a development default, seeded only while the
-users table is empty.
-
-### 2. Point the bastion at an address your cluster can reach
-
-`KUBEMG_PUBLIC_URL` is baked into every generated install command, so it must be the address the
-*target cluster* dials — not the container's own, and not loopback unless the cluster runs on this
-same host. Put it in `.env`:
+### Install on Kubernetes
 
 ```bash
-KUBEMG_PUBLIC_URL=https://192.0.2.10:8443
-KUBEMG_TLS_HOSTS=kubemg-backend,backend,192.0.2.10
-KUBEMG_SESSION_RECORDING_KEY=$(openssl rand -base64 32)
-KUBEMG_SECRET_KEY=$(openssl rand -base64 32)
+helm install kubemg oci://ghcr.io/kubemg/charts/kubemg --namespace kubemg --create-namespace \
+  --set publicURL=https://kubemg.example.com \
+  --set postgresql.enabled=true --set database.password=evaluation-only \
+  --set service.type=LoadBalancer
 ```
 
-Then `make down && make up`. It is also editable at runtime from **Settings** without a restart.
+That is an evaluation install with an in-chart PostgreSQL. For production, point the chart at your
+own database and supply the keys from a Secret — see the
+[Kubernetes install guide](https://kubemg.readthedocs.io/en/latest/install/kubernetes/).
+[Air-gapped installs](https://kubemg.readthedocs.io/en/latest/install/air-gapped/) are covered too.
 
-### 3. Attach your first cluster
+### Attach a cluster
 
-**Admin → Register a cluster**, pick *Agent-based*, and run the one-line command the wizard renders against
-your cluster:
+**Admin → Register a cluster**, pick *Agent-based*, and run the command the wizard renders against
+the target cluster:
 
 ```bash
-kubectl apply -k https://your-kubemg/install/<token>/kustomize.tar.gz
+kubectl apply -f https://<your-kubemg>/install/<ticket>/agent.yaml
 ```
 
-The wizard polls every 3 seconds and turns green the moment the tunnel attaches — the whole point of
-that step, since you are pasting into a terminal somewhere else. What lands in the cluster:
+The URL carries a single-use download ticket, never the agent's credential. The wizard turns green
+the moment the tunnel attaches. What lands in the cluster:
 
 ```
 namespace/kubemg-system
 serviceaccount/kubemg-agent
 secret/kubemg-agent            ← bastion URL, registration token, pinned CA
 deployment/kubemg-agent        ← one replica, ~7 MB, no CRDs
-clusterrolebindings            ← kubemg:view / :edit / :cluster-admin
+clusterroles + bindings        ← impersonation, kubemg:view / :edit / :cluster-admin
 ```
 
-Uninstall is `kubectl delete -k …`. Nothing else is left behind.
+### Give someone access
 
-> **Existing agent installs must re-apply their manifests** to pick up the CRD-discovery and
-> custom-resource ClusterRoles; until they do, discovery 403s and the Explore sidebar simply shows
-> no custom resources.
-
-### 4. Give someone access
-
-**Admin → Permissions**, pick a user or group, a cluster and a role (`view` / `edit` /
-`cluster-admin`), optionally scoped to namespaces. Then **Kubeconfig** on the cluster page issues a
-scoped, short-lived file that points at kubemg rather than at the cluster.
-
-For access somebody needs twice a quarter rather than daily, skip the standing grant entirely:
-they request it from **Activity → Access requests**, and an approval — from anyone but themselves —
-inserts a bounded grant that expires on its own.
-
-## Configuration
-
-**A fresh install configures itself in the browser.** Bring the management plane up with nothing
-set — `docker compose up -d` — and the first sign-in opens a setup wizard: the administrator's
-password, the address clusters dial, where the agent image comes from, what the trail keeps, and
-optionally an SSO provider. It ends on "add your first cluster", handing straight over to
-registration. The signing key is minted on first boot and kept in the database; the administrator
-password, if you did not choose one, is generated and printed once to the server log.
-
-The wizard has no write surface of its own — every field saves through the endpoint its Settings
-page already uses — and it runs exactly once. Finishing stamps the install and the wizard does not
-come back; an upgrade of an existing install is stamped at boot and never sees it.
-
-Four things it deliberately does not collect, because the server reads them once at boot from an
-environment it cannot rewrite: the **database credentials** (it needs the database in order to store
-anything the wizard is told), the **recording encryption key** (deliberately never stored beside the
-ciphertext it protects), the **TLS certificate files**, and the **listen address**. The wizard's
-final step reports all four instead, with the line to set and where — before you leave rather than
-after. Everything below still works and still wins over anything the wizard would have asked for.
-
-Those reports do not end with the wizard. **Settings → Deployment** answers the same question at any
-later point, from the same checks: which certificate is in force, whether recordings are encrypted at
-rest, where the signing key came from — and the tab carries a count whenever one of them wants
-attention, because a self-signed certificate is still self-signed a year on, in front of whoever
-inherited the bastion and never saw the wizard. The certificate in particular is a file copy away:
-put `tls.crt` and `tls.key` in the `ssl` directory beside the compose file (certbot's `fullchain.pem`
-and `privkey.pem` are recognised too) and it is served on the next restart, with no variable to set.
+**Admin → Permissions**: pick a user or group, a cluster and a role (`view`, `edit` or
+`cluster-admin`), optionally scoped to namespaces. They then generate a short-lived kubeconfig from
+the cluster's page — it points at kubemg, not at the cluster, so revoking it actually revokes it.
 
 <details>
-<summary><b>Server environment (click to expand — all optional, these are the defaults)</b></summary>
+<summary><b>Server environment — all optional, these are the defaults</b></summary>
 
 | Variable | Default | What it is |
 |---|---|---|
 | `KUBEMG_LISTEN_ADDR` | `:8080` | Listen address |
 | `DB_HOST` … `DB_SSLMODE` | localhost / kubemg | PostgreSQL 16 connection |
-| `JWT_SECRET`, `JWT_TTL` | generated, `12h` | Session signing. Unset, a key is minted on first boot and kept in the database, so sessions survive a restart; set it to supply your own, or to make several replicas agree |
-| `KUBEMG_ADMIN_USERNAME` / `_PASSWORD` | `admin` / generated | Bootstrap admin, seeded only when the users table is empty. With no password set, one is generated and printed once to the log |
-| `KUBEMG_PUBLIC_URL` | `http://localhost:8080` | The outside address agents and operators reach; baked into install commands |
-| `CORS_ALLOWED_ORIGINS` | Vite dev server | Where the browser app may live |
+| `JWT_SECRET`, `JWT_TTL` | generated, `12h` | Session signing. Unset, a key is minted on first boot and kept in the database |
+| `KUBEMG_ADMIN_USERNAME` / `_PASSWORD` | `admin` / generated | Bootstrap admin, seeded only when the users table is empty. A generated password is printed once to the log |
+| `KUBEMG_PUBLIC_URL` | `http://localhost:8080` | The address agents and operators reach; baked into install commands |
 | `KUBEMG_AGENT_IMAGE`, `KUBEMG_AGENT_NAMESPACE` | pinned image, `kubemg-system` | Rendered into agent manifests |
 | `KUBEMG_TLS_ENABLED` | `false` | Terminate HTTPS here. Required for `kubectl` through the proxy |
-| `KUBEMG_TLS_SUPPLIED_DIR` | `/etc/kubemg/ssl` | Checked first: a `tls.crt` + `tls.key` (or certbot's `fullchain.pem` + `privkey.pem`) found here is what gets served, ahead of anything minted or configured. Mount a directory over it and replacing the certificate is a file copy and a restart |
-| `KUBEMG_TLS_CERT_FILE`, `_KEY_FILE` | `/etc/kubemg/tls/tls.*` | Where the minted pair lives, and the explicit paths for an install configured that way |
-| `KUBEMG_TLS_SELF_SIGNED`, `KUBEMG_TLS_HOSTS` | `true`, — | Whether to mint when there is nothing supplied, and extra SANs |
-| `KUBEMG_AGENT_CA_BUNDLE` | — | The chain agents must trust. Set it behind an ingress or an internal PKI, where nothing here can infer it |
-| `KUBEMG_AUDIT_RETENTION_DAYS` | `30` | Retention for the trail *and* the recordings; also settable at runtime |
-| `KUBEMG_RESOURCE_CACHE_TTL` | `5s` | Per-caller read cache; negative turns it off |
-| `KUBEMG_SESSION_RECORDING_ENABLED` | `true` | Record `exec`/`attach` for replay |
-| `KUBEMG_SESSION_RECORDING_DIR` | `/var/lib/kubemg/recordings` | Where casts are written. **Mount it** — recordings must outlive the container |
-| `KUBEMG_SESSION_RECORDING_MAX_BYTES` | 32 MiB | Per-recording cap |
-| `KUBEMG_SESSION_RECORDING_KEY` | — | 32 bytes, hex or base64 (`openssl rand -base64 32`): encrypts recordings at rest. **Set it.** Keep it out of the backup that holds the recordings volume; losing it loses the recordings |
-| `KUBEMG_SECRET_KEY` | — | 32 bytes, hex or base64: encrypts the credentials stored in the database (signing key, agent tokens, stored passwords). **Set it**, and back it up separately — the server will not start on an encrypted database without it |
-| `KUBEMG_SESSION_RECORDING_INPUT` | `true` | Record keystrokes as well as output. `false` keeps only what the container printed |
+| `KUBEMG_TLS_SUPPLIED_DIR` | `/etc/kubemg/ssl` | Drop `tls.crt` + `tls.key` (or certbot's `fullchain.pem` + `privkey.pem`) here and it is served |
+| `KUBEMG_AGENT_CA_BUNDLE` | — | The chain agents must trust, behind an ingress or an internal PKI |
+| `KUBEMG_AUDIT_RETENTION_DAYS` | `30` | Retention for the trail and the recordings |
+| `KUBEMG_SESSION_RECORDING_KEY` | — | 32 bytes, hex or base64: encrypts recordings at rest. **Set it** |
+| `KUBEMG_SECRET_KEY` | — | 32 bytes, hex or base64: encrypts credentials stored in the database. **Set it**, and back it up separately |
+
+The full list is in the
+[environment reference](https://kubemg.readthedocs.io/en/latest/install/environment/). Before going
+live, work through the
+[production checklist](https://kubemg.readthedocs.io/en/latest/install/production-checklist/).
 
 </details>
 
-**Agent**: `KUBEMG_BASTION_URL`, `KUBEMG_CLUSTER_TOKEN`, `KUBEMG_BASTION_CA` (added to the system
-roots, not replacing them), and `KUBEMG_BASTION_INSECURE_SKIP_VERIFY` for hand-running against a dev
-bastion. The rendered manifests set all of these for you.
+## How it compares
 
-### Production checklist
+"No inbound ports" is not what sets kubemg apart — every serious product here has an agent that
+dials out. What differs is how much runs in the cluster, how identity reaches it, and what is
+recorded.
 
-- [ ] Real TLS material dropped into `/etc/kubemg/ssl` (`ssl/` beside the compose file), or `KUBEMG_AGENT_CA_BUNDLE` set behind an ingress — **Settings → Deployment** reports which certificate is actually in force
-- [ ] Bootstrap admin password changed — setup refuses to finish until it is, so this is ticked by getting through the wizard
-- [ ] Exactly one KubeMG replica (`strategy: Recreate` on Kubernetes) — an agent's tunnel lives in the replica it dialled, and a second one answers `503` for every cluster whose agent chose the other
-- [ ] `JWT_SECRET` set explicitly if you want a signing key you rotate yourself
-- [ ] `KUBEMG_SESSION_RECORDING_KEY` generated per install and kept out of the recordings backup
-- [ ] `KUBEMG_SECRET_KEY` generated per install and backed up separately from the database
-- [ ] `KUBEMG_SESSION_RECORDING_DIR` on a persistent volume
-- [ ] `KUBEMG_PUBLIC_URL` = the address your clusters dial, over HTTPS
-- [ ] Managed PostgreSQL with `DB_SSLMODE=require`
-- [ ] Retention window set to whatever your auditors need
-
-## Repository layout
-
-```
-backend/            Go server: Gin + GORM + PostgreSQL 16
-  pkg/bastion/        tunnel listener, kubectl proxy, streaming, audit
-  pkg/api/            HTTP surface: clusters, IAM, resources, observability, audit
-  pkg/terminal/       session recording (asciinema v2, encrypted)
-  pkg/jit/            just-in-time elevation engine
-  pkg/guardrails/     command guardrails — the one refusal kubemg makes itself
-  pkg/auditpolicy/    which verbs reach the table, and the floor nothing suppresses
-  pkg/db/             models and query layer
-  pkg/webui/          the built console, embedded and served on NoRoute (empty in a source checkout)
-  pkg/auth/ k8s/ certs/ observability/ cache/ agentpkg/
-frontend/           Vite + React + TypeScript + Tailwind v4
-agent/              the in-cluster agent — a separate Go module
-Dockerfile          the management plane image (repo root — spans both modules)
-deploy/kustomize/   the agent's install manifests (human-facing copy)
-deploy/compose/     standalone-VM install — pulls published images, builds nothing
-```
-
-The agent is its own module on purpose: it depends only on `gorilla/websocket`, has no client-go,
-and compiles to about 7 MB. The manifests exist twice — `deploy/kustomize/base/` for people and an
-embedded copy the server renders from — and `make manifest-check` fails if they drift.
-
-## Development
-
-All tooling runs in containers:
-
-```bash
-make verify            # manifest-check + vet + tests + builds + lint + contrast + frontend build
-make test              # backend + agent tests
-make backend-test      # go test ./...
-make frontend-lint
-make frontend-contrast # measure every deck colour pairing against WCAG — gates verify
-make agent-image-check # prove the amd64 + arm64 matrix still builds
-make image-check       # prove the management plane image builds for amd64 + arm64
-make up / down / logs / ps
-```
-
-`make frontend-contrast` is a gate rather than a report: it reads the tokens out of `index.css` and
-every pairing the components build, and **fails on a violation**. A violation is fixed by moving the
-token, never by adding an exception in a component.
-
-`docker-compose.ci.yml` exposes the same jobs as services for CI runners.
-
-## Deployment
-
-`make up` is the **dev stack** — it builds from source and bind-mounts it, and is what the Quick
-start above uses. It is not how kubemg runs in production.
-
-For a real install there is one production artefact for the management plane: `Dockerfile` at the
-repository root builds the console with a node stage and embeds it into the Go binary
-(`backend/pkg/webui`), so the console and the gateway ship and version together, and a production
-install needs no CORS configuration at all — the SPA calls the origin it was served from. The image
-is distroless and non-root, ~21 MB against the dev image's ~1 GB.
-
-`deploy/compose/` is the standalone-VM path: a compose file that only ever **pulls** published
-images and builds nothing, so it runs on a host with no toolchain and no source checkout. Four
-values (`DB_PASSWORD`, `JWT_SECRET`, `KUBEMG_ADMIN_PASSWORD`, `KUBEMG_PUBLIC_URL`) have no default,
-and compose refuses to start without them. See [`deploy/compose/README.md`](deploy/compose/README.md)
-for the full install, air-gapped mirroring, volumes to back up, and using a real certificate.
-
-```bash
-make image / image-push / image-check   # management plane (repo-root Dockerfile)
-make agent-image / agent-push           # the agent, published separately
-```
-
-`.github/workflows/release.yml` publishes both images on a `v*` tag as amd64+arm64 manifest
-indexes, with the Trivy vulnerability gate running **before** the push. They go to GitHub's own
-registry under the org that owns the source — `ghcr.io/kubemg/kubemg` and
-`ghcr.io/kubemg/kubemg-agent` — so the image and the commit it was built from carry one name, and
-the push authenticates with the workflow's own token rather than a credential somebody has to
-rotate. `REGISTRY` in the Makefile is what an air-gapped site overrides to retag them.
-
-`deploy/helm/kubemg/` is the Kubernetes path: the management plane's Helm chart, published by the
-same workflow as an OCI artefact at the tag's version, so it pulls exactly the images that release
-published.
-
-```bash
-helm install kubemg oci://ghcr.io/kubemg/charts/kubemg --namespace kubemg --create-namespace \
-  --set publicURL=https://kubemg.example.com \
-  --set database.host=postgres.example.internal --set database.existingSecret=kubemg-db \
-  --set service.type=LoadBalancer
-```
-
-Nothing in it is generated at render time, so it installs the same objects under `helm template`,
-Argo CD and Flux; the self-signed certificate every agent pins is minted by the server and kept in
-its database, so a replaced pod serves the same one. See the
-[Kubernetes install guide](https://kubemg.readthedocs.io/en/latest/install/kubernetes/).
-
-### Air-gapped installs
-
-Nothing is fetched from the internet at runtime; what an air-gapped site has to arrange is the
-images — the server and PostgreSQL this host runs, and the agent, browser shell and debug images
-your **clusters** pull.
-
-```bash
-make save-images                              # all five, one docker-load tarball, linux/amd64
-make save-images SAVE_PLATFORM=linux/arm64
-```
-
-That is for a site that receives artefacts on physical media rather than through a mirror; it needs
-only Docker, since the pull runs in a container. A mirror that requires authentication is covered by
-naming a pull secret — `KUBEMG_AGENT_IMAGE_PULL_SECRET`, the chart's `agent.imagePullSecret`, or
-**Agent settings** — which the agent and browser shell pods pull with. kubemg stores the name only;
-the install sheet shows the command that creates the Secret on each cluster, from credentials in the
-operator's own shell. See the
-[air-gapped install guide](https://kubemg.readthedocs.io/en/latest/install/air-gapped/).
+| | What it is | How it reaches a cluster |
+|---|---|---|
+| **Teleport** | The closest comparison and the more mature product: an access plane for Kubernetes, SSH, databases and more. | A reverse tunnel to the Teleport proxy; its Kubernetes Service impersonates the user — the same shape as kubemg. |
+| **Paralus** | A CNCF sandbox project: zero-trust Kubernetes access with SSO, per-user kubeconfigs and audit logs. | A relay agent connects out; access lands as just-in-time service accounts per user. |
+| **Rancher** | A cluster-management platform — provisioning, lifecycle, apps — of which access is one part. | `cattle-cluster-agent` dials out and runs with full control of the cluster; the server impersonates users through it. |
+| **kubemg** | A Kubernetes-only access gateway and console. Audit forwarding, JIT, session recording and SSO in one AGPL tree, no licence key. | One ~7 MB agent dials out; the bastion impersonates `kubemg:u:<username>` in kubemg's own groups, and the cluster's RBAC decides. |
 
 ## Roadmap
 
+**Shipped — the foundation:**
+
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{
-  'fontFamily':'-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif','fontSize':'13px',
+  'fontFamily':'-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif','fontSize':'14px',
   'primaryColor':'#1B1E22','primaryTextColor':'#F2F3EF','primaryBorderColor':'#3A4033',
-  'lineColor':'#8A9080','textColor':'#F2F3EF',
+  'lineColor':'#8A9080','textColor':'#8A9080',
   'cScale0':'#242B14','cScaleLabel0':'#F2F3EF',
-  'cScale1':'#1B1E22','cScaleLabel1':'#F2F3EF'
+  'cScale1':'#1B1E22','cScaleLabel1':'#F2F3EF',
+  'cScale2':'#242B14','cScaleLabel2':'#F2F3EF',
+  'cScale3':'#1B1E22','cScaleLabel3':'#F2F3EF',
+  'cScale4':'#242B14','cScaleLabel4':'#F2F3EF',
+  'cScale5':'#1B1E22','cScaleLabel5':'#F2F3EF'
 }}}%%
 timeline
-    title From an MVP to a console
-    section Shipped
-        Phase 1 : Multi-cluster IAM : Short-lived kubeconfigs
-        Phase 2 : Bastion + outbound agent tunnel : Impersonation : Audit trail
-        Phase 3 : Single pane of glass : Explore : Observability
-        Phase 4 : SSO federation : OIDC · SAML · LDAP
-        Phase 5 : Session recording : JIT elevation : Guardrails : Alarms
-        Phase 6 : Cluster-scoped console IA : Operate · Activity · Admin
-        Phase 6.5 : Helm rollback : RBAC visibility : Events timeline : Security posture
-    section Next
-        Phase 7 : FinOps : Capacity heatmap : Topology graph : AI RCA : GitOps drift
+    Phase 1 : Multi-cluster IAM : Short-lived kubeconfigs
+    Phase 2 : Outbound agent tunnel : Impersonation : Audit trail
+    Phase 3 : Explore : Helm : Metrics and logs
+    Phase 4 : OIDC · SAML · LDAP : IdP group mapping
+    Phase 5 : Session recording : JIT elevation : Guardrails : Alarms
 ```
 
-**Phases 1–6 are shipped, and 6.5 is all but one item** (an ephemeral debug container). Phase 6.6,
-enterprise console readiness, has four presentation items left. Phase 6 was scheduled ahead of Phase 7 deliberately: a capacity
-heatmap, a topology graph and an RCA panel are all *per-cluster* views, and building them into a
-global shell would have meant building each one twice — once where it fits today and once where it
-belongs. So the shell went first. Phase 6.5 followed as a survey against a competing tool's feature
-set — seven surfaces it answers that kubemg could not, none of them a new capability, since every
-one reads objects the impersonated tunnel already reaches, under grants that already exist.
+**Shipped since, and what is next:**
 
-Alongside the numbered phases, two standing efforts run in parallel rather than as a phase:
-**packaging &amp; deployment** — the management-plane image and the compose install above are the
-first shipped items there, then the management plane's Helm chart, and the air-gapped image bundle
-and agent pull secret the latest — and **maintenance &amp; dependency hygiene**, operational risk
-rather than missing features, where read rate limiting, the audit trail's gaps, a rotation scheme
-for the secret key and the exit status of a session the tunnel ended are the open items.
+```mermaid
+%%{init: {'theme':'base','themeVariables':{
+  'fontFamily':'-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif','fontSize':'14px',
+  'primaryColor':'#1B1E22','primaryTextColor':'#F2F3EF','primaryBorderColor':'#3A4033',
+  'lineColor':'#8A9080','textColor':'#8A9080',
+  'cScale0':'#242B14','cScaleLabel0':'#F2F3EF',
+  'cScale1':'#1B1E22','cScaleLabel1':'#F2F3EF',
+  'cScale2':'#242B14','cScaleLabel2':'#F2F3EF',
+  'cScale3':'#1B1E22','cScaleLabel3':'#F2F3EF',
+  'cScale4':'#242B14','cScaleLabel4':'#F2F3EF',
+  'cScale5':'#1B1E22','cScaleLabel5':'#F2F3EF'
+}}}%%
+timeline
+    section Shipped
+        Phase 6 – 6.6 : Cluster-scoped console : Helm lifecycle : RBAC visibility : Browser shell
+        Hardening and packaging : Single-use install URLs : Secrets at rest : Helm chart : Air-gapped bundle
+        Phase 7 so far : Traffic and dependency map
+    section Next · Phase 7
+        Phase 7 : MCP servers : FinOps : Capacity heatmap : AI root-cause analysis : GitOps drift
+```
 
-### Shipped
+**Phase 7 in detail:**
 
-<details>
-<summary><b>Phase 1 · MVP — multi-cluster management &amp; short-lived kubeconfigs</b></summary>
+- [x] **Traffic and dependency map** — `Ingress → Service → Workload → Pod`, with broken links shown as broken
+- [ ] **MCP servers** — opt-in Kubernetes and Grafana MCP servers for AI assistants, read-only by default
+- [ ] **FinOps** — workload cost estimation, waste detection and right-sizing
+- [ ] **Node capacity heatmap** — allocation and oversubscription across the fleet
+- [ ] **AI root-cause analysis** — `CrashLoopBackOff`, `OOMKilled`, node pressure and log anomalies explained
+- [ ] **GitOps drift** — live state compared with the Git manifests that produced it
 
-- [x] Core project structure, backend stack (Go + Gin + GORM) and frontend stack (Vite + React + TS)
-- [x] Docker Compose development environment, backend and frontend as services
-- [x] Containerized build/test/lint pipeline — `Makefile` + `docker-compose.ci.yml`, no host toolchain
-- [x] Local user database and authentication for DevOps users
-- [x] Multi-cluster schema and API — cluster registration and per-user permissions
-- [x] K8s TokenRequest integration for cluster-specific short-lived kubeconfigs
-- [x] UI for the cluster selector, cluster management and kubeconfig download
-- [x] User &amp; group management engine — CRUD, local groups, active/disabled status, memberships
-- [x] UI for user/group administration and the cluster access permission matrix
+**Also open:**
 
-</details>
+- [ ] Rate limiting per user and cluster at the proxy
+- [ ] Audit records for kubemg's own pre-tunnel refusals, and for the name of a created object
+- [ ] Key rotation for `KUBEMG_SECRET_KEY`, and sealing alarm-channel headers
+- [ ] A non-zero `kubectl exec` exit when the tunnel drops mid-session
+- [ ] An external security review and a second core maintainer
 
-<details>
-<summary><b>Phase 2 · Bastion architecture &amp; the dumb agent</b></summary>
+**Known gaps, deliberately:** direct mode provisions no RoleBinding (agent mode is where the RBAC
+story closes), and kubemg runs as a single replica — an agent's tunnel lives in the replica it
+dialled.
 
-- [x] Cluster registration as a step-by-step wizard (`/clusters/new`)
-- [x] Kustomize manifest generator and endpoint for one-step agent deployment (`kubectl apply -k …`)
-- [x] Central bastion/proxy server — WebSocket reverse-tunnel listener
-- [x] The lightweight open-source agent (`agent/`) — its own Go module, no client-go, ~7 MB
-- [x] `kubectl` proxying with `Impersonate-User`/`Impersonate-Group` and audit logging
-- [x] `exec`, `attach`, `watch` and `logs -f` streamed over the tunnel (protocol v2)
-- [x] Audit records persisted to a queryable store and surfaced in the UI
+## Development
 
-</details>
+All tooling runs in containers — Docker and `make` are the only requirements.
 
-<details>
-<summary><b>Phase 3 · Single pane of glass &amp; observability</b></summary>
+```bash
+make up        # dev stack from source: console on :5173, API on :8443, admin / admin
+make verify    # everything CI runs: vet, tests, builds, lint, contrast, docs
+make test      # backend + agent tests
+```
 
-- [x] RBAC-aware multi-cluster namespace and resource visibility
-- [x] On-demand state fetching through the agent — no privileged shortcut for the UI
-- [x] Settings page: public URL, agent image and agent namespace configurable at runtime
-- [x] The Signal Deck design system — rail, live fleet list, ⌘K palette, dark/light decks, self-hosted Archivo + Commit Mono
-- [x] Third-level resource sidebar in Explore — workloads, networking, storage &amp; config, custom resources, cluster
-- [x] Live utilisation from the cluster's own Metrics API, as capacity meters on the fleet, the cluster and the pod drawer
-- [x] Log viewer controls on the streamed container log — filter, wrap, tail
-- [x] Resource YAML viewer and live editor through the same impersonated tunnel
-- [x] Shell selector (`bash` / `sh`) on the pod terminal
-- [x] Kubeconfig generation for agent-mode clusters — pointing at kubemg's proxy, with the bastion CA pinned
-- [x] Workload lifecycle controls — scale and rollout restart as conditional read-modify-writes
-- [x] Pooled workload logs — every pod a workload owns, tailed at once and interleaved by timestamp
-- [x] `table-fixed` Explore tables, so row actions stop overlapping the column beside them
-- [x] Per-cluster observability datasource registration — a metrics source and a logs source, probed on save
-- [x] Dynamic CRD discovery and conditional sidebar categories, derived per cluster from its own CRD list
-- [x] User-scoped persistent namespace selection across Explore sessions
-- [x] Helm release visibility and values management — list, view, and write a new revision the way an upgrade does
-- [x] Universal resource detail drawer and describe engine — Overview, Describe &amp; Events, YAML, Logs &amp; Terminal
-- [x] VictoriaMetrics query path — server-written PromQL, scope resolved from the caller's grant
-- [x] VictoriaLogs/Loki query path — server-written LogsQL/LogQL, the filter quoted as a literal
-- [x] Loading UX and scoped caching — skeleton loaders, a client hook, and an RBAC-scoped backend TTL cache
-- [x] `port-forward` over the tunnel, carried in its WebSocket transport (`v2.portforward.k8s.io`)
-- [x] TLS in front of the bastion, self-signed on first boot and pinned into every agent package
-- [x] Audit retention policy — a background pass, re-reading its window every time
+```
+backend/            Go server: Gin + GORM + PostgreSQL 16 — bastion, proxy, API, audit
+frontend/           Vite + React + TypeScript + Tailwind v4 — the console
+agent/              the in-cluster agent — a separate Go module, gorilla/websocket only
+deploy/compose/     standalone-VM install — pulls published images, builds nothing
+deploy/helm/        the management plane's Helm chart
+deploy/kustomize/   the agent's install manifests
+docs/               this manual, published to Read the Docs
+```
 
-</details>
+The [Developer guide](https://kubemg.readthedocs.io/en/latest/dev/) covers local setup, the
+internals, the REST API and how to contribute.
 
-<details>
-<summary><b>Phase 4 · Enterprise SSO &amp; identity federation</b></summary>
+## License
 
-- [x] SAML / OIDC / LDAP behind one outcome — an engine turns what the directory said into an identity; what that identity is *worth* is decided elsewhere
-- [x] IdP group federation mapping — applied in one transaction per federated sign-in, because a half-applied federation is worse than a refused one
-
-</details>
-
-<details>
-<summary><b>Phase 5 · Zero-trust security &amp; enterprise features</b></summary>
-
-- [x] Interactive session recording &amp; replay — asciinema v2, encrypted at rest, optional keystroke capture, replay itself audited, a capability separate from the admin role, and disclosure before the first keystroke
-- [x] Selective audit verb selection &amp; automated retention — with a floor nothing suppresses: refusals, streaming calls, and kubemg's own replay and delete
-- [x] Audit filtering by date, time and verb *set*, exact status, and saved ranges — the question is almost always a set
-- [x] Cluster event alarms, SIEM and Alertmanager/ITSM dispatcher — five payload shapes, deduplicated, never blocking a caller
-- [x] Audit forwarding — the complete trail pushed to a syslog collector as RFC 5424 JSON, with delivery health on the row
-- [x] Just-in-time elevated access &amp; two-party approval — a grant of its own, expiring on read, never approvable by its own requester
-- [x] Command guardrails &amp; safety policies — enforced at the proxied call, at a non-interactive `exec`'s argv, and line-by-line inside an interactive shell
-- [x] Modular settings sub-pages — general, agent, audit, guardrails, alerting, SSO
-
-</details>
-
-<details>
-<summary><b>Phase 6 · Cluster-scoped console information architecture</b></summary>
-
-- [x] Cluster-scoped section panel and the route split — the second level becomes a property of the open cluster
-- [x] One global time range for the console, so two charts side by side cannot show two different windows
-- [x] Top-N series and a comparison window in the metrics query builder
-- [x] Explore reorganized around one navigation column — the tree in the panel, namespace in the header, the selection in the address, and an object filter over the list
-- [x] Three object overlays collapsed into one detail surface — seeing, asking why and changing it is one investigation
-- [x] Light-deck contrast debt closed, and `make frontend-contrast` added as a gate on `make verify`
-- [x] The rail splits on the job being done — Operate / Activity / Admin, with the environment on the panel's own edge
-- [x] A pilot header over the lists that have a state worth summarising — pods and workloads
-
-</details>
-
-<details>
-<summary><b>Phase 6.5 · Security visibility &amp; release lifecycle</b></summary>
-
-- [x] Helm release history and rollback — `helm rollback`'s own rule: re-applies the target revision's stored manifest, three-way merged against the current one, never a re-render
-- [x] Grafana, Argo CD and a datasource's own UI reachable from the cluster page — outbound links only, never an embed or a proxied application
-- [x] The target cluster's own RBAC, read — a Role/Binding inventory plus a `SubjectAccessReview`-backed access check, both read-only
-- [x] A cluster-wide events timeline — grouped by object and reason, backed by a lazy per-cluster watch rather than a poll
-- [x] A diff before a manifest write, and an optional diff stored in the audit trail — off by default, excluded for redacted kinds
-- [x] NetworkPolicies as an Explore resource, plus a reachability check per workload — a derivation from policy objects, not a live trace
-- [x] Workload security posture findings tied to Pod Security Standards, with an auditable acknowledgement for an accepted risk
-- [x] Node capacity and oversubscription — reserved vs used vs limits per node, pod slots, and the pods the scheduler could not place
-- [x] A register of every issued kubeconfig, and revoking one — per file or everything one person holds, stating what could not be revoked
-- [x] Changing your own password, with the current one required and the person's kubeconfigs optionally revoked with it
-- [x] Helm as a source — chart repositories, install, upgrade and values written by rendering and applying, from the chart stored on the release
-- [x] Removing a Helm release — its recorded manifest deleted object by object, the release record last and only if every object went
-- [x] Firing a CronJob now, a namespace page, and the inventory kinds that explain a refusal — HPAs, quotas, limit ranges, disruption budgets, ReplicaSets
-- [x] Revealing one Secret value, under a capability of its own and audited before the value is written
-- [x] Application templates and a form for seven kinds — both of which only write YAML the existing create path posts
-- [x] A browser shell — a `kubectl` terminal in a pod kubemg runs, holding no cluster credential of its own
-
-</details>
-
-### Next — Phase 7, not started
-
-| | What it is |
-|---|---|
-| **FinOps &amp; waste triage** | Workload-level cost estimation, over-provisioning and abandoned-volume detection, right-sizing YAML in the drawer |
-| **Topology graph** | `Ingress → Service → Workload → Pod → Volume/Config`, traceable and filterable by health |
-| **AI root-cause analysis** | `CrashLoopBackOff`, `OOMKilled`, node pressure and log anomalies synthesised into a cause and a remediation |
-| **GitOps drift detection** | Live cluster state against the Git manifests that were supposed to produce it |
-
-The auto-provisioned VictoriaMetrics/VictoriaLogs stack is still not built; bring your own for now.
-
-### Known gaps, deliberately
-
-- **Direct mode provisions no RoleBinding.** A kubeconfig generated there authenticates without authorizing, and the permission matrix governs kubemg's own authorization rather than the cluster's. Agent mode is where the RBAC story closes — and the UI says which of the two applies, on the cluster page, the permissions page and the wizard's last step.
-- **Existing agent installs must re-apply their manifests** to pick up the CRD-discovery and custom-resource ClusterRoles. Until they do, discovery 403s and the Explore sidebar shows no custom resources.
-- **Browsing a new operator's CRDs means adding its API group** to that ClusterRole and re-applying. The groups are enumerated rather than wildcarded on purpose: `apiGroups: ["*"]` includes the core group, and the core group is where Secrets live.
-- **The setup wizard cannot configure four things**, and says so on its last step rather than quietly omitting them: the database credentials, the recording encryption key, the TLS certificate files and the listen address. Each is read once at boot from an environment the process cannot rewrite, so a form collecting them would be collecting values that vanish at the next restart — and in the recording key's case, storing it beside the ciphertext it protects would defeat the point of encrypting anything. **Settings → Deployment** reports the same set afterwards, but it reports only: none of it is writable from a browser, and a change to any of it takes a restart.
-- **A supplied certificate is picked up on restart, not on change.** The `ssl` directory is read once at boot, so a renewal that lands in it is served the next time the container starts — a certbot deploy hook has to restart kubemg, and nothing here watches the directory for it.
-
-## Licensing
-
-kubemg is **open source in full** — there is no compiled core, no withheld module and no
-licence key. Two licences, split by directory, because only one half runs inside somebody
-else's cluster.
+kubemg is **open source in full** — no compiled core, no withheld module, no licence key.
 
 | Path | Licence | Why |
 |---|---|---|
-| Everything else — server, console | **AGPL-3.0** ([`LICENSE`](LICENSE)) | Running a modified kubemg as a network service means offering that modified source to its users. Section 13 is the point: this is a product people host for others. |
-| [`agent/`](agent/), [`deploy/kustomize/`](deploy/kustomize/) | **Apache-2.0** ([`agent/LICENSE`](agent/LICENSE)) | The only component that runs **inside a customer's cluster**. A SecOps team has to be able to read it, build it themselves and vendor it into their own tooling without copyleft reaching their infrastructure. |
+| Server and console | **AGPL-3.0** ([`LICENSE`](LICENSE)) | Running a modified kubemg as a network service means offering that source to its users. |
+| [`agent/`](agent/), [`deploy/kustomize/`](deploy/kustomize/) | **Apache-2.0** ([`agent/LICENSE`](agent/LICENSE)) | The only part that runs inside your cluster, so a security team can vendor it without copyleft reaching their infrastructure. |
 
-Third-party dependency licences are listed in full in [`NOTICE`](NOTICE); all of them are permissive
-(MIT, BSD, Apache-2.0, ISC, OFL).
-
-Be clear about what the AGPL does and does not do: it does **not** forbid selling or reselling
-kubemg — no OSI-approved licence can. What it forbids is keeping a *modified*, network-served fork
-private. Anyone who hosts a changed kubemg for others has to offer those changes to its users.
-
-**A commercial licence is available.** Copyright is held in full by the author, so the AGPL is not
-the only terms on which this can be had — if its source-offering obligation does not fit an embedded
-or OEM deployment, contact the maintainer. That does not withdraw the AGPL grant; it stands for
-everyone else.
+The AGPL does not forbid selling kubemg; it forbids keeping a modified, network-served fork
+private. A **commercial licence** is available for embedded or OEM use, alongside the AGPL rather
+than instead of it. Third-party licences are listed in [`NOTICE`](NOTICE).
 
 ## Security
 
-Please report vulnerabilities **privately to the maintainer** rather than opening a public issue. If
-you are evaluating kubemg for production, the security model section above is the honest short
-version — including the direct-mode limitation — and the
-[threat model](docs/introduction/threat-model.md) is the long one.
+Report vulnerabilities **privately to the maintainer**, not in a public issue. If you are evaluating
+kubemg for production, read the
+[security model](https://kubemg.readthedocs.io/en/latest/introduction/security-model/) and the
+[threat model](https://kubemg.readthedocs.io/en/latest/introduction/threat-model/) first.

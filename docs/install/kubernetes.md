@@ -1,34 +1,30 @@
 # Kubernetes
 
-The management plane installs on Kubernetes with its Helm chart, published
-beside the images as an OCI artefact:
+Install the management plane on Kubernetes with the Helm chart: make three
+decisions, create two Secrets, run `helm install`. The chart is published as an
+OCI artefact:
 
 ```text
 oci://ghcr.io/kubemg/charts/kubemg
 ```
 
-The chart's version is the release's version, and it pulls the images of that
-same release — `ghcr.io/kubemg/kubemg`, and the agent and browser-shell images
-the console hands out.
+The chart's version is the release's version and it pulls that release's images.
 
 !!! note "This deploys the management plane, not an agent"
-    The chart puts the console and gateway into *a* cluster. It is unrelated
-    to the agent manifests kubemg renders per target cluster, which you apply
-    to every cluster kubemg is going to manage — including, if you like, the
-    same cluster the management plane runs in. See
+    The chart installs the console and gateway. It is unrelated to the agent
+    manifests kubemg renders per target cluster (apply those to every managed
+    cluster, including this one if you like). See
     [Adding a cluster](../clusters/registering.md) and
     [The agent](../clusters/agent.md).
 
 ## Three decisions before the first install
 
-The chart refuses to render until the first two are made, because an install
-that came up without them would fail somewhere far less obvious.
+The chart refuses to render until the first two are made.
 
 1. **The public URL** (`publicURL`) — the `https://` address every target
    cluster's agent dials, and the one browsers and `kubectl` use. Choose it
-   before the first install: the certificate kubemg mints on first boot covers
-   this host and is pinned into every agent package. A plain `http://` URL is
-   refused, since `kubectl` will not send a token over it.
+   first: the minted certificate covers this host and is pinned into every
+   agent package. Plain `http://` is refused.
 2. **The database** — an external PostgreSQL 16 (`database.host`, the
    default), or `postgresql.enabled=true` for a single in-chart PostgreSQL
    pod meant for evaluation. The password always comes from you
@@ -40,8 +36,8 @@ that came up without them would fail somewhere far less obvious.
 
 ## Install
 
-Create the namespace and the two Secrets first, so no credential ever appears
-on a command line or in a values file:
+Create the namespace and two Secrets first, so no credential appears in a
+values file:
 
 ```bash
 kubectl create namespace kubemg
@@ -54,15 +50,15 @@ kubectl create secret generic kubemg-keys -n kubemg \
   --from-literal=KUBEMG_SESSION_RECORDING_KEY="$(openssl rand -base64 32)"
 ```
 
-`KUBEMG_SECRET_KEY` encrypts every credential kubemg stores in its database,
-and `KUBEMG_SESSION_RECORDING_KEY` encrypts session recordings. **Keep a copy
-of both somewhere other than the cluster:** once the secret key is set, the
-server refuses to start without it. The same Secret can also carry
-`KUBEMG_ADMIN_PASSWORD` and `JWT_SECRET`; every key in it is optional.
+`KUBEMG_SECRET_KEY` encrypts stored credentials and
+`KUBEMG_SESSION_RECORDING_KEY` encrypts recordings. **Keep a copy of both
+outside the cluster:** the server will not start without the secret key. The
+Secret may also carry `KUBEMG_ADMIN_PASSWORD` and `JWT_SECRET`; every key is
+optional.
 
 ```bash
 helm install kubemg oci://ghcr.io/kubemg/charts/kubemg \
-  --version 0.13.0 --namespace kubemg \
+  --version 0.14.0 --namespace kubemg \
   --set publicURL=https://kubemg.example.com \
   --set database.host=postgres.example.internal \
   --set database.existingSecret=kubemg-db \
@@ -70,11 +66,10 @@ helm install kubemg oci://ghcr.io/kubemg/charts/kubemg \
   --set service.type=LoadBalancer
 ```
 
-Then point `kubemg.example.com` at the load balancer's address
-(`kubectl get service kubemg -n kubemg`) and open the public URL. The install
-notes Helm prints say which TLS mode was chosen, how agents reach the pod, and
-how to find the first administrator's password — generated on first boot and
-printed once to the log unless you supplied `KUBEMG_ADMIN_PASSWORD`:
+Point `kubemg.example.com` at the load balancer
+(`kubectl get service kubemg -n kubemg`) and open the public URL. Helm's notes
+state the TLS mode and how agents reach the pod. The first admin password is
+printed once to the log unless you set `KUBEMG_ADMIN_PASSWORD`:
 
 ```bash
 kubectl logs -n kubemg deploy/kubemg | grep -A6 'not configured yet'
@@ -82,7 +77,7 @@ kubectl logs -n kubemg deploy/kubemg | grep -A6 'not configured yet'
 
 ### Evaluating it
 
-For a first look, the chart can run its own PostgreSQL:
+For a first look the chart can run its own PostgreSQL:
 
 ```bash
 helm install kubemg oci://ghcr.io/kubemg/charts/kubemg \
@@ -93,9 +88,8 @@ helm install kubemg oci://ghcr.io/kubemg/charts/kubemg \
   --set service.type=LoadBalancer
 ```
 
-That PostgreSQL is one pod with no backup and no replication. Every agent's
-registration token and the certificate every agent pinned live in it, so do
-not attach clusters you care about to it.
+That PostgreSQL is one pod with no backup or replication, and it holds every
+agent token and the pinned certificate. Do not attach clusters you care about.
 
 ## TLS
 
@@ -108,16 +102,14 @@ not attach clusters you care about to it.
 | The certificate agents verify | kubemg's own — minted, or yours | The ingress's |
 | Exposed by | A `LoadBalancer`/`NodePort` Service, or an ingress that passes TLS through | An ingress |
 
-**Passthrough is the recommended mode**, because there is exactly one
-certificate in the whole path and it is the one agents pin. With nothing else
-set, kubemg mints a self-signed certificate for the public URL's host on first
-boot and pins it into every agent package. It keeps that certificate in the
-database as well as the pod, so a replaced pod serves the same one — there is
-no volume to lose. See
+**Passthrough is recommended**: one certificate in the whole path, the one
+agents pin. By default kubemg mints a self-signed certificate for the public
+URL's host, pins it into agent packages and keeps it in the database, so a
+replaced pod serves the same one. See
 [TLS and certificates](tls.md#the-minted-certificate-is-kept-in-the-database-too).
 
-To serve your own certificate instead, put it in a `kubernetes.io/tls` Secret
-and name it in `tls.existingSecret`. cert-manager's output fits as-is:
+To serve your own, put it in a `kubernetes.io/tls` Secret and set
+`tls.existingSecret`. cert-manager's output fits as-is:
 
 ```yaml
 apiVersion: cert-manager.io/v1
@@ -146,25 +138,20 @@ What agents are told to trust then depends on who issued it:
 | Self-signed | Nothing — kubemg pins a self-signed certificate into agent packages on its own. |
 | Issued by a private CA (cert-manager's CA issuer, a corporate PKI) | `tls.agentCABundle.existingSecret` — cert-manager writes the CA into the same Secret as `ca.crt`, so `--set tls.agentCABundle.existingSecret=kubemg-tls` is enough. |
 
-**Changing the certificate after agents are installed is a fleet event:**
-every agent verifies against what it was handed at install, so a different
-certificate — or a different CA — means re-applying every agent's install
-package.
+**Changing the certificate (or CA) after agents are installed means
+re-applying every agent's install package.**
 
-In **edge** mode the pod never presents a certificate, so `tls.existingSecret`
-is refused; put the certificate on the ingress (`ingress.tlsSecretName`)
-instead. The chart sets `KUBEMG_TLS_ENABLED=false` and
-`KUBEMG_ALLOW_INSECURE=true` for you. Agents then verify the ingress's
-certificate, which kubemg never sees: if a private CA issued it, set
-`tls.agentCABundle` to that CA **before installing any agent**, or every
-handshake fails with an x509 error that points at the cluster rather than at
-this setting.
+In **edge** mode `tls.existingSecret` is refused; put the certificate on the
+ingress (`ingress.tlsSecretName`). The chart sets `KUBEMG_TLS_ENABLED=false`
+and `KUBEMG_ALLOW_INSECURE=true`. If a private CA issued the ingress
+certificate, set `tls.agentCABundle` to that CA **before installing any
+agent**, or every handshake fails with an x509 error that points at the
+cluster.
 
 ## Exposing it
 
-`publicURL` has to be reachable from every target cluster, and the default
-`ClusterIP` Service reaches nothing outside the cluster it runs in — the
-install notes warn about it.
+`publicURL` must be reachable from every target cluster; the default
+`ClusterIP` Service is not.
 
 === "LoadBalancer (passthrough)"
 
@@ -172,10 +159,9 @@ install notes warn about it.
     --set service.type=LoadBalancer
     ```
 
-    A layer-4 load balancer passes TLS through by nature, so nothing else is
-    needed. Cloud-specific settings go in `service.annotations`, and
-    `service.loadBalancerSourceRanges` limits who can connect — the agents'
-    egress addresses and your operators'.
+    A layer-4 load balancer passes TLS through. Cloud settings go in
+    `service.annotations`; `service.loadBalancerSourceRanges` limits who can
+    connect (agents' egress and your operators').
 
 === "ingress-nginx (passthrough)"
 
@@ -183,16 +169,14 @@ install notes warn about it.
     --set ingress.enabled=true --set ingress.className=nginx
     ```
 
-    In passthrough mode the chart adds ingress-nginx's `ssl-passthrough` and
-    HTTPS-backend annotations. They work only when the controller runs with
-    `--enable-ssl-passthrough`; without it the controller terminates TLS with
-    its own default certificate and every agent's handshake fails.
+    The chart adds ingress-nginx's `ssl-passthrough` and HTTPS-backend
+    annotations. They need the controller to run with
+    `--enable-ssl-passthrough`; without it every agent handshake fails.
 
 === "Gateway API (passthrough)"
 
-    Any other controller passes TLS through with a resource of its own. With
-    Gateway API, route the host to the Service's `https` port with a
-    `TLSRoute` on a listener in `Passthrough` mode:
+    Route the host to the Service's `https` port with a `TLSRoute` on a
+    `Passthrough` listener:
 
     ```yaml
     apiVersion: gateway.networking.k8s.io/v1alpha2
@@ -221,11 +205,11 @@ install notes warn about it.
     --set ingress.tlsSecretName=kubemg-edge-tls
     ```
 
-    The agent tunnel and interactive sessions are long-lived WebSockets.
-    Raise the controller's read and send timeouts for this host (for
-    ingress-nginx, `nginx.ingress.kubernetes.io/proxy-read-timeout` and
-    `proxy-send-timeout` in `ingress.annotations`): a 60-second default can
-    end an idle `kubectl exec` session.
+    The tunnel and interactive sessions are long-lived WebSockets. Raise the
+    controller's timeouts for this host (ingress-nginx:
+    `nginx.ingress.kubernetes.io/proxy-read-timeout` and `proxy-send-timeout`
+    in `ingress.annotations`); a 60-second default can end an idle
+    `kubectl exec`.
 
 ## Values
 
@@ -255,32 +239,26 @@ its explanation. The ones most installs touch:
 
 ## What the chart does not generate
 
-Nothing in the chart is generated when it renders — no random password, no
-certificate, nothing read back from the cluster. A render is the same under
-`helm install`, `helm template`, Argo CD and Flux, which is what keeps a
-GitOps sync from quietly replacing something kubemg depends on: a regenerated
-database password is one PostgreSQL no longer accepts, and a regenerated
-certificate is one no installed agent recognises. That is why the database
-password and the keys come from you, and why the certificate kubemg mints is
-minted by the server and kept in its database rather than by the chart.
+Nothing is generated at render time: no random password, no certificate,
+nothing read from the cluster. A render is identical under `helm install`,
+`helm template`, Argo CD and Flux, so a GitOps sync never replaces a password
+or certificate kubemg depends on. The database password and keys come from you;
+the certificate is minted by the server and kept in its database.
 
-It also means the chart can be rendered and applied without Helm on the
-cluster:
+So you can also render and apply without Helm on the cluster:
 
 ```bash
-helm template kubemg oci://ghcr.io/kubemg/charts/kubemg --version 0.13.0 \
+helm template kubemg oci://ghcr.io/kubemg/charts/kubemg --version 0.14.0 \
   --namespace kubemg -f values.yaml > kubemg.yaml
 kubectl apply -n kubemg -f kubemg.yaml
 ```
 
 ## What the pod runs as
 
-The server runs as uid/gid `65532`, non-root, with a read-only root filesystem
-and every capability dropped. Its ServiceAccount is granted nothing and its
-token is not mounted: kubemg reaches clusters through agents' tunnels or the
-credentials you register, never through the API server of the cluster it runs
-in. It writes to two places — a memory-backed volume for the certificate's
-working copy, and the recordings volume.
+uid/gid `65532`, non-root, read-only root filesystem, all capabilities
+dropped. Its ServiceAccount is granted nothing and its token is not mounted.
+It writes only to a memory-backed volume (certificate working copy) and the
+recordings volume.
 
 ## Mirrored and air-gapped registries
 
@@ -292,33 +270,25 @@ repository path:
 --set 'imagePullSecrets[0].name=registry-internal'
 ```
 
-That covers the server, the in-chart PostgreSQL, and the images the console
-hands out — the agent in every install package, the browser shell and the
-debug container — so mirror `kubemg/kubemg`, `kubemg/kubemg-agent`,
-`kubemg/kubemg-shell`, `library/postgres` and `library/busybox` under the same
-paths. The agent and shell images are pulled by your **target** clusters, not
-this one, so a mirror that requires authentication needs a pull secret there
-too — `agent.imagePullSecret` names it; see
-[Air-gapped installs](air-gapped.md#a-mirror-that-requires-authentication),
-which also covers carrying the images across on physical media.
-
-Carry the chart itself across with `helm pull
-oci://ghcr.io/kubemg/charts/kubemg --version 0.13.0` and install from the
-`.tgz`.
+This covers the server, in-chart PostgreSQL and the images the console hands
+out (agent, browser shell, debug container). Mirror all five under the same
+paths, and for authenticated mirrors set `agent.imagePullSecret`. See
+[Air-gapped installs](air-gapped.md), which also covers physical media and
+carrying the chart across (`helm pull`).
 
 ## Replicas
 
-The chart runs **one** replica, with `strategy: Recreate`, and does not offer
-a value to change it. Each agent's tunnel lives in the memory of the pod its
-connection reached, so a second pod behind the same Service answers
-`503 no agent tunnel is attached to this cluster` for every cluster whose
-agent chose the other one — and shows those agents as not attached.
-`RollingUpdate` causes the same split for the length of every rollout, and
-would also stall it: the new pod cannot mount the `ReadWriteOnce` recordings
-volume the old one still holds. `Recreate` costs a short outage per upgrade;
-the agents reconnect on their own once the new pod is ready, each within a
-minute. See [Choosing a deployment](index.md#sizing-and-high-availability)
-for the full reasoning.
+The chart runs **one** replica with `strategy: Recreate`; there is no value to
+change it. Each upgrade costs a short outage, and agents reconnect on their own
+within a minute.
+
+??? info "Why it works this way"
+    An agent's tunnel lives in the memory of the pod it reached, so a second
+    pod answers `503 no agent tunnel is attached to this cluster` for clusters
+    whose agent chose the other one. `RollingUpdate` causes the same split
+    during every rollout and stalls, because the new pod cannot mount the
+    `ReadWriteOnce` recordings volume. See
+    [Choosing a deployment](index.md#sizing-and-high-availability).
 
 ## Upgrading
 
@@ -328,16 +298,15 @@ helm upgrade kubemg oci://ghcr.io/kubemg/charts/kubemg \
 ```
 
 The schema migrates when the new pod boots. See [Upgrading](upgrading.md) for
-version compatibility between the management plane and the agent.
+agent compatibility.
 
 ## Uninstalling
 
 `helm uninstall kubemg -n kubemg` removes the server, not its evidence. It
-leaves the recordings claim (`kubemg-recordings`, annotated to be kept) and,
-with the in-chart PostgreSQL, that database's claim; an external database is
-untouched. The certificate kubemg minted lives in the database, so a new
-install against the same database — and the same `KUBEMG_SECRET_KEY` — serves
-the certificate every agent already pinned.
+leaves the recordings claim (`kubemg-recordings`) and, with the in-chart
+PostgreSQL, that database's claim; an external database is untouched. A new
+install against the same database and `KUBEMG_SECRET_KEY` serves the
+certificate agents already pinned.
 
 ## Next
 

@@ -103,6 +103,9 @@ type describeView struct {
 	Created     time.Time         `json:"created_at"`
 	Labels      map[string]string `json:"labels,omitempty"`
 	Annotations map[string]string `json:"annotations,omitempty"`
+	// ManagedBy names what reconciles this object besides the people editing
+	// it, absent when nothing does. See resources_managed.go.
+	ManagedBy *managedByView `json:"managed_by,omitempty"`
 
 	Conditions []conditionView `json:"conditions"`
 
@@ -177,6 +180,7 @@ func describeObject(object map[string]any, name, namespace string) describeView 
 		// here for the same reason the YAML editor drops it.
 		view.Annotations = stringMap(metadata["annotations"], maxAnnotationValue)
 		delete(view.Annotations, lastAppliedAnnotation)
+		view.ManagedBy = managedBy(view.Kind, view.Labels, view.Annotations, ownerRefsOf(metadata))
 	}
 
 	status, _ := object["status"].(map[string]any)

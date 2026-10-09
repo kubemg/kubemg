@@ -1,6 +1,6 @@
 # Kubeconfigs
 
-A kubeconfig has no page of its own in kubemg — it is generated from a sheet opened off a cluster's page (`KubeconfigDrawer`, `POST /api/v1/clusters/:id/kubeconfig/generate`). This page covers what that file contains, how long it can live, and what revoking it actually does — which differs by [connection mode](../clusters/connection-modes.md).
+Generate a short-lived kubeconfig for a cluster, see every one that has been issued, and revoke them. A kubeconfig has no page of its own: open the generate sheet from a cluster's page. What the file contains and what revoking does depend on the [connection mode](../clusters/connection-modes.md).
 
 ## Generating one
 
@@ -8,26 +8,9 @@ A kubeconfig has no page of its own in kubemg — it is generated from a sheet o
 { "ttl_seconds": 3600, "namespace": "team-a" }
 ```
 
-Both fields are optional. `ttl_seconds` defaults to `k8s.DefaultTTL` (1 hour); `namespace` defaults to the first namespace in the caller's grant, or `default` for an unscoped grant. A `namespace` outside the caller's granted scope is refused with `403 namespace is outside your granted scope` — the same enforcement point every namespace-scoped read and write goes through.
+Both fields are optional. `ttl_seconds` defaults to 1 hour. `namespace` defaults to the first namespace in your grant, or `default` for a cluster-wide grant. A namespace outside your grant is refused: `403 namespace is outside your granted scope`.
 
-The response:
-
-```json title="200 OK"
-{
-  "cluster": "prod-eu",
-  "context": "prod-eu",
-  "namespace": "team-a",
-  "ttl_seconds": 3600,
-  "expires_at": "2026-08-25T15:00:00Z",
-  "filename": "prod-eu-ada.kubeconfig",
-  "kubeconfig": "apiVersion: v1\n...",
-  "k8s_role": "edit",
-  "service_account": "",
-  "connection_mode": "agent",
-  "server": "https://kubemg.example.com/api/v1/clusters/3/proxy",
-  "warning": ""
-}
-```
+The response carries the file (`kubeconfig`, `filename`), `expires_at`, `k8s_role`, `connection_mode`, `server`, `service_account` (direct mode only) and a `warning` when something needs fixing.
 
 <figure markdown>
   ![The kubeconfig sheet](../assets/screenshots/kubeconfig-sheet.png)
@@ -36,112 +19,69 @@ The response:
 
 ## The TTL ladder and the two ceilings
 
-There are deliberately **two** ceilings:
-
 | Bound | Value | Meaning |
 | --- | --- | --- |
-| Shortest window | 10 minutes | The floor a request may ask for |
-| Default window | 1 hour | What a request that names no window gets |
-| Default ceiling | 24 hours | What an install allows when nobody has said otherwise — a credential sitting on a laptop for longer than a day is the exposure kubemg cannot see being used |
-| Absolute ceiling | 90 days | No administrator setting can push past it: beyond a quarter, a bearer token stops being access control and becomes a permanent key |
+| Shortest window | 10 minutes | Floor for a request. |
+| Default window | 1 hour | When a request names none. |
+| Default ceiling | 24 hours | What an install allows until an administrator says otherwise. |
+| Absolute ceiling | 90 days | No setting can exceed it; beyond a quarter a bearer token is a permanent key. |
 
-The effective ceiling in between is a runtime setting,
-`kubeconfig_max_ttl_hours`. A stored value below an hour or above the absolute
-ceiling reads as **unset**, falling back to the 24-hour default rather than to
-whatever it happens to parse to.
+The ceiling in between is the setting `kubeconfig_max_ttl_hours`, a plain number of **hours** under **Admin → Settings**. A value below an hour, above the absolute ceiling, or `0` reads as unset and falls back to 24 hours.
 
-Stored in **hours**, deliberately — a value that has to move both directions (an install handing out a quarter, and one refusing anything past an eight-hour shift) cannot be expressed in whole days. An out-of-bounds stored value — including `0` — reads as unset and falls back to the 24-hour default, the same rule the audit retention window follows: a ceiling read wrong is either every request refused or a credential longer than this build will ever sign for, so an ambiguous value defaults to the safer failure.
+`GET /api/v1/kubeconfig/policy` returns `min_ttl_seconds`, `default_ttl_seconds` and `max_ttl_seconds` to **any signed-in user**, so the generate sheet can offer only the windows that will be accepted (a fixed ladder from 1h to 90d). Raising the ceiling past a day is disclosed in the Settings warnings and again in the sheet, because the modes differ on revocation (see [below](#revocation-differs-by-mode)).
 
-`kubeconfig_max_ttl_hours` is set from **Admin → Settings**, as a plain number field rather than a preset ladder — a ceiling is an administrator's one-time decision, not a per-request choice.
-
-### The policy endpoint
-
-```
-GET /api/v1/kubeconfig/policy
-```
-
-Readable by **any authenticated caller**, not just admins — the same rule the recording policy follows: a form offering a choice must not discover the ceiling by being refused.
-
-```json title="200 OK"
-{ "min_ttl_seconds": 600, "default_ttl_seconds": 3600, "max_ttl_seconds": 86400 }
-```
-
-The console's own generator sheet filters a fixed preset ladder (1h → 90d) against `max_ttl_seconds` rather than offering a free-typed number box — a text field invites 480 [minutes when hours were meant, or the reverse]. Raising the effective ceiling past a day is disclosed both in the Settings warnings and again in the sheet, because agent mode and direct mode differ on the one thing that matters about a long-lived credential — see [Revocation](#revocation-differs-by-mode) below.
+??? info "Why hours, and why unset on a bad value"
+    A ceiling that must move both ways (a quarter for one install, an eight-hour shift for another) cannot be expressed in whole days. A ceiling read wrong is either every request refused or a credential longer than this build will sign, so an ambiguous value takes the safer default.
 
 ## What the file contains, by connection mode
 
 ### Agent mode
 
-The target cluster has no route kubemg can dial directly, and no cluster credential is stored at all — so the kubeconfig cannot point at the cluster. Instead:
+No cluster credential is stored and kubemg cannot dial the cluster, so the file points at kubemg.
 
-- `server` is `{public_url}/api/v1/clusters/:id/proxy` — kubemg's own proxy.
-- The bearer token is a **kubemg-issued JWT, scoped to the proxy and to that one cluster**, not a Kubernetes credential at all.
-- kubemg confines a proxy-scoped token to exactly that cluster's `/proxy` route — a kubeconfig lives on a laptop, so it must never double as a session key for the rest of the kubemg API.
-- `certificate-authority-data` carries **the bastion's own CA**, when the bastion has one pinned (self-signed or an operator-supplied `KUBEMG_AGENT_CA_BUNDLE`) — because the "cluster" kubectl is dialing is kubemg itself, so the CA it has to trust is kubemg's, not the target cluster's. A publicly-trusted bastion certificate embeds nothing, because pinning it would break the file at the next certificate renewal.
+- `server` is `{public_url}/api/v1/clusters/:id/proxy`.
+- The bearer token is a **kubemg-issued token scoped to that cluster's proxy route**, not a Kubernetes credential. It cannot be used against the rest of the kubemg API.
+- `certificate-authority-data` carries the **bastion's own CA** when one is pinned (self-signed, or supplied via `KUBEMG_AGENT_CA_BUNDLE`). A publicly trusted certificate embeds nothing, since pinning it would break the file at renewal.
 
 ### Direct mode
 
-kubemg holds a stored API URL and service account token for the cluster and dials it directly:
+- `server` is the cluster's own API URL, with its stored CA.
+- The token is minted **on the cluster** via the Kubernetes `TokenRequest` API for a ServiceAccount named after the caller; `service_account` names it.
 
-- `server` is the cluster's own `api_url`.
-- The bearer token is minted **on the target cluster** via the Kubernetes `TokenRequest` API, for a service account named after the caller's username (`k8s.ServiceAccountName`).
-- `certificate-authority-data` is the cluster's own stored CA certificate.
-- `service_account` in the response names the in-cluster identity the token authenticates as; this field is empty in agent mode, where there is no service account involved at all — the caller is impersonated instead.
+| Mode | `certificate-authority-data` |
+| --- | --- |
+| Agent, self-signed or custom CA | The bastion's CA |
+| Agent, publicly trusted | Empty |
+| Direct | The target cluster's CA |
 
-## The granted-vs-requested TTL warning
+## Warnings you may see
 
-A cluster's own API server may enforce `--service-account-max-token-expiration`, and it answers a request for a longer window with an **earlier expiry rather than an error** — silently, from kubemg's point of view. Reporting the TTL that was *asked for* would have the console counting down from time the token was never actually issued for, so the response reports what the cluster **granted**:
+**Granted shorter than requested (direct mode only).** The cluster's API server may cap token lifetime (`--service-account-max-token-expiration`) and silently issues a shorter one. The response reports what the cluster **granted**, and `warning` says so, e.g. it issued 1 hour instead of the 1 day requested. Raise the API server's own limit, or register the cluster in agent mode.
 
-When the cluster shortened the window, `warning` names the specific mechanism:
-
-```
-This cluster's API server caps service account tokens at about 1 hour, so it issued 1 hour instead
-of the 1 day that was requested. Raising it means raising the API server's own
---service-account-max-token-expiration, or registering the cluster in agent mode, where the
-credential is kubemg's rather than the cluster's.
-```
-
-This warning only applies to **direct mode** — an agent-mode credential is kubemg's own JWT, unaffected by anything the target cluster's API server enforces.
-
-## The plain-HTTP refusal warning
-
-`client-go` refuses to send a bearer token over plain `http://` at all, even to loopback. A kubeconfig generated while kubemg's public URL is not HTTPS still renders — refusing to generate the file would be worse than handing over one that needs a fix — but carries a warning naming the problem:
-
-```
-This server's public URL is not HTTPS. kubectl refuses to send a bearer token over plain HTTP,
-so put TLS in front of kubemg before using this kubeconfig.
-```
-
-See [TLS](../install/tls.md) for terminating TLS at the bastion.
+**Public URL is not HTTPS.** `kubectl` refuses to send a bearer token over plain HTTP. The file still renders but carries a warning to put TLS in front of kubemg. See [TLS](../install/tls.md).
 
 ## The register of issued credentials
 
-Every generated kubeconfig writes a row (`kubeconfig_issuances`): who holds it, which cluster, which mode, the namespace and role, when it was issued and by whom, when it expires, and when it was last used. The generator writes it itself, and the same act lands in the audit trail under `kubeconfig-issue` with the identities crossed — the record's user is whoever asked, and the holder is named as the impersonated identity, because an administrator generating a file for somebody else is exactly the row an auditor is looking for and neither half says it alone.
+Every generated kubeconfig is recorded: holder, cluster, mode, namespace, role, who issued it, when, when it expires and when it was last used. The same act is audited as `kubeconfig-issue`, naming both the requester and the holder (so an admin generating a file for someone else is visible). You cannot withdraw what was never recorded, which is why the register exists.
 
-The register exists because **revocation needs it first**: you cannot withdraw what was never recorded, and until this table existed generating a kubeconfig was the one act in kubemg that handed out a credential and wrote nothing down.
+Routes: `GET /api/v1/kubeconfigs`, `POST /api/v1/kubeconfigs/:id/revoke`, `POST /api/v1/kubeconfigs/revoke-all`.
 
-```
-GET  /api/v1/kubeconfigs
-POST /api/v1/kubeconfigs/:id/revoke
-POST /api/v1/kubeconfigs/revoke-all
-```
-
-Reading follows the audit trail's rule exactly: everybody may read, a non-admin is narrowed by the handler to their own rows, and the `user_id` query parameter can narrow that further but **never widen it**. Revoking your own credential is never administrative — revoking a file you know you lost must not require finding an administrator — and revoking somebody else's always is. In the console the register is **Admin → Identity → Issued credentials** for the fleet, and `/me/credentials` for an operator's own. Adding `?expiring=24h` (or any window from `15m` to `30d`) narrows either page to the live credentials that run out within it — the fleet page's *kubeconfigs expiring* figure opens the register that way.
-
-`last_used_at` is written off the request's own path and at most once every five minutes per credential, the machine token's rule: this read would otherwise sit in front of every proxied call. A credential that was generated and never used is the most useful row on the page.
-
-Retention follows the audit window, and a revoked or expired row is **kept rather than deleted** — "what existed and when did it stop" is the question a register answers.
+- **Who sees what:** everyone reads; a non-admin sees only their own rows, and `user_id` can narrow but never widen that.
+- **Who revokes:** revoking your own is never admin-only (a lost laptop should not need an administrator); somebody else's always is.
+- **Where:** **Admin → Identity → Issued credentials** for the fleet, `/me/credentials` for your own. `?expiring=24h` (any window from `15m` to `30d`) narrows to live credentials expiring within it.
+- **Last used** is updated at most once every five minutes per credential. A credential generated and never used is the most useful row.
+- **Retention** follows the audit window; revoked and expired rows are kept.
 
 ## Revocation differs by mode
 
-- **Agent mode**: the credential is a proxy-scoped kubemg JWT, and revoking it is a lookup the token cannot argue with — the `jti` in its claims against the register. That set is a **published immutable snapshot**: it is republished on every revoke, the gateway reads it as the first check on any proxied call, and the next call the file makes gets `401`. A server whose register cannot be read **fails open on nothing** — an unreadable register means no revocations are known, never that every token is refused, because a blip that locks a whole fleet out of `kubectl` is worse than one that briefly honours a withdrawn file. Replicas agree within 30 seconds; the replica that served the revoke is immediate.
-- **Direct mode**: the token is minted *on the cluster* via TokenRequest. kubemg cannot withdraw what it did not mint — it keeps working, exactly as issued, until its own expiry passes. The per-row Revoke is therefore **offered in agent mode only**, and a direct-mode row says why rather than showing a button that would report success and change nothing. The one real lever is cluster-side: deleting the per-user `kubemg-<username>` ServiceAccount invalidates every token bound to it, and it is inherently **all-or-nothing per cluster**, since every one of that user's direct-mode kubeconfigs on that cluster is bound to the same account. It is also not instant — the API server caches a successful authentication for about ten seconds, so a token keeps working for that long after the account is gone. Verified end-to-end against a real cluster: the call answers `403` (the token authenticates; direct mode provisions no RoleBinding) until the cache expires, and `401` from then on.
+- **Agent mode:** the token's ID is checked against the register on every proxied call, and the next call after a revoke gets `401`. Other replicas agree within 30 seconds. If the register cannot be read, the previous list is kept: an outage never locks everyone out and never silently honours nothing new.
+- **Direct mode:** the token was minted by the cluster, so kubemg cannot withdraw it; it works until it expires. The per-row Revoke is **offered in agent mode only**, and a direct-mode row says why. The one lever is cluster-side: delete the per-user `kubemg-<username>` ServiceAccount, which invalidates all of that user's direct tokens on that cluster. It is not instant, because the API server caches a successful authentication for about ten seconds.
 
-Two levers that already existed remain the fastest blunt instruments and are unchanged: **disabling the account** and **revoking the grant** both take effect on the very next call, because the proxy re-reads the user row and the grant every time. What the register adds is the lever for the case those two are wrong for — the laptop was stolen, and the person still works here and still needs their console.
+**Disabling the account** and **revoking the grant** both take effect on the very next call and remain the fastest blunt tools. The register adds the case where the laptop was stolen but the person still works here.
 
 ### Revoking everything one person holds
 
-`POST /api/v1/kubeconfigs/revoke-all` is its own action rather than *N* row writes, because it is what an incident calls for. It states what it actually reached:
+`POST /api/v1/kubeconfigs/revoke-all` states what it actually reached:
 
 ```json title="200 OK"
 {
@@ -152,29 +92,18 @@ Two levers that already existed remain the fastest blunt instruments and are unc
 }
 ```
 
-Refusing to disclose that difference would be worse than not shipping the button: an administrator who believes a revoke landed when it did not is in a worse position than one who knows the token has four more hours to run. The failed half is recorded as such in the audit trail too — each withdrawal is its own `kubeconfig-revoke` record, and a direct-mode one carries the reason it did not land.
+kubemg never reports a revoke that did not happen. Each withdrawal is its own `kubeconfig-revoke` audit record, and a direct-mode one carries the reason it did not land.
 
 ### Rotating a password can take them with it
 
-`POST /api/v1/auth/password` is where somebody changes their **own** password, and it accepts `revoke_kubeconfigs: true`. That is the same blanket revoke, run for the caller's own account, and it returns the same summary under `credentials`:
+`POST /api/v1/auth/password` changes your **own** password (current password required) and accepts `revoke_kubeconfigs: true`, which runs the same blanket revoke and returns its summary:
 
 ```json title="200 OK"
-{
-  "changed": true,
-  "credentials": { "revoked": 2, "still_valid": 0 }
-}
+{ "changed": true, "credentials": { "revoked": 2, "still_valid": 0 } }
 ```
 
-It is offered rather than done. Somebody rotating a password because they think it leaked wants the kubeconfigs gone with it; somebody rotating one on a schedule does not want every laptop on their team to stop working, and doing it silently would be the wrong answer to both. The trail records both acts separately — one `password-change`, and one `kubeconfig-revoke` per credential.
+It is offered, never silent: rotating because of a leak wants the files gone, rotating on a schedule does not. The audit trail records one `password-change` and one `kubeconfig-revoke` per credential.
 
-In the console it is **Change password** on your profile (`/me/profile`, reached from your name on the sidebar's person card) and on `/me/credentials`, beside the register it acts on. The button is absent for an account whose password is not held here: a federated account changes it with its provider, and a machine account has none at all — its credential is a [machine token](machine-accounts.md), with a revoke of its own.
+In the console it is **Change password** on your profile (`/me/profile`) and on `/me/credentials`. It is absent for a federated account (change it with the provider) and for a machine account, whose credential is a [machine token](machine-accounts.md).
 
-## Embedded CA rules, summarized
-
-| Mode | `certificate-authority-data` |
-| --- | --- |
-| Agent, bastion self-signed or custom CA configured | The bastion's own CA (`KUBEMG_AGENT_CA_BUNDLE` or the generated self-signed cert) |
-| Agent, bastion publicly trusted | Empty — the system trust store already covers it, and pinning would break the file at renewal |
-| Direct | The target cluster's own stored CA certificate |
-
-See [Adding a cluster](../clusters/registering.md) and [Machine accounts](machine-accounts.md) for the equivalent kubeconfig rendered for a programmatic caller rather than a person's session.
+See [Adding a cluster](../clusters/registering.md) for registration.

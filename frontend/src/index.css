@@ -293,6 +293,15 @@
   --deck-warn-soft: #f8efdc;
   --deck-danger: #a8341f;
   --deck-danger-soft: #fae8e4;
+  /* The capacity heatmap's ramp: sage let into the surface in three steps of
+     density, then amber and rust for the cells past a threshold the server
+     reasons with. Mixed from the brand hues (14/28/44%, 45%, 40% over white),
+     not new colours, and only ever under `text` — measured. */
+  --deck-heat-1: #edf4ea;
+  --deck-heat-2: #dbe9d5;
+  --deck-heat-3: #c7dcbd;
+  --deck-heat-warn: #f5d6a8;
+  --deck-heat-danger: #edbbb1;
   /* Text on a solid state fill — a count badge. White here, where the tones
      are taken dark; ink on the dark deck, where they are the brand's own. */
   --deck-on-state: #ffffff;
@@ -396,6 +405,12 @@
   --deck-warn-soft: #2a2011;
   --deck-danger: #e4735c;
   --deck-danger-soft: #2b1714;
+  /* The heatmap ramp over the dark surface: 14/26/38% sage, 36% amber, 40% rust. */
+  --deck-heat-1: #29322c;
+  --deck-heat-2: #354434;
+  --deck-heat-3: #41553d;
+  --deck-heat-warn: #654e2c;
+  --deck-heat-danger: #64342c;
   --deck-on-state: #14161a;
 
   --deck-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
@@ -457,6 +472,12 @@
   --color-danger: var(--deck-danger);
   --color-danger-soft: var(--deck-danger-soft);
   --color-on-state: var(--deck-on-state);
+
+  --color-heat-1: var(--deck-heat-1);
+  --color-heat-2: var(--deck-heat-2);
+  --color-heat-3: var(--deck-heat-3);
+  --color-heat-warn: var(--deck-heat-warn);
+  --color-heat-danger: var(--deck-heat-danger);
 
   --color-chart-1: var(--deck-chart-1);
   --color-chart-2: var(--deck-chart-2);

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { AlertTriangle, Ban, ChevronDown, CircleX, Cpu, Server } from 'lucide-react'
 import { errorMessage, fetchClusterCapacity } from '../api/client'
@@ -6,12 +6,15 @@ import type {
   CapacityDimension,
   CapacitySeverity,
   NodeCapacity as NodeCapacityRow,
+  PlacementSummary,
   PodSlots,
 } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { CapacityHeatmap } from '../components/CapacityHeatmap'
 import { LiveRefresh } from '../components/LiveRefresh'
 import { Disclosure, EmptyState, Notice, Pill, StatTile } from '../components/primitives'
 import { TableSkeleton } from '../components/SkeletonLoader'
+import { qosLine } from '../lib/capacityHeatmap'
 import { useDisclosureState } from '../lib/disclosures'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { formatCPU, formatMemory } from '../lib/units'
@@ -210,13 +213,33 @@ function PodSlotBar({ slots }: { slots: PodSlots }) {
   )
 }
 
-/** NodeRow is one node: its three ceilings, and what its numbers say. */
-function NodeRow({ node }: { node: NodeCapacityRow }) {
+/**
+ * NodeRow is one node: its three ceilings, and what its numbers say. `focus`
+ * is the heatmap asking for this row — it opens and is brought into view, with
+ * no smooth scroll, which is motion the reader did not ask for.
+ */
+function NodeRow({ node, focus }: { node: NodeCapacityRow; focus: number }) {
   const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLLIElement>(null)
   const worst = node.concerns[0]
+  const hasDetail =
+    node.concerns.length > 1 ||
+    node.top_requests.length > 0 ||
+    node.top_borrowers.length > 0 ||
+    node.taints.length > 0
+
+  useEffect(() => {
+    if (focus === 0) return
+    setOpen(true)
+    ref.current?.scrollIntoView({ block: 'start' })
+  }, [focus])
 
   return (
-    <li className="defer-row min-w-0 px-5 py-4 [contain-intrinsic-size:auto_160px]">
+    <li
+      ref={ref}
+      id={`node-${node.name}`}
+      className="defer-row min-w-0 scroll-mt-24 px-5 py-4 [contain-intrinsic-size:auto_160px]"
+    >
       <div className="flex flex-wrap items-center gap-2.5">
         <span className="min-w-0 truncate font-data text-[13px] text-fg">{node.name}</span>
         {node.roles.map((role) => (
@@ -226,6 +249,14 @@ function NodeRow({ node }: { node: NodeCapacityRow }) {
         ))}
         {!node.ready ? <Pill tone="bad">not ready</Pill> : null}
         {!node.schedulable ? <Pill tone="warn">cordoned</Pill> : null}
+        {node.ready && node.schedulable && !node.placeable ? (
+          <Pill tone="idle" title={node.taints.join(', ')}>
+            tainted
+          </Pill>
+        ) : null}
+        {qosLine(node.qos) ? (
+          <span className="text-[12px] text-faint">{qosLine(node.qos)}</span>
+        ) : null}
         <span className="ml-auto">
           <Pill tone={SEVERITY_TONE[node.severity]}>{SEVERITY_LABEL[node.severity]}</Pill>
         </span>
@@ -237,14 +268,16 @@ function NodeRow({ node }: { node: NodeCapacityRow }) {
         <PodSlotBar slots={node.pods} />
       </div>
 
-      {node.concerns.length > 0 ? (
+      {node.concerns.length > 0 || hasDetail ? (
         <div className="mt-3">
           {/* The worst line is always visible; the rest is one click away. A
               node with six notes must not push the next node off the screen. */}
-          <p className="text-[12.5px] leading-relaxed text-muted">
-            <span className="font-medium text-fg">{worst.title}.</span> {worst.detail}
-          </p>
-          {node.concerns.length > 1 || node.top_requests.length > 0 ? (
+          {worst ? (
+            <p className="text-[12.5px] leading-relaxed text-muted">
+              <span className="font-medium text-fg">{worst.title}.</span> {worst.detail}
+            </p>
+          ) : null}
+          {hasDetail ? (
             <button
               type="button"
               aria-expanded={open}
@@ -255,7 +288,11 @@ function NodeRow({ node }: { node: NodeCapacityRow }) {
                 aria-hidden="true"
                 className={`size-3.5 transition-transform ${open ? 'rotate-180' : ''}`}
               />
-              {open ? 'Less' : `${node.concerns.length - 1} more, and what is holding this node`}
+              {open
+                ? 'Less'
+                : node.concerns.length > 1
+                  ? `${node.concerns.length - 1} more, and what is holding this node`
+                  : 'What is holding this node'}
             </button>
           ) : null}
         </div>
@@ -269,6 +306,60 @@ function NodeRow({ node }: { node: NodeCapacityRow }) {
               <span className="ml-1">{concern.detail}</span>
             </p>
           ))}
+
+          {node.taints.length > 0 ? (
+            <p className="text-[12.5px] leading-relaxed text-muted">
+              <span className="font-medium text-fg">Taints.</span>{' '}
+              <span className="font-mono text-[12px]">{node.taints.join(', ')}</span>
+              {node.placeable
+                ? ' — none of them keeps an ordinary pod off this node.'
+                : ' — only pods that tolerate them are placed here.'}
+            </p>
+          ) : null}
+
+          {node.top_borrowers.length > 0 ? (
+            <div>
+              {/* The noisy neighbours: pods spending past their reservation.
+                  Under memory pressure these are what the kubelet evicts
+                  first, and on CPU what slows the pods beside them. */}
+              <p className="label mb-1.5 text-faint">
+                Using more than they reserved
+                {node.borrowing_pods > node.top_borrowers.length
+                  ? ` — the largest ${node.top_borrowers.length} of ${node.borrowing_pods}`
+                  : ''}
+              </p>
+              <ul className="flex flex-col gap-1">
+                {node.top_borrowers.map((pod) => (
+                  <li
+                    key={`${pod.namespace}/${pod.name}`}
+                    className="flex flex-wrap items-baseline gap-x-2.5 font-data text-[12px]"
+                  >
+                    <span className="text-faint">{pod.namespace}</span>
+                    <span className="min-w-0 truncate text-fg">{pod.name}</span>
+                    {pod.qos ? <span className="text-faint">{pod.qos}</span> : null}
+                    <span className="ml-auto text-muted tabular-nums">
+                      {[
+                        pod.cpu_used > pod.cpu_request
+                          ? `${formatCPU(pod.cpu_used)} of ${pod.cpu_request > 0 ? formatCPU(pod.cpu_request) : 'none'} CPU`
+                          : null,
+                        pod.memory_used > pod.memory_request
+                          ? `${formatMemory(pod.memory_used)} of ${pod.memory_request > 0 ? formatMemory(pod.memory_request) : 'none'} memory`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                    <span
+                      className="w-12 text-right text-faint tabular-nums"
+                      title="Taken beyond its request, as a share of the node"
+                    >
+                      +{pod.excess_percent.toFixed(0)}%
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           {node.top_requests.length > 0 ? (
             <div>
@@ -307,6 +398,41 @@ function NodeRow({ node }: { node: NodeCapacityRow }) {
   )
 }
 
+/**
+ * PlacementReading is the fragmentation answer: what is unreserved in total
+ * across the nodes an ordinary pod could land on, beside the most any one of
+ * them can take. The second number is the one a pending pod is measured
+ * against, and the first alone would say it fits.
+ */
+function PlacementReading({ placement }: { placement: PlacementSummary }) {
+  if (placement.placeable_nodes === 0 || !placement.largest_cpu || !placement.largest_memory) {
+    return (
+      <p className="mt-4 text-[13px] leading-relaxed text-muted">
+        No node takes an ordinary pod right now — every one is not Ready, cordoned, tainted
+        NoSchedule or NoExecute, or out of pod slots.
+      </p>
+    )
+  }
+  const { free, largest_cpu: cpu, largest_memory: memory } = placement
+  const data = 'font-data text-fg tabular-nums'
+  return (
+    <p className="mt-4 text-[13px] leading-relaxed text-muted">
+      Unreserved on the{' '}
+      <span className={data}>{placement.placeable_nodes}</span>{' '}
+      {placement.placeable_nodes === 1 ? 'node' : 'nodes'} that take ordinary pods:{' '}
+      <span className={data}>{formatCPU(free.cpu)}</span> CPU and{' '}
+      <span className={data}>{formatMemory(free.memory)}</span> memory. The most one node can take
+      is <span className={data}>{formatCPU(cpu.cpu)}</span> CPU (
+      <span className="font-data text-fg">{cpu.node}</span>, with{' '}
+      <span className={data}>{formatMemory(cpu.memory)}</span> beside it) or{' '}
+      <span className={data}>{formatMemory(memory.memory)}</span> memory (
+      <span className="font-data text-fg">{memory.node}</span>, with{' '}
+      <span className={data}>{formatCPU(memory.cpu)}</span> beside it) — a pod asking for more
+      will not schedule, however much is free in total.
+    </p>
+  )
+}
+
 export function NodeCapacity() {
   const { user } = useAuth()
   const { clusters, loading: clustersLoading } = useClusters()
@@ -323,6 +449,9 @@ export function NodeCapacity() {
         entry.id === clusterId && entry.connection_mode === 'agent' && entry.agent_attached,
     ) ?? null
   const unreachable = cluster ? null : (clusters.find((entry) => entry.id === clusterId) ?? null)
+  // Which row the heatmap last asked for, and how many times — a counter so
+  // asking for the same node twice still brings it back into view.
+  const [focused, setFocused] = useState<{ name: string; count: number } | null>(null)
 
   const report = useCachedQuery(
     cluster ? queryKey('capacity', cluster.id) : null,
@@ -389,6 +518,9 @@ export function NodeCapacity() {
         ) : null}
 
         {loaded && !loaded.available ? <Notice tone="info">{loaded.reason}</Notice> : null}
+        {loaded && loaded.available && !loaded.pod_usage_available && loaded.pod_usage_reason ? (
+          <Notice tone="info">{loaded.pod_usage_reason}</Notice>
+        ) : null}
 
         {/* Pods with nowhere to go are the other half of an oversubscription
             report, and the scheduler's own sentence says more about why than
@@ -440,6 +572,29 @@ export function NodeCapacity() {
               />
               <PodSlotBar slots={summary.pods} />
             </div>
+            <PlacementReading placement={summary.placement} />
+            {qosLine(summary.qos) ? (
+              <p className="mt-1.5 text-[12.5px] text-faint">
+                Pods by QoS class: {qosLine(summary.qos)}
+              </p>
+            ) : null}
+          </div>
+          <div className="card min-w-0 px-5 pt-4 pb-5">
+            <h2 className="text-[16px] font-bold text-fg">Heatmap</h2>
+            <p className="mt-0.5 mb-3 text-[13px] text-muted">
+              Every node against every ceiling, worst first — open a node to see why it reads
+              as it does
+            </p>
+            <CapacityHeatmap
+              nodes={nodes}
+              usageAvailable={loaded?.available ?? false}
+              onSelect={(name) =>
+                setFocused((current) => ({
+                  name,
+                  count: current?.name === name ? current.count + 1 : 1,
+                }))
+              }
+            />
           </div>
           </>
         ) : null}
@@ -467,7 +622,11 @@ export function NodeCapacity() {
           {nodes.length > 0 ? (
             <ul className="divide-y divide-line-soft">
               {nodes.map((node) => (
-                <NodeRow key={node.name} node={node} />
+                <NodeRow
+                  key={node.name}
+                  node={node}
+                  focus={focused?.name === node.name ? focused.count : 0}
+                />
               ))}
             </ul>
           ) : null}
@@ -481,8 +640,12 @@ export function NodeCapacity() {
           <p className="text-[12px] leading-relaxed text-muted">
             Reserved and limit figures are read from the pod specs and are exact — the same
             arithmetic the scheduler does, sidecars and pod overhead included. Live usage comes
-            from the cluster's Metrics API and is a single sample rather than a series. Nothing
-            here estimates a cost or changes anything on the cluster.
+            from the cluster's Metrics API and is a single sample rather than a series; a pod
+            using more than it reserved is read from the same API, per pod. QoS classes are the
+            ones the cluster wrote on each pod. Where a pod could still be placed considers only
+            requests, pod slots, cordons and NoSchedule/NoExecute taints — node selectors,
+            affinity, topology spread and tolerations are not read. Nothing here estimates a cost
+            or changes anything on the cluster.
           </p>
         </Disclosure>
       </div>

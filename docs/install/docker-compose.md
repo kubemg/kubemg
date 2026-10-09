@@ -1,27 +1,23 @@
 # Docker Compose
 
-`deploy/compose/` is a deployment compose file: it **pulls published images
-and builds nothing**, so it runs on a host with no toolchain, no source
-checkout, and no route to the internet beyond a registry you control.
+Run the management plane on one host from published images, with no toolchain,
+no source checkout and no internet beyond a registry you control. Start the
+stack, read the generated admin password, and finish setup in the console.
 
 !!! note "This is not the dev stack"
-    `docker-compose.yml` at the repository root builds from source and
-    bind-mounts it — that is what `make up` runs, and it is what
-    [Quickstart](../getting-started/quickstart.md) uses. The two are
-    unrelated and can coexist on the same machine.
+    `docker-compose.yml` at the repository root builds from source; that is
+    `make up`, used by the [Quickstart](../getting-started/quickstart.md). The
+    two are unrelated and can coexist.
 
 ## What it runs
 
-Two containers, and one image your *target clusters* pull — never this host:
-
 | Image | Pulled by | Why |
 |---|---|---|
-| `ghcr.io/kubemg/kubemg` | this host | The management plane: console and gateway in one binary. |
+| `ghcr.io/kubemg/kubemg` | this host | Console and gateway in one binary. |
 | `postgres:16-alpine` | this host | Users, grants, clusters, the audit trail. |
 | `ghcr.io/kubemg/kubemg-agent` | **your target clusters**, named in `KUBEMG_AGENT_IMAGE` | The outbound tunnel. |
 
-Both kubemg images are published as public manifest indexes covering amd64
-and arm64, so pulling them needs no `docker login`.
+The kubemg images cover amd64 and arm64 and need no `docker login`.
 
 ## Install
 
@@ -31,23 +27,17 @@ docker compose up -d
 docker compose logs kubemg | grep -A6 'not configured yet'
 ```
 
-That is the whole install. The second command reads the administrator
-password, generated on first boot and printed exactly once to the log. Then
-open `https://<your-host>:8443` — the browser will warn once, because the
-certificate is self-signed on first boot — sign in, and the console walks you
-through setup: the address clusters dial, the agent image, what the audit
-trail keeps, and optionally an SSO provider, before it lets you register
-anything.
-
-Setup will not finish until that generated password is changed. Everything it
-collects is stored in the database and editable afterwards from **Settings**.
+The second command prints the administrator password, generated on first boot
+and shown once. Open `https://<your-host>:8443` (the browser warns once: the
+certificate is self-signed), sign in, and setup collects the address clusters
+dial, the agent image, audit retention and optionally SSO. Setup will not
+finish until the generated password is changed. All of it is editable later in
+**Settings**.
 
 ## Deciding configuration up front instead
 
-Copy `.env.example` to `.env` next to `docker-compose.yml` and set what you
-want to decide yourself; anything set there wins over what setup would have
-asked for. This is what you want when the install is scripted, when secrets
-come from a manager, or when several replicas have to agree on a signing key.
+For scripted installs, secrets from a manager, or agreeing on a signing key,
+copy `.env.example` to `.env`. Anything set there wins over setup.
 
 ```dotenv
 DB_PASSWORD=<generate one — openssl rand -base64 24>
@@ -59,53 +49,38 @@ KUBEMG_SESSION_RECORDING_KEY=<generate one — openssl rand -base64 32>
 KUBEMG_SECRET_KEY=<generate another — openssl rand -base64 32>
 ```
 
-`KUBEMG_PUBLIC_URL` is the one that is easy to get wrong and hard to
-diagnose: it is baked into every rendered agent manifest, so `localhost`
-produces an agent that dials itself and never connects. Use the LAN, VPN or
-DNS name a target cluster can actually resolve and reach, with the port. It
-is also the one field setup will not let you past without.
+`KUBEMG_PUBLIC_URL` is the easy one to get wrong: it is baked into every agent
+manifest, so `localhost` makes an agent that dials itself. Use a name a target
+cluster can resolve and reach, with the port. Setup will not let you past
+without it.
 
-See the [environment reference](environment.md) for every variable this image
-reads, and [TLS and certificates](tls.md) for the SSL directory, SANs, and the
-agent trust story in detail.
+See the [environment reference](environment.md) for every variable and
+[TLS and certificates](tls.md) for the SSL directory, SANs and agent trust.
 
 ## The volumes, and which to back up
 
-```yaml
-volumes:
-  - tls-certs:/etc/kubemg/tls          # working copy of the minted certificate
-  - ./ssl:/etc/kubemg/ssl:ro           # your own certificate, if you supply one
-  - session-recordings:/var/lib/kubemg/recordings
-```
-
 | Volume | Holds | If you lose it |
 |---|---|---|
-| `tls-certs` | The working copy of the certificate minted on first boot | Nothing: the next boot writes the same certificate back from the database, which keeps it too — see [TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too). Losing `postgres-data` loses it along with everything else. |
-| `session-recordings` | Encrypted `.cast.gz` session replays | Audit evidence is gone — recordings are the artefact an auditor asks for. |
-| `postgres-data` | Users, grants, clusters, audit trail, the minted certificate | The install is gone, and every installed agent stops connecting: it pinned that certificate. |
+| `tls-certs` | Working copy of the minted certificate | Nothing: the next boot restores it from the database, see [TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too). |
+| `session-recordings` | Encrypted `.cast.gz` session replays | Audit evidence is gone. |
+| `postgres-data` | Users, grants, clusters, audit trail, the minted certificate | The install is gone and every installed agent stops connecting (it pinned that certificate). |
 
-`./ssl` is a **read-only bind mount**, not a named volume, because it's the
-one directory an operator has to be able to drop a file into from the host.
-See [TLS and certificates](tls.md) for exact file formats and how the
-certificate is picked up.
+`./ssl` is a read-only bind mount (not a named volume) so you can drop your own
+certificate into it from the host. See [TLS and certificates](tls.md).
 
 ## Air-gapped installs
 
-Mirror the three images into an internal registry and point the install at
-them — nothing else is fetched at runtime; the console's fonts are served
-from the binary, not a CDN:
+Mirror the three images and point `.env` at them:
 
 ```dotenv
-KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.13.0
+KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.14.0
 KUBEMG_POSTGRES_IMAGE=registry.internal/postgres:16-alpine
-KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.13.0
+KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.14.0
 ```
 
-`KUBEMG_AGENT_IMAGE` has to be reachable **from your target clusters**, not
-from this host — it's written into every rendered agent manifest. If that
-mirror requires authentication, name the pull secret your clusters will hold
-in `KUBEMG_AGENT_IMAGE_PULL_SECRET`. [Air-gapped installs](air-gapped.md)
-covers both, and carrying the images across on physical media.
+The agent image must be reachable from your **target clusters**. For
+authenticated mirrors (`KUBEMG_AGENT_IMAGE_PULL_SECRET`) and carrying images
+across on media, see [Air-gapped installs](air-gapped.md).
 
 ## Logs
 
@@ -114,10 +89,8 @@ docker compose logs -f kubemg
 docker compose logs postgres
 ```
 
-The first-boot administrator password and the "signing sessions with a
-server-generated key" / "set JWT_SECRET" notice both land on `kubemg`'s log at
-`Info` level. TLS warnings (a plaintext bind refused, a missing recording key)
-log at `Warn`.
+The first-boot admin password and the signing-key notice log at `Info`; TLS
+warnings (plaintext bind refused, missing recording key) at `Warn`.
 
 ## Restart and upgrade
 
@@ -127,29 +100,22 @@ docker compose pull
 docker compose up -d
 ```
 
-Schema migrations run automatically at boot (see [Database](database.md)).
-Keep the `tls-certs` volume across the upgrade and the fleet's agents
-reconnect on their own without re-installing anything — an install that
-kept the certificate only on this volume copies it into the database on the
-first boot after the upgrade. See
-[Upgrading](upgrading.md) for version compatibility between the management
-plane and the agent.
+Migrations run at boot (see [Database](database.md)). Keep the `tls-certs`
+volume and agents reconnect without re-installing. See
+[Upgrading](upgrading.md) for management-plane and agent compatibility.
 
-A plain `docker compose restart kubemg` is what picks up a certificate you
-just dropped into `ssl/` — that directory is read once at boot.
+`docker compose restart kubemg` picks up a certificate you just dropped into
+`ssl/`; that directory is read once at boot.
 
 ## Backup
 
-Back up, at minimum:
-
-- The `postgres-data` volume (or better, run managed PostgreSQL and back that
-  up per your usual process — see [Database](database.md)).
-- The `session-recordings` volume, and `KUBEMG_SESSION_RECORDING_KEY`
-  **kept separately** from that volume's backup — a key stored beside the
-  ciphertext it protects defends against nothing.
-- `KUBEMG_SECRET_KEY`, likewise **kept separately** from the `postgres-data`
-  backup. The credentials in the database are encrypted under it, and the server
-  refuses to start on a restored database without the key it was encrypted with.
+- `postgres-data` (or a managed PostgreSQL backed up your usual way, see
+  [Database](database.md)).
+- `session-recordings`, with `KUBEMG_SESSION_RECORDING_KEY` **kept
+  separately**; a key beside its ciphertext defends nothing.
+- `KUBEMG_SECRET_KEY`, **kept separately** from the database backup. Stored
+  credentials are encrypted under it and the server refuses to start on a
+  restored database without it.
 
 ## Using a real certificate
 
@@ -160,7 +126,6 @@ chmod 644 deploy/compose/ssl/tls.crt deploy/compose/ssl/tls.key
 docker compose restart kubemg
 ```
 
-`fullchain.pem` + `privkey.pem` are also recognized under those exact names,
-so a certbot live directory can be mounted at `/etc/kubemg/ssl` as-is. See
-[TLS and certificates](tls.md) for the full detail, including format
-conversion and the agent trust story.
+`fullchain.pem` and `privkey.pem` are also recognized under those names, so a
+certbot live directory can be mounted at `/etc/kubemg/ssl` as-is. See
+[TLS and certificates](tls.md) for formats and agent trust.

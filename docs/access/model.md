@@ -1,72 +1,52 @@
 # The access model
 
-Every read and write kubemg makes on a target cluster passes through the same question twice: who is this, and what may they do here. This page is the mechanics behind both answers.
+How kubemg decides who someone is and what they may do on a cluster. Read this to understand why a grant resolves the way it does; the day-to-day screens are in [Users and groups](users-and-groups.md).
 
 ## System roles
 
-Every account carries a `SystemRole`, one of:
-
 | Role | Meaning |
 | --- | --- |
-| `superadmin` | Full administrative control, including managing other super admins. The tier that exists to be the account an IdP outage — or an administrative mistake — cannot lock the operator out of. |
-| `admin` | Administers kubemg itself: users, groups, permissions, clusters, settings, guardrails. |
-| `user` | An ordinary account. What it can reach on any given cluster is entirely a function of its grants. |
+| `superadmin` | Full control, including managing other super admins. The account an IdP outage or an administrative mistake cannot lock you out of. |
+| `admin` | Administers kubemg: users, groups, permissions, clusters, settings, guardrails. |
+| `user` | An ordinary account. What it reaches on a cluster is entirely a function of its grants. |
 
-A coarser role — `admin` or `user` — is carried in the session token and checked wherever a page or a route only needs to know "administrator or not". The coarse role is derived from the system role rather than stored beside it, so the two can never disagree. A super admin counts as an "administrator" everywhere the coarse role is checked — which version of a page is drawn, and whether **Run check** is offered.
-
-A machine account is pinned to the `user` system role — a row edited directly in the database cannot smuggle admin onto a credential that lives in a CI secret store. See [Machine accounts](machine-accounts.md).
+Pages and routes that only need "administrator or not" use a coarser `admin`/`user` role derived from the system role, so the two never disagree. A super admin counts as an administrator everywhere. A [machine account](machine-accounts.md) is always `user`.
 
 ## Cluster grants
 
-Access to a specific cluster is a row in `user_cluster_access` (direct) or `group_cluster_access` (inherited via group membership), each carrying:
+A grant ties a user (directly) or a group (inherited by its members) to a cluster:
 
-- **`k8s_role`** — one of `view`, `edit`, `cluster-admin`.
-- **`namespaces`** — optional. Empty means cluster-wide; a comma-joined list scopes the grant to those namespaces.
-- **`source`** — `local` (an administrator wrote it by hand), `sso` (a federation mapping derived it — see [Single sign-on](sso.md)), or `jit` (a time-bound elevation — see [Just-in-time access](jit.md)).
-- **`expires_at`** — nil for a standing grant, set for a JIT elevation.
+| Field | Meaning |
+| --- | --- |
+| `k8s_role` | `view`, `edit` or `cluster-admin`. |
+| `namespaces` | Empty means cluster-wide; otherwise the grant is limited to the listed namespaces. |
+| `source` | `local` (an administrator wrote it), `sso` (a federation mapping derived it, see [Single sign-on](sso.md)) or `jit` (a time-bound elevation, see [Just-in-time access](jit.md)). |
+| `expires_at` | Empty for a standing grant; set for a JIT elevation. |
 
-A user can hold several rows for the same cluster at once — a standing grant, a federated one, a live elevation — and they are merged rather than one overwriting another.
+A user can hold several grants for one cluster at once. They are merged, never overwritten.
 
 ## Effective access
 
-One resolution answers "what can this person do, right now, on every cluster": direct grants merged with everything inherited from the caller's groups, the more permissive grant winning, so adding someone to a group can never take access away.
+One resolution answers "what can this person do right now on every cluster": direct grants merged with everything inherited from groups. Adding someone to a group can never take access away.
 
-Two things happen inside it that matter everywhere downstream:
-
-1. **An expired grant is dropped on read.** The query filters on `expires_at IS NULL OR expires_at > now()`. A JIT elevation stops counting the second its window ends — not when a background sweeper gets around to deleting the row — because this is the read every proxied call, kubeconfig generation, and permission check goes through.
-2. **Multiple rows for one cluster are merged, not overwritten**:
-    - The stronger role wins (`cluster-admin` > `edit` > `view`).
-    - If either side is unscoped (`namespaces == ""`), the merged result is unscoped — a standing view grant plus a bounded cluster-admin elevation is access that does not end when the elevation does.
-    - Otherwise the namespace lists union.
-
-This is why a user added to a group never loses access they already held directly, and why a temporary elevation never leaves a gap once it expires — the standing row is still there, merged, underneath it.
+1. **An expired grant is dropped on read.** A JIT elevation stops counting the second its window ends, not when a background sweep deletes the row.
+2. **Several grants for one cluster are merged.** The stronger role wins (`cluster-admin` > `edit` > `view`). If either side is cluster-wide, the result is cluster-wide. Otherwise the namespace lists are unioned. The merged result has no expiry if either side has none.
 
 ### Worked example
 
-Ada has three rows that all resolve against the same cluster, `prod-eu`:
+Ada has three grants on `prod-eu`:
 
-| Source | Row | `k8s_role` | `namespaces` | `expires_at` |
-| --- | --- | --- | --- | --- |
-| Direct grant | `local` | `view` | `` (cluster-wide) | nil |
-| Group grant (`platform-devs`) | `local` | `edit` | `team-a,team-b` | nil |
-| JIT elevation, approved 20 minutes ago | `jit` | `cluster-admin` | `` (cluster-wide) | in 40 minutes |
+| Source | `k8s_role` | `namespaces` | `expires_at` |
+| --- | --- | --- | --- |
+| Direct (`local`) | `view` | cluster-wide | none |
+| Group `platform-devs` (`local`) | `edit` | `team-a,team-b` | none |
+| JIT elevation (`jit`) | `cluster-admin` | cluster-wide | in 40 minutes |
 
-`AccessForUser` folds these three left to right through `MergeAccess`:
-
-1. **Direct `view` (cluster-wide) + group `edit` (`team-a,team-b`)** — the stronger role wins (`edit` beats `view`), and because the direct row is unscoped (`namespaces == ""`), the merge rule "either side unscoped ⇒ result unscoped" makes the intermediate result `edit`, cluster-wide.
-2. **That result + the JIT `cluster-admin` row** — `cluster-admin` beats `edit`, and the JIT row is itself cluster-wide, so the merged role is `cluster-admin`, cluster-wide. On expiry, `MergeAccess` takes `nil` whenever *either* side's `expires_at` is nil, and otherwise takes the **later** of two non-nil expiries. Both standing rows here carry `expires_at = nil`, so the final merged row is unscoped `cluster-admin` with `expires_at = nil` — a permanent grant merged with a temporary one reads as permanent, exactly as the model.md summary above states ("a standing view grant plus a bounded cluster-admin elevation is access that does not end when the elevation does").
-
-**Effective result while the elevation is live:** unscoped `cluster-admin`, with no countdown attached to the effective row, because the permanent `view` row is still there merging in underneath it.
-
-**The instant the JIT row's window passes:** `AccessForUser`'s `expires_at IS NULL OR expires_at > now()` filter drops that row from the query entirely — it is never handed to `MergeAccess` at all — so the effective grant is recomputed from the direct and group rows alone. Ada is back to `edit` scoped to `team-a,team-b`, exactly what she held before the elevation, with no restore step and no gap.
+While the elevation is live, Ada's effective access is cluster-wide `cluster-admin` with no countdown, because her permanent `view` grant is merged underneath it. When the window ends, the JIT grant is dropped and she is back to `edit` on `team-a,team-b`, the merge of her other two grants. No restore step, no gap.
 
 ## How a grant becomes access on the wire
 
-kubemg never manages per-user credentials on target clusters. Every proxied call is impersonated: the bastion sets `Impersonate-User` to the caller's own username **under a fixed prefix, `kubemg:u:`**, and `Impersonate-Group` to a pair of groups derived from the resolved role.
-
-That is `kubemg:view` / `kubemg:edit` / `kubemg:cluster-admin`, plus `kubemg:users` on every call regardless of role, giving the cluster one subject to hang baseline access off. Client-supplied credentials and impersonation headers on the incoming request — `Authorization`, `Impersonate-User`, `Impersonate-Group`, `Impersonate-Uid` and every `Impersonate-Extra-*` — are stripped before kubemg's own are set, so nothing a caller sends can widen what it is impersonated as.
-
-For a caller named `ada` with effective role `edit`, the header set the agent's Kubernetes API server actually sees is:
+kubemg holds no per-user credentials on target clusters. Every proxied call is impersonated: the bastion sets `Impersonate-User` to `kubemg:u:<username>` and `Impersonate-Group` to the role's group plus `kubemg:users`. Any credential or impersonation header the client sent is stripped first, so a caller cannot widen what it is impersonated as.
 
 ```
 Impersonate-User: kubemg:u:ada
@@ -74,80 +54,60 @@ Impersonate-Group: kubemg:edit
 Impersonate-Group: kubemg:users
 ```
 
-Every resolved role produces exactly this shape — `Impersonate-User` is always the caller's own username behind the prefix (never a shared service identity), and `Impersonate-Group` always carries two values: the one group for the resolved role, and `kubemg:users` unconditionally:
-
-| Effective `k8s_role` | `Impersonate-Group` values |
+| Effective `k8s_role` | `Impersonate-Group` |
 | --- | --- |
-| `view` | `kubemg:view`, `kubemg:users` |
+| `view` (also used when the role is empty) | `kubemg:view`, `kubemg:users` |
 | `edit` | `kubemg:edit`, `kubemg:users` |
 | `cluster-admin` | `kubemg:cluster-admin`, `kubemg:users` |
-| *(empty/unset)* | `kubemg:view`, `kubemg:users` — `ImpersonationGroups` treats an empty role as `view` |
 
-Nothing here is scoped by namespace: impersonation groups carry the *role*, never the namespace list — that half of the grant is enforced in the proxy itself, described below.
+Groups carry the role, never the namespace list; namespace scope is enforced by the proxy (below).
 
 ### Why the username is prefixed
 
-A username is chosen by whoever creates the account — an administrator, or an identity provider on first sign-in — and the agent is allowed to impersonate any user. Without a prefix, an account called `system:serviceaccount:kube-system:backup-operator` would reach the API server *as that ServiceAccount* and inherit every binding it holds, whatever its kubemg grant said. This is the same reason Kubernetes' own OIDC integration has `--oidc-username-prefix`. Three things close it together:
+Without a prefix, an account named `system:serviceaccount:kube-system:backup-operator` would reach the API server as that ServiceAccount and inherit its bindings, whatever its kubemg grant said. Three things close this together:
 
-- **The prefix.** A kubemg account is always `kubemg:u:<username>` to the cluster. No name an account can take is also a name the cluster already trusts.
-- **The username rule.** A new or renamed account may not contain `:` or a control character — every reserved Kubernetes form (`system:masters`, `system:serviceaccount:…`, `system:node:…`) is colon-separated, and an email or a directory login never needs one. A federated sign-in whose username claim breaks the rule is **refused by name**, not rewritten. Accounts created before the rule are left alone (the prefix already makes them harmless) and are listed in a warning at startup so an administrator can rename them.
-- **The agent's ClusterRole.** The agent may impersonate only the four `kubemg:` groups above, and no ServiceAccount at all. Users cannot be narrowed the same way — Kubernetes has no prefix match for `resourceNames` — which is why the prefix carries that half.
+- **The prefix.** A kubemg account is always `kubemg:u:<username>` to the cluster.
+- **The username rule.** A new or renamed account may not contain `:` or a control character. A federated sign-in whose username claim breaks the rule is refused by name, not rewritten. Older accounts are left alone and listed in a warning at startup so you can rename them.
+- **The agent's permissions.** The agent may impersonate only the four `kubemg:` groups and no ServiceAccount.
 
-**If you bound a RoleBinding to a kubemg username directly** — `kind: User, name: ada` — rebind it to `kubemg:u:ada`. Bindings to the `kubemg:` groups, which is how kubemg's own manifests grant access, are unaffected. kubemg's own fixed identities (`kubemg:alarm-watcher`, `kubemg:event-watcher`, `kubemg:shell-runner`) are not accounts and keep their names.
+If you bound a RoleBinding to a kubemg username directly (`kind: User, name: ada`), rebind it to `kubemg:u:ada`. Bindings to the `kubemg:` groups, which is how kubemg's own manifests grant access, are unaffected. kubemg's own fixed identities (`kubemg:alarm-watcher`, `kubemg:event-watcher`, `kubemg:shell-runner`) keep their names.
 
 ## Where namespace scope is enforced
 
-The namespace scope on a grant is a kubemg concept that Kubernetes impersonation groups cannot express — there is no `Impersonate-Group` that means "only these three namespaces." So it is enforced by the **proxy itself**: a scoped grant refuses any call naming a namespace outside its list (except discovery paths, and cluster-scoped kinds, which are read cluster-wide because there is no namespace to check). A resource list for a scoped grant is answered by reading the grant's own namespaces one at a time and merging results — never by listing the whole cluster and filtering, which would let a scoped user enumerate namespaces they were never given.
+Impersonation cannot express "only these namespaces", so the proxy enforces it: a scoped grant refuses any call naming a namespace outside its list. Discovery paths and cluster-scoped kinds are exempt (there is no namespace to check). A resource list for a scoped grant is answered by reading each granted namespace and merging the results, never by listing the whole cluster and filtering, so a scoped user cannot learn which other namespaces exist.
 
-## Why the role itself is deliberately *not* enforced locally
+## What each role can do
 
-kubemg resolves *which* role applies and sets the impersonation header accordingly — but whether `view` may only read, or `edit` may also delete, is answered by the **target cluster's own RBAC**, through the `kubemg:view` / `kubemg:edit` / `kubemg:cluster-admin` ClusterRoleBindings the agent manifests install. kubemg does not duplicate that decision locally. This is deliberate: the cluster's RBAC is the one place that already has to get this right, and a second, kubemg-side copy of "can `view` write" would only be a second place for the two to disagree.
+The role's meaning inside an agent-mode cluster comes from ClusterRoles and bindings in the agent's install manifests. The cluster's own RBAC decides every call; kubemg does not keep a second copy of "can `view` write".
 
-### What each role can actually do, on the wire
-
-The ClusterRoles and bindings in the agent's install manifests are what give the three roles their meaning inside an agent-mode cluster:
-
-| Group | Bound to | What it grants |
+| Group | Bound to | Grants |
 | --- | --- | --- |
-| `kubemg:view` | the built-in `view` ClusterRole | Read-only access to almost everything in the built-in and aggregated-to-view API groups — the same role `kubectl auth can-i --as` would show for a Kubernetes "viewer". Explicitly excludes Secrets' contents (the built-in `view` role can list Secret *objects* but not read most other sensitive resources) and any write verb. |
-| `kubemg:edit` | the built-in `edit` ClusterRole | Everything `view` gets, plus create/update/patch/delete on the workload- and namespace-scoped resources `edit` covers — Deployments, Services, ConfigMaps, and so on — but not cluster-scoped objects like Nodes, ClusterRoles, or other namespaces' RBAC. |
-| `kubemg:cluster-admin` | the built-in `cluster-admin` ClusterRole | Full control, cluster-wide, including RBAC itself. This is the role a JIT elevation to `cluster-admin` actually grants inside the cluster, not just in kubemg's own database. |
-| `kubemg:users` | `kubemg-crd-discovery` (read `customresourcedefinitions`), `kubemg-custom-resource-view`/`-edit` (the Gateway API and five Istio groups, enumerated, never wildcarded), `system:discovery` | Baseline access every proxied call carries regardless of role: seeing which CRDs exist (a schema, not the data it holds), reading and — if the resolved role is `edit` or above — writing objects in the Gateway API and Istio groups, and the API discovery `kubectl` needs before it can resolve a single resource. |
+| `kubemg:view` | built-in `view` | Read-only on most namespaced resources. No write verbs. |
+| `kubemg:edit` | built-in `edit` | `view` plus create/update/delete on workloads and other namespaced resources. No cluster-scoped objects such as Nodes or ClusterRoles. |
+| `kubemg:cluster-admin` | built-in `cluster-admin` | Full control cluster-wide, including RBAC. |
+| `kubemg:users` | CRD discovery, `kubemg-custom-resource-view`/`-edit`, `system:discovery` | Baseline on every call: list which CRDs exist, read (and, at `edit` or above, write) Gateway API and five Istio groups, and API discovery. |
 
-Two things follow directly from this table. First, a `view` grant genuinely cannot write to any of kubemg's first-class custom-resource groups either — `kubemg-custom-resource-edit` is bound to `kubemg:edit`, not `kubemg:users`, so `view` only ever picks up the read-only `kubemg-custom-resource-view` binding via `kubemg:users`. Second, browsing a CRD from an operator kubemg has not enumerated (anything outside the Gateway API and Istio groups) is a **generic list and a YAML editor with no RBAC to read or write it** unless an administrator adds that operator's API group to `kubemg-custom-resource-view`/`-edit` and re-applies the manifests — this is stated in the manifest's own comments and is the one thing standing between the generic tooling and a CRD nobody here has heard of.
+Browsing a custom resource from an operator outside those groups is a generic list and YAML editor with no RBAC to read or write it, unless an administrator adds that API group to `kubemg-custom-resource-view`/`-edit` and re-applies the manifests.
 
 ## The direct-mode gap
 
-In **direct** connection mode, this closes only partially. kubemg mints a token on the target cluster via TokenRequest, but provisions **no RoleBinding** for it — so a generated kubeconfig authenticates against the cluster without the cluster having any opinion on what that identity may do. The permission matrix in direct mode governs *kubemg's own* authorization (whether the console lets someone generate the file at all, and what it fills in), not the target cluster's RBAC.
-
-In **agent** mode this gap closes: the installed manifests bind `kubemg:view`/`kubemg:edit`/`kubemg:cluster-admin` to real ClusterRoles, and the proxy's impersonation headers mean the cluster's own RBAC decides every call. This is why programmatic access via [machine accounts](machine-accounts.md) refuses direct mode outright — a credential this console cannot see authorized on the cluster is not one it should hand out for unattended use.
-
-The cluster detail page, the permissions page, and the registration wizard's last step all disclose which of the two modes a given cluster is in, and this disclosure is treated as load-bearing — it must stay honest and mode-aware wherever it appears.
+In direct mode kubemg mints a token but binds no RBAC to it, so the permission matrix governs only kubemg's own authorization, not the cluster's. Agent mode closes the gap. Details in [Connection modes](../clusters/connection-modes.md). This is why [machine accounts](machine-accounts.md) refuse direct mode.
 
 ## Disabled accounts
 
-Disabling an account (`is_active: false`) takes effect immediately, not when an already-issued session token happens to expire. Every authenticated request re-reads the account and rejects a disabled one with `403 this account is disabled`.
-
-The same check applies to a machine token's verifier, so disabling the machine account behind a credential stops it at the next call too.
+Disabling an account takes effect immediately, not when its session token expires. Every request re-reads the account and a disabled one gets `403 this account is disabled`. A machine token stops at its next call too.
 
 ## Self-protection rules
 
-Two rules live in the account-management handlers rather than the store, and both are deliberate:
-
-- **A caller can never delete, disable, or change the system role of its own account.** This is the actual guarantee that an active admin always remains — there is no separate "last admin" count to maintain, because the rule holds even for the only admin left.
-- **Only a super admin may create or manage another super admin.** An ordinary admin cannot promote an account to super admin, and cannot edit, disable, or delete an existing super admin's account.
-
-Both are enforced at the handler that would otherwise perform the action (`setUserStatus`, `deleteUser`, `loadManageableUser`), not by the store layer, and they hold regardless of the caller's own tier — a super admin cannot disable itself either.
+- A caller can never delete, disable or change the system role of **its own** account. This is what guarantees an active admin always remains, even for the only admin left.
+- Only a super admin may create or manage another super admin.
 
 ## FAQ
 
-**Why is a namespace-scoped user answered from their grant, rather than by listing every namespace and filtering?**
+**What happens to an open shell, followed log or port-forward when a grant changes?**
 
-Because that would let a scoped user enumerate namespaces they were never given. If kubemg listed the whole cluster and threw away rows outside the grant, the *list of namespace names* itself would leak — a scoped grant for `team-a` would still see that `team-b`, `payments-prod`, and every other namespace exist, just not their contents. Reading a scoped grant's own namespace list one at a time and merging the results, as [Where namespace scope is enforced](#where-namespace-scope-is-enforced) describes, never issues a cluster-wide list at all, so there is nothing for the response to leak.
+- **Agent mode:** the change applies to anything opened after it, at the very next call. A socket already open is not interrupted.
+- **Direct mode:** the kubeconfig's token is valid on the cluster until it expires, whatever happens to the grant in kubemg.
 
-**What happens to an open session — a shell, a followed log, a port-forward — when the underlying grant changes mid-stream?**
-
-It depends entirely on connection mode, and this is one of the two things the raise-the-kubeconfig-TTL disclosure and the machine-account design both hinge on:
-
-- **In agent mode**, every call — including a long-lived stream — is impersonated through the tunnel, and impersonation is resolved from a **live** read of `AccessForUser` on the call that opens the stream. A grant change (an admin revokes access, a group membership is removed, a JIT elevation expires) takes effect for anything opened *after* the change, at the very next call. It does not reach back into a socket that is already open and bridging bytes — the tunnel itself has no mechanism to interrupt a running exec or port-forward mid-stream. What is guaranteed is that a *new* stream, or a re-authenticated one, sees the change immediately, and the standing "revocation stops the file at once" language elsewhere in the manual is about calls, not about killing sessions already in flight.
-- **In direct mode**, a kubeconfig carries a token minted directly on the cluster via TokenRequest. Revoking the grant in kubemg does nothing to that token's validity on the cluster — it keeps working until it expires on its own schedule, however the grant changes in the meantime. This is the direct-mode gap described above, stated again here because it is the sharper edge of it: kubemg's grant is not the thing standing between a revoked user and the cluster in this mode.
+??? info "Why a scoped user is not answered by filtering a cluster-wide list"
+    Listing everything and discarding rows outside the grant would still leak the names of the other namespaces. Reading the granted namespaces one at a time never issues a cluster-wide list.

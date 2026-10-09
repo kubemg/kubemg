@@ -1,3 +1,4 @@
+import type { ManagedBy } from '../api/types'
 import type { ResourceKey } from './resources'
 import { workloadCapability } from './workloads'
 
@@ -38,6 +39,11 @@ export interface SelectedRow {
   suspended?: boolean
   /** Whether a node is currently cordoned. Set on Node rows and nowhere else. */
   unschedulable?: boolean
+  /**
+   * What else reconciles this object, off the list row — a selection has no
+   * describe behind it to ask. Set on the rows whose lists carry it.
+   */
+  managedBy?: ManagedBy
 }
 
 /** selectionKey is how a row is identified inside a selection. */
