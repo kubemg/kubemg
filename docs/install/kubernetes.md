@@ -58,7 +58,7 @@ optional.
 
 ```bash
 helm install kubemg oci://ghcr.io/kubemg/charts/kubemg \
-  --version 0.14.0 --namespace kubemg \
+  --version 0.14.1 --namespace kubemg \
   --set publicURL=https://kubemg.example.com \
   --set database.host=postgres.example.internal \
   --set database.existingSecret=kubemg-db \
@@ -248,7 +248,7 @@ the certificate is minted by the server and kept in its database.
 So you can also render and apply without Helm on the cluster:
 
 ```bash
-helm template kubemg oci://ghcr.io/kubemg/charts/kubemg --version 0.14.0 \
+helm template kubemg oci://ghcr.io/kubemg/charts/kubemg --version 0.14.1 \
   --namespace kubemg -f values.yaml > kubemg.yaml
 kubectl apply -n kubemg -f kubemg.yaml
 ```

@@ -176,3 +176,13 @@ disagree with the thing it describes.
 `helm` was in that image and was deliberately removed — its release binaries
 carried a Go standard library behind Go's own security releases. The console
 installs, upgrades, rolls back and uninstalls through the tunnel instead.
+
+`kubectl` could not leave the same way, and it ran into the same problem in
+0.14.0: v1.37.1 on dl.k8s.io was built on Go 1.26.8 with `golang.org/x/net`
+v0.57.0, and the release scan refused it. So `shell/Dockerfile` compiles it
+instead, from the release's own `kubernetes-src.tar.gz`, checked against the
+sha256 the release publishes. Only the Go toolchain (`GO_IMAGE`) and x/net
+(`XNET_VERSION`) change. The build cross-compiles on the builder's platform
+(no cgo), so both architectures take about half a minute. Go back to the
+downloaded binary once a Kubernetes patch release is built on a toolchain the
+scan accepts; `go version -m kubectl` says which one a release used.
