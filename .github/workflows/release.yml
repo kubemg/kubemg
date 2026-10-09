@@ -289,6 +289,15 @@ jobs:
             echo "A release already exists for $TAG — leaving it untouched."
             exit 0
           fi
+          # actions/checkout writes the pushed tag back as a lightweight ref
+          # pointing at the commit, so without this the "tag message" read below
+          # is the merge commit's message — which is how v0.12.0 and v0.13.0
+          # were drafted with a PR title in place of their notes.
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          if [ "$(git cat-file -t "$TAG")" != tag ]; then
+            echo "$TAG is not an annotated tag; its notes would be a commit message." >&2
+            exit 1
+          fi
           git tag -l --format='%(contents)' "$TAG" > notes.md
           gh release create "$TAG" \
             --draft \

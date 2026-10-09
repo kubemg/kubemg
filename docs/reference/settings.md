@@ -48,7 +48,7 @@ private value means an agent inside a target cluster can never dial back in.
 | | |
 |---|---|
 | Meaning | The container image installed into a target cluster when it registers in agent mode. |
-| Environment default | `KUBEMG_AGENT_IMAGE` (falls back to the build's own default, currently `ghcr.io/kubemg/kubemg-agent:0.13.0`) |
+| Environment default | `KUBEMG_AGENT_IMAGE` (falls back to the build's own default, currently `ghcr.io/kubemg/kubemg-agent:0.14.0`) |
 | Validation | none beyond trimming |
 
 ### `agent_namespace`
