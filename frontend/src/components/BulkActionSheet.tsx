@@ -20,6 +20,12 @@ import {
   suspendWorkload,
 } from '../api/client'
 import type { Cluster } from '../api/types'
+import {
+  type ManagedAct,
+  managedByLabel,
+  managedNotice,
+  managedSelectionNotice,
+} from '../lib/managedBy'
 import type { BulkActionName, SelectedRow } from '../lib/selection'
 import { BULK_ACTION_LABEL } from '../lib/selection'
 import { Button, Notice, Sheet } from './primitives'
@@ -88,6 +94,20 @@ const ACTION_BLURB: Record<BulkActionName, string> = {
     'untouched and still fires at its next matching time.',
 }
 
+/**
+ * Which managed-by wording an action reads. Firing a CronJob makes a new Job
+ * nothing manages, and a node is nobody's GitOps object, so neither has one.
+ */
+const MANAGED_ACT: Record<BulkActionName, ManagedAct | null> = {
+  delete: 'delete',
+  restart: 'restart',
+  suspend: 'change',
+  resume: 'change',
+  cordon: null,
+  uncordon: null,
+  run: null,
+}
+
 export function BulkActionSheet({
   cluster,
   action,
@@ -109,6 +129,8 @@ export function BulkActionSheet({
   const Icon = ACTION_ICON[action]
   const destructive = action === 'delete'
   const label = BULK_ACTION_LABEL[action]
+  const managedAct = MANAGED_ACT[action]
+  const managed = managedAct ? managedSelectionNotice(rows, managedAct) : null
 
   // One Kind, or several. "3 Pods" is worth saying; "5 objects" is what a mixed
   // selection honestly is, and inventing a plural for it would be worse.
@@ -180,6 +202,10 @@ export function BulkActionSheet({
     >
       <Notice tone={destructive ? 'warn' : 'info'}>{ACTION_BLURB[action]}</Notice>
 
+      {/* Before the click, like the RBAC line below: something else writing
+          these objects is a reason to stop, not something to learn afterwards. */}
+      {managed && !ran ? <Notice tone={managed.tone}>{managed.text}</Notice> : null}
+
       {/* Said before the click rather than after a refusal: the grant that
           decides this is the cluster's, not KubeMG's, and a selection can be
           half-permitted. */}
@@ -200,6 +226,10 @@ export function BulkActionSheet({
       <ul className="flex flex-col divide-y divide-line-soft rounded-card border border-line-soft">
         {rows.map((row) => {
           const outcome = outcomes[row.key]
+          const managedBy =
+            managedAct && row.managedBy && managedNotice(row.managedBy, row.label, managedAct)
+              ? row.managedBy
+              : undefined
           return (
             <li key={row.key} className="flex items-start gap-2.5 px-3 py-2">
               <OutcomeGlyph state={outcome?.state} />
@@ -209,6 +239,15 @@ export function BulkActionSheet({
                   {row.label}
                   {row.namespace ? ` · ${row.namespace}` : ''}
                 </span>
+                {managedBy ? (
+                  <span
+                    className={`block truncate text-[11.5px] ${
+                      managedBy.reverts ? 'text-warn' : 'text-muted'
+                    }`}
+                  >
+                    Managed by {managedByLabel(managedBy)}
+                  </span>
+                ) : null}
                 {outcome?.message ? (
                   <span
                     className={`mt-0.5 block text-[11.5px] leading-relaxed ${

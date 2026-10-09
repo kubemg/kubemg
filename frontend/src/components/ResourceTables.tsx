@@ -682,6 +682,7 @@ function jobRow(job: Job): SelectedRow {
     label: 'Job',
     name: job.name,
     namespace: job.namespace,
+    managedBy: job.managed_by,
   }
 }
 
@@ -696,6 +697,7 @@ function cronJobRow(cronjob: CronJob): SelectedRow {
     // offered is Suspend or Resume, and whether a bulk suspend has anything to
     // do to this row at all.
     suspended: cronjob.suspended,
+    managedBy: cronjob.managed_by,
   }
 }
 
@@ -712,6 +714,7 @@ function workloadRow(workload: Workload): SelectedRow | undefined {
     label: workload.kind,
     name: workload.name,
     namespace: workload.namespace,
+    managedBy: workload.managed_by,
   }
 }
 
@@ -1767,6 +1770,7 @@ function replicaSetRow(replicaset: ReplicaSet): SelectedRow {
     label: 'ReplicaSet',
     name: replicaset.name,
     namespace: replicaset.namespace,
+    managedBy: replicaset.managed_by,
   }
 }
 

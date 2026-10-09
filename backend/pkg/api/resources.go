@@ -38,6 +38,8 @@ type workloadView struct {
 	Desired   int32     `json:"desired"`
 	Images    []string  `json:"images"`
 	Created   time.Time `json:"created_at"`
+	// ManagedBy: see resources_managed.go.
+	ManagedBy *managedByView `json:"managed_by,omitempty"`
 }
 
 type containerView struct {
@@ -261,12 +263,8 @@ func (s *server) collectWorkloads(c *gin.Context, user *db.User, cluster *db.Clu
 		}
 		for _, path := range scope.paths(resourceListPath{"/apis/apps/v1", kind.resource}) {
 			var items []struct {
-				Metadata struct {
-					Name              string    `json:"name"`
-					Namespace         string    `json:"namespace"`
-					CreationTimestamp time.Time `json:"creationTimestamp"`
-				} `json:"metadata"`
-				Spec struct {
+				Metadata managedObjectMeta `json:"metadata"`
+				Spec     struct {
 					Replicas *int32 `json:"replicas"`
 					Template struct {
 						Spec struct {
@@ -294,6 +292,7 @@ func (s *server) collectWorkloads(c *gin.Context, user *db.User, cluster *db.Clu
 					Name:      item.Metadata.Name,
 					Namespace: item.Metadata.Namespace,
 					Created:   item.Metadata.CreationTimestamp,
+					ManagedBy: item.Metadata.managedBy(kind.kind),
 				}
 				// A DaemonSet has no replica count; its scale is how many nodes
 				// it is meant to be on.

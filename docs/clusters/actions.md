@@ -17,6 +17,28 @@ A DaemonSet has no replica count, and a CronJob owns Jobs rather than pods. Repl
 
 If a `HorizontalPodAutoscaler` targets the workload, the scale panel shows its name and min/max bounds **before** you write. It is a notice, not a refusal: setting a count by hand is legitimate, but the autoscaler will revert it on its next pass.
 
+### Something else manages the object
+
+Before a write, the console says when something other than you reconciles the object: an operator, Argo CD, Flux or Helm. The notice appears on the scale and restart panels, while editing the manifest, on a rollback, and in the confirmation for a delete, suspend or resume started from a list, where each affected row is marked. Like the autoscaler notice it never refuses; it tells you the change may not last and where a lasting change belongs.
+
+It is read only from what the reconciler itself writes on the object:
+
+| Managed by | Recognised from | A change made here |
+|---|---|---|
+| An operator or other controller | a controlling `ownerReference` (a ReplicaSet's Deployment, a custom resource) | **will** be undone, and a deleted object recreated |
+| Argo CD | the `argocd.argoproj.io/tracking-id` annotation or `argocd.argoproj.io/instance` label | **may** be reverted: it depends on the application's self-heal setting, which the console does not read |
+| Flux Kustomization | `kustomize.toolkit.fluxcd.io/name` | **will** be undone for every field the source sets, unless `kustomize.toolkit.fluxcd.io/reconcile: disabled` is on the object |
+| Flux HelmRelease | `helm.toolkit.fluxcd.io/name` | **may** be reverted by drift detection, and is rendered over by the next upgrade |
+| Helm | `meta.helm.sh/release-name` | is rendered over by the release's next upgrade |
+
+Some things are deliberately not treated as management:
+
+- `app.kubernetes.io/instance` on its own. Every Helm chart sets it, so it does not mean Argo CD.
+- A pod under its ReplicaSet, StatefulSet, DaemonSet or Job, and a Job under its CronJob. Deleting a pod so its controller replaces it is the ordinary case.
+- A rollout restart under Argo CD, Flux or Helm. The annotation it writes is not in any manifest those tools apply, so they leave it alone. Only a controlling owner may put the pod template back.
+
+When the cluster has an Argo CD console configured, the object's drawer links to the application, including for applications tracked by annotation and those outside Argo CD's own namespace.
+
 ## What each action does
 
 - **Scale** changes only the replica count. Counts above **1000** are refused before reaching the cluster, as a guard against typos; the cluster's own quota still applies.

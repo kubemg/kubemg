@@ -59,9 +59,11 @@ export const CONSOLES: Record<ConsoleKind, ConsoleInfo> = {
 export const CONSOLE_KINDS: ConsoleKind[] = ['grafana', 'argocd', 'registry']
 
 /**
- * The label Argo CD writes on everything it owns. A workload carrying it was
- * deployed by an Argo application of that name, which is the one thing needed to
- * link straight to it.
+ * The label Argo CD writes on everything it owns under label tracking. A workload
+ * carrying it was deployed by an Argo application of that name. Argo CD 3.0
+ * tracks by annotation instead, which the server reads into `managed_by`; this
+ * label is the fallback for an object whose `managed_by` names something nearer
+ * (an operator that copied its resource's labels down).
  */
 export const ARGO_INSTANCE_LABEL = 'argocd.argoproj.io/instance'
 
@@ -74,11 +76,16 @@ export const ARGO_INSTANCE_LABEL = 'argocd.argoproj.io/instance'
  * The name comes off a label Argo wrote, so it is encoded into its segment
  * rather than trusted to be one.
  */
-export function argoApplicationHref(base: string, name: string): string {
+export function argoApplicationHref(base: string, name: string, namespace?: string): string {
   const trimmedBase = base.replace(/\/+$/, '')
   const trimmedName = name.trim()
   if (!trimmedBase || !trimmedName) return ''
-  return `${trimmedBase}/applications/${encodeURIComponent(trimmedName)}`
+  // An application outside Argo CD's own namespace is addressed by both.
+  const trimmedNamespace = namespace?.trim()
+  const path = trimmedNamespace
+    ? `${encodeURIComponent(trimmedNamespace)}/${encodeURIComponent(trimmedName)}`
+    : encodeURIComponent(trimmedName)
+  return `${trimmedBase}/applications/${path}`
 }
 
 /** What the datasource's own UI is called, for the link that opens it. */

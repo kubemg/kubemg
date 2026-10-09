@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { History, RefreshCw, Undo2, X } from 'lucide-react'
 import { errorMessage, fetchWorkloadHistory, rollbackWorkload } from '../api/client'
-import type { Cluster, WorkloadRevision } from '../api/types'
+import type { Cluster, ManagedBy, WorkloadRevision } from '../api/types'
 import type { ResourceKey } from '../lib/resources'
+import { ManagedByNotice } from './ManagedByNotice'
 import { Age, Button, IconButton, Notice, Pill, Row, Table, Td, Th } from './primitives'
 
 /**
@@ -33,6 +34,7 @@ export function WorkloadHistoryPanel({
   name,
   namespace,
   label,
+  managedBy,
   onApplied,
 }: {
   cluster: Cluster
@@ -41,6 +43,8 @@ export function WorkloadHistoryPanel({
   namespace: string
   /** The singular Kind, for the confirmation's own words. */
   label: string
+  /** What else reconciles this workload, which a rollback is a change to like any other. */
+  managedBy?: ManagedBy
   /** Refreshes the object and the list behind the drawer once a revision has been written. */
   onApplied?: () => Promise<void> | void
 }) {
@@ -143,6 +147,7 @@ export function WorkloadHistoryPanel({
             kubemg writes the pod template and stops there — the controller performs the rollout from
             it, exactly as <span className="font-mono">kubectl rollout undo</span> leaves it to.
           </Notice>
+          <ManagedByNotice managed={managedBy} label={label} act="change" />
 
           <div className="flex items-center justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setPending(null)} disabled={busy}>
