@@ -253,7 +253,7 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | `GET /clusters/:id/metrics/nodes` | Cluster-wide only — refused to a namespace-scoped grant. `404`/`503` from metrics-server answers `available:false`, not an error. |
 | `GET /clusters/:id/metrics/pods` | Scoped like any other list. |
 | `GET /clusters/:id/metrics/pods/:pod` | |
-| `GET /clusters/:id/metrics/capacity` | Allocation (requests/limits) against allocatable, not consumption. |
+| `GET /clusters/:id/metrics/capacity` | Allocation (requests/limits) against allocatable, plus usage, per node: taints and `placeable`, `headroom`, `qos`, and `top_borrowers` from the per-pod Metrics API (`pod_usage_available`; a 403 there is reported, not fatal). `summary.placement` is the fragmentation reading. |
 
 ## Machine accounts
 
