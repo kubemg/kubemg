@@ -1965,17 +1965,74 @@ export interface PodRequest {
   share_percent: number
 }
 
+/** How a node's pods split across QoS classes, as the API server wrote them. */
+export interface QOSCounts {
+  guaranteed: number
+  burstable: number
+  best_effort: number
+}
+
+/** What a node has not yet promised away: allocatable less requested, and free slots. */
+export interface NodeHeadroom {
+  cpu: number
+  memory: number
+  pods: number
+}
+
+/**
+ * A pod using more than it reserved — a noisy neighbour, and under memory
+ * pressure among the first the kubelet evicts. Excess is against the node's
+ * allocatable, so pods on different nodes compare on one scale.
+ */
+export interface PodBorrow {
+  name: string
+  namespace: string
+  qos: string
+  cpu_used: number
+  cpu_request: number
+  memory_used: number
+  memory_request: number
+  excess_percent: number
+}
+
 export interface NodeCapacity {
   name: string
   roles: string[]
   ready: boolean
   schedulable: boolean
+  /** Written as kubectl writes them, `key=value:Effect`. */
+  taints: string[]
+  /** Ready, not cordoned, and no NoSchedule/NoExecute taint: an ordinary pod could land here. */
+  placeable: boolean
   cpu: CapacityDimension
   memory: CapacityDimension
   pods: PodSlots
+  qos: QOSCounts
+  headroom: NodeHeadroom
   concerns: CapacityConcern[]
   severity: CapacitySeverity
   top_requests: PodRequest[]
+  borrowing_pods: number
+  top_borrowers: PodBorrow[]
+}
+
+/** The most one placeable node can still take of a resource, with what it has of the other. */
+export interface PlacementSlot {
+  node: string
+  cpu: number
+  memory: number
+}
+
+/**
+ * Unreserved capacity across every node an ordinary pod could land on, beside
+ * the most any one of them can take. The slots are null when no node is
+ * placeable — a different answer from a slot of zero.
+ */
+export interface PlacementSummary {
+  placeable_nodes: number
+  free: NodeHeadroom
+  largest_cpu: PlacementSlot | null
+  largest_memory: PlacementSlot | null
 }
 
 export interface CapacitySummary {
@@ -1985,7 +2042,9 @@ export interface CapacitySummary {
   cpu: CapacityDimension
   memory: CapacityDimension
   pods: PodSlots
+  qos: QOSCounts
   severity_counts: Partial<Record<CapacitySeverity, number>>
+  placement: PlacementSummary
 }
 
 /** A pod the scheduler has not placed, with its own explanation of why. */
@@ -1999,6 +2058,9 @@ export interface ClusterCapacity {
   /** Whether live usage could be read; the rest of the report never depends on it. */
   available: boolean
   reason?: string
+  /** Whether per-pod usage could be read; borrowers are empty, not zero, without it. */
+  pod_usage_available: boolean
+  pod_usage_reason?: string
   nodes: NodeCapacity[]
   summary: CapacitySummary
   /** A sample — the count beside it is exact. */

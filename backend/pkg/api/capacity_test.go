@@ -161,7 +161,7 @@ func TestBuildCapacityAggregatesOntoNodes(t *testing.T) {
 	}
 	usage := map[string]nodeSize{"n1": {cpu: 900, memory: 1 << 30}}
 
-	rows, summary, unscheduled := buildCapacity(nodes, pods, usage)
+	rows, summary, unscheduled := buildCapacity(nodes, pods, usage, nil)
 	if len(rows) != 2 {
 		t.Fatalf("expected a row per node, got %d", len(rows))
 	}
@@ -213,7 +213,7 @@ func TestBuildCapacityReportsUnscheduledPods(t *testing.T) {
 	}
 
 	_, _, unscheduled := buildCapacity([]nodeRecord{fourCoreNode("n1")},
-		[]capacityPod{pending}, nil)
+		[]capacityPod{pending}, nil, nil)
 
 	if unscheduled.count != 1 || len(unscheduled.sample) != 1 {
 		t.Fatalf("expected one unscheduled pod, got count %d sample %d",
@@ -231,7 +231,7 @@ func TestBuildCapacityCountsPodsThatReserveNothing(t *testing.T) {
 		[]capacityPod{
 			podOn("n1", "shop", "batch", container("app", nil, nil)),
 			podOn("n1", "shop", "api", container("app", map[string]string{"cpu": "1"}, nil)),
-		}, nil)
+		}, nil, nil)
 
 	if rows[0].Pods.WithoutRequests != 1 || summary.Pods.WithoutRequests != 1 {
 		t.Fatalf("expected exactly one pod reserving nothing, got node %d summary %d",
@@ -248,7 +248,7 @@ func TestBuildCapacityIgnoresPodsOnAVanishedNode(t *testing.T) {
 	rows, summary, unscheduled := buildCapacity(
 		[]nodeRecord{fourCoreNode("n1")},
 		[]capacityPod{podOn("gone", "shop", "api", container("app", map[string]string{"cpu": "1"}, nil))},
-		nil)
+		nil, nil)
 
 	if len(rows) != 1 || rows[0].CPU.Requested != 0 {
 		t.Fatalf("a pod on an unknown node must not be counted anywhere, got %+v", rows)
@@ -269,7 +269,7 @@ func TestTopRequestersRankByTheLargerShare(t *testing.T) {
 			podOn("n1", "shop", "memory-heavy",
 				container("app", map[string]string{"cpu": "100m", "memory": "6Gi"}, nil)),
 			podOn("n1", "shop", "nothing", container("app", nil, nil)),
-		}, nil)
+		}, nil, nil)
 
 	top := rows[0].TopRequests
 	if len(top) != 2 {
@@ -309,7 +309,7 @@ func TestConcernsReadReservationRatherThanUsage(t *testing.T) {
 	rows, _, _ := buildCapacity([]nodeRecord{node},
 		[]capacityPod{podOn("n1", "shop", "api",
 			container("app", map[string]string{"cpu": "4"}, map[string]string{"cpu": "4"}))},
-		map[string]nodeSize{"n1": {cpu: 200}})
+		map[string]nodeSize{"n1": {cpu: 200}}, nil)
 
 	row := rows[0]
 	if row.CPU.UsedPercent != 5 {
@@ -327,7 +327,7 @@ func TestConcernsWarnBeforeANodeIsFull(t *testing.T) {
 	rows, _, _ := buildCapacity([]nodeRecord{fourCoreNode("n1")},
 		[]capacityPod{podOn("n1", "shop", "api",
 			container("app", map[string]string{"cpu": "3800m"}, map[string]string{"cpu": "3800m"}))},
-		nil)
+		nil, nil)
 
 	if got := concernOf(t, rows[0], "cpu-committed"); got.Severity != severityWarn {
 		t.Errorf("95%% reserved is a warning, got %q", got.Severity)
@@ -347,7 +347,7 @@ func TestOvercommitThresholdsDifferByResource(t *testing.T) {
 				map[string]string{"cpu": "500m", "memory": "1Gi"},
 				// 125% of the node's CPU, 125% of its memory.
 				map[string]string{"cpu": "5", "memory": "10Gi"}))},
-		nil)
+		nil, nil)
 
 	row := rows[0]
 	if hasConcern(row, "cpu-overcommitted") {
@@ -370,7 +370,7 @@ func TestReservedIdleNeedsLiveUsage(t *testing.T) {
 		container("app", map[string]string{"cpu": "3"}, nil))}
 
 	withUsage, _, _ := buildCapacity([]nodeRecord{node}, pods,
-		map[string]nodeSize{"n1": {cpu: 600}})
+		map[string]nodeSize{"n1": {cpu: 600}}, nil)
 	if got := concernOf(t, withUsage[0], "cpu-reserved-idle"); got.Severity != severityNote {
 		t.Errorf("reserved and unspent is money rather than an incident, got %q", got.Severity)
 	}
@@ -378,7 +378,7 @@ func TestReservedIdleNeedsLiveUsage(t *testing.T) {
 		t.Errorf("a note must not lift a node past a warning, got %q", withUsage[0].Severity)
 	}
 
-	withoutUsage, _, _ := buildCapacity([]nodeRecord{node}, pods, nil)
+	withoutUsage, _, _ := buildCapacity([]nodeRecord{node}, pods, nil, nil)
 	if hasConcern(withoutUsage[0], "cpu-reserved-idle") {
 		t.Error("with no usage to compare against, a reservation cannot be called idle")
 	}
@@ -392,7 +392,7 @@ func TestPodSlotsCapANodeBeforeItsCPUDoes(t *testing.T) {
 		pods = append(pods, podOn("n1", "shop", name, container("app", map[string]string{"cpu": "1m"}, nil)))
 	}
 
-	rows, _, _ := buildCapacity([]nodeRecord{node}, pods, nil)
+	rows, _, _ := buildCapacity([]nodeRecord{node}, pods, nil, nil)
 	if got := concernOf(t, rows[0], "pod-slots-exhausted"); got.Severity != severityDanger {
 		t.Errorf("a node with no pod slots left takes nothing more, got %q", got.Severity)
 	}
@@ -406,7 +406,7 @@ func TestConcernsForACordonedAndUnreadyNode(t *testing.T) {
 	node.Ready = false
 	node.Unschedulable = true
 
-	rows, summary, _ := buildCapacity([]nodeRecord{node}, nil, nil)
+	rows, summary, _ := buildCapacity([]nodeRecord{node}, nil, nil, nil)
 	if !hasConcern(rows[0], "not-ready") || !hasConcern(rows[0], "unschedulable") {
 		t.Fatalf("both facts must be stated, got %+v", rows[0].Concerns)
 	}

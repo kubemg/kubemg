@@ -151,6 +151,7 @@ const SURFACES = ['surface', 'bg', 'raised', 'sunken']
    text — a port number in a manifest — not glanced at as a series identity. */
 const TEXT_TONES = ['text', 'muted', 'faint', 'ok', 'warn', 'danger', 'accent', 'syntax-scalar']
 const SOFT_TONES = ['ok', 'warn', 'danger', 'accent']
+const HEAT_STEPS = ['heat-1', 'heat-2', 'heat-3', 'heat-warn', 'heat-danger']
 
 function check(deck, tokens) {
   const failures = []
@@ -169,6 +170,8 @@ function check(deck, tokens) {
   for (const tone of SOFT_TONES) {
     measure(tone, `${tone}-soft`, TEXT_FLOOR, `${tone} on ${tone}-soft`)
   }
+  // A capacity heatmap cell carries its figure in `text` on its own step.
+  for (const step of HEAT_STEPS) measure('text', step, TEXT_FLOOR, `text on ${step}`)
   // The rail is chrome with tokens of its own — graphite on the dark deck, a
   // cool grey on the light one — so its tones are held to the floor against the
   // rail rather than against the work surface.

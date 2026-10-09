@@ -2035,7 +2035,14 @@ const EMPTY_CAPACITY_SUMMARY = {
   cpu: EMPTY_DIMENSION,
   memory: EMPTY_DIMENSION,
   pods: { allocatable: 0, scheduled: 0, percent: 0, without_requests: 0 },
+  qos: { guaranteed: 0, burstable: 0, best_effort: 0 },
   severity_counts: {},
+  placement: {
+    placeable_nodes: 0,
+    free: { cpu: 0, memory: 0, pods: 0 },
+    largest_cpu: null,
+    largest_memory: null,
+  },
 }
 
 /**
@@ -2048,6 +2055,8 @@ export async function fetchClusterCapacity(clusterId: number): Promise<ClusterCa
   return {
     available: data.available ?? false,
     reason: data.reason,
+    pod_usage_available: data.pod_usage_available ?? false,
+    pod_usage_reason: data.pod_usage_reason,
     nodes: data.nodes ?? [],
     summary: data.summary ?? EMPTY_CAPACITY_SUMMARY,
     unscheduled: data.unscheduled ?? [],

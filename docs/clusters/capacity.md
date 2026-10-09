@@ -19,6 +19,30 @@ A fourth ceiling can bind first: **pod slots**, the kubelet's cap on pod count, 
 ??? info "Why it works this way"
     Getting sidecars wrong understates every node running a service mesh. A finished init step constrains nothing in steady state, so its limit is skipped.
 
+## Heatmap
+
+Below the cluster totals, the **Heatmap** puts every node on one row and every ceiling in one cell: CPU reserved, in use and limits; memory reserved, in use and limits; pod slots. Beside them sit the node's unreserved CPU and memory, and its pods by QoS class (Guaranteed, Burstable, BestEffort, as the cluster wrote them). A fleet of two hundred nodes fits on one screen, and the bars further down explain whichever row you open.
+
+- **Rows** are grouped by role, control plane first, and start sorted worst first. Click a column heading to sort by it (fullest first), or **Node** to sort by name. Nodes that cannot answer for a column always sort last.
+- **Shade** darkens toward the column's warning line. Amber means past it, rust means exhausted. The lines are the ones the concerns below use: reserved and slots 90% (100% exhausted), memory in use 90%, CPU limits 200%, memory limits 100%. **CPU in use never turns amber**, because a node short of CPU still gives every pod what it requested.
+- **The number is the reading.** A limit of 340% reads 340%.
+- **A dash is "not measured"**, never 0%. You see one for live usage when the Metrics API has no reading, and for any column on a node that reports no allocatable capacity.
+- **Click a node's name** to open its row below, with the bars, every concern, taints, the largest reservations and the pods using more than they reserved.
+
+## Where a pod can still go
+
+The cluster card ends with the fragmentation reading: the unreserved CPU and memory summed across every node an ordinary pod could land on, and the most any **one** node can take. Twelve free cores spread one per node do not schedule a two-core pod, and the total alone would say they do.
+
+A node counts as able to take an ordinary pod when it is Ready, not cordoned, has a free pod slot, and carries no `NoSchedule` or `NoExecute` taint (`PreferNoSchedule` does not keep a pod off). Node selectors, affinity, topology spread and tolerations are **not** read, so a pod that tolerates a control-plane taint, or one pinned by affinity, can land somewhere this reading leaves out.
+
+## Pods using more than they reserved
+
+When the cluster serves the Metrics API, each node lists the pods whose live use is above their request. A BestEffort pod requests nothing, so everything it uses counts. They are ranked by how much they take beyond their request as a share of the **node**, so a pod at ten times a tiny request does not outrank one 2 GiB over on an 8 GiB node. The list shows the largest five, and the count beside it is exact.
+
+These are the noisy neighbours. When memory runs out, the kubelet evicts BestEffort pods first, then the pods furthest over their request. When CPU runs out, they slow down the pods beside them.
+
+Reading per-pod usage needs `get`/`list` on `pods.metrics.k8s.io`. If the cluster refuses that read, the page says so in the cluster's own words and shows everything else. The borrower lists are then empty: they are not an "all clear".
+
 ## Bars
 
 - The bar fills to the **requested** percentage, with one tick for live usage. The gap between them is the point of the page.
@@ -29,7 +53,7 @@ A fourth ceiling can bind first: **pod slots**, the kubelet's cap on pod count, 
 
 | Route | Answers |
 |---|---|
-| `GET .../metrics/capacity` | Full report: allocatable, requested, limited, used per node, a fleet summary, per-node concerns, unplaceable pods |
+| `GET .../metrics/capacity` | Full report: allocatable, requested, limited, used per node; taints, placeability, headroom, QoS split and the pods using more than they reserved; a fleet summary with the placement reading; per-node concerns; unplaceable pods |
 | `GET .../metrics/nodes` | Live node usage (`kubectl top nodes`) against allocatable |
 | `GET .../metrics/pods[?all_namespaces=true]` | Live pod usage, scoped like any namespaced list |
 | `GET .../metrics/pods/:pod` | One pod, with container breakdown |
@@ -51,6 +75,8 @@ Each node is reduced to **concerns** with a `code`, a `severity` (`ok`/`note`/`w
 | CPU or memory fully / nearly reserved | `danger` / `warn` |
 | CPU limits past 200% of the node, or memory limits past 100% | `warn` |
 | Pod slots exhausted or nearly so | raised as a concern |
+| Memory in use at 90% or more of allocatable (only when live usage is available) | `warn` |
+| CPU in use at 90% or more of allocatable (only when live usage is available) | `note` |
 | Resources reserved but mostly unspent (only when live usage is available) | `note` |
 | Containers with no limit at all | `note` |
 
