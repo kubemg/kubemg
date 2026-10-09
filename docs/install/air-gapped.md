@@ -27,9 +27,9 @@ amd64+arm64 index.
 internet access (the pull runs in a container):
 
 ```bash
-make save-images                          # kubemg-images-0.14.0-linux-amd64.tar
+make save-images                          # kubemg-images-0.14.1-linux-amd64.tar
 make save-images SAVE_PLATFORM=linux/arm64
-make save-images KUBEMG_VERSION=0.14.0 AGENT_VERSION=0.14.0 SHELL_VERSION=0.14.0
+make save-images KUBEMG_VERSION=0.14.1 AGENT_VERSION=0.14.1 SHELL_VERSION=0.14.1
 ```
 
 That writes one tarball with all five images at the pinned (or named)
@@ -37,12 +37,12 @@ versions, for **one** platform: the one you name, not the machine's. Carry it
 across, load it and push it to your registry:
 
 ```bash
-docker load -i kubemg-images-0.14.0-linux-amd64.tar
+docker load -i kubemg-images-0.14.1-linux-amd64.tar
 mirror=registry.internal
 for pair in \
-  ghcr.io/kubemg/kubemg:0.14.0=kubemg/kubemg:0.14.0 \
-  ghcr.io/kubemg/kubemg-agent:0.14.0=kubemg/kubemg-agent:0.14.0 \
-  ghcr.io/kubemg/kubemg-shell:0.14.0=kubemg/kubemg-shell:0.14.0 \
+  ghcr.io/kubemg/kubemg:0.14.1=kubemg/kubemg:0.14.1 \
+  ghcr.io/kubemg/kubemg-agent:0.14.1=kubemg/kubemg-agent:0.14.1 \
+  ghcr.io/kubemg/kubemg-shell:0.14.1=kubemg/kubemg-shell:0.14.1 \
   busybox:1.36=library/busybox:1.36 \
   postgres:16-alpine=library/postgres:16-alpine; do
   docker tag "${pair%%=*}" "$mirror/${pair#*=}" && docker push "$mirror/${pair#*=}"
@@ -89,4 +89,4 @@ from a mirror path that allows anonymous pulls.
 ## The chart itself
 
 Carry the chart across with `helm pull oci://ghcr.io/kubemg/charts/kubemg
---version 0.14.0` and install from the `.tgz`.
+--version 0.14.1` and install from the `.tgz`.

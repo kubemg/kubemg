@@ -73,9 +73,9 @@ certificate into it from the host. See [TLS and certificates](tls.md).
 Mirror the three images and point `.env` at them:
 
 ```dotenv
-KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.14.0
+KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.14.1
 KUBEMG_POSTGRES_IMAGE=registry.internal/postgres:16-alpine
-KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.14.0
+KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.14.1
 ```
 
 The agent image must be reachable from your **target clusters**. For
