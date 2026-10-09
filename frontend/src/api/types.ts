@@ -620,6 +620,25 @@ export interface Namespace {
   granted: boolean
 }
 
+/**
+ * What reconciles an object besides the people editing it, read server-side off
+ * the object's own tracking metadata: a controlling owner (an operator's custom
+ * resource, a ReplicaSet's Deployment), an Argo CD application, a Flux
+ * Kustomization or HelmRelease, or a Helm release. Absent when nothing does.
+ * `reverts` is true only where a hand edit is certain to be undone; otherwise it
+ * depends on a setting on an object the server did not read (Argo CD's
+ * self-heal, Flux helm-controller's drift detection) or on the next upgrade.
+ */
+export interface ManagedBy {
+  manager: 'controller' | 'argocd' | 'flux' | 'helm'
+  /** The owner's Kind for a controller; Kustomization or HelmRelease for Flux. */
+  kind?: string
+  name: string
+  /** Where the managing object lives, when its tracking metadata says so. */
+  namespace?: string
+  reverts: boolean
+}
+
 export interface Workload {
   kind: 'Deployment' | 'StatefulSet' | 'DaemonSet'
   name: string
@@ -628,6 +647,7 @@ export interface Workload {
   desired: number
   images: string[]
   created_at: string
+  managed_by?: ManagedBy
 }
 
 export interface PodContainer {
@@ -724,6 +744,7 @@ export interface Job {
   active: number
   state: string
   images: string[]
+  managed_by?: ManagedBy
 }
 
 /** What firing a CronJob by hand answers with: the Job the cluster named, so
@@ -753,6 +774,7 @@ export interface CronJob {
   /** `spec.timeZone`, shown beside the expression because it is what the expression means. */
   time_zone?: string
   schedule_error?: string
+  managed_by?: ManagedBy
 }
 
 export interface Service {
@@ -889,6 +911,7 @@ export interface ReplicaSet {
   owner_kind?: string
   revision?: string
   images?: string[]
+  managed_by?: ManagedBy
 }
 
 /** One resource a quota bounds, with what has been taken of it. `used` is
@@ -1568,6 +1591,7 @@ export interface ResourceDescribeResult {
   created_at: string
   labels?: Record<string, string>
   annotations?: Record<string, string>
+  managed_by?: ManagedBy
   conditions: ResourceCondition[]
   spec_summary: ResourceField[]
   spec_truncated?: boolean

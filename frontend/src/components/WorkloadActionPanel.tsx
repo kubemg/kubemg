@@ -6,8 +6,9 @@ import {
   restartWorkload,
   scaleWorkload,
 } from '../api/client'
-import type { Cluster } from '../api/types'
+import type { Cluster, ManagedBy } from '../api/types'
 import type { ResourceKey } from '../lib/resources'
+import { ManagedByNotice } from './ManagedByNotice'
 import { Button, Field, Notice, TextInput } from './primitives'
 
 /*
@@ -43,6 +44,8 @@ export interface WorkloadActionTarget {
   namespace?: string
   /** The replica count the list or the describe already read, for the prefill. */
   replicas?: number
+  /** What else reconciles this workload, off the describe already on screen. */
+  managedBy?: ManagedBy
 }
 
 /** The ceiling the backend enforces; repeated here so the field says so first. */
@@ -184,6 +187,7 @@ export function WorkloadActionPanel({
             />
           </Field>
           {autoscaler ? <Notice tone="warn">{autoscaler}</Notice> : null}
+          <ManagedByNotice managed={target.managedBy} label={target.label} act="change" />
           {count === 0 && valid ? (
             <Notice tone="warn">
               Scaling to zero stops this workload: every pod is removed, and nothing takes their
@@ -207,6 +211,7 @@ export function WorkloadActionPanel({
             one whose strategy replaces pods before the new ones are ready, will be briefly
             unavailable.
           </Notice>
+          <ManagedByNotice managed={target.managedBy} label={target.label} act="restart" />
         </>
       ) : null}
 

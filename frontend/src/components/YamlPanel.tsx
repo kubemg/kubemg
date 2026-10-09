@@ -8,9 +8,10 @@ import {
   previewResourceObjectDiff,
   updateResourceYaml,
 } from '../api/client'
-import type { Cluster, ManifestDiff, ResourceManifest } from '../api/types'
+import type { Cluster, ManagedBy, ManifestDiff, ResourceManifest } from '../api/types'
 import type { ResourceKey } from '../lib/resources'
 import { useAuth } from '../state/auth-context'
+import { ManagedByNotice } from './ManagedByNotice'
 import { ManifestDiffView } from './ManifestDiffView'
 import { Button, Notice, Pill, Spinner } from './primitives'
 import { SaveAsTemplateSheet } from './SaveAsTemplateSheet'
@@ -35,6 +36,7 @@ export function YamlPanel({
   name,
   namespace,
   editing: startEditing = false,
+  managedBy,
   onDirtyChange,
   onApplied,
 }: {
@@ -44,6 +46,12 @@ export function YamlPanel({
   namespace?: string
   /** Whether the panel opens ready to type. */
   editing?: boolean
+  /**
+   * What else reconciles this object, off the describe the drawer already has.
+   * Said while editing rather than after the apply: told before is a decision,
+   * told after is a surprise.
+   */
+  managedBy?: ManagedBy
   /**
    * Reports a half-typed manifest upward, so the drawer around it can ask before
    * closing. The panel cannot ask on its own — it is not what gets closed.
@@ -313,6 +321,9 @@ export function YamlPanel({
       ) : null}
       {manifest && !manifest.editable && manifest.reason ? (
         <Notice tone="info">{manifest.reason}</Notice>
+      ) : null}
+      {editing && manifest ? (
+        <ManagedByNotice managed={managedBy} label={manifest.kind} act="change" />
       ) : null}
 
       {reviewing ? (

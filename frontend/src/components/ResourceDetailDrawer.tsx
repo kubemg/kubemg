@@ -407,9 +407,18 @@ export function ResourceDetailDrawer({
   // source, same reason: no second read to learn what the drawer already has.
   const unschedulable = booleanField(describe?.spec_summary, 'unschedulable')
 
+  // What else reconciles this object, read server-side off its own tracking
+  // metadata. Every write surface below says so before it writes.
+  const managedBy = describe?.managed_by
+
+  // The Argo CD application, from managed_by where that names one — which is
+  // the only way to find it under annotation tracking, Argo CD 3.0's default —
+  // and from the instance label where managed_by names something nearer.
   const argocd = useClusterConsole(cluster.id, 'argocd')
   const argoApp = argocd
-    ? argoApplicationHref(argocd.url, describe?.labels?.[ARGO_INSTANCE_LABEL] ?? '')
+    ? managedBy?.manager === 'argocd'
+      ? argoApplicationHref(argocd.url, managedBy.name, managedBy.namespace)
+      : argoApplicationHref(argocd.url, describe?.labels?.[ARGO_INSTANCE_LABEL] ?? '')
     : ''
 
   const actionTarget: WorkloadActionTarget | null = action
@@ -420,6 +429,7 @@ export function ResourceDetailDrawer({
         name: target.name,
         namespace: target.namespace,
         replicas,
+        managedBy,
       }
     : null
 
@@ -599,6 +609,7 @@ export function ResourceDetailDrawer({
           name={target.name}
           namespace={target.namespace}
           label={describe?.kind || target.label}
+          managedBy={managedBy}
           onApplied={async () => {
             // The object behind this drawer, and the list it was opened from,
             // are both stale the moment a rollback writes a new revision.
@@ -677,6 +688,7 @@ export function ResourceDetailDrawer({
           name={target.name}
           namespace={target.namespace}
           editing={target.editing}
+          managedBy={managedBy}
           onDirtyChange={setDirty}
           onApplied={async () => {
             await load()

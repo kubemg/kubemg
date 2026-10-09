@@ -113,6 +113,8 @@ type jobView struct {
 	Active      int32    `json:"active"`
 	State       string   `json:"state"`
 	Images      []string `json:"images"`
+	// ManagedBy: see resources_managed.go.
+	ManagedBy *managedByView `json:"managed_by,omitempty"`
 }
 
 type cronJobView struct {
@@ -131,6 +133,8 @@ type cronJobView struct {
 	NextSchedule  *time.Time `json:"next_schedule_at,omitempty"`
 	TimeZone      string     `json:"time_zone,omitempty"`
 	ScheduleError string     `json:"schedule_error,omitempty"`
+	// ManagedBy: see resources_managed.go.
+	ManagedBy *managedByView `json:"managed_by,omitempty"`
 }
 
 // listWorkloadsOf serves one apps/v1 kind on its own route, reusing the same
@@ -172,7 +176,7 @@ func (s *server) listJobs(c *gin.Context) {
 	for _, path := range scope.paths(resourceListPath{"/apis/batch/v1", "jobs"}) {
 		var list struct {
 			Items []struct {
-				Metadata objectMeta `json:"metadata"`
+				Metadata managedObjectMeta `json:"metadata"`
 				Spec     struct {
 					Completions *int32 `json:"completions"`
 					Suspend     *bool  `json:"suspend"`
@@ -205,6 +209,7 @@ func (s *server) listJobs(c *gin.Context) {
 				Succeeded: item.Status.Succeeded,
 				Failed:    item.Status.Failed,
 				Active:    item.Status.Active,
+				ManagedBy: item.Metadata.managedBy("Job"),
 				// A job with no completions target runs exactly once.
 				Completions: 1,
 			}
@@ -289,7 +294,7 @@ func (s *server) listCronJobs(c *gin.Context) {
 	for _, path := range scope.paths(resourceListPath{"/apis/batch/v1", "cronjobs"}) {
 		var list struct {
 			Items []struct {
-				Metadata objectMeta `json:"metadata"`
+				Metadata managedObjectMeta `json:"metadata"`
 				Spec     struct {
 					Schedule string `json:"schedule"`
 					Suspend  *bool  `json:"suspend"`
@@ -312,6 +317,7 @@ func (s *server) listCronJobs(c *gin.Context) {
 				Active:       len(item.Status.Active),
 				LastSchedule: item.Status.LastScheduleTime,
 				TimeZone:     item.Spec.TimeZone,
+				ManagedBy:    item.Metadata.managedBy("CronJob"),
 			}
 			if item.Spec.Suspend != nil {
 				view.Suspended = *item.Spec.Suspend

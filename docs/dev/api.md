@@ -231,7 +231,7 @@ fan-out limit) rather than listing the whole cluster.
 | `POST /restart` | Stamps `kubectl.kubernetes.io/restartedAt`. `409` a kind with no pod template. |
 | `POST /suspend` | CronJob only. A request for the state the object is already in is answered without a write. |
 | `POST /cronjob/run` | Body `{name,namespace?}`. Builds a Job from the CronJob's own `spec.jobTemplate` and posts it to the Jobs collection — `generateName`, `cronjob.kubernetes.io/instantiate: manual`, and deliberately **no** `ownerReferences` so the CronJob's history limits cannot reap it. `201` with the name the cluster generated. |
-| `GET /describe` | Metadata, `status.conditions`, a bounded flatten of spec/status, and the object's own events (both legacy and `events.k8s.io` shapes). |
+| `GET /describe` | Metadata, `status.conditions`, a bounded flatten of spec/status, the object's own events (both legacy and `events.k8s.io` shapes), and `managed_by` — what reconciles it (`controller`/`argocd`/`flux`/`helm`, its name, namespace, and `reverts`), absent when nothing does. The workload, Job, CronJob and ReplicaSet list rows carry the same field. |
 | `GET /events` | Filters `range/since/until, kind?, name?, type?`. |
 | `GET /posture` | Fixed posture rules per workload; `findings` are never dropped, only acknowledged. |
 | `POST` / `DELETE .../posture/ack` | Requires an edit-or-above grant (`403` for `view`). `reason` is mandatory. Audited. |
