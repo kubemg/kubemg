@@ -8,9 +8,9 @@ Pin an explicit tag rather than tracking `latest`, in three places:
 
 | Image | Set with | Read when |
 |---|---|---|
-| Management plane (`ghcr.io/kubemg/kubemg:0.13.0`) | `KUBEMG_IMAGE`/`KUBEMG_VERSION` in Compose, or the Deployment's `image:` in Kubernetes | The server starts |
-| Agent (`ghcr.io/kubemg/kubemg-agent:0.13.0`) | `KUBEMG_AGENT_IMAGE` | A package is rendered. Changing it affects *future* installs, not agents already running. |
-| Browser shell (`ghcr.io/kubemg/kubemg-shell:0.13.0`) | `KUBEMG_SHELL_IMAGE` | A shell is *started*. Changing it affects the next shell, not one already open. |
+| Management plane (`ghcr.io/kubemg/kubemg:0.14.0`) | `KUBEMG_IMAGE`/`KUBEMG_VERSION` in Compose, or the Deployment's `image:` in Kubernetes | The server starts |
+| Agent (`ghcr.io/kubemg/kubemg-agent:0.14.0`) | `KUBEMG_AGENT_IMAGE` | A package is rendered. Changing it affects *future* installs, not agents already running. |
+| Browser shell (`ghcr.io/kubemg/kubemg-shell:0.14.0`) | `KUBEMG_SHELL_IMAGE` | A shell is *started*. Changing it affects the next shell, not one already open. |
 
 All three are published as multi-arch (amd64 and arm64) images on a `v*` tag, after a vulnerability scan gate.
 
@@ -75,6 +75,13 @@ A release that asks something beyond pulling the image is listed here.
 
     It also adds the [Helm chart](kubernetes.md) and an image pull secret for an authenticated mirror ([Air-gapped installs](air-gapped.md)); the secret reaches an agent through the same re-apply.
 - **0.13.0**, from 0.12.x: no schema step (new columns are added at boot) and the agent binary is unchanged. **Re-apply every agent's install package** if anyone will create [alarms](../observability/alerts.md) (see [above](#when-agents-must-re-apply-their-manifests)). It also adds Alertmanager as a third datasource kind (*alerts*), Okta as an identity provider type, and the namespace block on Explore's workload lists. None needs anything at upgrade time.
+- **0.14.0**, from 0.13.x: no schema step, no new setting, and the agent's roles are unchanged.
+    - **Re-apply every agent's install package** when convenient. The agent binary is rebuilt on Go 1.26.9 for the `net/http` fixes (GO-2026-6610 to 6617), and an agent keeps its old image until it is re-applied. Nothing stops working in the meantime.
+    - **A git checkout rebuilds its backend image with `--pull`** ([below](#the-backend-will-not-start-after-a-pull)), because the server now needs Go 1.26.9.
+
+    It also adds the [capacity heatmap](../clusters/capacity.md#heatmap), with placement, QoS and the pods using more than they reserved, and a notice before a write to an object [something else manages](../clusters/actions.md#something-else-manages-the-object). The list of pods using more than they reserved reads `pods.metrics.k8s.io`, which a metrics-server install grants to the built-in `view` role. Where a cluster refuses it, the page says so and shows everything else.
+
+    The user guide was reorganised: the upgrading pages are now this one page, and the first-cluster pages are one [Quickstart](../getting-started/quickstart.md). A link into a removed page still works on the 0.13.0 docs.
 
 An install that runs from a clone of the repository has one more thing to get right: see [Upgrading a git checkout](#upgrading-a-git-checkout).
 
@@ -89,7 +96,7 @@ A rollback does **not** undo:
 
 ## Documentation versioning
 
-This manual is versioned against release tags. An install running `0.13.0` matches the `0.13.0` docs; check the version selector.
+This manual is versioned against release tags. An install running `0.14.0` matches the `0.14.0` docs; check the version selector.
 
 ## Upgrading to 0.11.0
 
@@ -203,6 +210,23 @@ git reset --hard origin/master
 **Some output**: these are real local changes. Configuration belongs in `.env` at the repository root, not in a commit; move it there, then reset as above. A genuine code change can be carried with `git pull --rebase`.
 
 Do **not** answer the prompt with `git config pull.rebase true` before you know which case you are in. Rebasing rewritten history replays every upstream commit and ends in meaningless conflicts.
+
+### The backend will not start after a pull
+
+The dev stack builds its backend on the `golang:1.26-alpine` image Docker already has. When a release raises the Go version the server needs (0.14.0 needs 1.26.9), that cached image is too old, and the backend exits at start with:
+
+```text
+go: go.mod requires go >= 1.26.9 (running go 1.26.8; GOTOOLCHAIN=local)
+```
+
+Rebuild it on a fresh base, then start it again:
+
+```bash
+docker compose build --pull backend
+docker compose up -d backend
+```
+
+Agents reconnect on their own within about half a minute.
 
 ### What a reset keeps
 

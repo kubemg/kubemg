@@ -10,8 +10,8 @@ type: application
 # fields, so a published chart and the images it pulls always agree. The values
 # here are what a checkout installs; keep them in step with KUBEMG_VERSION in the
 # Makefile.
-version: 0.13.0
-appVersion: "0.13.0"
+version: 0.14.0
+appVersion: "0.14.0"
 home: https://kubemg.readthedocs.io/
 sources:
   - https://github.com/kubemg/kubemg
