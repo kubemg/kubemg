@@ -91,16 +91,17 @@ func (s *server) changePassword(c *gin.Context) {
 	// The current password is a password check like any other, and the caller
 	// already holds a session — which is exactly the stolen-session case this
 	// field exists for, so it is not a free oracle for the real one either.
-	account := signInAccount("password", strconv.FormatUint(uint64(caller.ID), 10))
-	if s.signInRefused(c, account) {
+	attempt, ok := s.beginSignIn(c, signInAccount("password", strconv.FormatUint(uint64(caller.ID), 10)))
+	if !ok {
 		return
 	}
+	defer attempt.Release()
 	if !auth.CheckPassword(caller.PasswordHash, req.CurrentPassword) {
-		s.signInFailed(c, account)
+		s.signInFailed(c, attempt)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "the current password is incorrect"})
 		return
 	}
-	s.signIns.Succeed(account)
+	attempt.Succeed()
 	// A rotation that rotates nothing is refused rather than reported as done:
 	// the caller believes the old password is now dead, and it is not.
 	if req.NewPassword == req.CurrentPassword {

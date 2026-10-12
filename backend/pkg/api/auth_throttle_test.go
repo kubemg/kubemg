@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/kubemg/kubemg/backend/pkg/auth"
@@ -51,11 +52,15 @@ func TestLoginThrottleTreatsAnUnknownNameLikeAKnownOne(t *testing.T) {
 	failSignIns(t, env, "devops")
 	failSignIns(t, env, "nobody")
 
+	// The wait itself differs by however long apart the two locks started, which
+	// says when somebody guessed, not whether the account exists.
 	known := env.do(t, http.MethodPost, "/api/v1/auth/login", "", map[string]string{"username": "devops", "password": "x"})
 	unknown := env.do(t, http.MethodPost, "/api/v1/auth/login", "", map[string]string{"username": "nobody", "password": "x"})
-	if known.Code != unknown.Code || known.Body.String() != unknown.Body.String() {
-		t.Fatalf("known and unknown names answered differently: %d %s / %d %s",
-			known.Code, known.Body.String(), unknown.Code, unknown.Body.String())
+	knownBody := decode[map[string]any](t, known)
+	unknownBody := decode[map[string]any](t, unknown)
+	if known.Code != http.StatusTooManyRequests || known.Code != unknown.Code || knownBody["error"] != unknownBody["error"] {
+		t.Fatalf("known and unknown names answered differently: %d %v / %d %v",
+			known.Code, knownBody, unknown.Code, unknownBody)
 	}
 }
 
@@ -100,5 +105,40 @@ func TestChangePasswordIsThrottled(t *testing.T) {
 	}
 	if code := signIn(t, env, "devops", "right-password"); code != http.StatusOK {
 		t.Fatalf("the change-password lock must not lock the sign-in, got %d", code)
+	}
+}
+
+// A burst sent at once must not be a burst checked at once: every request in
+// flight counts against the free allowance, so at most that many reach bcrypt
+// before the lock, however many arrive together.
+func TestConcurrentGuessesAreNotAllChecked(t *testing.T) {
+	env := newTestEnv(t)
+	env.store.addUser("devops", "right-password", db.RoleUser)
+
+	const burst = 40
+	codes := make([]int, burst)
+	var wg sync.WaitGroup
+	for i := range burst {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			codes[i] = signIn(t, env, "devops", "wrong")
+		}()
+	}
+	wg.Wait()
+
+	checked := 0
+	for _, code := range codes {
+		switch code {
+		case http.StatusUnauthorized:
+			checked++
+		case http.StatusTooManyRequests:
+		default:
+			t.Fatalf("unexpected status %d", code)
+		}
+	}
+	if checked > auth.AccountThrottle.Free+1 {
+		t.Fatalf("%d of %d concurrent guesses were checked, want at most %d",
+			checked, burst, auth.AccountThrottle.Free+1)
 	}
 }

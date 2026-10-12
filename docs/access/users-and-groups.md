@@ -61,10 +61,11 @@ Every place kubemg checks a password — the sign-in form, an LDAP provider's si
 - **Per account:** 5 failures in a row are free. Each failure after that locks the account for 30 seconds, then 1, 2, 4 minutes and so on, up to 15 minutes. The lock applies from every address.
 - **Per address:** 20 failures, across any accounts, are free. After that the address is locked for 1 minute, doubling up to an hour, so one machine cannot try a common password against everyone.
 - **While locked**, the password is not checked at all, the right one included. The answer is `429 Too Many Requests` with a `Retry-After` header, and the sign-in page says how long to wait.
+- **Attempts sent at once do not all get checked.** An attempt still being checked counts against the free allowance, so a burst of requests gets at most the free attempts checked, and the rest are told to wait. Once the free attempts are spent, attempts for that account run one at a time.
 - **A successful sign-in clears that account's count**, but not the address's.
 - A username that does not exist is counted exactly like one that does, so a lock tells nobody whether the account exists. The username is compared without regard to case.
 
-It is a delay, not a lockout: nobody can keep an owner out of their account for more than 15 minutes at a time, and nothing needs an administrator to unlock. Counts are held in the server's memory and start over when it restarts. The failure that starts a lock is logged as a warning (`repeated failed password checks; throttling`) with the account and the address.
+It is a delay, not a lockout: nobody can keep an owner out of their account for more than 15 minutes at a time, and nothing needs an administrator to unlock. Counts are held in the server's memory and start over when it restarts. The memory is bounded; an account that is locked is never dropped to make room, and once the table is full of locked accounts, every further one shares a single count, so filling the table does not switch the protection off. The failure that starts a lock is logged as a warning (`repeated failed password checks; throttling`) with the account and the address.
 
 ### Account lifecycle: create → disable → delete
 

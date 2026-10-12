@@ -113,17 +113,18 @@ func (s *server) login(c *gin.Context) {
 		return
 	}
 
-	account := signInAccount("local", req.Username)
-	if s.signInRefused(c, account) {
+	attempt, ok := s.beginSignIn(c, signInAccount("local", req.Username))
+	if !ok {
 		return
 	}
+	defer attempt.Release()
 
 	user, err := s.store.UserByUsername(c.Request.Context(), req.Username)
 	if errors.Is(err, db.ErrNotFound) {
 		// Spend the time a real check would, so this branch is not a visibly
 		// faster oracle for "no such account" next to the ones below.
 		auth.CheckPassword(dummyPasswordHash, req.Password)
-		s.signInFailed(c, account)
+		s.signInFailed(c, attempt)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
@@ -145,19 +146,19 @@ func (s *server) login(c *gin.Context) {
 	// against one cluster's proxy.
 	if user.IsMachine() || user.IsFederated() {
 		auth.CheckPassword(dummyPasswordHash, req.Password)
-		s.signInFailed(c, account)
+		s.signInFailed(c, attempt)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
 
 	if !auth.CheckPassword(user.PasswordHash, req.Password) {
-		s.signInFailed(c, account)
+		s.signInFailed(c, attempt)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
 	// The password was right, so the count goes — before the disabled check,
 	// which is a refusal of the account rather than of the guess.
-	s.signIns.Succeed(account)
+	attempt.Succeed()
 
 	// A disabled account keeps its grants but must not be able to sign in.
 	if !user.IsActive {
@@ -189,13 +190,15 @@ func signInAccount(route, username string) string {
 	return route + ":" + strings.ToLower(strings.TrimSpace(username))
 }
 
-// signInRefused answers 429 when account (or the caller's address) is still
-// locked, before any password is checked. The answer is the same for an
-// account that does not exist, so it tells a guesser nothing a 401 would not.
-func (s *server) signInRefused(c *gin.Context, account string) bool {
-	wait := s.signIns.Wait(account, c.ClientIP())
+// beginSignIn reserves a password check for account from the caller's address,
+// or answers 429 when either is still locked — before any password is checked.
+// The answer is the same for an account that does not exist, so it tells a
+// guesser nothing a 401 would not. The caller settles the attempt it gets back
+// (and defers Release, so a path that never reached a verdict counts nothing).
+func (s *server) beginSignIn(c *gin.Context, account string) (*auth.Attempt, bool) {
+	attempt, wait := s.signIns.Begin(account, c.ClientIP())
 	if wait <= 0 {
-		return false
+		return attempt, true
 	}
 	seconds := int(math.Ceil(wait.Seconds()))
 	c.Header("Retry-After", strconv.Itoa(seconds))
@@ -203,22 +206,18 @@ func (s *server) signInRefused(c *gin.Context, account string) bool {
 		"error":               "too many failed attempts; wait before trying again",
 		"retry_after_seconds": seconds,
 	})
-	return true
+	return nil, false
 }
 
-// signInFailed counts a failed password check, and says so in the log on the
-// failure that starts a lock — the moment an operator watching for guessing
-// wants to hear about.
-func (s *server) signInFailed(c *gin.Context, account string) {
-	source := c.ClientIP()
-	s.signIns.Fail(account, source)
-	if s.logger != nil {
-		if wait := s.signIns.Wait(account, source); wait > 0 {
-			s.logger.Warn("repeated failed password checks; throttling",
-				slog.String("account", account),
-				slog.String("source", source),
-				slog.String("retry_after", wait.Round(time.Second).String()))
-		}
+// signInFailed settles an attempt as a wrong password, and says so in the log
+// on a failure that starts a lock — the moment an operator watching for
+// guessing wants to hear about.
+func (s *server) signInFailed(c *gin.Context, attempt *auth.Attempt) {
+	if lock := attempt.Fail(); lock > 0 && s.logger != nil {
+		s.logger.Warn("repeated failed password checks; throttling",
+			slog.String("account", attempt.Account()),
+			slog.String("source", c.ClientIP()),
+			slog.String("retry_after", lock.Round(time.Second).String()))
 	}
 }
 
