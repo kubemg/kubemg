@@ -45,12 +45,18 @@ import (
  * anyway at the ceiling.
  *
  * Each table is bounded, and the bound is not a way to switch the throttle off.
- * Keys that have gone quiet are forgotten first; past that an *unlocked* key
- * with nothing in flight is dropped, which costs a guesser at most that key's
- * remaining free attempts; a locked key is never dropped, because dropping it
- * would be the bypass. A table full of locked keys is an attack in progress,
- * and every key that cannot be tracked then shares one overflow entry — so
- * guessing past the bound is throttled collectively rather than not at all.
+ * A count is only ever forgotten once its key has been quiet for Forget —
+ * dropping a recent one early, locked or not, would hand its key a fresh
+ * allowance, and flooding the table with names would be the way to ask for
+ * one. A key with no failures holds no entry at all. Past the bound, every key
+ * that cannot be tracked shares one overflow entry, so guessing past it is
+ * throttled collectively rather than not at all. The cost of that choice is
+ * stated rather than hidden: once more than MaxThrottleKeys names have failed
+ * within Forget, a person whose name is not already tracked shares the
+ * overflow entry's lock. That needs hundreds of thousands of failed sign-ins
+ * an hour, and the throttle is then failing closed on purpose. Making room is
+ * a sweep of the whole table, so it runs at most once every sweepEvery: a
+ * full table answers a new key in constant time rather than in a scan.
  */
 
 // ThrottlePolicy is how one key is slowed down.
@@ -73,9 +79,12 @@ var (
 	SourceThrottle  = ThrottlePolicy{Free: 20, Base: time.Minute, Max: time.Hour, Forget: time.Hour}
 )
 
-// MaxThrottleKeys bounds each table. See the package comment for what happens
-// past it.
-const MaxThrottleKeys = 50_000
+// MaxThrottleKeys bounds each table — a few tens of megabytes at the bound.
+// See the package comment for what happens past it.
+const MaxThrottleKeys = 200_000
+
+// sweepEvery is how often a full table may be swept for keys gone quiet.
+const sweepEvery = 30 * time.Second
 
 // busyWait is what a refusal for "another check of this key is still running"
 // asks the caller to wait. It is short because the check it waits on is.
@@ -93,9 +102,10 @@ type throttleEntry struct {
 }
 
 type throttleTable struct {
-	policy  ThrottlePolicy
-	limit   int
-	entries map[string]*throttleEntry
+	policy    ThrottlePolicy
+	limit     int
+	entries   map[string]*throttleEntry
+	lastSweep time.Time
 }
 
 // LoginThrottle tracks failed password checks per account and per source.
@@ -143,18 +153,16 @@ func (t *LoginThrottle) Begin(account, source string) (*Attempt, time.Duration) 
 	defer t.mu.Unlock()
 	now := t.now()
 
-	accountKey, accountEntry := t.accounts.entry(account, now)
-	sourceKey, sourceEntry := t.sources.entry(source, now)
+	// Looked up first and created only on admission, so a refused attempt
+	// writes nothing — refusals cannot be what fills the table.
+	accountKey, accountEntry := t.accounts.lookup(account, now)
+	sourceKey, sourceEntry := t.sources.lookup(source, now)
 	wait := max(t.accounts.wait(accountEntry, now), t.sources.wait(sourceEntry, now))
 	if wait > 0 {
 		return nil, wait
 	}
-	if accountEntry != nil {
-		accountEntry.inFlight++
-	}
-	if sourceEntry != nil {
-		sourceEntry.inFlight++
-	}
+	t.accounts.admit(accountKey, accountEntry)
+	t.sources.admit(sourceKey, sourceEntry)
 	return &Attempt{throttle: t, account: accountKey, source: sourceKey}, 0
 }
 
@@ -194,16 +202,12 @@ func (a *Attempt) Succeed() {
 	t := a.throttle
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.accounts.release(a.account)
 	// The overflow entry is shared by every key that could not be tracked, so
 	// one success there clears nobody's count but its own — which it has not got.
 	if entry, ok := t.accounts.entries[a.account]; ok && a.account != overflowKey {
-		if entry.inFlight == 0 {
-			delete(t.accounts.entries, a.account)
-		} else {
-			entry.failures, entry.lockedUntil = 0, time.Time{}
-		}
+		entry.failures, entry.lockedUntil = 0, time.Time{}
 	}
+	t.accounts.release(a.account)
 	t.sources.release(a.source)
 }
 
@@ -221,10 +225,10 @@ func (a *Attempt) Release() {
 	t.sources.release(a.source)
 }
 
-// entry finds or makes key's entry, making room under the bound and falling
-// back to the shared overflow entry when there is none to make. An empty key
-// has no entry.
-func (tt *throttleTable) entry(key string, now time.Time) (string, *throttleEntry) {
+// lookup finds key's entry, or the overflow entry when the table is full and
+// has no room for it. An entry that does not exist yet is returned as nil with
+// the key it would be made under. An empty key has no entry.
+func (tt *throttleTable) lookup(key string, now time.Time) (string, *throttleEntry) {
 	if key == "" {
 		return "", nil
 	}
@@ -235,14 +239,22 @@ func (tt *throttleTable) entry(key string, now time.Time) (string, *throttleEntr
 		return key, entry
 	}
 	if len(tt.entries) >= tt.limit && !tt.makeRoom(now) {
-		key = overflowKey
-		if entry, ok := tt.entries[key]; ok {
-			return key, entry
-		}
+		return overflowKey, tt.entries[overflowKey]
 	}
-	entry := &throttleEntry{}
-	tt.entries[key] = entry
-	return key, entry
+	return key, nil
+}
+
+// admit counts one more check in flight against key, making its entry if it
+// has none yet.
+func (tt *throttleTable) admit(key string, entry *throttleEntry) {
+	if key == "" {
+		return
+	}
+	if entry == nil {
+		entry = &throttleEntry{}
+		tt.entries[key] = entry
+	}
+	entry.inFlight++
 }
 
 // wait is how long an entry must wait before another check: its lock, or a
@@ -279,9 +291,16 @@ func (tt *throttleTable) fail(key string, now time.Time) time.Duration {
 	return 0
 }
 
+// release ends a check that recorded no failure. A key left with no failures
+// and nothing in flight holds no entry, so only real counts occupy the table.
 func (tt *throttleTable) release(key string) {
-	if entry, ok := tt.entries[key]; ok {
-		entry.inFlight = max(entry.inFlight-1, 0)
+	entry, ok := tt.entries[key]
+	if !ok {
+		return
+	}
+	entry.inFlight = max(entry.inFlight-1, 0)
+	if entry.inFlight == 0 && entry.failures == 0 && key != overflowKey {
+		delete(tt.entries, key)
 	}
 }
 
@@ -295,26 +314,21 @@ func (p ThrottlePolicy) lock(n int) time.Duration {
 	return min(d, p.Max)
 }
 
-// makeRoom frees one slot if it can: quiet keys first, then any unlocked key
-// with nothing in flight. A locked or busy key is never dropped.
+// makeRoom sweeps out every key that has been quiet past Forget, at most once
+// every sweepEvery, and reports whether that left room. Nothing with a recent
+// failure, a running check or a live lock is ever dropped.
 func (tt *throttleTable) makeRoom(now time.Time) bool {
-	idle := func(entry *throttleEntry) bool {
-		return entry.inFlight == 0 && !now.Before(entry.lockedUntil)
+	if now.Sub(tt.lastSweep) < sweepEvery {
+		return false
 	}
-	before := len(tt.entries)
+	tt.lastSweep = now
 	for key, entry := range tt.entries {
-		if key != overflowKey && idle(entry) && now.Sub(entry.lastFailure) >= tt.policy.Forget {
+		if key == overflowKey {
+			continue
+		}
+		if entry.inFlight == 0 && !now.Before(entry.lockedUntil) && now.Sub(entry.lastFailure) >= tt.policy.Forget {
 			delete(tt.entries, key)
 		}
 	}
-	if len(tt.entries) < before {
-		return true
-	}
-	for key, entry := range tt.entries {
-		if key != overflowKey && idle(entry) {
-			delete(tt.entries, key)
-			return true
-		}
-	}
-	return false
+	return len(tt.entries) < tt.limit
 }

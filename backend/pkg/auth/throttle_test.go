@@ -184,6 +184,55 @@ func TestThrottleNeverDropsALockedKeyToMakeRoom(t *testing.T) {
 	}
 }
 
+// A lock that has lapsed is not a count that has gone: flooding the table with
+// names must not hand the key a fresh allowance in place of one check at a time.
+func TestThrottleFloodDoesNotResetALapsedLock(t *testing.T) {
+	th, c := testThrottle(4)
+	for i := 0; i < 4; i++ {
+		fail(th, "a:alice", "")
+	}
+	c.advance(10 * time.Second) // the first lock lapses
+	for i := 0; i < 50; i++ {
+		fail(th, fmt.Sprintf("a:spray%d", i), "")
+	}
+	if _, wait := th.Begin("a:alice", ""); wait != 0 {
+		t.Fatalf("a lapsed lock should admit one check, wait %v", wait)
+	}
+	if _, wait := th.Begin("a:alice", ""); wait == 0 {
+		t.Fatal("the flood reset alice's count: a second concurrent check was admitted")
+	}
+}
+
+// Refusals write nothing, so they cannot be what fills the table.
+func TestThrottleRefusalsAddNoEntries(t *testing.T) {
+	th, _ := testThrottle(100)
+	for i := 0; i < 11; i++ {
+		fail(th, fmt.Sprintf("a:user%d", i), "10.0.0.1")
+	}
+	before := len(th.accounts.entries)
+	for i := 0; i < 50; i++ {
+		if _, wait := th.Begin(fmt.Sprintf("a:new%d", i), "10.0.0.1"); wait == 0 {
+			t.Fatal("the locked source should refuse")
+		}
+	}
+	if after := len(th.accounts.entries); after != before {
+		t.Fatalf("refused attempts added %d account entries", after-before)
+	}
+}
+
+// Keys that went quiet are swept out, so a full table recovers by itself.
+func TestThrottleSweepsQuietKeys(t *testing.T) {
+	th, c := testThrottle(2)
+	fail(th, "a:alice", "")
+	fail(th, "a:bob", "")
+	c.advance(2 * time.Hour)
+	attempt, wait := th.Begin("a:carol", "")
+	if wait != 0 || attempt.Account() != "a:carol" {
+		t.Fatalf("a new key after the sweep should be tracked as itself, got %q (wait %v)", attempt.Account(), wait)
+	}
+	attempt.Release()
+}
+
 // A table full of locked keys is an attack, and what cannot be tracked then
 // shares one entry rather than going uncounted.
 func TestThrottleCountsUntrackableKeysTogether(t *testing.T) {

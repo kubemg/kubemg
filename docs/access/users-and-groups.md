@@ -65,7 +65,7 @@ Every place kubemg checks a password — the sign-in form, an LDAP provider's si
 - **A successful sign-in clears that account's count**, but not the address's.
 - A username that does not exist is counted exactly like one that does, so a lock tells nobody whether the account exists. The username is compared without regard to case.
 
-It is a delay, not a lockout: nobody can keep an owner out of their account for more than 15 minutes at a time, and nothing needs an administrator to unlock. Counts are held in the server's memory and start over when it restarts. The memory is bounded; an account that is locked is never dropped to make room, and once the table is full of locked accounts, every further one shares a single count, so filling the table does not switch the protection off. The failure that starts a lock is logged as a warning (`repeated failed password checks; throttling`) with the account and the address.
+It is a delay, not a lockout: nobody can keep an owner out of their account for more than 15 minutes at a time, and nothing needs an administrator to unlock. Counts are held in the server's memory and start over when it restarts. The memory is bounded, and filling it does not switch the protection off: a count is only forgotten once its account has been quiet for an hour. If more than 200,000 names have failed within an hour, names not already counted share a single count, so under an attack that size sign-in for those names is slowed down together rather than not at all. The failure that starts a lock is logged as a warning (`repeated failed password checks; throttling`) with the account and the address.
 
 ### Account lifecycle: create → disable → delete
 
