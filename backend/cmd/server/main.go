@@ -44,6 +44,9 @@ var version = "dev"
 
 func main() {
 	cfg := config.Load()
+	if err := config.ParseTrustedProxies(cfg.TrustedProxies); err != nil {
+		log.Fatalf("refusing to start: %v", err)
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	// The credential key is settled before the database is touched: a key that
@@ -255,6 +258,7 @@ func main() {
 		Health:               clusters,
 		SANamespace:          cfg.SANamespace,
 		AllowedOrigins:       cfg.AllowedOrigins,
+		TrustedProxies:       cfg.TrustedProxies,
 		Bastion:              gateway,
 		Proxy:                proxy,
 		PublicURL:            cfg.PublicURL,

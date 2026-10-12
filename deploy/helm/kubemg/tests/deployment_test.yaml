@@ -255,6 +255,24 @@ tests:
           content:
             name: KUBEMG_AGENT_IMAGE_PULL_SECRET
 
+  - it: trusts no proxy's forwarding headers by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: KUBEMG_TRUSTED_PROXIES
+
+  - it: passes the trusted proxies as one comma-separated list
+    set:
+      trustedProxies: [10.244.0.0/16, 192.0.2.7]
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_TRUSTED_PROXIES
+            value: 10.244.0.0/16,192.0.2.7
+
   - it: pins the server by digest when one is given
     set:
       image.digest: sha256:abc

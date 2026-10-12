@@ -117,6 +117,12 @@ also validated on the way in (1–3650 days) and on the way out.*
 |---|---|---|
 | `KUBEMG_METRICS_ADDR` | — | `host:port` for a separate internal listener that serves only `GET /metrics` for Prometheus scraping. Unset, the endpoint is not exposed at all. Bind to a loopback or private address (e.g. `127.0.0.1:9090`) — **never** to the same address as `KUBEMG_LISTEN_ADDR`, which is reachable from agent clusters. See [Prometheus metrics](metrics.md). |
 
+## Client addresses behind a proxy
+
+| Variable | Default | What it is |
+|---|---|---|
+| `KUBEMG_TRUSTED_PROXIES` | — | The proxies in front of kubemg whose `X-Forwarded-For` / `X-Real-IP` are believed, as comma-separated IPs or CIDRs (`10.244.0.0/16,192.0.2.7`). **Unset, no proxy is trusted**: the audit trail's `source_addr`, an account's last sign-in address and the per-address sign-in limit all see the connecting peer. Behind an ingress or a load balancer that does not preserve the source address, that peer is the proxy; name its range here to record the real client. Never name a range callers can connect from directly — a trusted peer can claim any address it likes. An entry that is not an IP or a CIDR **stops the server from starting**. |
+
 ## CORS
 
 | Variable | Default | What it is |

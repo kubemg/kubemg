@@ -188,6 +188,10 @@ spec:
             - name: KUBEMG_DEBUG_IMAGE
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.trustedProxies }}
+            - name: KUBEMG_TRUSTED_PROXIES
+              value: {{ join "," . | quote }}
+            {{- end }}
             {{- if .Values.metrics.enabled }}
             - name: KUBEMG_METRICS_ADDR
               value: ":{{ .Values.metrics.port }}"

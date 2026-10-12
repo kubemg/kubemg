@@ -231,6 +231,7 @@ its explanation. The ones most installs touch:
 | `recordings.persistence.*` | on, `20Gi`, `ReadWriteOnce` | The session-recordings volume. `existingClaim` uses one you made. |
 | `service.type` / `.port` | `ClusterIP` / 443 (80 in edge mode) | What exposes the pod. |
 | `ingress.*` | off | See [Exposing it](#exposing-it). |
+| `trustedProxies` | — | IPs or CIDRs whose `X-Forwarded-For` is believed (`KUBEMG_TRUSTED_PROXIES`). Unset, every audit row records the connecting peer — in edge mode, the ingress controller. Set it to the controller's pod range to record the real client. |
 | `metrics.enabled` / `.serviceMonitor.enabled` | off / off | [Prometheus metrics](metrics.md) on their own port, behind their own `ClusterIP` Service — never the one agents reach. |
 | `global.imageRegistry` | — | A mirror for every image; see [below](#mirrored-and-air-gapped-registries). |
 | `imagePullSecrets` | — | For the server's pod and the in-chart PostgreSQL. |
