@@ -75,6 +75,7 @@ spec:
               cpu: 5m
               memory: 8Mi
             limits:
+              cpu: 50m
               memory: 16Mi
 ---
 apiVersion: v1
@@ -342,6 +343,7 @@ spec:
               cpu: 5m
               memory: 8Mi
             limits:
+              cpu: 50m
               memory: 16Mi
 ---
 # A Secret to open: its drawer lists the keys and their sizes, and reveals a

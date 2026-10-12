@@ -187,6 +187,12 @@ jobs:
     permissions:
       contents: read
       security-events: write
+    # Rego data for the config checks — today only the trusted-registry set
+    # KSV-0125 reads (see the file). Job-level so the gate and the SARIF pass
+    # judge against the same data; trivy-action leaves a caller's TRIVY_* env
+    # alone.
+    env:
+      TRIVY_CONFIG_DATA: .github/trivy
     steps:
       - uses: actions/checkout@v4
 
