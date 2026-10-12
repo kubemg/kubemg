@@ -95,6 +95,78 @@ func TestUpdateAlarmChannelKeepsTheStoredSecret(t *testing.T) {
 	}
 }
 
+// A header is as good a place for a token as the secret field, so its values
+// leave the API the way the secret does: not at all. Only the names come back.
+func TestAlarmChannelHeadersAreNeverReadBack(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+
+	rec := env.do(t, http.MethodPost, "/api/v1/alarms/channels", token, map[string]any{
+		"name":    "siem",
+		"kind":    db.ChannelWebhook,
+		"url":     "https://siem.example.com/in",
+		"headers": `{"X-Tenant":"tenant-prod","X-Api-Key":"key-abc-123"}`,
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected %d, got %d (%s)", http.StatusCreated, rec.Code, rec.Body.String())
+	}
+	created := decode[alarmChannelResponse](t, rec)
+	if got := strings.Join(created.HeaderNames, ","); got != "X-Api-Key,X-Tenant" {
+		t.Fatalf("header_names = %q, want the sorted names", got)
+	}
+
+	list := env.do(t, http.MethodGet, "/api/v1/alarms/channels", token, nil)
+	for _, raw := range []string{rec.Body.String(), list.Body.String()} {
+		if contains(raw, "key-abc-123") || contains(raw, "tenant-prod") {
+			t.Fatalf("a header value must never be serialized: %s", raw)
+		}
+	}
+}
+
+func TestUpdateAlarmChannelHeaders(t *testing.T) {
+	const stored = `{"X-Api-Key":"kept"}`
+	for _, tc := range []struct {
+		name    string
+		headers any // absent when nil
+		send    bool
+		want    string
+	}{
+		{name: "omitted keeps the stored set", want: stored},
+		{name: "null keeps the stored set", send: true, headers: nil, want: stored},
+		{name: "empty clears them", send: true, headers: "", want: ""},
+		{name: "a value replaces the whole set", send: true, headers: `{"X-Tenant":"b"}`, want: `{"X-Tenant":"b"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+			channel := env.store.addAlarmChannel(db.AlarmChannel{
+				Name: "siem", Kind: db.ChannelWebhook, URL: "https://siem.example.com/in",
+				AuthMode: db.AuthNone, Headers: stored, Enabled: true,
+			})
+
+			body := map[string]any{
+				"name": "siem", "kind": db.ChannelWebhook, "url": "https://siem.example.com/ingest",
+			}
+			if tc.send {
+				body["headers"] = tc.headers
+			}
+			path := fmt.Sprintf("/api/v1/alarms/channels/%d", channel.ID)
+			rec := env.do(t, http.MethodPut, path, env.tokenFor(t, admin), body)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
+			}
+			got, err := env.store.AlarmChannelByID(t.Context(), channel.ID)
+			if err != nil {
+				t.Fatalf("read back: %v", err)
+			}
+			if got.Headers != tc.want {
+				t.Fatalf("stored headers = %q, want %q", got.Headers, tc.want)
+			}
+		})
+	}
+}
+
 func TestAlarmChannelURLIsValidated(t *testing.T) {
 	env := newTestEnv(t)
 	admin := env.store.addUser("admin", "pw", db.RoleAdmin)

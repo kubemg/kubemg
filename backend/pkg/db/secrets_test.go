@@ -78,6 +78,7 @@ func TestSecretColumnsCoverEveryCredential(t *testing.T) {
 		"observability_sources.credential",
 		"helm_repositories.credential",
 		"alarm_channels.secret",
+		"alarm_channels.headers",
 		"sso_providers.client_secret",
 		"sso_providers.ldap_bind_password",
 	} {
@@ -112,9 +113,9 @@ func TestMapWritesAreSealed(t *testing.T) {
 	gdb := dryRunDB(t)
 
 	stmt := gdb.Model(&AlarmChannel{}).Where("id = ?", 1).
-		Updates(map[string]any{"secret": "routing-key-123", "name": "n"}).Statement
+		Updates(map[string]any{"secret": "routing-key-123", "headers": `{"X-Api-Key":"hdr-key-456"}`, "name": "n"}).Statement
 	vars := varsString(stmt.Vars)
-	if strings.Contains(vars, "routing-key-123") || !strings.Contains(vars, secretbox.Prefix) {
+	if strings.Contains(vars, "routing-key-123") || strings.Contains(vars, "hdr-key-456") || !strings.Contains(vars, secretbox.Prefix) {
 		t.Fatalf("map update sent %s", vars)
 	}
 
