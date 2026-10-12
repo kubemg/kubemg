@@ -3,9 +3,9 @@
 # trivy-action's own path-scoped `.trivyignore.yaml` + trivyignores input
 # does not correctly re-apply the severity threshold before deciding the
 # job's exit code when format is sarif (observed: findings well below
-# CRITICAL/HIGH still failed the job). Only one ID, with a narrow,
-# documented reason -- see deploy/kustomize/base/rbac.yaml for the
-# rationale in context.
+# CRITICAL/HIGH still failed the job). Every ID carries its reason beside
+# it; because the file is global, an ID belongs here only when the rule is
+# wrong for every file it could match, not just for the one that tripped it.
 #
 # AVD-DS-0002 (backend/Dockerfile.dev, frontend/Dockerfile.dev running as
 # root) used to be ignored here on the theory that root kept the
@@ -46,3 +46,11 @@ AVD-KSV-0046
 # own would remove the overlap entirely; the agent's namespace was chosen
 # deliberately instead, and this is the trade that came with that choice.
 AVD-KSV-0053
+
+# DS-0026 asks every Dockerfile for a HEALTHCHECK. Nothing that runs these
+# images reads one: the kubelet ignores HEALTHCHECK entirely and the agent's,
+# server's and chart's manifests carry their own probes, and the dev Dockerfiles
+# run under compose for a person at a keyboard. The three runtime images are
+# distroless with no shell or client to run a check with, so satisfying the rule
+# would mean shipping a binary into them for a probe no orchestrator calls.
+AVD-DS-0026

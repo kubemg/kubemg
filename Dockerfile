@@ -65,7 +65,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOFLAGS=-trimpath go bui
 RUN mkdir -p /state/etc/kubemg/tls /state/var/lib/kubemg/recordings
 
 # --- runtime -----------------------------------------------------------------
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot
 
 LABEL org.opencontainers.image.title="KubeMG" \
       org.opencontainers.image.description="Centralized, audited access to every Kubernetes cluster — without opening one firewall port" \
