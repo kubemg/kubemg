@@ -1,7 +1,10 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"sync"
 	"testing"
@@ -10,10 +13,11 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
-// failSignIns spends an account's free attempts and the one that starts the lock.
+// failSignIns spends the free attempts of an account from the test's one
+// address, and the one that starts the lock.
 func failSignIns(t *testing.T, env *testEnv, username string) {
 	t.Helper()
-	for i := 0; i <= auth.AccountThrottle.Free; i++ {
+	for i := 0; i <= auth.PairThrottle.Free; i++ {
 		if code := signIn(t, env, username, "wrong"); code != http.StatusUnauthorized {
 			t.Fatalf("failure %d: expected %d, got %d", i+1, http.StatusUnauthorized, code)
 		}
@@ -68,14 +72,14 @@ func TestSuccessfulLoginClearsTheAccountCount(t *testing.T) {
 	env := newTestEnv(t)
 	env.store.addUser("devops", "right-password", db.RoleUser)
 
-	for i := 0; i < auth.AccountThrottle.Free; i++ {
+	for i := 0; i < auth.PairThrottle.Free; i++ {
 		signIn(t, env, "devops", "wrong")
 	}
 	if code := signIn(t, env, "devops", "right-password"); code != http.StatusOK {
 		t.Fatalf("the right password inside the free attempts should sign in, got %d", code)
 	}
 	// The count started over, so the full free allowance is back.
-	for i := 0; i < auth.AccountThrottle.Free; i++ {
+	for i := 0; i < auth.PairThrottle.Free; i++ {
 		if code := signIn(t, env, "devops", "wrong"); code != http.StatusUnauthorized {
 			t.Fatalf("failure %d after a success: expected %d, got %d", i+1, http.StatusUnauthorized, code)
 		}
@@ -89,7 +93,7 @@ func TestChangePasswordIsThrottled(t *testing.T) {
 	user := env.store.addUser("devops", "right-password", db.RoleUser)
 	token := env.tokenFor(t, user)
 
-	for i := 0; i <= auth.AccountThrottle.Free; i++ {
+	for i := 0; i <= auth.PairThrottle.Free; i++ {
 		rec := env.do(t, http.MethodPost, passwordPath, token, map[string]any{
 			"current_password": "wrong", "new_password": "new-password-123",
 		})
@@ -137,8 +141,35 @@ func TestConcurrentGuessesAreNotAllChecked(t *testing.T) {
 			t.Fatalf("unexpected status %d", code)
 		}
 	}
-	if checked > auth.AccountThrottle.Free+1 {
+	if checked > auth.PairThrottle.Free+1 {
 		t.Fatalf("%d of %d concurrent guesses were checked, want at most %d",
-			checked, burst, auth.AccountThrottle.Free+1)
+			checked, burst, auth.PairThrottle.Free+1)
+	}
+}
+
+// Someone who knows a username and fails its password from their own address
+// locks that address out of that account — not the owner signing in from
+// somewhere else.
+func TestAStrangersFailuresDoNotLockTheOwnerOut(t *testing.T) {
+	env := newTestEnv(t)
+	env.store.addUser("devops", "right-password", db.RoleUser)
+
+	from := func(addr, password string) int {
+		body, _ := json.Marshal(map[string]string{"username": "devops", "password": password})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = addr
+		rec := httptest.NewRecorder()
+		env.router.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	for i := 0; i <= auth.PairThrottle.Free; i++ {
+		from("203.0.113.9:5000", "wrong")
+	}
+	if code := from("203.0.113.9:5000", "right-password"); code != http.StatusTooManyRequests {
+		t.Fatalf("the guessing address should be locked, got %d", code)
+	}
+	if code := from("192.0.2.50:5000", "right-password"); code != http.StatusOK {
+		t.Fatalf("the owner from another address should sign in, got %d", code)
 	}
 }

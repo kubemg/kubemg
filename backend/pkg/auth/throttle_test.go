@@ -11,14 +11,24 @@ type clock struct{ t time.Time }
 func (c *clock) now() time.Time          { return c.t }
 func (c *clock) advance(d time.Duration) { c.t = c.t.Add(d) }
 
+// An empty source leaves only the account-wide count in play, which is how the
+// tests below exercise that table on its own.
 var (
-	testAccount = ThrottlePolicy{Free: 3, Base: 10 * time.Second, Max: 40 * time.Second, Forget: time.Hour}
+	testPair    = ThrottlePolicy{Free: 3, Base: 10 * time.Second, Max: 40 * time.Second, Forget: time.Hour}
+	testAccount = ThrottlePolicy{Free: 6, Base: 10 * time.Second, Max: 40 * time.Second, Forget: time.Hour}
 	testSource  = ThrottlePolicy{Free: 10, Base: time.Minute, Max: time.Hour, Forget: time.Hour}
 )
 
 func testThrottle(limit int) (*LoginThrottle, *clock) {
 	c := &clock{t: time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)}
-	return NewLoginThrottleWith(testAccount, testSource, limit, c.now), c
+	return NewLoginThrottleWith(testPair, testAccount, testSource, limit, c.now), c
+}
+
+// failN fails account from source n times.
+func failN(th *LoginThrottle, n int, account, source string) {
+	for i := 0; i < n; i++ {
+		fail(th, account, source)
+	}
 }
 
 // fail runs one whole failed check and returns the wait Begin answered with.
@@ -39,7 +49,7 @@ func waitFor(th *LoginThrottle, account, source string) time.Duration {
 
 func TestThrottleLetsTheFreeAttemptsThrough(t *testing.T) {
 	th, _ := testThrottle(100)
-	for i := 0; i < 3; i++ {
+	for i := 0; i < testPair.Free; i++ {
 		if w := fail(th, "a:alice", "10.0.0.1"); w != 0 {
 			t.Fatalf("attempt %d: wait %v, want none", i+1, w)
 		}
@@ -51,9 +61,7 @@ func TestThrottleLetsTheFreeAttemptsThrough(t *testing.T) {
 
 func TestThrottleBacksOffAndCaps(t *testing.T) {
 	th, c := testThrottle(100)
-	for i := 0; i < 3; i++ {
-		fail(th, "a:alice", "10.0.0.1")
-	}
+	failN(th, testPair.Free, "a:alice", "10.0.0.1")
 	for _, want := range []time.Duration{10 * time.Second, 20 * time.Second, 40 * time.Second, 40 * time.Second} {
 		if w := fail(th, "a:alice", "10.0.0.1"); w != 0 {
 			t.Fatalf("the attempt after a lapsed lock should run, wait %v", w)
@@ -75,7 +83,8 @@ func TestThrottleCountsChecksInFlight(t *testing.T) {
 			running = append(running, attempt)
 		}
 	}
-	// Three free failures and the one that starts the lock.
+	// From many addresses, the account-wide allowance is what bounds it: its
+	// free failures and the one that starts the lock.
 	if len(running) != testAccount.Free+1 {
 		t.Fatalf("%d checks admitted at once, want %d", len(running), testAccount.Free+1)
 	}
@@ -91,9 +100,7 @@ func TestThrottleCountsChecksInFlight(t *testing.T) {
 // re-locking it, so a lapsed lock admits one guess and not a burst.
 func TestThrottleSerialisesChecksPastTheAllowance(t *testing.T) {
 	th, c := testThrottle(100)
-	for i := 0; i < 4; i++ {
-		fail(th, "a:alice", "")
-	}
+	failN(th, testAccount.Free+1, "a:alice", "")
 	c.advance(time.Minute)
 	first, wait := th.Begin("a:alice", "")
 	if wait != 0 {
@@ -108,18 +115,32 @@ func TestThrottleSerialisesChecksPastTheAllowance(t *testing.T) {
 	}
 }
 
-// The account is what is locked, wherever the next guess comes from — otherwise
-// a guesser only needs a second address.
-func TestThrottleLocksTheAccountFromEveryAddress(t *testing.T) {
+// A stranger's failures lock the stranger's address for that account, not the
+// account: otherwise anybody who knows a username could keep its owner out with
+// a wrong guess every few minutes.
+func TestThrottleAStrangerDoesNotLockTheOwnerOut(t *testing.T) {
 	th, _ := testThrottle(100)
-	for i := 0; i < 4; i++ {
-		fail(th, "a:alice", "10.0.0.1")
+	failN(th, testPair.Free+1, "a:alice", "10.0.0.1")
+	if w := waitFor(th, "a:alice", "10.0.0.1"); w == 0 {
+		t.Fatal("the guessing address should be locked for this account")
+	}
+	if w := waitFor(th, "a:alice", "192.0.2.7"); w != 0 {
+		t.Fatalf("the owner, from another address, should be unaffected, wait %v", w)
+	}
+	if w := waitFor(th, "a:bob", "10.0.0.1"); w != 0 {
+		t.Fatalf("the guessing address may still try another account, wait %v", w)
+	}
+}
+
+// Guesses at one account spread over many addresses never trip any pair, so
+// the account carries a count of its own — larger, and from anywhere.
+func TestThrottleLocksAnAccountGuessedFromManyAddresses(t *testing.T) {
+	th, _ := testThrottle(100)
+	for i := 0; i <= testAccount.Free; i++ {
+		fail(th, "a:alice", fmt.Sprintf("10.0.%d.1", i))
 	}
 	if w := waitFor(th, "a:alice", "192.0.2.7"); w == 0 {
-		t.Fatal("a locked account must be locked from another address too")
-	}
-	if w := waitFor(th, "a:bob", "192.0.2.7"); w != 0 {
-		t.Fatalf("another account from another address is unaffected, wait %v", w)
+		t.Fatal("an account guessed past its own allowance should be locked from everywhere")
 	}
 }
 
@@ -159,9 +180,7 @@ func TestThrottleSuccessClearsTheAccountButNotTheSource(t *testing.T) {
 
 func TestThrottleForgetsAQuietKey(t *testing.T) {
 	th, c := testThrottle(100)
-	for i := 0; i < 3; i++ {
-		fail(th, "a:alice", "")
-	}
+	failN(th, testAccount.Free, "a:alice", "")
 	c.advance(2 * time.Hour)
 	fail(th, "a:alice", "")
 	if w := waitFor(th, "a:alice", ""); w != 0 {
@@ -173,9 +192,7 @@ func TestThrottleForgetsAQuietKey(t *testing.T) {
 // is never the one dropped to make room.
 func TestThrottleNeverDropsALockedKeyToMakeRoom(t *testing.T) {
 	th, _ := testThrottle(4)
-	for i := 0; i < 4; i++ {
-		fail(th, "a:alice", "")
-	}
+	failN(th, testAccount.Free+1, "a:alice", "")
 	for i := 0; i < 50; i++ {
 		fail(th, fmt.Sprintf("a:spray%d", i), "")
 	}
@@ -188,9 +205,7 @@ func TestThrottleNeverDropsALockedKeyToMakeRoom(t *testing.T) {
 // names must not hand the key a fresh allowance in place of one check at a time.
 func TestThrottleFloodDoesNotResetALapsedLock(t *testing.T) {
 	th, c := testThrottle(4)
-	for i := 0; i < 4; i++ {
-		fail(th, "a:alice", "")
-	}
+	failN(th, testAccount.Free+1, "a:alice", "")
 	c.advance(10 * time.Second) // the first lock lapses
 	for i := 0; i < 50; i++ {
 		fail(th, fmt.Sprintf("a:spray%d", i), "")
@@ -209,13 +224,13 @@ func TestThrottleRefusalsAddNoEntries(t *testing.T) {
 	for i := 0; i < 11; i++ {
 		fail(th, fmt.Sprintf("a:user%d", i), "10.0.0.1")
 	}
-	before := len(th.accounts.entries)
+	before := len(th.tables[sideAccount].entries)
 	for i := 0; i < 50; i++ {
 		if _, wait := th.Begin(fmt.Sprintf("a:new%d", i), "10.0.0.1"); wait == 0 {
 			t.Fatal("the locked source should refuse")
 		}
 	}
-	if after := len(th.accounts.entries); after != before {
+	if after := len(th.tables[sideAccount].entries); after != before {
 		t.Fatalf("refused attempts added %d account entries", after-before)
 	}
 }
@@ -238,9 +253,7 @@ func TestThrottleSweepsQuietKeys(t *testing.T) {
 func TestThrottleCountsUntrackableKeysTogether(t *testing.T) {
 	th, _ := testThrottle(2)
 	for _, key := range []string{"a:alice", "a:bob"} {
-		for i := 0; i < 4; i++ {
-			fail(th, key, "")
-		}
+		failN(th, testAccount.Free+1, key, "")
 	}
 	locked := false
 	for i := 0; i < 10 && !locked; i++ {
@@ -263,9 +276,7 @@ func TestSettlingAnAttemptTwiceCountsOnce(t *testing.T) {
 	attempt.Fail()
 	attempt.Fail()
 	attempt.Release()
-	for i := 0; i < 2; i++ {
-		fail(th, "a:alice", "")
-	}
+	failN(th, testAccount.Free-1, "a:alice", "")
 	if w := waitFor(th, "a:alice", ""); w != 0 {
 		t.Fatalf("a doubly-settled attempt counted twice, wait %v", w)
 	}

@@ -11,20 +11,35 @@ import (
  * Every route that checks a password — the local sign-in, the directory
  * sign-in, the change-password form's current password — answers a guess in
  * the time a bcrypt comparison takes, and nothing used to stop the next one.
- * The throttle counts failures twice over: per *account*, which is what stops a
- * guesser working through one person's password, and per *source address*,
- * which is what stops one address spraying a common password across many
- * accounts. Either being locked refuses the attempt, and the password is not
+ * The throttle counts failures three times over:
+ *
+ *   - per **account and address together**, which stops one address working
+ *     through one person's password, and is the count that locks soonest;
+ *   - per **account**, from anywhere, with a far larger allowance, which stops
+ *     a guesser spreading one account's guesses over many addresses;
+ *   - per **address**, across accounts, which stops one address spraying a
+ *     common password at everybody.
+ *
+ * Any of the three being locked refuses the attempt, and the password is not
  * checked while it is — a locked route that still compared would answer the
  * guess, only later.
  *
- * Four rules shape it:
+ * The split is what keeps the throttle from being a way to lock people out.
+ * Anyone who knows a username can fail its password, and if the soonest lock
+ * were the account's own, a stranger could keep its owner out indefinitely
+ * with one wrong guess every few minutes. Here a stranger's failures lock the
+ * stranger's address for that account — the owner, signing in from anywhere
+ * else, is untouched — and reaching the account-wide lock takes the account's
+ * whole allowance in an hour, which one address cannot spend on its own
+ * before its pair lock stops it. An attack spread over enough addresses to do
+ * that is real guessing at one account, and slowing everybody down on that
+ * account is then the point; it is logged when it starts.
+ *
+ * Four more rules shape it:
  *
  *   - **It is a delay, not a lockout.** A few attempts are free, then each
  *     further failure locks the key for twice as long as the last, up to a
- *     ceiling. A permanent lock would hand anybody who knows a username a way
- *     to keep its owner out; a capped delay costs the owner minutes and a
- *     guesser most of their rate.
+ *     ceiling, and nothing needs an administrator to unlock.
  *   - **An attempt is reserved before the password is checked**, and an
  *     attempt still being checked counts against the free allowance. A check
  *     takes as long as bcrypt does, and counting only finished failures would
@@ -35,9 +50,9 @@ import (
  *   - **An unknown username counts exactly like a known one.** The account key
  *     is the name as typed, not a row, so a 429 says nothing about whether the
  *     account exists — the sign-in route's one-answer rule still holds.
- *   - **A success clears the account, never the source.** Otherwise one valid
- *     login, interleaved, would reset an address that is guessing at everybody
- *     else.
+ *   - **A success clears the account's counts, never the address's.**
+ *     Otherwise one valid login, interleaved, would reset an address that is
+ *     guessing at everybody else.
  *
  * State is held in this process. KubeMG runs one replica, and a second would
  * only give a guesser a second budget rather than none; a restart forgets the
@@ -51,12 +66,12 @@ import (
  * one. A key with no failures holds no entry at all. Past the bound, every key
  * that cannot be tracked shares one overflow entry, so guessing past it is
  * throttled collectively rather than not at all. The cost of that choice is
- * stated rather than hidden: once more than MaxThrottleKeys names have failed
- * within Forget, a person whose name is not already tracked shares the
- * overflow entry's lock. That needs hundreds of thousands of failed sign-ins
- * an hour, and the throttle is then failing closed on purpose. Making room is
- * a sweep of the whole table, so it runs at most once every sweepEvery: a
- * full table answers a new key in constant time rather than in a scan.
+ * stated rather than hidden: once more than MaxThrottleKeys keys have failed
+ * within Forget, a key not already tracked shares the overflow entry's lock.
+ * That needs hundreds of thousands of failed sign-ins an hour, and the
+ * throttle is then failing closed on purpose. Making room is a sweep of the
+ * whole table, so it runs at most once every sweepEvery: a full table answers
+ * a new key in constant time rather than in a scan.
  */
 
 // ThrottlePolicy is how one key is slowed down.
@@ -71,11 +86,14 @@ type ThrottlePolicy struct {
 	Forget time.Duration
 }
 
-// The policies the routes use. An account gets few free tries because one
-// person mistypes a handful of times, not dozens; an address gets more because
-// several people can share one (an office NAT, a bastion host).
+// The policies the routes use. The pair gets few free tries because one person
+// at one machine mistypes a handful of times, not dozens. The account's own
+// allowance is ten pairs' worth, so reaching it takes many addresses. An
+// address gets more than a pair because several people can share one (an
+// office NAT, a bastion host).
 var (
-	AccountThrottle = ThrottlePolicy{Free: 5, Base: 30 * time.Second, Max: 15 * time.Minute, Forget: time.Hour}
+	PairThrottle    = ThrottlePolicy{Free: 5, Base: 30 * time.Second, Max: 15 * time.Minute, Forget: time.Hour}
+	AccountThrottle = ThrottlePolicy{Free: 50, Base: time.Minute, Max: 15 * time.Minute, Forget: time.Hour}
 	SourceThrottle  = ThrottlePolicy{Free: 20, Base: time.Minute, Max: time.Hour, Forget: time.Hour}
 )
 
@@ -108,27 +126,35 @@ type throttleTable struct {
 	lastSweep time.Time
 }
 
-// LoginThrottle tracks failed password checks per account and per source.
+// The three tables, in the order an Attempt carries its keys.
+const (
+	sidePair = iota
+	sideAccount
+	sideSource
+	sides
+)
+
+// LoginThrottle tracks failed password checks per account and address, per
+// account and per address.
 type LoginThrottle struct {
-	mu       sync.Mutex
-	now      func() time.Time
-	accounts throttleTable
-	sources  throttleTable
+	mu     sync.Mutex
+	now    func() time.Time
+	tables [sides]throttleTable
 }
 
 // NewLoginThrottle returns a throttle using the package policies.
 func NewLoginThrottle() *LoginThrottle {
-	return NewLoginThrottleWith(AccountThrottle, SourceThrottle, MaxThrottleKeys, time.Now)
+	return NewLoginThrottleWith(PairThrottle, AccountThrottle, SourceThrottle, MaxThrottleKeys, time.Now)
 }
 
 // NewLoginThrottleWith returns a throttle with the given policies, table bound
 // and clock.
-func NewLoginThrottleWith(account, source ThrottlePolicy, limit int, now func() time.Time) *LoginThrottle {
-	return &LoginThrottle{
-		now:      now,
-		accounts: throttleTable{policy: account, limit: limit, entries: map[string]*throttleEntry{}},
-		sources:  throttleTable{policy: source, limit: limit, entries: map[string]*throttleEntry{}},
+func NewLoginThrottleWith(pair, account, source ThrottlePolicy, limit int, now func() time.Time) *LoginThrottle {
+	t := &LoginThrottle{now: now}
+	for side, policy := range [sides]ThrottlePolicy{pair, account, source} {
+		t.tables[side] = throttleTable{policy: policy, limit: limit, entries: map[string]*throttleEntry{}}
 	}
+	return t
 }
 
 // Attempt is one reserved password check. Exactly one of Fail, Succeed or
@@ -136,9 +162,16 @@ func NewLoginThrottleWith(account, source ThrottlePolicy, limit int, now func() 
 // settles whatever path the caller left by without counting it.
 type Attempt struct {
 	throttle *LoginThrottle
-	account  string
-	source   string
+	keys     [sides]string
 	done     bool
+}
+
+// pairKey joins an account and an address. Either missing, there is no pair.
+func pairKey(account, source string) string {
+	if account == "" || source == "" {
+		return ""
+	}
+	return account + "\x00" + source
 }
 
 // Begin reserves a check of account from source. A zero wait means go ahead
@@ -155,15 +188,21 @@ func (t *LoginThrottle) Begin(account, source string) (*Attempt, time.Duration) 
 
 	// Looked up first and created only on admission, so a refused attempt
 	// writes nothing — refusals cannot be what fills the table.
-	accountKey, accountEntry := t.accounts.lookup(account, now)
-	sourceKey, sourceEntry := t.sources.lookup(source, now)
-	wait := max(t.accounts.wait(accountEntry, now), t.sources.wait(sourceEntry, now))
+	wanted := [sides]string{pairKey(account, source), account, source}
+	var keys [sides]string
+	var entries [sides]*throttleEntry
+	var wait time.Duration
+	for side := range sides {
+		keys[side], entries[side] = t.tables[side].lookup(wanted[side], now)
+		wait = max(wait, t.tables[side].wait(entries[side], now))
+	}
 	if wait > 0 {
 		return nil, wait
 	}
-	t.accounts.admit(accountKey, accountEntry)
-	t.sources.admit(sourceKey, sourceEntry)
-	return &Attempt{throttle: t, account: accountKey, source: sourceKey}, 0
+	for side := range sides {
+		t.tables[side].admit(keys[side], entries[side])
+	}
+	return &Attempt{throttle: t, keys: keys}, 0
 }
 
 // Account names the account key the attempt was counted under, for a log
@@ -172,14 +211,14 @@ func (a *Attempt) Account() string {
 	if a == nil {
 		return ""
 	}
-	if a.account == overflowKey {
+	if a.keys[sideAccount] == overflowKey {
 		return "(untracked: throttle table full)"
 	}
-	return a.account
+	return a.keys[sideAccount]
 }
 
-// Fail settles the attempt as a wrong password and returns the lock it started
-// on either side, zero if none.
+// Fail settles the attempt as a wrong password and returns the longest lock it
+// started on any side, zero if none.
 func (a *Attempt) Fail() time.Duration {
 	if a == nil || a.done {
 		return 0
@@ -189,11 +228,16 @@ func (a *Attempt) Fail() time.Duration {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	now := t.now()
-	return max(t.accounts.fail(a.account, now), t.sources.fail(a.source, now))
+	var lock time.Duration
+	for side := range sides {
+		lock = max(lock, t.tables[side].fail(a.keys[side], now))
+	}
+	return lock
 }
 
-// Succeed settles the attempt as the right password: the account's count is
-// cleared, the source's is kept on purpose.
+// Succeed settles the attempt as the right password: the account's counts —
+// its own and its pair with this address — are cleared; the address's is kept
+// on purpose.
 func (a *Attempt) Succeed() {
 	if a == nil || a.done {
 		return
@@ -202,13 +246,18 @@ func (a *Attempt) Succeed() {
 	t := a.throttle
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	// The overflow entry is shared by every key that could not be tracked, so
-	// one success there clears nobody's count but its own — which it has not got.
-	if entry, ok := t.accounts.entries[a.account]; ok && a.account != overflowKey {
-		entry.failures, entry.lockedUntil = 0, time.Time{}
+	for _, side := range []int{sidePair, sideAccount} {
+		// The overflow entry is shared by every key that could not be tracked,
+		// so one success there clears nobody's count but its own — which it
+		// has not got.
+		key := a.keys[side]
+		if entry, ok := t.tables[side].entries[key]; ok && key != overflowKey {
+			entry.failures, entry.lockedUntil = 0, time.Time{}
+		}
 	}
-	t.accounts.release(a.account)
-	t.sources.release(a.source)
+	for side := range sides {
+		t.tables[side].release(a.keys[side])
+	}
 }
 
 // Release settles the attempt as neither — the check could not be made (a
@@ -221,8 +270,9 @@ func (a *Attempt) Release() {
 	t := a.throttle
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.accounts.release(a.account)
-	t.sources.release(a.source)
+	for side := range sides {
+		t.tables[side].release(a.keys[side])
+	}
 }
 
 // lookup finds key's entry, or the overflow entry when the table is full and
