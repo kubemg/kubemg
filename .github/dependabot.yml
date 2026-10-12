@@ -11,3 +11,8 @@ updates:
     # update opened against master fails "Only dev reaches master" and cannot
     # merge. Open them where every other change goes.
     target-branch: dev
+    # Every action is pinned to a commit, and a pin is only as good as the
+    # release it names. A week's wait lets a compromised or yanked release be
+    # caught upstream before a PR proposes it here.
+    cooldown:
+      default-days: 7

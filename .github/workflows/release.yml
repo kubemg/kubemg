@@ -71,7 +71,9 @@ jobs:
             platforms: linux/amd64,linux/arm64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # The tag is the source of truth for a tag-triggered run; the manual input
       # is for republishing without moving a tag. Refusing anything that is not
@@ -100,24 +102,26 @@ jobs:
           echo "Publishing $IMAGE:$version"
 
       - name: Set up buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       # Scanning needs an image in the local daemon, which a multi-platform build
       # cannot produce — so the gate runs against the runner's architecture. The
       # layers are identical bar the binary's target, so this still scans the
       # base image and the whole dependency set.
       - name: Build for scanning
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           docker buildx build --load \
             -t scan-target:ci \
-            --build-arg VERSION=${{ steps.version.outputs.version }} \
+            --build-arg VERSION="$VERSION" \
             ${{ matrix.context }}
 
       # Same split as pr-checks.yml: this step is the pass/fail gate, scoped to
       # CRITICAL/HIGH, and it runs *before* the push. Nothing reaches the
       # registry that failed it.
       - name: Run Trivy (gate on CRITICAL/HIGH)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: scan-target:ci
           scanners: vuln,secret
@@ -128,7 +132,7 @@ jobs:
 
       - name: Run Trivy (SARIF for code scanning)
         if: always()
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: scan-target:ci
           scanners: vuln,secret
@@ -139,14 +143,14 @@ jobs:
 
       - name: Upload results to code scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@9f759ee644a3e7c15c1390abf49868036c00067b # v3.38.3
         with:
           sarif_file: trivy-${{ matrix.image }}.sarif
           category: trivy-release-${{ matrix.image }}
 
       - name: Log in to GitHub Container Registry
         if: ${{ !inputs.dry_run }}
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -162,25 +166,31 @@ jobs:
       # a path it has no permission to.
       - name: Build and push
         if: ${{ !inputs.dry_run }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           docker buildx build --push \
             --platform ${{ matrix.platforms }} \
-            -t ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ steps.version.outputs.version }} \
+            -t ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:"$VERSION" \
             -t ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:latest \
-            --build-arg VERSION=${{ steps.version.outputs.version }} \
+            --build-arg VERSION="$VERSION" \
             ${{ matrix.context }}
 
       - name: Confirm the published manifest covers every platform
         if: ${{ !inputs.dry_run }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           docker buildx imagetools inspect \
-            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:"$VERSION"
 
       - name: Cross-build every platform (dry run)
         if: ${{ inputs.dry_run }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           docker buildx build --platform ${{ matrix.platforms }} \
-            --build-arg VERSION=${{ steps.version.outputs.version }} \
+            --build-arg VERSION="$VERSION" \
             ${{ matrix.context }}
 
   # The management plane's Helm chart, as an OCI artefact beside the images:
@@ -197,7 +207,9 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # Same resolution and the same refusal as the publish job: the version
       # arrives through the environment and is checked before it is used.
@@ -219,7 +231,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # Keep in step with HELM_IMAGE in the Makefile, which is what verified it.
-      - uses: azure/setup-helm@v5
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: v4.2.3
 
@@ -273,8 +285,9 @@ jobs:
       # The tag's own message is the seed. It is fetched rather than read from
       # the event, because the push payload carries the commit's message and not
       # the annotated tag's.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Draft the release

@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -78,7 +79,7 @@ func main() {
 				slog.String("addr", cfg.MetricsAddr),
 				slog.String("note", "bind to loopback or a private interface — not the public agent port"),
 			)
-			if err := http.ListenAndServe(cfg.MetricsAddr, mux); err != nil {
+			if err := newHTTPServer(cfg.MetricsAddr, mux).ListenAndServe(); err != nil {
 				logger.Error("metrics listener exited", slog.String("error", err.Error()))
 			}
 		}()
@@ -314,7 +315,7 @@ func main() {
 			slog.String("addr", cfg.ListenAddr),
 			slog.String("certificate", tlsMaterial.certFile),
 		)
-		if err := router.RunTLS(cfg.ListenAddr, tlsMaterial.certFile, tlsMaterial.keyFile); err != nil {
+		if err := newHTTPServer(cfg.ListenAddr, router.Handler()).ListenAndServeTLS(tlsMaterial.certFile, tlsMaterial.keyFile); err != nil {
 			log.Fatalf("server exited: %v", err)
 		}
 		return
@@ -356,7 +357,7 @@ func main() {
 			slog.String("fix", "set KUBEMG_TLS_ENABLED=true"),
 		)
 	}
-	if err := router.Run(cfg.ListenAddr); err != nil {
+	if err := newHTTPServer(cfg.ListenAddr, router.Handler()).ListenAndServe(); err != nil {
 		log.Fatalf("server exited: %v", err)
 	}
 }
@@ -390,6 +391,21 @@ func sealStoredSecrets(ctx context.Context, gdb *gorm.DB, box *secretbox.Box, lo
 		slog.Int("encrypted_now", report.Sealed),
 		slog.Int("already_encrypted", report.Encrypted))
 	return nil
+}
+
+// headerTimeout bounds how long a client may take to send its request headers.
+// It is the only deadline these listeners set: a read or write timeout would
+// apply to the whole request, and this server holds exec sessions, `logs -f`,
+// watches and the agent tunnel open for hours. Without it, a client that
+// trickles a header a byte at a time holds a connection forever, and enough of
+// them exhaust the listener — the Slowloris shape, which gin.Engine.Run and
+// http.ListenAndServe both leave open.
+const headerTimeout = 10 * time.Second
+
+// newHTTPServer is every listener this binary opens: the API (TLS or not) and
+// the metrics port.
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: headerTimeout}
 }
 
 // isLoopbackAddr reports whether a listen address (as passed to
