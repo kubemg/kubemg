@@ -62,6 +62,8 @@ Every place kubemg checks a password — the sign-in form, an LDAP provider's si
 - **Per account, from any address:** 50 failures within an hour are free. Past that the account is locked for everyone for 1 minute, doubling up to 15 minutes. Reaching this takes guesses at one account from many addresses, which is a real attack on it; the warning in the log says when it starts.
 - **Per address, across accounts:** 20 failures are free. After that the address is locked for 1 minute, doubling up to an hour, so one machine cannot try a common password against everyone.
 
+**The address is the connecting peer** unless the proxy in front is named in [`KUBEMG_TRUSTED_PROXIES`](../install/environment.md#client-addresses-behind-a-proxy); a forwarded address from anyone else is ignored, so it cannot be used to make up fresh addresses. Behind an ingress or a load balancer that is not named there, every caller shares the proxy's address. The per-address limit then applies to everyone together, and a stranger's failures on an account lock out its owner too, since both arrive from the same address. Name the proxy to keep the three counts apart.
+
 What is common to all three:
 
 - **While locked**, the password is not checked at all, the right one included. The answer is `429 Too Many Requests` with a `Retry-After` header, and the sign-in page says how long to wait.
