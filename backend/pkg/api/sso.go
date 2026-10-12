@@ -381,8 +381,17 @@ func (s *server) ldapLogin(c *gin.Context) {
 		return
 	}
 
+	// Throttled here as well as on the local form, and for a second reason: a
+	// directory usually has a lockout policy of its own, and guesses relayed
+	// through KubeMG would otherwise spend the owner's directory account.
+	account := signInAccount("ldap:"+strconv.FormatUint(uint64(provider.ID), 10), req.Username)
+	if s.signInRefused(c, account) {
+		return
+	}
+
 	identity, err := auth.LDAPAuthenticate(c.Request.Context(), provider, req.Username, req.Password)
 	if errors.Is(err, auth.ErrLDAPCredentials) {
+		s.signInFailed(c, account)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
@@ -393,6 +402,8 @@ func (s *server) ldapLogin(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
+
+	s.signIns.Succeed(account)
 
 	session, err := s.completeSSOLogin(c.Request.Context(), provider, identity)
 	if err != nil {

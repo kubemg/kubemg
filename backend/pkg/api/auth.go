@@ -2,7 +2,10 @@ package api
 
 import (
 	"errors"
+	"log/slog"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -110,11 +113,17 @@ func (s *server) login(c *gin.Context) {
 		return
 	}
 
+	account := signInAccount("local", req.Username)
+	if s.signInRefused(c, account) {
+		return
+	}
+
 	user, err := s.store.UserByUsername(c.Request.Context(), req.Username)
 	if errors.Is(err, db.ErrNotFound) {
 		// Spend the time a real check would, so this branch is not a visibly
 		// faster oracle for "no such account" next to the ones below.
 		auth.CheckPassword(dummyPasswordHash, req.Password)
+		s.signInFailed(c, account)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
@@ -136,14 +145,19 @@ func (s *server) login(c *gin.Context) {
 	// against one cluster's proxy.
 	if user.IsMachine() || user.IsFederated() {
 		auth.CheckPassword(dummyPasswordHash, req.Password)
+		s.signInFailed(c, account)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
 
 	if !auth.CheckPassword(user.PasswordHash, req.Password) {
+		s.signInFailed(c, account)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
+	// The password was right, so the count goes — before the disabled check,
+	// which is a refusal of the account rather than of the guess.
+	s.signIns.Succeed(account)
 
 	// A disabled account keeps its grants but must not be able to sign in.
 	if !user.IsActive {
@@ -165,6 +179,47 @@ func (s *server) login(c *gin.Context) {
 		ExpiresAt: expiresAt,
 		User:      toUserResponse(user),
 	})
+}
+
+// signInAccount is the account side of the throttle's key: the route, so a
+// directory and the local table never share a count, and the name as typed,
+// folded, so a case variant is not a fresh budget. It is deliberately not a
+// row id — an unknown name has to count exactly like a known one.
+func signInAccount(route, username string) string {
+	return route + ":" + strings.ToLower(strings.TrimSpace(username))
+}
+
+// signInRefused answers 429 when account (or the caller's address) is still
+// locked, before any password is checked. The answer is the same for an
+// account that does not exist, so it tells a guesser nothing a 401 would not.
+func (s *server) signInRefused(c *gin.Context, account string) bool {
+	wait := s.signIns.Wait(account, c.ClientIP())
+	if wait <= 0 {
+		return false
+	}
+	seconds := int(math.Ceil(wait.Seconds()))
+	c.Header("Retry-After", strconv.Itoa(seconds))
+	c.JSON(http.StatusTooManyRequests, gin.H{
+		"error":               "too many failed attempts; wait before trying again",
+		"retry_after_seconds": seconds,
+	})
+	return true
+}
+
+// signInFailed counts a failed password check, and says so in the log on the
+// failure that starts a lock — the moment an operator watching for guessing
+// wants to hear about.
+func (s *server) signInFailed(c *gin.Context, account string) {
+	source := c.ClientIP()
+	s.signIns.Fail(account, source)
+	if s.logger != nil {
+		if wait := s.signIns.Wait(account, source); wait > 0 {
+			s.logger.Warn("repeated failed password checks; throttling",
+				slog.String("account", account),
+				slog.String("source", source),
+				slog.String("retry_after", wait.Round(time.Second).String()))
+		}
+	}
 }
 
 // me returns the authenticated user's details.

@@ -470,6 +470,9 @@ type server struct {
 	allowedOrigins []string
 	// ssoFlows holds sign-ins that have left for an IdP and not yet come back.
 	ssoFlows *flowStore
+	// signIns slows down password guessing on every route that checks one; see
+	// auth.LoginThrottle and signInRefused.
+	signIns *auth.LoginThrottle
 	// deployment is what this process was started with; see Options.Deployment.
 	deployment Deployment
 	// version is the release this binary was built as; see Options.Version.
@@ -546,6 +549,7 @@ func NewRouter(opts Options) *gin.Engine {
 		logger:               opts.Logger,
 		allowedOrigins:       opts.AllowedOrigins,
 		ssoFlows:             newFlowStore(),
+		signIns:              auth.NewLoginThrottle(),
 		deployment:           opts.Deployment,
 		version:              strings.TrimSpace(opts.Version),
 	}

@@ -54,6 +54,18 @@ See [Self-protection rules](model.md#self-protection-rules).
 - **`local`**: a password hash in this database. Created and edited here.
 - **A federation provider** (see [Single sign-on](sso.md)): the identity provider vouches for the account. It has no usable password (password sign-in is refused and the console shows no password field) and is matched by the directory's stable identifier, so a rename in the directory does not lose the account. Otherwise it is managed like any other row, and its group memberships can be reconciled on every login by the provider's [group mappings](sso.md#group-mappings).
 
+### Repeated failed passwords are slowed down
+
+Every place kubemg checks a password — the sign-in form, an LDAP provider's sign-in, and the current-password field of **Change password** — counts failures twice: per account and per source address.
+
+- **Per account:** 5 failures in a row are free. Each failure after that locks the account for 30 seconds, then 1, 2, 4 minutes and so on, up to 15 minutes. The lock applies from every address.
+- **Per address:** 20 failures, across any accounts, are free. After that the address is locked for 1 minute, doubling up to an hour, so one machine cannot try a common password against everyone.
+- **While locked**, the password is not checked at all, the right one included. The answer is `429 Too Many Requests` with a `Retry-After` header, and the sign-in page says how long to wait.
+- **A successful sign-in clears that account's count**, but not the address's.
+- A username that does not exist is counted exactly like one that does, so a lock tells nobody whether the account exists. The username is compared without regard to case.
+
+It is a delay, not a lockout: nobody can keep an owner out of their account for more than 15 minutes at a time, and nothing needs an administrator to unlock. Counts are held in the server's memory and start over when it restarts. The failure that starts a lock is logged as a warning (`repeated failed password checks; throttling`) with the account and the address.
+
 ### Account lifecycle: create → disable → delete
 
 | Stage | What happens | What breaks |

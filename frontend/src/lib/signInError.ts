@@ -27,6 +27,8 @@ export interface SignInFailure {
   status?: number
   /** The server's `error`, read only to recognise a named refusal — never shown. */
   message?: string
+  /** How long a throttled sign-in has to wait, from `retry_after_seconds`. */
+  retryAfterSeconds?: number
 }
 
 export const SIGN_IN_TEXT = {
@@ -35,6 +37,7 @@ export const SIGN_IN_TEXT = {
     'If your account comes from your organisation, sign in with it below instead.',
   disabled: 'This account is disabled. An administrator can re-enable it.',
   incomplete: 'Enter both a username and a password.',
+  throttled: 'Too many failed sign-in attempts. Wait a few minutes before trying again.',
   unavailable:
     'kubemg could not check your sign-in just now. Try again in a moment, and tell your administrator if it keeps happening.',
   unreachable: 'Cannot reach the kubemg server. Check your connection and try again.',
@@ -76,10 +79,12 @@ function namedRefusal(message: string | undefined): string | null {
 /** Reads a failed request into the two facts the table is keyed on. */
 export function readSignInFailure(error: unknown): SignInFailure {
   if (!axios.isAxiosError(error)) return {}
-  const data = error.response?.data as { error?: unknown } | undefined
+  const data = error.response?.data as { error?: unknown; retry_after_seconds?: unknown } | undefined
   return {
     status: error.response?.status,
     message: typeof data?.error === 'string' ? data.error : undefined,
+    retryAfterSeconds:
+      typeof data?.retry_after_seconds === 'number' ? data.retry_after_seconds : undefined,
   }
 }
 
@@ -95,6 +100,9 @@ export function signInErrorText(
   const { status, message } = failure
   if (status === undefined) return SIGN_IN_TEXT.unreachable
   if (status === 400) return SIGN_IN_TEXT.incomplete
+  // Both forms throttle the same way, and the answer is the same whether the
+  // account exists, so it can say what it is.
+  if (status === 429) return throttledText(failure.retryAfterSeconds)
 
   if (route === 'local') {
     if (status === 401) {
@@ -113,6 +121,14 @@ export function signInErrorText(
 
   if (status >= 500) return SIGN_IN_TEXT.unavailable
   return SIGN_IN_TEXT.generic
+}
+
+/** The throttled sentence, with the wait when the server said what it is. */
+function throttledText(seconds: number | undefined): string {
+  if (!seconds || seconds <= 0) return SIGN_IN_TEXT.throttled
+  if (seconds < 60) return 'Too many failed sign-in attempts. Try again in under a minute.'
+  const minutes = Math.ceil(seconds / 60)
+  return `Too many failed sign-in attempts. Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`
 }
 
 /**
