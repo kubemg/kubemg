@@ -68,6 +68,7 @@ is stored encrypted (AES-256-GCM, written as `enc:v1:…`):
 | Observability datasource credentials | `observability_sources.credential` |
 | Helm repository credentials | `helm_repositories.credential` |
 | Alarm channel secrets (tokens, routing keys, passwords) | `alarm_channels.secret` |
+| Alarm channel extra headers (a header can carry a token as well as the secret field can) | `alarm_channels.headers` |
 | OIDC client secrets | `sso_providers.client_secret` |
 | LDAP bind passwords | `sso_providers.ldap_bind_password` |
 
@@ -80,9 +81,8 @@ What is **not** encrypted, and why:
   (`clusters.agent_token_hash`). The token itself is encrypted, not only hashed,
   because the **Agent install** sheet re-renders the package from it without
   rotating the credential.
-- Cluster CA certificates, alarm channel headers, audit-forwarder CA bundles,
-  the audit trail and everything else are not credentials and are stored as
-  they are.
+- Cluster CA certificates, audit-forwarder CA bundles, the audit trail and
+  everything else are not credentials and are stored as they are.
 
 **The key is as important as the database backup.** A restored database is only
 usable with the key it was encrypted under:

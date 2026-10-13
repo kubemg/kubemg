@@ -325,7 +325,7 @@ See [Runtime settings](../reference/settings.md) for what each field means.
 
 | Method & path | Auth | Notes |
 | --- | --- | --- |
-| `GET /alarms/channels` `POST /alarms/channels` | Admin | A channel's secret is write-only — never read back. |
+| `GET /alarms/channels` `POST /alarms/channels` | Admin | A channel's secret and extra-header values are write-only — never read back; the response carries `has_secret` and `header_names`. On `PUT`, omitting `headers` (or sending `null`) keeps the stored set, `""` clears it, and a JSON object replaces it whole. |
 | `PUT /alarms/channels/:id` `DELETE /alarms/channels/:id` | Admin | `409` duplicate name. `400` invalid header JSON, or a missing PagerDuty routing key/basic-auth username. |
 | `POST /alarms/channels/:id/test` | Admin | Bypasses the matcher and cool-off. `200` even if delivery itself failed — the test is about the endpoint, not the rule. |
 | `GET /alarms/rules` `POST /alarms/rules` | Admin | Response includes the trigger/severity vocabulary alongside the rules. |

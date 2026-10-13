@@ -29,6 +29,9 @@ import (
  * and an observability datasource's credential already follow — and omitting the
  * secret on an edit keeps the stored one, so changing a URL does not mean
  * re-typing a routing key nobody can read.
+ *
+ * The extra headers follow the same rule, by name only, because a header is as
+ * good a place for a token as the secret field is.
  */
 
 // Field bounds. A name and a URL both end up in a delivered payload, so they are
@@ -46,8 +49,11 @@ type alarmChannelResponse struct {
 	URL      string `json:"url"`
 	AuthMode string `json:"auth_mode"`
 	Username string `json:"username,omitempty"`
-	Headers  string `json:"headers,omitempty"`
 	Enabled  bool   `json:"enabled"`
+
+	// HeaderNames stands in for the extra headers the way HasSecret stands in for
+	// the credential: which headers are sent, never what they carry.
+	HeaderNames []string `json:"header_names,omitempty"`
 
 	// HasSecret stands in for the credential. It is what makes an edit form
 	// honest: an empty token box means "keep what is stored", and without this
@@ -70,9 +76,9 @@ func toAlarmChannelResponse(channel db.AlarmChannel) alarmChannelResponse {
 		URL:           channel.URL,
 		AuthMode:      channel.AuthMode,
 		Username:      channel.Username,
-		Headers:       channel.Headers,
 		Enabled:       channel.Enabled,
 		HasSecret:     channel.HasSecret(),
+		HeaderNames:   channel.HeaderNames(),
 		LastStatus:    channel.LastStatus,
 		LastMessage:   channel.LastMessage,
 		LastAttemptAt: channel.LastAttemptAt,
@@ -88,8 +94,11 @@ type alarmChannelRequest struct {
 	AuthMode string `json:"auth_mode"`
 	Username string `json:"username"`
 	// Secret is write-only. Omitted on an update, the stored one is kept.
-	Secret  string `json:"secret"`
-	Headers string `json:"headers"`
+	Secret string `json:"secret"`
+	// Headers is write-only too, and a pointer for the same reason: omitted (or
+	// null) on an update keeps the stored set, "" clears it, and anything else
+	// replaces the whole set.
+	Headers *string `json:"headers"`
 	// Enabled defaults to true on create — a channel somebody just configured is
 	// one they want working — and is honoured as sent on an update.
 	Enabled *bool `json:"enabled"`
@@ -237,7 +246,7 @@ func (s *server) testAlarmChannel(c *gin.Context) {
 }
 
 // channelFrom validates a request into a channel row. existing is nil on create;
-// on update it supplies the stored secret when the request omits one.
+// on update it supplies the stored secret and headers when the request omits them.
 func (s *server) channelFrom(
 	c *gin.Context, req alarmChannelRequest, existing *db.AlarmChannel,
 ) (*db.AlarmChannel, bool) {
@@ -278,7 +287,14 @@ func (s *server) channelFrom(
 		return nil, false
 	}
 
-	if headers := strings.TrimSpace(req.Headers); headers != "" && !validHeaderJSON(headers) {
+	var headers string
+	switch {
+	case req.Headers != nil:
+		headers = strings.TrimSpace(*req.Headers)
+	case existing != nil:
+		headers = existing.Headers
+	}
+	if headers != "" && !validHeaderJSON(headers) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": `headers must be a JSON object of string values, for example {"X-Tenant":"prod"}`,
 		})
@@ -321,7 +337,7 @@ func (s *server) channelFrom(
 		AuthMode: authMode,
 		Username: username,
 		Secret:   secret,
-		Headers:  strings.TrimSpace(req.Headers),
+		Headers:  headers,
 		Enabled:  enabled,
 	}, true
 }

@@ -23,6 +23,7 @@ import type {
   AlarmTrigger,
   Cluster,
 } from '../../api/types'
+import { headersHint, headersPayload } from '../../lib/alarmHeaders'
 import type { Tone } from '../../lib/status'
 import {
   Age,
@@ -448,13 +449,17 @@ function ChannelSheet({
           // Always blank: the stored credential is never read back, and leaving
           // it empty is what keeps it.
           secret: '',
-          headers: channel.headers ?? '',
+          // Always blank too: header values are never read back either, and an
+          // empty box keeps the stored set.
+          headers: '',
           enabled: channel.enabled,
         }
       : EMPTY_CHANNEL,
   )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [clearHeaders, setClearHeaders] = useState(false)
+  const storedHeaders = channel?.header_names ?? []
 
   function set<K extends keyof AlarmChannelInput>(key: K, value: AlarmChannelInput[K]) {
     setDraft((current) => ({ ...current, [key]: value }))
@@ -471,6 +476,7 @@ function ChannelSheet({
         // An empty secret means "keep the stored one", so it is omitted rather
         // than sent blank.
         secret: draft.secret?.trim() ? draft.secret.trim() : undefined,
+        headers: headersPayload(draft.headers ?? '', clearHeaders),
       }
       if (channel) {
         await updateAlarmChannel(channel.id, payload)
@@ -617,16 +623,28 @@ function ChannelSheet({
         <Field
           label="Extra headers"
           htmlFor="channel_headers"
-          hint={`Optional JSON object, for a SIEM's tenant id or an API version. Authorization and Content-Type are set by kubemg and cannot be overridden here.`}
+          hint={headersHint(storedHeaders, clearHeaders)}
         >
           <TextArea
             id="channel_headers"
             rows={2}
             value={draft.headers ?? ''}
             onChange={(event) => set('headers', event.target.value)}
-            placeholder='{"X-Tenant":"prod"}'
+            placeholder={storedHeaders.length ? 'Values hidden — leave empty to keep' : '{"X-Tenant":"prod"}'}
+            disabled={clearHeaders}
           />
         </Field>
+        {storedHeaders.length ? (
+          <label className="-mt-2 flex items-center gap-2.5">
+            <input
+              type="checkbox"
+              className="size-4 accent-[var(--color-accent)]"
+              checked={clearHeaders}
+              onChange={(event) => setClearHeaders(event.target.checked)}
+            />
+            <span className="text-[13px] text-fg">Remove the stored headers</span>
+          </label>
+        ) : null}
 
         <label className="flex items-center gap-2.5">
           <input

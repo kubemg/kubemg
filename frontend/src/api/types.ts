@@ -2283,9 +2283,10 @@ export interface AlarmChannel {
   url: string
   auth_mode: AlarmAuthMode
   username?: string
-  headers?: string
   enabled: boolean
   has_secret: boolean
+  /** The extra headers by name. Their values are never read back. */
+  header_names?: string[]
   last_status?: string
   last_message?: string
   last_attempt_at?: string
@@ -2301,6 +2302,8 @@ export interface AlarmChannelInput {
   username?: string
   /** Omit to keep the stored credential. */
   secret?: string
+  /** Omit to keep the stored headers, `''` to clear them, a JSON object to
+      replace them all. */
   headers?: string
   enabled?: boolean
 }

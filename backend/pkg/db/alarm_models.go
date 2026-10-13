@@ -1,6 +1,11 @@
 package db
 
-import "time"
+import (
+	"encoding/json"
+	"slices"
+	"strings"
+	"time"
+)
 
 /*
  * Alarms: where a cluster event or a refused action goes when somebody has to
@@ -114,7 +119,13 @@ type AlarmChannel struct {
 	// Headers are extra headers as a JSON object, for the destinations that want
 	// one — a SIEM's tenant id, ServiceNow's API version. Stored as text because
 	// this is the only place that reads it and a second table would buy nothing.
-	Headers string `gorm:"type:text" json:"headers,omitempty"`
+	//
+	// They are treated as a credential, sealed at rest and never serialized,
+	// because nothing stops an operator putting one here: an X-Api-Key or an
+	// X-Auth-Token is a header like any other, and telling a tenant id from a
+	// token by its name is a guess. The API reads back the names alone
+	// (HeaderNames); an edit that omits the field keeps what is stored.
+	Headers string `gorm:"type:text;serializer:secret" json:"-"`
 
 	Enabled bool `gorm:"not null;default:true" json:"enabled"`
 
@@ -135,6 +146,25 @@ func (AlarmChannel) TableName() string { return "alarm_channels" }
 // HasSecret reports whether a credential is stored, which is what the UI shows
 // in place of the credential itself.
 func (c AlarmChannel) HasSecret() bool { return c.Secret != "" }
+
+// HeaderNames lists the stored extra headers by name, sorted, which is all of
+// them the API reads back. A malformed value has no names, the same reading the
+// dispatcher gives it.
+func (c AlarmChannel) HeaderNames() []string {
+	if strings.TrimSpace(c.Headers) == "" {
+		return nil
+	}
+	var headers map[string]string
+	if err := json.Unmarshal([]byte(c.Headers), &headers); err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(headers))
+	for name := range headers {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
 
 // AlarmRule is one condition worth sending somewhere.
 //
