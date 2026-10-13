@@ -92,3 +92,22 @@ func TestEnvDurationFallbacks(t *testing.T) {
 		t.Fatalf("expected fallback of 12h for invalid input, got %s", got)
 	}
 }
+
+func TestTrustedProxies(t *testing.T) {
+	if got := Load().TrustedProxies; len(got) != 0 {
+		t.Fatalf("no proxy should be trusted by default, got %v", got)
+	}
+	t.Setenv("KUBEMG_TRUSTED_PROXIES", "10.0.0.0/8, 192.0.2.7 ,fd00::/8")
+	if got := Load().TrustedProxies; len(got) != 3 {
+		t.Fatalf("expected three entries, got %v", got)
+	}
+
+	if err := ParseTrustedProxies([]string{"10.0.0.0/8", "192.0.2.7", "fd00::/8", "::1"}); err != nil {
+		t.Fatalf("valid entries refused: %v", err)
+	}
+	for _, bad := range []string{"10.0.0.0/33", "ingress-nginx", "10.0.0"} {
+		if err := ParseTrustedProxies([]string{bad}); err == nil {
+			t.Errorf("%q should be refused", bad)
+		}
+	}
+}

@@ -38,7 +38,7 @@ A refusal is recorded like a success: a guardrail block, a namespace-scope viola
 
 ## Where a call came from
 
-- `source_addr` is the client address the server resolved, honouring `X-Forwarded-For` and `X-Real-IP` only if the server is configured to trust them (default: none, so behind an untrusted proxy you see the proxy). It carries no port.
+- `source_addr` is the client address the server resolved, honouring `X-Forwarded-For` and `X-Real-IP` only from a proxy named in [`KUBEMG_TRUSTED_PROXIES`](../install/environment.md#client-addresses-behind-a-proxy) (default: none, so behind a proxy you see the proxy, and a caller cannot write its own address). It carries no port.
 - `user_agent` is the client's own claim (`kubectl`, a browser, a CI runner), truncated to 256 characters. It is untrusted, but a credential used by something other than what it was issued to shows up here first.
 
 Both read "not recorded" in the console for calls with no caller (for example the JIT expirer closing a grant) and for rows written before these columns existed. Old rows cannot be backfilled.
