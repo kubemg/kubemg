@@ -54,6 +54,26 @@ See [Self-protection rules](model.md#self-protection-rules).
 - **`local`**: a password hash in this database. Created and edited here.
 - **A federation provider** (see [Single sign-on](sso.md)): the identity provider vouches for the account. It has no usable password (password sign-in is refused and the console shows no password field) and is matched by the directory's stable identifier, so a rename in the directory does not lose the account. Otherwise it is managed like any other row, and its group memberships can be reconciled on every login by the provider's [group mappings](sso.md#group-mappings).
 
+### Repeated failed passwords are slowed down
+
+Every place kubemg checks a password — the sign-in form, an LDAP provider's sign-in, and the current-password field of **Change password** — counts failures three ways:
+
+- **Per account and address together:** 5 failures in a row are free. Each failure after that locks *that address* out of *that account* for 30 seconds, then 1, 2, 4 minutes and so on, up to 15 minutes. The account's owner, signing in from anywhere else, is not affected, so knowing someone's username is not a way to lock them out.
+- **Per account, from any address:** 50 failures within an hour are free. Past that the account is locked for everyone for 1 minute, doubling up to 15 minutes. Reaching this takes guesses at one account from many addresses, which is a real attack on it; the warning in the log says when it starts.
+- **Per address, across accounts:** 20 failures are free. After that the address is locked for 1 minute, doubling up to an hour, so one machine cannot try a common password against everyone.
+
+**The address is the connecting peer** unless the proxy in front is named in [`KUBEMG_TRUSTED_PROXIES`](../install/environment.md#client-addresses-behind-a-proxy); a forwarded address from anyone else is ignored, so it cannot be used to make up fresh addresses. Behind an ingress or a load balancer that is not named there, every caller shares the proxy's address. The per-address limit then applies to everyone together, and a stranger's failures on an account lock out its owner too, since both arrive from the same address. Name the proxy to keep the three counts apart.
+
+What is common to all three:
+
+- **While locked**, the password is not checked at all, the right one included. The answer is `429 Too Many Requests` with a `Retry-After` header, and the sign-in page says how long to wait.
+- **Attempts sent at once do not all get checked.** An attempt still being checked counts against the free allowance, so a burst of requests gets at most the free attempts checked, and the rest are told to wait. Once the free attempts are spent, attempts run one at a time.
+- **A successful sign-in clears that account's counts**, but not the address's.
+- A username that does not exist is counted exactly like one that does, so a lock tells nobody whether the account exists. The username is compared without regard to case.
+- Nothing needs an administrator to unlock: every lock runs out on its own. A count is forgotten once its account or address has had no failure for an hour.
+
+Counts are held in the server's memory and start over when it restarts. The memory is bounded, and filling it does not switch the protection off: a count is only forgotten once it has been quiet for an hour. If more than 200,000 names have failed within an hour, names not already counted share a single count, so under an attack that size sign-in for those names is slowed down together rather than not at all. The failure that starts a lock is logged as a warning (`repeated failed password checks; throttling`) with the account and the address.
+
 ### Account lifecycle: create → disable → delete
 
 | Stage | What happens | What breaks |

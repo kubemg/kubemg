@@ -138,6 +138,17 @@ describe('signInErrorText on the directory form', () => {
   })
 })
 
+describe('signInErrorText for a throttled sign-in', () => {
+  it('says to wait, on both forms, with the wait when the server gave one', () => {
+    for (const route of ['local', 'directory'] as const) {
+      expect(signInErrorText({ status: 429 }, route)).toBe(SIGN_IN_TEXT.throttled)
+      expect(signInErrorText({ status: 429, retryAfterSeconds: 30 }, route)).toMatch(/under a minute/)
+      expect(signInErrorText({ status: 429, retryAfterSeconds: 61 }, route)).toMatch(/about 2 minutes/)
+      expect(signInErrorText({ status: 429, retryAfterSeconds: 60 }, route)).toMatch(/about 1 minute\./)
+    }
+  })
+})
+
 describe('readSignInFailure', () => {
   it('reads the status and the error field off a refused request', () => {
     expect(readSignInFailure(axiosFailure(401, { error: 'invalid credentials' }))).toEqual({
