@@ -88,7 +88,7 @@ Pods the scheduler could not place are listed separately (a sample of 10), each 
 
 The Overview's **Fleet capacity** card makes one call per attached cluster. It is capped at 12 clusters, and the page says so past the cap.
 
-Nothing on this page costs money, recommends a size or changes the cluster. All reads go through the same impersonated, audited tunnel.
+Nothing on this page costs money, recommends a size or changes the cluster. All reads go through the same impersonated, audited tunnel. To see *which* workloads reserve more than they use, and what to request instead, open [Waste](waste.md).
 
 ## See also
 
