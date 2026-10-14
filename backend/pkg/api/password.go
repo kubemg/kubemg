@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -87,10 +88,20 @@ func (s *server) changePassword(c *gin.Context) {
 		return
 	}
 
+	// The current password is a password check like any other, and the caller
+	// already holds a session — which is exactly the stolen-session case this
+	// field exists for, so it is not a free oracle for the real one either.
+	attempt, ok := s.beginSignIn(c, signInAccount("password", strconv.FormatUint(uint64(caller.ID), 10)))
+	if !ok {
+		return
+	}
+	defer attempt.Release()
 	if !auth.CheckPassword(caller.PasswordHash, req.CurrentPassword) {
+		s.signInFailed(c, attempt)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "the current password is incorrect"})
 		return
 	}
+	attempt.Succeed()
 	// A rotation that rotates nothing is refused rather than reported as done:
 	// the caller believes the old password is now dead, and it is not.
 	if req.NewPassword == req.CurrentPassword {

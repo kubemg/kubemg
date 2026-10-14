@@ -501,8 +501,14 @@ func parseHeaders(raw string) map[string]string {
 	// Never let a stored header set the credential or the body type — those are
 	// decided by the channel's own fields, and a header map that could override
 	// them would be a second, unvalidated way to configure authentication.
-	delete(out, "Authorization")
-	delete(out, "Content-Type")
+	// Matched on the canonical form, since that is the one req.Header.Set writes:
+	// a stored "authorization" is the same header.
+	for name := range out {
+		switch http.CanonicalHeaderKey(name) {
+		case "Authorization", "Content-Type":
+			delete(out, name)
+		}
+	}
 	return out
 }
 

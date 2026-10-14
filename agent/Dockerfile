@@ -27,7 +27,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOFLAGS=-trimpath go bui
     -ldflags "-s -w -X main.version=${VERSION}" \
     -o /out/kubemg-agent ./cmd/agent
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot
 
 LABEL org.opencontainers.image.title="KubeMG Dumb Agent" \
       org.opencontainers.image.description="Outbound reverse tunnel from a Kubernetes cluster to a KubeMG bastion" \

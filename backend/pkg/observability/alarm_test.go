@@ -472,6 +472,16 @@ func TestBearerAndExtraHeadersAreSent(t *testing.T) {
 	}
 }
 
+// Header names are case-insensitive, so the guard has to be too: a stored
+// "authorization" would otherwise ride past it and authenticate a channel whose
+// own auth mode says none.
+func TestReservedHeadersAreDroppedWhateverTheirCase(t *testing.T) {
+	got := parseHeaders(`{"authorization":"Bearer smuggled","CONTENT-TYPE":"text/plain","x-tenant":"prod"}`)
+	if len(got) != 1 || got["x-tenant"] != "prod" {
+		t.Fatalf("parseHeaders = %v, want only x-tenant", got)
+	}
+}
+
 func TestWebhookCarriesTheSignalUnreshaped(t *testing.T) {
 	got := &receiver{}
 	server := httptest.NewServer(got.handler())

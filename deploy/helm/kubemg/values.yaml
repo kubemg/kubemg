@@ -186,6 +186,16 @@ ingress:
   # -- Edge mode only: the Secret holding the certificate the ingress presents.
   tlsSecretName: ""
 
+# -- The proxies (IPs or CIDRs) in front of KubeMG whose X-Forwarded-For is
+# believed. Empty, the default, believes nobody's: every audit row, the last
+# sign-in address and the sign-in throttle see the connecting peer, which
+# behind an ingress or a load balancer that does not preserve the source is
+# the proxy itself. Name the ingress controller's pod range (edge mode, or a
+# passthrough ingress that adds the header) to record the real client. Never
+# a range a caller can connect from directly: a trusted peer can write any
+# address it likes.
+trustedProxies: []
+
 metrics:
   # -- Serves Prometheus metrics on a separate plain-HTTP port, behind its own
   # ClusterIP Service — never on the Service agents and browsers reach.

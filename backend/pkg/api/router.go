@@ -253,6 +253,9 @@ type Options struct {
 	// AllowedOrigins are the browser origins permitted to call the API. A single
 	// "*" entry allows any origin. Defaults to the Vite dev server.
 	AllowedOrigins []string
+	// TrustedProxies are the peers whose forwarding headers are believed; see
+	// trustProxies. Nil believes none.
+	TrustedProxies []string
 
 	// Bastion accepts agent tunnels. When nil, the tunnel and proxy routes are
 	// not registered and KubeMG behaves exactly as it did in Phase 1.
@@ -467,6 +470,9 @@ type server struct {
 	allowedOrigins []string
 	// ssoFlows holds sign-ins that have left for an IdP and not yet come back.
 	ssoFlows *flowStore
+	// signIns slows down password guessing on every route that checks one; see
+	// auth.LoginThrottle and signInRefused.
+	signIns *auth.LoginThrottle
 	// deployment is what this process was started with; see Options.Deployment.
 	deployment Deployment
 	// version is the release this binary was built as; see Options.Version.
@@ -477,6 +483,7 @@ type server struct {
 // registered when both a store and a token manager are supplied.
 func NewRouter(opts Options) *gin.Engine {
 	router := gin.New()
+	trustProxies(router, opts.TrustedProxies, opts.Logger)
 	router.Use(gin.Recovery())
 	router.Use(cors.New(corsConfig(opts.AllowedOrigins)))
 	router.Use(securityHeaders(opts.Deployment.TLSEnabled))
@@ -542,6 +549,7 @@ func NewRouter(opts Options) *gin.Engine {
 		logger:               opts.Logger,
 		allowedOrigins:       opts.AllowedOrigins,
 		ssoFlows:             newFlowStore(),
+		signIns:              auth.NewLoginThrottle(),
 		deployment:           opts.Deployment,
 		version:              strings.TrimSpace(opts.Version),
 	}
@@ -1423,14 +1431,33 @@ const contentSecurityPolicy = "" +
 // while serving plaintext would tell a browser to require HTTPS for a host
 // that cannot yet serve it, and the header is a no-op anyway when the
 // response that carried it did not arrive over HTTPS.
+// trustProxies says whose X-Forwarded-For / X-Real-IP Gin's ClientIP may
+// believe. Gin's own default is every peer (0.0.0.0/0 and ::/0), which makes
+// the address on every audit row, on last sign-in and in the sign-in throttle a
+// header any caller can write. Nothing is trusted unless the operator names the
+// proxy in front (KUBEMG_TRUSTED_PROXIES, checked at boot by
+// config.ParseTrustedProxies). A list that still fails here leaves nothing
+// trusted rather than everything.
+func trustProxies(router *gin.Engine, proxies []string, logger *slog.Logger) {
+	if len(proxies) == 0 {
+		proxies = nil
+	}
+	if err := router.SetTrustedProxies(proxies); err != nil {
+		if logger != nil {
+			logger.Error("trusted proxy list refused; trusting none", slog.String("error", err.Error()))
+		}
+		_ = router.SetTrustedProxies(nil)
+	}
+}
+
 // requestSource stamps the caller's address and user agent onto the request
 // context, so whatever this request ends up recording can say where it came
 // from without every handler having to pass it along.
 //
 // The address is Gin's `ClientIP`, which resolves `X-Forwarded-For` /
-// `X-Real-IP` only for proxies the engine has been told to trust — the default
-// being none, so behind an untrusted hop this records the hop rather than a
-// header anybody could have written. An audit column holding a spoofable value
+// `X-Real-IP` only for proxies the engine has been told to trust — none unless
+// KUBEMG_TRUSTED_PROXIES names some (see trustProxies), so behind an untrusted
+// hop this records the hop rather than a header anybody could have written. An audit column holding a spoofable value
 // presented as fact is worse than one holding the load balancer's address.
 func requestSource() gin.HandlerFunc {
 	return func(c *gin.Context) {

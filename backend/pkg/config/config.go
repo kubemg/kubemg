@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -60,6 +61,11 @@ type Config struct {
 	SANamespace string
 	// AllowedOrigins are the browser origins allowed to call the API.
 	AllowedOrigins []string
+	// TrustedProxies are the peers (IPs or CIDRs) whose X-Forwarded-For and
+	// X-Real-IP are believed. Empty, the default, believes nobody's: the address
+	// on every audit row, on last sign-in and in the sign-in throttle is the
+	// connecting peer. See ParseTrustedProxies.
+	TrustedProxies []string
 	// PublicURL is the address agents and operators reach this server on. It is
 	// baked into every generated install command, so it has to be the outside
 	// view of the bastion rather than its listen address.
@@ -229,6 +235,7 @@ func Load() Config {
 			"CORS_ALLOWED_ORIGINS",
 			[]string{"http://localhost:5173", "http://127.0.0.1:5173"},
 		),
+		TrustedProxies: envList("KUBEMG_TRUSTED_PROXIES", nil),
 		PublicURL:            strings.TrimRight(env("KUBEMG_PUBLIC_URL", "http://localhost:8080"), "/"),
 		AgentImage:           env("KUBEMG_AGENT_IMAGE", agentpkg.DefaultImage),
 		AgentNamespace:       env("KUBEMG_AGENT_NAMESPACE", agentpkg.DefaultNamespace),
@@ -288,6 +295,22 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// ParseTrustedProxies checks every KUBEMG_TRUSTED_PROXIES entry is an IP or a
+// CIDR. It is checked at boot rather than left to the router, which would
+// otherwise have to choose between trusting nothing (and recording the proxy's
+// address on every row without saying why) and failing on the first request.
+func ParseTrustedProxies(entries []string) error {
+	for _, entry := range entries {
+		if net.ParseIP(entry) != nil {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(entry); err != nil {
+			return fmt.Errorf("KUBEMG_TRUSTED_PROXIES: %q is neither an IP address nor a CIDR", entry)
+		}
+	}
+	return nil
 }
 
 // envList reads a comma-separated environment variable.

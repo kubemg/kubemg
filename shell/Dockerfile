@@ -41,7 +41,7 @@ ARG KUBECTL_VERSION=v1.37.1
 ARG GO_IMAGE=golang:1.26.9-alpine
 ARG XNET_VERSION=v0.60.0
 ARG BUSYBOX_IMAGE=busybox:1.37.0-musl
-ARG BASE_IMAGE=gcr.io/distroless/static-debian12:nonroot
+ARG BASE_IMAGE=gcr.io/distroless/static-debian13:nonroot
 
 # ---- the shell itself -------------------------------------------------------
 #
@@ -50,9 +50,8 @@ ARG BASE_IMAGE=gcr.io/distroless/static-debian12:nonroot
 # invoked from — those break the moment the tree is copied to a different path
 # in the final image.
 FROM ${BUSYBOX_IMAGE} AS busybox
-RUN mkdir -p /out/bin \
- && cp /bin/busybox /out/bin/busybox \
- && cd /out/bin \
+WORKDIR /out/bin
+RUN cp /bin/busybox ./busybox \
  && for applet in $(./busybox --list); do \
         [ "$applet" = "busybox" ] || ln -s busybox "$applet"; \
     done

@@ -1,0 +1,19 @@
+# Rego data for Trivy's KSV-0125 ("Restrict container images to trusted
+# registries"), loaded by pr-checks.yml through TRIVY_CONFIG_DATA.
+#
+# Without it the check trusts only ACR, ECR and GCR, so every manifest here that
+# pulls from the Kubernetes project's own registry is flagged. This is the set
+# this repository actually pulls from, declared rather than ignored: a manifest
+# that reaches for an image anywhere else is still a finding.
+#
+# The list *replaces* the check's defaults rather than extending them, and a
+# registry matches by suffix — so add one only for a registry the project has
+# chosen to depend on, never to quieten a single manifest.
+ksv0125:
+  trusted_registries:
+    # Kubernetes project images (pause, in the e2e fixtures).
+    - registry.k8s.io
+    # Distroless bases.
+    - gcr.io
+    # KubeMG's own published images.
+    - ghcr.io
