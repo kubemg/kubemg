@@ -8,9 +8,9 @@ Pin an explicit tag rather than tracking `latest`, in three places:
 
 | Image | Set with | Read when |
 |---|---|---|
-| Management plane (`ghcr.io/kubemg/kubemg:0.14.1`) | `KUBEMG_IMAGE`/`KUBEMG_VERSION` in Compose, or the Deployment's `image:` in Kubernetes | The server starts |
-| Agent (`ghcr.io/kubemg/kubemg-agent:0.14.1`) | `KUBEMG_AGENT_IMAGE` | A package is rendered. Changing it affects *future* installs, not agents already running. |
-| Browser shell (`ghcr.io/kubemg/kubemg-shell:0.14.1`) | `KUBEMG_SHELL_IMAGE` | A shell is *started*. Changing it affects the next shell, not one already open. |
+| Management plane (`ghcr.io/kubemg/kubemg:0.14.2`) | `KUBEMG_IMAGE`/`KUBEMG_VERSION` in Compose, or the Deployment's `image:` in Kubernetes | The server starts |
+| Agent (`ghcr.io/kubemg/kubemg-agent:0.14.2`) | `KUBEMG_AGENT_IMAGE` | A package is rendered. Changing it affects *future* installs, not agents already running. |
+| Browser shell (`ghcr.io/kubemg/kubemg-shell:0.14.2`) | `KUBEMG_SHELL_IMAGE` | A shell is *started*. Changing it affects the next shell, not one already open. |
 
 All three are published as multi-arch (amd64 and arm64) images on a `v*` tag, after a vulnerability scan gate.
 
@@ -84,6 +84,11 @@ A release that asks something beyond pulling the image is listed here.
     It also adds the [capacity heatmap](../clusters/capacity.md#heatmap), with placement, QoS and the pods using more than they reserved, and a notice before a write to an object [something else manages](../clusters/actions.md#something-else-manages-the-object). The list of pods using more than they reserved reads `pods.metrics.k8s.io`, which a metrics-server install grants to the built-in `view` role. Where a cluster refuses it, the page says so and shows everything else.
 
     The user guide was reorganised: the upgrading pages are now this one page, and the first-cluster pages are one [Quickstart](../getting-started/quickstart.md). A link into a removed page still works on the 0.13.0 docs.
+- **0.14.2**, from 0.14.1: no schema step, the agent's roles and the tunnel protocol are unchanged.
+    - **Behind an ingress or a load balancer, set [`KUBEMG_TRUSTED_PROXIES`](environment.md#client-addresses-behind-a-proxy)** (Helm: `trustedProxies`) to its address range. `X-Forwarded-For` is no longer believed from every peer, so until the proxy is named the audit trail's `source_addr` and an account's last sign-in address record the proxy, and every caller shares one address for the new sign-in limit.
+    - **Repeated failed passwords are [slowed down](../access/users-and-groups.md#repeated-failed-passwords-are-slowed-down)**: a locked sign-in answers `429` with `Retry-After`. Nothing to configure, and every lock runs out on its own.
+    - **Alarm channel headers are a credential now.** With `KUBEMG_SECRET_KEY` set they are encrypted in place at the first boot, and `GET /api/v1/alarms/channels` returns `header_names` instead of `headers`. A script that read the header values back must stop doing so. Rolling back to 0.14.1 after that boot leaves those channels with headers 0.14.1 cannot read: re-enter them there.
+    - **Re-apply every agent's install package** when convenient. The server, agent and shell images moved to the `distroless/static-debian13` base. Nothing stops working in the meantime.
 
 An install that runs from a clone of the repository has one more thing to get right: see [Upgrading a git checkout](#upgrading-a-git-checkout).
 
@@ -98,7 +103,7 @@ A rollback does **not** undo:
 
 ## Documentation versioning
 
-This manual is versioned against release tags. An install running `0.14.1` matches the `0.14.1` docs; check the version selector.
+This manual is versioned against release tags. An install running `0.14.2` matches the `0.14.2` docs; check the version selector.
 
 ## Upgrading to 0.11.0
 
