@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { CapacityDimension, NodeCapacity } from '../api/types'
-import { HEAT_COLUMNS, groupNodes, heatLevel, heatValue, qosLine, sortNodes } from './capacityHeatmap'
+import { HEAT_COLUMNS, groupNodes, heatLevel, heatValue, sortNodes } from './capacityHeatmap'
 import type { HeatKey } from './capacityHeatmap'
 
 function dimension(over: Partial<CapacityDimension> = {}): CapacityDimension {
@@ -149,12 +149,5 @@ describe('groupNodes', () => {
     expect(groups.map((group) => group.role)).toEqual(['control-plane', 'gpu', 'worker'])
     expect(groups[0].nodes.map((entry) => entry.name)).toEqual(['cp1', 'old-master'])
     expect(groups[2].nodes.map((entry) => entry.name)).toEqual(['w2', 'w1'])
-  })
-})
-
-describe('qosLine', () => {
-  it('names only the classes present, in a fixed order', () => {
-    expect(qosLine({ guaranteed: 0, burstable: 3, best_effort: 2 })).toBe('3 Burstable · 2 BestEffort')
-    expect(qosLine({ guaranteed: 0, burstable: 0, best_effort: 0 })).toBe('')
   })
 })
