@@ -6,9 +6,10 @@ import {
   groupNodes,
   heatLevel,
   heatValue,
-  qosLine,
   sortNodes,
 } from '../lib/capacityHeatmap'
+import { qosSegments } from '../lib/capacityView'
+import { SegmentBar } from './CapacityVisuals'
 import type { HeatColumn, HeatLevel, HeatSort } from '../lib/capacityHeatmap'
 import { formatCPU, formatMemory } from '../lib/units'
 
@@ -217,8 +218,8 @@ export function CapacityHeatmap({
                         <span className="text-faint">not placeable</span>
                       )}
                     </td>
-                    <td className="px-2 py-1.5 whitespace-nowrap text-muted">
-                      {qosLine(node.qos) || <span className="text-faint">—</span>}
+                    <td className="w-28 px-2 py-1.5">
+                      <SegmentBar label="QoS" segments={qosSegments(node.qos)} compact />
                     </td>
                   </tr>
                 ))}
@@ -228,10 +229,12 @@ export function CapacityHeatmap({
         </table>
       </div>
 
-      {/* The legend states the thresholds in words rather than leaving the
-          colours to explain themselves: a shade is only as good as the line
-          it stands for. */}
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-muted">
+      {/* The thresholds are the legend's tooltip: a shade is only as good as
+          the line it stands for, but the line need not be read every visit. */}
+      <div
+        className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-muted"
+        title="Warning lines: reserved and slots 90%, memory in use 90%, CPU limits 200%, memory limits 100%. CPU in use has none — every pod still gets the CPU it requested."
+      >
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden="true" className="inline-flex overflow-hidden rounded-chip border border-line-soft">
             <span className="size-3" />
@@ -239,7 +242,7 @@ export function CapacityHeatmap({
             <span className="size-3 bg-heat-2" />
             <span className="size-3 bg-heat-3" />
           </span>
-          denser toward the warning line
+          toward the line
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden="true" className="size-3 rounded-chip bg-heat-warn" />
@@ -249,9 +252,13 @@ export function CapacityHeatmap({
           <span aria-hidden="true" className="size-3 rounded-chip bg-heat-danger" />
           exhausted
         </span>
-        <span className="text-faint">
-          Warning lines: reserved and slots 90%, memory in use 90%, CPU limits 200%, memory limits
-          100%. CPU in use has none — every pod still gets the CPU it requested.
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden="true" className="inline-flex gap-1">
+            <span className="size-2 rounded-full bg-chart-1" />
+            <span className="size-2 rounded-full bg-chart-2" />
+            <span className="size-2 rounded-full bg-chart-3" />
+          </span>
+          QoS: Guaranteed · Burstable · BestEffort
         </span>
       </div>
     </div>
