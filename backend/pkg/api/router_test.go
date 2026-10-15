@@ -70,6 +70,9 @@ type fakeStore struct {
 	appTemplates map[string]*db.AppTemplate
 	// consoles holds the external console links, keyed the same way.
 	consoles map[uint]map[string]db.ClusterConsole
+	// costRates holds each cluster's unit prices; costRatesErr fails every read.
+	costRates    map[uint]db.ClusterCostRates
+	costRatesErr error
 	// hiddenCRDs is each cluster's sidebar curation: the resources an admin
 	// took off the list, keyed plural.group.
 	hiddenCRDs map[uint][]string
@@ -134,6 +137,7 @@ func newFakeStore() *fakeStore {
 		helmCharts:   map[uint][]db.HelmChart{},
 		appTemplates: map[string]*db.AppTemplate{},
 		consoles:     map[uint]map[string]db.ClusterConsole{},
+		costRates:    map[uint]db.ClusterCostRates{},
 		hiddenCRDs:   map[uint][]string{},
 		providers:    map[uint]*db.SSOProviderConfig{},
 		mappings:     map[uint]*db.SSOGroupMapping{},
@@ -407,6 +411,7 @@ func (f *fakeStore) DeleteCluster(_ context.Context, id uint) error {
 	for _, grants := range f.access {
 		delete(grants, id)
 	}
+	delete(f.costRates, id)
 	return nil
 }
 
@@ -1048,6 +1053,31 @@ func (f *fakeStore) DeleteClusterConsole(_ context.Context, clusterID uint, kind
 		return db.ErrNotFound
 	}
 	delete(f.consoles[clusterID], kind)
+	return nil
+}
+
+func (f *fakeStore) ClusterCostRates(_ context.Context, clusterID uint) (*db.ClusterCostRates, error) {
+	if f.costRatesErr != nil {
+		return nil, f.costRatesErr
+	}
+	rates, ok := f.costRates[clusterID]
+	if !ok {
+		return nil, db.ErrNotFound
+	}
+	return &rates, nil
+}
+
+func (f *fakeStore) PutClusterCostRates(_ context.Context, rates *db.ClusterCostRates) error {
+	rates.UpdatedAt = time.Now()
+	f.costRates[rates.ClusterID] = *rates
+	return nil
+}
+
+func (f *fakeStore) DeleteClusterCostRates(_ context.Context, clusterID uint) error {
+	if _, ok := f.costRates[clusterID]; !ok {
+		return db.ErrNotFound
+	}
+	delete(f.costRates, clusterID)
 	return nil
 }
 

@@ -1,12 +1,19 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { completeWaste, type ClusterWaste, type WasteWorkload } from '../api/waste'
-import { WorkloadSheet, WorkloadsSection } from './Waste'
+import { CostRatesSheet } from '../components/CostRatesSheet'
+import { ReservedSection, WorkloadSheet, WorkloadsSection } from './Waste'
+
+const putClusterCostRates = vi.fn()
+vi.mock('../api/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api/client')>()),
+  putClusterCostRates: (...args: unknown[]) => putClusterCostRates(...args),
+}))
 
 /*
  * The page's one reading that needs history must say when it has none, and a
@@ -127,5 +134,111 @@ describe('the workload sheet', () => {
       <WorkloadSheet workload={{ ...workload, rollout: true }} report={report({})} onClose={() => {}} />,
     )
     expect(screen.getByText(/a rollout is in progress/)).toBeTruthy()
+  })
+})
+
+const reserved = {
+  pods: 3,
+  cpu: 3000,
+  memory: 2560 * MI,
+  unscheduled: 1,
+  namespaces_total: 1,
+  namespaces: [
+    {
+      namespace: 'shop',
+      pods: 3,
+      cpu: 3000,
+      memory: 2560 * MI,
+      workloads_total: 1,
+      workloads: [{ kind: 'Deployment', name: 'web', pods: 3, cpu: 3000, memory: 2560 * MI }],
+    },
+  ],
+}
+
+function reservedSection(data: ClusterWaste, isAdmin: boolean, onSetRates = () => {}) {
+  return render(
+    <ReservedSection
+      report={data}
+      busy={false}
+      isAdmin={isAdmin}
+      onOpen={() => {}}
+      onSetRates={onSetRates}
+    />,
+  )
+}
+
+describe('the reserved section', () => {
+  it('answers in cores and bytes without rates, and offers an admin the rates', () => {
+    const onSetRates = vi.fn()
+    reservedSection(report({ reserved }), true, onSetRates)
+    expect(screen.getByText('shop')).toBeTruthy()
+    expect(screen.queryByText('Per month')).toBeNull()
+    expect(screen.getByText(/No rates are set for this cluster/)).toBeTruthy()
+    expect(screen.getByText(/1 pod is waiting for a node/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Set rates/ }))
+    expect(onSetRates).toHaveBeenCalled()
+  })
+
+  it('tells a non-admin who sets the rates rather than offering a button', () => {
+    reservedSection(report({ reserved }), false)
+    expect(screen.queryByRole('button', { name: /Set rates/ })).toBeNull()
+    expect(screen.getByText(/An administrator can set them/)).toBeTruthy()
+  })
+
+  it('prices each namespace when the cluster has rates', () => {
+    const priced = {
+      ...reserved,
+      monthly: 1204.4,
+      namespaces: [{ ...reserved.namespaces[0], monthly: 1204.4 }],
+    }
+    const { container } = reservedSection(
+      report({
+        reserved: priced,
+        cost: {
+          currency: 'USD',
+          rates: { currency: 'USD', cpu_core_hour: 0.04, memory_gib_hour: 0.005 },
+          hours_per_month: 730,
+        },
+      }),
+      true,
+    )
+    expect(screen.getByText('Per month')).toBeTruthy()
+    expect(container.textContent).toMatch(/1,204/)
+    expect(screen.queryByText(/No rates are set/)).toBeNull()
+  })
+})
+
+describe('the rates sheet', () => {
+  it('refuses CPU without memory before anything is sent', () => {
+    putClusterCostRates.mockReset()
+    render(
+      <CostRatesSheet clusterId={4} clusterName="edge" rates={null} onClose={() => {}} onSaved={() => {}} />,
+    )
+    fireEvent.change(screen.getByLabelText('Currency'), { target: { value: 'usd' } })
+    fireEvent.change(screen.getByLabelText('CPU, per core-hour'), { target: { value: '0.04' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save rates' }))
+    expect(screen.getByText(/Needed: a compute price is both CPU and memory/)).toBeTruthy()
+    expect(putClusterCostRates).not.toHaveBeenCalled()
+  })
+
+  it('sends an empty optional rate as unpriced, never as zero', async () => {
+    putClusterCostRates.mockReset()
+    putClusterCostRates.mockResolvedValue({})
+    const onSaved = vi.fn()
+    render(
+      <CostRatesSheet clusterId={4} clusterName="edge" rates={null} onClose={() => {}} onSaved={onSaved} />,
+    )
+    fireEvent.change(screen.getByLabelText('Currency'), { target: { value: 'eur' } })
+    fireEvent.change(screen.getByLabelText('CPU, per core-hour'), { target: { value: '0,04' } })
+    fireEvent.change(screen.getByLabelText('Memory, per GiB-hour'), { target: { value: '0.005' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save rates' }))
+    await vi.waitFor(() => expect(onSaved).toHaveBeenCalled())
+    expect(putClusterCostRates).toHaveBeenCalledWith(4, {
+      currency: 'EUR',
+      cpu_core_hour: 0.04,
+      memory_gib_hour: 0.005,
+      storage_gib_month: undefined,
+      load_balancer_hour: undefined,
+    })
   })
 })

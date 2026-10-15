@@ -73,8 +73,8 @@ function clusterViewTargets(cluster: Cluster): CommandTarget[] {
     })
     views.push({
       id: `cluster-${cluster.id}-waste`,
-      label: `${cluster.name} — Waste`,
-      hint: 'Cluster · Waste',
+      label: `${cluster.name} — Cost & waste`,
+      hint: 'Cluster · Cost & waste',
       to: clusterPageHref(cluster.id, 'waste'),
       cluster,
     })

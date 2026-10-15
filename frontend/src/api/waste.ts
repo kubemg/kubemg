@@ -6,7 +6,8 @@
  * recommendation for a workload too young to size. The page draws absent as a
  * dash with the reason beside it, and a default filled in here would turn that
  * into "measured, and nothing" — which is exactly the wrong claim on a page
- * whose subject is how much is unused.
+ * whose subject is how much is unused. Money follows the same rule: a figure
+ * is present only where the cluster has a rate for it.
  */
 
 export type WasteSpan = '1d' | '7d' | '14d' | '30d'
@@ -45,6 +46,8 @@ export interface WasteWorkload {
   rollout?: boolean
   containers: WasteContainer[]
   reclaimable: WasteAmount
+  /** What the reclaimable capacity costs a month at the cluster's rates. */
+  monthly?: number
 }
 
 export type WasteVolumeState = 'unmounted' | 'released' | 'available'
@@ -62,6 +65,7 @@ export interface WasteVolume {
   statefulset?: string
   scaled_down?: boolean
   created_at: string
+  monthly?: number
 }
 
 export interface WasteLoadBalancer {
@@ -70,6 +74,7 @@ export interface WasteLoadBalancer {
   addresses: string[]
   state: 'no-ready-endpoints' | 'no-selector'
   created_at: string
+  monthly?: number
 }
 
 export interface WasteSummary {
@@ -80,6 +85,63 @@ export interface WasteSummary {
   workloads_checked: number
   workloads_short_history: number
   workloads_unmeasured: number
+  /** Present only where the cluster has rates. */
+  monthly?: WasteMonthly
+}
+
+export type UnpricedCategory = 'storage' | 'load_balancers'
+
+export interface WasteMonthly {
+  reclaimable: number
+  unused_storage?: number
+  idle_load_balancers?: number
+  /** What every priced category adds up to. */
+  total: number
+  /** Categories with something in them and no rate, which the total leaves out. */
+  unpriced: UnpricedCategory[]
+}
+
+/** A cluster's unit prices, as an admin entered them. */
+export interface CostRates {
+  currency: string
+  cpu_core_hour: number
+  memory_gib_hour: number
+  storage_gib_month?: number
+  load_balancer_hour?: number
+  updated_at?: string
+}
+
+export interface ReservedWorkload {
+  kind: string
+  name: string
+  pods: number
+  /** Millicores and bytes, as the scheduler counts them. */
+  cpu: number
+  memory: number
+  monthly?: number
+}
+
+export interface ReservedNamespace {
+  namespace: string
+  pods: number
+  cpu: number
+  memory: number
+  monthly?: number
+  workloads: ReservedWorkload[]
+  /** Exact, where `workloads` is capped. */
+  workloads_total: number
+}
+
+/** What the placed pods reserve. Answered with or without rates or history. */
+export interface Reserved {
+  pods: number
+  cpu: number
+  memory: number
+  monthly?: number
+  namespaces: ReservedNamespace[]
+  namespaces_total: number
+  /** Pods waiting for a node, which reserve nothing yet. */
+  unscheduled: number
 }
 
 export interface ClusterWaste {
@@ -99,6 +161,11 @@ export interface ClusterWaste {
   load_balancers_available: boolean
   load_balancers_reason?: string
   summary: WasteSummary
+  reserved: Reserved
+  /** Present only where the cluster has rates. */
+  cost?: { currency: string; rates: CostRates; hours_per_month: number }
+  /** Why nothing is priced, where that is not simply "no rates set". */
+  cost_reason?: string
   /** The PromQL asked, so an empty answer can be diagnosed. */
   query?: { cpu: string; memory: string; history: string }
   truncated?: boolean
@@ -140,7 +207,28 @@ export function completeWaste(data: Partial<ClusterWaste>): ClusterWaste {
     })),
     load_balancers_available: data.load_balancers_available ?? false,
     load_balancers_reason: data.load_balancers_reason,
-    summary: { ...EMPTY_SUMMARY, ...data.summary },
+    summary: {
+      ...EMPTY_SUMMARY,
+      ...data.summary,
+      monthly: data.summary?.monthly
+        ? { ...data.summary.monthly, unpriced: data.summary.monthly.unpriced ?? [] }
+        : undefined,
+    },
+    reserved: {
+      pods: data.reserved?.pods ?? 0,
+      cpu: data.reserved?.cpu ?? 0,
+      memory: data.reserved?.memory ?? 0,
+      monthly: data.reserved?.monthly,
+      namespaces: (data.reserved?.namespaces ?? []).map((namespace) => ({
+        ...namespace,
+        workloads: namespace.workloads ?? [],
+        workloads_total: namespace.workloads_total ?? namespace.workloads?.length ?? 0,
+      })),
+      namespaces_total: data.reserved?.namespaces_total ?? data.reserved?.namespaces?.length ?? 0,
+      unscheduled: data.reserved?.unscheduled ?? 0,
+    },
+    cost: data.cost,
+    cost_reason: data.cost_reason,
     query: data.query,
     truncated: data.truncated,
   }

@@ -102,7 +102,7 @@ const PAGE_ROWS: readonly { page: ClusterPage; label: string; icon: typeof Gauge
   { page: 'events', label: 'Events', icon: Siren },
   { page: 'alerts', label: 'Alerts', icon: BellRing },
   { page: 'capacity', label: 'Capacity', icon: Cpu },
-  { page: 'waste', label: 'Waste', icon: Recycle },
+  { page: 'waste', label: 'Cost & waste', icon: Recycle },
   { page: 'security', label: 'Security', icon: ShieldAlert },
   { page: 'audit', label: 'Audit trail', icon: ScrollText },
   // The shell is deliberately absent: it is not a page somebody browses to, it

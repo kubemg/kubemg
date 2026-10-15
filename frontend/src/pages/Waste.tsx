@@ -1,20 +1,23 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { Cpu, HardDrive, MemoryStick, Network, Recycle, RefreshCw } from 'lucide-react'
+import { Coins, Cpu, HardDrive, MemoryStick, Network, Recycle, RefreshCw } from 'lucide-react'
 import { errorMessage, fetchClusterWaste } from '../api/client'
 import {
   WASTE_SPANS,
   type ClusterWaste,
+  type ReservedNamespace,
   type WasteContainer,
   type WasteDimension,
   type WasteSpan,
   type WasteWorkload,
 } from '../api/waste'
 import { AppShell } from '../components/AppShell'
+import { CostRatesSheet } from '../components/CostRatesSheet'
 import {
   Age,
   Button,
   CodeBlock,
+  DetailList,
   Disclosure,
   EmptyState,
   Notice,
@@ -35,17 +38,22 @@ import { formatCPU, formatMemory } from '../lib/units'
 import {
   BALANCER_STATE_LABEL,
   VOLUME_STATE_LABEL,
+  formatMoney,
+  rateLines,
   rightsizingCommand,
   rightsizingPatch,
   sinceWindow,
   volumeExplanation,
+  wasteCostSentence,
 } from '../lib/waste'
 import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
 
 /**
- * What a cluster reserves and does not use.
+ * What a cluster reserves, what that costs, and what it does not use.
  *
+ * **Reserved** comes first: every placed pod's requests, by namespace and
+ * workload — exact, and answered with or without history. Then the waste.
  * Capacity says a node is mostly reserved and half idle; this says whose
  * reservation it is. Three readings, each answerable on its own:
  *
@@ -57,9 +65,10 @@ import { useClusters } from '../state/clusters-context'
  *
  * **It recommends and never writes.** The change is shown as a patch for the
  * operator to apply where the manifest is kept; a button here would be undone
- * by the next sync of any workload a GitOps tool manages. **There is no money
- * on the page**: reclaimable capacity is cores and bytes, because a price is a
- * property of somebody's contract, not of the cluster.
+ * by the next sync of any workload a GitOps tool manages. **Money appears only
+ * at the cluster's own rates**, set by an admin: a price is a property of
+ * somebody's contract, not of the cluster, so without rates the page speaks in
+ * cores and bytes, and a category without its rate is left out by name.
  *
  * Not live: a 30-day history read is the most expensive question KubeMG asks a
  * metrics backend, so it is asked when the page opens or Refresh is pressed,
@@ -269,6 +278,7 @@ export function WorkloadsSection({
   onOpen: (workload: WasteWorkload) => void
 }) {
   const sized = report?.workloads_available ?? false
+  const currency = report?.cost?.currency
   return (
     <section className="card min-w-0 overflow-hidden" aria-labelledby="waste-workloads">
       <div className="border-b border-line-soft px-5 pt-4 pb-3.5">
@@ -325,6 +335,7 @@ export function WorkloadsSection({
                 <Th className="w-[12%]">Pods</Th>
                 <Th className="w-[16%]">CPU to give back</Th>
                 <Th className="w-[16%]">Memory to give back</Th>
+                {currency ? <Th className="w-[14%]">Per month</Th> : null}
               </tr>
             </thead>
             <tbody>
@@ -372,6 +383,11 @@ export function WorkloadsSection({
                       <span className="text-faint">—</span>
                     )}
                   </Td>
+                  {currency ? (
+                    <Td className="text-[12.5px]">
+                      <Money amount={workload.monthly} currency={currency} />
+                    </Td>
+                  ) : null}
                 </Row>
               ))}
             </tbody>
@@ -388,6 +404,211 @@ export function WorkloadsSection({
   )
 }
 
+/** Money is the server's figure or a dash: an unpriced row is never a zero. */
+function Money({ amount, currency }: { amount: number | undefined; currency: string }) {
+  if (amount === undefined) {
+    return (
+      <span className="text-faint" title="No rate for this">
+        —
+      </span>
+    )
+  }
+  return <span className="font-data tabular-nums">{formatMoney(amount, currency)}</span>
+}
+
+export function ReservedSheet({
+  namespace,
+  currency,
+  onClose,
+}: {
+  namespace: ReservedNamespace
+  currency: string | undefined
+  onClose: () => void
+}) {
+  return (
+    <Sheet title={namespace.namespace} eyebrow="Namespace · reserved" onClose={onClose} width="lg">
+      <div className="flex flex-col gap-4">
+        <p className="text-[13px] leading-relaxed text-muted">
+          {namespace.pods} {namespace.pods === 1 ? 'pod' : 'pods'} placed, reserving{' '}
+          {formatCPU(namespace.cpu)} and {formatMemory(namespace.memory)}
+          {currency && namespace.monthly !== undefined
+            ? `, about ${formatMoney(namespace.monthly, currency)} a month at this cluster’s rates`
+            : ''}
+          . A bare pod is listed by its own name.
+        </p>
+        <div className="card min-w-0 overflow-hidden">
+          <Table>
+            <thead>
+              <tr>
+                <Th className="w-[40%]">Workload</Th>
+                <Th>Pods</Th>
+                <Th>CPU</Th>
+                <Th>Memory</Th>
+                {currency ? <Th>Per month</Th> : null}
+              </tr>
+            </thead>
+            <tbody>
+              {namespace.workloads.map((workload) => (
+                <Row key={`${workload.kind}/${workload.name}`}>
+                  <Td className="truncate">
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="truncate font-data text-[13px] font-semibold text-fg">
+                        {workload.name}
+                      </span>
+                      <span className="text-[11.5px] text-faint">{workload.kind}</span>
+                    </span>
+                  </Td>
+                  <Td className="font-data text-[12.5px] text-muted tabular-nums">{workload.pods}</Td>
+                  <Td className="font-data text-[12.5px] tabular-nums">{formatCPU(workload.cpu)}</Td>
+                  <Td className="font-data text-[12.5px] tabular-nums">
+                    {formatMemory(workload.memory)}
+                  </Td>
+                  {currency ? (
+                    <Td className="text-[12.5px]">
+                      <Money amount={workload.monthly} currency={currency} />
+                    </Td>
+                  ) : null}
+                </Row>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+        {namespace.workloads_total > namespace.workloads.length ? (
+          <p className="text-[12.5px] text-muted">
+            Showing the {namespace.workloads.length} that reserve the most of{' '}
+            {namespace.workloads_total}; the namespace’s total counts them all.
+          </p>
+        ) : null}
+      </div>
+    </Sheet>
+  )
+}
+
+/**
+ * ReservedSection is what the cluster's placed pods reserve, by namespace —
+ * the figure a node-billed cluster pays for. It needs no history and no
+ * rates; with rates, each row is priced.
+ */
+export function ReservedSection({
+  report,
+  busy,
+  isAdmin,
+  onOpen,
+  onSetRates,
+}: {
+  report: ClusterWaste | null
+  busy: boolean
+  isAdmin: boolean
+  onOpen: (namespace: ReservedNamespace) => void
+  onSetRates: () => void
+}) {
+  const reserved = report?.reserved
+  const currency = report?.cost?.currency
+  return (
+    <section className="card min-w-0 overflow-hidden" aria-labelledby="cost-reserved">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
+        <div className="min-w-0">
+          <h2 id="cost-reserved" className="text-[16px] font-bold text-fg">
+            What it reserves
+          </h2>
+          <p className="mt-0.5 text-[13px] text-muted">
+            The requests of every placed pod, by namespace — what a node-billed cluster pays for
+          </p>
+        </div>
+        {reserved ? (
+          <div className="flex flex-col items-end gap-0.5 text-right">
+            {currency && reserved.monthly !== undefined ? (
+              <span className="font-data text-[18px] font-bold text-fg tabular-nums">
+                {formatMoney(reserved.monthly, currency)}
+                <span className="ml-1 text-[12.5px] font-normal text-muted">a month</span>
+              </span>
+            ) : null}
+            <span className="font-data text-[12.5px] text-muted tabular-nums">
+              {formatCPU(reserved.cpu)} · {formatMemory(reserved.memory)} · {reserved.pods}{' '}
+              {reserved.pods === 1 ? 'pod' : 'pods'}
+            </span>
+          </div>
+        ) : null}
+      </div>
+
+      {busy && !report ? <TableSkeleton columns={5} rows={4} label="Reading requests" /> : null}
+
+      {report && !currency ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line-soft px-5 py-3">
+          <p className="text-[12.5px] text-muted">
+            {report.cost_reason ??
+              (isAdmin
+                ? 'No rates are set for this cluster, so nothing is priced.'
+                : 'No rates are set for this cluster, so nothing is priced. An administrator can set them.')}
+          </p>
+          {isAdmin ? (
+            <Button size="sm" onClick={onSetRates}>
+              <Coins aria-hidden="true" className="size-4" />
+              Set rates
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {reserved && reserved.namespaces.length === 0 ? (
+        <p className="px-5 py-10 text-center text-[13px] text-muted">
+          No placed pod reserves anything you can see.
+        </p>
+      ) : null}
+
+      {reserved && reserved.namespaces.length > 0 ? (
+        <Table>
+          <thead>
+            <tr>
+              <Th className="w-[34%]">Namespace</Th>
+              <Th>Pods</Th>
+              <Th>CPU</Th>
+              <Th>Memory</Th>
+              {currency ? <Th>Per month</Th> : null}
+            </tr>
+          </thead>
+          <tbody>
+            {reserved.namespaces.map((namespace) => (
+              <Row key={namespace.namespace} onOpen={() => onOpen(namespace)}>
+                <Td className="truncate">
+                  <button
+                    type="button"
+                    className="truncate text-left font-data text-[13.5px] font-semibold text-fg transition-colors group-hover/row:text-accent"
+                    onClick={() => onOpen(namespace)}
+                  >
+                    {namespace.namespace}
+                  </button>
+                </Td>
+                <Td className="font-data text-[12.5px] text-muted tabular-nums">{namespace.pods}</Td>
+                <Td className="font-data text-[12.5px] tabular-nums">{formatCPU(namespace.cpu)}</Td>
+                <Td className="font-data text-[12.5px] tabular-nums">
+                  {formatMemory(namespace.memory)}
+                </Td>
+                {currency ? (
+                  <Td className="text-[12.5px]">
+                    <Money amount={namespace.monthly} currency={currency} />
+                  </Td>
+                ) : null}
+              </Row>
+            ))}
+          </tbody>
+        </Table>
+      ) : null}
+
+      {reserved && (reserved.namespaces_total > reserved.namespaces.length || reserved.unscheduled > 0) ? (
+        <p className="border-t border-line-soft px-5 py-3 text-[12.5px] text-muted">
+          {reserved.namespaces_total > reserved.namespaces.length
+            ? `Showing the ${reserved.namespaces.length} namespaces that reserve the most of ${reserved.namespaces_total}. `
+            : ''}
+          {reserved.unscheduled > 0
+            ? `${reserved.unscheduled} ${reserved.unscheduled === 1 ? 'pod is' : 'pods are'} waiting for a node and reserve nothing yet.`
+            : ''}
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
 export function Waste() {
   const params = useParams<{ id: string }>()
   const { user } = useAuth()
@@ -395,6 +616,8 @@ export function Waste() {
   const clusterId = Number(params.id)
   const [span, setSpan] = useState<WasteSpan>(storedSpan)
   const [open, setOpen] = useState<WasteWorkload | null>(null)
+  const [openNamespace, setOpenNamespace] = useState<ReservedNamespace | null>(null)
+  const [ratesOpen, setRatesOpen] = useState(false)
   const [methodologyOpen, setMethodologyOpen] = useDisclosureState(
     'waste.methodology',
     user?.id ?? null,
@@ -414,7 +637,7 @@ export function Waste() {
 
   if (!clustersLoading && !cluster) {
     return (
-      <AppShell title="Waste">
+      <AppShell title="Cost & waste">
         <div className="card">
           <EmptyState
             icon={<Recycle aria-hidden="true" className="size-5" />}
@@ -449,10 +672,13 @@ export function Waste() {
   const busy = report.loading || report.revalidating
   const summary = loaded?.summary
   const sized = loaded?.workloads_available ?? false
+  const isAdmin = user?.role === 'admin'
+  const currency = loaded?.cost?.currency
+  const costSentence = loaded ? wasteCostSentence(loaded) : null
 
   return (
     <AppShell
-      title="Waste"
+      title="Cost & waste"
       fullWidth
       actions={
         <div className="flex flex-wrap items-center gap-2">
@@ -465,6 +691,12 @@ export function Waste() {
             }}
             options={WASTE_SPANS.map((value) => ({ value, label: value }))}
           />
+          {isAdmin ? (
+            <Button onClick={() => setRatesOpen(true)} disabled={!loaded}>
+              <Coins aria-hidden="true" className="size-4" />
+              {loaded?.cost ? 'Rates' : 'Set rates'}
+            </Button>
+          ) : null}
           <Button onClick={() => void report.refresh()} disabled={busy}>
             <RefreshCw aria-hidden="true" className={`size-4 ${busy ? 'animate-spin' : ''}`} />
             Refresh
@@ -483,6 +715,18 @@ export function Waste() {
             This cluster is larger than one read collects, so the report covers part of it. A
             namespace-scoped view reads less at once.
           </Notice>
+        ) : null}
+
+        <ReservedSection
+          report={loaded ?? null}
+          busy={busy}
+          isAdmin={isAdmin}
+          onOpen={setOpenNamespace}
+          onSetRates={() => setRatesOpen(true)}
+        />
+
+        {costSentence ? (
+          <p className="px-1 text-[13.5px] leading-relaxed text-fg">{costSentence}</p>
         ) : null}
 
         {summary ? (
@@ -505,7 +749,11 @@ export function Waste() {
               icon={HardDrive}
               label="Storage nothing uses"
               value={formatMemory(summary.unused_storage)}
-              sub={`${loaded?.volumes.length ?? 0} volumes`}
+              sub={
+                currency && summary.monthly?.unused_storage !== undefined
+                  ? `${loaded?.volumes.length ?? 0} volumes · ${formatMoney(summary.monthly.unused_storage, currency)} a month`
+                  : `${loaded?.volumes.length ?? 0} volumes`
+              }
             />
             <StatTile
               icon={Network}
@@ -513,6 +761,11 @@ export function Waste() {
               value={loaded?.load_balancers_available ? summary.idle_load_balancers : '—'}
               dim={!loaded?.load_balancers_available}
               tone={summary.idle_load_balancers > 0 ? 'warn' : 'neutral'}
+              sub={
+                currency && summary.monthly?.idle_load_balancers !== undefined
+                  ? `${formatMoney(summary.monthly.idle_load_balancers, currency)} a month`
+                  : undefined
+              }
             />
           </div>
         ) : null}
@@ -521,7 +774,7 @@ export function Waste() {
           report={loaded ?? null}
           span={span}
           busy={busy}
-          isAdmin={user?.role === 'admin'}
+          isAdmin={isAdmin}
           clusterId={clusterId}
           onOpen={setOpen}
         />
@@ -554,6 +807,9 @@ export function Waste() {
                   <Th className="w-[10%]">Size</Th>
                   <Th className="hidden lg:table-cell w-[14%]">Storage class</Th>
                   <Th>Why it is here</Th>
+                  {currency && loaded.cost?.rates.storage_gib_month !== undefined ? (
+                    <Th className="w-[11%]">Per month</Th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -583,6 +839,11 @@ export function Waste() {
                       {volume.storage_class || '—'}
                     </Td>
                     <Td className="text-[12.5px] text-muted">{volumeExplanation(volume)}</Td>
+                    {currency && loaded.cost?.rates.storage_gib_month !== undefined ? (
+                      <Td className="text-[12.5px]">
+                        <Money amount={volume.monthly} currency={currency} />
+                      </Td>
+                    ) : null}
                   </Row>
                 ))}
               </tbody>
@@ -617,6 +878,9 @@ export function Waste() {
                   <Th className="w-[18%]">State</Th>
                   <Th>Addresses</Th>
                   <Th className="w-[12%]">Age</Th>
+                  {currency && loaded.cost?.rates.load_balancer_hour !== undefined ? (
+                    <Th className="w-[12%]">Per month</Th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -643,6 +907,11 @@ export function Waste() {
                     <Td className="text-[12.5px] text-muted">
                       <Age iso={balancer.created_at} />
                     </Td>
+                    {currency && loaded.cost?.rates.load_balancer_hour !== undefined ? (
+                      <Td className="text-[12.5px]">
+                        <Money amount={balancer.monthly} currency={currency} />
+                      </Td>
+                    ) : null}
                   </Row>
                 ))}
               </tbody>
@@ -665,8 +934,16 @@ export function Waste() {
               and a workload is listed only when it would give back at least 100m or 128 MiB.
               A workload with less than a day of history — counted from its oldest pod’s start or the
               datasource’s first sample of it, whichever is later — is not sized. Jobs, CronJobs and bare pods
-              are left out. Nothing here estimates a cost or changes the cluster.
+              are left out. Nothing here changes the cluster.
             </p>
+            <p className="text-[12px] leading-relaxed text-muted">
+              What a pod reserves is the scheduler’s own sum — its containers and sidecars, the largest
+              init step, and the runtime’s overhead — counted only once it is placed on a node. A
+              figure in money is that reservation times this cluster’s rates over a 730-hour month,
+              and appears only where an administrator has set them. Usage above a request is not
+              charged: the reservation is what fills a node.
+            </p>
+            {loaded?.cost ? <DetailList rows={rateLines(loaded.cost.rates)} columns={2} /> : null}
             {loaded?.query ? (
               <>
                 <CodeBlock label="CPU query" value={loaded.query.cpu} wrap />
@@ -680,6 +957,22 @@ export function Waste() {
 
       {open && loaded ? (
         <WorkloadSheet workload={open} report={loaded} onClose={() => setOpen(null)} />
+      ) : null}
+      {openNamespace ? (
+        <ReservedSheet
+          namespace={openNamespace}
+          currency={currency}
+          onClose={() => setOpenNamespace(null)}
+        />
+      ) : null}
+      {ratesOpen && cluster ? (
+        <CostRatesSheet
+          clusterId={cluster.id}
+          clusterName={cluster.name}
+          rates={loaded?.cost?.rates ?? null}
+          onClose={() => setRatesOpen(false)}
+          onSaved={() => void report.refresh()}
+        />
       ) : null}
     </AppShell>
   )
