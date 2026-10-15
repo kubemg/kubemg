@@ -77,11 +77,16 @@ export function Avatar({ name, className }: { name: string; className?: string }
 export function Pill({
   tone,
   dot = true,
+  icon,
   children,
   title,
 }: {
   tone: Tone
   dot?: boolean
+  /** A glyph in place of the dot. It sits beside the label rather than inside
+      it: the label is the part that truncates, and an svg is `display: block`
+      under preflight, so one passed as a child wrapped onto a line of its own. */
+  icon?: ReactNode
   children: ReactNode
   title?: string
 }) {
@@ -90,7 +95,11 @@ export function Pill({
       title={title}
       className={`inline-flex min-w-0 items-center gap-1.5 rounded-full border px-2 py-px text-[12px] font-medium whitespace-nowrap ${TONE_CHIP[tone]} ${TONE_EDGE[tone]}`}
     >
-      {dot ? (
+      {icon ? (
+        <span aria-hidden="true" className="flex shrink-0">
+          {icon}
+        </span>
+      ) : dot ? (
         <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${TONE_DOT[tone]}`} />
       ) : null}
       {/* A pill shrinks and ellipsises rather than growing past whatever holds
