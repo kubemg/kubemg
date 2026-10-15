@@ -75,7 +75,7 @@ describe('the traffic map', () => {
 
   it('says what is broken in words, beside the drawing', () => {
     draw()
-    expect(screen.getByText('1 hop is broken on this map.', { exact: false })).toBeTruthy()
+    expect(screen.getByText('1 hop is broken')).toBeTruthy()
     expect(screen.getAllByText('its selector app=api matches no pods').length).toBeGreaterThan(0)
   })
 

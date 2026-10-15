@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { BellOff, Pencil, Trash2 } from 'lucide-react'
+import { BellOff, CircleCheck, Pencil, Trash2 } from 'lucide-react'
 import {
   createSilence,
   deleteAlarm,
@@ -87,22 +87,26 @@ export function ObjectAlertsPanel({
     <Panel
       title="Alerts"
       eyebrow={firing.length > 0 ? `${firing.filter((a) => a.state === 'firing').length} firing` : 'Alerting'}
-      description="What the cluster's Alertmanager is firing for this object, and the alarms kubemg wrote for it."
-      bodyClassName="flex flex-col gap-4 px-5 py-4"
+      bodyClassName="grid gap-4 px-5 py-4 lg:grid-cols-2"
     >
       <section aria-label="Firing" className="flex flex-col gap-2">
         <h4 className="label">Firing now</h4>
         {noAlertmanager ? (
-          <p className="text-[12.5px] text-muted">
-            No Alertmanager is registered for this cluster, so what is firing cannot be read here. An
-            administrator connects one under the cluster&rsquo;s datasources.
+          <p
+            className="text-[12.5px] text-muted"
+            title="An administrator connects one under the cluster's datasources."
+          >
+            No Alertmanager is registered for this cluster.
           </p>
         ) : alerts.error ? (
           <Notice tone="warn">{errorMessage(alerts.error, 'Could not read the Alertmanager.')}</Notice>
         ) : alerts.loading ? (
           <p className="text-[12.5px] text-muted">Reading the Alertmanager…</p>
         ) : firing.length === 0 ? (
-          <p className="text-[12.5px] text-muted">Nothing is firing for this object.</p>
+          <p className="inline-flex items-center gap-1.5 text-[12.5px] text-ok">
+            <CircleCheck aria-hidden="true" className="size-4" />
+            Nothing is firing
+          </p>
         ) : (
           <ul className="flex flex-col divide-y divide-line-soft rounded-control border border-line-soft">
             {firing.map((alert) => (
@@ -133,9 +137,11 @@ export function ObjectAlertsPanel({
         ) : alarms.loading ? (
           <p className="text-[12.5px] text-muted">Reading the alarms…</p>
         ) : own.length === 0 ? (
-          <p className="text-[12.5px] text-muted">
-            None yet. <span className="text-fg">Create alarm</span> at the top of this drawer writes one for this{' '}
-            {target.label.toLowerCase()}.
+          <p
+            className="text-[12.5px] text-muted"
+            title={`Create alarm at the top of this drawer writes one for this ${target.label.toLowerCase()}.`}
+          >
+            None yet
           </p>
         ) : (
           <ul className="flex flex-col divide-y divide-line-soft rounded-control border border-line-soft">
