@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { completeWaste, type WasteWorkload } from '../api/waste'
 import {
   cpuQuantity,
+  formatMoney,
   memoryQuantity,
+  parseRate,
+  rateLines,
   rightsizingCommand,
   rightsizingPatch,
   sinceWindow,
   volumeExplanation,
+  wasteCostSentence,
 } from './waste'
 
 const MI = 1024 * 1024
@@ -118,6 +122,82 @@ describe('completeWaste', () => {
     expect(container.memory.over).toBe(false)
     expect(container.memory.observed).toBeUndefined()
     expect(container.cpu.request).toBeUndefined()
+  })
+
+  it('leaves money absent where the server sent none', () => {
+    const complete = completeWaste({})
+    expect(complete.cost).toBeUndefined()
+    expect(complete.summary.monthly).toBeUndefined()
+    expect(complete.reserved.namespaces).toEqual([])
+    expect(complete.reserved.monthly).toBeUndefined()
+  })
+})
+
+describe('money', () => {
+  it('writes cents below 100 and whole units above', () => {
+    expect(formatMoney(12.5, 'USD', 'en-US')).toBe('$12.50')
+    expect(formatMoney(1204.37, 'USD', 'en-US')).toBe('$1,204')
+    expect(formatMoney(0, 'EUR', 'en-US')).toBe('€0.00')
+  })
+
+  it('keeps a rate’s fraction of a cent', () => {
+    const lines = rateLines(
+      { currency: 'USD', cpu_core_hour: 0.0316, memory_gib_hour: 0.004237, load_balancer_hour: 0 },
+      'en-US',
+    )
+    expect(lines.map((line) => line.value)).toEqual([
+      '$0.0316 per core-hour',
+      '$0.004237 per GiB-hour',
+      '$0.00 per hour',
+    ])
+  })
+
+  it('reads a rate field: empty is unpriced, a comma is a decimal point, anything else is refused', () => {
+    expect(parseRate('')).toBeUndefined()
+    expect(parseRate(' 0,04 ')).toBe(0.04)
+    expect(parseRate('0')).toBe(0)
+    expect(parseRate('-1')).toBeNull()
+    expect(parseRate('1e3')).toBeNull()
+    expect(parseRate('$5')).toBeNull()
+  })
+})
+
+describe('wasteCostSentence', () => {
+  const priced = (monthly: Partial<NonNullable<ReturnType<typeof completeWaste>['summary']['monthly']>>) =>
+    completeWaste({
+      workloads_available: true,
+      cost: { currency: 'USD', rates: { currency: 'USD', cpu_core_hour: 1, memory_gib_hour: 1 }, hours_per_month: 730 },
+      summary: {
+        reclaimable_cpu: 0,
+        reclaimable_memory: 0,
+        unused_storage: 0,
+        idle_load_balancers: 0,
+        workloads_checked: 0,
+        workloads_short_history: 0,
+        workloads_unmeasured: 0,
+        monthly: { reclaimable: 40, total: 40, unpriced: [], ...monthly },
+      },
+    })
+
+  it('is absent without rates', () => {
+    expect(wasteCostSentence(completeWaste({}))).toBeNull()
+  })
+
+  it('breaks the total down and names what it leaves out', () => {
+    const sentence = wasteCostSentence(
+      priced({ idle_load_balancers: 18.25, total: 58.25, unpriced: ['storage'] }),
+      'en-US',
+    )
+    expect(sentence).toBe(
+      'At this cluster’s rates, what this page finds unused costs about $58.25 a month: ' +
+        '$40.00 in over-asked requests, $18.25 in load balancers. ' +
+        'Storage has no rate, so it is not counted.',
+    )
+  })
+
+  it('says over-asked requests are missing without history', () => {
+    const report = { ...priced({ reclaimable: 0, total: 0 }), workloads_available: false }
+    expect(wasteCostSentence(report, 'en-US')).toMatch(/need usage history, so they are not counted/)
   })
 })
 

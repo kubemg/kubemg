@@ -42,9 +42,12 @@ import (
  * needs the cluster's metrics datasource, and without one it says so — volumes
  * and load balancers are read from the cluster alone and are answered anyway.
  *
- * **No money.** Reclaimable capacity is cores and bytes. A price is a property
- * of a contract, not of the cluster, and a figure in dollars built on a vendor's
- * list price would be wrong for nearly everyone who read it.
+ * **Money only at the operator's rates.** Reclaimable capacity is cores and
+ * bytes; a figure in a currency appears only where an admin has set the
+ * cluster's rates (cost_rates.go), because a price is a property of a contract,
+ * not of the cluster, and a vendor's list price would be wrong for nearly
+ * everyone who read it. The same pods also answer what the cluster reserves,
+ * per namespace and workload (cost.go) — with or without rates or history.
  *
  * Every cluster read rides the same impersonated, audited tunnel as the lists;
  * the history read is the observability path's, scoped by the same grant. A
@@ -145,6 +148,8 @@ type wasteWorkload struct {
 	Rollout     bool             `json:"rollout,omitempty"`
 	Containers  []wasteContainer `json:"containers"`
 	Reclaimable wasteAmount      `json:"reclaimable"`
+	// Monthly is what the reclaimable capacity costs at the cluster's rates.
+	Monthly *float64 `json:"monthly,omitempty"`
 }
 
 type wasteVolume struct {
@@ -168,6 +173,7 @@ type wasteVolume struct {
 	StatefulSet string    `json:"statefulset,omitempty"`
 	ScaledDown  bool      `json:"scaled_down,omitempty"`
 	Created     time.Time `json:"created_at"`
+	Monthly     *float64  `json:"monthly,omitempty"`
 }
 
 type wasteLoadBalancer struct {
@@ -177,6 +183,7 @@ type wasteLoadBalancer struct {
 	// State is no-ready-endpoints or no-selector.
 	State   string    `json:"state"`
 	Created time.Time `json:"created_at"`
+	Monthly *float64  `json:"monthly,omitempty"`
 }
 
 type wasteSummary struct {
@@ -189,6 +196,8 @@ type wasteSummary struct {
 	WorkloadsChecked      int `json:"workloads_checked"`
 	WorkloadsShortHistory int `json:"workloads_short_history"`
 	WorkloadsUnmeasured   int `json:"workloads_unmeasured"`
+	// Monthly is present only where the cluster has rates.
+	Monthly *wasteMonthly `json:"monthly,omitempty"`
 }
 
 type wasteReport struct {
@@ -197,6 +206,7 @@ type wasteReport struct {
 	Volumes        []wasteVolume       `json:"volumes"`
 	LoadBalancers  []wasteLoadBalancer `json:"load_balancers"`
 	Summary        wasteSummary        `json:"summary"`
+	Reserved       reservedReport      `json:"reserved"`
 }
 
 /* --------------------------------------------------------------- the reads -- */
@@ -210,6 +220,8 @@ type wastePod struct {
 		OwnerReferences   []ownerRef        `json:"ownerReferences"`
 	} `json:"metadata"`
 	Spec struct {
+		NodeName       string                  `json:"nodeName"`
+		Overhead       map[string]string       `json:"overhead"`
 		Containers     []capacityContainer     `json:"containers"`
 		InitContainers []capacityInitContainer `json:"initContainers"`
 		Volumes        []struct {
@@ -319,6 +331,8 @@ type wasteInputs struct {
 	slicesRead bool
 	// usage is nil when there is no history to size from.
 	usage map[observability.UsageKey]observability.UsageProfile
+	// rates is nil when the cluster has none set: nothing is priced.
+	rates *db.ClusterCostRates
 }
 
 /* ------------------------------------------------------------- the handler -- */
@@ -410,6 +424,8 @@ func (s *server) clusterWaste(c *gin.Context) {
 	if usage != nil {
 		in.usage = usage.Profiles
 	}
+	rates, ratesReason := s.wasteRates(c, cluster.ID)
+	in.rates = rates
 
 	report := buildWaste(in)
 
@@ -423,6 +439,14 @@ func (s *server) clusterWaste(c *gin.Context) {
 		"load_balancers":           report.LoadBalancers,
 		"load_balancers_available": in.slicesRead,
 		"summary":                  report.Summary,
+		"reserved":                 report.Reserved,
+	}
+	if rates != nil {
+		payload["cost"] = gin.H{
+			"currency": rates.Currency, "rates": rates, "hours_per_month": hoursPerMonth,
+		}
+	} else if ratesReason != "" {
+		payload["cost_reason"] = ratesReason
 	}
 	if usage == nil {
 		payload["workloads_reason"] = usageReason
@@ -446,6 +470,19 @@ func (s *server) clusterWaste(c *gin.Context) {
 const wasteScopedVolumesReason = "PersistentVolumes are cluster-scoped, and your access to this " +
 	"cluster is limited to some namespaces, so released and unbound volumes are not shown. " +
 	"Unmounted claims in your namespaces are."
+
+// wasteRates loads the cluster's rates. None set is no money and no reason; a
+// store that cannot answer is no money with one — never a failed report.
+func (s *server) wasteRates(c *gin.Context, clusterID uint) (*db.ClusterCostRates, string) {
+	rates, err := s.store.ClusterCostRates(c.Request.Context(), clusterID)
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		return nil, ""
+	case err != nil:
+		return nil, "The cluster's rates could not be loaded, so nothing is priced."
+	}
+	return rates, ""
+}
 
 // wasteUsage reads the history the workload reading is sized from. Every way
 // it can be missing is an answer with a reason rather than a failed page:
@@ -506,6 +543,9 @@ func buildWaste(in wasteInputs) wasteReport {
 		report.LoadBalancers = idleLoadBalancers(in)
 		report.Summary.IdleLoadBalancers = len(report.LoadBalancers)
 	}
+
+	report.Reserved = buildReserved(in.pods, in.rates)
+	priceWaste(&report, in.rates)
 	return report
 }
 

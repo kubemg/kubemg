@@ -1,4 +1,12 @@
-import type { WasteContainer, WasteLoadBalancer, WasteVolume, WasteWorkload } from '../api/waste'
+import type {
+  ClusterWaste,
+  CostRates,
+  UnpricedCategory,
+  WasteContainer,
+  WasteLoadBalancer,
+  WasteVolume,
+  WasteWorkload,
+} from '../api/waste'
 
 /**
  * What the waste page derives from the report: the YAML that applies a
@@ -111,4 +119,116 @@ export const BALANCER_STATE_LABEL: Record<WasteLoadBalancer['state'], string> = 
 export function sinceWindow(workload: WasteWorkload, windowStart: string): boolean {
   if (!windowStart) return false
   return Date.parse(workload.since) > Date.parse(windowStart)
+}
+
+/*
+ * Money. Every figure is the server's — requests times the cluster's rates —
+ * and the page only writes it down. A figure the server did not send is not
+ * priced, and is never drawn as a zero.
+ */
+
+/**
+ * formatMoney writes a monthly figure: cents below 100, whole units above,
+ * because nobody reading "€1,204.37 a month" of an estimate acts on the 37.
+ */
+export function formatMoney(amount: number, currency: string, locale?: string): string {
+  const digits = Math.abs(amount) >= 100 ? 0 : 2
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }).format(amount)
+  } catch {
+    // A code Intl does not know is still the operator's: write it beside the figure.
+    return `${amount.toFixed(digits)} ${currency}`
+  }
+}
+
+/** formatRate writes a unit price, which is often a fraction of a cent. */
+export function formatRate(amount: number, currency: string, locale?: string): string {
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 6,
+    }).format(amount)
+  } catch {
+    return `${amount} ${currency}`
+  }
+}
+
+/** The rate lines as the page states them, absent rates left out. */
+export function rateLines(rates: CostRates, locale?: string): { term: string; value: string }[] {
+  const lines = [
+    { term: 'CPU', value: `${formatRate(rates.cpu_core_hour, rates.currency, locale)} per core-hour` },
+    {
+      term: 'Memory',
+      value: `${formatRate(rates.memory_gib_hour, rates.currency, locale)} per GiB-hour`,
+    },
+  ]
+  if (rates.storage_gib_month !== undefined) {
+    lines.push({
+      term: 'Storage',
+      value: `${formatRate(rates.storage_gib_month, rates.currency, locale)} per GiB-month`,
+    })
+  }
+  if (rates.load_balancer_hour !== undefined) {
+    lines.push({
+      term: 'Load balancer',
+      value: `${formatRate(rates.load_balancer_hour, rates.currency, locale)} per hour`,
+    })
+  }
+  return lines
+}
+
+export const UNPRICED_LABEL: Record<UnpricedCategory, string> = {
+  storage: 'storage',
+  load_balancers: 'load balancers',
+}
+
+/**
+ * wasteCostSentence states what the page finds unused costs a month, and what
+ * the figure leaves out. Null when nothing is priced.
+ */
+export function wasteCostSentence(report: ClusterWaste, locale?: string): string | null {
+  const monthly = report.summary.monthly
+  const currency = report.cost?.currency
+  if (!monthly || !currency) return null
+  const money = (amount: number) => formatMoney(amount, currency, locale)
+
+  const parts: string[] = []
+  if (report.workloads_available) parts.push(`${money(monthly.reclaimable)} in over-asked requests`)
+  if (monthly.unused_storage !== undefined) parts.push(`${money(monthly.unused_storage)} in storage`)
+  if (monthly.idle_load_balancers !== undefined) {
+    parts.push(`${money(monthly.idle_load_balancers)} in load balancers`)
+  }
+  let sentence = `At this cluster’s rates, what this page finds unused costs about ${money(monthly.total)} a month`
+  sentence += parts.length > 1 ? `: ${parts.join(', ')}.` : '.'
+  if (monthly.unpriced.length > 0) {
+    const names = monthly.unpriced.map((category) => UNPRICED_LABEL[category])
+    sentence += ` ${capitalise(names.join(' and '))} ${names.length === 1 ? 'has' : 'have'} no rate, so ${names.length === 1 ? 'it is' : 'they are'} not counted.`
+  }
+  if (!report.workloads_available) {
+    sentence += ' Over-asked requests need usage history, so they are not counted either.'
+  }
+  return sentence
+}
+
+function capitalise(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/**
+ * parseRate reads one rate field: empty is "not priced", anything else must
+ * be a plain non-negative number. A comma is taken as a decimal point, since
+ * half the world writes 0,04.
+ */
+export function parseRate(text: string): number | undefined | null {
+  const trimmed = text.trim().replace(',', '.')
+  if (trimmed === '') return undefined
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return null
+  return Number(trimmed)
 }

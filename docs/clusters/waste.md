@@ -1,14 +1,25 @@
-# Waste
+# Cost & waste
 
-The waste page (`/clusters/:id/waste`) shows what a cluster reserves and does not use. The [capacity page](capacity.md) can tell you a node is mostly reserved and half idle. This page tells you whose reservation that is, and what to change. It looks at three things:
+The cost & waste page (`/clusters/:id/waste`) shows what a cluster reserves, what that costs, and what it reserves without using. The [capacity page](capacity.md) can tell you a node is mostly reserved and half idle. This page tells you whose reservation that is, and what to change. It has four sections:
 
 | Section | What it lists | Needs |
 |---|---|---|
+| **What it reserves** | The requests of every pod placed on a node, by namespace and workload | The cluster alone |
 | **Over-requested workloads** | Deployments, StatefulSets and DaemonSets whose containers request well past what they used | A [metrics datasource](../observability/datasources.md) |
 | **Storage nothing uses** | Claims no running pod mounts, and volumes left released or never bound | The cluster alone |
 | **Idle load balancers** | `type: LoadBalancer` Services with no ready endpoint behind them | The cluster alone |
 
-The page **recommends and never writes**. It has **no money** on it: what can be given back is stated in cores and bytes, because a price depends on your contract, not on the cluster.
+The page **recommends and never writes**. Amounts of money appear only once an administrator has [set the cluster's rates](#rates). Until then, everything is stated in cores and bytes, because a price depends on your contract, not on the cluster.
+
+## What it reserves
+
+Every pod that is placed on a node reserves its requests there, whether it uses them or not. On a cluster billed by the node, that reservation is what you pay for: it decides how many nodes the cluster needs. This section totals it per namespace. Open a namespace to see its workloads. A Deployment's pods are counted under the Deployment, a Job's under the Job, and a bare pod under its own name.
+
+A pod's reservation is the same sum the scheduler makes: its containers and native sidecars, or its largest init step if that is bigger, plus the runtime's pod overhead. The capacity page uses the same sum, so the two pages agree. A pod still waiting for a node reserves nothing yet. It is counted below the table and left out of the totals.
+
+With rates set, each namespace and workload shows what its reservation costs a month (730 hours). Usage above a request is not charged. A pod that uses more than it asked for is borrowing capacity that someone else reserved, and charging it would make the figure change every time the page is opened.
+
+The list shows the 100 namespaces that reserve the most and, inside each, the 25 workloads that reserve the most. Totals always count everything.
 
 ## Over-requested workloads
 
@@ -65,8 +76,28 @@ A `type: LoadBalancer` Service is idle when none of its EndpointSlices has a rea
 
 If the cluster refuses the EndpointSlice list, no load balancer is called idle, and the page shows the cluster's own reason.
 
+## Rates
+
+An administrator sets a cluster's rates with **Set rates** (or **Rates**, once they are set) at the top of the page:
+
+| Rate | Unit | Required |
+|---|---|---|
+| Currency | A three-letter ISO 4217 code, such as `USD` or `EUR`. Nothing is converted. | Yes |
+| CPU | Per core, per hour | Yes |
+| Memory | Per GiB, per hour | Yes |
+| Storage | Per GiB of provisioned volume, per month | No |
+| Load balancer | Per load balancer, per hour | No |
+
+CPU and memory are set together. A compute price covers both, and pricing only one would make the figure look complete when it is not. Leaving storage or load balancer empty means **not priced**: those rows show a dash, and the page says the total leaves them out. `0` means **costs nothing**, which is a real answer for an on-premises load balancer.
+
+The rates are yours, not a provider's list price. Take them from your bill or contract. Where a provider prices only whole nodes, split the node's hourly price between its cores and its memory. Providers that price the two separately charge about as much for one core as for 8 to 9 GiB of memory. For example, taking 8, a node at $0.192 an hour with 4 cores and 16 GiB works out to $0.032 per core-hour and $0.004 per GiB-hour: 4 × 0.032 + 16 × 0.004 = 0.192.
+
+Each cluster has its own rates, since clusters in different regions, clouds or data centres do not cost the same. Anyone granted the cluster can see the rates under **Where these numbers come from**, so every figure can be checked against the rate behind it. Only an administrator can change or remove them.
+
+With rates set, the waste sections are priced too. A sentence above them sums up what the page finds unused each month, broken down into over-requested workloads, storage and load balancers, and names anything left out. Over-requested workloads are priced by what they would give back. Storage is priced by the claim's or volume's size. Each idle load balancer is priced at the load balancer rate.
+
 ## Access
 
-The page is open to anyone granted the cluster. Every read goes through the agent tunnel as you, so the cluster's own permissions apply and each read lands in the [audit trail](../audit/trail.md). A namespace-scoped grant is answered over its own namespaces, including the usage history. A grant covering more than 25 namespaces is asked to narrow down.
+The page is open to anyone granted the cluster, and so are its rates. Setting the rates is administrative. Every read goes through the agent tunnel as you, so the cluster's own permissions apply and each read lands in the [audit trail](../audit/trail.md). A namespace-scoped grant is answered over its own namespaces, including the usage history. A grant covering more than 25 namespaces is asked to narrow down.
 
-The page is not refreshed automatically. A 30-day history read is the most expensive question kubemg asks a metrics backend, so it runs when the page opens or when you press **Refresh**. **Where these numbers come from**, at the bottom of the page, shows the three queries that were asked: CPU, memory, and when each container's history starts.
+The page is not refreshed automatically. A 30-day history read is the most expensive question kubemg asks a metrics backend, so it runs when the page opens or when you press **Refresh**. **Where these numbers come from**, at the bottom of the page, shows the three queries that were asked (CPU, memory, and when each container's history starts) and the rates every amount was computed from.

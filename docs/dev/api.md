@@ -162,6 +162,9 @@ curl -sk -X POST https://localhost:8443/api/v1/clusters/3/kubeconfig/generate \
 | `GET /clusters/:id/consoles` | Session | `{consoles, datasource_uis, editable}`. |
 | `PUT /clusters/:id/consoles/:kind` | Admin | `kind` is `grafana`, `argocd` or `registry`. Body `{url, ref?}`; `400` on an invalid URL or one carrying userinfo (a credential in a stored link is refused, not stripped). |
 | `DELETE /clusters/:id/consoles/:kind` | Admin | `204`; `404` none registered. |
+| `GET /clusters/:id/cost-rates` | Session | `{rates, editable}`; `rates` is `null` when none are set. Readable by anyone granted the cluster. |
+| `PUT /clusters/:id/cost-rates` | Admin | Body `{currency, cpu_core_hour, memory_gib_hour, storage_gib_month?, load_balancer_hour?}`. `currency` is a three-letter ISO 4217 code (uppercased, never converted); CPU and memory are required together; every rate `0`–`1000000`. An absent optional rate is "not priced", `0` is "costs nothing". `400` names the field. Drops the cluster's read cache. |
+| `DELETE /clusters/:id/cost-rates` | Admin | `204`; `404` none set. |
 
 ## Helm repositories
 
@@ -254,7 +257,7 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | `GET /clusters/:id/metrics/pods` | Scoped like any other list. |
 | `GET /clusters/:id/metrics/pods/:pod` | |
 | `GET /clusters/:id/metrics/capacity` | Allocation (requests/limits) against allocatable, plus usage, per node: taints and `placeable`, `headroom`, `qos`, and `top_borrowers` from the per-pod Metrics API (`pod_usage_available`; a 403 there is reported, not fatal). `summary.placement` is the fragmentation reading. |
-| `GET /clusters/:id/metrics/waste?window=1d\|7d\|14d\|30d` | Reserved and not used. `workloads` (Deployments/StatefulSets/DaemonSets over-requesting by >1.5× the CPU p95 / memory peak from the metrics datasource, with `recommended` requests and `reclaimable`; absent datasource → `workloads_available: false` + `workloads_reason`, not an error), `volumes` (unmounted bound PVCs with StatefulSet attribution, Released/Available PVs — PVs not read for a scoped grant, `volumes_pv_reason`), `load_balancers` (no ready EndpointSlice endpoint; `load_balancers_available` false when the slices are refused). `query` carries the PromQL asked. Default window `7d`; anything else 400. Scoped grants read their own namespaces. |
+| `GET /clusters/:id/metrics/waste?window=1d\|7d\|14d\|30d` | Reserved and not used. `workloads` (Deployments/StatefulSets/DaemonSets over-requesting by >1.5× the CPU p95 / memory peak from the metrics datasource, with `recommended` requests and `reclaimable`; absent datasource → `workloads_available: false` + `workloads_reason`, not an error), `volumes` (unmounted bound PVCs with StatefulSet attribution, Released/Available PVs — PVs not read for a scoped grant, `volumes_pv_reason`), `load_balancers` (no ready EndpointSlice endpoint; `load_balancers_available` false when the slices are refused). `query` carries the PromQL asked. `reserved` totals every placed pod's requests (the scheduler's sum: sidecars, init peaks, overhead) per namespace and workload — 100 namespaces, 25 workloads each, counts exact, `unscheduled` pods left out — with or without a datasource. With rates set, `cost` `{currency, rates, hours_per_month: 730}` and a `monthly` figure on reserved rows, listed workloads, volumes (storage rate) and load balancers (LB rate), plus `summary.monthly {reclaimable, unused_storage?, idle_load_balancers?, total, unpriced}`; a category without its rate is absent and named in `unpriced`. A rates store error is `cost_reason`, never a failed report. Default window `7d`; anything else 400. Scoped grants read their own namespaces. |
 
 ## Machine accounts
 

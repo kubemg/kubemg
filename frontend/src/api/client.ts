@@ -164,7 +164,7 @@ import type {
   WorkloadRollbackResult,
 } from './types'
 import { completeCapacity } from './capacity'
-import { completeWaste, type ClusterWaste, type WasteSpan } from './waste'
+import { completeWaste, type ClusterWaste, type CostRates, type WasteSpan } from './waste'
 
 const TOKEN_KEY = 'kubemg.token'
 
@@ -2039,6 +2039,17 @@ export async function fetchClusterWaste(clusterId: number, span: WasteSpan): Pro
     params: { window: span },
   })
   return completeWaste(data)
+}
+
+/** Set a cluster's unit prices (admin). */
+export async function putClusterCostRates(clusterId: number, rates: CostRates): Promise<CostRates> {
+  const { data } = await http.put<{ rates: CostRates }>(`/clusters/${clusterId}/cost-rates`, rates)
+  return data.rates
+}
+
+/** Remove a cluster's unit prices (admin). */
+export async function deleteClusterCostRates(clusterId: number): Promise<void> {
+  await http.delete(`/clusters/${clusterId}/cost-rates`)
 }
 
 /**
