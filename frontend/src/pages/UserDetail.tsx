@@ -272,8 +272,7 @@ function Reach({ review }: { review: UserAccessReview }) {
                     : `${entry.namespaces.length} namespace${entry.namespaces.length === 1 ? '' : 's'}: ${entry.namespaces.join(', ')}`}
                 </span>
                 {entry.expires_at ? (
-                  <Pill tone="warn">
-                    <Timer aria-hidden="true" className="size-3" />
+                  <Pill tone="warn" icon={<Timer className="size-3" />}>
                     ends <Age iso={entry.expires_at} />
                   </Pill>
                 ) : null}

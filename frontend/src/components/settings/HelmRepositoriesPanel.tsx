@@ -193,16 +193,14 @@ export function HelmRepositoriesPanel() {
 function StatusPill({ repository }: { repository: HelmRepository }) {
   if (repository.status === 'ok') {
     return (
-      <Pill tone="ok" dot={false}>
-        <CheckCircle2 aria-hidden="true" className="size-3" />
+      <Pill tone="ok" icon={<CheckCircle2 className="size-3" />}>
         synced
       </Pill>
     )
   }
   if (repository.status === 'error') {
     return (
-      <Pill tone="bad" dot={false}>
-        <XCircle aria-hidden="true" className="size-3" />
+      <Pill tone="bad" icon={<XCircle className="size-3" />}>
         sync failed
       </Pill>
     )

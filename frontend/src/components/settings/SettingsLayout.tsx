@@ -58,7 +58,7 @@ export function SettingsLayout({
           {/* A page with no second column still has to carry this: it is the
               one thing on the settings surface that is about the install
               rather than about the page. */}
-          {aside ? null : <DeploymentAttention />}
+          {aside ? null : <DeploymentAttention className="max-w-5xl" />}
           {children}
         </div>
         {aside ? (
@@ -132,7 +132,7 @@ const SOURCE_COPY: Record<SettingSource, string> = {
  * settings page must not fail to render because the prompt could not be
  * resolved.
  */
-function DeploymentAttention() {
+function DeploymentAttention({ className = '' }: { className?: string }) {
   const [attention, setAttention] = useState(0)
 
   useEffect(() => {
@@ -152,7 +152,9 @@ function DeploymentAttention() {
   return (
     <Link
       to="/admin/settings/deployment"
-      className="flex items-start gap-2 rounded-card border border-warn/40 bg-warn-soft p-3 text-[12.5px] text-warn transition-colors hover:border-warn/70"
+      // An asideless page passes its panels' width, so the banner ends where the
+      // card below it does rather than running on to the window's edge.
+      className={`flex items-start gap-2 rounded-card border border-warn/40 bg-warn-soft p-3 text-[12.5px] text-warn transition-colors hover:border-warn/70 ${className}`}
     >
       <TriangleAlert aria-hidden="true" className="mt-px size-4 shrink-0" />
       <span>
