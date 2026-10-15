@@ -62,10 +62,15 @@ unsuppressible floor and in the alarm verb vocabulary.
 it is a breaking change that requires every agent to be upgraded, so it is a
 decision rather than a bump. What can be added without one is negotiated as a
 **capability** instead (`negotiateCapabilities`, `welcome.capabilities`) — see
-the agent page for `response-parts` and the two outbound queues. The tunnel's
-read loop joins `response_part` frames per request ID in a map only it touches
-(`assembly`), drops parts for a caller that already gave up, and turns a body
-past `maxResponseBody` into an agent error rather than a truncated answer.
+the agent page for `response-parts` and the two outbound queues. The tunnel
+files `response_part` frames on the waiting call itself (`pendingCall`), so a
+caller that gives up takes its parts with it (`forget`) — a body part-sent and
+never finished is not held for the life of the tunnel. A body past
+`maxResponseBody` becomes an agent error rather than a truncated answer, and
+parts across **all** pending calls share one `assemblyBudget` (128 MB: the
+agent's 16 concurrent calls at its 8 MB cap), so an agent holding a leaked
+token cannot part-fill every request in flight; the part that would cross it
+fails its own call, never the tunnel.
 
 ## Proxying a request
 
