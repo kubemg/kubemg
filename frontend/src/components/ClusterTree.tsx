@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import {
   Boxes,
+  ChartColumn,
   ChevronDown,
   Cpu,
   Database,
@@ -22,11 +23,17 @@ import {
   TriangleAlert,
   Waypoints,
 } from 'lucide-react'
-import { Link, NavLink, useSearchParams } from 'react-router'
+import { Link, NavLink, useLocation, useSearchParams } from 'react-router'
 import { fetchResourceCounts } from '../api/client'
 import type { Cluster, ResourceCount } from '../api/types'
 import type { ClusterPage } from '../lib/navigation'
-import { clusterPageHref, hasTunnel, pageNeedsTunnel, resourceHref } from '../lib/navigation'
+import {
+  clusterPageHref,
+  currentClusterSlot,
+  hasTunnel,
+  pageNeedsTunnel,
+  resourceHref,
+} from '../lib/navigation'
 import { useFavorites } from '../lib/favorites'
 import { queryKey, useCachedQuery } from '../lib/query'
 import type {
@@ -96,18 +103,29 @@ function startsCollapsed(id: CategoryId): boolean {
   )
 }
 
-/** A cluster's own pages, in the order the work reaches for them. */
-const PAGE_ROWS: readonly { page: ClusterPage; label: string; icon: typeof Gauge }[] = [
+type PageEntry = { page: ClusterPage; label: string; icon: typeof Gauge }
+
+/**
+ * A cluster's own pages, in the order the work reaches for them, split in two.
+ * The first are what somebody opens the cluster to look at — what it is and
+ * what is happening in it now. The second are reports: read deliberately, not
+ * scanned on the way past, so they fold into a section of their own that
+ * starts closed rather than lengthening the column every page shares.
+ */
+const PAGE_ROWS: readonly PageEntry[] = [
   { page: 'dashboard', label: 'Dashboard', icon: Gauge },
   { page: 'events', label: 'Events', icon: Siren },
   { page: 'alerts', label: 'Alerts', icon: BellRing },
+  // The shell is deliberately absent: it is not a page somebody browses to, it
+  // is what they reach for mid-question from whatever page raised the question.
+  // It lives as one icon in the header instead — see AppShell.
+]
+
+const INSIGHT_ROWS: readonly PageEntry[] = [
   { page: 'capacity', label: 'Capacity', icon: Cpu },
   { page: 'waste', label: 'Cost & waste', icon: Recycle },
   { page: 'security', label: 'Security', icon: ShieldAlert },
   { page: 'audit', label: 'Audit trail', icon: ScrollText },
-  // The shell is deliberately absent: it is not a page somebody browses to, it
-  // is what they reach for mid-question from whatever page raised the question.
-  // It lives as one icon in the header instead — see AppShell.
 ]
 
 type Row =
@@ -122,7 +140,7 @@ interface Group {
   rows: Row[]
 }
 
-function pageRow(entry: (typeof PAGE_ROWS)[number]): Row {
+function pageRow(entry: PageEntry): Row {
   return { kind: 'page', id: `page:${entry.page}`, label: entry.label, page: entry.page, icon: entry.icon }
 }
 
@@ -155,11 +173,12 @@ function favoriteRows(
  * The tree's groups: the cluster's own group first, then everything the cluster
  * turned out to have.
  *
- * The Cluster group is the five pages with the fixed inventory's own
- * cluster-scoped kinds threaded into it — Dashboard, Nodes, Namespaces, then
- * the three reads and the trail. Nodes and Namespaces are resource lists, but
- * nobody thinks of them as a category of their own next to Workloads: they are
- * how you look at the cluster.
+ * The Cluster group is the everyday pages with the fixed inventory's own
+ * cluster-scoped kinds threaded into it — Dashboard, Nodes, Namespaces, Events,
+ * Alerts. Nodes and Namespaces are resource lists, but nobody thinks of them as
+ * a category of their own next to Workloads: they are how you look at the
+ * cluster. The reports follow as Insights, closed until opened or until one of
+ * them is the page on screen.
  */
 function buildGroups(
   categories: ResourceCategory[],
@@ -184,6 +203,13 @@ function buildGroups(
       ? [{ id: 'favorites', label: 'Favorites', icon: Star, collapsed: false, rows: pinned }]
       : []),
     { id: 'cluster', label: 'Cluster', icon: Server, collapsed: false, rows: clusterRows },
+    {
+      id: 'insights',
+      label: 'Insights',
+      icon: ChartColumn,
+      collapsed: true,
+      rows: INSIGHT_ROWS.map(pageRow),
+    },
     ...rest.map((category) => ({
       id: category.id,
       label: category.label,
@@ -249,6 +275,17 @@ function countLabel(entry: ResourceCount | undefined): string | null {
   return entry.count.toLocaleString()
 }
 
+/**
+ * Whether a section holds what is on screen. A section that starts closed opens
+ * for it: the current row folded out of sight would leave nothing in the column
+ * saying where you are.
+ */
+function holdsSelection(group: Group, selected: ResourceKey | null, page: ClusterPage | null): boolean {
+  return group.rows.some((row) =>
+    row.kind === 'resource' ? row.item.key === selected : row.page === page,
+  )
+}
+
 /** Whether a row can be opened at all, which without a tunnel is most of them. */
 function rowIsLive(row: Row, live: boolean): boolean {
   if (live) return true
@@ -275,6 +312,7 @@ export function ClusterTree({
   selected: ResourceKey | null
 }) {
   const [searchParams] = useSearchParams()
+  const { pathname } = useLocation()
   const [filter, setFilter] = useState('')
   // Only what the operator has actually toggled; anything absent falls back to
   // the group's own default. Seeding this with the defaults instead would make
@@ -283,6 +321,8 @@ export function ClusterTree({
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   const live = hasTunnel(cluster)
+  const slot = currentClusterSlot(pathname, cluster.id)
+  const page = slot.kind === 'page' ? slot.page : null
   const needle = filter.trim().toLowerCase()
   // The namespace travels with the kind: someone working in `payments` stays in
   // it while moving from Pods to Services.
@@ -314,12 +354,10 @@ export function ClusterTree({
   const isOpen = useCallback(
     (group: Group) => {
       if (needle !== '') return true
-      const holdsSelection = group.rows.some(
-        (row) => row.kind === 'resource' && row.item.key === selected,
-      )
-      return !(collapsed[group.id] ?? (group.collapsed && !holdsSelection))
+      const holds = holdsSelection(group, selected, page)
+      return !(collapsed[group.id] ?? (group.collapsed && !holds))
     },
-    [collapsed, needle, selected],
+    [collapsed, needle, selected, page],
   )
 
   // The namespace travels in the address, and with none named the tree is asking
@@ -339,12 +377,10 @@ export function ClusterTree({
   const keys = useMemo(
     () =>
       countableKeys(groups, (group) => {
-        const holdsSelection = group.rows.some(
-          (row) => row.kind === 'resource' && row.item.key === selected,
-        )
-        return !(collapsed[group.id] ?? (group.collapsed && !holdsSelection))
+        const holds = holdsSelection(group, selected, page)
+        return !(collapsed[group.id] ?? (group.collapsed && !holds))
       }),
-    [groups, collapsed, selected],
+    [groups, collapsed, selected, page],
   )
 
   const counts = useCachedQuery<Record<string, ResourceCount>>(
@@ -394,11 +430,8 @@ export function ClusterTree({
 
       <nav aria-label="Cluster" className="min-h-0">
         {shown.map((group) => {
-          const holdsSelection = group.rows.some(
-            (row) => row.kind === 'resource' && row.item.key === selected,
-          )
           const stored = collapsed[group.id]
-          const shut = stored ?? (group.collapsed && !holdsSelection)
+          const shut = stored ?? (group.collapsed && !holdsSelection(group, selected, page))
           // A filter opens everything: a search that skipped a closed section
           // would be lying about what the cluster has.
           const open = isOpen(group)

@@ -9,6 +9,7 @@ The tree is a **fixed** inventory (namespaces, workloads, pods, services, ingres
 - **HTTPRoutes and VirtualServices** appear only when the cluster serves them, and get a proper hostname/gateway/rules table. Every other CRD gets a generic name/kind/age table.
 - **Other CRDs are grouped by API group family.** `kafka.strimzi.io` and `core.strimzi.io` both become *strimzi.io*. A family with **two or more** kinds gets its own section; a single-kind family lands in **Other**, at the bottom.
 - Discovered sections and **Other** **start collapsed**. A section holding your current selection opens anyway.
+- The cluster's own pages come first: **Cluster** (Dashboard, Nodes, Namespaces, Events, Alerts) is open, and the reports — Capacity, Cost & waste, Security, Audit trail — sit in **Insights** below it, which **starts collapsed** and opens when one of them is the page you are on.
 - An administrator can hide CRDs from the sidebar: see [Managing a cluster](managing.md#curating-which-crds-the-explore-sidebar-offers). Hiding is navigation only, never access control.
 
 While discovery is still running the sidebar waits. If it finds no CRDs, it falls back to Pods.
