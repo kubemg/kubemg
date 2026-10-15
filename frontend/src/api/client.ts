@@ -164,6 +164,7 @@ import type {
   WorkloadRollbackResult,
 } from './types'
 import { completeCapacity } from './capacity'
+import { completeWaste, type ClusterWaste, type WasteSpan } from './waste'
 
 const TOKEN_KEY = 'kubemg.token'
 
@@ -2026,6 +2027,18 @@ const EMPTY_USAGE = {
 export async function fetchClusterCapacity(clusterId: number): Promise<ClusterCapacity> {
   const { data } = await http.get<Partial<ClusterCapacity>>(`/clusters/${clusterId}/metrics/capacity`)
   return completeCapacity(data)
+}
+
+/**
+ * What the cluster reserves and does not use, over a window. Like capacity it
+ * is whole without history — `workloads_available` marks the missing reading,
+ * and volumes and load balancers are answered anyway.
+ */
+export async function fetchClusterWaste(clusterId: number, span: WasteSpan): Promise<ClusterWaste> {
+  const { data } = await http.get<Partial<ClusterWaste>>(`/clusters/${clusterId}/metrics/waste`, {
+    params: { window: span },
+  })
+  return completeWaste(data)
 }
 
 /**

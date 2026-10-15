@@ -26,7 +26,7 @@ export function hasTunnel(cluster: Cluster): boolean {
 
 /**
  * A page a cluster carries that is not one of its resource lists. Everything
- * else under `/clusters/:id/` is a resource key, which is why these six names
+ * else under `/clusters/:id/` is a resource key, which is why these seven names
  * are reserved: the resource route is a splat, so a kind called `capacity`
  * would otherwise be unreachable.
  *
@@ -35,13 +35,21 @@ export function hasTunnel(cluster: Cluster): boolean {
  * running while its operator navigates — and a URL for it would be a link that
  * promises a page and delivers a layer over whichever one you were on.
  */
-export type ClusterPage = 'dashboard' | 'events' | 'alerts' | 'capacity' | 'security' | 'audit'
+export type ClusterPage =
+  | 'dashboard'
+  | 'events'
+  | 'alerts'
+  | 'capacity'
+  | 'waste'
+  | 'security'
+  | 'audit'
 
 export const CLUSTER_PAGES: readonly ClusterPage[] = [
   'dashboard',
   'events',
   'alerts',
   'capacity',
+  'waste',
   'security',
   'audit',
 ]
@@ -49,10 +57,10 @@ export const CLUSTER_PAGES: readonly ClusterPage[] = [
 /**
  * The pages that read the cluster itself. Dashboard and the audit trail are
  * served from KubeMG's own records — the connection it holds, the calls it made
- * — so they survive an agent that has stopped dialling in. The other three are
- * reads through the tunnel and cannot.
+ * — so they survive an agent that has stopped dialling in. The others are reads
+ * through the tunnel and cannot.
  */
-const LIVE_PAGES: readonly ClusterPage[] = ['events', 'alerts', 'capacity', 'security']
+const LIVE_PAGES: readonly ClusterPage[] = ['events', 'alerts', 'capacity', 'waste', 'security']
 
 export function pageNeedsTunnel(page: ClusterPage): boolean {
   return LIVE_PAGES.includes(page)

@@ -1175,6 +1175,12 @@ func NewRouter(opts Options) *gin.Engine {
 			// nature, so a namespace-scoped grant is refused, exactly as it is
 			// on node metrics above.
 			metrics.GET("/capacity", s.clusterCapacity)
+			// Reserved and not used: over-requested workloads sized from the
+			// metrics datasource's history, unmounted or released storage, and
+			// load balancers with nothing behind them. It recommends and never
+			// writes. Unlike capacity, a scoped grant is answered over its own
+			// namespaces — every reading but PersistentVolumes is namespaced.
+			metrics.GET("/waste", s.clusterWaste)
 		}
 
 		// Identity and access management is an administrative surface only.

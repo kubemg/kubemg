@@ -254,6 +254,7 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | `GET /clusters/:id/metrics/pods` | Scoped like any other list. |
 | `GET /clusters/:id/metrics/pods/:pod` | |
 | `GET /clusters/:id/metrics/capacity` | Allocation (requests/limits) against allocatable, plus usage, per node: taints and `placeable`, `headroom`, `qos`, and `top_borrowers` from the per-pod Metrics API (`pod_usage_available`; a 403 there is reported, not fatal). `summary.placement` is the fragmentation reading. |
+| `GET /clusters/:id/metrics/waste?window=1d\|7d\|14d\|30d` | Reserved and not used. `workloads` (Deployments/StatefulSets/DaemonSets over-requesting by >1.5× the CPU p95 / memory peak from the metrics datasource, with `recommended` requests and `reclaimable`; absent datasource → `workloads_available: false` + `workloads_reason`, not an error), `volumes` (unmounted bound PVCs with StatefulSet attribution, Released/Available PVs — PVs not read for a scoped grant, `volumes_pv_reason`), `load_balancers` (no ready EndpointSlice endpoint; `load_balancers_available` false when the slices are refused). `query` carries the PromQL asked. Default window `7d`; anything else 400. Scoped grants read their own namespaces. |
 
 ## Machine accounts
 
