@@ -66,6 +66,43 @@ func TestCreateMachineAccountHoldsNoPasswordAndNoAdminRole(t *testing.T) {
 	}
 }
 
+// The list is what the console's account sheet re-reads after a grant, so the
+// grant has to come back on the account under the key the console reads. It
+// was once written as `service_accounts`, and the sheet saw no account at all:
+// the grant landed and the page never showed it.
+func TestMachineAccountListCarriesItsGrant(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	machine := env.store.addMachineAccount("jenkins")
+	cluster := env.store.addCluster("dev-eu", db.EnvDev)
+	token := env.tokenFor(t, admin)
+
+	rec := env.do(t, http.MethodPost, "/api/v1/permissions/assign", token, map[string]any{
+		"subject_type": "user",
+		"subject_id":   machine.ID,
+		"cluster_id":   cluster.ID,
+		"k8s_role":     db.K8sRoleEdit,
+		"namespaces":   []string{"payments"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("grant: expected %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	rec = env.do(t, http.MethodGet, "/api/v1/machine-accounts", token, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list: expected %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	accounts := decode[machineAccountListResponse](t, rec).MachineAccounts
+	if len(accounts) != 1 || accounts[0].Username != "jenkins" {
+		t.Fatalf("expected the one machine account under machine_accounts, got %s", rec.Body.String())
+	}
+	access := accounts[0].ClusterSummary
+	if len(access) != 1 || access[0].ClusterID != cluster.ID || access[0].K8sRole != db.K8sRoleEdit ||
+		len(access[0].Namespaces) != 1 || access[0].Namespaces[0] != "payments" {
+		t.Fatalf("expected the grant on the account, got %+v", access)
+	}
+}
+
 // A name that reaches the cluster as Impersonate-User has to be one a
 // RoleBinding can name, so it is validated rather than trimmed.
 func TestCreateMachineAccountRejectsAnUnusableName(t *testing.T) {
