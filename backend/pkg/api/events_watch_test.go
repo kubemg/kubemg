@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -309,4 +310,76 @@ func TestBufferedNarrowingMatchesTheSelector(t *testing.T) {
 	if matchesEventNarrowing(item, "", "", readScope{Namespaces: []string{"other"}}) {
 		t.Fatal("an event outside the scope must not match")
 	}
+}
+
+// The incident case: the first views of a cold cluster arrive together, and the
+// ring is already reading its events once for all of them. A read that waits is
+// served from the ring as soon as that list lands, instead of scanning the
+// cluster on its own alongside it.
+func TestAColdRingIsWaitedForUntilItsFirstListLands(t *testing.T) {
+	ring := newEventRing()
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		ring.markSynced()
+	}()
+
+	started := time.Now()
+	ring.awaitFirstSync(context.Background(), 5*time.Second)
+	if waited := time.Since(started); waited > 2*time.Second {
+		t.Fatalf("the wait outlived the sync by %s", waited)
+	}
+	if synced, _, _ := ring.state(); !synced {
+		t.Fatal("the ring should be readable once the wait returns")
+	}
+}
+
+// A first list slower than the wait gives up on it, and the read falls back to
+// its own pages rather than hanging the page.
+func TestAColdRingIsWaitedForNoLongerThanTheLimit(t *testing.T) {
+	ring := newEventRing()
+
+	started := time.Now()
+	ring.awaitFirstSync(context.Background(), 20*time.Millisecond)
+	if waited := time.Since(started); waited > 2*time.Second {
+		t.Fatalf("the wait ran %s past a 20ms limit", waited)
+	}
+	if synced, _, _ := ring.state(); synced {
+		t.Fatal("an unsynced ring must not read as synced after the wait")
+	}
+}
+
+// A cluster whose watch is refused settles the ring too. Every later read
+// returns at once and falls back — the wait is only ever paid while a first list
+// is genuinely in flight.
+func TestAFailedRingIsNotWaitedFor(t *testing.T) {
+	ring := newEventRing()
+	ring.markFailed(&fakeErr{})
+
+	started := time.Now()
+	ring.awaitFirstSync(context.Background(), time.Minute)
+	if waited := time.Since(started); waited > time.Second {
+		t.Fatalf("a settled ring made the read wait %s", waited)
+	}
+}
+
+// A caller that hangs up stops waiting with it.
+func TestTheWaitEndsWithTheCaller(t *testing.T) {
+	ring := newEventRing()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	started := time.Now()
+	ring.awaitFirstSync(ctx, time.Minute)
+	if waited := time.Since(started); waited > time.Second {
+		t.Fatalf("a cancelled caller waited %s", waited)
+	}
+}
+
+// The watch re-syncs every time it ends, so a ring is marked synced and failed
+// many times over its life. Only the first may close the channel.
+func TestARingSettlesOnceAcrossResyncs(t *testing.T) {
+	ring := newEventRing()
+	ring.markSynced()
+	ring.markFailed(&fakeErr{})
+	ring.markSynced()
 }

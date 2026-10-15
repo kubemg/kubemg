@@ -99,6 +99,15 @@ const (
 	// while. A watch that is never renewed accumulates state on the server, and
 	// re-listing periodically is how every controller bounds that.
 	eventWatchTimeout = 30 * time.Minute
+
+	// eventSyncWait is how long a timeline read waits for a cold ring's first
+	// list before falling back to reading pages itself. The first view of a
+	// cluster nobody has looked at lately starts the watch, and in an incident
+	// that view arrives with a dozen others: without the wait each of them read
+	// the cluster's events on its own, in the very seconds the ring was reading
+	// them once for all of them. It costs the first viewer little, because the
+	// fallback reads the same list the ring is reading.
+	eventSyncWait = 10 * time.Second
 )
 
 // bufferedEvent is one event as the ring holds it: the decoded object plus the
@@ -129,10 +138,15 @@ type eventRing struct {
 	syncedAt time.Time
 	// lastErr is why the watch is not running, if it is not.
 	lastErr error
+
+	// settled is closed once the first list has finished, either way. It is what
+	// a read arriving at a cold ring waits on; see eventSyncWait.
+	settled    chan struct{}
+	settleOnce sync.Once
 }
 
 func newEventRing() *eventRing {
-	return &eventRing{byUID: map[string]*bufferedEvent{}}
+	return &eventRing{byUID: map[string]*bufferedEvent{}, settled: make(chan struct{})}
 }
 
 // put files or replaces one event.
@@ -193,6 +207,7 @@ func (r *eventRing) markSynced() {
 	r.synced = true
 	r.syncedAt = time.Now()
 	r.lastErr = nil
+	r.settleOnce.Do(func() { close(r.settled) })
 }
 
 // markFailed records why the ring is not being kept up to date.
@@ -201,6 +216,26 @@ func (r *eventRing) markFailed(err error) {
 	defer r.mu.Unlock()
 	r.synced = false
 	r.lastErr = err
+	r.settleOnce.Do(func() { close(r.settled) })
+}
+
+// awaitFirstSync waits until the ring's first list has finished — synced or
+// failed — or until limit or ctx runs out, whichever is first. Once the first
+// list has finished it returns at once, so only reads of a cold ring ever wait,
+// and a cluster whose watch is refused costs each read nothing extra.
+func (r *eventRing) awaitFirstSync(ctx context.Context, limit time.Duration) {
+	select {
+	case <-r.settled:
+		return
+	default:
+	}
+	timer := time.NewTimer(limit)
+	defer timer.Stop()
+	select {
+	case <-r.settled:
+	case <-ctx.Done():
+	case <-timer.C:
+	}
 }
 
 // trimLocked enforces both bounds. The count bound walks the insertion order,
