@@ -5,6 +5,7 @@ import {
   Box,
   Bug,
   CalendarClock,
+  ChevronDown,
   CircleCheck,
   ExternalLink,
   FolderTree,
@@ -14,7 +15,6 @@ import {
   RefreshCw,
   RotateCcw,
   Server,
-  ShieldCheck,
   SlidersHorizontal,
 } from 'lucide-react'
 import { errorMessage, fetchObservability, fetchResourceDescribe } from '../api/client'
@@ -36,6 +36,8 @@ import type { ResourceKey } from '../lib/resources'
 import type { SelectedRow } from '../lib/selection'
 import { selectionKey } from '../lib/selection'
 import { podTone, type Tone } from '../lib/status'
+import { NEGATIVE_CONDITIONS, glanceFor } from '../lib/objectGlance'
+import { ConditionTiles, ObjectGlance } from './ObjectGlance'
 import { DebugContainerSheet } from './DebugContainerSheet'
 import { AlarmComposer } from './AlarmComposer'
 import type { AlarmTarget } from './AlarmComposer'
@@ -68,13 +70,9 @@ import {
   Notice,
   Panel,
   Pill,
-  Row,
   Segmented,
   Select,
   Sheet,
-  Table,
-  Td,
-  Th,
 } from './primitives'
 import { useConfirm } from '../state/confirm-context'
 
@@ -811,14 +809,6 @@ function failing(conditions: ResourceCondition[] | undefined): ResourceCondition
   )
 }
 
-/**
- * Conditions whose healthy value is False rather than True. Kubernetes has no
- * flag for this — the polarity is a naming convention — so it is matched by name
- * and kept deliberately short: a condition this does not know about is treated
- * as positive, which fails towards saying nothing rather than towards crying
- * wolf on every CRD that invents a condition type.
- */
-const NEGATIVE_CONDITIONS = /^(Failed|.*Pressure|NetworkUnavailable|Degraded)$/
 
 function OverviewTab({
   cluster,
@@ -874,7 +864,7 @@ function OverviewTab({
   // header instead of the body scrolling.
   return (
     <div className="flex shrink-0 flex-col gap-4">
-      <ObjectSummary describe={describe} pod={pod} />
+      <ObjectSummary describe={describe} pod={pod} kind={kind} />
 
       {/* A pod has more to say than any other kind: what each container is
           using against its own limit, and how often it has restarted. The list
@@ -887,11 +877,6 @@ function OverviewTab({
         <Panel
           title="Data"
           eyebrow={kind === 'secrets' ? 'Keys' : 'Values'}
-          description={
-            kind === 'secrets'
-              ? 'Each key and its size. A value leaves only through the audited reveal.'
-              : 'Each key and the value the cluster holds for it.'
-          }
           bodyClassName="px-5 py-4"
         >
           <ConfigDataPanel cluster={cluster} kind={kind} name={name} namespace={namespace} />
@@ -906,11 +891,6 @@ function OverviewTab({
         <Panel
           title="Traffic"
           eyebrow={kind === 'services' ? 'Reached by' : 'Routes to'}
-          description={
-            kind === 'services'
-              ? 'The routes in this namespace that send traffic here, and the pods behind it.'
-              : 'Where this route sends traffic, followed to the pods that answer it.'
-          }
           bodyClassName="px-5 py-4"
         >
           <TrafficMapPanel
@@ -935,7 +915,6 @@ function OverviewTab({
         <Panel
           title="Pods"
           eyebrow="Owned now"
-          description="What this workload is running right now, and whether each one is ready."
           bodyClassName="px-5 py-4"
         >
           <WorkloadPodsView
@@ -956,7 +935,6 @@ function OverviewTab({
         <Panel
           title="Dependencies"
           eyebrow="To start"
-          description="The ConfigMaps, Secrets, service account and volume claims the pods need before they can run."
           bodyClassName="px-5 py-4"
         >
           <TrafficMapPanel
@@ -1014,7 +992,18 @@ const FACT_VALUE = { default: 'text-fg', warn: 'text-warn', bad: 'text-danger' }
  * for a pod and absent for every other kind. Everything else is read off the
  * describe already on screen: no second call to fill a card.
  */
-function ObjectSummary({ describe, pod }: { describe: ResourceDescribeResult; pod?: Pod }) {
+function ObjectSummary({
+  describe,
+  pod,
+  kind,
+}: {
+  describe: ResourceDescribeResult
+  pod?: Pod
+  kind: ResourceKey
+}) {
+  // What can be drawn rather than listed — replicas, a Job's outcomes, a
+  // Service's or an Ingress's shape. A kind it does not know draws nothing.
+  const glance = pod ? null : glanceFor(kind, describe)
   const facts: SummaryFact[] = [
     {
       icon: FolderTree,
@@ -1062,21 +1051,9 @@ function ObjectSummary({ describe, pod }: { describe: ResourceDescribeResult; po
     // A workload's asked-for size, where the kind has one — the figure the
     // Pods card below is measured against.
     const replicas = numericField(describe.spec_summary, 'replicas')
-    if (replicas !== undefined) {
+    // Drawn below as marks wherever the kind is known; a figure only otherwise.
+    if (replicas !== undefined && !glance?.replicas) {
       facts.push({ icon: Layers, term: 'Replicas', value: String(replicas) })
-    }
-    if (describe.conditions.length > 0) {
-      const bad = failingCount
-      facts.push({
-        icon: ShieldCheck,
-        term: 'Conditions',
-        value:
-          bad > 0
-            ? `${bad} of ${describe.conditions.length} failing`
-            : `${describe.conditions.length} healthy`,
-        tone: bad > 0 ? 'bad' : 'default',
-        phrase: true,
-      })
     }
   }
 
@@ -1121,61 +1098,21 @@ function ObjectSummary({ describe, pod }: { describe: ResourceDescribeResult; po
           )
         })}
       </dl>
+      {glance ? (
+        <div className="border-t border-line-soft px-5 py-4">
+          <ObjectGlance glance={glance} />
+        </div>
+      ) : null}
     </section>
   )
 }
 
 function Conditions({ conditions }: { conditions: ResourceCondition[] }) {
   return (
-    <Panel
-      title="Conditions"
-      eyebrow={String(conditions.length)}
-      description="What the object says about itself, in its controller's own words."
-    >
-      <div className="overflow-x-auto">
-        <Table>
-          <thead>
-            <tr>
-              <Th className="w-[22%]">Type</Th>
-              <Th className="w-[12%]">Status</Th>
-              <Th className="hidden w-[22%] md:table-cell">Reason</Th>
-              <Th className="w-[32%]">Message</Th>
-              <Th className="w-[12%]">Changed</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {conditions.map((condition) => {
-              const tone = conditionTone(condition)
-              return (
-                <Row key={condition.type}>
-                  <Td className="truncate font-data text-[12.5px] text-fg">{condition.type}</Td>
-                  <Td>
-                    <Pill tone={tone}>{condition.status}</Pill>
-                  </Td>
-                  <Td className="hidden truncate font-data text-[12.5px] text-muted md:table-cell">
-                    {condition.reason || '—'}
-                  </Td>
-                  <Td className="text-[12.5px] text-muted" title={condition.message}>
-                    {condition.message || '—'}
-                  </Td>
-                  <Td className="text-[12.5px] text-muted">
-                    {condition.last_transition_at ? <Age iso={condition.last_transition_at} /> : '—'}
-                  </Td>
-                </Row>
-              )
-            })}
-          </tbody>
-        </Table>
-      </div>
+    <Panel title="Conditions" eyebrow={String(conditions.length)} bodyClassName="px-5 py-4">
+      <ConditionTiles conditions={conditions} />
     </Panel>
   )
-}
-
-function conditionTone(condition: ResourceCondition): Tone {
-  const negative = NEGATIVE_CONDITIONS.test(condition.type)
-  if (condition.status === 'Unknown') return 'warn'
-  const healthy = negative ? condition.status === 'False' : condition.status === 'True'
-  return healthy ? 'ok' : 'bad'
 }
 
 /**
@@ -1197,10 +1134,13 @@ function Metadata({
 }) {
   const labelEntries = sortedEntries(labels)
   const annotationEntries = sortedEntries(annotations)
+  // Annotations fold: a chatty object carries a last-applied manifest and a
+  // dozen controller notes, and none of them is what the drawer was opened for.
+  const [showAnnotations, setShowAnnotations] = useState(false)
   if (labelEntries.length === 0 && annotationEntries.length === 0) return null
 
   return (
-    <Panel title="Metadata" description="What the object is labelled and annotated with.">
+    <Panel title="Metadata">
       {labelEntries.length > 0 ? (
         <div className="flex flex-col gap-2 px-5 py-4">
           <span className="label">
@@ -1229,9 +1169,19 @@ function Metadata({
             labelEntries.length > 0 ? 'border-t border-line-soft' : ''
           }`}
         >
-          <span className="label">
+          <button
+            type="button"
+            aria-expanded={showAnnotations}
+            onClick={() => setShowAnnotations((open) => !open)}
+            className="label inline-flex w-fit items-center gap-1.5 hover:text-fg"
+          >
+            <ChevronDown
+              aria-hidden="true"
+              className={`size-3.5 transition-transform ${showAnnotations ? '' : '-rotate-90'}`}
+            />
             Annotations <span className="font-data text-faint">{annotationEntries.length}</span>
-          </span>
+          </button>
+          {showAnnotations ? (
           <dl className="flex flex-col divide-y divide-line-soft overflow-hidden rounded-control border border-line-soft">
             {annotationEntries.map(([key, value]) => (
               <div
@@ -1247,6 +1197,7 @@ function Metadata({
               </div>
             ))}
           </dl>
+          ) : null}
         </div>
       ) : null}
     </Panel>
@@ -1304,58 +1255,75 @@ function Events({ describe }: { describe: ResourceDescribeResult }) {
   if (describe.events.length === 0) {
     return (
       <Panel title="Events" eyebrow="0" bodyClassName="px-5 py-4">
-        <p className="text-[13px] text-muted">
-          The cluster has nothing recorded against this object. Kubernetes keeps events for about an
-          hour, so a quiet object and an old one look the same here.
+        <p className="text-[13px] text-muted" title="Kubernetes keeps events for about an hour, so a quiet object and an old one look the same here.">
+          Nothing recorded in the last hour or so.
         </p>
       </Panel>
     )
   }
 
+  const warnings = describe.events.filter((event) => event.type === 'Warning').length
   return (
     <Panel
       title="Events"
       eyebrow={String(describe.events.length)}
-      description="What the cluster recorded against this object, newest first."
+      actions={
+        warnings > 0 ? (
+          <Pill tone="warn">
+            {warnings} {warnings === 1 ? 'warning' : 'warnings'}
+          </Pill>
+        ) : (
+          <Pill tone="ok">no warnings</Pill>
+        )
+      }
+      bodyClassName="px-5 py-4"
     >
-      <div className="overflow-x-auto">
-        <Table>
-          <thead>
-            <tr>
-              <Th className="w-[9%]">Type</Th>
-              <Th className="w-[17%]">Reason</Th>
-              <Th className="w-[38%]">Message</Th>
-              <Th className="hidden w-[15%] lg:table-cell">Source</Th>
-              <Th className="w-[8%]">Count</Th>
-              <Th className="w-[13%]">Last seen</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {describe.events.map((event, index) => (
-              <Row key={`${event.reason}/${event.last_seen ?? index}`}>
-                <Td>
-                  <Pill tone={eventTone(event)}>{event.type || 'Normal'}</Pill>
-                </Td>
-                <Td className="truncate font-data text-[12.5px] text-fg">{event.reason || '—'}</Td>
-                <Td className="text-[12.5px] text-muted" title={event.message}>
-                  {event.message || '—'}
-                </Td>
-                <Td className="hidden truncate font-data text-[12.5px] text-muted lg:table-cell">
-                  {event.source || '—'}
-                </Td>
-                <Td
-                  className={`font-data text-[12.5px] ${event.count > 1 ? 'text-warn' : 'text-muted'}`}
-                >
-                  {event.count}
-                </Td>
-                <Td className="text-[12.5px] text-muted">
-                  {event.last_seen ? <Age iso={event.last_seen} /> : '—'}
-                </Td>
-              </Row>
-            ))}
-          </tbody>
-        </Table>
-      </div>
+      {/* A timeline, newest on top: the dot is the type, the badge how often
+          the cluster saw it, the source on the pointer. */}
+      <ol className="relative flex flex-col gap-3 before:absolute before:top-1.5 before:bottom-1.5 before:left-[5px] before:w-px before:bg-line-soft">
+        {describe.events.map((event, index) => {
+          const tone = eventTone(event)
+          return (
+            <li
+              key={`${event.reason}/${event.last_seen ?? index}`}
+              className="relative grid grid-cols-[11px_minmax(0,1fr)_auto] gap-x-3"
+              title={event.source ? `Reported by ${event.source}` : undefined}
+            >
+              <span
+                aria-hidden="true"
+                className={`mt-1 size-[11px] rounded-full border-2 border-surface ${
+                  tone === 'warn' ? 'bg-warn' : 'bg-faint'
+                }`}
+              />
+              <div className="min-w-0">
+                <p className="flex flex-wrap items-baseline gap-x-2">
+                  <span
+                    className={`font-data text-[12.5px] font-semibold ${tone === 'warn' ? 'text-warn' : 'text-fg'}`}
+                  >
+                    {event.reason || event.type || 'Event'}
+                  </span>
+                  {event.count > 1 ? (
+                    <span
+                      className="rounded-chip bg-raised px-1.5 font-data text-[11px] text-muted tabular-nums"
+                      title={`Seen ${event.count} times`}
+                    >
+                      ×{event.count}
+                    </span>
+                  ) : null}
+                </p>
+                {event.message ? (
+                  <p className="mt-0.5 text-[12.5px] leading-relaxed break-words text-muted">
+                    {event.message}
+                  </p>
+                ) : null}
+              </div>
+              <span className="text-[11.5px] text-faint">
+                {event.last_seen ? <Age iso={event.last_seen} /> : '—'}
+              </span>
+            </li>
+          )
+        })}
+      </ol>
     </Panel>
   )
 }

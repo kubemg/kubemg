@@ -9,7 +9,7 @@ import {
 } from '../api/client'
 import type { Cluster, ContainerUsage, Pod, PodContainer, PodUsage } from '../api/types'
 import { MetricsChart } from './MetricsChart'
-import { Button, Chip, Meter, Notice, Panel, Pill, SearchInput } from './primitives'
+import { ArcGauge, Button, Chip, Meter, Notice, Panel, Pill, SearchInput } from './primitives'
 import { useLiveTick } from '../lib/live'
 import { formatCPU, formatMemory, podLimit, ratio } from '../lib/units'
 
@@ -96,7 +96,6 @@ export function PodOverview({ cluster, pod }: { cluster: Cluster; pod: Pod }) {
         <Panel
           title="Usage"
           eyebrow="Live"
-          description={`What the pod is using now, against its limits — sampled every ${USAGE_POLL_MS / 1000}s.`}
           bodyClassName="flex flex-col gap-3 px-5 py-4"
         >
           {error ? <Notice tone="error">{error}</Notice> : null}
@@ -106,18 +105,18 @@ export function PodOverview({ cluster, pod }: { cluster: Cluster; pod: Pod }) {
           ) : null}
 
           {usage ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Meter
-                label="CPU"
-                value={formatCPU(usage.cpu_millicores)}
-                {...bound(usage.cpu_millicores, podLimit(pod.containers, 'cpu'), formatCPU)}
-              />
-              <Meter
-                label="Memory"
-                value={formatMemory(usage.memory_bytes)}
-                {...bound(usage.memory_bytes, podLimit(pod.containers, 'memory'), formatMemory)}
-              />
-            </div>
+            <UsageReadings
+              cpu={{
+                label: 'CPU',
+                value: formatCPU(usage.cpu_millicores),
+                ...bound(usage.cpu_millicores, podLimit(pod.containers, 'cpu'), formatCPU),
+              }}
+              memory={{
+                label: 'Memory',
+                value: formatMemory(usage.memory_bytes),
+                ...bound(usage.memory_bytes, podLimit(pod.containers, 'memory'), formatMemory),
+              }}
+            />
           ) : null}
         </Panel>
       ) : null}
@@ -150,7 +149,6 @@ export function PodOverview({ cluster, pod }: { cluster: Cluster; pod: Pod }) {
       <Panel
         title="Containers"
         eyebrow={String(pod.containers.length)}
-        description="Each container's image and state, and what it is using against its own limits."
       >
         <ul className="flex flex-col divide-y divide-line-soft">
           {pod.containers.map((entry) => (
@@ -186,6 +184,25 @@ export function PodOverview({ cluster, pod }: { cluster: Cluster; pod: Pod }) {
         </ul>
       </Panel>
     </>
+  )
+}
+
+type Reading = { label: string; value: string; percent?: number; capacity?: string }
+
+/**
+ * UsageReadings draws a pod's totals against its limits as two dials — and,
+ * unless both are bounded, as the bars instead: a dial with nothing to measure
+ * against is a large picture of a dash, and a dial beside a bar reads as two
+ * different kinds of answer to one question.
+ */
+function UsageReadings({ cpu, memory }: { cpu: Reading; memory: Reading }) {
+  const dials = cpu.percent !== undefined && memory.percent !== undefined
+  const Reading = dials ? ArcGauge : Meter
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <Reading {...cpu} />
+      <Reading {...memory} />
+    </div>
   )
 }
 
