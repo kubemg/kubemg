@@ -13,6 +13,7 @@ func deliveringTunnel() *Tunnel {
 	return &Tunnel{
 		ClusterID: 1,
 		out:       make(chan []byte, 8),
+		bulk:      make(chan []byte, 8),
 		queueWait: 20 * time.Millisecond,
 		pending:   map[string]chan *Response{},
 		streams:   map[string]*Stream{},

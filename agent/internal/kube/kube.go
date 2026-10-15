@@ -36,9 +36,18 @@ const (
 // DefaultAPIURL is the in-cluster address of the API server.
 const DefaultAPIURL = "https://kubernetes.default.svc"
 
-// maxResponseBody caps what the agent will read back from the API server, so a
-// runaway response cannot push the pod past its memory limit.
-const maxResponseBody = 8 << 20
+// MaxResponseBody caps what the agent will relay back from the API server, so a
+// runaway response cannot push the pod past its memory limit — or, sent in
+// parts, hold the tunnel for longer than one list is worth.
+const MaxResponseBody = 8 << 20
+
+// RequestTimeout bounds one proxied call from request to last body byte. It sits
+// under the bastion's own 60s so the agent's answer — even "timed out" — still
+// arrives while somebody is waiting for it.
+const RequestTimeout = 55 * time.Second
+
+// ErrResponseTooLarge is a response past MaxResponseBody.
+var ErrResponseTooLarge = errors.New("response from the API server is too large to tunnel")
 
 // Client talks to the local Kubernetes API server as the agent's own service
 // account.
@@ -116,7 +125,7 @@ func New(opts Options) (*Client, error) {
 		baseURL:   strings.TrimRight(opts.APIURL, "/"),
 		tokenPath: opts.TokenPath,
 		tls:       tlsConfig,
-		http:      &http.Client{Timeout: 55 * time.Second, Transport: transport},
+		http:      &http.Client{Timeout: RequestTimeout, Transport: transport},
 		// No Timeout: the caller's context is what ends a stream.
 		stream: &http.Client{Transport: transport},
 		dialer: &websocket.Dialer{
@@ -264,13 +273,13 @@ func (c *Client) URL(path string) string {
 func ReadBody(body io.ReadCloser) ([]byte, error) {
 	defer body.Close()
 
-	limited := io.LimitReader(body, maxResponseBody+1)
+	limited := io.LimitReader(body, MaxResponseBody+1)
 	out, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, err
 	}
-	if len(out) > maxResponseBody {
-		return nil, errors.New("response from the API server is too large to tunnel")
+	if len(out) > MaxResponseBody {
+		return nil, ErrResponseTooLarge
 	}
 	return out, nil
 }

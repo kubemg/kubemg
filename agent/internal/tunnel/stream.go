@@ -343,17 +343,42 @@ func (t *streamTable) closeAll() {
 // taking a lock and waiting out the write in front of it, they hand the frame to
 // a queue that one goroutine drains. A slow write then costs the writer, not
 // every other session sharing the tunnel.
+//
+// There are two queues. A stream's frames — a terminal's output, a line of a
+// followed log, a close — are small and somebody is waiting on each one; a
+// proxied response is bulk. In one queue a list response that got there first
+// was written first, however long the link took to carry it, and an exec
+// session printed nothing until it had gone. Stream frames therefore go in
+// `urgent` and are written ahead of `bulk`, which gets a turn every urgentBurst
+// frames while urgent ones keep coming, so a busy port-forward cannot starve an
+// API call into its timeout either.
 type writer struct {
-	out    chan []byte
+	urgent chan []byte
+	bulk   chan []byte
 	conn   *websocket.Conn
 	logger *slog.Logger
 	done   chan struct{}
+	// urgentRun counts urgent frames written since the last bulk one. Only the
+	// writer's own goroutine touches it.
+	urgentRun int
 }
 
-// outboundQueue is how many frames may wait to go out before the goroutine
-// handing one over is made to wait for room. That wait is the backpressure: it
-// slows the one stream that outran the socket instead of the whole tunnel.
+// outboundQueue is how many urgent frames may wait to go out before the
+// goroutine handing one over is made to wait for room. That wait is the
+// backpressure: it slows the one stream that outran the socket instead of the
+// whole tunnel.
 const outboundQueue = 512
+
+// bulkQueue is how many bulk frames may wait. It is small on purpose: a bulk
+// frame is up to a ResponsePartSize slice of a body, base64-encoded, and the
+// queue is memory the pod holds. A sender that finds it full waits its turn on
+// its request's own deadline, which is the backpressure that keeps a dozen
+// concurrent lists from being a dozen lists in memory at once.
+const bulkQueue = 8
+
+// urgentBurst is how many urgent frames may go out in a row while a bulk frame
+// waits.
+const urgentBurst = 16
 
 // errBacklog is a frame that could not be queued. It ends the one call that hit
 // it and leaves the tunnel alone.
@@ -361,7 +386,8 @@ var errBacklog = errors.New("the tunnel's outbound queue is full")
 
 func newWriter(conn *websocket.Conn, logger *slog.Logger) *writer {
 	w := &writer{
-		out:    make(chan []byte, outboundQueue),
+		urgent: make(chan []byte, outboundQueue),
+		bulk:   make(chan []byte, bulkQueue),
 		conn:   conn,
 		logger: logger,
 		done:   make(chan struct{}),
@@ -376,25 +402,55 @@ func (w *writer) stop() { close(w.done) }
 // run is the socket's only writer.
 func (w *writer) run() {
 	for {
-		select {
-		case <-w.done:
+		payload, ok := w.next()
+		if !ok {
 			return
-		case payload := <-w.out:
-			if err := w.conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
-				return
-			}
-			if err := w.conn.WriteMessage(websocket.TextMessage, payload); err != nil {
-				// The pump's own read will see the same broken socket and end
-				// the tunnel; there is nothing useful to do from here.
-				return
-			}
+		}
+		if err := w.conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+			return
+		}
+		if err := w.conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+			// The pump's own read will see the same broken socket and end
+			// the tunnel; there is nothing useful to do from here.
+			return
 		}
 	}
 }
 
-// send queues a frame. It returns once the frame is queued, not once it is on
-// the wire — a write that fails afterwards drops the tunnel, and every caller is
-// already bound to the tunnel's context.
+// next picks what goes out next: an urgent frame whenever there is one, except
+// that a waiting bulk frame goes first once urgentBurst urgent ones have gone in
+// a row. It blocks until there is something to send, and reports false once the
+// writer is stopped.
+func (w *writer) next() ([]byte, bool) {
+	if w.urgentRun >= urgentBurst {
+		select {
+		case payload := <-w.bulk:
+			w.urgentRun = 0
+			return payload, true
+		default:
+		}
+	}
+	select {
+	case payload := <-w.urgent:
+		w.urgentRun++
+		return payload, true
+	default:
+	}
+	select {
+	case <-w.done:
+		return nil, false
+	case payload := <-w.urgent:
+		w.urgentRun++
+		return payload, true
+	case payload := <-w.bulk:
+		w.urgentRun = 0
+		return payload, true
+	}
+}
+
+// send queues an urgent frame. It returns once the frame is queued, not once it
+// is on the wire — a write that fails afterwards drops the tunnel, and every
+// caller is already bound to the tunnel's context.
 func (w *writer) send(msg protocol.Message) error {
 	payload, err := json.Marshal(msg)
 	if err != nil {
@@ -404,7 +460,7 @@ func (w *writer) send(msg protocol.Message) error {
 	select {
 	case <-w.done:
 		return errBacklog
-	case w.out <- payload:
+	case w.urgent <- payload:
 		return nil
 	default:
 	}
@@ -415,10 +471,29 @@ func (w *writer) send(msg protocol.Message) error {
 	select {
 	case <-w.done:
 		return errBacklog
-	case w.out <- payload:
+	case w.urgent <- payload:
 		return nil
 	case <-timer.C:
 		return errBacklog
+	}
+}
+
+// sendBulk queues a response frame, waiting for room for as long as ctx allows.
+// The frame is encoded before this returns, so a caller may reuse the buffer a
+// part was sliced from as soon as it does.
+func (w *writer) sendBulk(ctx context.Context, msg protocol.Message) error {
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	select {
+	case <-w.done:
+		return errBacklog
+	case <-ctx.Done():
+		return ctx.Err()
+	case w.bulk <- payload:
+		return nil
 	}
 }
 

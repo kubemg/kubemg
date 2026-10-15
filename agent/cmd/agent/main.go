@@ -16,7 +16,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -38,6 +40,7 @@ func main() {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
+	applyMemoryLimit(logger)
 
 	if err := run(logger, *listen, *apiURL, *insecure); err != nil && !errors.Is(err, context.Canceled) {
 		logger.Error("agent stopped", slog.String("error", err.Error()))
@@ -126,6 +129,41 @@ func serveProbes(ctx context.Context, logger *slog.Logger, addr string, client *
 		defer cancel()
 		_ = server.Shutdown(shutdownCtx)
 	}
+}
+
+// applyMemoryLimit tells the Go runtime about the container's memory limit.
+//
+// Without it the runtime does not know there is one: the collector paces itself
+// by heap growth alone, so a burst of large responses can take the heap past
+// the limit before a collection is due, and the kernel OOM-kills the pod — the
+// one process every session on the cluster goes through. With a soft limit under
+// the hard one, the runtime collects harder as it gets close instead.
+//
+// The limit arrives as KUBEMG_MEMORY_LIMIT_BYTES, which the install manifest
+// fills from the container's own `limits.memory`, so the two cannot drift. An
+// explicit GOMEMLIMIT wins: the runtime has already applied it, and an operator
+// who set one meant it.
+func applyMemoryLimit(logger *slog.Logger) {
+	if os.Getenv("GOMEMLIMIT") != "" {
+		return
+	}
+	limit, ok := softMemoryLimit(os.Getenv("KUBEMG_MEMORY_LIMIT_BYTES"))
+	if !ok {
+		return
+	}
+	debug.SetMemoryLimit(limit)
+	logger.Info("memory limit applied", slog.Int64("soft_limit_bytes", limit))
+}
+
+// softMemoryLimit is the runtime's limit for a container limit of raw bytes:
+// 80% of it, leaving the rest for what the runtime does not count against the
+// heap — goroutine stacks, the socket buffers, the binary itself.
+func softMemoryLimit(raw string) (int64, bool) {
+	limit, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil || limit <= 0 {
+		return 0, false
+	}
+	return limit / 5 * 4, true
 }
 
 func envOr(key, fallback string) string {

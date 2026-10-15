@@ -114,6 +114,7 @@ The agent holds almost nothing itself: its only privilege is to *impersonate*. W
 | `KUBEMG_INSECURE_SKIP_VERIFY` | `false` | Skip **API server** certificate verification; development only |
 | `KUBEMG_BASTION_CA` | *(empty)* | PEM chain to trust for kubemg's own TLS; the manifest sets it when kubemg is self-signed or on an internal CA |
 | `KUBEMG_BASTION_INSECURE_SKIP_VERIFY` | `false` | Skip **kubemg** certificate verification; development only, logs a warning |
+| `KUBEMG_MEMORY_LIMIT_BYTES` | *(from `limits.memory`)* | The container's memory limit; the agent keeps its heap under 80% of it. The manifest fills it from the container's own limit, so raising the limit is the only change needed. A `GOMEMLIMIT` you set yourself wins |
 
 `KUBEMG_KUBERNETES_URL`, `KUBEMG_LISTEN_ADDR` and `KUBEMG_INSECURE_SKIP_VERIFY` are also flags (`--kubernetes-url`, `--listen`, `--insecure-skip-verify`); a flag wins. To send the agent through a proxy, add the standard `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` variables to the Deployment's `env`.
 

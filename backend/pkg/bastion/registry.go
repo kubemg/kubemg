@@ -34,7 +34,32 @@ const (
 // keepalive ping was the write that timed out, the tunnel was torn down and
 // every session on that cluster died at once. With a queue the slow write blocks
 // one goroutine, the writer's, and everyone else keeps handing frames over.
+//
+// There are two queues, not one. A cluster's sessions are not all alike: a
+// keystroke, a line of `logs -f` and a stream's close are small and someone is
+// waiting on each one, while a proxied request — and, coming the other way, a
+// list response — is bulk. In one queue a bulk frame that got there first is
+// written first, however long it takes. So stream frames go in `out` and are
+// written ahead of anything in `bulk`, which only gets a turn every
+// urgentBurst frames while urgent ones keep arriving — enough that a busy
+// port-forward cannot starve an API call into its timeout.
 const outboundQueue = 512
+
+// urgentBurst is how many urgent frames may go out in a row while a bulk frame
+// waits. Urgent frames are small (a stream chunk is 32 KB at most from a body
+// stream, a terminal frame usually far less), so bulk still gets a meaningful
+// share of the socket.
+const urgentBurst = 16
+
+// maxResponseBody bounds a response the agent sends in parts, once joined. It is
+// the ceiling a whole response always had — one frame of maxFrame — so sending in
+// parts changes how a response travels and nothing about how large one may be.
+const maxResponseBody = maxFrame
+
+// errResponseTooLarge is the answer to a response whose parts outgrew
+// maxResponseBody. The caller gets it as an agent error, the same shape as any
+// other response the agent could not deliver.
+var errResponseTooLarge = errors.New("the agent's response was larger than the tunnel accepts")
 
 // ErrTunnelBacklog is returned when the outbound queue stays full. It is
 // deliberately not a tunnel-level failure: one sender that cannot get a frame
@@ -70,13 +95,19 @@ type Tunnel struct {
 	credential string
 
 	conn *websocket.Conn
-	// out carries frames to the one goroutine that writes them. gorilla permits
-	// a single concurrent writer, and this is it — see outboundQueue for why it
-	// is a queue rather than the mutex it replaced.
-	out chan []byte
+	// out and bulk carry frames to the one goroutine that writes them. gorilla
+	// permits a single concurrent writer, and this is it — see outboundQueue for
+	// why these are queues rather than the mutex they replaced, and why two.
+	out  chan []byte
+	bulk chan []byte
+	// urgentRun counts urgent frames written since the last bulk one. Only the
+	// writer touches it.
+	urgentRun int
 	// queueWait is how long a sender waits for room in that queue before giving
 	// up on its own frame. It is a field only so a test can shorten it.
 	queueWait time.Duration
+	// bodyLimit is maxResponseBody, as a field only so a test can shorten it.
+	bodyLimit int
 
 	// mu guards the two correlation tables and the ID counter. Streams and
 	// request/response pairs share it because they share the ID space.
@@ -99,7 +130,9 @@ func newTunnel(conn *websocket.Conn, clusterID uint, clusterName string, hello H
 		ConnectedAt:       time.Now().UTC(),
 		conn:              conn,
 		out:               make(chan []byte, outboundQueue),
+		bulk:              make(chan []byte, outboundQueue),
 		queueWait:         writeTimeout,
+		bodyLimit:         maxResponseBody,
 		pending:           map[string]chan *Response{},
 		streams:           map[string]*Stream{},
 		closed:            make(chan struct{}),
@@ -157,22 +190,29 @@ func (t *Tunnel) send(msg Message) error {
 		return fmt.Errorf("encode %s frame: %w", msg.Type, err)
 	}
 
-	if err := t.enqueue(payload); err != nil {
+	lane := t.out
+	if msg.Type == MessageRequest {
+		lane = t.bulk
+	}
+	if err := t.enqueueOn(lane, payload); err != nil {
 		return fmt.Errorf("queue %s frame: %w", msg.Type, err)
 	}
 	return nil
 }
 
-// enqueue puts a frame in front of the writer, waiting for room if the queue is
-// full. It is separate from send so the queueing rules can be exercised without
-// a socket: what matters about them is that a full queue slows one sender and
-// never closes the tunnel, and that is a property, not a wire format.
-func (t *Tunnel) enqueue(payload []byte) error {
+// enqueue puts a frame on the urgent queue. See enqueueOn.
+func (t *Tunnel) enqueue(payload []byte) error { return t.enqueueOn(t.out, payload) }
+
+// enqueueOn puts a frame in front of the writer, waiting for room if the queue
+// is full. It is separate from send so the queueing rules can be exercised
+// without a socket: what matters about them is that a full queue slows one
+// sender and never closes the tunnel, and that is a property, not a wire format.
+func (t *Tunnel) enqueueOn(lane chan []byte, payload []byte) error {
 	// The common case: room in the queue, no timer, no allocation.
 	select {
 	case <-t.closed:
 		return ErrTunnelClosed
-	case t.out <- payload:
+	case lane <- payload:
 		return nil
 	default:
 	}
@@ -186,7 +226,7 @@ func (t *Tunnel) enqueue(payload []byte) error {
 	select {
 	case <-t.closed:
 		return ErrTunnelClosed
-	case t.out <- payload:
+	case lane <- payload:
 		return nil
 	case <-timer.C:
 		return ErrTunnelBacklog
@@ -194,23 +234,53 @@ func (t *Tunnel) enqueue(payload []byte) error {
 }
 
 // writeLoop is the tunnel's only writer. A slow write blocks this goroutine and
-// nothing else; the queue in front of it is what keeps one session's bulk
+// nothing else; the queues in front of it are what keep one session's bulk
 // transfer from delaying another session's keystroke.
 func (t *Tunnel) writeLoop() {
 	for {
-		select {
-		case <-t.closed:
+		payload, ok := t.nextFrame()
+		if !ok {
 			return
-		case payload := <-t.out:
-			if err := t.conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
-				t.closeWith(fmt.Errorf("set write deadline: %w", err))
-				return
-			}
-			if err := t.conn.WriteMessage(websocket.TextMessage, payload); err != nil {
-				t.closeWith(fmt.Errorf("write frame: %w", err))
-				return
-			}
 		}
+		if err := t.conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+			t.closeWith(fmt.Errorf("set write deadline: %w", err))
+			return
+		}
+		if err := t.conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+			t.closeWith(fmt.Errorf("write frame: %w", err))
+			return
+		}
+	}
+}
+
+// nextFrame picks what the writer sends next: an urgent frame whenever there is
+// one, except that a waiting bulk frame goes first once urgentBurst urgent ones
+// have gone in a row. It blocks until there is something to send, and reports
+// false once the tunnel is closed.
+func (t *Tunnel) nextFrame() ([]byte, bool) {
+	if t.urgentRun >= urgentBurst {
+		select {
+		case payload := <-t.bulk:
+			t.urgentRun = 0
+			return payload, true
+		default:
+		}
+	}
+	select {
+	case payload := <-t.out:
+		t.urgentRun++
+		return payload, true
+	default:
+	}
+	select {
+	case <-t.closed:
+		return nil, false
+	case payload := <-t.out:
+		t.urgentRun++
+		return payload, true
+	case payload := <-t.bulk:
+		t.urgentRun = 0
+		return payload, true
 	}
 }
 
@@ -229,6 +299,10 @@ func (t *Tunnel) serve() error {
 
 	go t.keepalive()
 
+	// Response bodies arriving in parts, by request ID. Only this loop reads or
+	// writes it, so it needs no lock.
+	assembling := map[string]*assembly{}
+
 	for {
 		_, payload, err := t.conn.ReadMessage()
 		if err != nil {
@@ -245,9 +319,29 @@ func (t *Tunnel) serve() error {
 			return err
 		}
 		switch msg.Type {
+		case MessageResponsePart:
+			if msg.ResponsePart == nil {
+				continue
+			}
+			if !t.isPending(msg.ID) {
+				// The caller gave up; nothing will read what is assembled.
+				delete(assembling, msg.ID)
+				continue
+			}
+			parts, ok := assembling[msg.ID]
+			if !ok {
+				parts = &assembly{}
+				assembling[msg.ID] = parts
+			}
+			parts.add(msg.ResponsePart.Data, t.bodyLimit)
+
 		case MessageResponse:
 			if msg.Response == nil {
 				continue
+			}
+			if parts, ok := assembling[msg.ID]; ok {
+				delete(assembling, msg.ID)
+				parts.finish(msg.Response, t.bodyLimit)
 			}
 			t.mu.Lock()
 			replies, ok := t.pending[msg.ID]
@@ -292,6 +386,47 @@ func (t *Tunnel) serve() error {
 			stream.Close(cause)
 		}
 	}
+}
+
+// isPending reports whether a caller is still waiting on a request.
+func (t *Tunnel) isPending(id string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	_, ok := t.pending[id]
+	return ok
+}
+
+// assembly is a response body arriving in parts. Past the limit it stops
+// keeping bytes and remembers only that it overflowed: a response that cannot be
+// delivered whole is not delivered at all.
+type assembly struct {
+	body     []byte
+	overflow bool
+}
+
+func (a *assembly) add(data []byte, limit int) {
+	if a.overflow {
+		return
+	}
+	if len(a.body)+len(data) > limit {
+		a.overflow = true
+		a.body = nil
+		return
+	}
+	a.body = append(a.body, data...)
+}
+
+// finish puts the parts in front of the final frame's own body. A final frame
+// that carries an error keeps it, and the parts are dropped with it.
+func (a *assembly) finish(resp *Response, limit int) {
+	if resp.Error != "" {
+		return
+	}
+	if a.overflow || len(a.body)+len(resp.Body) > limit {
+		*resp = Response{Error: errResponseTooLarge.Error()}
+		return
+	}
+	resp.Body = append(a.body, resp.Body...)
 }
 
 // keepalive pings the agent so the socket stays warm through idle proxies and

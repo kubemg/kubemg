@@ -222,6 +222,7 @@ func (s *Server) serveTunnel(
 		ClusterID:        cluster.ID,
 		ClusterName:      cluster.Name,
 		HeartbeatSeconds: int(heartbeatInterval.Seconds()),
+		Capabilities:     negotiateCapabilities(hello.Capabilities),
 	}}
 	if err := tunnel.send(welcome); err != nil {
 		s.dropTunnel(tunnel, cluster, err)

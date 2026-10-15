@@ -60,7 +60,12 @@ unsuppressible floor and in the alarm verb vocabulary.
 
 `ProtocolVersion` is checked at the handshake and a mismatch is refused. Bumping
 it is a breaking change that requires every agent to be upgraded, so it is a
-decision rather than a bump.
+decision rather than a bump. What can be added without one is negotiated as a
+**capability** instead (`negotiateCapabilities`, `welcome.capabilities`) — see
+the agent page for `response-parts` and the two outbound queues. The tunnel's
+read loop joins `response_part` frames per request ID in a map only it touches
+(`assembly`), drops parts for a caller that already gave up, and turns a body
+past `maxResponseBody` into an agent error rather than a truncated answer.
 
 ## Proxying a request
 
