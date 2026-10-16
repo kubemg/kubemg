@@ -6,7 +6,7 @@ make verify
 
 That is the gate. It runs, in order: `manifest-check`, `chart-test`, `backend-vet`,
 `backend-test`, `backend-build`, `agent-vet`, `agent-test`, `agent-build`,
-`frontend-lint`, `frontend-test`, `frontend-contrast`, `frontend-build` and
+`cli-vet`, `cli-test`, `cli-build`, `frontend-lint`, `frontend-test`, `frontend-contrast`, `frontend-build` and
 `docs-build`. Nothing is proposed for merge without it, and on Apple Silicon it
 needs `DOCKER_DEFAULT_PLATFORM=linux/amd64` in front of it (see
 [Local development](setup.md#apple-silicon)).
@@ -95,6 +95,19 @@ that asks for a DOM in its own docblock:
 
 vitest runs in the `node` environment by default, per file, so a component test
 that forgets the docblock fails on `document`.
+
+### The kubemg CLI
+
+```bash
+make cli-test
+make cli-dist CLI_VERSION=0.0.0-dev   # every published platform, into cli/dist
+```
+
+`cli/` is its own module, like the agent. The tests run the whole command line
+against an `httptest` server standing in for the CLI routes, and the kubeconfig
+merge against files with comments and foreign entries in them. `cli-dist` runs
+`hack/cli-dist.sh`, the script the release workflow runs, so the archives a
+developer builds are the ones a tag publishes.
 
 ### The agent
 

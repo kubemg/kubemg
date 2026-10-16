@@ -7,6 +7,18 @@ It works the way `aws eks update-kubeconfig` does: the CLI writes an `exec` entr
 !!! note "Agent-mode clusters only"
     A cluster registered for direct API access is reached with a token the cluster itself mints. No CLI session governs it and kubemg cannot revoke it, so the CLI lists it and points to the console download instead.
 
+## Installing it
+
+Download the archive for your system from the [releases page](https://github.com/kubemg/kubemg/releases) — `kubemg_<version>_<os>_<arch>.tar.gz`, or `.zip` for Windows — check it against `SHA256SUMS`, and put the `kubemg` binary on your `PATH`:
+
+```bash
+tar -xzf kubemg_0.16.0_darwin_arm64.tar.gz
+sudo install kubemg_0.16.0_darwin_arm64/kubemg /usr/local/bin/
+kubemg version
+```
+
+It is one static binary with no dependencies, released with the server and versioned with it. It is Apache-2.0 licensed, like the agent: you can vendor it into your own tooling.
+
 ## Signing in
 
 1. Run `kubemg login --server https://kubemg.example.com`. It prints a code like `BCDF-GHJK` and opens your browser at **/cli/activate** with the code filled in. On a machine with no browser, open the printed address yourself, on any device.
@@ -21,11 +33,84 @@ A browser session that did not pass a second factor cannot approve when your acc
 
 A code waits ten minutes. One address can have at most ten sign-ins waiting at a time.
 
+## Adding clusters to your kubeconfig
+
+```bash
+kubemg clusters                                   # what you can reach
+kubemg update-kubeconfig --cluster edge-us        # add it, make it current
+kubectl get pods
+```
+
+`update-kubeconfig` writes three entries — the cluster (the console's proxy address and, for a self-signed server, its CA), a user that runs `kubemg credential`, and a context — into the first file in `$KUBECONFIG`, or `~/.kube/config`. Everything else in the file, comments included, is left as it was, and the previous version is kept beside it as `config.bak`. Running it again replaces kubemg's entries rather than adding more.
+
+Every entry is named under the server's host as you typed it at login — `kubemg.example.com/edge-us` for the cluster and context, `kubemg.example.com/edge-us/dana` for the user — and carries a `kubemg` extension naming its server. kubemg only ever replaces an entry carrying its own marker for the same server: if a name it would write is already taken by an entry it did not write, it stops, changes nothing, and names the entry. A server therefore cannot point one of your existing contexts, users or clusters somewhere else.
+
+| Flag | |
+|---|---|
+| `--cluster NAME\|ID` | Which cluster. Required |
+| `--namespace NS` | The context's namespace. Defaults to the first one your grant covers; one outside it is refused |
+| `--alias NAME` | Name the context something else |
+| `--kubeconfig FILE` | Write to this file instead |
+| `--no-set-context` | Add the context without making it current |
+| `--static --ttl 8h` | Write a kubeconfig that carries its own token instead of running kubemg — the console download, for a tool that cannot run a credential plugin. It is registered like any download and refused under `cli_only`. Only the token is taken from what the server sends; the entries are written by kubemg itself, so a server can never put a command into your kubeconfig |
+| `--server URL` | Needed only when you are signed in to more than one server (or set `KUBEMG_SERVER`) |
+
+The entry kubectl runs looks like this, and needs no editing:
+
+```yaml
+users:
+- name: kubemg.example.com/edge-us/dana
+  user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1
+      command: kubemg
+      args: [credential, --server, 'https://kubemg.example.com', --cluster-id, "7"]
+      interactiveMode: Never
+      provideClusterInfo: false
+```
+
+`kubemg credential` keeps the current credential in your user cache directory and reuses it until a minute before it expires, so a loop of kubectl calls does not ask the server each time. It never prompts. When the session has ended it fails with the command to run, which is what kubectl shows you:
+
+```text
+kubemg: the CLI session has ended: this CLI session was revoked; run kubemg login — run: kubemg login --server https://kubemg.example.com
+```
+
+If a session is ended while kubectl still holds one of its credentials — from the console, by an administrator, by a blanket revoke — the next call is refused at once, but kubectl reports it in its own words: `error: You must be logged in to the server (the server has asked for the client to provide credentials)`. Run `kubemg clusters`: it says whether the session has ended, and `kubemg login` starts a new one.
+
+With `KUBEMG_TOKEN`, the variable has to be in the environment kubectl runs in, since kubectl is what starts `kubemg credential`.
+
+## A self-signed server
+
+kubemg talks to its server over **https only** — the session's refresh token is a credential, and kubectl would not use a plaintext server anyway. It writes only https cluster addresses into a kubeconfig, and opens the approval page in your browser only when it is an https address (anything else is printed for you to follow).
+
+Pass the server's CA once, at sign-in: `kubemg login --server https://kubemg.internal --ca-file kubemg-ca.pem`. It is kept with the session and written into every kubeconfig entry, so neither kubemg nor kubectl skips verification. There is no flag that turns verification off.
+
+## In CI: machine accounts
+
+A pipeline has no browser. Give it a [machine account](machine-accounts.md) token in `KUBEMG_TOKEN` and name the cluster by its numeric id — a machine token is bound to one cluster:
+
+```bash
+export KUBEMG_TOKEN=kmgm_…
+kubemg update-kubeconfig --server https://kubemg.example.com --cluster 7 [--ca-file ca.pem]
+kubectl get deploy -n payments
+```
+
+With `KUBEMG_TOKEN` set, `kubemg credential` hands kubectl that token as it is and never needs a session.
+
 ## How long it lasts
 
 A sign-in lasts **12 hours** by default — a working day, so one second factor a day. Administrators change it under **Admin → Settings → General → The kubemg command line** (`cli_session_max_hours`, 1–720 hours). It is never longer than the kubeconfig window (`kubeconfig_max_ttl_hours`): a CLI session cannot outlive what a downloaded file could.
 
 Within a session, each credential kubectl receives lives **15 minutes** and is renewed by the CLI as needed. When the session ends, kubectl stops with a message telling you to run `kubemg login` again.
+
+## Where it keeps things
+
+| What | Where |
+|---|---|
+| The session (refresh token, server, CA) | `~/.config/kubemg/sessions/` on Linux, `~/Library/Application Support/kubemg/sessions/` on macOS, `%AppData%\kubemg\sessions\` on Windows — or `KUBEMG_CONFIG_DIR` |
+| The current kubectl credentials | the user cache directory's `kubemg/credentials/` — or `KUBEMG_CACHE_DIR` |
+
+Both are readable only by you. `kubemg logout` deletes them as well as ending the session on the server.
 
 ## Ending a session
 

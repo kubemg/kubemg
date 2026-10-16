@@ -4,11 +4,13 @@ import { FileKey, Hourglass, KeyRound, ShieldOff, Unlink, Users, X } from 'lucid
 import {
   errorMessage,
   fetchIssuedKubeconfigs,
+  fetchKubeconfigPolicy,
   revokeAllIssuedKubeconfigs,
   revokeIssuedKubeconfig,
 } from '../api/client'
-import type { IssuedKubeconfig, KubeconfigRevokeAllResult } from '../api/types'
+import type { IssuedKubeconfig, KubeconfigPolicy, KubeconfigRevokeAllResult } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { CliCommands } from '../components/CliCommands'
 import { CliSessionsPanel } from '../components/CliSessionsPanel'
 import { PasswordSheet } from '../components/PasswordSheet'
 import { profileAbilities } from '../lib/profile'
@@ -18,6 +20,7 @@ import {
   Chip,
   EmptyState,
   Notice,
+  Panel,
   Pill,
   Row,
   SearchInput,
@@ -403,6 +406,8 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
           activeOnly={status === 'active'}
           refreshKey={sessionsKey}
         />
+
+        {mine ? <CommandLinePanel /> : null}
       </div>
     </AppShell>
   )
@@ -425,4 +430,32 @@ function expiryTitle(row: IssuedKubeconfig): string {
     return `Revoked${by} ${row.revoked_at ? relativeAge(row.revoked_at) : ''}`.trim()
   }
   return `Expires ${relativeAge(row.expires_at)}`
+}
+
+/**
+ * How to get kubectl access without a file, on the holder's own reading: the
+ * download and the two commands, with this server filled in.
+ */
+function CommandLinePanel() {
+  const [policy, setPolicy] = useState<KubeconfigPolicy | null>(null)
+  useEffect(() => {
+    let live = true
+    fetchKubeconfigPolicy()
+      .then((next) => {
+        if (live) setPolicy(next)
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [])
+  return (
+    <Panel
+      title="Use the command line"
+      description="kubectl access to agent-mode clusters without a kubeconfig file: sign in once, with your second factor, and the CLI does the rest."
+      bodyClassName="p-4"
+    >
+      <CliCommands serverURL={policy?.server_url ?? ''} showInstall />
+    </Panel>
+  )
 }

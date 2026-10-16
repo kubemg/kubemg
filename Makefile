@@ -44,6 +44,7 @@ AGENT_PLATFORMS ?= linux/amd64,linux/arm64
 
 DOCKER_GO    = docker run --rm -v $(PWD)/backend:/app -v kubemg-go-mod:/go/pkg/mod -v kubemg-go-build:/root/.cache/go-build -w /app $(GO_IMAGE)
 DOCKER_AGENT = docker run --rm -v $(PWD)/agent:/app -v kubemg-go-mod:/go/pkg/mod -v kubemg-go-build:/root/.cache/go-build -w /app $(GO_IMAGE)
+DOCKER_CLI   = docker run --rm -v $(PWD)/cli:/app -v kubemg-go-mod:/go/pkg/mod -v kubemg-go-build:/root/.cache/go-build -w /app $(GO_IMAGE)
 DOCKER_NODE  = docker run --rm -v $(PWD)/frontend:/app -v kubemg-npm:/root/.npm -w /app $(NODE_IMAGE)
 
 .PHONY: help build test verify manifest-check chart-test \
@@ -59,9 +60,9 @@ help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 ## ---- aggregate ----
-build: backend-build agent-build frontend-build ## Build backend + agent + frontend in containers
-test: backend-test agent-test frontend-test ## Run all container-based tests
-verify: manifest-check chart-test backend-vet backend-test backend-build agent-vet agent-test agent-build frontend-lint frontend-test frontend-contrast frontend-build docs-build ## Full containerized verification
+build: backend-build agent-build cli-build frontend-build ## Build backend + agent + CLI + frontend in containers
+test: backend-test agent-test cli-test frontend-test ## Run all container-based tests
+verify: manifest-check chart-test backend-vet backend-test backend-build agent-vet agent-test agent-build cli-vet cli-test cli-build frontend-lint frontend-test frontend-contrast frontend-build docs-build ## Full containerized verification
 
 # The bastion embeds its own copy of the agent manifests so they ship inside the
 # server binary. Two copies can drift; this makes drift a build failure.
@@ -101,6 +102,27 @@ agent-vet: ## Run go vet on the agent
 
 agent-tidy: ## Run go mod tidy on the agent
 	$(DOCKER_AGENT) go mod tidy
+
+## ---- kubemg CLI (open source, Apache-2.0) ----
+CLI_VERSION ?= $(KUBEMG_VERSION)
+
+cli-build: ## Compile the kubemg CLI for the container's platform
+	$(DOCKER_CLI) sh -c "CGO_ENABLED=0 go build -trimpath -ldflags '-s -w -X main.version=$(CLI_VERSION)' -o kubemg ./cmd/kubemg"
+
+cli-test: ## Run CLI tests
+	$(DOCKER_CLI) go test ./...
+
+cli-vet: ## Run go vet on the CLI
+	$(DOCKER_CLI) go vet ./...
+
+cli-tidy: ## Run go mod tidy on the CLI
+	$(DOCKER_CLI) go mod tidy
+
+# Every published platform, as the archives a release carries — the same script
+# the release workflow runs. zip is installed for the Windows archives.
+cli-dist: ## Build the CLI release archives into cli/dist
+	docker run --rm -v $(PWD):/repo -v kubemg-go-mod:/go/pkg/mod -v kubemg-go-build:/root/.cache/go-build -w /repo $(GO_IMAGE) \
+		sh -c "apk add --no-cache zip >/dev/null && hack/cli-dist.sh $(CLI_VERSION)"
 
 # Single-platform and loaded into the local daemon, which is what a local e2e
 # pass needs (`minikube image load`, `docker run`). A multi-platform build
