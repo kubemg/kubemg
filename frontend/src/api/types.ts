@@ -184,6 +184,8 @@ export type IssuedKubeconfigStatus = 'active' | 'expired' | 'revoked'
 /** What a blanket revoke actually reached. The second half is the honest half. */
 export interface KubeconfigRevokeAllResult {
   revoked: number
+  /** Signed-in kubemg CLIs the blanket revoke ended. */
+  cli_sessions_revoked?: number
   still_valid: number
   clusters_not_reached?: string[]
   explanation?: string
@@ -2198,6 +2200,50 @@ export interface KubeconfigPolicy {
   min_ttl_seconds: number
   default_ttl_seconds: number
   max_ttl_seconds: number
+  /** `cli_only` means no agent-mode kubeconfig file is handed out: kubectl
+      reaches an agent-mode cluster through the kubemg CLI's short-lived
+      credentials only. */
+  issuance?: KubeconfigIssuance
+  /** How long a `kubemg login` lasts. */
+  cli_session_max_hours?: number
+  /** What `kubemg login --server` takes. */
+  server_url?: string
+}
+
+export type KubeconfigIssuance = 'allowed' | 'cli_only'
+
+/** One `kubemg login` waiting for approval, as the approval page shows it. */
+export interface CLIDeviceRequest {
+  user_code: string
+  client_name?: string
+  client_host?: string
+  client_os?: string
+  client_version?: string
+  source_ip: string
+  /** Whether the request came from the address this browser is at. */
+  same_address: boolean
+  status: 'pending' | 'approved' | 'denied'
+  created_at: string
+  expires_at: string
+  session_hours: number
+}
+
+/** A signed-in kubemg CLI, in the credential register. */
+export interface CLISession {
+  id: string
+  user_id: number
+  username: string
+  client_name?: string
+  client_host?: string
+  client_os?: string
+  client_version?: string
+  source_ip?: string
+  expires_at: string
+  revoked_at?: string
+  revoked_by_username?: string
+  last_used_at?: string
+  created_at: string
+  status: 'active' | 'expired' | 'revoked'
 }
 
 /**
@@ -2209,6 +2255,10 @@ export interface RuntimeSettings {
   /** Whose password sign-in also needs a second factor. Empty in `overrides`
       means unset, which is off. */
   mfa_enforcement: MFAEnforcement | ''
+  /** How long a `kubemg login` lasts. 0 in `overrides` means unset. */
+  cli_session_max_hours: number
+  /** Empty in `overrides` means unset, which is allowed. */
+  kubeconfig_issuance: KubeconfigIssuance | ''
   public_url: string
   agent_image: string
   agent_namespace: string

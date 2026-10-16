@@ -78,6 +78,13 @@ type runtimeSettings struct {
 	// MFAEnforcement is whose sign-in needs a second factor: off, admins or
 	// all. Empty in the overrides means unset, which is off.
 	MFAEnforcement string `json:"mfa_enforcement"`
+	// CLISessionMaxHours is how long a `kubemg login` lasts. Zero in the
+	// overrides means unset; the effective value is clamped to the kubeconfig
+	// ceiling at the point of use.
+	CLISessionMaxHours int `json:"cli_session_max_hours"`
+	// KubeconfigIssuance is allowed or cli_only. Empty in the overrides means
+	// unset, which is allowed.
+	KubeconfigIssuance string `json:"kubeconfig_issuance"`
 }
 
 type settingsResponse struct {
@@ -129,6 +136,10 @@ type updateSettingsRequest struct {
 	DebugImage              *string `json:"debug_image"`
 	// MFAEnforcement accepts "" to clear back to off.
 	MFAEnforcement *string `json:"mfa_enforcement"`
+	// CLISessionMaxHours accepts 0 to clear back to the default.
+	CLISessionMaxHours *int `json:"cli_session_max_hours"`
+	// KubeconfigIssuance accepts "" to clear back to allowed.
+	KubeconfigIssuance *string `json:"kubeconfig_issuance"`
 }
 
 // Audit retention bounds. The floor stops an operator from silently emptying
@@ -190,7 +201,9 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 		DebugImage: s.debugImage,
 		// No environment variable: who must hold a second factor is a policy an
 		// administrator sets where it is audited and changed without a redeploy.
-		MFAEnforcement: mfaEnforcementOff,
+		MFAEnforcement:     mfaEnforcementOff,
+		CLISessionMaxHours: defaultCLISessionHours,
+		KubeconfigIssuance: issuanceAllowed,
 	}
 	stored, err := s.store.Settings(ctx)
 	if err != nil {
@@ -247,6 +260,11 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 		out.DebugImage = v
 	}
 	out.MFAEnforcement = normalizeMFAEnforcement(stored[db.SettingMFAEnforcement])
+	if v := storedBounded(stored, db.SettingCLISessionMaxHours,
+		minCLISessionHours, maxCLISessionHours); v > 0 {
+		out.CLISessionMaxHours = v
+	}
+	out.KubeconfigIssuance = normalizeIssuance(stored[db.SettingKubeconfigIssuance])
 	out.SessionRecordingRetentionDays = clampRecordingRetention(
 		storedDays(stored, db.SettingSessionRecordingRetentionDays), out.AuditRetentionDays)
 	return out
@@ -402,6 +420,9 @@ func (s *server) getSettings(c *gin.Context) {
 			minShellMaxLifetimeHours, maxShellMaxLifetimeHours),
 		DebugImage:     strings.TrimSpace(stored[db.SettingDebugImage]),
 		MFAEnforcement: storedMFAEnforcement(stored),
+		CLISessionMaxHours: storedBounded(stored, db.SettingCLISessionMaxHours,
+			minCLISessionHours, maxCLISessionHours),
+		KubeconfigIssuance: storedIssuance(stored),
 	}
 
 	c.JSON(http.StatusOK, settingsResponse{
@@ -428,6 +449,8 @@ func (s *server) getSettings(c *gin.Context) {
 			ShellMaxLifetimeHours:   int(shell.DefaultMaxLifetime / time.Hour),
 			DebugImage:              s.debugImage,
 			MFAEnforcement:          mfaEnforcementOff,
+			CLISessionMaxHours:      defaultCLISessionHours,
+			KubeconfigIssuance:      issuanceAllowed,
 		},
 		Warnings: settingsWarnings(effective),
 	})
@@ -602,6 +625,30 @@ func (s *server) updateSettings(c *gin.Context) {
 			return
 		}
 		values[db.SettingMFAEnforcement] = value
+	}
+	if req.CLISessionMaxHours != nil {
+		hours := *req.CLISessionMaxHours
+		switch {
+		case hours == 0:
+			values[db.SettingCLISessionMaxHours] = ""
+		case hours < minCLISessionHours || hours > maxCLISessionHours:
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf(
+					"a CLI session must last between %d and %d hours, or 0 to use the default of %d",
+					minCLISessionHours, maxCLISessionHours, defaultCLISessionHours),
+			})
+			return
+		default:
+			values[db.SettingCLISessionMaxHours] = strconv.Itoa(hours)
+		}
+	}
+	if req.KubeconfigIssuance != nil {
+		value := strings.ToLower(strings.TrimSpace(*req.KubeconfigIssuance))
+		if value != "" && value != issuanceAllowed && value != issuanceCLIOnly {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "kubeconfig_issuance must be allowed or cli_only"})
+			return
+		}
+		values[db.SettingKubeconfigIssuance] = value
 	}
 
 	if err := s.store.PutSettings(c.Request.Context(), values, caller.ID); err != nil {

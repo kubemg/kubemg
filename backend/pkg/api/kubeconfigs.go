@@ -326,6 +326,10 @@ type revokeAllKubeconfigsResponse struct {
 	// Revoked is how many credentials this stopped — agent-mode rows, which
 	// stop on their next call.
 	Revoked int `json:"revoked"`
+	// CLISessionsRevoked is how many signed-in `kubemg` CLIs it ended. A
+	// blanket revoke that left them working would be a revoke that did not
+	// happen.
+	CLISessionsRevoked int `json:"cli_sessions_revoked"`
 	// StillValid is how many were withdrawn in the register but keep working,
 	// which is every direct-mode row, and Clusters names the clusters they are
 	// on so the cluster-side lever can actually be pulled.
@@ -370,10 +374,21 @@ func (s *server) revokeAllKubeconfigs(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not revoke the credentials"})
 		return
 	}
+	sessions, sessionErr := s.revokeCLISessionsFor(c, caller, target)
 	s.publishRevokedCredentials(ctx)
 	s.recordKubeconfigRevocation(c, caller, revoked)
+	if sessionErr != nil {
+		// The kubeconfigs are withdrawn; the sessions are not, and saying the
+		// whole revoke failed would hide the half that landed.
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "the kubeconfigs were revoked, but the CLI sessions could not be — revoke them one by one",
+		})
+		return
+	}
 
-	c.JSON(http.StatusOK, summariseBlanketRevoke(revoked))
+	summary := summariseBlanketRevoke(revoked)
+	summary.CLISessionsRevoked = sessions
+	c.JSON(http.StatusOK, summary)
 }
 
 // summariseBlanketRevoke splits what was stopped from what was only recorded as
@@ -474,7 +489,16 @@ func (s *server) publishRevokedCredentials(ctx context.Context) {
 	if s.credentials == nil {
 		return
 	}
-	ids, err := s.store.RevokedKubeconfigTokenIDs(ctx, time.Now().UTC())
+	now := time.Now().UTC()
+	ids, err := s.store.RevokedKubeconfigTokenIDs(ctx, now)
+	if err == nil {
+		// A CLI session's tokens all carry the session's id as their jti, so
+		// the ended sessions join the same set and the gateway asks nothing new.
+		var sessions []string
+		if sessions, err = s.store.RevokedCLISessionIDs(ctx, now); err == nil {
+			ids = append(ids, sessions...)
+		}
+	}
 	if err != nil {
 		if ctx.Err() == nil {
 			s.log().Warn("could not refresh the revoked credential set",
@@ -491,6 +515,9 @@ func (s *server) publishRevokedCredentials(ctx context.Context) {
 // call it was observing.
 func (s *server) credentialToucher() credentials.Toucher {
 	return func(ctx context.Context, tokenID string, at time.Time) {
+		// The id is a kubeconfig's or a CLI session's; whichever it is not
+		// matches no row and writes nothing.
 		_ = s.store.TouchKubeconfigIssuance(ctx, tokenID, at)
+		_ = s.store.TouchCLISession(ctx, tokenID, at)
 	}
 }

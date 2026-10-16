@@ -170,6 +170,26 @@ type Store interface {
 	TouchKubeconfigIssuance(ctx context.Context, tokenID string, at time.Time) error
 	PruneKubeconfigIssuances(ctx context.Context, before time.Time) (int64, error)
 
+	// Signed-in `kubemg` CLIs and the device-code requests that create them —
+	// see cli_auth.go. A session's id is the jti of every token it mints, so
+	// RevokedCLISessionIDs joins the same published snapshot.
+	CreateCLIDeviceCode(ctx context.Context, code *db.CLIDeviceCode) error
+	PendingCLIDeviceCodesFrom(ctx context.Context, sourceIP string, now time.Time) (int64, error)
+	CLIDeviceCodeByUserCode(ctx context.Context, userCode string, now time.Time) (*db.CLIDeviceCode, error)
+	CLIDeviceCodeByHash(ctx context.Context, hash string) (*db.CLIDeviceCode, error)
+	DecideCLIDeviceCode(ctx context.Context, userCode, status string, userID uint, now time.Time) (bool, error)
+	PollCLIDeviceCode(ctx context.Context, hash string, now time.Time) error
+	TakeCLIDeviceCode(ctx context.Context, hash string) (*db.CLIDeviceCode, error)
+	CreateCLISession(ctx context.Context, session *db.CLISession) error
+	CLISessionByRefreshHash(ctx context.Context, hash string) (*db.CLISession, error)
+	CLISessionByID(ctx context.Context, id string) (*db.CLISession, error)
+	ListCLISessions(ctx context.Context, filter db.CLISessionFilter) ([]db.CLISession, int64, error)
+	RevokeCLISession(ctx context.Context, id string, at time.Time, by uint, byName string) (*db.CLISession, error)
+	RevokeCLISessionsForUser(ctx context.Context, userID uint, at time.Time, by uint, byName string) ([]db.CLISession, error)
+	RevokedCLISessionIDs(ctx context.Context, now time.Time) ([]string, error)
+	TouchCLISession(ctx context.Context, id string, at time.Time) error
+	PruneCLISessions(ctx context.Context, before time.Time) (int64, error)
+
 	ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]db.AuditEvent, int64, error)
 	ExportAuditEvents(ctx context.Context, filter db.AuditFilter) ([]db.AuditEvent, bool, error)
 	AuditSummary(ctx context.Context, since time.Time) (db.AuditStats, error)
@@ -771,6 +791,27 @@ func NewRouter(opts Options) *gin.Engine {
 		// you know you lost must not require finding an administrator, and you
 		// cannot revoke what you cannot see. The handlers enforce the other half:
 		// revoking somebody else's is administrative, revoking your own never is.
+		// The `kubemg` CLI. Starting and polling a sign-in are unauthenticated by
+		// necessity and narrow for it (a request does nothing until a signed-in
+		// person approves it); reading and deciding one is the person's, behind
+		// their session; and the CLI's own calls ride its refresh token, which
+		// RequireAuth refuses everywhere else. See cli_auth.go.
+		v1.POST("/auth/cli/device", s.startDeviceLogin)
+		v1.POST("/auth/cli/token", s.pollDeviceLogin)
+		v1.GET("/auth/cli/device/:code", requireAuth, s.describeDeviceLogin)
+		v1.POST("/auth/cli/device/:code/approve", requireAuth, s.approveDeviceLogin)
+		v1.POST("/auth/cli/device/:code/deny", requireAuth, s.denyDeviceLogin)
+		cli := v1.Group("/auth/cli", s.requireCLISession)
+		cli.GET("/clusters", s.cliClusters)
+		cli.POST("/credential", s.cliCredential)
+		cli.POST("/logout", s.cliLogout)
+
+		// The CLI sessions in the register, under the kubeconfig register's read
+		// rule: everyone reads their own, an administrator anybody's.
+		cliSessions := v1.Group("/cli-sessions", requireAuth)
+		cliSessions.GET("", s.listCLISessions)
+		cliSessions.POST("/:id/revoke", s.revokeCLISession)
+
 		kubeconfigs := v1.Group("/kubeconfigs", requireAuth)
 		kubeconfigs.GET("", s.listKubeconfigs)
 		// The blanket action is registered before the parameterised route so

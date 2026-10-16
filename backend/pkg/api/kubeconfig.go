@@ -103,6 +103,13 @@ func (s *server) generateKubeconfig(c *gin.Context) {
 	// instead, which is the path that carries impersonation, namespace scope
 	// and the audit trail anyway.
 	if cluster.UsesAgent() {
+		// Under cli_only the long-lived file is not handed out at all: the CLI's
+		// fifteen-minute credentials, under a session that met the second
+		// factor, are the only way kubectl reaches an agent-mode cluster.
+		if normalizeIssuance(s.settings(ctx).KubeconfigIssuance) == issuanceCLIOnly {
+			c.JSON(http.StatusConflict, gin.H{"error": cliOnlyRefusal})
+			return
+		}
 		s.agentKubeconfig(c, user, cluster, namespace, k8sRole, ttl)
 		return
 	}
@@ -237,10 +244,19 @@ func (s *server) kubeconfigPolicy(c *gin.Context) {
 	if _, ok := s.currentUser(c); !ok {
 		return
 	}
+	ctx := c.Request.Context()
 	c.JSON(http.StatusOK, gin.H{
 		"min_ttl_seconds":     int64(k8s.MinTTL.Seconds()),
 		"default_ttl_seconds": int64(k8s.DefaultTTL.Seconds()),
-		"max_ttl_seconds":     int64(s.kubeconfigMaxTTL(c.Request.Context()).Seconds()),
+		"max_ttl_seconds":     int64(s.kubeconfigMaxTTL(ctx).Seconds()),
+		// Whether the drawer offers an agent-mode download at all, and how long
+		// a CLI session would last — both things the person is about to choose
+		// between, so both readable by anyone who can generate.
+		"issuance":              normalizeIssuance(s.settings(ctx).KubeconfigIssuance),
+		"cli_session_max_hours": int(s.cliSessionCap(ctx).Hours()),
+		// The address `kubemg login --server` takes. It is in every agent-mode
+		// kubeconfig already, so saying it here discloses nothing new.
+		"server_url": strings.TrimRight(s.settings(ctx).PublicURL, "/"),
 	})
 }
 

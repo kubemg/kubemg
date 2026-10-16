@@ -39,6 +39,10 @@ On **My profile**:
 - **Remove** a factor — needs a current code (from any factor, or a recovery code). Removing the last one takes the recovery codes with it, and sign-in goes back to a password alone. If your organisation requires a factor, the last one cannot be removed; add another first.
 - **New recovery codes** — needs a current code. Ten new codes replace the old set, used or not.
 
+## The command line
+
+`kubemg login` never asks for a code itself: it is approved in the browser, from a session that already passed the factor. A session that did not cannot approve when the account holds a factor or must hold one. See [The kubemg command line](cli.md).
+
 ## Requiring a second factor
 
 **Admin → Settings → General → Second factor**, stored as the `mfa_enforcement` setting:

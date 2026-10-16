@@ -82,10 +82,25 @@ func (m *Manager) GenerateWithMFA(userID uint, username, role string) (string, t
 func (m *Manager) GenerateProxyToken(
 	userID uint, username, role string, clusterID uint, ttl time.Duration,
 ) (token string, tokenID string, expiresAt time.Time, err error) {
+	tokenID = uuid.NewString()
+	token, expiresAt, err = m.GenerateProxyTokenWithID(userID, username, role, clusterID, ttl, tokenID)
+	if err != nil {
+		return "", "", time.Time{}, err
+	}
+	return token, tokenID, expiresAt, nil
+}
+
+// GenerateProxyTokenWithID is GenerateProxyToken with the id chosen by the
+// caller. The CLI is its one user: every short-lived token a CLI session mints
+// carries the session's own id, so withdrawing the session in the register
+// withdraws every token it ever minted through the snapshot the gateway already
+// consults — one row, one id, no second question on the hot path.
+func (m *Manager) GenerateProxyTokenWithID(
+	userID uint, username, role string, clusterID uint, ttl time.Duration, tokenID string,
+) (string, time.Time, error) {
 	if ttl <= 0 {
 		ttl = m.ttl
 	}
-	tokenID = uuid.NewString()
 	claims := Claims{
 		UserID:    userID,
 		Username:  username,
@@ -96,11 +111,7 @@ func (m *Manager) GenerateProxyToken(
 	// A promoted field cannot be set in a composite literal, and sign rebuilds
 	// the registered claims from this one anyway.
 	claims.ID = tokenID
-	token, expiresAt, err = m.sign(claims, ttl)
-	if err != nil {
-		return "", "", time.Time{}, err
-	}
-	return token, tokenID, expiresAt, nil
+	return m.sign(claims, ttl)
 }
 
 func (m *Manager) sign(claims Claims, ttl time.Duration) (string, time.Time, error) {

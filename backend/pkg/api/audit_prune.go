@@ -128,6 +128,15 @@ func (s *server) pruneAudit(ctx context.Context) {
 // here must not stop the audit pass below, which is why it reports rather than
 // returns.
 func (s *server) pruneKubeconfigRegister(ctx context.Context, before time.Time) {
+	// CLI sessions are the same register by another name: a session that ended
+	// before the audit window goes with the records of the calls it made.
+	if pruned, err := s.store.PruneCLISessions(ctx, before); err != nil {
+		if ctx.Err() == nil {
+			s.log().Warn("CLI session retention pass failed", slog.String("error", err.Error()))
+		}
+	} else if pruned > 0 {
+		s.log().Info("pruned CLI sessions past their retention window", slog.Int64("removed", pruned))
+	}
 	removed, err := s.store.PruneKubeconfigIssuances(ctx, before)
 	if err != nil {
 		if ctx.Err() == nil {

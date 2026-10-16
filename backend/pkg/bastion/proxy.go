@@ -626,7 +626,8 @@ func (p *Proxy) resolve(c *gin.Context) (*db.User, *db.Cluster, db.UserClusterAc
 	// revoked here, because nothing in the register can name it.
 	if p.issued.Observe(claims.ID) {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-			"error": "this kubeconfig has been revoked; generate a new one from the KubeMG console",
+			"error": "this credential has been revoked — generate a new kubeconfig from the KubeMG console, " +
+				"or run kubemg login if it came from the CLI",
 		})
 		return nil, nil, noGrant, false
 	}

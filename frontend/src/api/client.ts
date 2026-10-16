@@ -98,6 +98,8 @@ import type {
   ShellState,
   ServerVersion,
   LogQueryResponse,
+  CLIDeviceRequest,
+  CLISession,
   MFAConfirmResult,
   MFAEnrollment,
   MFASessionResponse,
@@ -395,6 +397,31 @@ export async function regenerateRecoveryCodes(code: string): Promise<string[]> {
 export async function fetchUserMFA(userId: number): Promise<MFAStatus> {
   const { data } = await http.get<MFAStatus>(`/users/${userId}/mfa`)
   return { ...data, factors: data.factors ?? [] }
+}
+
+/* ---------------------------------------------------------------- cli --- */
+
+/** A `kubemg login` waiting for approval, by the code it showed. */
+export async function fetchCLIDeviceRequest(code: string): Promise<CLIDeviceRequest> {
+  const { data } = await http.get<CLIDeviceRequest>(`/auth/cli/device/${encodeURIComponent(code)}`)
+  return data
+}
+
+export async function decideCLIDeviceRequest(code: string, decision: 'approve' | 'deny'): Promise<void> {
+  await http.post(`/auth/cli/device/${encodeURIComponent(code)}/${decision}`)
+}
+
+export async function fetchCLISessions(input: { userId?: number; activeOnly?: boolean } = {}): Promise<CLISession[]> {
+  const params: Record<string, string> = {}
+  if (input.userId) params.user_id = String(input.userId)
+  if (input.activeOnly) params.status = 'active'
+  const { data } = await http.get<{ sessions: CLISession[] }>('/cli-sessions', { params })
+  return data.sessions ?? []
+}
+
+export async function revokeCLISession(id: string): Promise<CLISession> {
+  const { data } = await http.post<CLISession>(`/cli-sessions/${encodeURIComponent(id)}/revoke`)
+  return data
 }
 
 export async function resetUserMFA(userId: number): Promise<{ factors_removed: number }> {
