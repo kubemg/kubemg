@@ -435,3 +435,20 @@ describe('Login with a security key', () => {
     expect(adopt).toHaveBeenCalledWith('session-token', user)
   })
 })
+
+describe('the sign-in on the way to approving a kubemg login', () => {
+  afterEach(() => sessionStorage.clear())
+
+  it('says a command line is waiting, so the walk from the terminal reads as one errand', async () => {
+    sessionStorage.setItem('kubemg.returnTo', '/cli/activate?code=BCDF-GHJK')
+    await draw()
+    expect(screen.getByText(/approve the kubemg login waiting in your terminal/)).toBeTruthy()
+    expect(screen.getByText(/A command line is waiting/)).toBeTruthy()
+  })
+
+  it('is the ordinary sign-in otherwise', async () => {
+    await draw()
+    expect(screen.getByText('Use the account your administrator issued.')).toBeTruthy()
+    expect(screen.queryByText(/A command line is waiting/)).toBeNull()
+  })
+})

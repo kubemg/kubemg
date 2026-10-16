@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { CLIDeviceRequest } from '../api/types'
@@ -31,8 +32,12 @@ const request: CLIDeviceRequest = {
   session_hours: 12,
 }
 
-async function draw(code: string, onCode = vi.fn()) {
-  render(<CliActivateBody code={code} onCode={onCode} />)
+async function draw(code: string, onCode = vi.fn(), extra: { account?: string; onSwitchAccount?: () => void } = {}) {
+  render(
+    <MemoryRouter>
+      <CliActivateBody code={code} onCode={onCode} {...extra} />
+    </MemoryRouter>,
+  )
   await act(async () => {})
   return onCode
 }
@@ -77,6 +82,29 @@ describe('approving a CLI sign-in', () => {
     })
     expect(client.decideCLIDeviceRequest).toHaveBeenCalledWith('BCDF-GHJK', 'approve')
     expect(screen.getByText(/Go back to your terminal/)).toBeTruthy()
+  })
+
+  it('leads with the code to compare against the terminal, and names the account approving', async () => {
+    client.fetchCLIDeviceRequest.mockResolvedValue(request)
+    const onSwitchAccount = vi.fn()
+    await draw('BCDF-GHJK', vi.fn(), { account: 'dana', onSwitchAccount })
+    expect(screen.getByText('BCDF-GHJK')).toBeTruthy()
+    expect(screen.getByText(/matches the one in your terminal/)).toBeTruthy()
+    expect(screen.getAllByText('dana').length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Use another account' }))
+    expect(onSwitchAccount).toHaveBeenCalled()
+  })
+
+  it('denies, and says nothing was signed in', async () => {
+    client.fetchCLIDeviceRequest.mockResolvedValue(request)
+    client.decideCLIDeviceRequest.mockResolvedValue(undefined)
+    await draw('BCDF-GHJK')
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Deny' }))
+    })
+    expect(client.decideCLIDeviceRequest).toHaveBeenCalledWith('BCDF-GHJK', 'deny')
+    expect(screen.getByText('Sign-in denied')).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'My credentials' })).toBeNull()
   })
 
   it('says what the server refused, and offers the code box again for an expired one', async () => {
