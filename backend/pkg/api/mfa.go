@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,6 +17,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/webauthn"
 
 	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/bastion"
@@ -100,8 +103,10 @@ type mfaChallengeResponse struct {
 	MFAEnrollmentRequired bool      `json:"mfa_enrollment_required,omitempty"`
 	Challenge             string    `json:"challenge"`
 	ExpiresAt             time.Time `json:"challenge_expires_at"`
-	// Methods is what the code step accepts, so the form can offer the
-	// recovery-code path only when there is one.
+	// Methods is what the step accepts, so the form offers only what will
+	// work: for a verify challenge the factors held — a security key first —
+	// and recovery when codes are left; for an enrolment, the kinds that can be
+	// set up here.
 	Methods []string `json:"methods,omitempty"`
 }
 
@@ -134,34 +139,43 @@ func (s *server) challengeSignIn(c *gin.Context, user *db.User) bool {
 		return false
 	}
 
-	challenge, expiresAt, err := s.mintMFAChallenge(ctx, user.ID, purpose)
+	challenge, expiresAt, err := s.mintMFAChallenge(ctx, user.ID, purpose, "")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not start the second step of sign-in"})
 		return true
 	}
+	_, keys := s.relyingParty(ctx)
 	response := mfaChallengeResponse{Challenge: challenge, ExpiresAt: expiresAt}
 	if purpose == db.MFAChallengeVerify {
 		response.MFARequired = true
-		response.Methods = []string{db.MFAKindTOTP}
-		if state.RecoveryCodesRemaining > 0 {
-			response.Methods = append(response.Methods, "recovery")
-		}
+		response.Methods = mfaMethods(state, keys)
 	} else {
 		response.MFAEnrollmentRequired = true
+		response.Methods = []string{db.MFAKindTOTP}
+		if keys.Available {
+			response.Methods = append(response.Methods, db.MFAKindWebAuthn)
+		}
 	}
 	c.JSON(http.StatusOK, response)
 	return true
 }
 
-func (s *server) mintMFAChallenge(ctx context.Context, userID uint, purpose string) (string, time.Time, error) {
+// mintMFAChallenge files a challenge row. ceremony is a security-key
+// ceremony's state, and empty for a sign-in's.
+func (s *server) mintMFAChallenge(ctx context.Context, userID uint, purpose, ceremony string) (string, time.Time, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return "", time.Time{}, fmt.Errorf("generate challenge: %w", err)
 	}
 	challenge := mfaChallengePrefix + base64.RawURLEncoding.EncodeToString(buf)
-	expiresAt := time.Now().UTC().Add(mfaChallengeTTL)
+	ttl := mfaChallengeTTL
+	if purpose == db.MFAChallengeWebAuthn {
+		ttl = webauthnTimeout
+	}
+	expiresAt := time.Now().UTC().Add(ttl)
 	err := s.store.PutMFAChallenge(ctx, &db.MFAChallenge{
 		TokenHash: hashMFAChallenge(challenge), UserID: userID, Purpose: purpose, ExpiresAt: expiresAt,
+		Ceremony: ceremony,
 	})
 	if err != nil {
 		return "", time.Time{}, err
@@ -232,14 +246,24 @@ func (s *server) spendChallenge(c *gin.Context, hash string) bool {
 const (
 	proofTOTP     = "totp"
 	proofRecovery = "recovery"
+	proofWebAuthn = "webauthn"
 )
 
-// proveFactor checks a submitted code against an account's confirmed factors,
-// or failing the TOTP shape, against its unspent recovery codes. It returns how
-// the factor was proved, or "" when the code proves nothing. Accepting a code
-// is a write — a TOTP step advanced, a recovery code spent — so the same code
-// cannot prove anything twice, on this replica or another.
-func (s *server) proveFactor(ctx context.Context, user *db.User, state db.MFAState, code string) (string, error) {
+// proveFactor checks a proof against an account's confirmed factors: a security
+// key's answer against its keys, a code against its apps, or failing the TOTP
+// shape, against its unspent recovery codes. It returns how the factor was
+// proved, or "" when the proof proves nothing. Accepting one is a write — a
+// TOTP step or a key's counter advanced, a recovery code spent — so the same
+// proof cannot prove anything twice, on this replica or another.
+func (s *server) proveFactor(ctx context.Context, user *db.User, state db.MFAState, proof factorProof) (string, error) {
+	if proof.WebAuthn != nil {
+		ok, err := s.proveWebAuthn(ctx, user, state, proof.WebAuthn)
+		if err != nil || !ok {
+			return "", err
+		}
+		return proofWebAuthn, nil
+	}
+	code := proof.Code
 	now := time.Now().UTC()
 	if auth.LooksLikeTOTP(code) {
 		for _, factor := range state.Factors {
@@ -275,7 +299,10 @@ func (s *server) proveFactor(ctx context.Context, user *db.User, state db.MFASta
 
 type mfaVerifyRequest struct {
 	Challenge string `json:"challenge" binding:"required"`
-	Code      string `json:"code" binding:"required"`
+	// Code is an app's code or a recovery code; WebAuthn is a security key's
+	// answer. One of the two.
+	Code     string         `json:"code"`
+	WebAuthn *webauthnProof `json:"webauthn"`
 }
 
 // mfaSessionResponse is a session finished by a second factor. When a recovery
@@ -292,10 +319,11 @@ type mfaSessionResponse struct {
 // script.
 func (s *server) verifyMFA(c *gin.Context) {
 	var req mfaVerifyRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "challenge and code are required"})
+	if err := c.ShouldBindJSON(&req); err != nil || req.factorProof().empty() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "challenge and a code or a security key are required"})
 		return
 	}
+	proof := req.factorProof()
 	user, hash, ok := s.challengeUser(c, req.Challenge, db.MFAChallengeVerify)
 	if !ok {
 		return
@@ -312,14 +340,14 @@ func (s *server) verifyMFA(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check the second factor"})
 		return
 	}
-	proof, err := s.proveFactor(ctx, user, state, req.Code)
+	proved, err := s.proveFactor(ctx, user, state, proof)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check the second factor"})
 		return
 	}
-	if proof == "" {
+	if proved == "" {
 		s.signInFailed(c, attempt)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "that code is not right"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": proof.refusal()})
 		return
 	}
 	attempt.Succeed()
@@ -332,13 +360,17 @@ func (s *server) verifyMFA(c *gin.Context) {
 		return
 	}
 	response := mfaSessionResponse{loginResponse: session}
-	if proof == proofRecovery {
+	if proved == proofRecovery {
 		s.recordMFAEvent(c, user, user, verbMFARecoveryUsed, "")
 		if after, err := s.store.MFAState(ctx, user.ID); err == nil {
 			response.RecoveryCodesRemaining = &after.RecoveryCodesRemaining
 		}
 	}
 	c.JSON(http.StatusOK, response)
+}
+
+func (r mfaVerifyRequest) factorProof() factorProof {
+	return factorProof{Code: r.Code, WebAuthn: r.WebAuthn}
 }
 
 func mfaThrottleAccount(userID uint) string {
@@ -355,6 +387,10 @@ type mfaStatusResponse struct {
 	Enrolled               bool           `json:"enrolled"`
 	Factors                []db.MFAFactor `json:"factors"`
 	RecoveryCodesRemaining int64          `json:"recovery_codes_remaining"`
+	// WebAuthn says whether a security key can be added and used here, and
+	// which host the keys are bound to, so a key registered under an old
+	// public URL can be shown as the one that no longer works.
+	WebAuthn webauthnStatus `json:"webauthn"`
 }
 
 func (s *server) mfaStatus(ctx context.Context, user *db.User) (mfaStatusResponse, error) {
@@ -370,6 +406,7 @@ func (s *server) mfaStatus(ctx context.Context, user *db.User) (mfaStatusRespons
 	out.Enrolled = state.Enrolled()
 	out.Factors = state.Factors
 	out.RecoveryCodesRemaining = state.RecoveryCodesRemaining
+	_, out.WebAuthn = s.relyingParty(ctx)
 	return out, nil
 }
 
@@ -406,6 +443,8 @@ func refuseMFAFor(c *gin.Context, user *db.User) bool {
 }
 
 type mfaEnrollRequest struct {
+	// Kind is totp (the default) or webauthn.
+	Kind string `json:"kind"`
 	Name string `json:"name"`
 	// Challenge is an enrolment challenge from a sign-in that could not finish
 	// without a factor. Absent, the caller's session is what authorises this.
@@ -413,13 +452,19 @@ type mfaEnrollRequest struct {
 	// CurrentCode is required when the account already holds a factor: a
 	// stolen session must not be able to add the thief's authenticator.
 	CurrentCode string `json:"current_code"`
+	// CurrentWebAuthn is a security key's answer in place of the code.
+	CurrentWebAuthn *webauthnProof `json:"current_webauthn"`
 }
 
+// mfaEnrollResponse is an enrolment begun. An app's carries its secret, shown
+// once; a key's carries the options the browser makes a credential with.
 type mfaEnrollResponse struct {
-	FactorID uint   `json:"factor_id"`
-	Secret   string `json:"secret"`
-	URI      string `json:"otpauth_uri"`
-	QR       string `json:"qr"`
+	FactorID uint                         `json:"factor_id"`
+	Kind     string                       `json:"kind"`
+	Secret   string                       `json:"secret,omitempty"`
+	URI      string                       `json:"otpauth_uri,omitempty"`
+	QR       string                       `json:"qr,omitempty"`
+	WebAuthn *protocol.CredentialCreation `json:"webauthn,omitempty"`
 }
 
 // enrollMFA starts an enrolment: a secret, shown once, waiting for its first
@@ -438,6 +483,41 @@ func (s *server) enrollMFA(c *gin.Context) {
 	if refuseMFAFor(c, user) {
 		return
 	}
+	kind := strings.ToLower(strings.TrimSpace(req.Kind))
+	if kind == "" {
+		kind = db.MFAKindTOTP
+	}
+	if kind != db.MFAKindTOTP && kind != db.MFAKindWebAuthn {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a factor is an authenticator app (totp) or a security key (webauthn)"})
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = "Authenticator app"
+		if kind == db.MFAKindWebAuthn {
+			name = "Security key"
+		}
+	}
+	if len([]rune(name)) > maxFactorName {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("a factor's name is at most %d characters", maxFactorName),
+		})
+		return
+	}
+	// Whether a key can be registered here is settled before any proof is
+	// taken: a refusal must not have spent the code that came with it.
+	var rp *webauthn.WebAuthn
+	var keys webauthnStatus
+	if kind == db.MFAKindWebAuthn {
+		rp, keys = s.relyingParty(c.Request.Context())
+		if !keys.Available {
+			c.JSON(http.StatusConflict, gin.H{"error": keys.Reason})
+			return
+		}
+		if refuseForeignOrigin(c, keys) {
+			return
+		}
+	}
 	ctx := c.Request.Context()
 	state, err := s.store.MFAState(ctx, user.ID)
 	if err != nil {
@@ -451,20 +531,14 @@ func (s *server) enrollMFA(c *gin.Context) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": errChallengeGone.Error()})
 			return
 		}
-		if !s.requireCurrentFactor(c, user, state, req.CurrentCode,
+		if !s.requireCurrentFactor(c, user, state,
+			factorProof{Code: req.CurrentCode, WebAuthn: req.CurrentWebAuthn},
 			"adding another factor needs a code from one you already have") {
 			return
 		}
 	}
-
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		name = "Authenticator app"
-	}
-	if len([]rune(name)) > maxFactorName {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": fmt.Sprintf("a factor's name is at most %d characters", maxFactorName),
-		})
+	if kind == db.MFAKindWebAuthn {
+		s.beginWebAuthnEnrollment(c, rp, keys, user, state, name)
 		return
 	}
 
@@ -484,7 +558,7 @@ func (s *server) enrollMFA(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not draw the QR code"})
 		return
 	}
-	c.JSON(http.StatusOK, mfaEnrollResponse{FactorID: factor.ID, Secret: secret, URI: uri, QR: qr})
+	c.JSON(http.StatusOK, mfaEnrollResponse{FactorID: factor.ID, Kind: db.MFAKindTOTP, Secret: secret, URI: uri, QR: qr})
 }
 
 // mfaAccountLabel is the account half of an authenticator entry: the username
@@ -497,9 +571,12 @@ func (s *server) mfaAccountLabel(ctx context.Context, user *db.User) string {
 }
 
 type mfaConfirmRequest struct {
-	FactorID  uint   `json:"factor_id" binding:"required"`
-	Code      string `json:"code" binding:"required"`
-	Challenge string `json:"challenge"`
+	FactorID uint `json:"factor_id" binding:"required"`
+	// Code is the app's first code; Credential is what a security key made,
+	// the browser's PublicKeyCredential as JSON. The factor's kind says which.
+	Code       string          `json:"code"`
+	Credential json.RawMessage `json:"credential"`
+	Challenge  string          `json:"challenge"`
 }
 
 // mfaConfirmResponse carries the recovery codes when this was the account's
@@ -510,11 +587,12 @@ type mfaConfirmResponse struct {
 	Session       *mfaSessionResponse `json:"session,omitempty"`
 }
 
-// confirmMFA finishes an enrolment with the first code the app produced.
+// confirmMFA finishes an enrolment with the first code the app produced, or the
+// credential the key made.
 func (s *server) confirmMFA(c *gin.Context) {
 	var req mfaConfirmRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "factor_id and code are required"})
+	if err := c.ShouldBindJSON(&req); err != nil || (strings.TrimSpace(req.Code) == "" && len(req.Credential) == 0) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "factor_id and a code or a key's credential are required"})
 		return
 	}
 	user, hash, ok := s.mfaSubject(c, req.Challenge)
@@ -546,21 +624,30 @@ func (s *server) confirmMFA(c *gin.Context) {
 		return
 	}
 	now := time.Now().UTC()
-	step, ok := auth.VerifyTOTP(factor.Secret, req.Code, 0, now)
-	if !ok {
-		if attempt != nil {
-			s.signInFailed(c, attempt)
-		}
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "that code is not right — check the phone's clock and try the next one"})
-		return
-	}
-	if attempt != nil {
-		attempt.Succeed()
-	}
 	state, err := s.store.MFAState(ctx, user.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not read the second factor"})
 		return
+	}
+	var step int64
+	var record string
+	if factor.Kind == db.MFAKindWebAuthn {
+		record, step, ok = s.finishWebAuthnEnrollment(c, user, state, factor, req.Credential, attempt)
+		if !ok {
+			return
+		}
+	} else {
+		step, ok = auth.VerifyTOTP(factor.Secret, req.Code, 0, now)
+		if !ok {
+			if attempt != nil {
+				s.signInFailed(c, attempt)
+			}
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "that code is not right — check the phone's clock and try the next one"})
+			return
+		}
+	}
+	if attempt != nil {
+		attempt.Succeed()
 	}
 
 	var codes, hashes []string
@@ -575,7 +662,7 @@ func (s *server) confirmMFA(c *gin.Context) {
 			hashes[i] = auth.HashRecoveryCode(code)
 		}
 	}
-	err = s.store.ConfirmMFAFactor(ctx, user.ID, factor.ID, step, now, hashes)
+	err = s.store.ConfirmMFAFactor(ctx, user.ID, factor.ID, step, record, now, hashes)
 	if errors.Is(err, db.ErrNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "that enrolment has expired; start again"})
 		return
@@ -584,7 +671,7 @@ func (s *server) confirmMFA(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not confirm the factor"})
 		return
 	}
-	s.recordMFAEvent(c, user, user, verbMFAEnroll, "")
+	s.recordMFAEvent(c, user, user, verbMFAEnroll, factor.Kind)
 
 	response := mfaConfirmResponse{RecoveryCodes: codes}
 	if hash != "" {
@@ -615,12 +702,12 @@ func (s *server) mfaSubject(c *gin.Context, challenge string) (*db.User, string,
 	return user, "", ok
 }
 
-// requireCurrentFactor proves a code before a change to the factors
+// requireCurrentFactor proves a code or a key before a change to the factors
 // themselves, answering the request when it does not.
 func (s *server) requireCurrentFactor(
-	c *gin.Context, user *db.User, state db.MFAState, code, missing string,
+	c *gin.Context, user *db.User, state db.MFAState, proof factorProof, missing string,
 ) bool {
-	if strings.TrimSpace(code) == "" {
+	if proof.empty() {
 		c.JSON(http.StatusBadRequest, gin.H{"error": missing})
 		return false
 	}
@@ -629,25 +716,30 @@ func (s *server) requireCurrentFactor(
 		return false
 	}
 	defer attempt.Release()
-	proof, err := s.proveFactor(c.Request.Context(), user, state, code)
+	proved, err := s.proveFactor(c.Request.Context(), user, state, proof)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check the second factor"})
 		return false
 	}
-	if proof == "" {
+	if proved == "" {
 		s.signInFailed(c, attempt)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "that code is not right"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": proof.refusal()})
 		return false
 	}
 	attempt.Succeed()
-	if proof == proofRecovery {
+	if proved == proofRecovery {
 		s.recordMFAEvent(c, user, user, verbMFARecoveryUsed, "")
 	}
 	return true
 }
 
 type mfaCodeRequest struct {
-	Code string `json:"code"`
+	Code     string         `json:"code"`
+	WebAuthn *webauthnProof `json:"webauthn"`
+}
+
+func (r mfaCodeRequest) factorProof() factorProof {
+	return factorProof{Code: r.Code, WebAuthn: r.WebAuthn}
 }
 
 // removeMFAFactor removes one of the caller's factors. A code is required — a
@@ -677,11 +769,13 @@ func (s *server) removeMFAFactor(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not read the second factor"})
 		return
 	}
-	found := false
+	kind := ""
 	for _, factor := range state.Factors {
-		found = found || factor.ID == id
+		if factor.ID == id {
+			kind = factor.Kind
+		}
 	}
-	if !found {
+	if kind == "" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "factor not found"})
 		return
 	}
@@ -691,7 +785,7 @@ func (s *server) removeMFAFactor(c *gin.Context) {
 		})
 		return
 	}
-	if !s.requireCurrentFactor(c, caller, state, req.Code, "removing a factor needs a current code") {
+	if !s.requireCurrentFactor(c, caller, state, req.factorProof(), "removing a factor needs a current code") {
 		return
 	}
 	if err := s.store.DeleteMFAFactor(ctx, caller.ID, id); err != nil {
@@ -702,7 +796,7 @@ func (s *server) removeMFAFactor(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not remove the factor"})
 		return
 	}
-	s.recordMFAEvent(c, caller, caller, verbMFARemove, "")
+	s.recordMFAEvent(c, caller, caller, verbMFARemove, kind)
 	s.getMFA(c)
 }
 
@@ -735,7 +829,7 @@ func (s *server) regenerateRecoveryCodes(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "recovery codes stand in for a factor; add one first"})
 		return
 	}
-	if !s.requireCurrentFactor(c, caller, state, req.Code, "new recovery codes need a current code") {
+	if !s.requireCurrentFactor(c, caller, state, req.factorProof(), "new recovery codes need a current code") {
 		return
 	}
 	codes, err := auth.NewRecoveryCodes()
@@ -804,8 +898,9 @@ func (s *server) resetUserMFA(c *gin.Context) {
 
 // recordMFAEvent puts a factor's change in the trail with the identities
 // crossed — who acted as the user, whose factor as the impersonated identity,
-// the kubeconfig register's convention. Never the secret or a code.
-func (s *server) recordMFAEvent(c *gin.Context, actor, subject *db.User, verb, failure string) {
+// the kubeconfig register's convention. kind, when one factor is the subject,
+// rides the path's query. Never the secret, a code or a key's credential.
+func (s *server) recordMFAEvent(c *gin.Context, actor, subject *db.User, verb, kind string) {
 	if s.auditor == nil {
 		return
 	}
@@ -815,10 +910,9 @@ func (s *server) recordMFAEvent(c *gin.Context, actor, subject *db.User, verb, f
 		Username: actor.Username,
 		Verb:     verb,
 		Method:   c.Request.Method,
-		Path:     c.Request.URL.Path,
+		Path:     c.Request.URL.Path + kindQuery(kind),
 		Resource: "users",
 		Status:   http.StatusOK,
-		Error:    failure,
 	}
 	if subject.ID != actor.ID {
 		event.ImpersonatedUser = subject.Username

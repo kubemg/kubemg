@@ -26,6 +26,7 @@ const mfa = vi.hoisted(() => ({
   verifyMFA: vi.fn(),
   enrollMFA: vi.fn(),
   confirmMFA: vi.fn(),
+  beginKeyCheck: vi.fn(),
 }))
 
 vi.mock('../api/client', () => ({
@@ -36,6 +37,7 @@ vi.mock('../api/client', () => ({
   verifyMFA: mfa.verifyMFA,
   enrollMFA: mfa.enrollMFA,
   confirmMFA: mfa.confirmMFA,
+  beginKeyCheck: mfa.beginKeyCheck,
 }))
 
 const oidc: SSOProviderSummary = { id: 3, name: 'Okta', protocol: 'oidc', interactive: true }
@@ -272,6 +274,163 @@ describe('Login second factor', () => {
     expect(go.disabled).toBe(false)
     await act(async () => {
       fireEvent.click(go)
+    })
+    expect(adopt).toHaveBeenCalledWith('session-token', user)
+  })
+})
+
+/*
+ * A security key, with the browser's half mocked: `navigator.credentials` is
+ * what jsdom does not have, and the server's half is tested in Go with a
+ * virtual authenticator. What is asserted here is the wiring — the ceremony is
+ * opened with the sign-in's challenge, the browser is handed bytes, and what it
+ * returns goes back as the proof — and that a browser without WebAuthn is never
+ * offered a key it cannot use.
+ */
+describe('Login with a security key', () => {
+  const user = { id: 1, username: 'dev' } as User
+  const session: MFASessionResponse = { token: 'session-token', expires_at: '2026-10-16T12:00:00Z', user }
+  const buf = (...values: number[]) => new Uint8Array(values).buffer
+  const browser = { get: vi.fn(), create: vi.fn() }
+
+  function withWebAuthn() {
+    Object.defineProperty(window, 'PublicKeyCredential', { value: function PublicKeyCredential() {}, configurable: true })
+    Object.defineProperty(navigator, 'credentials', { value: browser, configurable: true })
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(window, 'PublicKeyCredential')
+    Reflect.deleteProperty(navigator, 'credentials')
+    browser.get.mockReset()
+    browser.create.mockReset()
+    vi.clearAllMocks()
+  })
+
+  async function passwordStep(challenge: MFAChallenge, adoptSession = vi.fn(async () => {})) {
+    await draw(async () => challenge, adoptSession)
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'dev' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } })
+    await act(async () => {
+      fireEvent.submit(screen.getByLabelText('Username').closest('form') as HTMLFormElement)
+    })
+    return adoptSession
+  }
+
+  const verify: MFAChallenge = {
+    mfa_required: true,
+    challenge: 'kmgc_abc',
+    challenge_expires_at: '2026-10-16T12:05:00Z',
+    methods: ['webauthn', 'totp', 'recovery'],
+  }
+
+  it('offers the key first, and signs in with what it returns', async () => {
+    withWebAuthn()
+    mfa.beginKeyCheck.mockResolvedValue({
+      ceremony: 'kmgc_ceremony',
+      expires_at: '2026-10-16T12:02:00Z',
+      options: {
+        publicKey: { challenge: 'AQID', rpId: 'kubemg.example.com', allowCredentials: [{ type: 'public-key', id: 'BAUG' }] },
+      },
+    })
+    browser.get.mockResolvedValue({
+      id: 'BAUG',
+      rawId: buf(4, 5, 6),
+      type: 'public-key',
+      response: { clientDataJSON: buf(1), authenticatorData: buf(2), signature: buf(3), userHandle: null },
+    })
+    mfa.verifyMFA.mockResolvedValue(session)
+    const adopt = await passwordStep(verify)
+
+    expect(screen.queryByLabelText('Code')).toBeNull()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Use security key/ }))
+    })
+    expect(mfa.beginKeyCheck).toHaveBeenCalledWith('kmgc_abc')
+    const asked = browser.get.mock.calls[0][0].publicKey
+    expect(new Uint8Array(asked.challenge)).toEqual(new Uint8Array([1, 2, 3]))
+    expect(new Uint8Array(asked.allowCredentials[0].id)).toEqual(new Uint8Array([4, 5, 6]))
+    expect(mfa.verifyMFA).toHaveBeenCalledWith('kmgc_abc', '', {
+      ceremony: 'kmgc_ceremony',
+      credential: expect.objectContaining({
+        rawId: 'BAUG',
+        response: { clientDataJSON: 'AQ', authenticatorData: 'Ag', signature: 'Aw' },
+      }),
+    })
+    expect(adopt).toHaveBeenCalledWith('session-token', user)
+  })
+
+  it('says a dismissed prompt in words, opens nothing, and still offers the app', async () => {
+    withWebAuthn()
+    mfa.beginKeyCheck.mockResolvedValue({ ceremony: 'kmgc_c', expires_at: '', options: { publicKey: { challenge: 'AQID' } } })
+    browser.get.mockRejectedValue(new DOMException('cancelled', 'NotAllowedError'))
+    const adopt = await passwordStep(verify)
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Use security key/ }))
+    })
+    expect(screen.getByText(/closed or timed out/)).toBeTruthy()
+    expect(adopt).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Use the authenticator app' }))
+    expect(screen.getByLabelText('Code')).toBeTruthy()
+  })
+
+  it('says so when the only factor is a key and this browser cannot use one', async () => {
+    await passwordStep({ ...verify, methods: ['webauthn'] })
+    expect(screen.getByText(/this browser cannot use one/)).toBeTruthy()
+    expect(screen.queryByLabelText('Code')).toBeNull()
+  })
+
+  it('never offers a key to a browser that cannot ask one', async () => {
+    await passwordStep(verify)
+    expect(screen.queryByRole('button', { name: /security key/ })).toBeNull()
+    expect(screen.getByLabelText('Code')).toBeTruthy()
+  })
+
+  it('lets an account that must enrol choose a key, and finishes with its recovery codes', async () => {
+    withWebAuthn()
+    mfa.enrollMFA.mockResolvedValue({
+      factor_id: 12,
+      kind: 'webauthn',
+      webauthn: {
+        publicKey: {
+          rp: { id: 'kubemg.example.com', name: 'KubeMG' },
+          user: { id: 'AAAAAAAAAAE', name: 'dev', displayName: 'dev' },
+          challenge: 'AQID',
+          pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+        },
+      },
+    })
+    browser.create.mockResolvedValue({
+      id: 'BAUG',
+      rawId: buf(4, 5, 6),
+      type: 'public-key',
+      response: { clientDataJSON: buf(1), attestationObject: buf(2), getTransports: () => ['usb'] },
+    })
+    mfa.confirmMFA.mockResolvedValue({ recovery_codes: ['abcde-fghjk'], session })
+    const adopt = await passwordStep({
+      mfa_enrollment_required: true,
+      challenge: 'kmgc_enrol',
+      challenge_expires_at: '2026-10-16T12:05:00Z',
+      methods: ['totp', 'webauthn'],
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Security key or passkey/ }))
+    })
+    expect(mfa.enrollMFA).toHaveBeenCalledWith(expect.objectContaining({ kind: 'webauthn', challenge: 'kmgc_enrol' }))
+    expect(screen.getByText('kubemg.example.com')).toBeTruthy()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Register key' }))
+    })
+    expect(mfa.confirmMFA).toHaveBeenCalledWith({
+      factor_id: 12,
+      challenge: 'kmgc_enrol',
+      credential: expect.objectContaining({
+        rawId: 'BAUG',
+        response: { clientDataJSON: 'AQ', attestationObject: 'Ag', transports: ['usb'] },
+      }),
+    })
+    fireEvent.click(screen.getByLabelText('I have saved these codes'))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Continue to kubemg' }))
     })
     expect(adopt).toHaveBeenCalledWith('session-token', user)
   })

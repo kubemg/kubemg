@@ -76,18 +76,26 @@ func (s *Store) CreatePendingMFAFactor(ctx context.Context, factor *MFAFactor) e
 }
 
 // ConfirmMFAFactor marks a pending factor confirmed at the step its first code
-// matched. recoveryHashes, when non-nil, replaces the account's recovery codes
-// in the same transaction — the first factor comes with a set, later ones do
-// not touch it. A factor that is not pending, or not the account's, or older
-// than pendingFactorTTL is not found.
+// matched. secret, when not empty, replaces what the pending row held — a
+// security key's ceremony state becomes its credential record. recoveryHashes,
+// when non-nil, replaces the account's recovery codes in the same transaction —
+// the first factor comes with a set, later ones do not touch it. A factor that
+// is not pending, or not the account's, or older than pendingFactorTTL is not
+// found.
 func (s *Store) ConfirmMFAFactor(
-	ctx context.Context, userID, id uint, step int64, at time.Time, recoveryHashes []string,
+	ctx context.Context, userID, id uint, step int64, secret string, at time.Time, recoveryHashes []string,
 ) error {
 	return s.gdb.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		update := map[string]any{"confirmed_at": at, "last_used_at": at, "last_step": step}
+		if secret != "" {
+			// Sealed on the way in by the kubemg:seal_secrets callback: a map
+			// update bypasses the column's serializer.
+			update["secret"] = secret
+		}
 		res := tx.Model(&MFAFactor{}).
 			Where("id = ? AND user_id = ? AND confirmed_at IS NULL AND created_at >= ?",
 				id, userID, at.Add(-pendingFactorTTL)).
-			Updates(map[string]any{"confirmed_at": at, "last_used_at": at, "last_step": step})
+			Updates(update)
 		if res.Error != nil {
 			return fmt.Errorf("confirm mfa factor: %w", res.Error)
 		}
@@ -110,6 +118,26 @@ func (s *Store) AdvanceMFAStep(ctx context.Context, factorID uint, step int64, a
 		Updates(map[string]any{"last_step": step, "last_used_at": at})
 	if res.Error != nil {
 		return false, fmt.Errorf("advance mfa step: %w", res.Error)
+	}
+	return res.RowsAffected == 1, nil
+}
+
+// AdvanceMFACounter accepts a security key's signature counter for a confirmed
+// factor, the counter's version of AdvanceMFAStep. A key that keeps no counter
+// signs 0 every time, and is accepted only while the stored counter is 0 too;
+// any other counter must move forward. Replay is the ceremony's job — its
+// challenge is single-use — so this is what catches a cloned key.
+func (s *Store) AdvanceMFACounter(ctx context.Context, factorID uint, counter int64, at time.Time) (bool, error) {
+	query := s.gdb.WithContext(ctx).Model(&MFAFactor{}).
+		Where("id = ? AND kind = ? AND confirmed_at IS NOT NULL", factorID, MFAKindWebAuthn)
+	if counter == 0 {
+		query = query.Where("last_step = 0")
+	} else {
+		query = query.Where("last_step < ?", counter)
+	}
+	res := query.Updates(map[string]any{"last_step": counter, "last_used_at": at})
+	if res.Error != nil {
+		return false, fmt.Errorf("advance mfa counter: %w", res.Error)
 	}
 	return res.RowsAffected == 1, nil
 }
@@ -246,4 +274,22 @@ func (s *Store) TakeMFAChallenge(ctx context.Context, hash string) (bool, error)
 		return false, fmt.Errorf("redeem mfa challenge: %w", res.Error)
 	}
 	return res.RowsAffected > 0 && len(rows) > 0, nil
+}
+
+// TakeMFACeremony spends a security-key ceremony and returns it: one DELETE …
+// RETURNING, whatever the answer turns out to be, because a WebAuthn challenge
+// is good for exactly one signature. Gone, expired or already spent is nil.
+func (s *Store) TakeMFACeremony(ctx context.Context, hash string) (*MFAChallenge, error) {
+	var rows []MFAChallenge
+	res := s.gdb.WithContext(ctx).
+		Clauses(clause.Returning{}).
+		Where("token_hash = ? AND purpose = ? AND expires_at > ?", hash, MFAChallengeWebAuthn, time.Now().UTC()).
+		Delete(&rows)
+	if res.Error != nil {
+		return nil, fmt.Errorf("redeem mfa ceremony: %w", res.Error)
+	}
+	if res.RowsAffected == 0 || len(rows) == 0 {
+		return nil, nil
+	}
+	return &rows[0], nil
 }

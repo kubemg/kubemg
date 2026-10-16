@@ -8,7 +8,7 @@ import { AddFactorSheet, RecoveryCodesSheet, RemoveFactorSheet } from '../compon
 import { PasswordSheet } from '../components/PasswordSheet'
 import { ProfileSheet } from '../components/ProfileSheet'
 import { Button, Panel, Pill } from '../components/primitives'
-import { secondFactorApplies } from '../lib/mfa'
+import { factorKindLabel, keyIsStale, secondFactorApplies } from '../lib/mfa'
 import { ACCESS_HOME, CREDENTIALS_HOME } from '../lib/navigation'
 import { profileAbilities } from '../lib/profile'
 import { formatInstant, relativeAge } from '../lib/time'
@@ -86,14 +86,14 @@ export function Profile() {
           onAdded={() => {
             setMfaSheet(null)
             loadMfa()
-            report({ tone: 'ok', title: 'Factor added', body: 'Your next sign-in asks for its code.' })
+            report({ tone: 'ok', title: 'Factor added', body: 'Your next sign-in asks for it.' })
           }}
         />
       ) : null}
       {mfa && mfaSheet?.kind === 'remove' ? (
         <RemoveFactorSheet
           factor={mfaSheet.factor}
-          last={mfa.factors.length === 1}
+          status={mfa}
           onClose={() => setMfaSheet(null)}
           onRemoved={(next) => {
             setMfaSheet(null)
@@ -106,8 +106,9 @@ export function Profile() {
           }}
         />
       ) : null}
-      {mfaSheet?.kind === 'recovery' ? (
+      {mfa && mfaSheet?.kind === 'recovery' ? (
         <RecoveryCodesSheet
+          status={mfa}
           account={user.username}
           onClose={() => setMfaSheet(null)}
           onReplaced={() => {
@@ -286,7 +287,7 @@ function SecondFactorPanel({
       description={
         status?.required
           ? 'Your organisation requires a second factor for this account.'
-          : 'A code from an authenticator app after your password, so a password alone does not open your account.'
+          : 'A security key or a code from an authenticator app after your password, so a password alone does not open your account.'
       }
       actions={
         status ? (
@@ -310,9 +311,15 @@ function SecondFactorPanel({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13.5px] text-fg">{factor.name}</span>
                   <span className="block text-[12px] text-muted">
-                    Authenticator app · added {relativeAge(factor.created_at)}
+                    {factorKindLabel(factor)} · added {relativeAge(factor.created_at)}
                     {factor.last_used_at ? ` · last used ${relativeAge(factor.last_used_at)}` : ''}
                   </span>
+                  {keyIsStale(factor, status) ? (
+                    <span className="block text-[12px] text-warn">
+                      Registered at <span className="font-data">{factor.rp_id}</span> — this console
+                      moved, and the key answers only there. Add it again and remove this one.
+                    </span>
+                  ) : null}
                 </span>
                 <Button size="sm" variant="ghost" onClick={() => onRemove(factor)}>
                   Remove

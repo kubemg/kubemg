@@ -96,7 +96,7 @@ func (f *fakeStore) CreatePendingMFAFactor(_ context.Context, factor *db.MFAFact
 }
 
 func (f *fakeStore) ConfirmMFAFactor(
-	_ context.Context, userID, id uint, step int64, at time.Time, hashes []string,
+	_ context.Context, userID, id uint, step int64, secret string, at time.Time, hashes []string,
 ) error {
 	if f.mfaErr != nil {
 		return f.mfaErr
@@ -109,6 +109,9 @@ func (f *fakeStore) ConfirmMFAFactor(
 	factor.ConfirmedAt = &at
 	factor.LastUsedAt = &at
 	factor.LastStep = step
+	if secret != "" {
+		factor.Secret = secret
+	}
 	if hashes != nil {
 		f.replaceCodes(userID, hashes)
 	}
@@ -132,6 +135,22 @@ func (f *fakeStore) AdvanceMFAStep(_ context.Context, factorID uint, step int64,
 		return false, nil
 	}
 	factor.LastStep = step
+	factor.LastUsedAt = &at
+	return true, nil
+}
+
+func (f *fakeStore) AdvanceMFACounter(_ context.Context, factorID uint, counter int64, at time.Time) (bool, error) {
+	if f.mfaErr != nil {
+		return false, f.mfaErr
+	}
+	factor, ok := f.mfaTables().factors[factorID]
+	if !ok || factor.ConfirmedAt == nil || factor.Kind != db.MFAKindWebAuthn {
+		return false, nil
+	}
+	if (counter == 0 && factor.LastStep != 0) || (counter != 0 && factor.LastStep >= counter) {
+		return false, nil
+	}
+	factor.LastStep = counter
 	factor.LastUsedAt = &at
 	return true, nil
 }
@@ -229,4 +248,17 @@ func (f *fakeStore) TakeMFAChallenge(_ context.Context, hash string) (bool, erro
 	}
 	delete(t.challenges, hash)
 	return true, nil
+}
+
+func (f *fakeStore) TakeMFACeremony(_ context.Context, hash string) (*db.MFAChallenge, error) {
+	if f.mfaErr != nil {
+		return nil, f.mfaErr
+	}
+	t := f.mfaTables()
+	challenge, ok := t.challenges[hash]
+	if !ok || challenge.Purpose != db.MFAChallengeWebAuthn || !challenge.ExpiresAt.After(time.Now()) {
+		return nil, nil
+	}
+	delete(t.challenges, hash)
+	return &challenge, nil
 }

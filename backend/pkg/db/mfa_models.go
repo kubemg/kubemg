@@ -2,16 +2,27 @@ package db
 
 import "time"
 
-// MFAKindTOTP is an authenticator-app factor (RFC 6238).
-const MFAKindTOTP = "totp"
+// The kinds of second factor an account can hold.
+const (
+	// MFAKindTOTP is an authenticator-app factor (RFC 6238).
+	MFAKindTOTP = "totp"
+	// MFAKindWebAuthn is a security key or a passkey (WebAuthn Level 3).
+	MFAKindWebAuthn = "webauthn"
+)
 
 // MFA challenge purposes. A verify challenge stands between a right password
 // and a session; an enroll challenge is what an account that must have a
 // factor and has none holds instead of a session — it opens the enrolment
 // routes and nothing else.
+//
+// A webauthn row is one security-key ceremony rather than a sign-in: the
+// challenge the key signs, minted when the browser asks for it and spent by the
+// first answer, right or wrong — WebAuthn's challenge is single-use, unlike a
+// sign-in's.
 const (
-	MFAChallengeVerify = "verify"
-	MFAChallengeEnroll = "enroll"
+	MFAChallengeVerify   = "verify"
+	MFAChallengeEnroll   = "enroll"
+	MFAChallengeWebAuthn = "webauthn"
 )
 
 // MFAFactor is one second factor an account holds.
@@ -31,11 +42,20 @@ type MFAFactor struct {
 	// Secret is the TOTP shared secret. It is read back on every sign-in, which
 	// is what puts it under serializer:secret: a database dump must not be a
 	// copy of everybody's authenticator.
+	//
+	// For a security key it is the credential record as JSON — a public key,
+	// which is not secret, sealed anyway because it costs nothing — and while
+	// the enrolment is pending, the registration ceremony's state.
 	Secret string `gorm:"type:text;serializer:secret" json:"-"`
-	// LastStep is the last TOTP time step accepted. A code at or before it is
-	// refused, and it is advanced by a conditional update so two replicas
-	// presented the same code cannot both accept it.
-	LastStep    int64      `gorm:"not null;default:0" json:"-"`
+	// LastStep is the last TOTP time step accepted, or for a security key the
+	// last signature counter. A value at or before it is refused, and it is
+	// advanced by a conditional update so two replicas presented the same code
+	// cannot both accept it.
+	LastStep int64 `gorm:"not null;default:0" json:"-"`
+	// RPID is the host a security key was registered for — the public URL's at
+	// the time. A key answers only to that host, so one registered before the
+	// public URL changed is still listed but no longer offered at sign-in.
+	RPID        string     `gorm:"column:rp_id;size:253" json:"rp_id,omitempty"`
 	ConfirmedAt *time.Time `json:"confirmed_at,omitempty"`
 	LastUsedAt  *time.Time `json:"last_used_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
@@ -65,6 +85,9 @@ type MFAChallenge struct {
 	UserID    uint      `gorm:"not null"`
 	Purpose   string    `gorm:"size:16;not null"`
 	ExpiresAt time.Time `gorm:"index;not null"`
+	// Ceremony is a webauthn row's ceremony state: the challenge the key must
+	// sign and the credentials it may sign with. Empty for every other purpose.
+	Ceremony string `gorm:"type:text"`
 }
 
 // TableName pins the table name.

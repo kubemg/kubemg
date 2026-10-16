@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import type { MFAStatus } from '../api/types'
 import {
+  factorKindLabel,
   isMFAChallenge,
+  keyCanProve,
+  keyIsStale,
   looksLikeTOTP,
   mfaResettable,
   mfaSummary,
@@ -86,5 +89,34 @@ describe('the recovery codes file', () => {
     const file = recoveryCodesFile(['abcde-fghjk'], 'dev', 'kubemg.example.com')
     expect(file).toContain('dev at kubemg.example.com')
     expect(file).toContain('abcde-fghjk')
+  })
+})
+
+describe('security keys', () => {
+  const withKey: MFAStatus = {
+    ...enrolled,
+    factors: [
+      ...enrolled.factors,
+      { id: 2, kind: 'webauthn', name: 'YubiKey', rp_id: 'kubemg.example.com', created_at: '2026-10-02T00:00:00Z' },
+    ],
+    webauthn: { available: true, rp_id: 'kubemg.example.com' },
+  }
+
+  it('counts apps and keys apart in the access review', () => {
+    expect(mfaSummary(withKey)).toBe('1 authenticator app, 1 security key · 7 recovery codes left')
+    expect(factorKindLabel(withKey.factors[1])).toBe('Security key')
+    expect(factorKindLabel(withKey.factors[0])).toBe('Authenticator app')
+  })
+
+  it('offers a key as proof only where it answers: this host, a browser that can ask', () => {
+    expect(keyCanProve(withKey, true)).toBe(true)
+    expect(keyCanProve(withKey, false)).toBe(false)
+    expect(keyCanProve(enrolled, true)).toBe(false)
+    const moved = { ...withKey, webauthn: { available: true, rp_id: 'console.example.net' } }
+    expect(keyCanProve(moved, true)).toBe(false)
+    expect(keyIsStale(withKey.factors[1], moved)).toBe(true)
+    expect(keyIsStale(withKey.factors[1], withKey)).toBe(false)
+    // An app is never stale; it is bound to nothing.
+    expect(keyIsStale(withKey.factors[0], moved)).toBe(false)
   })
 })

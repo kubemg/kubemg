@@ -126,4 +126,20 @@ describe('the second factor', () => {
     expect(screen.getByText(/organisation requires/)).toBeTruthy()
     expect(screen.getByRole('button', { name: /add a factor/i })).toBeTruthy()
   })
+
+  it('names a key as a key, and says when the console moved away from it', () => {
+    draw(account({}), {
+      ...noFactor,
+      enrolled: true,
+      factors: [
+        { id: 5, kind: 'webauthn', name: 'YubiKey', rp_id: 'kubemg.example.com', created_at: '2026-10-01T00:00:00Z' },
+        { id: 6, kind: 'webauthn', name: 'Laptop', rp_id: 'old.example.com', created_at: '2026-09-01T00:00:00Z' },
+      ],
+      recovery_codes_remaining: 10,
+      webauthn: { available: true, rp_id: 'kubemg.example.com' },
+    })
+    expect(screen.getAllByText(/^Security key ·/)).toHaveLength(2)
+    expect(screen.getByText('old.example.com')).toBeTruthy()
+    expect(screen.queryByText('kubemg.example.com')).toBeNull()
+  })
 })

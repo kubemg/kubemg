@@ -1,4 +1,4 @@
-import type { MFAChallenge, MFAStatus, SignInResult, User } from '../api/types'
+import type { MFAChallenge, MFAFactor, MFAStatus, SignInResult, User } from '../api/types'
 
 /** Whether a password sign-in was answered with a challenge rather than a session. */
 export function isMFAChallenge(result: SignInResult): result is MFAChallenge {
@@ -30,7 +30,7 @@ export function looksLikeTOTP(code: string): boolean {
 export function recoveryCodesFile(codes: string[], account: string, host: string): string {
   return [
     `kubemg recovery codes for ${account} at ${host}`,
-    'Each code signs in once in place of your authenticator app. Keep them somewhere other than the phone.',
+    'Each code signs in once in place of your authenticator app or security key. Keep them somewhere other than either.',
     '',
     ...codes,
     '',
@@ -46,9 +46,38 @@ export function mfaSummary(mfa: MFAStatus | null): string {
   if (!mfa) return 'Not read'
   if (!mfa.applies) return 'Held by the identity provider — kubemg does not see it'
   if (!mfa.enrolled) return mfa.required ? 'None — must set one up at the next sign-in' : 'None — password only'
-  const count = mfa.factors.length
+  const apps = mfa.factors.filter((factor) => factor.kind !== 'webauthn').length
+  const keys = mfa.factors.length - apps
   const codes = mfa.recovery_codes_remaining
-  return `${count} authenticator ${count === 1 ? 'app' : 'apps'} · ${codes} recovery ${codes === 1 ? 'code' : 'codes'} left`
+  const held = [
+    apps ? `${apps} authenticator ${apps === 1 ? 'app' : 'apps'}` : '',
+    keys ? `${keys} security ${keys === 1 ? 'key' : 'keys'}` : '',
+  ].filter(Boolean)
+  return `${held.join(', ')} · ${codes} recovery ${codes === 1 ? 'code' : 'codes'} left`
+}
+
+/** What a factor is, in the profile's words. */
+export function factorKindLabel(factor: Pick<MFAFactor, 'kind'>): string {
+  return factor.kind === 'webauthn' ? 'Security key' : 'Authenticator app'
+}
+
+/**
+ * Whether a key no longer works here: it was registered for a host other than
+ * the one the public URL names today, and a key answers only to its own.
+ */
+export function keyIsStale(factor: Pick<MFAFactor, 'kind' | 'rp_id'>, mfa: Pick<MFAStatus, 'webauthn'>): boolean {
+  const current = mfa.webauthn?.rp_id
+  return factor.kind === 'webauthn' && Boolean(current) && factor.rp_id !== current
+}
+
+/**
+ * Whether a change to the factors can be proved with a key here: the account
+ * holds one bound to this host, and the install and the browser can both use
+ * it. The browser half is passed in so this stays a pure derivation.
+ */
+export function keyCanProve(mfa: Pick<MFAStatus, 'factors' | 'webauthn'>, browserCanAsk: boolean): boolean {
+  if (!browserCanAsk || !mfa.webauthn?.available) return false
+  return mfa.factors.some((factor) => factor.kind === 'webauthn' && factor.rp_id === mfa.webauthn?.rp_id)
 }
 
 /**
