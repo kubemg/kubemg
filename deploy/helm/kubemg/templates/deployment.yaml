@@ -196,6 +196,16 @@ spec:
             - name: KUBEMG_METRICS_ADDR
               value: ":{{ .Values.metrics.port }}"
             {{- end }}
+            {{- if and .Values.resources .Values.resources.limits .Values.resources.limits.memory }}
+            # The Go runtime's soft limit is set from this, at 80% — only when
+            # there is a limit to read: with none, the field would report the
+            # node's memory and the runtime would pace itself against that.
+            - name: KUBEMG_MEMORY_LIMIT_BYTES
+              valueFrom:
+                resourceFieldRef:
+                  containerName: kubemg
+                  resource: limits.memory
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

@@ -63,7 +63,8 @@ is `response-parts`: a response body leaves the agent as `ResponsePartSize`
 (256 KB) slices read straight off the API server's answer, and the bastion joins
 them under the same ceiling a whole response always had (`maxResponseBody` =
 one 16 MB frame; the agent's own cap stays 8 MB, counted in bytes as the API
-server sent them — compressed, when the client asked for gzip, as kubectl does). A final `response` carrying
+server sent them — compressed, when the client asked for gzip, as kubectl and
+the console's own reads do). A final `response` carrying
 `error` discards the parts before it — half a list is never presented as a
 whole one.
 

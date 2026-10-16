@@ -48,6 +48,7 @@ func main() {
 		log.Fatalf("refusing to start: %v", err)
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	applyMemoryLimit(logger)
 
 	// The credential key is settled before the database is touched: a key that
 	// is set but malformed is an operator who believes the credentials are
