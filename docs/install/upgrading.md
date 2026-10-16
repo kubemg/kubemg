@@ -8,9 +8,9 @@ Pin an explicit tag rather than tracking `latest`, in three places:
 
 | Image | Set with | Read when |
 |---|---|---|
-| Management plane (`ghcr.io/kubemg/kubemg:0.14.2`) | `KUBEMG_IMAGE`/`KUBEMG_VERSION` in Compose, or the Deployment's `image:` in Kubernetes | The server starts |
-| Agent (`ghcr.io/kubemg/kubemg-agent:0.14.2`) | `KUBEMG_AGENT_IMAGE` | A package is rendered. Changing it affects *future* installs, not agents already running. |
-| Browser shell (`ghcr.io/kubemg/kubemg-shell:0.14.2`) | `KUBEMG_SHELL_IMAGE` | A shell is *started*. Changing it affects the next shell, not one already open. |
+| Management plane (`ghcr.io/kubemg/kubemg:0.15.0`) | `KUBEMG_IMAGE`/`KUBEMG_VERSION` in Compose, or the Deployment's `image:` in Kubernetes | The server starts |
+| Agent (`ghcr.io/kubemg/kubemg-agent:0.15.0`) | `KUBEMG_AGENT_IMAGE` | A package is rendered. Changing it affects *future* installs, not agents already running. |
+| Browser shell (`ghcr.io/kubemg/kubemg-shell:0.15.0`) | `KUBEMG_SHELL_IMAGE` | A shell is *started*. Changing it affects the next shell, not one already open. |
 
 All three are published as multi-arch (amd64 and arm64) images on a `v*` tag, after a vulnerability scan gate.
 
@@ -34,6 +34,7 @@ Schema migrations run automatically at boot. There is no separate migration step
 Agent and server must agree on a tunnel protocol version exactly. The server **refuses a handshake at any other version**, so a mismatched agent fails to connect entirely rather than half working.
 
 - A protocol bump is a breaking change and is flagged in the release notes. The last one added the streaming frames behind `watch`, `logs -f`, `exec` and `port-forward`.
+- Since 0.15.0, a new tunnel feature is **negotiated** in the handshake instead of bumping the version. Each side names what it supports, and a side that names nothing gets the previous behaviour. Agent and server can then be upgraded in either order.
 - An agent much older than the server may need upgrading before it can reconnect. Check the release notes when crossing more than a couple of minor versions.
 - The fix is upgrading the agent: re-apply the install package rendered by the *upgraded* server (or update `KUBEMG_AGENT_IMAGE` and re-apply). It is not a config change.
 
@@ -89,6 +90,11 @@ A release that asks something beyond pulling the image is listed here.
     - **Repeated failed passwords are [slowed down](../access/users-and-groups.md#repeated-failed-passwords-are-slowed-down)**: a locked sign-in answers `429` with `Retry-After`. Nothing to configure, and every lock runs out on its own.
     - **Alarm channel headers are a credential now.** With `KUBEMG_SECRET_KEY` set they are encrypted in place at the first boot, and `GET /api/v1/alarms/channels` returns `header_names` instead of `headers`. A script that read the header values back must stop doing so. Rolling back to 0.14.1 after that boot leaves those channels with headers 0.14.1 cannot read: re-enter them there.
     - **Re-apply every agent's install package** when convenient. The server, agent and shell images moved to the `distroless/static-debian13` base. Nothing stops working in the meantime.
+- **0.15.0**, from 0.14.x: no manual schema step (the cluster rates table is created at boot), the agent's roles are unchanged and the tunnel protocol version is the same, so 0.14.x agents stay attached.
+    - **Re-apply every agent's install package** when convenient. A 0.15.0 agent sends large responses in parts behind interactive traffic, runs at most 16 proxied calls at once and keeps its heap under its own memory limit. A 0.14.x agent keeps working without any of that: the server [negotiates](#agent-and-server-version-compatibility) it and falls back.
+    - **On Kubernetes, give the server a memory limit** (Helm: `resources.limits.memory`, set by default). The chart now passes it as [`KUBEMG_MEMORY_LIMIT_BYTES`](environment.md), and the server keeps its heap under 80% of it. With no limit, nothing changes.
+    - **Cost & waste** is a new cluster page, under the sidebar's new collapsed **Insights** section with Capacity and the other report pages. Its over-requested workloads need a [metrics datasource](../observability/datasources.md); the rest needs nothing. Money appears only after an administrator [sets the cluster's rates](../clusters/waste.md#rates).
+    - **Machine accounts** were listed as empty in the console since 0.10.0, so a cluster granted from an account's sheet seemed not to land. Nothing needs to be redone: grants made then are in place.
 
 An install that runs from a clone of the repository has one more thing to get right: see [Upgrading a git checkout](#upgrading-a-git-checkout).
 
@@ -103,7 +109,7 @@ A rollback does **not** undo:
 
 ## Documentation versioning
 
-This manual is versioned against release tags. An install running `0.14.2` matches the `0.14.2` docs; check the version selector.
+This manual is versioned against release tags. An install running `0.15.0` matches the `0.15.0` docs; check the version selector.
 
 ## Upgrading to 0.11.0
 
