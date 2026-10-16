@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -185,7 +186,9 @@ func (a *app) session(server string) (store.Session, *client.Client, error) {
 	if !a.now().Before(session.ExpiresAt) {
 		return store.Session{}, nil, fmt.Errorf("the session for %s has ended — run: kubemg login --server %s", server, server)
 	}
-	c, err := a.newClient(server, []byte(session.CAPEM))
+	// The client is built from the stored session's own server, so the refresh
+	// token only ever goes back to where it came from.
+	c, err := a.newClient(session.Server, []byte(session.CAPEM))
 	if err != nil {
 		return store.Session{}, nil, err
 	}
@@ -229,7 +232,7 @@ func (a *app) login(ctx context.Context, args []string) error {
 
 	fmt.Fprintf(a.stderr, "To sign in, open this page and approve the code %s:\n\n  %s\n\n",
 		device.UserCode, device.VerificationURIComplete)
-	if !*noBrowser && a.openBrowser != nil {
+	if !*noBrowser && a.openBrowser != nil && safeBrowserURL(device.VerificationURIComplete) {
 		if err := a.openBrowser(device.VerificationURIComplete); err == nil {
 			fmt.Fprintln(a.stderr, "Opened it in your browser. Waiting for approval…")
 		} else {
@@ -271,7 +274,7 @@ func (a *app) logout(ctx context.Context, args []string) error {
 	}
 	session, loadErr := a.store.LoadSession(resolved)
 	if loadErr == nil {
-		if c, err := a.newClient(resolved, []byte(session.CAPEM)); err == nil {
+		if c, err := a.newClient(session.Server, []byte(session.CAPEM)); err == nil {
 			if err := c.Logout(ctx, session.RefreshToken); err != nil && !errors.Is(err, client.ErrSessionEnded) {
 				// The local half still happens: a server that cannot be reached
 				// must not leave the session on disk. Said, not hidden.
@@ -390,6 +393,11 @@ func (a *app) updateKubeconfig(ctx context.Context, args []string) error {
 		}
 		return fmt.Errorf("%s: %s", cluster.Name, note)
 	}
+	// The address goes into the kubeconfig, and kubectl sends credentials to
+	// it: it has to be https whatever the server said.
+	if parsed, err := url.Parse(cluster.Server); err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return fmt.Errorf("the server described %s with an address that is not https (%q); refusing to write it", cluster.Name, cluster.Server)
+	}
 	ns := *namespace
 	if ns == "" && len(cluster.Namespaces) > 0 {
 		ns = cluster.Namespaces[0]
@@ -404,13 +412,16 @@ func (a *app) updateKubeconfig(ctx context.Context, args []string) error {
 		if err != nil {
 			return a.explain(resolved, err)
 		}
-		contexts, err := file.MergeEntries([]byte(rendered.Kubeconfig))
+		token, err := kubeconfig.TokenFrom([]byte(rendered.Kubeconfig))
 		if err != nil {
 			return err
 		}
-		if len(contexts) > 0 {
-			contextName = contexts[0]
+		if *alias != "" {
+			contextName = *alias
 		}
+		file.SetCluster(cluster.Name, cluster.Server, cluster.CAData)
+		file.SetTokenUser(cluster.ContextName, token)
+		file.SetContext(contextName, cluster.Name, cluster.ContextName, ns)
 		if !*noSetContext {
 			file.SetCurrentContext(contextName)
 		}
@@ -571,6 +582,17 @@ func execCommand() string {
 		}
 	}
 	return self
+}
+
+// safeBrowserURL accepts only an https address with a host before it is handed
+// to the platform's opener. The URL comes from the server, and `open`,
+// `xdg-open` and Windows' protocol handler will all launch whatever a file:,
+// smb: or custom scheme names — so anything else is printed for the person to
+// follow, never opened.
+func safeBrowserURL(raw string) bool {
+	parsed, err := url.Parse(raw)
+	return err == nil && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil &&
+		!strings.ContainsAny(raw, " \t\n\r\"'`<>^|")
 }
 
 // openBrowser opens a URL the platform's way. With no display it does

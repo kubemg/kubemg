@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +15,7 @@ import (
 func deviceServer(t *testing.T, script []string) (*Client, *[]time.Duration) {
 	t.Helper()
 	calls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/auth/cli/token" {
 			http.NotFound(w, r)
 			return
@@ -32,7 +33,7 @@ func deviceServer(t *testing.T, script []string) (*Client, *[]time.Duration) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": reply, "error_description": reply})
 	}))
 	t.Cleanup(srv.Close)
-	c, err := New(srv.URL, nil)
+	c, err := New(srv.URL, certPEM(srv))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +72,7 @@ func TestADeniedOrExpiredSignInEndsTheWait(t *testing.T) {
 }
 
 func TestAnEndedSessionIsNamedAsSuch(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer kmgr_x" {
 			t.Errorf("auth header %q", r.Header.Get("Authorization"))
 		}
@@ -79,16 +80,32 @@ func TestAnEndedSessionIsNamedAsSuch(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "this CLI session was revoked; run kubemg login"})
 	}))
 	t.Cleanup(srv.Close)
-	c, _ := New(srv.URL, nil)
+	c, _ := New(srv.URL, certPEM(srv))
 	_, err := c.Credential(context.Background(), "kmgr_x", 7)
 	if !errors.Is(err, ErrSessionEnded) {
 		t.Fatalf("got %v", err)
 	}
 }
 
-func TestAServerMustBeAURLAndACABundleMustHoldACertificate(t *testing.T) {
-	if _, err := New("kubemg.example.com", nil); err == nil {
-		t.Fatal("a bare host was accepted")
+// certPEM is the test server's certificate, trusted as a self-signed bastion
+// would be: through --ca-file.
+func certPEM(srv *httptest.Server) []byte {
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+}
+
+// The refresh token is a credential: no plaintext server, ever.
+func TestAServerMustBeHTTPSAndACABundleMustHoldACertificate(t *testing.T) {
+	for _, server := range []string{"kubemg.example.com", "http://kubemg.example.com", "https://"} {
+		if _, err := New(server, nil); err == nil {
+			t.Errorf("%q was accepted", server)
+		}
+	}
+	// Without the bastion's CA a self-signed server is not trusted.
+	srv := httptest.NewTLSServer(http.NotFoundHandler())
+	t.Cleanup(srv.Close)
+	c, _ := New(srv.URL, nil)
+	if _, err := c.Clusters(context.Background(), "kmgr_x"); err == nil {
+		t.Error("an untrusted certificate was accepted")
 	}
 	if _, err := New("https://kubemg.example.com", []byte("not a pem")); err == nil {
 		t.Fatal("a CA file with no certificate was accepted")

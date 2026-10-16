@@ -72,14 +72,16 @@ func Default() (Store, error) {
 
 var unsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
-// Key is the file-name form of a server URL: host and port, nothing that
-// could climb out of the directory.
+// Key is the file-name form of a server URL: scheme, host and port, nothing
+// that could climb out of the directory. The scheme is part of it so a session
+// signed in over https can never be looked up — and its refresh token sent —
+// under the same host spelled with another scheme.
 func Key(server string) string {
-	host := server
+	key := server
 	if parsed, err := url.Parse(server); err == nil && parsed.Host != "" {
-		host = parsed.Host
+		key = parsed.Scheme + "_" + parsed.Host
 	}
-	return unsafeName.ReplaceAllString(host, "_")
+	return unsafeName.ReplaceAllString(key, "_")
 }
 
 func (s Store) sessionPath(server string) string {

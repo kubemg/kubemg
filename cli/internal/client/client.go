@@ -35,13 +35,18 @@ type Client struct {
 	Sleep func(context.Context, time.Duration) error
 }
 
-// New builds a client for a server, trusting caPEM in addition to — never
-// instead of — nothing: a non-empty bundle is the only pool used, so a
-// self-signed bastion is trusted exactly and nothing else is added.
+// New builds a client for a server. A non-empty caPEM is the only trust pool
+// used, so a self-signed bastion is trusted exactly and nothing else is added;
+// without one the system roots apply.
+//
+// The server must be https. The refresh token is a credential and a plaintext
+// server would carry it in the clear — and nothing is lost by refusing: kubectl
+// will not send a bearer token over http either, so a plaintext kubemg could
+// not serve the credentials this CLI exists to fetch.
 func New(server string, caPEM []byte) (*Client, error) {
 	server = strings.TrimRight(strings.TrimSpace(server), "/")
-	if !strings.HasPrefix(server, "https://") && !strings.HasPrefix(server, "http://") {
-		return nil, fmt.Errorf("the server must be a URL, like https://kubemg.example.com")
+	if !strings.HasPrefix(server, "https://") || len(server) == len("https://") {
+		return nil, fmt.Errorf("the server must be an https URL, like https://kubemg.example.com")
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if len(caPEM) > 0 {

@@ -50,7 +50,7 @@ kubectl get pods
 | `--alias NAME` | Name the context something else |
 | `--kubeconfig FILE` | Write to this file instead |
 | `--no-set-context` | Add the context without making it current |
-| `--static --ttl 8h` | Write a kubeconfig that carries its own token instead of running kubemg — the console download, for a tool that cannot run a credential plugin. It is registered like any download and refused under `cli_only` |
+| `--static --ttl 8h` | Write a kubeconfig that carries its own token instead of running kubemg — the console download, for a tool that cannot run a credential plugin. It is registered like any download and refused under `cli_only`. Only the token is taken from what the server sends; the entries are written by kubemg itself, so a server can never put a command into your kubeconfig |
 | `--server URL` | Needed only when you are signed in to more than one server (or set `KUBEMG_SERVER`) |
 
 The entry kubectl runs looks like this, and needs no editing:
@@ -78,6 +78,8 @@ If a session is ended while kubectl still holds one of its credentials — from 
 With `KUBEMG_TOKEN`, the variable has to be in the environment kubectl runs in, since kubectl is what starts `kubemg credential`.
 
 ## A self-signed server
+
+kubemg talks to its server over **https only** — the session's refresh token is a credential, and kubectl would not use a plaintext server anyway. It writes only https cluster addresses into a kubeconfig, and opens the approval page in your browser only when it is an https address (anything else is printed for you to follow).
 
 Pass the server's CA once, at sign-in: `kubemg login --server https://kubemg.internal --ca-file kubemg-ca.pem`. It is kept with the session and written into every kubeconfig entry, so neither kubemg nor kubectl skips verification. There is no flag that turns verification off.
 

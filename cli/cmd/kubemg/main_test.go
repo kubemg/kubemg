@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,16 +25,24 @@ type fakeServer struct {
 	revoked  atomic.Bool
 	loggedIn atomic.Bool
 	ttl      time.Duration
+	// clusterServer and staticUser let a test play a server that lies.
+	clusterServer string
+	staticUser    string
+	verifyURL     string
 }
 
 func newFakeServer(t *testing.T) *fakeServer {
 	t.Helper()
-	f := &fakeServer{ttl: 15 * time.Minute}
+	f := &fakeServer{ttl: 15 * time.Minute, staticUser: "{token: static-token}"}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/auth/cli/device", func(w http.ResponseWriter, r *http.Request) {
+		verify := f.verifyURL
+		if verify == "" {
+			verify = f.URL + "/cli/activate?code=BCDF-GHJK"
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"device_code": "kmgd_x", "user_code": "BCDF-GHJK",
-			"verification_uri_complete": f.URL + "/cli/activate?code=BCDF-GHJK",
+			"verification_uri_complete": verify,
 			"expires_in": 600, "interval": 5,
 		})
 	})
@@ -54,9 +63,13 @@ func newFakeServer(t *testing.T) *fakeServer {
 		}
 	}
 	mux.HandleFunc("GET /api/v1/auth/cli/clusters", authed(func(w http.ResponseWriter, r *http.Request) {
+		server := f.clusterServer
+		if server == "" {
+			server = f.URL + "/api/v1/clusters/7/proxy"
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"clusters": []map[string]any{
 			{"id": 7, "name": "edge-us", "connection_mode": "agent", "role": "view", "namespaces": []string{"payments"},
-				"server": f.URL + "/api/v1/clusters/7/proxy", "context_name": "dana@edge-us", "ca_data": "Q0E="},
+				"server": server, "context_name": "dana@edge-us", "ca_data": "Q0E="},
 			{"id": 9, "name": "legacy", "connection_mode": "direct", "role": "view",
 				"note": "registered for direct API access — download its kubeconfig from the console"},
 		}})
@@ -67,7 +80,7 @@ func newFakeServer(t *testing.T) *fakeServer {
 		if body["static"] == true {
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"context": "dana@edge-us", "expires_at": time.Now().Add(8 * time.Hour),
-				"kubeconfig": "apiVersion: v1\nkind: Config\nclusters:\n- name: edge-us\n  cluster: {server: x}\nusers:\n- name: dana@edge-us\n  user: {token: static-token}\ncontexts:\n- name: dana@edge-us\n  context: {cluster: edge-us, user: dana@edge-us}\n",
+				"kubeconfig": "apiVersion: v1\nkind: Config\nclusters:\n- name: edge-us\n  cluster: {server: x}\nusers:\n- name: dana@edge-us\n  user: " + f.staticUser + "\ncontexts:\n- name: dana@edge-us\n  context: {cluster: edge-us, user: dana@edge-us}\n",
 			})
 			return
 		}
@@ -80,7 +93,7 @@ func newFakeServer(t *testing.T) *fakeServer {
 		f.loggedIn.Store(false)
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	f.Server = httptest.NewServer(mux)
+	f.Server = httptest.NewTLSServer(mux)
 	t.Cleanup(f.Close)
 	return f
 }
@@ -91,6 +104,21 @@ type harness struct {
 	opened         string
 	dir            string
 	env            map[string]string
+}
+
+// trustPEM is the fake server's certificate, which a test trusts the way a
+// person trusts a self-signed bastion: with --ca-file.
+func trustPEM(f *fakeServer) []byte {
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: f.Certificate().Raw})
+}
+
+func caFile(t *testing.T, f *fakeServer) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(path, trustPEM(f), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func newHarness(t *testing.T) *harness {
@@ -125,7 +153,7 @@ func (h *harness) run(args ...string) int {
 func TestLoginStoresTheSessionAndOpensTheApprovalPage(t *testing.T) {
 	srv := newFakeServer(t)
 	h := newHarness(t)
-	if code := h.run("login", "--server", srv.URL+"/"); code != 0 {
+	if code := h.run("login", "--server", srv.URL+"/", "--ca-file", caFile(t, srv)); code != 0 {
 		t.Fatalf("login exit %d: %s", code, h.stderr)
 	}
 	if h.opened != srv.URL+"/cli/activate?code=BCDF-GHJK" || !strings.Contains(h.stderr.String(), "BCDF-GHJK") {
@@ -144,7 +172,7 @@ func TestLoginStoresTheSessionAndOpensTheApprovalPage(t *testing.T) {
 func TestUpdateKubeconfigWritesAnExecEntryAndRefusesDirectMode(t *testing.T) {
 	srv := newFakeServer(t)
 	h := newHarness(t)
-	h.run("login", "--server", srv.URL, "--no-browser")
+	h.run("login", "--server", srv.URL, "--no-browser", "--ca-file", caFile(t, srv))
 	kubeconfig := filepath.Join(h.dir, "kube", "config")
 
 	if code := h.run("update-kubeconfig", "--cluster", "edge-us", "--kubeconfig", kubeconfig); code != 0 {
@@ -181,7 +209,7 @@ func TestUpdateKubeconfigWritesAnExecEntryAndRefusesDirectMode(t *testing.T) {
 func TestTheExecPluginCachesAndRenews(t *testing.T) {
 	srv := newFakeServer(t)
 	h := newHarness(t)
-	h.run("login", "--server", srv.URL, "--no-browser")
+	h.run("login", "--server", srv.URL, "--no-browser", "--ca-file", caFile(t, srv))
 
 	var first execCredential
 	if code := h.run("credential", "--server", srv.URL, "--cluster-id", "7"); code != 0 {
@@ -212,7 +240,7 @@ func TestTheExecPluginCachesAndRenews(t *testing.T) {
 func TestAnEndedSessionSaysToSignInAgain(t *testing.T) {
 	srv := newFakeServer(t)
 	h := newHarness(t)
-	h.run("login", "--server", srv.URL, "--no-browser")
+	h.run("login", "--server", srv.URL, "--no-browser", "--ca-file", caFile(t, srv))
 	h.run("credential", "--server", srv.URL, "--cluster-id", "7")
 	srv.revoked.Store(true)
 	h.app.store.SaveCredential(srv.URL, 7, store.Credential{Token: "access-1", ExpiresAt: time.Now().Add(10 * time.Second)})
@@ -256,7 +284,7 @@ func TestAMachineTokenNeedsNoSession(t *testing.T) {
 func TestStaticWritesTheServersKubeconfig(t *testing.T) {
 	srv := newFakeServer(t)
 	h := newHarness(t)
-	h.run("login", "--server", srv.URL, "--no-browser")
+	h.run("login", "--server", srv.URL, "--no-browser", "--ca-file", caFile(t, srv))
 	kubeconfig := filepath.Join(h.dir, "static-config")
 	if code := h.run("update-kubeconfig", "--cluster", "7", "--static", "--ttl", "8h", "--kubeconfig", kubeconfig); code != 0 {
 		t.Fatalf("exit %d: %s", code, h.stderr)
@@ -273,7 +301,7 @@ func TestStaticWritesTheServersKubeconfig(t *testing.T) {
 func TestLogoutForgetsEverythingLocally(t *testing.T) {
 	srv := newFakeServer(t)
 	h := newHarness(t)
-	h.run("login", "--server", srv.URL, "--no-browser")
+	h.run("login", "--server", srv.URL, "--no-browser", "--ca-file", caFile(t, srv))
 	h.run("credential", "--server", srv.URL, "--cluster-id", "7")
 	// One server signed in: no --server needed.
 	if code := h.run("logout"); code != 0 {
@@ -299,5 +327,65 @@ func TestUsageMistakesExitTwo(t *testing.T) {
 	}
 	if code := h.run("version"); code != 0 || !strings.HasPrefix(h.stdout.String(), "kubemg ") {
 		t.Fatalf("version: %d %s", code, h.stdout)
+	}
+}
+
+func TestTheStaticPathTakesOnlyATokenFromTheServer(t *testing.T) {
+	srv := newFakeServer(t)
+	srv.staticUser = "{exec: {command: /bin/sh, args: [-c, 'touch /tmp/pwned']}}"
+	h := newHarness(t)
+	h.run("login", "--server", srv.URL, "--no-browser", "--ca-file", caFile(t, srv))
+	kubeconfig := filepath.Join(h.dir, "static-config")
+	if code := h.run("update-kubeconfig", "--cluster", "7", "--static", "--kubeconfig", kubeconfig); code != 1 ||
+		!strings.Contains(h.stderr.String(), "only a token is accepted") {
+		t.Fatalf("exit %d: %s", code, h.stderr)
+	}
+	if _, err := os.Stat(kubeconfig); err == nil {
+		data, _ := os.ReadFile(kubeconfig)
+		t.Fatalf("a kubeconfig was written:\n%s", data)
+	}
+}
+
+func TestANonHTTPSClusterAddressIsNotWritten(t *testing.T) {
+	srv := newFakeServer(t)
+	srv.clusterServer = "http://evil.example.com/proxy"
+	h := newHarness(t)
+	h.run("login", "--server", srv.URL, "--no-browser", "--ca-file", caFile(t, srv))
+	if code := h.run("update-kubeconfig", "--cluster", "edge-us", "--kubeconfig", filepath.Join(h.dir, "c")); code != 1 ||
+		!strings.Contains(h.stderr.String(), "not https") {
+		t.Fatalf("exit %d: %s", code, h.stderr)
+	}
+}
+
+func TestOnlyAnHTTPSApprovalPageIsOpened(t *testing.T) {
+	srv := newFakeServer(t)
+	srv.verifyURL = "file:///Applications/Calculator.app"
+	h := newHarness(t)
+	if code := h.run("login", "--server", srv.URL, "--ca-file", caFile(t, srv)); code != 0 {
+		t.Fatalf("exit %d: %s", code, h.stderr)
+	}
+	if h.opened != "" {
+		t.Fatalf("opened %q", h.opened)
+	}
+	for raw, want := range map[string]bool{
+		"https://kubemg.example.com/cli/activate?code=BCDF-GHJK": true,
+		"http://kubemg.example.com/cli/activate":                 false,
+		"file:///etc/passwd":                                     false,
+		"smb://share/x":                                          false,
+		"https://user:pw@kubemg.example.com/":                    false,
+		"https://kubemg.example.com/\" & calc":                   false,
+	} {
+		if got := safeBrowserURL(raw); got != want {
+			t.Errorf("%q: %v", raw, got)
+		}
+	}
+}
+
+func TestASessionIsKeyedByScheme(t *testing.T) {
+	if store.Key("https://kubemg.example.com") == store.Key("http://kubemg.example.com") {
+		t.Fatal("http and https share a session")
+	}
+	if strings.ContainsAny(store.Key("https://../../etc:443"), "/") {
+		t.Fatal("a key climbs out of its directory")
 	}
 }
