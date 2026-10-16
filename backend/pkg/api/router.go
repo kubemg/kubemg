@@ -335,6 +335,10 @@ type Options struct {
 	// answer "recording is not enabled" while it is empty rather than trusting
 	// whatever a row happens to name.
 	RecordingDir string
+	// CLIDir is where the kubemg CLI binaries the image carries live, one
+	// `<os>-<arch>/` directory each. Empty, or a directory without them, and
+	// the download routes say so and point at the releases page.
+	CLIDir string
 	// RecordingKey decrypts recordings on the way out. It has to be the key they
 	// were written with; a recording written without one is read without one, so
 	// this being empty is not an error until an encrypted file is opened.
@@ -517,6 +521,9 @@ type server struct {
 	signIns *auth.LoginThrottle
 	// deployment is what this process was started with; see Options.Deployment.
 	deployment Deployment
+	// cliDir holds the CLI binaries; cliSums their digests. See cli_downloads.go.
+	cliDir  string
+	cliSums cliDigests
 	// version is the release this binary was built as; see Options.Version.
 	version string
 }
@@ -577,6 +584,7 @@ func NewRouter(opts Options) *gin.Engine {
 		debugImage:           strings.TrimSpace(opts.DebugImage),
 		bastionCA:            opts.BastionCA,
 		recordings:           strings.TrimSpace(opts.RecordingDir),
+		cliDir:               strings.TrimSpace(opts.CLIDir),
 		recordingKey:         opts.RecordingKey,
 		recordingInput:       opts.RecordingInput,
 		auditor:              opts.Auditor,
@@ -698,6 +706,12 @@ func NewRouter(opts Options) *gin.Engine {
 		// The installer is fetched by kubectl, which cannot carry a KubeMG
 		// session; a single-use download ticket in the path is the credential —
 		// never the tunnel credential itself. See agent_install.go.
+		// The kubemg CLI, for a site that cannot reach the releases page. Open
+		// on purpose — it is the open-source binary, and whoever needs it has
+		// not signed in yet. See cli_downloads.go.
+		router.GET("/downloads/cli", s.listCLIDownloads)
+		router.GET("/downloads/cli/:os/:arch", s.downloadCLI)
+
 		install := router.Group("/install/:token")
 		install.GET("/agent.yaml", s.installManifest)
 		install.GET("/kustomize.tar.gz", s.installArchive)

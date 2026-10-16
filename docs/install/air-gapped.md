@@ -86,6 +86,10 @@ the pull secrets of the pod it is added to, which cannot be changed. The debug
 image must be pullable with what the target pod already carries, in practice
 from a mirror path that allows anonymous pulls.
 
+## The kubemg CLI
+
+Nothing extra to carry across. The management-plane image holds the `kubemg` command line for Linux, macOS and Windows (amd64 and arm64), and serves it at `/downloads/cli` — people download it from the server they sign in to, and **My credentials → Use the command line** links it. See [The kubemg command line](../access/cli.md#installing-it).
+
 ## The chart itself
 
 Carry the chart across with `helm pull oci://ghcr.io/kubemg/charts/kubemg

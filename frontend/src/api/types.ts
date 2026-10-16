@@ -2212,6 +2212,14 @@ export interface KubeconfigPolicy {
 
 export type KubeconfigIssuance = 'allowed' | 'cli_only'
 
+/** The kubemg CLI binaries this server carries, for an air-gapped site. */
+export interface CLIDownloads {
+  /** False on a server built without them; `releases_url` is the fallback. */
+  available: boolean
+  downloads: { os: string; arch: string; path: string; size: number; sha256: string }[]
+  releases_url: string
+}
+
 /** One `kubemg login` waiting for approval, as the approval page shows it. */
 export interface CLIDeviceRequest {
   user_code: string

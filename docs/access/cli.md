@@ -9,7 +9,16 @@ It works the way `aws eks update-kubeconfig` does: the CLI writes an `exec` entr
 
 ## Installing it
 
-Download the archive for your system from the [releases page](https://github.com/kubemg/kubemg/releases) — `kubemg_<version>_<os>_<arch>.tar.gz`, or `.zip` for Windows — check it against `SHA256SUMS`, and put the `kubemg` binary on your `PATH`:
+**From your kubemg server.** The server's image carries the binary for every platform, so the people who use it can get it from the server they already reach — no internet access needed. **My credentials → Use the command line** offers the one for your system, with a `curl` line for a terminal:
+
+```bash
+curl -fLo kubemg https://kubemg.example.com/downloads/cli/linux/amd64 && chmod +x kubemg
+sudo mv kubemg /usr/local/bin/
+```
+
+`GET /downloads/cli` lists what the server carries with each file's SHA-256; `GET /downloads/cli/{linux,darwin,windows}/{amd64,arm64}` serves one. Neither needs a session — the binary is open source, and whoever needs it has not signed in yet. A server built from source without the binaries (the development stack) says so and points at the releases page.
+
+**From the releases page.** Download the archive for your system from the [releases page](https://github.com/kubemg/kubemg/releases) — `kubemg_<version>_<os>_<arch>.tar.gz`, or `.zip` for Windows — check it against `SHA256SUMS`, and put the `kubemg` binary on your `PATH`:
 
 ```bash
 tar -xzf kubemg_0.16.0_darwin_arm64.tar.gz
