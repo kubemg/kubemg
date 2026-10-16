@@ -109,6 +109,9 @@ export function PasswordSheet({ onClose, onRevoked }: {
               {done.credentials.revoked}{' '}
               {done.credentials.revoked === 1 ? 'kubeconfig was' : 'kubeconfigs were'} revoked with
               it.
+              {done.credentials.cli_sessions_revoked
+                ? ` ${done.credentials.cli_sessions_revoked} signed-in kubemg ${done.credentials.cli_sessions_revoked === 1 ? 'command line was' : 'command lines were'} ended too.`
+                : null}
               {done.credentials.still_valid > 0 ? (
                 <>
                   {' '}

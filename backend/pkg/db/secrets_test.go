@@ -81,6 +81,7 @@ func TestSecretColumnsCoverEveryCredential(t *testing.T) {
 		"alarm_channels.headers",
 		"sso_providers.client_secret",
 		"sso_providers.ldap_bind_password",
+		"user_mfa_factors.secret",
 	} {
 		if !got[want] {
 			t.Errorf("%s is not tagged serializer:secret", want)

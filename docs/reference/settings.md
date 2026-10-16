@@ -43,12 +43,17 @@ Every setting below follows the same rule:
 This is the outside view of the bastion, not its listen address. A loopback or
 private value means an agent inside a target cluster can never dial back in.
 
+Its **host** is also what every [security key](../access/mfa.md#where-a-security-key-works)
+is bound to. Keys work only when the public URL is `https` and a domain name, and
+only on a console opened at this address; changing the host retires every key
+registered under the old one.
+
 ### `agent_image`
 
 | | |
 |---|---|
 | Meaning | The container image installed into a target cluster when it registers in agent mode. |
-| Environment default | `KUBEMG_AGENT_IMAGE` (falls back to the build's own default, currently `ghcr.io/kubemg/kubemg-agent:0.15.0`) |
+| Environment default | `KUBEMG_AGENT_IMAGE` (falls back to the build's own default, currently `ghcr.io/kubemg/kubemg-agent:0.16.0`) |
 | Validation | none beyond trimming |
 
 ### `agent_namespace`
@@ -149,6 +154,36 @@ refusal or error, any streaming call (`exec`/`attach`/`portforward`/`log
 | Unusable stored value | Read as unset (the 24-hour default applies) |
 | Clear with | `0` |
 | Stored in | **Hours**, not days, so an install can go below a day (an eight-hour shift) as well as up to a quarter |
+
+### `mfa_enforcement`
+
+| | |
+|---|---|
+| Meaning | Whose password sign-in also needs a [second factor](../access/mfa.md): `off`, `admins` or `all`. Covers local and LDAP accounts only. |
+| Default | `off`; no environment variable |
+| Unusable stored value | Read as `off` — a mistyped row never locks anyone out |
+| Clear with | `""` |
+| Takes effect | At the next sign-in. Sessions already open run to their own expiry |
+
+### `cli_session_max_hours`
+
+| | |
+|---|---|
+| Meaning | How long a `kubemg login` lasts before it has to be done again — and with it the second factor. See [The kubemg command line](../access/cli.md#how-long-it-lasts). |
+| Default | 12 hours; no environment variable |
+| Range | 1 to 720 hours |
+| Clamped to | `kubeconfig_max_ttl_hours` at the point of use — a CLI session never outlives what a downloaded file could |
+| Clear with | `0` |
+
+### `kubeconfig_issuance`
+
+| | |
+|---|---|
+| Meaning | `allowed` or `cli_only`. Under `cli_only` no agent-mode kubeconfig file is handed out; kubectl reaches agent-mode clusters through the CLI only. |
+| Default | `allowed`; no environment variable |
+| Not affected | Direct-mode downloads (no CLI session governs a cluster-minted token), the browser shell, machine accounts |
+| Unusable stored value | Read as `allowed` |
+| Clear with | `""` |
 
 ## Branding (a separate surface, on purpose)
 

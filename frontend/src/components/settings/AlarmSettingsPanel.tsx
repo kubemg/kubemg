@@ -1004,6 +1004,11 @@ const AUDIT_VERBS = [
   'recording-delete',
   'agent-displaced',
   'agent-token-rotate',
+  'mfa-reset',
+  'mfa-remove',
+  'mfa-recovery-used',
+  'cli-login',
+  'cli-session-revoke',
 ]
 
 function splitList(raw: string | undefined): string[] {

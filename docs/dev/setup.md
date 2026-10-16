@@ -66,6 +66,43 @@ The full list of variables and what each one does is in the user guide's
 defaults an administrator can override at runtime from
 [Runtime settings](../reference/settings.md).
 
+## The kubemg CLI against the dev stack
+
+Build a binary for the host — the dev image carries none, so the console's
+download section points at the releases page:
+
+```bash
+docker run --rm -v "$PWD/cli:/src" -w /src -e CGO_ENABLED=0 -e GOOS=darwin -e GOARCH=arm64 \
+  golang:1.26-alpine go build -o dist/dev/kubemg ./cmd/kubemg
+./cli/dist/dev/kubemg login --server https://localhost:8443
+```
+
+The stack's certificate is self-signed, so the first `login` shows its SHA-256
+fingerprint and asks before trusting it; **My credentials → Use the command
+line** shows the same fingerprint to compare against. Answer `y` and the
+certificate is pinned with the session — no `--ca-file` to extract, and nothing
+turns verification off. `kubemg update-kubeconfig` then asks which clusters to
+add.
+
+The approval address `login` prints is under the public URL, and the dev
+backend serves the API only — open the same `/cli/activate?code=…` path on
+`http://localhost:5173` instead.
+
+The kubeconfig entries point at the **public URL**, not at the address you
+signed in to. With `KUBEMG_PUBLIC_URL=https://host.docker.internal:8443`, macOS
+resolves that name to an address that refuses `:8443`; add
+`127.0.0.1 host.docker.internal` to `/etc/hosts` for kubectl on the host to
+reach it (the certificate already covers the name).
+
+To try the console's server-hosted download buttons, copy binaries into the
+running backend in the image's layout (`<os>-<arch>/kubemg`) — the list is read
+per request, no restart needed:
+
+```bash
+docker compose exec -u 0 backend mkdir -p /usr/share/kubemg/cli/darwin-arm64
+docker compose cp cli/dist/dev/kubemg backend:/usr/share/kubemg/cli/darwin-arm64/kubemg
+```
+
 ## Apple Silicon
 
 The frontend toolchain has to run under emulation:

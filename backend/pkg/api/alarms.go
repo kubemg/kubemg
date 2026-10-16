@@ -636,12 +636,15 @@ func (s *server) ruleFrom(c *gin.Context, req alarmRuleRequest) (*db.AlarmRule, 
 // auditVerbVocabulary is every verb an audit record can carry: the ones the
 // selection in Settings governs, plus KubeMG's own recording-access verbs — which
 // are exactly the ones an alarm on "who watched a production shell" would name —
-// and the agent's credential events, which are what an alarm on "somebody else
-// is now this cluster's agent" names.
+// the agent's credential events, which are what an alarm on "somebody else
+// is now this cluster's agent" names, and the second-factor events an alarm on
+// "somebody's MFA was reset" names.
 var auditVerbVocabulary = append(
 	append([]string{}, auditpolicy.Verbs...),
 	"replay", "recording-get", "recording-delete",
 	bastion.VerbAgentDisplaced, bastion.VerbAgentTokenRotate,
+	verbMFAReset, verbMFARemove, verbMFARecoveryUsed,
+	verbCLILogin, verbCLISessionRevoke,
 )
 
 // joinList renders a submitted list into the stored comma-separated form,

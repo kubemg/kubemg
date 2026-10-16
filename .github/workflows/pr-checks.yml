@@ -131,6 +131,9 @@ jobs:
           - agent-vet
           - agent-test
           - agent-build
+          - cli-vet
+          - cli-test
+          - cli-build
           - frontend-lint
           - frontend-test
           - frontend-contrast
@@ -272,11 +275,11 @@ jobs:
     permissions:
       contents: read
     strategy:
-      # Both modules report. The agent and the backend fail for different
+      # Every module reports. The agent, the CLI and the backend fail for different
       # reasons and knowing only the first one is not useful.
       fail-fast: false
       matrix:
-        module: [backend, agent]
+        module: [backend, agent, cli]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

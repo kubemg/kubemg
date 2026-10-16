@@ -115,6 +115,14 @@ type fakeStore struct {
 	// postureAcks stands in for the posture_acknowledgements table, keyed by its
 	// natural key; see posture_fake_test.go.
 	postureAcks map[string]*db.PostureAcknowledgement
+	// mfa stands in for the second-factor tables; see mfa_fake_test.go.
+	// mfaErr makes every one of them unreadable.
+	mfa    *mfaTables
+	mfaErr error
+	// cli stands in for cli_device_codes and cli_sessions; see
+	// cli_fake_test.go. cliErr makes the session reads fail.
+	cli    *cliTables
+	cliErr error
 	// now is the clock the fake resolves expiring grants against. A test that
 	// moves an elevation past its window sets it, so the fake and the workflow
 	// engine agree about what time it is — two clocks would make the expiry

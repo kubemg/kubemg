@@ -218,8 +218,9 @@ Thanos or Mimir for metrics, VictoriaLogs or Loki for logs. **The browser never 
 the server writes the PromQL/LogsQL around the scope the caller's grant allows.
 
 **Access.** Users and groups with effective-permission merging, namespace-scoped grants, SSO over
-OIDC, SAML and LDAP with IdP group mapping, machine accounts for pipelines, and kubeconfigs that
-expire and can be revoked. For access someone needs twice a quarter, **just-in-time elevation**: a
+OIDC, SAML and LDAP with IdP group mapping, a second factor (TOTP) for local and LDAP accounts,
+machine accounts for pipelines, and kubeconfigs that expire and can be revoked — or none at all:
+the **`kubemg` CLI** signs in through the console and hands kubectl fifteen-minute credentials. For access someone needs twice a quarter, **just-in-time elevation**: a
 role, a cluster, a mandatory reason and a clock, approved by somebody other than the requester.
 
 **Audit.** Every call is recorded — refusals included, and long-lived calls (`exec`, `logs -f`,
@@ -428,6 +429,7 @@ kubemg is **open source in full** — no compiled core, no withheld module, no l
 |---|---|---|
 | Server and console | **AGPL-3.0** ([`LICENSE`](LICENSE)) | Running a modified kubemg as a network service means offering that source to its users. |
 | [`agent/`](agent/), [`deploy/kustomize/`](deploy/kustomize/) | **Apache-2.0** ([`agent/LICENSE`](agent/LICENSE)) | The only part that runs inside your cluster, so a security team can vendor it without copyleft reaching their infrastructure. |
+| [`cli/`](cli/) | **Apache-2.0** ([`cli/LICENSE`](cli/LICENSE)) | The `kubemg` command line runs on laptops and CI runners, and gets vendored into other tooling. |
 
 The AGPL does not forbid selling kubemg; it forbids keeping a modified, network-served fork
 private. A **commercial licence** is available for embedded or OEM use, alongside the AGPL rather
