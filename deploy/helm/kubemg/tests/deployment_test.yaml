@@ -426,3 +426,28 @@ tests:
       - equal:
           path: spec.template.metadata.annotations["kubemg.io/secret-keys"]
           value: DB_PASSWORD,KUBEMG_SECRET_KEY
+
+  - it: hands the server its own memory limit, so the runtime paces itself under it
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_MEMORY_LIMIT_BYTES
+            valueFrom:
+              resourceFieldRef:
+                containerName: kubemg
+                resource: limits.memory
+
+  - it: names no memory limit when the container has none
+    set:
+      resources:
+        limits: null
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_MEMORY_LIMIT_BYTES
+            valueFrom:
+              resourceFieldRef:
+                containerName: kubemg
+                resource: limits.memory

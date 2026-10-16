@@ -41,7 +41,8 @@ Where it can, the timeline answers from a per-cluster buffer fed by a watch, sta
 - Is filled cluster-wide and filtered **per caller** on read, so a scoped grant sees only its namespaces.
 - Stops after 15 minutes without readers, so an unwatched cluster costs nothing.
 - When it is warm the response has `buffered: true` and `buffered_at`, and "newest first" is true of the whole last hour.
-- A cold buffer, a server without the watcher, or a refused watch falls back to the scan above automatically.
+- A request that arrives while the buffer is still on its first list **waits for it**, up to 10 seconds, rather than scanning on its own. The first views of a cluster nobody has opened lately usually arrive together, as at the start of an incident, and they then cost the cluster one list between them.
+- A server without the watcher, a refused watch, or a first list slower than 10 seconds falls back to the scan above automatically.
 
 ??? info "Why it works this way"
     A page of the Events list is in key order (namespace/name), so on a large cluster one page is an alphabetical slice by involved object, not the newest events. That is why the scan follows continue tokens (an empty page with a token is not the end) and why the buffer exists.
@@ -52,7 +53,7 @@ Where it can, the timeline answers from a per-cluster buffer fed by a watch, sta
 
 ## Caching
 
-Answers are held for 30 seconds by default (`KUBEMG_EVENT_CACHE_TTL`), longer than the normal resource cache. No kubemg write produces an Event, and a whole incident team opening one page at once should not become a dozen cluster-wide list calls. **Refresh** always bypasses the cache.
+Answers are held for 30 seconds by default (`KUBEMG_EVENT_CACHE_TTL`), longer than the normal resource cache, because no kubemg write produces an Event. Like every cached answer it is held **per person**, so it saves one person's repeated reads, not a team's. A team sharing one read of the cluster comes from the buffer above. **Refresh** always bypasses the cache.
 
 ## See also
 

@@ -45,7 +45,7 @@ func TestReadBodyEnforcesTheCap(t *testing.T) {
 
 	// A response larger than the cap must fail loudly rather than push the pod
 	// past its memory limit.
-	oversized := io.NopCloser(bytes.NewReader(make([]byte, maxResponseBody+1)))
+	oversized := io.NopCloser(bytes.NewReader(make([]byte, MaxResponseBody+1)))
 	if _, err := ReadBody(oversized); err == nil {
 		t.Fatal("expected an oversized response to be refused")
 	}

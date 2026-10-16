@@ -29,6 +29,7 @@ to the default.
 | Variable | Default | What it is |
 |---|---|---|
 | `KUBEMG_LISTEN_ADDR` | `:8080` (dev) / `:8443` (production image) | Listen address. Must be loopback if `KUBEMG_TLS_ENABLED=false` unless `KUBEMG_ALLOW_INSECURE=true` — see [TLS](tls.md). |
+| `KUBEMG_MEMORY_LIMIT_BYTES` | — | The container's memory limit in bytes. The server sets the Go runtime's soft limit to 80% of it, so it reclaims memory harder as it nears the limit instead of being OOM-killed. The Helm chart fills it from `resources.limits.memory`; unset, the runtime is left alone. An explicit `GOMEMLIMIT` wins. |
 
 ## Database
 
@@ -157,9 +158,9 @@ KUBEMG_TLS_SUPPLIED_DIR=/etc/kubemg/ssl
 # KUBEMG_AGENT_CA_BUNDLE=/etc/kubemg/ssl/proxy-ca.crt
 
 # --- air-gapped / internal registry --------------------------------------
-# KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.14.2
+# KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.15.0
 # KUBEMG_POSTGRES_IMAGE=registry.internal/postgres:16-alpine
-# KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.14.2
+# KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.15.0
 # KUBEMG_AGENT_IMAGE_PULL_SECRET=registry-internal
 KUBEMG_AGENT_NAMESPACE=kubemg-system
 

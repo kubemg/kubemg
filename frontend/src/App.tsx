@@ -14,6 +14,7 @@ import { GroupManagement } from './pages/GroupManagement'
 import { Login } from './pages/Login'
 import { NamespaceDetail } from './pages/NamespaceDetail'
 import { NodeCapacity } from './pages/NodeCapacity'
+import { Waste } from './pages/Waste'
 import { Overview } from './pages/Overview'
 import { IssuedCredentials } from './pages/IssuedCredentials'
 import { MachineAccounts } from './pages/MachineAccounts'
@@ -326,6 +327,18 @@ export default function App() {
               element={
                 <RequireAuth>
                   <NodeCapacity />
+                </RequireAuth>
+              }
+            />
+            {/* Reserved and not used: over-requested workloads sized from
+                history, storage nothing mounts, load balancers in front of
+                nothing. Open to anyone granted — a scoped grant reads its own
+                namespaces. */}
+            <Route
+              path="/clusters/:id/waste"
+              element={
+                <RequireAuth>
+                  <Waste />
                 </RequireAuth>
               }
             />

@@ -345,6 +345,9 @@ func (s *Store) DeleteCluster(ctx context.Context, id uint) error {
 		if err := deleteClusterConsoles(tx, id); err != nil {
 			return err
 		}
+		if err := deleteClusterCostRates(tx, id); err != nil {
+			return err
+		}
 		if err := deleteClusterCRDVisibility(tx, id); err != nil {
 			return err
 		}

@@ -431,7 +431,11 @@ func (p *Proxy) Call(
 	defer cancel()
 
 	header := map[string][]string{
-		"Accept":            {"application/json"},
+		"Accept": {"application/json"},
+		// Asked for explicitly so the agent's HTTP client passes the compressed
+		// answer through instead of undoing it, and the tunnel carries a tenth of
+		// the bytes. It is undone here, under maxDecodedBody — see decodeBody.
+		"Accept-Encoding":   {"gzip"},
 		"Impersonate-User":  {ImpersonationUser(user)},
 		"Impersonate-Group": ImpersonationGroups(grant.K8sRole),
 	}
@@ -451,6 +455,10 @@ func (p *Proxy) Call(
 			Status:  http.StatusBadGateway,
 			Message: "the in-cluster agent could not reach the API server: " + resp.Error,
 		}
+	}
+	if err := decodeBody(resp, maxDecodedBody); err != nil {
+		record(http.StatusBadGateway, err)
+		return nil, &CallError{Status: http.StatusBadGateway, Message: err.Error()}
 	}
 
 	// The diff is attached only once the round trip is known to have

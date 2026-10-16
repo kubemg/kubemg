@@ -131,6 +131,7 @@ type harness struct {
 	gateway *Server
 	jwt     *auth.Manager
 	audit   *recordingAuditor
+	proxy   *Proxy
 }
 
 func newHarness(t *testing.T) *harness {
@@ -167,6 +168,7 @@ func newHarnessWithOrigins(t *testing.T, allowedOrigins []string, publicURL stri
 		gateway: gateway,
 		jwt:     manager,
 		audit:   auditor,
+		proxy:   proxy,
 	}
 	t.Cleanup(h.server.Close)
 	return h

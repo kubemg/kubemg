@@ -1,20 +1,34 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { AlertTriangle, Ban, ChevronDown, CircleX, Cpu, Server } from 'lucide-react'
+import { ChevronDown, Cpu, Server } from 'lucide-react'
 import { errorMessage, fetchClusterCapacity } from '../api/client'
 import type {
   CapacityDimension,
   CapacitySeverity,
   NodeCapacity as NodeCapacityRow,
   PlacementSummary,
-  PodSlots,
 } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { CapacityHeatmap } from '../components/CapacityHeatmap'
+import {
+  AllocationLine,
+  CapacityRing,
+  FitBar,
+  SegmentBar,
+  ShareRow,
+  SlotLine,
+} from '../components/CapacityVisuals'
 import { LiveRefresh } from '../components/LiveRefresh'
-import { Disclosure, EmptyState, Notice, Pill, StatTile } from '../components/primitives'
+import { Disclosure, EmptyState, Notice, Pill } from '../components/primitives'
 import { TableSkeleton } from '../components/SkeletonLoader'
-import { qosLine } from '../lib/capacityHeatmap'
+import {
+  fitShare,
+  nodeHasDetail,
+  nodeStateSegments,
+  percentText,
+  qosSegments,
+  relativeShare,
+} from '../lib/capacityView'
 import { useDisclosureState } from '../lib/disclosures'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { formatCPU, formatMemory } from '../lib/units'
@@ -51,15 +65,6 @@ import { useClusters } from '../state/clusters-context'
  * pod specs — and says which column is absent instead of failing.
  */
 
-/* The tone ladder for a percentage against allocatable. It mirrors the
-   thresholds the server reasons with, and never contradicts them: this only
-   colours a bar, the concern list beneath it is what makes the claim. */
-function allocationTone(percent: number): 'ok' | 'warn' | 'bad' {
-  if (percent >= 100) return 'bad'
-  if (percent >= 90) return 'warn'
-  return 'ok'
-}
-
 const SEVERITY_TONE: Record<CapacitySeverity, 'ok' | 'warn' | 'bad' | 'idle'> = {
   ok: 'ok',
   note: 'idle',
@@ -74,159 +79,25 @@ const SEVERITY_LABEL: Record<CapacitySeverity, string> = {
   danger: 'will not schedule',
 }
 
-const FILL_TONE = { ok: 'bg-ok', warn: 'bg-warn', bad: 'bg-danger' } as const
-
 /**
- * AllocationBar is one resource on one node: a track filled to what is
- * reserved, a tick where consumption actually sits, and the limit written
- * underneath because it cannot be drawn to the same scale.
+ * NodeRow is one node: its three ceilings as one line each, its concerns as
+ * pills whose sentence is the tooltip, and the rest — every concern in full,
+ * taints, the largest reservations and the pods using more than they reserved
+ * — one click away. `focus` is the heatmap asking for this row: it opens and
+ * is brought into view, with no smooth scroll.
  */
-function AllocationBar({
-  label,
-  dimension,
-  format,
+function NodeRow({
+  node,
+  focus,
+  usageAvailable,
 }: {
-  label: string
-  dimension: CapacityDimension
-  format: (value: number) => string
+  node: NodeCapacityRow
+  focus: number
+  usageAvailable: boolean
 }) {
-  const reserved = Math.min(100, Math.max(0, dimension.requested_percent))
-  const used = Math.min(100, Math.max(0, dimension.used_percent))
-  const tone = allocationTone(dimension.requested_percent)
-  const measured = dimension.allocatable > 0
-
-  return (
-    <div className="min-w-0">
-      <div className="flex items-baseline gap-2">
-        <span className="text-[12.5px] text-muted">{label}</span>
-        <span className="ml-auto font-data text-[13px] font-semibold text-fg tabular-nums">
-          {measured ? PERCENT.format(dimension.requested_percent / 100) : '—'}
-        </span>
-      </div>
-
-      <div
-        role="meter"
-        aria-label={`${label} reserved`}
-        aria-valuenow={measured ? Math.round(dimension.requested_percent) : undefined}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuetext={
-          measured
-            ? `${format(dimension.requested)} of ${format(dimension.allocatable)} reserved, ` +
-              `${format(dimension.used)} in use`
-            : 'no allocatable capacity reported'
-        }
-        className="relative mt-1.5 h-2 overflow-hidden rounded-full bg-raised"
-      >
-        <span
-          aria-hidden="true"
-          className={`block h-full rounded-full ${FILL_TONE[tone]}`}
-          style={{ width: `${reserved}%` }}
-        />
-        {/* Consumption, on the same track and the same scale. It is a tick and
-            not a second fill because two overlapping fills read as one bar of
-            an ambiguous length, and the distance between the two marks is the
-            whole point of the page. */}
-        {dimension.used > 0 ? (
-          <span
-            aria-hidden="true"
-            className="absolute inset-y-0 w-0.5 bg-fg"
-            style={{ left: `calc(${used}% - 1px)` }}
-          />
-        ) : null}
-      </div>
-
-      <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] text-faint">
-        <span>
-          <span className="font-data text-fg tabular-nums">{format(dimension.requested)}</span>
-          <span className="font-data tabular-nums">
-            {' '}
-            / {measured ? format(dimension.allocatable) : 'unknown'}
-          </span>{' '}
-          reserved
-        </span>
-        <span>
-          {dimension.used > 0 ? (
-            <>
-              <span className="font-data tabular-nums">{format(dimension.used)}</span> in use
-            </>
-          ) : (
-            'no live usage'
-          )}
-        </span>
-        <span>
-          {dimension.limited > 0 ? (
-            <>
-              limits{' '}
-              <span className="font-data tabular-nums">
-                {PERCENT.format(dimension.limited_percent / 100)}
-              </span>{' '}
-              of the node
-            </>
-          ) : (
-            'no limits declared'
-          )}
-        </span>
-      </p>
-    </div>
-  )
-}
-
-const PERCENT = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 0 })
-
-/** PodSlotBar is the third ceiling, and the one that binds before the others do. */
-function PodSlotBar({ slots }: { slots: PodSlots }) {
-  const tone = allocationTone(slots.percent)
-  return (
-    <div className="min-w-0">
-      <div className="flex items-baseline gap-2">
-        <span className="text-[12.5px] text-muted">Pod slots</span>
-        <span className="ml-auto font-data text-[13px] font-semibold text-fg tabular-nums">
-          {PERCENT.format(slots.percent / 100)}
-        </span>
-      </div>
-      <div
-        role="meter"
-        aria-label="Pod slots"
-        aria-valuenow={Math.round(slots.percent)}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuetext={`${slots.scheduled} of ${slots.allocatable} pod slots taken`}
-        className="mt-1.5 h-2 overflow-hidden rounded-full bg-raised"
-      >
-        <span
-          aria-hidden="true"
-          className={`block h-full rounded-full ${FILL_TONE[tone]}`}
-          style={{ width: `${Math.min(100, Math.max(0, slots.percent))}%` }}
-        />
-      </div>
-      <p className="mt-1.5 text-[12px] text-faint">
-        <span className="font-data text-fg tabular-nums">{slots.scheduled}</span>
-        <span className="font-data tabular-nums">
-          {' '}
-          / {slots.allocatable > 0 ? slots.allocatable : 'unknown'}
-        </span>{' '}
-        taken
-        {slots.without_requests > 0 ? ` · ${slots.without_requests} reserving nothing` : ''}
-      </p>
-    </div>
-  )
-}
-
-/**
- * NodeRow is one node: its three ceilings, and what its numbers say. `focus`
- * is the heatmap asking for this row — it opens and is brought into view, with
- * no smooth scroll, which is motion the reader did not ask for.
- */
-function NodeRow({ node, focus }: { node: NodeCapacityRow; focus: number }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLLIElement>(null)
-  const worst = node.concerns[0]
-  const hasDetail =
-    node.concerns.length > 1 ||
-    node.top_requests.length > 0 ||
-    node.top_borrowers.length > 0 ||
-    node.taints.length > 0
+  const hasDetail = nodeHasDetail(node)
 
   useEffect(() => {
     if (focus === 0) return
@@ -238,12 +109,18 @@ function NodeRow({ node, focus }: { node: NodeCapacityRow; focus: number }) {
     <li
       ref={ref}
       id={`node-${node.name}`}
-      className="defer-row min-w-0 scroll-mt-24 px-5 py-4 [contain-intrinsic-size:auto_160px]"
+      className="defer-row min-w-0 scroll-mt-24 px-5 py-4 [contain-intrinsic-size:auto_140px]"
     >
-      <div className="flex flex-wrap items-center gap-2.5">
-        <span className="min-w-0 truncate font-data text-[13px] text-fg">{node.name}</span>
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          aria-hidden="true"
+          className={`size-2 shrink-0 rounded-full ${SEVERITY_DOT[node.severity]}`}
+        />
+        <span className="min-w-0 truncate font-data text-[13.5px] font-semibold text-fg">
+          {node.name}
+        </span>
         {node.roles.map((role) => (
-          <span key={role} className="label text-faint">
+          <span key={role} className="text-[12px] text-faint">
             {role}
           </span>
         ))}
@@ -254,182 +131,280 @@ function NodeRow({ node, focus }: { node: NodeCapacityRow; focus: number }) {
             tainted
           </Pill>
         ) : null}
-        {qosLine(node.qos) ? (
-          <span className="text-[12px] text-faint">{qosLine(node.qos)}</span>
-        ) : null}
         <span className="ml-auto">
           <Pill tone={SEVERITY_TONE[node.severity]}>{SEVERITY_LABEL[node.severity]}</Pill>
         </span>
       </div>
 
-      <div className="mt-3 grid gap-4 sm:grid-cols-3">
-        <AllocationBar label="CPU" dimension={node.cpu} format={formatCPU} />
-        <AllocationBar label="Memory" dimension={node.memory} format={formatMemory} />
-        <PodSlotBar slots={node.pods} />
+      <div className="mt-3 grid gap-x-8 gap-y-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(0,220px)]">
+        <div className="flex min-w-0 flex-col gap-2">
+          <AllocationLine
+            label="CPU"
+            dimension={node.cpu}
+            format={formatCPU}
+            usageAvailable={usageAvailable}
+          />
+          <AllocationLine
+            label="Memory"
+            dimension={node.memory}
+            format={formatMemory}
+            usageAvailable={usageAvailable}
+          />
+          <SlotLine slots={node.pods} />
+        </div>
+        <div className="flex min-w-0 flex-col justify-center gap-2">
+          <SegmentBar label="QoS" segments={qosSegments(node.qos)} compact />
+          <p className="text-[11.5px] text-faint">
+            Free{' '}
+            {node.placeable ? (
+              <span className="font-data text-fg tabular-nums">
+                {formatCPU(node.headroom.cpu)} · {formatMemory(node.headroom.memory)}
+              </span>
+            ) : (
+              'for no ordinary pod'
+            )}
+          </p>
+        </div>
       </div>
 
       {node.concerns.length > 0 || hasDetail ? (
-        <div className="mt-3">
-          {/* The worst line is always visible; the rest is one click away. A
-              node with six notes must not push the next node off the screen. */}
-          {worst ? (
-            <p className="text-[12.5px] leading-relaxed text-muted">
-              <span className="font-medium text-fg">{worst.title}.</span> {worst.detail}
-            </p>
-          ) : null}
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          {node.concerns.map((concern) => (
+            <Pill key={concern.code} tone={SEVERITY_TONE[concern.severity]} title={concern.detail}>
+              {concern.title}
+            </Pill>
+          ))}
           {hasDetail ? (
             <button
               type="button"
               aria-expanded={open}
               onClick={() => setOpen((current) => !current)}
-              className="mt-2 inline-flex items-center gap-1.5 text-[12px] text-accent hover:underline"
+              className="ml-auto inline-flex items-center gap-1 text-[12px] text-accent hover:underline"
             >
               <ChevronDown
                 aria-hidden="true"
                 className={`size-3.5 transition-transform ${open ? 'rotate-180' : ''}`}
               />
-              {open
-                ? 'Less'
-                : node.concerns.length > 1
-                  ? `${node.concerns.length - 1} more, and what is holding this node`
-                  : 'What is holding this node'}
+              {open ? 'Less' : 'Details'}
             </button>
           ) : null}
         </div>
       ) : null}
 
-      {open ? (
-        <div className="mt-3 flex flex-col gap-3 rounded-control border border-line-soft bg-sunken p-3">
-          {node.concerns.slice(1).map((concern) => (
-            <p key={concern.code} className="text-[12.5px] leading-relaxed text-muted">
-              <Pill tone={SEVERITY_TONE[concern.severity]}>{concern.title}</Pill>{' '}
-              <span className="ml-1">{concern.detail}</span>
-            </p>
-          ))}
-
-          {node.taints.length > 0 ? (
-            <p className="text-[12.5px] leading-relaxed text-muted">
-              <span className="font-medium text-fg">Taints.</span>{' '}
-              <span className="font-mono text-[12px]">{node.taints.join(', ')}</span>
-              {node.placeable
-                ? ' — none of them keeps an ordinary pod off this node.'
-                : ' — only pods that tolerate them are placed here.'}
-            </p>
-          ) : null}
-
-          {node.top_borrowers.length > 0 ? (
-            <div>
-              {/* The noisy neighbours: pods spending past their reservation.
-                  Under memory pressure these are what the kubelet evicts
-                  first, and on CPU what slows the pods beside them. */}
-              <p className="label mb-1.5 text-faint">
-                Using more than they reserved
-                {node.borrowing_pods > node.top_borrowers.length
-                  ? ` — the largest ${node.top_borrowers.length} of ${node.borrowing_pods}`
-                  : ''}
-              </p>
-              <ul className="flex flex-col gap-1">
-                {node.top_borrowers.map((pod) => (
-                  <li
-                    key={`${pod.namespace}/${pod.name}`}
-                    className="flex flex-wrap items-baseline gap-x-2.5 font-data text-[12px]"
-                  >
-                    <span className="text-faint">{pod.namespace}</span>
-                    <span className="min-w-0 truncate text-fg">{pod.name}</span>
-                    {pod.qos ? <span className="text-faint">{pod.qos}</span> : null}
-                    <span className="ml-auto text-muted tabular-nums">
-                      {[
-                        pod.cpu_used > pod.cpu_request
-                          ? `${formatCPU(pod.cpu_used)} of ${pod.cpu_request > 0 ? formatCPU(pod.cpu_request) : 'none'} CPU`
-                          : null,
-                        pod.memory_used > pod.memory_request
-                          ? `${formatMemory(pod.memory_used)} of ${pod.memory_request > 0 ? formatMemory(pod.memory_request) : 'none'} memory`
-                          : null,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </span>
-                    <span
-                      className="w-12 text-right text-faint tabular-nums"
-                      title="Taken beyond its request, as a share of the node"
-                    >
-                      +{pod.excess_percent.toFixed(0)}%
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {node.top_requests.length > 0 ? (
-            <div>
-              <p className="label mb-1.5 text-faint">Largest reservations on this node</p>
-              <ul className="flex flex-col gap-1">
-                {node.top_requests.map((pod) => (
-                  <li
-                    key={`${pod.namespace}/${pod.name}`}
-                    className="flex flex-wrap items-baseline gap-x-2.5 font-data text-[12px]"
-                  >
-                    <span className="text-faint">{pod.namespace}</span>
-                    <span className="min-w-0 truncate text-fg">{pod.name}</span>
-                    {/* Only the resources this pod actually reserves. A pod
-                        asking for CPU and nothing else would otherwise read as
-                        "250m · 0", which looks like a memory request of zero
-                        rather than the absence of one. */}
-                    <span className="ml-auto text-muted tabular-nums">
-                      {[
-                        pod.cpu_millicores > 0 ? formatCPU(pod.cpu_millicores) : null,
-                        pod.memory_bytes > 0 ? formatMemory(pod.memory_bytes) : null,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </span>
-                    <span className="w-12 text-right text-faint tabular-nums">
-                      {pod.share_percent.toFixed(0)}%
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      {open ? <NodeDetail node={node} /> : null}
     </li>
   )
 }
 
+const SEVERITY_DOT: Record<CapacitySeverity, string> = {
+  ok: 'bg-ok',
+  note: 'bg-faint',
+  warn: 'bg-warn',
+  danger: 'bg-danger',
+}
+
+/** NodeDetail is what a node's row folds: the sentences, then the pods behind the numbers. */
+function NodeDetail({ node }: { node: NodeCapacityRow }) {
+  const excess = node.top_borrowers.map((pod) => pod.excess_percent)
+  const shares = node.top_requests.map((pod) => pod.share_percent)
+  return (
+    <div className="mt-3 grid gap-4 rounded-control border border-line-soft bg-sunken p-3 lg:grid-cols-2">
+      {node.concerns.length > 0 || node.taints.length > 0 ? (
+        <ul className="flex flex-col gap-1.5 text-[12.5px] leading-relaxed text-muted lg:col-span-2">
+          {node.concerns.map((concern) => (
+            <li key={concern.code}>
+              <span className="font-medium text-fg">{concern.title}.</span> {concern.detail}
+            </li>
+          ))}
+          {node.taints.length > 0 ? (
+            <li>
+              <span className="font-medium text-fg">Taints.</span>{' '}
+              <span className="font-mono text-[12px]">{node.taints.join(', ')}</span>
+              {node.placeable
+                ? ' — none keeps an ordinary pod off.'
+                : ' — only pods that tolerate them land here.'}
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
+
+      {node.top_requests.length > 0 ? (
+        <div className="min-w-0">
+          <p className="label mb-2 text-faint">Largest reservations</p>
+          <ul className="flex flex-col gap-1.5">
+            {node.top_requests.map((pod) => (
+              <ShareRow
+                key={`${pod.namespace}/${pod.name}`}
+                namespace={pod.namespace}
+                name={pod.name}
+                share={relativeShare(pod.share_percent, shares)}
+                figure={`${pod.share_percent.toFixed(0)}%`}
+                // Only what the pod actually reserves: "250m · 0" would read
+                // as a memory request of zero, not the absence of one.
+                detail={[
+                  pod.cpu_millicores > 0 ? formatCPU(pod.cpu_millicores) : null,
+                  pod.memory_bytes > 0 ? formatMemory(pod.memory_bytes) : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              />
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {node.top_borrowers.length > 0 ? (
+        <div className="min-w-0">
+          {/* The noisy neighbours: under memory pressure what the kubelet
+              evicts first, and on CPU what slows the pods beside them. */}
+          <p className="label mb-2 text-faint">
+            Using more than reserved
+            {node.borrowing_pods > node.top_borrowers.length
+              ? ` · top ${node.top_borrowers.length} of ${node.borrowing_pods}`
+              : ''}
+          </p>
+          <ul className="flex flex-col gap-1.5">
+            {node.top_borrowers.map((pod) => (
+              <ShareRow
+                key={`${pod.namespace}/${pod.name}`}
+                namespace={pod.namespace}
+                name={pod.name}
+                share={relativeShare(pod.excess_percent, excess)}
+                figure={`+${pod.excess_percent.toFixed(0)}%`}
+                detail={[
+                  pod.qos || null,
+                  pod.cpu_used > pod.cpu_request
+                    ? `${formatCPU(pod.cpu_used)} of ${pod.cpu_request > 0 ? formatCPU(pod.cpu_request) : 'none'} CPU`
+                    : null,
+                  pod.memory_used > pod.memory_request
+                    ? `${formatMemory(pod.memory_used)} of ${pod.memory_request > 0 ? formatMemory(pod.memory_request) : 'none'} memory`
+                    : null,
+                  'taken beyond its request, as a share of the node',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              />
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/** ClusterRing is one cluster-wide ceiling with its in-use and limit figures under it. */
+function ClusterRing({
+  label,
+  dimension,
+  format,
+  usageAvailable,
+}: {
+  label: string
+  dimension: CapacityDimension
+  format: (value: number) => string
+  usageAvailable: boolean
+}) {
+  const measured = dimension.allocatable > 0
+  const used = usageAvailable && dimension.used > 0
+  return (
+    <CapacityRing
+      label={label}
+      reservedPercent={dimension.requested_percent}
+      usedPercent={used ? dimension.used_percent : null}
+      measured={measured}
+      amount={
+        measured
+          ? `${format(dimension.requested)} / ${format(dimension.allocatable)}`
+          : 'no allocatable'
+      }
+      title={
+        measured
+          ? `${label}: ${format(dimension.requested)} of ${format(dimension.allocatable)} reserved` +
+            (used ? `, ${format(dimension.used)} in use` : ', live use not measured') +
+            (dimension.limited > 0
+              ? `, limits ${percentText(dimension.limited_percent)} of allocatable`
+              : ', no limits declared')
+          : `${label}: no allocatable capacity reported`
+      }
+      footer={
+        measured ? (
+          <>
+            <span>
+              <span aria-hidden="true" className="mr-1 inline-block h-2.5 w-0.5 bg-fg align-middle" />
+              {used ? (
+                <span className="font-data tabular-nums">{format(dimension.used)}</span>
+              ) : (
+                '—'
+              )}
+            </span>
+            <span>
+              limits{' '}
+              <span className="font-data tabular-nums">
+                {dimension.limited > 0 ? percentText(dimension.limited_percent) : '—'}
+              </span>
+            </span>
+          </>
+        ) : null
+      }
+    />
+  )
+}
+
 /**
- * PlacementReading is the fragmentation answer: what is unreserved in total
- * across the nodes an ordinary pod could land on, beside the most any one of
- * them can take. The second number is the one a pending pod is measured
- * against, and the first alone would say it fits.
+ * Placement is the fragmentation answer drawn: what is unreserved across the
+ * nodes an ordinary pod could land on, and how much of it one node can take.
+ * The second is what a pending pod is measured against.
  */
-function PlacementReading({ placement }: { placement: PlacementSummary }) {
+function Placement({ placement }: { placement: PlacementSummary }) {
   if (placement.placeable_nodes === 0 || !placement.largest_cpu || !placement.largest_memory) {
     return (
-      <p className="mt-4 text-[13px] leading-relaxed text-muted">
-        No node takes an ordinary pod right now — every one is not Ready, cordoned, tainted
-        NoSchedule or NoExecute, or out of pod slots.
-      </p>
+      <Notice tone="warn">
+        No node takes an ordinary pod right now — each is not Ready, cordoned, tainted or full.
+      </Notice>
     )
   }
   const { free, largest_cpu: cpu, largest_memory: memory } = placement
-  const data = 'font-data text-fg tabular-nums'
   return (
-    <p className="mt-4 text-[13px] leading-relaxed text-muted">
-      Unreserved on the{' '}
-      <span className={data}>{placement.placeable_nodes}</span>{' '}
-      {placement.placeable_nodes === 1 ? 'node' : 'nodes'} that take ordinary pods:{' '}
-      <span className={data}>{formatCPU(free.cpu)}</span> CPU and{' '}
-      <span className={data}>{formatMemory(free.memory)}</span> memory. The most one node can take
-      is <span className={data}>{formatCPU(cpu.cpu)}</span> CPU (
-      <span className="font-data text-fg">{cpu.node}</span>, with{' '}
-      <span className={data}>{formatMemory(cpu.memory)}</span> beside it) or{' '}
-      <span className={data}>{formatMemory(memory.memory)}</span> memory (
-      <span className="font-data text-fg">{memory.node}</span>, with{' '}
-      <span className={data}>{formatCPU(memory.cpu)}</span> beside it) — a pod asking for more
-      will not schedule, however much is free in total.
-    </p>
+    <div className="flex min-w-0 flex-col gap-3">
+      <FitBar
+        label="CPU"
+        share={fitShare(cpu.cpu, free.cpu)}
+        largest={formatCPU(cpu.cpu)}
+        free={formatCPU(free.cpu)}
+        node={cpu.node}
+      />
+      <FitBar
+        label="Memory"
+        share={fitShare(memory.memory, free.memory)}
+        largest={formatMemory(memory.memory)}
+        free={formatMemory(free.memory)}
+        node={memory.node}
+      />
+      <p className="text-[11.5px] text-faint">
+        <span className="font-data tabular-nums">{placement.placeable_nodes}</span>{' '}
+        {placement.placeable_nodes === 1 ? 'node takes' : 'nodes take'} ordinary pods
+      </p>
+    </div>
+  )
+}
+
+/** The one key every picture on the page shares. */
+function RingLegend() {
+  return (
+    <span className="flex flex-wrap items-center gap-x-3 text-[11.5px] text-faint">
+      <span className="inline-flex items-center gap-1.5">
+        <span aria-hidden="true" className="h-2 w-4 rounded-full bg-ok" />
+        reserved
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span aria-hidden="true" className="h-3 w-0.5 bg-fg" />
+        in use
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span aria-hidden="true" className="size-1.5 rounded-full bg-warn" />
+        90% line
+      </span>
+    </span>
   )
 }
 
@@ -503,6 +478,7 @@ export function NodeCapacity() {
   const summary = loaded?.summary
   const attention =
     (summary?.severity_counts.danger ?? 0) + (summary?.severity_counts.warn ?? 0)
+  const usageAvailable = loaded?.available ?? false
 
   return (
     <AppShell
@@ -537,71 +513,109 @@ export function NodeCapacity() {
 
         {summary && summary.nodes > 0 ? (
           <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatTile icon={Server} label="Nodes" value={summary.nodes} />
-            <StatTile
-              icon={AlertTriangle}
-              label="Needing attention"
-              value={attention}
-              tone={attention > 0 ? 'warn' : 'neutral'}
-              sub={attention > 0 ? undefined : 'nothing pressing'}
-            />
-            <StatTile
-              icon={Ban}
-              label="Cordoned"
-              value={summary.nodes - summary.schedulable}
-            />
-            <StatTile
-              icon={CircleX}
-              label="Not ready"
-              value={summary.nodes - summary.ready}
-              tone={summary.ready < summary.nodes ? 'danger' : 'neutral'}
-            />
-          </div>
-          <div className="card min-w-0 px-5 pt-4 pb-5">
-            <h2 className="text-[16px] font-bold text-fg">Reserved across the cluster</h2>
-            <p className="mt-0.5 text-[13px] text-muted">
-              What pods have asked for against what the nodes can give, with live use as a tick
-            </p>
-            <div className="mt-4 grid gap-5 sm:grid-cols-3">
-              <AllocationBar label="CPU reserved" dimension={summary.cpu} format={formatCPU} />
-              <AllocationBar
-                label="Memory reserved"
-                dimension={summary.memory}
-                format={formatMemory}
-              />
-              <PodSlotBar slots={summary.pods} />
+            <div className="card grid min-w-0 gap-6 px-5 py-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,1.4fr)]">
+              <section aria-labelledby="capacity-reserved" className="flex min-w-0 flex-col">
+                <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                  <h2 id="capacity-reserved" className="text-[16px] font-bold text-fg">
+                    Reserved
+                  </h2>
+                  <RingLegend />
+                </div>
+                <div className="mt-4 grid flex-1 grid-cols-1 items-center gap-6 sm:grid-cols-3">
+                  <ClusterRing
+                    label="CPU"
+                    dimension={summary.cpu}
+                    format={formatCPU}
+                    usageAvailable={usageAvailable}
+                  />
+                  <ClusterRing
+                    label="Memory"
+                    dimension={summary.memory}
+                    format={formatMemory}
+                    usageAvailable={usageAvailable}
+                  />
+                  <CapacityRing
+                    label="Pods"
+                    reservedPercent={summary.pods.percent}
+                    usedPercent={null}
+                    measured={summary.pods.allocatable > 0}
+                    amount={`${summary.pods.scheduled} / ${summary.pods.allocatable}`}
+                    title={
+                      `Pod slots: ${summary.pods.scheduled} of ${summary.pods.allocatable} taken` +
+                      (summary.pods.without_requests > 0
+                        ? `, ${summary.pods.without_requests} reserving nothing`
+                        : '')
+                    }
+                    footer={
+                      summary.pods.without_requests > 0 ? (
+                        <span title="Pods that request neither CPU nor memory">
+                          <span className="font-data tabular-nums">
+                            {summary.pods.without_requests}
+                          </span>{' '}
+                          reserve nothing
+                        </span>
+                      ) : null
+                    }
+                  />
+                </div>
+              </section>
+
+              <div className="flex min-w-0 flex-col gap-5 border-line-soft lg:border-l lg:pl-6">
+                <section aria-labelledby="capacity-nodes" className="min-w-0">
+                  <h2 id="capacity-nodes" className="mb-2 flex items-baseline gap-2 text-[13px] font-semibold text-fg">
+                    <Server aria-hidden="true" className="size-3.5 self-center text-muted" />
+                    Nodes
+                    <span className="font-data text-[13px] text-fg tabular-nums">{summary.nodes}</span>
+                    {attention > 0 ? (
+                      <span className="ml-auto">
+                        <Pill tone="warn">{attention} need attention</Pill>
+                      </span>
+                    ) : null}
+                  </h2>
+                  <SegmentBar
+                    label="Nodes"
+                    segments={nodeStateSegments(nodes)}
+                  />
+                </section>
+                <section aria-labelledby="capacity-fit" className="min-w-0">
+                  <h2
+                    id="capacity-fit"
+                    className="mb-2 text-[13px] font-semibold text-fg"
+                    title="The most one node can take, against what is free across every node that takes ordinary pods. A pod asking for more will not schedule, however much is free in total."
+                  >
+                    Largest pod that fits
+                  </h2>
+                  <Placement placement={summary.placement} />
+                </section>
+                <section aria-labelledby="capacity-qos" className="min-w-0">
+                  <h2 id="capacity-qos" className="mb-2 text-[13px] font-semibold text-fg">
+                    QoS
+                  </h2>
+                  <SegmentBar label="Pods by QoS class" segments={qosSegments(summary.qos)} />
+                </section>
+              </div>
             </div>
-            <PlacementReading placement={summary.placement} />
-            {qosLine(summary.qos) ? (
-              <p className="mt-1.5 text-[12.5px] text-faint">
-                Pods by QoS class: {qosLine(summary.qos)}
-              </p>
-            ) : null}
-          </div>
-          <div className="card min-w-0 px-5 pt-4 pb-5">
-            <h2 className="text-[16px] font-bold text-fg">Heatmap</h2>
-            <p className="mt-0.5 mb-3 text-[13px] text-muted">
-              Every node against every ceiling, worst first — open a node to see why it reads
-              as it does
-            </p>
-            <CapacityHeatmap
-              nodes={nodes}
-              usageAvailable={loaded?.available ?? false}
-              onSelect={(name) =>
-                setFocused((current) => ({
-                  name,
-                  count: current?.name === name ? current.count + 1 : 1,
-                }))
-              }
-            />
-          </div>
+
+            <div className="card min-w-0 px-5 pt-4 pb-5">
+              <h2 className="mb-3 text-[16px] font-bold text-fg">Heatmap</h2>
+              <CapacityHeatmap
+                nodes={nodes}
+                usageAvailable={usageAvailable}
+                onSelect={(name) =>
+                  setFocused((current) => ({
+                    name,
+                    count: current?.name === name ? current.count + 1 : 1,
+                  }))
+                }
+              />
+            </div>
           </>
         ) : null}
 
         <div className="card min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
             <h2 className="text-[16px] font-bold text-fg">Nodes</h2>
+            <RingLegend />
             {loading ? (
               <span role="status" className="text-[12.5px] text-muted">
                 Reading the cluster…
@@ -626,6 +640,7 @@ export function NodeCapacity() {
                   key={node.name}
                   node={node}
                   focus={focused?.name === node.name ? focused.count : 0}
+                  usageAvailable={usageAvailable}
                 />
               ))}
             </ul>

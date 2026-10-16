@@ -9,6 +9,7 @@ The tree is a **fixed** inventory (namespaces, workloads, pods, services, ingres
 - **HTTPRoutes and VirtualServices** appear only when the cluster serves them, and get a proper hostname/gateway/rules table. Every other CRD gets a generic name/kind/age table.
 - **Other CRDs are grouped by API group family.** `kafka.strimzi.io` and `core.strimzi.io` both become *strimzi.io*. A family with **two or more** kinds gets its own section; a single-kind family lands in **Other**, at the bottom.
 - Discovered sections and **Other** **start collapsed**. A section holding your current selection opens anyway.
+- The cluster's own pages come first: **Cluster** (Dashboard, Nodes, Namespaces, Events, Alerts) is open, and the reports — Capacity, Cost & waste, Security, Audit trail — sit in **Insights** below it, which **starts collapsed** and opens when one of them is the page you are on.
 - An administrator can hide CRDs from the sidebar: see [Managing a cluster](managing.md#curating-which-crds-the-explore-sidebar-offers). Hiding is navigation only, never access control.
 
 While discovery is still running the sidebar waits. If it finds no CRDs, it falls back to Pods.
@@ -98,12 +99,17 @@ The number beside a collapsed section is read cheaply from the API server (one i
 
 One drawer, one object, four tabs.
 
-- **Overview** shows the object's summary fields.
+- **Overview** opens on a summary card that draws the object's state rather than listing it:
+    - **Deployments, StatefulSets, DaemonSets and ReplicaSets**: one mark per desired replica (per node for a DaemonSet), lit when ready, with *Up to date* and *Available* bars and the rollout strategy as chips.
+    - **Jobs**: one bar split into Succeeded, Running, Failed and Not started. **CronJobs**: schedule, time zone, concurrency and whether it is suspended.
+    - **Services**: type, cluster IP, port count and, for a LoadBalancer, whether an address is assigned. **Ingresses**: class, rule count, TLS and whether a controller has given it an address. **Volume claims**: phase, capacity, class and access modes.
+    - **Pods**: the usage card is two dials when every container declares a limit, and bars otherwise.
+    - **Conditions** are tiles, coloured by whether each is the healthy way up; the controller's message is on the pointer. **Annotations** are folded under the labels.
     - A **ConfigMap** shows each key with its value (cut at 64 KiB; binary data as a size).
     - A **Secret** shows keys and sizes, never a value. With the reveal-secrets capability each key has a **Reveal** button; the read is recorded in the audit trail first. Without it, the drawer says who grants it.
     - Ingress, HTTPRoute, VirtualService and Service open with the [traffic map](#the-traffic-map).
     - Workloads, pods, Jobs, CronJobs and volume claims on a cluster with an Alertmanager have an **Alerts** panel under **Dependencies**, with **Silence** and the alarms kubemg wrote. **Create alarm** in the toolbar opens the form there. See [Cluster alerts](../observability/alerts.md).
-- **Describe & Events** shows metadata, conditions, a flattened spec/status and the object's events, **newest first**. A refused events read shows the cluster's RBAC reason instead of failing the tab.
+- **Describe & Events** shows the object's events as a timeline, **newest first** (warnings in amber, repeats as a count), then a flattened spec/status. A refused events read shows the cluster's RBAC reason instead of failing the tab.
 - **YAML** is the live manifest, editable where the write path allows.
 - **Logs & Terminal** (pods) or **Logs** (workloads): see [Terminals and logs](terminals-and-logs.md).
 

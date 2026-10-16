@@ -114,6 +114,7 @@ nav:
           - Helm: clusters/helm.md
           - Events timeline: clusters/events.md
           - Node capacity: clusters/capacity.md
+          - Cost & waste: clusters/waste.md
           - Security posture: clusters/security-posture.md
       - Access:
           - The access model: access/model.md

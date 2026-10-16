@@ -60,7 +60,30 @@ unsuppressible floor and in the alarm verb vocabulary.
 
 `ProtocolVersion` is checked at the handshake and a mismatch is refused. Bumping
 it is a breaking change that requires every agent to be upgraded, so it is a
-decision rather than a bump.
+decision rather than a bump. What can be added without one is negotiated as a
+**capability** instead (`negotiateCapabilities`, `welcome.capabilities`) — see
+the agent page for `response-parts` and the two outbound queues. The tunnel
+files `response_part` frames on the waiting call itself (`pendingCall`), so a
+caller that gives up takes its parts with it (`forget`) — a body part-sent and
+never finished is not held for the life of the tunnel. A body past
+`maxResponseBody` becomes an agent error rather than a truncated answer, and
+parts across **all** pending calls share one `assemblyBudget` (128 MB: the
+agent's 16 concurrent calls at its 8 MB cap), so an agent holding a leaked
+token cannot part-fill every request in flight; the part that would cross it
+fails its own call, never the tunnel.
+
+**The console's reads cross the tunnel compressed.** `Proxy.Call` sends
+`Accept-Encoding: gzip`, so the agent's HTTP client passes the API server's
+compressed answer through instead of undoing it — a wide pod list is a tenth of
+the bytes on the one WebSocket every user shares. `decodeBody` undoes it before
+any caller sees the response, under `maxDecodedBody` (8 MB). That is the ceiling
+the agent's cap used to enforce on these same bytes when its client decompressed
+them, so a read refused before is refused now; it is also the guard against a
+few kilobytes of gzip from an agent holding a leaked token expanding into the
+server's memory. Past it, or on a stream that is not valid gzip, the call fails
+502 and the audit row carries why. Streams (`Watch`, exec, logs) and the kubectl
+passthrough are untouched: the passthrough hands the client whatever encoding it
+asked for.
 
 ## Proxying a request
 

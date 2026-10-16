@@ -19,19 +19,32 @@ A fourth ceiling can bind first: **pod slots**, the kubelet's cap on pod count, 
 ??? info "Why it works this way"
     Getting sidecars wrong understates every node running a service mesh. A finished init step constrains nothing in steady state, so its limit is skipped.
 
+## Cluster totals
+
+The top card draws the whole cluster on one screen:
+
+- **Three rings** — CPU, memory and pod slots. Each fills to the **reserved** share and carries a white mark where live use sits; the amber dot on the rim is the 90% line. In-use and limit figures sit under the ring, and the full reading is on the pointer.
+- **Nodes** — one bar split into Ready, Cordoned and Not ready.
+- **Largest pod that fits** — see [below](#where-a-pod-can-still-go).
+- **QoS** — the cluster's pods split into Guaranteed, Burstable and BestEffort.
+
 ## Heatmap
 
-Below the cluster totals, the **Heatmap** puts every node on one row and every ceiling in one cell: CPU reserved, in use and limits; memory reserved, in use and limits; pod slots. Beside them sit the node's unreserved CPU and memory, and its pods by QoS class (Guaranteed, Burstable, BestEffort, as the cluster wrote them). A fleet of two hundred nodes fits on one screen, and the bars further down explain whichever row you open.
+Below the cluster totals, the **Heatmap** puts every node on one row and every ceiling in one cell: CPU reserved, in use and limits; memory reserved, in use and limits; pod slots. Beside them sit the node's unreserved CPU and memory, and its pods by QoS class as a small split bar (Guaranteed, Burstable, BestEffort, as the cluster wrote them; counts on the pointer). A fleet of two hundred nodes fits on one screen, and the bars further down explain whichever row you open.
 
 - **Rows** are grouped by role, control plane first, and start sorted worst first. Click a column heading to sort by it (fullest first), or **Node** to sort by name. Nodes that cannot answer for a column always sort last.
-- **Shade** darkens toward the column's warning line. Amber means past it, rust means exhausted. The lines are the ones the concerns below use: reserved and slots 90% (100% exhausted), memory in use 90%, CPU limits 200%, memory limits 100%. **CPU in use never turns amber**, because a node short of CPU still gives every pod what it requested.
+- **Shade** darkens toward the column's warning line. Amber means past it, rust means exhausted. The legend's pointer text names the lines, which are the ones the concerns below use: reserved and slots 90% (100% exhausted), memory in use 90%, CPU limits 200%, memory limits 100%. **CPU in use never turns amber**, because a node short of CPU still gives every pod what it requested.
 - **The number is the reading.** A limit of 340% reads 340%.
 - **A dash is "not measured"**, never 0%. You see one for live usage when the Metrics API has no reading, and for any column on a node that reports no allocatable capacity.
-- **Click a node's name** to open its row below, with the bars, every concern, taints, the largest reservations and the pods using more than they reserved.
+- **Click a node's name** to open its row below.
+
+## Nodes
+
+Each node is three one-line bars (CPU, memory, pod slots), its QoS split and what it still has free. Its concerns are pills — the explanation is on the pointer. **Details** opens every concern in full, its taints, the largest reservations and the pods using more than they reserved, each ranked with a bar.
 
 ## Where a pod can still go
 
-The cluster card ends with the fragmentation reading: the unreserved CPU and memory summed across every node an ordinary pod could land on, and the most any **one** node can take. Twelve free cores spread one per node do not schedule a two-core pod, and the total alone would say they do.
+**Largest pod that fits** is the fragmentation reading, one bar per resource: the track is the unreserved CPU or memory summed across every node an ordinary pod could land on, the fill is the most any **one** node can take, and the node is named under it. A short fill means the free capacity only exists in sum. Twelve free cores spread one per node do not schedule a two-core pod, and the total alone would say they do.
 
 A node counts as able to take an ordinary pod when it is Ready, not cordoned, has a free pod slot, and carries no `NoSchedule` or `NoExecute` taint (`PreferNoSchedule` does not keep a pod off). Node selectors, affinity, topology spread and tolerations are **not** read, so a pod that tolerates a control-plane taint, or one pinned by affinity, can land somewhere this reading leaves out.
 
@@ -45,8 +58,8 @@ Reading per-pod usage needs `get`/`list` on `pods.metrics.k8s.io`. If the cluste
 
 ## Bars
 
-- The bar fills to the **requested** percentage, with one tick for live usage. The gap between them is the point of the page.
-- **Limits are stated in text, never drawn.** Limits routinely exceed allocatable, and a bar would misreport exactly that.
+- A ring or bar fills to the **requested** percentage, with one white mark for live usage. The gap between them is the point of the page.
+- **Limits are stated as a figure, never drawn.** Limits routinely exceed allocatable, and a bar would misreport exactly that.
 - A reading with no limit to measure against is drawn as a **hatch**, not a full bar.
 
 ## Routes
@@ -88,7 +101,7 @@ Pods the scheduler could not place are listed separately (a sample of 10), each 
 
 The Overview's **Fleet capacity** card makes one call per attached cluster. It is capped at 12 clusters, and the page says so past the cap.
 
-Nothing on this page costs money, recommends a size or changes the cluster. All reads go through the same impersonated, audited tunnel.
+Nothing on this page costs money, recommends a size or changes the cluster. All reads go through the same impersonated, audited tunnel. To see *which* workloads reserve more than they use, and what to request instead, open [Cost & waste](waste.md), which can also put a price on it.
 
 ## See also
 

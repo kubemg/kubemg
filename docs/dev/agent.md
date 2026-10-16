@@ -33,10 +33,11 @@ frames:
 
 | Frame | Direction | Meaning |
 |---|---|---|
-| `hello` | agent → bastion | protocol version, agent version, Kubernetes version |
-| `welcome` | bastion → agent | which cluster the tunnel bound to |
+| `hello` | agent → bastion | protocol version, agent version, Kubernetes version, capabilities offered |
+| `welcome` | bastion → agent | which cluster the tunnel bound to, and the capabilities accepted |
 | `request` | bastion → agent | one HTTP call to replay against the API server |
-| `response` | agent → bastion | the API server's answer, or why there isn't one |
+| `response_part` | agent → bastion | a slice (≤256 KB) of a response body, ahead of the `response` that ends it — only when `response-parts` was negotiated |
+| `response` | agent → bastion | the API server's answer, or why there isn't one; after parts, the status, headers and the last slice |
 | `stream_open` | bastion → agent | open a long-lived call: `exec`, `attach`, `port-forward`, `watch`, `logs -f` |
 | `stream_start` | agent → bastion | the response head, or the reason the stream could not open |
 | `stream_data` | both ways | one chunk, verbatim — for `exec`/`port-forward` these are the channel-prefixed bytes Kubernetes itself multiplexes stdin/stdout/stderr with |
@@ -52,6 +53,39 @@ hours. `agent/internal/protocol` mirrors the bastion's
 `pkg/bastion/protocol.go` field-for-field — they are two separate files
 because the agent is a separate module, and bumping `ProtocolVersion` is a
 breaking change that has to move both together.
+
+**Capabilities are how the wire grows without a bump.** The agent lists what it
+can do in `hello.capabilities`; the bastion answers with the subset it accepts
+in `welcome.capabilities` (`negotiateCapabilities`), and each side uses only
+what both named. A side that names nothing gets the v2 behaviour exactly, so an
+agent and a bastion can be upgraded in either order. The one capability today
+is `response-parts`: a response body leaves the agent as `ResponsePartSize`
+(256 KB) slices read straight off the API server's answer, and the bastion joins
+them under the same ceiling a whole response always had (`maxResponseBody` =
+one 16 MB frame; the agent's own cap stays 8 MB, counted in bytes as the API
+server sent them — compressed, when the client asked for gzip, as kubectl and
+the console's own reads do). A final `response` carrying
+`error` discards the parts before it — half a list is never presented as a
+whole one.
+
+**Two outbound queues on each side.** Stream frames (`stream_*`) go in an
+*urgent* queue; `request`, `response` and `response_part` go in a *bulk* one.
+The single writer drains urgent first and gives bulk a turn every
+`urgentBurst` (16) urgent frames, so a terminal's output never waits behind a
+list and a busy port-forward cannot starve an API call into its timeout. Before
+this, one 8 MB list was one ~11 MB base64 frame at the head of a single FIFO:
+every session's frames waited behind it, and on a link under ~10 Mbit/s the
+write outlasted the 10s deadline and dropped the tunnel for the whole cluster.
+The agent's bulk queue is only `bulkQueue` (8) frames deep and a sender waits
+on its own call's deadline (`kube.RequestTimeout`, 55s), which is what keeps
+concurrent lists from piling up in the pod.
+
+**The agent bounds itself.** At most `maxConcurrentRequests` (16) proxied calls
+run at once; the rest wait for a slot on their own deadline rather than being
+refused. Streams are not counted — a watch or a shell holds its slot for hours.
+`main.applyMemoryLimit` sets the Go runtime's soft limit to 80% of
+`KUBEMG_MEMORY_LIMIT_BYTES`, which the manifest fills from the container's own
+`limits.memory`; an explicit `GOMEMLIMIT` wins.
 
 `port-forward` rides the WebSocket shape Kubernetes itself offers
 (`v2.portforward.k8s.io`), which is channel-prefixed bytes this framing

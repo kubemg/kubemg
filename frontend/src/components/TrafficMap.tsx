@@ -3,12 +3,15 @@ import type { KeyboardEvent } from 'react'
 import {
   Box,
   Boxes,
+  CircleAlert,
+  CircleCheck,
   Cloud,
   Ellipsis,
   FileKey,
   FileText,
   Globe,
   HardDrive,
+  Info,
   Network,
   RefreshCw,
   Route,
@@ -282,13 +285,26 @@ export function TrafficMapView({
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="min-w-0 flex-1 text-[13px] text-muted">
-          {problems.length === 0
-            ? 'Every hop on this map answers.'
-            : broken > 0
-              ? `${broken} ${broken === 1 ? 'hop is' : 'hops are'} broken on this map.`
-              : `${problems.length} ${problems.length === 1 ? 'hop needs' : 'hops need'} a look.`}{' '}
-          Point at a hop to trace its path; open one to read it.
+        {/* The verdict as a state word; how to use the map is on the pointer. */}
+        <p
+          className="min-w-0 flex-1"
+          title="Point at a hop to trace its path; open one to read it."
+        >
+          {problems.length === 0 ? (
+            <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-ok">
+              <CircleCheck aria-hidden="true" className="size-4" />
+              Every hop answers
+            </span>
+          ) : (
+            <span
+              className={`inline-flex items-center gap-1.5 text-[13px] font-medium ${broken > 0 ? 'text-danger' : 'text-warn'}`}
+            >
+              <CircleAlert aria-hidden="true" className="size-4" />
+              {broken > 0
+                ? `${broken} ${broken === 1 ? 'hop is' : 'hops are'} broken`
+                : `${problems.length} ${problems.length === 1 ? 'hop needs' : 'hops need'} a look`}
+            </span>
+          )}
         </p>
         {canNarrow ? (
           <button
@@ -523,9 +539,12 @@ export function TrafficMapView({
       ) : null}
 
       {map.notes.length > 0 ? (
-        <ul className="flex flex-col gap-1 text-[12px] leading-snug text-muted">
+        <ul className="flex flex-col gap-1 text-[11.5px] leading-snug text-faint">
           {map.notes.map((note) => (
-            <li key={note}>{note}</li>
+            <li key={note} className="flex items-start gap-1.5">
+              <Info aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+              {note}
+            </li>
           ))}
         </ul>
       ) : null}

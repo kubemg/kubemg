@@ -230,6 +230,11 @@ type Store interface {
 	PutClusterConsole(ctx context.Context, console *db.ClusterConsole) error
 	DeleteClusterConsole(ctx context.Context, clusterID uint, kind string) error
 
+	// A cluster's unit prices, entered by an admin — see pkg/api/cost_rates.go.
+	ClusterCostRates(ctx context.Context, clusterID uint) (*db.ClusterCostRates, error)
+	PutClusterCostRates(ctx context.Context, rates *db.ClusterCostRates) error
+	DeleteClusterCostRates(ctx context.Context, clusterID uint) error
+
 	// Workload security posture acknowledgements — see pkg/api/resources_posture.go.
 	// The scan itself is stateless; this is the one thing it cannot recompute.
 	ListPostureAcknowledgements(ctx context.Context, clusterID uint) ([]db.PostureAcknowledgement, error)
@@ -819,6 +824,15 @@ func NewRouter(opts Options) *gin.Engine {
 		consoles.PUT("/:kind", requireAdmin, s.putClusterConsole)
 		consoles.DELETE("/:kind", requireAdmin, s.deleteClusterConsole)
 
+		// What this cluster's capacity costs, as its operator prices it. The
+		// consoles' rule: read by anyone granted the cluster — a figure on the
+		// waste page is only as good as the rate behind it, so the rate is shown
+		// beside it — and set by an admin.
+		costRates := clusters.Group("/:id/cost-rates")
+		costRates.GET("", s.showClusterCostRates)
+		costRates.PUT("", requireAdmin, s.putClusterCostRates)
+		costRates.DELETE("", requireAdmin, s.deleteClusterCostRates)
+
 		// The query path: reading history out of the backend the rows above
 		// name. Open to anyone the cluster is granted to, because the scope is
 		// enforced *inside* the query — a caller never sends one, they name a
@@ -1175,6 +1189,12 @@ func NewRouter(opts Options) *gin.Engine {
 			// nature, so a namespace-scoped grant is refused, exactly as it is
 			// on node metrics above.
 			metrics.GET("/capacity", s.clusterCapacity)
+			// Reserved and not used: over-requested workloads sized from the
+			// metrics datasource's history, unmounted or released storage, and
+			// load balancers with nothing behind them. It recommends and never
+			// writes. Unlike capacity, a scoped grant is answered over its own
+			// namespaces — every reading but PersistentVolumes is namespaced.
+			metrics.GET("/waste", s.clusterWaste)
 		}
 
 		// Identity and access management is an administrative surface only.

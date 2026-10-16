@@ -138,6 +138,20 @@ describe('Pill', () => {
     expect(label.className).toContain('truncate')
     expect(label.parentElement?.className).toContain('min-w-0')
   })
+
+  it('draws an icon beside the label, never inside the truncating span', () => {
+    // An svg is `display: block` under preflight; inside the label span it
+    // wrapped onto its own line and the Helm page's "synced" pill stood two
+    // lines tall.
+    render(
+      <Pill tone="ok" icon={<svg data-testid="glyph" />}>
+        synced
+      </Pill>,
+    )
+    const label = screen.getByText('synced')
+    expect(label.contains(screen.getByTestId('glyph'))).toBe(false)
+    expect(label.parentElement?.contains(screen.getByTestId('glyph'))).toBe(true)
+  })
 })
 
 describe('Disclosure', () => {

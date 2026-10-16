@@ -162,12 +162,3 @@ export function groupNodes(nodes: readonly NodeCapacity[]): NodeGroup[] {
       return a.role.localeCompare(b.role)
     })
 }
-
-/** qosLine writes a node's QoS split in a fixed order, leaving out the empty classes. */
-export function qosLine(qos: NodeCapacity['qos']): string {
-  const parts: string[] = []
-  if (qos.guaranteed > 0) parts.push(`${qos.guaranteed} Guaranteed`)
-  if (qos.burstable > 0) parts.push(`${qos.burstable} Burstable`)
-  if (qos.best_effort > 0) parts.push(`${qos.best_effort} BestEffort`)
-  return parts.join(' · ')
-}

@@ -116,7 +116,7 @@ func (s *server) listMachineAccounts(c *gin.Context) {
 		out = append(out, row)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"service_accounts": out})
+	c.JSON(http.StatusOK, gin.H{"machine_accounts": out})
 }
 
 // createMachineAccount adds a programmatic identity (admin only). It holds no
