@@ -66,6 +66,7 @@ export default defineConfig({
       // cluster can be pointed at the address an operator already uses.
       '/agent': { target: apiTarget, changeOrigin: true, ws: true, secure: proxySecure },
       '/install': { target: apiTarget, changeOrigin: true, secure: proxySecure },
+      '/downloads': { target: apiTarget, changeOrigin: true, secure: proxySecure },
     },
   },
 })

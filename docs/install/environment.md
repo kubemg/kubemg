@@ -54,6 +54,7 @@ See [Database](database.md) for how the schema is applied.
 | `KUBEMG_ADMIN_USERNAME` | `admin` | Bootstrap administrator's username, created only when the users table is empty. |
 | `KUBEMG_ADMIN_PASSWORD` | generated, printed once to the log | Bootstrap administrator's password. Left unset, a random 20-character password (drawn from an alphabet with no visually-ambiguous characters) is generated and logged exactly once. Setup will not let you finish until it's changed either way. |
 | `KUBEMG_MFA_RESET_USERNAME` | unset | **Break-glass.** The account named has its second factor removed at every boot, with an `ERROR` log line and a `mfa-reset` audit record. For a sole super admin who lost both phone and recovery codes; unset it once they have enrolled again. See [Two-factor authentication](../access/mfa.md#break-glass-the-only-super-admin-lost-both-phone-and-codes). |
+| `KUBEMG_CLI_DIR` | `/usr/share/kubemg/cli` | Where the image keeps the `kubemg` CLI binaries served at `/downloads/cli` (one `<os>-<arch>/` directory each). The published image fills it; point it elsewhere only to serve binaries you built yourself. |
 | `KUBEMG_SA_NAMESPACE` | `kubemg-system` | The namespace on a **direct-mode** target cluster that holds the per-user service accounts kubemg's TokenRequest calls create. Irrelevant to agent-mode clusters. |
 
 ## Public URL & agent

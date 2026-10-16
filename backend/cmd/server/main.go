@@ -284,6 +284,7 @@ func main() {
 		EventCacheTTL:      cfg.EventCacheTTL,
 		EventScanLimit:     cfg.EventScanLimit,
 		RecordingDir:       recording.dir,
+		CLIDir:             cfg.CLIDir,
 		RecordingKey:       recording.key,
 		RecordingInput:     recording.input,
 		Auditor:            auditor,

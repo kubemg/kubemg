@@ -99,6 +99,7 @@ import type {
   ServerVersion,
   LogQueryResponse,
   CLIDeviceRequest,
+  CLIDownloads,
   CLISession,
   MFAConfirmResult,
   MFAEnrollment,
@@ -409,6 +410,12 @@ export async function fetchCLIDeviceRequest(code: string): Promise<CLIDeviceRequ
 
 export async function decideCLIDeviceRequest(code: string, decision: 'approve' | 'deny'): Promise<void> {
   await http.post(`/auth/cli/device/${encodeURIComponent(code)}/${decision}`)
+}
+
+/** The CLI binaries this server hands out. Unauthenticated on the server. */
+export async function fetchCLIDownloads(): Promise<CLIDownloads> {
+  const { data } = await axios.get<CLIDownloads>(`${apiOrigin}/downloads/cli`)
+  return { ...data, downloads: data.downloads ?? [] }
 }
 
 export async function fetchCLISessions(input: { userId?: number; activeOnly?: boolean } = {}): Promise<CLISession[]> {
