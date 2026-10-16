@@ -50,7 +50,7 @@ func giveFactor(t *testing.T, env *testEnv, user *db.User) (secret string, codes
 		hashes[i] = auth.HashRecoveryCode(code)
 	}
 	past := auth.TOTPStep(time.Now()) - 10
-	if err := env.store.ConfirmMFAFactor(ctx, user.ID, factor.ID, past, time.Now(), hashes); err != nil {
+	if err := env.store.ConfirmMFAFactor(ctx, user.ID, factor.ID, past, "", time.Now(), hashes); err != nil {
 		t.Fatal(err)
 	}
 	return secret, codes

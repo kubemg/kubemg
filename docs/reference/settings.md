@@ -43,6 +43,11 @@ Every setting below follows the same rule:
 This is the outside view of the bastion, not its listen address. A loopback or
 private value means an agent inside a target cluster can never dial back in.
 
+Its **host** is also what every [security key](../access/mfa.md#where-a-security-key-works)
+is bound to. Keys work only when the public URL is `https` and a domain name, and
+only on a console opened at this address; changing the host retires every key
+registered under the old one.
+
 ### `agent_image`
 
 | | |

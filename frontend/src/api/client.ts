@@ -101,10 +101,13 @@ import type {
   CLIDeviceRequest,
   CLIDownloads,
   CLISession,
+  FactorProof,
   MFAConfirmResult,
   MFAEnrollment,
   MFASessionResponse,
   MFAStatus,
+  WebAuthnCeremony,
+  WebAuthnProof,
   SignInResult,
   ManifestDiff,
   Namespace,
@@ -348,9 +351,25 @@ export async function login(username: string, password: string): Promise<SignInR
 
 /* ---------------------------------------------------------------- mfa --- */
 
-/** The code step of a sign-in: a TOTP code or a recovery code. */
-export async function verifyMFA(challenge: string, code: string): Promise<MFASessionResponse> {
-  const { data } = await http.post<MFASessionResponse>('/auth/mfa/verify', { challenge, code })
+/** The code step of a sign-in: a TOTP code or a recovery code, or a key's answer. */
+export async function verifyMFA(
+  challenge: string,
+  code: string,
+  webauthn?: WebAuthnProof,
+): Promise<MFASessionResponse> {
+  const body = webauthn ? { challenge, webauthn } : { challenge, code }
+  const { data } = await http.post<MFASessionResponse>('/auth/mfa/verify', body)
+  return data
+}
+
+/**
+ * Opens a ceremony for a security key to sign. With a challenge it is a
+ * sign-in's code step, on the unauthenticated route; without one the session
+ * authorises it, for proving a change to the factors.
+ */
+export async function beginKeyCheck(challenge?: string): Promise<WebAuthnCeremony> {
+  const path = challenge ? '/auth/mfa/challenge/webauthn' : '/auth/mfa/webauthn'
+  const { data } = await http.post<WebAuthnCeremony>(path, challenge ? { challenge } : {})
   return data
 }
 
@@ -365,9 +384,11 @@ export async function fetchMFA(): Promise<MFAStatus> {
  * without one the session authorises it.
  */
 export async function enrollMFA(input: {
+  kind?: 'totp' | 'webauthn'
   name?: string
   challenge?: string
   current_code?: string
+  current_webauthn?: WebAuthnProof
 }): Promise<MFAEnrollment> {
   const path = input.challenge ? '/auth/mfa/challenge/enroll' : '/auth/mfa/enroll'
   const { data } = await http.post<MFAEnrollment>(path, input)
@@ -376,7 +397,10 @@ export async function enrollMFA(input: {
 
 export async function confirmMFA(input: {
   factor_id: number
-  code: string
+  /** An app's first code. */
+  code?: string
+  /** What a key made. */
+  credential?: Record<string, unknown>
   challenge?: string
 }): Promise<MFAConfirmResult> {
   const path = input.challenge ? '/auth/mfa/challenge/enroll/confirm' : '/auth/mfa/enroll/confirm'
@@ -384,13 +408,13 @@ export async function confirmMFA(input: {
   return data
 }
 
-export async function removeMFAFactor(id: number, code: string): Promise<MFAStatus> {
-  const { data } = await http.delete<MFAStatus>(`/auth/mfa/factors/${id}`, { data: { code } })
+export async function removeMFAFactor(id: number, proof: FactorProof): Promise<MFAStatus> {
+  const { data } = await http.delete<MFAStatus>(`/auth/mfa/factors/${id}`, { data: proof })
   return { ...data, factors: data.factors ?? [] }
 }
 
-export async function regenerateRecoveryCodes(code: string): Promise<string[]> {
-  const { data } = await http.post<{ recovery_codes: string[] }>('/auth/mfa/recovery-codes', { code })
+export async function regenerateRecoveryCodes(proof: FactorProof): Promise<string[]> {
+  const { data } = await http.post<{ recovery_codes: string[] }>('/auth/mfa/recovery-codes', proof)
   return data.recovery_codes
 }
 

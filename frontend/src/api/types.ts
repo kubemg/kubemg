@@ -1,4 +1,5 @@
 import type { TimeRangeId } from '../lib/timerange'
+import type { CreationOptionsJSON, RequestOptionsJSON } from '../lib/webauthn'
 
 export type Role = 'admin' | 'user'
 
@@ -311,7 +312,12 @@ export interface MFAChallenge {
   mfa_enrollment_required?: boolean
   challenge: string
   challenge_expires_at: string
-  /** `totp`, and `recovery` when the account has recovery codes left. */
+  /**
+   * What the step accepts. For a verify challenge, the factors the account
+   * holds — `webauthn` first when a key works here, then `totp` — and
+   * `recovery` when codes are left. For an enrolment, the kinds that can be set
+   * up: `totp`, and `webauthn` when this install can use a key.
+   */
   methods?: string[]
 }
 
@@ -326,8 +332,10 @@ export interface MFASessionResponse extends LoginResponse {
 
 export interface MFAFactor {
   id: number
-  kind: 'totp' | string
+  kind: 'totp' | 'webauthn' | string
   name: string
+  /** A key's: the host it was registered for. It answers nowhere else. */
+  rp_id?: string
   confirmed_at?: string
   last_used_at?: string
   created_at: string
@@ -342,15 +350,47 @@ export interface MFAStatus {
   enrolled: boolean
   factors: MFAFactor[]
   recovery_codes_remaining: number
+  /** Whether a security key can be added and used here, and the host keys
+      are bound to. Absent from a server older than security keys. */
+  webauthn?: WebAuthnAvailability
+}
+
+export interface WebAuthnAvailability {
+  available: boolean
+  rp_id?: string
+  /** Why not, when not. */
+  reason?: string
 }
 
 export interface MFAEnrollment {
   factor_id: number
-  /** Base32, for typing in by hand when the QR code cannot be scanned. */
-  secret: string
-  otpauth_uri: string
-  /** A PNG data: URI, drawn by the server. */
-  qr: string
+  kind?: 'totp' | 'webauthn'
+  /** An app's: Base32, for typing in by hand when the QR code cannot be scanned. */
+  secret?: string
+  otpauth_uri?: string
+  /** An app's: a PNG data: URI, drawn by the server. */
+  qr?: string
+  /** A key's: the options the browser makes a credential with. */
+  webauthn?: { publicKey: CreationOptionsJSON }
+}
+
+/** A security key's answer to a ceremony the server opened. */
+export interface WebAuthnProof {
+  ceremony: string
+  credential: Record<string, unknown>
+}
+
+/** A ceremony opened for a key to sign. */
+export interface WebAuthnCeremony {
+  ceremony: string
+  expires_at: string
+  options: { publicKey: RequestOptionsJSON }
+}
+
+/** What a change to the factors is proved with: a code, or a key. */
+export interface FactorProof {
+  code?: string
+  webauthn?: WebAuthnProof
 }
 
 export interface MFAConfirmResult {

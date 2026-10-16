@@ -138,7 +138,7 @@ export function GeneralSettings() {
               label="Server URL in force"
               value={settings.effective.public_url}
               source={settingSource(settings.overrides.public_url, settings.defaults.public_url)}
-              reach="Every agent install command rendered from now on, and the address in every kubeconfig issued for an agent-mode cluster. An agent already running keeps the address it was installed with until its manifests are re-applied."
+              reach="Every agent install command rendered from now on, and the address in every kubeconfig issued for an agent-mode cluster. An agent already running keeps the address it was installed with until its manifests are re-applied. Security keys are bound to its host: changing the host retires every key registered under the old one, and their owners sign in with another factor or a recovery code and register again."
             />
             <SettingsAside
               label="Longest kubeconfig window"
