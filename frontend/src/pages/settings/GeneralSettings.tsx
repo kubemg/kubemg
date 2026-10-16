@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { RotateCcw } from 'lucide-react'
 import { errorMessage, fetchSettings, updateSettings } from '../../api/client'
-import type { MFAEnforcement, SettingsResponse } from '../../api/types'
+import type { KubeconfigIssuance, MFAEnforcement, SettingsResponse } from '../../api/types'
 import { Button, Field, Notice, Panel, Select, TextInput } from '../../components/primitives'
 import { settingSource } from '../../lib/settings'
 import { SettingsAside, SettingsLayout } from '../../components/settings/SettingsLayout'
@@ -38,6 +38,8 @@ export function GeneralSettings() {
   // than the value — the same reason audit retention is edited as a string.
   const [ceiling, setCeiling] = useState('')
   const [mfaPolicy, setMfaPolicy] = useState<MFAEnforcement>('off')
+  const [cliHours, setCliHours] = useState('')
+  const [issuance, setIssuance] = useState<KubeconfigIssuance>('allowed')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -50,6 +52,8 @@ export function GeneralSettings() {
       setPublicUrl(next.overrides.public_url)
       setCeiling(ceilingDraft(next))
       setMfaPolicy(next.effective.mfa_enforcement || 'off')
+      setCliHours(cliHoursDraft(next))
+      setIssuance(next.effective.kubeconfig_issuance || 'allowed')
       setError(null)
     } catch (err) {
       setError(errorMessage(err, 'Could not load the settings.'))
@@ -70,6 +74,10 @@ export function GeneralSettings() {
       document.getElementById('kubeconfig_max_ttl_hours')?.focus()
       return
     }
+    if (cliHoursError !== undefined) {
+      document.getElementById('cli_session_max_hours')?.focus()
+      return
+    }
     setBusy(true)
     setError(null)
     setSaved(false)
@@ -81,11 +89,15 @@ export function GeneralSettings() {
         // Off is stored as the cleared value, so the row says "unset" rather
         // than recording a decision nobody made.
         mfa_enforcement: mfaPolicy === 'off' ? '' : mfaPolicy,
+        cli_session_max_hours: Number(cliHours.trim()) || 0,
+        kubeconfig_issuance: issuance === 'allowed' ? '' : issuance,
       })
       setSettings(next)
       setPublicUrl(next.overrides.public_url)
       setCeiling(ceilingDraft(next))
       setMfaPolicy(next.effective.mfa_enforcement || 'off')
+      setCliHours(cliHoursDraft(next))
+      setIssuance(next.effective.kubeconfig_issuance || 'allowed')
       setSaved(true)
     } catch (err) {
       setError(errorMessage(err, 'Could not save the settings.'))
@@ -101,11 +113,18 @@ export function GeneralSettings() {
       ? undefined
       : `Enter a whole number of hours between 1 and ${MAX_CEILING_HOURS}, or leave it empty for the default.`
 
+  const cliHoursError =
+    cliHours.trim() === '' || withinBounds(cliHours, 1, 720)
+      ? undefined
+      : 'Enter a whole number of hours between 1 and 720, or leave it empty for the default.'
+
   const dirty =
     settings !== null &&
     (publicUrl.trim() !== settings.overrides.public_url ||
       ceiling.trim() !== ceilingDraft(settings) ||
-      mfaPolicy !== (settings.effective.mfa_enforcement || 'off'))
+      mfaPolicy !== (settings.effective.mfa_enforcement || 'off') ||
+      cliHours.trim() !== cliHoursDraft(settings) ||
+      issuance !== (settings.effective.kubeconfig_issuance || 'allowed'))
   useUnsavedGuard(dirty, 'these settings')
 
   return (
@@ -147,6 +166,8 @@ export function GeneralSettings() {
                 setPublicUrl(settings.overrides.public_url)
                 setCeiling(ceilingDraft(settings))
                 setMfaPolicy(settings.effective.mfa_enforcement || 'off')
+                setCliHours(cliHoursDraft(settings))
+                setIssuance(settings.effective.kubeconfig_issuance || 'allowed')
                 setSaved(false)
               }}
             >
@@ -239,6 +260,60 @@ export function GeneralSettings() {
 
         {settings ? (
           <Panel
+            eyebrow="Cluster access"
+            title="The kubemg command line"
+            description="kubemg login signs a command line in through this console — your second factor included — and it then hands kubectl a fifteen-minute credential at a time."
+            bodyClassName="flex flex-col gap-4 p-4"
+          >
+            <Field
+              label="A sign-in lasts (hours)"
+              htmlFor="cli_session_max_hours"
+              hint={`Leave empty for the default of ${settings.defaults.cli_session_max_hours} hours. Never longer than the kubeconfig window above.`}
+              error={cliHoursError}
+            >
+              <TextInput
+                id="cli_session_max_hours"
+                type="number"
+                min={1}
+                max={720}
+                step={1}
+                inputMode="numeric"
+                className="max-w-40 font-data text-[12.5px]"
+                placeholder={String(settings.defaults.cli_session_max_hours)}
+                value={cliHours}
+                onChange={(event) => {
+                  setCliHours(event.target.value)
+                  setSaved(false)
+                }}
+              />
+            </Field>
+            <Field
+              label="Agent-mode kubeconfig files"
+              htmlFor="kubeconfig_issuance"
+              hint={
+                issuance === 'cli_only'
+                  ? 'Not handed out. kubectl reaches agent-mode clusters through the CLI only. Direct-mode clusters are unaffected — their credential is a token the cluster mints, which no CLI session governs.'
+                  : 'Handed out from the console, alongside the CLI.'
+              }
+            >
+              <Select
+                id="kubeconfig_issuance"
+                className="max-w-60"
+                value={issuance}
+                onChange={(event) => {
+                  setIssuance(event.target.value as KubeconfigIssuance)
+                  setSaved(false)
+                }}
+              >
+                <option value="allowed">Allowed</option>
+                <option value="cli_only">CLI only</option>
+              </Select>
+            </Field>
+          </Panel>
+        ) : null}
+
+        {settings ? (
+          <Panel
             eyebrow="Sign-in"
             title="Second factor"
             description="Whose password sign-in also asks for a code from an authenticator app. It covers local and LDAP accounts; an OIDC or SAML account's second factor is its identity provider's."
@@ -273,8 +348,18 @@ export function GeneralSettings() {
 }
 
 function withinCeilingBounds(raw: string): boolean {
+  return withinBounds(raw, 1, MAX_CEILING_HOURS)
+}
+
+function withinBounds(raw: string, min: number, max: number): boolean {
   const hours = Number(raw)
-  return Number.isInteger(hours) && hours >= 1 && hours <= MAX_CEILING_HOURS
+  return Number.isInteger(hours) && hours >= min && hours <= max
+}
+
+/** The stored override as the form shows it: 0 from the API is an empty box. */
+function cliHoursDraft(settings: SettingsResponse): string {
+  const hours = settings.overrides.cli_session_max_hours
+  return hours > 0 ? String(hours) : ''
 }
 
 /** ceilingDraft is the stored override as the form shows it: 0 from the API

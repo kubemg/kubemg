@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router'
 import { AccessRequests } from './pages/AccessRequests'
@@ -12,6 +13,7 @@ import { ClusterAlerts } from './pages/ClusterAlerts'
 import { Explore } from './pages/Explore'
 import { GroupManagement } from './pages/GroupManagement'
 import { Login } from './pages/Login'
+import { CliActivate } from './pages/CliActivate'
 import { NamespaceDetail } from './pages/NamespaceDetail'
 import { NodeCapacity } from './pages/NodeCapacity'
 import { Waste } from './pages/Waste'
@@ -36,6 +38,7 @@ import { UserDetail } from './pages/UserDetail'
 import { UserManagement } from './pages/UserManagement'
 import type { ClusterPage } from './lib/navigation'
 import { DEFAULT_RESOURCE } from './lib/navigation'
+import { forgetReturnTo, rememberReturnTo, returnTo } from './lib/returnTo'
 import { AuthProvider } from './state/AuthProvider'
 import { BrandingProvider } from './state/BrandingProvider'
 import { ClustersProvider } from './state/ClustersProvider'
@@ -70,9 +73,18 @@ function RestoringSession() {
  */
 function RequireAuth({ children, adminOnly = false }: { children: ReactNode; adminOnly?: boolean }) {
   const { user, loading, setupRequired, setupLoading } = useAuth()
+  const location = useLocation()
+
+  // Arrived signed in at the page a sign-in was for: the detour is over.
+  useEffect(() => {
+    if (user) forgetReturnTo()
+  }, [user])
 
   if (loading || setupLoading) return <RestoringSession />
-  if (!user) return <Navigate to="/login" replace />
+  if (!user) {
+    rememberReturnTo(location.pathname + location.search)
+    return <Navigate to="/login" replace />
+  }
   if (setupRequired) {
     return user.role === 'admin' ? <Navigate to="/setup" replace /> : <SetupPending />
   }
@@ -120,14 +132,14 @@ function LoginRoute() {
   const { user, loading } = useAuth()
 
   if (loading) return <RestoringSession />
-  return user ? <Navigate to="/" replace /> : <Login />
+  return user ? <Navigate to={returnTo()} replace /> : <Login />
 }
 
 /** The SSO landing page, which becomes a redirect the moment it has a session. */
 function CallbackRoute() {
   const { user } = useAuth()
 
-  return user ? <Navigate to="/" replace /> : <AuthCallback />
+  return user ? <Navigate to={returnTo()} replace /> : <AuthCallback />
 }
 
 /**
@@ -430,6 +442,17 @@ export default function App() {
             {/* Reached from the person's own name on the sidebar card. The
                 server answers it from the session, so there is no id to
                 address and nobody else's to reach. */}
+            {/* Where `kubemg login` sends the browser. Behind the sign-in like
+                every page, and a signed-out visitor comes back here with the
+                code once signed in (lib/returnTo). */}
+            <Route
+              path="/cli/activate"
+              element={
+                <RequireAuth>
+                  <CliActivate />
+                </RequireAuth>
+              }
+            />
             <Route
               path="/me/profile"
               element={

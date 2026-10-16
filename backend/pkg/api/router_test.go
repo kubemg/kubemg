@@ -119,6 +119,10 @@ type fakeStore struct {
 	// mfaErr makes every one of them unreadable.
 	mfa    *mfaTables
 	mfaErr error
+	// cli stands in for cli_device_codes and cli_sessions; see
+	// cli_fake_test.go. cliErr makes the session reads fail.
+	cli    *cliTables
+	cliErr error
 	// now is the clock the fake resolves expiring grants against. A test that
 	// moves an elevation past its window sets it, so the fake and the workflow
 	// engine agree about what time it is — two clocks would make the expiry

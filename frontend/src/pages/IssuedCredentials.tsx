@@ -9,6 +9,7 @@ import {
 } from '../api/client'
 import type { IssuedKubeconfig, KubeconfigRevokeAllResult } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { CliSessionsPanel } from '../components/CliSessionsPanel'
 import { PasswordSheet } from '../components/PasswordSheet'
 import { profileAbilities } from '../lib/profile'
 import {
@@ -78,6 +79,8 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
   const [filter, setFilter] = useUrlText('q')
   const [blanket, setBlanket] = useState<KubeconfigRevokeAllResult | null>(null)
   const [changingPassword, setChangingPassword] = useState(false)
+  // A blanket revoke ends CLI sessions too, so the panel below re-reads after one.
+  const [sessionsKey, setSessionsKey] = useState(0)
   // `?expiring=24h` is how the fleet's figure opens this page on the rows it
   // counted: live credentials running out within that window, asked of the
   // server with the same parameter the count was. `all` is not a window here.
@@ -144,7 +147,7 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
     const confirmed = await confirm({
       eyebrow: 'Issued credentials',
       title: `Revoke ${whose} live kubeconfigs?`,
-      body: 'Anything using one starts failing at its next call. Credentials for clusters registered for direct API access cannot be withdrawn from here and will be named in the result.',
+      body: 'Anything using one starts failing at its next call, and signed-in kubemg command lines are ended with them. Credentials for clusters registered for direct API access cannot be withdrawn from here and will be named in the result.',
       confirmLabel: 'Revoke all',
     })
     if (!confirmed) return
@@ -152,6 +155,7 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
     try {
       const result = await revokeAllIssuedKubeconfigs(mine ? user?.id : undefined)
       setBlanket(result)
+      setSessionsKey((key) => key + 1)
       await load()
       // The full summary — what was revoked, what is still valid, which clusters
       // were not reached — stays on the page, because it is a reading rather
@@ -228,6 +232,7 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
             // table, so the register behind the sheet is re-read rather than
             // left showing rows that are no longer live.
             if (result.credentials) setBlanket(result.credentials)
+            setSessionsKey((key) => key + 1)
             void load()
           }}
         />
@@ -263,6 +268,9 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
         {blanket ? (
           <Notice tone={blanket.still_valid > 0 ? 'warn' : 'ok'}>
             {blanket.revoked} {blanket.revoked === 1 ? 'credential' : 'credentials'} stopped.
+            {blanket.cli_sessions_revoked
+              ? ` ${blanket.cli_sessions_revoked} CLI ${blanket.cli_sessions_revoked === 1 ? 'session' : 'sessions'} ended.`
+              : null}
             {blanket.still_valid > 0 ? (
               <>
                 {' '}
@@ -388,6 +396,13 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
             </EmptyState>
           ) : null}
         </div>
+
+        <CliSessionsPanel
+          userId={mine ? user?.id : undefined}
+          showHolder={!mine}
+          activeOnly={status === 'active'}
+          refreshKey={sessionsKey}
+        />
       </div>
     </AppShell>
   )

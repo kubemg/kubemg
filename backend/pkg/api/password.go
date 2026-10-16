@@ -152,9 +152,18 @@ func (s *server) revokeOwnKubeconfigs(c *gin.Context, caller *db.User) (revokeAl
 		})
 		return revokeAllKubeconfigsResponse{}, false
 	}
+	sessions, err := s.revokeCLISessionsFor(c, caller, caller.ID)
 	s.publishRevokedCredentials(ctx)
 	s.recordKubeconfigRevocation(c, caller, revoked)
-	return summariseBlanketRevoke(revoked), true
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "the password was changed and the kubeconfigs revoked, but the CLI sessions could not be",
+		})
+		return revokeAllKubeconfigsResponse{}, false
+	}
+	summary := summariseBlanketRevoke(revoked)
+	summary.CLISessionsRevoked = sessions
+	return summary, true
 }
 
 // recordPasswordChange puts the rotation in the trail. Only the act is

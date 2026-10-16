@@ -88,6 +88,8 @@ const VERBS = [
   'mfa-reset',
   'mfa-remove',
   'mfa-recovery-used',
+  'cli-login',
+  'cli-session-revoke',
 ]
 
 const MUTATING = new Set(['create', 'update', 'patch', 'delete'])

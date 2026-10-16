@@ -40,6 +40,12 @@ func RequireAuth(m *Manager, service ...MachineTokenVerifier) gin.HandlerFunc {
 		)
 
 		if token, ok := bearerToken(c.GetHeader("Authorization")); ok {
+			if strings.HasPrefix(token, CLIRefreshPrefix) {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+					"error": "a kubemg CLI session token is accepted only by the CLI's own routes",
+				})
+				return
+			}
 			if IsMachineToken(token) {
 				// A build without programmatic access wired refuses these rather
 				// than falling through to the JWT parser, which would answer the

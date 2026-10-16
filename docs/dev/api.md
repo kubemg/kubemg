@@ -15,6 +15,13 @@ Two credential shapes arrive at the same middleware (`RequireAuth`):
   [machine accounts](#machine-accounts) surface. Sent the same way, and
   resolved by a stored-hash lookup rather than a JWT parse.
 
+A third shape, the **`kubemg` CLI's refresh token** (`kmgr_`), is refused by
+`RequireAuth` by name and accepted only on `/auth/cli/{clusters,credential,logout}`,
+which have a middleware of their own. The fifteen-minute token it mints is an
+ordinary `scope: "proxy"` JWT whose `jti` is the CLI session's id — so ending the
+session withdraws every token it minted through the same revocation snapshot a
+revoked kubeconfig uses.
+
 A JWT with `scope: "proxy"` (what a generated kubeconfig carries) is confined
 to exactly one route — `/api/v1/clusters/:id/proxy/*path` for the cluster ID
 in its claims — and is refused with `403` anywhere else. See
@@ -121,8 +128,17 @@ All unauthenticated by necessity — nobody has a session yet.
 | `GET /clusters/:id` | Session | `404` if not found or not granted. Includes `agent_attached` (live tunnel state). |
 | `DELETE /clusters/:id` | Admin | `204`. |
 | `POST /clusters/:id/check` | Admin | Re-probes health — tunnel connectivity in agent mode, a real dial in direct mode. |
-| `POST /clusters/:id/kubeconfig/generate` | Session | Body `{ttl_seconds?, namespace?}`. `400` TTL outside the configured policy. `424` if the server has no token minter/proxy/public URL configured for the mode in play. Response carries `warning` for a shortened direct-mode TTL (the cluster's own SA token cap) or a non-HTTPS public URL. |
-| `GET /kubeconfig/policy` | Session | `{min_ttl_seconds, default_ttl_seconds, max_ttl_seconds}` — server-wide, not per cluster. |
+| `POST /clusters/:id/kubeconfig/generate` | Session | Body `{ttl_seconds?, namespace?}`. `400` TTL outside the configured policy. `409` on an agent-mode cluster while `kubeconfig_issuance` is `cli_only`. `424` if the server has no token minter/proxy/public URL configured for the mode in play. Response carries `warning` for a shortened direct-mode TTL (the cluster's own SA token cap) or a non-HTTPS public URL. |
+| `GET /kubeconfig/policy` | Session | `{min_ttl_seconds, default_ttl_seconds, max_ttl_seconds, issuance, cli_session_max_hours, server_url}` — server-wide, not per cluster. `cli_session_max_hours` is already clamped to the kubeconfig ceiling; `server_url` is what `kubemg login --server` takes. |
+| `POST /auth/cli/device` | — | Body `{client_name?, client_host?, client_os?, client_version?}` (printable, bounded). RFC 8628: `{device_code (kmgd_…), user_code (XXXX-XXXX, consonants), verification_uri, verification_uri_complete, expires_in: 600, interval: 5}`. `429` once an address holds 10 unanswered requests; `424` with no public URL. |
+| `POST /auth/cli/token` | Device code | Body `{device_code}`. `400` with RFC 8628 `error`: `authorization_pending`, `slow_down` (polled within the interval), `access_denied`, `expired_token` (expired or already spent). On approval `200` `{refresh_token (kmgr_…), session_id, expires_at, user}` — the session is created here, the request spent by one `DELETE … RETURNING`. |
+| `GET /auth/cli/device/:code` | Session | The waiting request for the approval page: client fields, `source_ip`, `same_address` (whether it matches the caller's), `session_hours`. Code read case- and dash-insensitively. `404` unknown or expired. |
+| `POST /auth/cli/device/:code/approve`, `/deny` | Session | `403` approving from a session without the `mfa` claim when the account holds or must hold a factor; `403` for a machine account; `409` already answered. Approval audited `cli-login` with the client fields and source address in the path query. |
+| `GET /auth/cli/clusters` | CLI session | The account's clusters: `{id, name, environment, connection_mode, role, namespaces}`, and for agent mode the server-authored `server`, `context_name`, `ca_data`; direct mode carries a `note`. |
+| `POST /auth/cli/credential` | CLI session | Body `{cluster_id, namespace?, static?, ttl_seconds?}`. Grant and namespace decided as `kubeconfig/generate` decides them (`403`); direct mode `409`. Answers `{token, expires_at}`: a proxy-scoped JWT whose `jti` is the session id, living `min(15m, session remaining)`. `static: true` answers the `kubeconfig/generate` shape with a register row, refused `409` under `cli_only`. |
+| `POST /auth/cli/logout` | CLI session | Ends the session; `204`. |
+| `GET /cli-sessions` | Session | `{sessions, total}`, newest first; `?status=active`, `?user_id=` (narrows only — a non-admin always reads their own). |
+| `POST /cli-sessions/:id/revoke` | Session | Your own always, somebody else's as an admin; `404` otherwise. Republishes the revocation snapshot before answering, so every token the session minted is refused at its next call. Audited `cli-session-revoke`. |
 | `GET /clusters/:id/kustomize` | Admin | `409` on a direct-mode cluster (nothing to install). `?format=yaml` downloads the flat manifest; otherwise JSON, and **every JSON read mints a fresh single-use download ticket** carried by `manifest_url`/`archive_url`/the commands, with `download_expires_at`. Never rotates the registration token. `Cache-Control: no-store`. |
 | `POST /clusters/:id/agent-token/rotate` | Admin | Replaces the registration token, withdraws every outstanding install ticket for the cluster, and closes the attached tunnel (another replica's within 30s). `409` on a direct-mode cluster. Answers `{install, disconnected}` — `install` is the `kustomize` envelope for the new token. Audited as `agent-token-rotate`; a store failure is audited with its reason and answers `500` with the old token still valid. |
 
@@ -284,7 +300,7 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | --- | --- | --- |
 | `GET /kubeconfigs` | Session, narrows | Filters `user_id`, `cluster_id`, `status=active`, and `expiring` — a range preset (`15m`…`30d`, not `all`) read *forward*: live credentials that run out within it; implies `status=active`, `400` on any other value. Pages with `limit`/`offset` and answers `{kubeconfigs, total}`, so `limit=1` is a count. Non-admin forced to their own `user_id`; the query cannot widen it. |
 | `POST /kubeconfigs/:id/revoke` | Session | Your own always; somebody else's needs an admin. `404`, not `403`, for a row you cannot read. `409` for a direct-mode credential, naming the ServiceAccount. |
-| `POST /kubeconfigs/revoke-all` | Session | Registered before `/:id`. Answers `{revoked, still_valid, clusters_not_reached}`. |
+| `POST /kubeconfigs/revoke-all` | Session | Registered before `/:id`. Answers `{revoked, cli_sessions_revoked, still_valid, clusters_not_reached}` — CLI sessions are ended with the kubeconfigs. |
 
 ## Users
 

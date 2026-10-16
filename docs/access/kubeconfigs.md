@@ -2,6 +2,8 @@
 
 Generate a short-lived kubeconfig for a cluster, see every one that has been issued, and revoke them. A kubeconfig has no page of its own: open the generate sheet from a cluster's page. What the file contains and what revoking does depend on the [connection mode](../clusters/connection-modes.md).
 
+For agent-mode clusters there is an alternative that writes no long-lived file at all: the [kubemg command line](cli.md), which hands kubectl fifteen-minute credentials under a sign-in that met your second factor. An administrator can make it the only way (`kubeconfig_issuance: cli_only`).
+
 ## Generating one
 
 ```json title="POST /api/v1/clusters/:id/kubeconfig/generate"

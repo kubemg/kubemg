@@ -160,6 +160,26 @@ refusal or error, any streaming call (`exec`/`attach`/`portforward`/`log
 | Clear with | `""` |
 | Takes effect | At the next sign-in. Sessions already open run to their own expiry |
 
+### `cli_session_max_hours`
+
+| | |
+|---|---|
+| Meaning | How long a `kubemg login` lasts before it has to be done again — and with it the second factor. See [The kubemg command line](../access/cli.md#how-long-it-lasts). |
+| Default | 12 hours; no environment variable |
+| Range | 1 to 720 hours |
+| Clamped to | `kubeconfig_max_ttl_hours` at the point of use — a CLI session never outlives what a downloaded file could |
+| Clear with | `0` |
+
+### `kubeconfig_issuance`
+
+| | |
+|---|---|
+| Meaning | `allowed` or `cli_only`. Under `cli_only` no agent-mode kubeconfig file is handed out; kubectl reaches agent-mode clusters through the CLI only. |
+| Default | `allowed`; no environment variable |
+| Not affected | Direct-mode downloads (no CLI session governs a cluster-minted token), the browser shell, machine accounts |
+| Unusable stored value | Read as `allowed` |
+| Clear with | `""` |
+
 ## Branding (a separate surface, on purpose)
 
 The console's own identity — your organisation's name and mark, an environment
