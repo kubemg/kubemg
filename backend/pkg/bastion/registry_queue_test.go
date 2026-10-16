@@ -16,8 +16,9 @@ func queuedTunnel(depth int, wait time.Duration) *Tunnel {
 	return &Tunnel{
 		ClusterID: 1,
 		out:       make(chan []byte, depth),
+		bulk:      make(chan []byte, depth),
 		queueWait: wait,
-		pending:   map[string]chan *Response{},
+		pending:   map[string]*pendingCall{},
 		streams:   map[string]*Stream{},
 		closed:    make(chan struct{}),
 	}

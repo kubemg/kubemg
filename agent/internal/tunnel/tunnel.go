@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math/rand"
 	"net/http"
@@ -39,6 +40,19 @@ const (
 	handshakeTimeout = 20 * time.Second
 )
 
+// maxConcurrentRequests is how many proxied calls the agent runs against its API
+// server at once. The rest wait their turn, on their own deadline, rather than
+// being refused: a dozen people browsing at once produce bursts past this, and a
+// queue is what they should see, not errors.
+//
+// It bounds the pod as much as the API server. A call holds its response in
+// memory until it is relayed — all of it when the bastion takes responses whole,
+// one ResponsePartSize slice when it takes them in parts — so without a ceiling
+// a burst of large lists was as many 8 MB bodies in a pod limited to 256 MiB.
+// Streams are not counted: a watch or a terminal holds its slot for hours, and
+// counting them would let a handful of open shells lock every list out.
+const maxConcurrentRequests = 16
+
 // Reconnect backoff. A bastion restart should not stampede every agent in the
 // fleet, so the delay grows and carries jitter.
 const (
@@ -58,6 +72,9 @@ type Client struct {
 
 	// streams tracks the long-lived calls this agent is servicing.
 	streams *streamTable
+	// slots holds one token per proxied call in flight; see
+	// maxConcurrentRequests.
+	slots chan struct{}
 
 	// connected drives the readiness probe: a pod whose tunnel is down should
 	// not report itself ready.
@@ -119,6 +136,7 @@ func New(opts Options) (*Client, error) {
 		logger:     opts.Logger,
 		tlsConfig:  tlsConfig,
 		streams:    newStreamTable(),
+		slots:      make(chan struct{}, maxConcurrentRequests),
 	}, nil
 }
 
@@ -223,6 +241,7 @@ func (c *Client) connectOnce(ctx context.Context) error {
 		ProtocolVersion:   protocol.ProtocolVersion,
 		AgentVersion:      c.version,
 		KubernetesVersion: kubernetesVersion,
+		Capabilities:      []string{protocol.CapabilityResponseParts},
 	}}
 	if err := writeMessage(conn, hello); err != nil {
 		return fmt.Errorf("send handshake: %w", err)
@@ -245,13 +264,16 @@ func (c *Client) connectOnce(ctx context.Context) error {
 		slog.String("bastion", c.bastionURL),
 	)
 
-	return c.pump(ctx, conn)
+	// A bastion that predates response parts does not name them, and gets
+	// whole responses exactly as before.
+	parts := protocol.Has(welcome.Capabilities, protocol.CapabilityResponseParts)
+	return c.pump(ctx, conn, parts)
 }
 
 // pump serves proxied requests until the socket dies. Each request is handled
 // in its own goroutine so a slow API call cannot stall the tunnel, and writes
 // are serialised because gorilla permits one writer at a time.
-func (c *Client) pump(ctx context.Context, conn *websocket.Conn) error {
+func (c *Client) pump(ctx context.Context, conn *websocket.Conn, parts bool) error {
 	conn.SetReadLimit(maxFrame)
 	if err := conn.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
 		return err
@@ -300,14 +322,7 @@ func (c *Client) pump(ctx context.Context, conn *websocket.Conn) error {
 			wg.Add(1)
 			go func(id string, req protocol.Request) {
 				defer wg.Done()
-
-				resp := c.forward(ctx, req)
-				if err := out.send(protocol.Message{
-					Type: protocol.MessageResponse, ID: id, Response: &resp,
-				}); err != nil {
-					c.logger.Warn("could not answer a proxied request",
-						slog.String("error", err.Error()))
-				}
+				c.serveRequest(ctx, id, req, out, parts)
 			}(msg.ID, *msg.Request)
 
 		case protocol.MessageStreamOpen:
@@ -338,30 +353,56 @@ func (c *Client) pump(ctx context.Context, conn *websocket.Conn) error {
 	}
 }
 
-// forward replays one request against the local API server. Failures come back
-// as a Response carrying Error rather than as a dropped tunnel: the bastion
-// needs to tell the client what went wrong, and the tunnel is still fine.
-func (c *Client) forward(ctx context.Context, req protocol.Request) protocol.Response {
-	var body *bytes.Reader
-	if len(req.Body) > 0 {
-		body = bytes.NewReader(req.Body)
-	} else {
-		body = bytes.NewReader(nil)
-	}
+// serveRequest answers one proxied request: it waits for a slot, replays the
+// call, and relays the answer — in parts when the bastion takes them.
+func (c *Client) serveRequest(ctx context.Context, id string, req protocol.Request, out *writer, parts bool) {
+	callCtx, cancel := context.WithTimeout(ctx, kube.RequestTimeout)
+	defer cancel()
 
-	httpReq, err := http.NewRequestWithContext(ctx, req.Method, c.kube.URL(req.Path), body)
-	if err != nil {
-		return protocol.Response{Error: "could not build the upstream request: " + err.Error()}
-	}
-	for name, values := range req.Header {
-		for _, value := range values {
-			httpReq.Header.Add(name, value)
+	var resp protocol.Response
+	if c.acquire(callCtx) {
+		defer c.release()
+		if parts {
+			resp = c.forwardInParts(callCtx, id, req, out)
+		} else {
+			resp = c.forward(callCtx, req)
 		}
+	} else {
+		resp = protocol.Response{Error: "the agent is at its limit of concurrent requests and this one waited too long"}
 	}
 
-	resp, err := c.kube.Do(httpReq)
-	if err != nil {
-		return protocol.Response{Error: err.Error()}
+	// The answer gets its own window: the call's may already be spent, and the
+	// bastion is still waiting to hear that it was.
+	answerCtx, cancelAnswer := context.WithTimeout(ctx, writeTimeout)
+	defer cancelAnswer()
+	if err := out.sendBulk(answerCtx, protocol.Message{
+		Type: protocol.MessageResponse, ID: id, Response: &resp,
+	}); err != nil {
+		c.logger.Warn("could not answer a proxied request", slog.String("error", err.Error()))
+	}
+}
+
+// acquire takes a slot for one proxied call, waiting until one is free or ctx
+// ends. It reports whether it got one.
+func (c *Client) acquire(ctx context.Context) bool {
+	select {
+	case c.slots <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (c *Client) release() { <-c.slots }
+
+// forward replays one request against the local API server and holds the whole
+// answer — what a bastion that does not take parts needs. Failures come back as
+// a Response carrying Error rather than as a dropped tunnel: the bastion needs
+// to tell the client what went wrong, and the tunnel is still fine.
+func (c *Client) forward(ctx context.Context, req protocol.Request) protocol.Response {
+	resp, failed := c.call(ctx, req)
+	if failed != nil {
+		return *failed
 	}
 
 	payload, err := kube.ReadBody(resp.Body)
@@ -374,6 +415,79 @@ func (c *Client) forward(ctx context.Context, req protocol.Request) protocol.Res
 		Header: resp.Header,
 		Body:   payload,
 	}
+}
+
+// forwardInParts replays one request and relays its body a ResponsePartSize
+// slice at a time, returning the final Response — status, headers and the last
+// slice — for the caller to send after them. The pod holds one slice per call
+// instead of the whole body, and no frame is large enough to hold the tunnel.
+//
+// The size cap is the same one a whole response has. A body past it ends in a
+// final Response carrying the error, which tells the bastion to drop the parts
+// it has: half a list must never be presented as all of one.
+func (c *Client) forwardInParts(ctx context.Context, id string, req protocol.Request, out *writer) protocol.Response {
+	resp, failed := c.call(ctx, req)
+	if failed != nil {
+		return *failed
+	}
+	defer resp.Body.Close()
+
+	buf := make([]byte, protocol.ResponsePartSize)
+	relayed := 0
+	for {
+		n, err := io.ReadFull(resp.Body, buf)
+		if relayed+n > kube.MaxResponseBody {
+			return protocol.Response{Error: kube.ErrResponseTooLarge.Error()}
+		}
+		switch {
+		case err == nil:
+			// A full slice, and possibly more behind it, so it goes as a part.
+			// sendBulk encodes before returning, so buf is free again after it.
+			if err := out.sendBulk(ctx, protocol.Message{
+				Type: protocol.MessageResponsePart, ID: id,
+				ResponsePart: &protocol.ResponsePart{Data: buf[:n]},
+			}); err != nil {
+				return protocol.Response{Error: "could not relay the response: " + err.Error()}
+			}
+			relayed += n
+		case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+			// The end of the body: whatever is left rides on the final frame.
+			return protocol.Response{
+				Status: resp.StatusCode,
+				Header: resp.Header,
+				Body:   buf[:n],
+			}
+		default:
+			return protocol.Response{Error: err.Error()}
+		}
+	}
+}
+
+// call sends one request to the local API server. A request that could not be
+// made comes back as the Response that says so.
+func (c *Client) call(ctx context.Context, req protocol.Request) (*http.Response, *protocol.Response) {
+	var body *bytes.Reader
+	if len(req.Body) > 0 {
+		body = bytes.NewReader(req.Body)
+	} else {
+		body = bytes.NewReader(nil)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, req.Method, c.kube.URL(req.Path), body)
+	if err != nil {
+		return nil, &protocol.Response{Error: "could not build the upstream request: " + err.Error()}
+	}
+	for name, values := range req.Header {
+		for _, value := range values {
+			httpReq.Header.Add(name, value)
+		}
+	}
+
+	resp, err := c.kube.Do(httpReq)
+	if err != nil {
+		return nil, &protocol.Response{Error: err.Error()}
+	}
+	return resp, nil
 }
 
 // wsURL turns the configured bastion URL into the tunnel endpoint.

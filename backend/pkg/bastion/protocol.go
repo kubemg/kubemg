@@ -27,6 +27,28 @@ const ProtocolVersion = 2
 // agree on this number; kubectl's own messages are 32 KiB plus a channel byte.
 const MaxSessionMessage = 1 << 20
 
+// Capabilities are what one side of the tunnel can do beyond ProtocolVersion's
+// floor. They are negotiated rather than versioned on purpose: the agent says
+// what it can do in its hello, the server answers with the subset it accepts in
+// its welcome, and a side that names nothing gets the v2 behaviour exactly. So
+// either half can be upgraded first, and an agent fleet does not have to move in
+// lockstep with the server the way a ProtocolVersion bump would force it to.
+const (
+	// CapabilityResponseParts lets the agent send a response body as a run of
+	// response_part frames ahead of the response that ends it, instead of as
+	// one frame. See ResponsePart.
+	CapabilityResponseParts = "response-parts"
+)
+
+// ResponsePartSize is the largest slice of a response body one frame carries
+// when the response is sent in parts. A whole 8 MB list in one frame held every
+// other session's frames behind it for as long as the link took to carry ~11 MB
+// of base64, and past ~10 Mbit/s that was longer than the write deadline — the
+// write failed and the tunnel went down for everyone on the cluster. At this
+// size the wait an interactive frame can see behind one part is a fraction of a
+// second on any link a tunnel is usable over.
+const ResponsePartSize = 256 << 10
+
 // MessageType discriminates the frames multiplexed over one tunnel.
 type MessageType string
 
@@ -39,6 +61,10 @@ const (
 	MessageRequest MessageType = "request"
 	// MessageResponse carries the target API server's answer back.
 	MessageResponse MessageType = "response"
+	// MessageResponsePart carries a slice of a response body ahead of the
+	// MessageResponse that ends it. Only sent when CapabilityResponseParts was
+	// negotiated.
+	MessageResponsePart MessageType = "response_part"
 
 	// The frames below carry long-lived calls — watch, logs -f, exec — that a
 	// single request/response pair cannot express. A stream is identified by
@@ -60,16 +86,17 @@ const (
 // selected by Type. ID correlates a response with its request — and a stream's
 // frames with each other — and is empty on handshake frames.
 type Message struct {
-	Type        MessageType  `json:"type"`
-	ID          string       `json:"id,omitempty"`
-	Hello       *Hello       `json:"hello,omitempty"`
-	Welcome     *Welcome     `json:"welcome,omitempty"`
-	Request     *Request     `json:"request,omitempty"`
-	Response    *Response    `json:"response,omitempty"`
-	StreamOpen  *StreamOpen  `json:"stream_open,omitempty"`
-	StreamStart *StreamStart `json:"stream_start,omitempty"`
-	StreamData  *StreamData  `json:"stream_data,omitempty"`
-	StreamClose *StreamClose `json:"stream_close,omitempty"`
+	Type         MessageType   `json:"type"`
+	ID           string        `json:"id,omitempty"`
+	Hello        *Hello        `json:"hello,omitempty"`
+	Welcome      *Welcome      `json:"welcome,omitempty"`
+	Request      *Request      `json:"request,omitempty"`
+	Response     *Response     `json:"response,omitempty"`
+	ResponsePart *ResponsePart `json:"response_part,omitempty"`
+	StreamOpen   *StreamOpen   `json:"stream_open,omitempty"`
+	StreamStart  *StreamStart  `json:"stream_start,omitempty"`
+	StreamData   *StreamData   `json:"stream_data,omitempty"`
+	StreamClose  *StreamClose  `json:"stream_close,omitempty"`
 }
 
 // StreamOpen starts a streaming call against the target API server.
@@ -119,6 +146,9 @@ type Hello struct {
 	// KubernetesVersion is what the agent read from its own API server, which
 	// saves KubeMG a round trip to display it.
 	KubernetesVersion string `json:"kubernetes_version,omitempty"`
+	// Capabilities lists what this agent can do beyond the protocol version's
+	// floor. An agent that predates them sends none.
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 // Welcome confirms the handshake and tells the agent which cluster it bound to,
@@ -130,6 +160,9 @@ type Welcome struct {
 	// HeartbeatSeconds is how often the server expects a pong. The agent uses
 	// it to size its own keepalive so idle load balancers do not cut the tunnel.
 	HeartbeatSeconds int `json:"heartbeat_seconds"`
+	// Capabilities is the subset of the hello's that this server accepts. The
+	// agent uses nothing it does not find here.
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 // Request is one HTTP call to replay against the in-cluster API server. Path
@@ -148,4 +181,32 @@ type Response struct {
 	Header map[string][]string `json:"header,omitempty"`
 	Body   []byte              `json:"body,omitempty"`
 	Error  string              `json:"error,omitempty"`
+}
+
+// ResponsePart is a slice of a response body, sent ahead of the Response that
+// ends it under the same ID. The server joins the parts in arrival order and
+// puts the final Response's own Body after them; a final Response carrying Error
+// discards whatever parts came before it.
+type ResponsePart struct {
+	Data []byte `json:"data,omitempty"`
+}
+
+// supportedCapabilities is what this server accepts from an agent.
+var supportedCapabilities = []string{CapabilityResponseParts}
+
+// negotiateCapabilities answers a hello's capabilities with the ones this
+// server accepts, in the agent's order. An unknown capability is not an error:
+// a newer agent offering something this server has never heard of simply does
+// not get it.
+func negotiateCapabilities(offered []string) []string {
+	var out []string
+	for _, capability := range offered {
+		for _, supported := range supportedCapabilities {
+			if capability == supported {
+				out = append(out, capability)
+				break
+			}
+		}
+	}
+	return out
 }

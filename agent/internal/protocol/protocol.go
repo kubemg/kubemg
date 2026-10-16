@@ -23,6 +23,22 @@ const ProtocolVersion = 2
 // agree on this number; kubectl's own messages are 32 KiB plus a channel byte.
 const MaxSessionMessage = 1 << 20
 
+// Capabilities are what one side can do beyond ProtocolVersion's floor. The
+// agent offers them in its hello and uses only those the bastion's welcome
+// names back, so an agent newer than its bastion — or older — keeps working:
+// a side that names nothing gets the v2 behaviour exactly.
+const (
+	// CapabilityResponseParts lets the agent send a response body as a run of
+	// response_part frames ahead of the response that ends it.
+	CapabilityResponseParts = "response-parts"
+)
+
+// ResponsePartSize is the largest slice of a response body one frame carries
+// when the response is sent in parts. A whole 8 MB list in one frame held every
+// other session's frames behind it, and on a slow enough link outlasted the
+// write deadline and took the tunnel down for everyone.
+const ResponsePartSize = 256 << 10
+
 // MessageType discriminates the frames multiplexed over one tunnel.
 type MessageType string
 
@@ -31,6 +47,9 @@ const (
 	MessageWelcome  MessageType = "welcome"
 	MessageRequest  MessageType = "request"
 	MessageResponse MessageType = "response"
+	// MessageResponsePart is a slice of a response body, ahead of the
+	// MessageResponse that ends it. Sent only when negotiated.
+	MessageResponsePart MessageType = "response_part"
 
 	// Long-lived calls — watch, logs -f, exec — that a single request/response
 	// pair cannot express. A stream is identified by the envelope's ID.
@@ -44,16 +63,17 @@ const (
 // selected by Type; ID correlates a response with its request, and a stream's
 // frames with each other.
 type Message struct {
-	Type        MessageType  `json:"type"`
-	ID          string       `json:"id,omitempty"`
-	Hello       *Hello       `json:"hello,omitempty"`
-	Welcome     *Welcome     `json:"welcome,omitempty"`
-	Request     *Request     `json:"request,omitempty"`
-	Response    *Response    `json:"response,omitempty"`
-	StreamOpen  *StreamOpen  `json:"stream_open,omitempty"`
-	StreamStart *StreamStart `json:"stream_start,omitempty"`
-	StreamData  *StreamData  `json:"stream_data,omitempty"`
-	StreamClose *StreamClose `json:"stream_close,omitempty"`
+	Type         MessageType   `json:"type"`
+	ID           string        `json:"id,omitempty"`
+	Hello        *Hello        `json:"hello,omitempty"`
+	Welcome      *Welcome      `json:"welcome,omitempty"`
+	Request      *Request      `json:"request,omitempty"`
+	Response     *Response     `json:"response,omitempty"`
+	ResponsePart *ResponsePart `json:"response_part,omitempty"`
+	StreamOpen   *StreamOpen   `json:"stream_open,omitempty"`
+	StreamStart  *StreamStart  `json:"stream_start,omitempty"`
+	StreamData   *StreamData   `json:"stream_data,omitempty"`
+	StreamClose  *StreamClose  `json:"stream_close,omitempty"`
 }
 
 // StreamOpen starts a streaming call against the target API server.
@@ -95,9 +115,10 @@ type StreamClose struct {
 // Hello is the agent's opening frame. It carries no cluster identity: the
 // server derives that from the registration token on the upgrade request.
 type Hello struct {
-	ProtocolVersion   int    `json:"protocol_version"`
-	AgentVersion      string `json:"agent_version"`
-	KubernetesVersion string `json:"kubernetes_version,omitempty"`
+	ProtocolVersion   int      `json:"protocol_version"`
+	AgentVersion      string   `json:"agent_version"`
+	KubernetesVersion string   `json:"kubernetes_version,omitempty"`
+	Capabilities      []string `json:"capabilities,omitempty"`
 }
 
 // Welcome confirms the handshake and names the cluster the tunnel bound to.
@@ -106,6 +127,8 @@ type Welcome struct {
 	ClusterID        uint   `json:"cluster_id"`
 	ClusterName      string `json:"cluster_name"`
 	HeartbeatSeconds int    `json:"heartbeat_seconds"`
+	// Capabilities is the subset of the hello's that the bastion accepts.
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 // Request is one HTTP call to replay against the in-cluster API server. Path
@@ -124,4 +147,22 @@ type Response struct {
 	Header map[string][]string `json:"header,omitempty"`
 	Body   []byte              `json:"body,omitempty"`
 	Error  string              `json:"error,omitempty"`
+}
+
+// ResponsePart is a slice of a response body, sent ahead of the Response that
+// ends it under the same ID. The bastion joins the parts in order and puts the
+// final Response's own Body after them; a final Response carrying Error
+// discards the parts before it.
+type ResponsePart struct {
+	Data []byte `json:"data,omitempty"`
+}
+
+// Has reports whether a negotiated capability list names one capability.
+func Has(capabilities []string, capability string) bool {
+	for _, c := range capabilities {
+		if c == capability {
+			return true
+		}
+	}
+	return false
 }

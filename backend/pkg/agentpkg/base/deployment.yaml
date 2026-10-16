@@ -62,6 +62,13 @@ spec:
                   name: kubemg-agent
                   key: bastion-ca
                   optional: true
+            # The container's own memory limit, so the agent can keep its heap
+            # under it rather than find out from the OOM killer. Read from the
+            # limit below, so the two cannot drift apart.
+            - name: KUBEMG_MEMORY_LIMIT_BYTES
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.memory
           ports:
             - name: health
               containerPort: 8081
@@ -73,9 +80,10 @@ spec:
           # dozen concurrent port-forwards or followed logs hit the cap, and
           # CFS throttling at the cap is not felt by the busy session alone: it
           # is latency across every shell on the cluster. Memory is sized for a
-          # single in-flight API object plus the per-session input queues, so a
-          # `kubectl get pods -A` on a large cluster does not get the agent
-          # OOMKilled mid-request.
+          # bounded number of in-flight API calls (16), each holding one 256 KB
+          # slice of its response at a time, plus the per-session input queues;
+          # the agent keeps its heap under 80% of the limit (see
+          # KUBEMG_MEMORY_LIMIT_BYTES above).
           resources:
             requests:
               cpu: 50m
