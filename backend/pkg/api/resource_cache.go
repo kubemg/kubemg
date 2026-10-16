@@ -136,16 +136,17 @@ func (s *server) cachedRead() gin.HandlerFunc {
  * restart the operator just performed, and five seconds is the largest window
  * that stays true.
  *
- * The events timeline is the exception, and it is an exception on both halves of
- * that reasoning. Nothing an operator does through KubeMG writes an Event — they
- * are the cluster's own account, append-only, and discarded by the cluster after
- * an hour — so there is no write for a stale entry to hide. And it is the one
- * page a whole team opens at the same moment, because it is the page you open
- * when something is wrong: an incident with a dozen people watching turns into a
- * dozen cluster-wide event LISTs on exactly the API server that is already
- * having a bad day. Holding the answer for half a minute makes that one LIST,
- * and the cost is seeing a new event up to half a minute late on a surface whose
- * rows are timestamped anyway.
+ * The events timeline is the exception. Nothing an operator does through KubeMG
+ * writes an Event — they are the cluster's own account, append-only, and
+ * discarded by the cluster after an hour — so there is no write for a stale entry
+ * to hide, and holding one for half a minute costs seeing a new event up to half
+ * a minute late on a surface whose rows are timestamped anyway.
+ *
+ * What this does **not** do is turn a dozen people into one read: the entry is
+ * keyed by caller like every other, so each of them misses on their own. That is
+ * the shared, watch-fed ring's job (events_watch.go) — once it is warm a
+ * timeline read costs the cluster nothing at all — and a read arriving while it
+ * is still cold waits for it (eventSyncWait) rather than scanning on its own.
  *
  * Refresh still bypasses this, as it bypasses everything: `Cache-Control:
  * no-cache` is what the button sends, so an operator asking again explicitly is

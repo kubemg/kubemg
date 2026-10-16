@@ -62,9 +62,10 @@ const (
 	maxEventScan = 4000
 
 	// defaultEventCacheTTL is how long a timeline answer is held — six times the
-	// resource default, for the reason readTTL sets out: no KubeMG write produces
-	// an Event, so there is nothing for a stale entry to hide, and this is the
-	// page a whole team opens at once during an incident.
+	// resource default, because no KubeMG write produces an Event, so there is
+	// nothing for a stale entry to hide. Like every cached read it is held per
+	// caller; what makes a whole team's timeline one read of the cluster is the
+	// shared ring (events_watch.go), not this.
 	defaultEventCacheTTL = 30 * time.Second
 
 	// maxEventRequests bounds the round trips one page view costs, whatever the
@@ -347,12 +348,18 @@ func (s *server) listClusterEvents(c *gin.Context) {
 	 * A warm ring holds every event the cluster has produced in the last hour, so
 	 * "newest first" is a fact about the cluster rather than about a page of it —
 	 * and it costs no API call at all. It is tried first and falls through to the
-	 * paginated read whenever it cannot answer: a cluster whose watch has not
-	 * synced yet, a server built without one, or a cluster the watch is being
-	 * refused on. The fallback is not a nicety; it is what makes the first page
-	 * view (which starts the watch) return something.
+	 * paginated read whenever it cannot answer: a server built without one, a
+	 * cluster the watch is being refused on, or a first list that is taking
+	 * longer than eventSyncWait.
+	 *
+	 * A ring that is still on its first list is waited for rather than read
+	 * around. The first views of a cluster nobody has looked at for a while
+	 * arrive together — that is what an incident looks like — and each one
+	 * falling back would have been its own scan of the cluster's events
+	 * alongside the one the ring was already making.
 	 */
 	if ring := s.eventRingFor(cluster); ring != nil {
+		ring.awaitFirstSync(c.Request.Context(), eventSyncWait)
 		if synced, syncedAt, _ := ring.state(); synced {
 			// The filter that now stands where the API server's authorizer stood
 			// for this surface: the buffer is filled cluster-wide, and a scoped
