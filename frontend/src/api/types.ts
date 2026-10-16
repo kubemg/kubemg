@@ -2248,6 +2248,11 @@ export interface KubeconfigPolicy {
   cli_session_max_hours?: number
   /** What `kubemg login --server` takes. */
   server_url?: string
+  /** SHA-256s of the certificate kubemg serves when it is one of its own
+      (self-signed or a pinned bundle) — what the first `kubemg login` shows
+      before asking to trust it. Empty when the certificate is publicly
+      trusted. */
+  tls_fingerprints?: string[]
 }
 
 export type KubeconfigIssuance = 'allowed' | 'cli_only'

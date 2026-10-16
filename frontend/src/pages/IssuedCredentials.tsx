@@ -455,7 +455,7 @@ function CommandLinePanel() {
       description="kubectl access to agent-mode clusters without a kubeconfig file: sign in once, with your second factor, and the CLI does the rest."
       bodyClassName="p-4"
     >
-      <CliCommands serverURL={policy?.server_url ?? ''} showInstall />
+      <CliCommands serverURL={policy?.server_url ?? ''} fingerprints={policy?.tls_fingerprints} showInstall />
     </Panel>
   )
 }

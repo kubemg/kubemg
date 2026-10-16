@@ -7,6 +7,7 @@ import { formatClock, formatDuration, formatInstant, formatTTL, useCountdown } f
 import {
   Button,
   DetailList,
+  Disclosure,
   Field,
   Notice,
   Segmented,
@@ -55,6 +56,7 @@ export function KubeconfigDrawer({
   const [issued, setIssued] = useState<Kubeconfig | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [cliOpen, setCliOpen] = useState(false)
 
   // How long a credential may live is an install-wide policy, so the sheet asks
   // rather than assuming. A failure leaves the default ladder in place: the
@@ -95,7 +97,12 @@ export function KubeconfigDrawer({
           only, so no long-lived kubeconfig file leaves it. Sign in once with your second factor and
           the CLI keeps kubectl supplied for {policy.cli_session_max_hours ?? 12} hours.
         </Notice>
-        <CliCommands serverURL={policy.server_url ?? ''} cluster={cluster.name} />
+        <CliCommands
+          serverURL={policy.server_url ?? ''}
+          cluster={cluster.name}
+          fingerprints={policy.tls_fingerprints}
+          showInstall
+        />
       </Sheet>
     )
   }
@@ -198,6 +205,24 @@ export function KubeconfigDrawer({
       {error ? <Notice tone="error">{error}</Notice> : null}
 
       {issued ? <IssuedCredential issued={issued} /> : null}
+
+      {/* The other way to the same access, offered where kubectl access is
+          asked for: no file to keep, and a session that ends on its own. Agent
+          mode only — a direct-mode cluster has no CLI path. */}
+      {cluster.connection_mode === 'agent' ? (
+        <Disclosure
+          summary="Or skip the file: use the kubemg command line"
+          open={cliOpen}
+          onOpenChange={setCliOpen}
+        >
+          <CliCommands
+            serverURL={policy?.server_url ?? ''}
+            cluster={cluster.name}
+            fingerprints={policy?.tls_fingerprints}
+            showInstall
+          />
+        </Disclosure>
+      ) : null}
     </Sheet>
   )
 }

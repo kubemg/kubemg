@@ -1,8 +1,11 @@
 package api
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -587,5 +590,32 @@ func TestKubeconfigPolicyNeedsAuth(t *testing.T) {
 	env := newTestEnv(t)
 	if rec := env.do(t, http.MethodGet, "/api/v1/kubeconfig/policy", "", nil); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, rec.Code)
+	}
+}
+
+// The policy names the certificate the first `kubemg login` asks about, in the
+// form the CLI prints it, and names none when there is no certificate of
+// kubemg's own to ask about.
+func TestKubeconfigPolicyCarriesTheCertificateFingerprint(t *testing.T) {
+	env := newTestEnvWith(t, func(o *Options) { o.BastionCA = testPEM })
+	user := env.store.addUser("dev", "pw", db.RoleUser)
+	block, _ := pem.Decode([]byte(testPEM))
+	sum := sha256.Sum256(block.Bytes)
+	pairs := make([]string, len(sum))
+	for i, b := range sum {
+		pairs[i] = fmt.Sprintf("%02X", b)
+	}
+	got := decode[struct {
+		Fingerprints []string `json:"tls_fingerprints"`
+	}](t, env.do(t, http.MethodGet, "/api/v1/kubeconfig/policy", env.tokenFor(t, user), nil)).Fingerprints
+	if len(got) != 1 || got[0] != strings.Join(pairs, ":") {
+		t.Fatalf("fingerprints %v", got)
+	}
+
+	plain := newTestEnv(t)
+	other := plain.store.addUser("dev", "pw", db.RoleUser)
+	rec := plain.do(t, http.MethodGet, "/api/v1/kubeconfig/policy", plain.tokenFor(t, other), nil)
+	if !strings.Contains(rec.Body.String(), `"tls_fingerprints":[]`) {
+		t.Fatalf("no certificate of its own: %s", rec.Body.String())
 	}
 }

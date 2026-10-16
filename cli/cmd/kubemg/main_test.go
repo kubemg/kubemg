@@ -29,6 +29,8 @@ type fakeServer struct {
 	clusterServer string
 	staticUser    string
 	verifyURL     string
+	// noCAData plays a server that names no CA of its own for its clusters.
+	noCAData bool
 }
 
 func newFakeServer(t *testing.T) *fakeServer {
@@ -67,9 +69,15 @@ func newFakeServer(t *testing.T) *fakeServer {
 		if server == "" {
 			server = f.URL + "/api/v1/clusters/7/proxy"
 		}
+		caData := "Q0E="
+		if f.noCAData {
+			caData = ""
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"clusters": []map[string]any{
 			{"id": 7, "name": "edge-us", "connection_mode": "agent", "role": "view", "namespaces": []string{"payments"},
-				"server": server, "context_name": "dana@edge-us", "ca_data": "Q0E="},
+				"server": server, "context_name": "dana@edge-us", "ca_data": caData},
+			{"id": 8, "name": "edge-eu", "environment": "staging", "connection_mode": "agent", "role": "edit",
+				"server": f.URL + "/api/v1/clusters/8/proxy", "context_name": "dana@edge-eu", "ca_data": caData},
 			{"id": 9, "name": "legacy", "connection_mode": "direct", "role": "view",
 				"note": "registered for direct API access — download its kubeconfig from the console"},
 		}})
@@ -104,6 +112,15 @@ type harness struct {
 	opened         string
 	dir            string
 	env            map[string]string
+	// tty is whether the run has a person at the keyboard; answer is what
+	// they type.
+	tty bool
+}
+
+// answer sets what the person types, one line per question.
+func (h *harness) answer(lines ...string) {
+	h.app.stdin = strings.NewReader(strings.Join(lines, "\n") + "\n")
+	h.app.lines = nil
 }
 
 // trustPEM is the fake server's certificate, which a test trusts the way a
@@ -142,6 +159,9 @@ func newHarness(t *testing.T) *harness {
 		},
 		openBrowser: func(url string) error { h.opened = url; return nil },
 		executable:  func() string { return "kubemg" },
+		peerChain:   client.PeerChain,
+		stdin:       strings.NewReader(""),
+		interactive: func() bool { return h.tty },
 	}
 	return h
 }

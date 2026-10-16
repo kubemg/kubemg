@@ -2,6 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -257,7 +260,37 @@ func (s *server) kubeconfigPolicy(c *gin.Context) {
 		// The address `kubemg login --server` takes. It is in every agent-mode
 		// kubeconfig already, so saying it here discloses nothing new.
 		"server_url": strings.TrimRight(s.settings(ctx).PublicURL, "/"),
+		// What the first `kubemg login` against a certificate the person's
+		// system does not trust shows before asking to pin it — the same
+		// certificate every agent install and kubeconfig already carries, so
+		// public. Empty when the certificate is publicly trusted, which the
+		// CLI then never asks about.
+		"tls_fingerprints": s.tlsFingerprints,
 	})
+}
+
+// certFingerprints are the SHA-256s of a PEM bundle's certificates, as openssl
+// and the kubemg CLI print them: upper-case pairs joined by colons.
+func certFingerprints(bundle string) []string {
+	out := []string{}
+	rest := []byte(bundle)
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			return out
+		}
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		sum := sha256.Sum256(block.Bytes)
+		encoded := strings.ToUpper(hex.EncodeToString(sum[:]))
+		pairs := make([]string, 0, len(sum))
+		for i := 0; i < len(encoded); i += 2 {
+			pairs = append(pairs, encoded[i:i+2])
+		}
+		out = append(out, strings.Join(pairs, ":"))
+	}
 }
 
 // agentKubeconfig renders the bastion-mode credential: kubectl talks to KubeMG,
