@@ -75,6 +75,9 @@ type runtimeSettings struct {
 	ShellMaxLifetimeHours int `json:"shell_max_lifetime_hours"`
 	// DebugImage is what an ephemeral debug container runs.
 	DebugImage string `json:"debug_image"`
+	// MFAEnforcement is whose sign-in needs a second factor: off, admins or
+	// all. Empty in the overrides means unset, which is off.
+	MFAEnforcement string `json:"mfa_enforcement"`
 }
 
 type settingsResponse struct {
@@ -124,6 +127,8 @@ type updateSettingsRequest struct {
 	ShellIdleTimeoutMinutes *int    `json:"shell_idle_timeout_minutes"`
 	ShellMaxLifetimeHours   *int    `json:"shell_max_lifetime_hours"`
 	DebugImage              *string `json:"debug_image"`
+	// MFAEnforcement accepts "" to clear back to off.
+	MFAEnforcement *string `json:"mfa_enforcement"`
 }
 
 // Audit retention bounds. The floor stops an operator from silently emptying
@@ -183,6 +188,9 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 		// does, but with no enable switch of its own: a grant that can already
 		// exec into a pod can already ask for one.
 		DebugImage: s.debugImage,
+		// No environment variable: who must hold a second factor is a policy an
+		// administrator sets where it is audited and changed without a redeploy.
+		MFAEnforcement: mfaEnforcementOff,
 	}
 	stored, err := s.store.Settings(ctx)
 	if err != nil {
@@ -238,6 +246,7 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 	if v := strings.TrimSpace(stored[db.SettingDebugImage]); v != "" {
 		out.DebugImage = v
 	}
+	out.MFAEnforcement = normalizeMFAEnforcement(stored[db.SettingMFAEnforcement])
 	out.SessionRecordingRetentionDays = clampRecordingRetention(
 		storedDays(stored, db.SettingSessionRecordingRetentionDays), out.AuditRetentionDays)
 	return out
@@ -391,7 +400,8 @@ func (s *server) getSettings(c *gin.Context) {
 			minShellIdleTimeoutMinutes, maxShellIdleTimeoutMinutes),
 		ShellMaxLifetimeHours: storedBounded(stored, db.SettingShellMaxLifetimeHours,
 			minShellMaxLifetimeHours, maxShellMaxLifetimeHours),
-		DebugImage: strings.TrimSpace(stored[db.SettingDebugImage]),
+		DebugImage:     strings.TrimSpace(stored[db.SettingDebugImage]),
+		MFAEnforcement: storedMFAEnforcement(stored),
 	}
 
 	c.JSON(http.StatusOK, settingsResponse{
@@ -417,6 +427,7 @@ func (s *server) getSettings(c *gin.Context) {
 			ShellIdleTimeoutMinutes: int(shell.DefaultIdleTimeout / time.Minute),
 			ShellMaxLifetimeHours:   int(shell.DefaultMaxLifetime / time.Hour),
 			DebugImage:              s.debugImage,
+			MFAEnforcement:          mfaEnforcementOff,
 		},
 		Warnings: settingsWarnings(effective),
 	})
@@ -581,6 +592,16 @@ func (s *server) updateSettings(c *gin.Context) {
 
 	if req.DebugImage != nil {
 		values[db.SettingDebugImage] = strings.TrimSpace(*req.DebugImage)
+	}
+	if req.MFAEnforcement != nil {
+		value := strings.ToLower(strings.TrimSpace(*req.MFAEnforcement))
+		if value != "" && normalizeMFAEnforcement(value) != value {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "mfa_enforcement must be one of " + strings.Join(mfaEnforcementValues, ", "),
+			})
+			return
+		}
+		values[db.SettingMFAEnforcement] = value
 	}
 
 	if err := s.store.PutSettings(c.Request.Context(), values, caller.ID); err != nil {

@@ -150,6 +150,16 @@ refusal or error, any streaming call (`exec`/`attach`/`portforward`/`log
 | Clear with | `0` |
 | Stored in | **Hours**, not days, so an install can go below a day (an eight-hour shift) as well as up to a quarter |
 
+### `mfa_enforcement`
+
+| | |
+|---|---|
+| Meaning | Whose password sign-in also needs a [second factor](../access/mfa.md): `off`, `admins` or `all`. Covers local and LDAP accounts only. |
+| Default | `off`; no environment variable |
+| Unusable stored value | Read as `off` — a mistyped row never locks anyone out |
+| Clear with | `""` |
+| Takes effect | At the next sign-in. Sessions already open run to their own expiry |
+
 ## Branding (a separate surface, on purpose)
 
 The console's own identity — your organisation's name and mark, an environment

@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { RotateCcw } from 'lucide-react'
 import { errorMessage, fetchSettings, updateSettings } from '../../api/client'
-import type { SettingsResponse } from '../../api/types'
-import { Button, Field, Notice, Panel, TextInput } from '../../components/primitives'
+import type { MFAEnforcement, SettingsResponse } from '../../api/types'
+import { Button, Field, Notice, Panel, Select, TextInput } from '../../components/primitives'
 import { settingSource } from '../../lib/settings'
 import { SettingsAside, SettingsLayout } from '../../components/settings/SettingsLayout'
 import { useUnsavedGuard } from '../../lib/unsavedGuard'
@@ -13,14 +13,31 @@ import { useUnsavedGuard } from '../../lib/unsavedGuard'
     from offering a value that would come back refused. */
 const MAX_CEILING_HOURS = 90 * 24
 
-/** GeneralSettings owns two server-wide decisions: where a target cluster
-    reaches this KubeMG, and how long a credential it hands out may live. */
+/** The words for each enforcement policy, in the order the select offers them. */
+const MFA_POLICY: { value: MFAEnforcement; label: string; reach: string }[] = [
+  { value: 'off', label: 'Optional', reach: 'Anyone may set up a second factor; nobody is made to.' },
+  {
+    value: 'admins',
+    label: 'Administrators',
+    reach: 'Administrators and super admins set one up at their next sign-in and cannot remove their last.',
+  },
+  {
+    value: 'all',
+    label: 'Everyone',
+    reach: 'Every local and LDAP account sets one up at its next sign-in and cannot remove its last.',
+  },
+]
+
+/** GeneralSettings owns three server-wide decisions: where a target cluster
+    reaches this KubeMG, how long a credential it hands out may live, and whose
+    password sign-in also needs a second factor. */
 export function GeneralSettings() {
   const [settings, setSettings] = useState<SettingsResponse | null>(null)
   const [publicUrl, setPublicUrl] = useState('')
   // Blank means "use the default", so the form state is the override rather
   // than the value — the same reason audit retention is edited as a string.
   const [ceiling, setCeiling] = useState('')
+  const [mfaPolicy, setMfaPolicy] = useState<MFAEnforcement>('off')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -32,6 +49,7 @@ export function GeneralSettings() {
       setSettings(next)
       setPublicUrl(next.overrides.public_url)
       setCeiling(ceilingDraft(next))
+      setMfaPolicy(next.effective.mfa_enforcement || 'off')
       setError(null)
     } catch (err) {
       setError(errorMessage(err, 'Could not load the settings.'))
@@ -60,10 +78,14 @@ export function GeneralSettings() {
         public_url: publicUrl.trim(),
         // 0 is how the API says "clear it", which the form shows as an empty box.
         kubeconfig_max_ttl_hours: Number(ceiling.trim()) || 0,
+        // Off is stored as the cleared value, so the row says "unset" rather
+        // than recording a decision nobody made.
+        mfa_enforcement: mfaPolicy === 'off' ? '' : mfaPolicy,
       })
       setSettings(next)
       setPublicUrl(next.overrides.public_url)
       setCeiling(ceilingDraft(next))
+      setMfaPolicy(next.effective.mfa_enforcement || 'off')
       setSaved(true)
     } catch (err) {
       setError(errorMessage(err, 'Could not save the settings.'))
@@ -81,13 +103,15 @@ export function GeneralSettings() {
 
   const dirty =
     settings !== null &&
-    (publicUrl.trim() !== settings.overrides.public_url || ceiling.trim() !== ceilingDraft(settings))
+    (publicUrl.trim() !== settings.overrides.public_url ||
+      ceiling.trim() !== ceilingDraft(settings) ||
+      mfaPolicy !== (settings.effective.mfa_enforcement || 'off'))
   useUnsavedGuard(dirty, 'these settings')
 
   return (
     <SettingsLayout
       title="General settings"
-      description="Where clusters reach this server, and how long a kubeconfig may live. A value set here overrides what the server read from its environment at boot; clearing it falls back to that."
+      description="Where clusters reach this server, how long a kubeconfig may live, and who needs a second factor to sign in. A value set here overrides what the server read from its environment at boot; clearing it falls back to that."
       aside={
         settings ? (
           <>
@@ -103,6 +127,12 @@ export function GeneralSettings() {
               source={settingSource(settings.overrides.kubeconfig_max_ttl_hours, 0)}
               reach="Credentials issued from now on. A kubeconfig already in somebody's hands keeps the window it was signed with — shortening the ceiling does not shorten it, revoking it does."
             />
+            <SettingsAside
+              label="Second factor"
+              value={MFA_POLICY.find((p) => p.value === (settings.effective.mfa_enforcement || 'off'))?.label ?? 'Optional'}
+              source={settingSource(settings.overrides.mfa_enforcement, '')}
+              reach="Sign-ins from now on. A session already open runs to its own expiry — requiring a factor does not end it."
+            />
           </>
         ) : null
       }
@@ -116,6 +146,7 @@ export function GeneralSettings() {
               onClick={() => {
                 setPublicUrl(settings.overrides.public_url)
                 setCeiling(ceilingDraft(settings))
+                setMfaPolicy(settings.effective.mfa_enforcement || 'off')
                 setSaved(false)
               }}
             >
@@ -202,6 +233,37 @@ export function GeneralSettings() {
                   setSaved(false)
                 }}
               />
+            </Field>
+          </Panel>
+        ) : null}
+
+        {settings ? (
+          <Panel
+            eyebrow="Sign-in"
+            title="Second factor"
+            description="Whose password sign-in also asks for a code from an authenticator app. It covers local and LDAP accounts; an OIDC or SAML account's second factor is its identity provider's."
+            bodyClassName="flex flex-col gap-4 p-4"
+          >
+            <Field
+              label="Required for"
+              htmlFor="mfa_enforcement"
+              hint={MFA_POLICY.find((p) => p.value === mfaPolicy)?.reach}
+            >
+              <Select
+                id="mfa_enforcement"
+                className="max-w-60"
+                value={mfaPolicy}
+                onChange={(event) => {
+                  setMfaPolicy(event.target.value as MFAEnforcement)
+                  setSaved(false)
+                }}
+              >
+                {MFA_POLICY.map((policy) => (
+                  <option key={policy.value} value={policy.value}>
+                    {policy.label}
+                  </option>
+                ))}
+              </Select>
             </Field>
           </Panel>
         ) : null}

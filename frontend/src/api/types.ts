@@ -298,6 +298,68 @@ export interface LoginResponse {
   user: User
 }
 
+/**
+ * What a right password is answered with when a second factor is still owed:
+ * a challenge and no token. `mfa_required` means prove a factor the account
+ * holds; `mfa_enrollment_required` means the account must hold one and does
+ * not, so the challenge opens enrolment and nothing else.
+ */
+export interface MFAChallenge {
+  mfa_required?: boolean
+  mfa_enrollment_required?: boolean
+  challenge: string
+  challenge_expires_at: string
+  /** `totp`, and `recovery` when the account has recovery codes left. */
+  methods?: string[]
+}
+
+/** Either half of a password sign-in's answer. */
+export type SignInResult = LoginResponse | MFAChallenge
+
+/** A session finished by a second factor. The count is there only when a
+    recovery code did it, so the person knows how close they are to a reset. */
+export interface MFASessionResponse extends LoginResponse {
+  recovery_codes_remaining?: number
+}
+
+export interface MFAFactor {
+  id: number
+  kind: 'totp' | string
+  name: string
+  confirmed_at?: string
+  last_used_at?: string
+  created_at: string
+}
+
+/** An account's second factor. `applies` is false for an account whose factor
+    is its identity provider's (OIDC, SAML) or that has none by construction
+    (a machine account). */
+export interface MFAStatus {
+  applies: boolean
+  required: boolean
+  enrolled: boolean
+  factors: MFAFactor[]
+  recovery_codes_remaining: number
+}
+
+export interface MFAEnrollment {
+  factor_id: number
+  /** Base32, for typing in by hand when the QR code cannot be scanned. */
+  secret: string
+  otpauth_uri: string
+  /** A PNG data: URI, drawn by the server. */
+  qr: string
+}
+
+export interface MFAConfirmResult {
+  /** Present only for an account's first factor — shown once. */
+  recovery_codes?: string[]
+  /** Present when the enrolment finished a sign-in. */
+  session?: MFASessionResponse
+}
+
+export type MFAEnforcement = 'off' | 'admins' | 'all'
+
 export interface ClusterListResponse {
   clusters: Cluster[]
 }
@@ -2144,6 +2206,9 @@ export interface KubeconfigPolicy {
  * clearing a field restores the default rather than emptying it.
  */
 export interface RuntimeSettings {
+  /** Whose password sign-in also needs a second factor. Empty in `overrides`
+      means unset, which is off. */
+  mfa_enforcement: MFAEnforcement | ''
   public_url: string
   agent_image: string
   agent_namespace: string

@@ -56,6 +56,10 @@ type Config struct {
 	// boot path generates one and prints it once instead of seeding a fleet
 	// gateway with a password from an example file.
 	AdminPassword string
+	// MFAResetUsername is the break-glass for a sole super admin who lost both
+	// the phone and the recovery codes: the account it names has its second
+	// factor removed at boot. Empty does nothing. See api.ResetMFAAtBoot.
+	MFAResetUsername string
 	// SANamespace is the namespace on target clusters that holds KubeMG's
 	// per-user service accounts.
 	SANamespace string
@@ -230,6 +234,7 @@ func Load() Config {
 		},
 		AdminUsername: env("KUBEMG_ADMIN_USERNAME", "admin"),
 		AdminPassword: env("KUBEMG_ADMIN_PASSWORD", ""),
+		MFAResetUsername: env("KUBEMG_MFA_RESET_USERNAME", ""),
 		SANamespace:   env("KUBEMG_SA_NAMESPACE", "kubemg-system"),
 		AllowedOrigins: envList(
 			"CORS_ALLOWED_ORIGINS",

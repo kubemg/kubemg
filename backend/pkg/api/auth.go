@@ -167,19 +167,37 @@ func (s *server) login(c *gin.Context) {
 	}
 
 	user.Normalize()
-	token, expiresAt, err := s.jwt.Generate(user.ID, user.Username, user.Role)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not issue token"})
+	// A right password is the whole sign-in only when no second factor is owed.
+	if s.challengeSignIn(c, user) {
 		return
 	}
+	s.issueSession(c, user, false)
+}
 
+// issueSession answers a finished sign-in with a session. mfa records that a
+// second factor was proved on the way, which the token carries.
+func (s *server) issueSession(c *gin.Context, user *db.User, mfa bool) {
+	session, ok := s.newSession(c, user, mfa)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, session)
+}
+
+// newSession mints a session and stamps the sign-in, writing the error itself
+// when it cannot.
+func (s *server) newSession(c *gin.Context, user *db.User, mfa bool) (loginResponse, bool) {
+	generate := s.jwt.Generate
+	if mfa {
+		generate = s.jwt.GenerateWithMFA
+	}
+	token, expiresAt, err := generate(user.ID, user.Username, user.Role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not issue token"})
+		return loginResponse{}, false
+	}
 	s.recordLogin(c, user.ID)
-
-	c.JSON(http.StatusOK, loginResponse{
-		Token:     token,
-		ExpiresAt: expiresAt,
-		User:      toUserResponse(user),
-	})
+	return loginResponse{Token: token, ExpiresAt: expiresAt, User: toUserResponse(user)}, true
 }
 
 // signInAccount is the account side of the throttle's key: the route, so a

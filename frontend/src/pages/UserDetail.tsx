@@ -6,11 +6,14 @@ import {
   fetchIssuedKubeconfigs,
   fetchTerminalSessions,
   fetchUserAccess,
+  fetchUserMFA,
+  resetUserMFA,
 } from '../api/client'
-import type { IssuedKubeconfig, TerminalSession, UserAccessReview } from '../api/types'
+import type { IssuedKubeconfig, MFAStatus, TerminalSession, UserAccessReview } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import {
   Age,
+  Button,
   EmptyState,
   EnvironmentTag,
   Notice,
@@ -22,7 +25,11 @@ import {
   Th,
 } from '../components/primitives'
 import { railChip } from '../lib/branding'
+import { mfaResettable, mfaSummary } from '../lib/mfa'
 import { formatInstant, relativeAge } from '../lib/time'
+import { useAuth } from '../state/auth-context'
+import { useConfirm } from '../state/confirm-context'
+import { useResult } from '../state/result-context'
 
 /**
  * One page for "what can this person reach today".
@@ -40,13 +47,12 @@ import { formatInstant, relativeAge } from '../lib/time'
  * did**. Production sorts first throughout, because the rows that decide whether
  * a review is signed are the ones on the clusters that matter.
  *
- * Two things it deliberately does not claim. There is no MFA state, because
- * KubeMG has none: a federated account's second factor is the identity
- * provider's business and this console never sees it, and inventing a column
- * that read "unknown" for every row would be worse than the absence. And the
- * effective grant per cluster is the **server's** merge, not a second one
- * computed here — see the backend's user_access.go for why a page free to
- * disagree with the proxy would be worse than no page.
+ * The second factor is reported for the accounts KubeMG's factor governs —
+ * local and LDAP — and said to be the provider's for an OIDC or SAML account,
+ * whose factor this console never sees. And the effective grant per cluster is
+ * the **server's** merge, not a second one computed here — see the backend's
+ * user_access.go for why a page free to disagree with the proxy would be worse
+ * than no page.
  */
 export function UserDetail() {
   const params = useParams<{ id: string }>()
@@ -55,6 +61,7 @@ export function UserDetail() {
   const [review, setReview] = useState<UserAccessReview | null>(null)
   const [credentials, setCredentials] = useState<IssuedKubeconfig[]>([])
   const [sessions, setSessions] = useState<TerminalSession[]>([])
+  const [mfa, setMfa] = useState<MFAStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -82,6 +89,12 @@ export function UserDetail() {
     void fetchIssuedKubeconfigs({ userId })
       .then((rows) => {
         if (live) setCredentials(rows)
+      })
+      .catch(() => undefined)
+
+    void fetchUserMFA(userId)
+      .then((answer) => {
+        if (live) setMfa(answer)
       })
       .catch(() => undefined)
 
@@ -115,7 +128,7 @@ export function UserDetail() {
 
         {review ? (
           <>
-            <Identity review={review} />
+            <Identity review={review} mfa={mfa} onMfaReset={setMfa} />
             <Reach review={review} />
             <Credentials rows={credentials} live={liveCredentials} />
             <Sessions rows={sessions} />
@@ -134,8 +147,46 @@ export function UserDetail() {
  * asks and which otherwise means matching an id against the SSO settings page by
  * hand.
  */
-function Identity({ review }: { review: UserAccessReview }) {
+function Identity({
+  review,
+  mfa,
+  onMfaReset,
+}: {
+  review: UserAccessReview
+  mfa: MFAStatus | null
+  onMfaReset: (next: MFAStatus) => void
+}) {
   const { user } = review
+  const { user: caller } = useAuth()
+  const confirm = useConfirm()
+  const report = useResult()
+  const [resetting, setResetting] = useState(false)
+  const canReset = mfa !== null && mfaResettable(user, mfa, caller)
+
+  async function reset() {
+    const ok = await confirm({
+      title: 'Reset second factor',
+      body: `${user.username} loses every factor and recovery code they hold. Their next sign-in is password-only — or, if your policy requires a factor, goes straight to setting up a new one. Do this for somebody who lost their phone, after confirming it is them.`,
+      confirmLabel: 'Reset',
+      tone: 'danger',
+    })
+    if (!ok) return
+    setResetting(true)
+    try {
+      await resetUserMFA(user.id)
+      onMfaReset({ ...(mfa as MFAStatus), enrolled: false, factors: [], recovery_codes_remaining: 0 })
+      report({
+        tone: 'ok',
+        title: 'Second factor reset',
+        body: `${user.username} will set up a new one at their next sign-in.`,
+        link: { to: '/admin/audit', label: 'See it in the audit trail' },
+      })
+    } catch (err) {
+      report({ tone: 'error', title: 'Could not reset', body: errorMessage(err, 'The reset failed.') })
+    } finally {
+      setResetting(false)
+    }
+  }
 
   return (
     <Panel
@@ -207,12 +258,17 @@ function Identity({ review }: { review: UserAccessReview }) {
         )}
       </div>
 
-      {/* Said rather than left to be inferred, on the same principle the posture
-          page states its non-goals: a review has to know what was not checked. */}
-      <p className="text-[12px] text-muted sm:col-span-2 xl:col-span-4">
-        kubemg records no second factor. For a federated account that is the identity provider's to
-        assert and this console never sees it; for a local account there is none to report.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3 sm:col-span-2 xl:col-span-4">
+        <div className="min-w-0">
+          <p className="label text-faint">Second factor</p>
+          <p className="mt-1 text-[13px] text-fg">{mfaSummary(mfa)}</p>
+        </div>
+        {canReset ? (
+          <Button size="sm" variant="danger" disabled={resetting} onClick={() => void reset()}>
+            {resetting ? 'Resetting…' : 'Reset second factor'}
+          </Button>
+        ) : null}
+      </div>
     </Panel>
   )
 }

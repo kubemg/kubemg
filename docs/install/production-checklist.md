@@ -14,6 +14,11 @@ why and links to the detail.
       generated password is unchanged, so completing setup ticks this box. See
       [Environment reference](environment.md#auth-jwt-bootstrap).
 
+- [ ] **A second factor required for administrators.** Admin → Settings →
+      General → Second factor: Administrators (or Everyone). Until then a
+      stolen administrator password is the whole console. See
+      [Two-factor authentication](../access/mfa.md).
+
 - [ ] **Exactly one kubemg replica** (on Kubernetes, `replicas: 1` with
       `strategy: Recreate`). A second replica answers `503` for clusters whose
       agent connected to the other. See

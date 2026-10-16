@@ -109,7 +109,9 @@ The effective grant is computed server-side by the same merge the gateway uses, 
 - `direct` + `jit`: an approved elevation, with its `expires_at`.
 - `group`: inherited through the named group.
 
-Left out on purpose: expired grants, grants on deleted clusters and memberships of deleted groups (nothing to act on), and MFA state (kubemg has none; a federated account's second factor is the provider's). Issued kubeconfigs and recent sessions are read from their own endpoints (`GET /api/v1/kubeconfigs?user_id=`, `GET /api/v1/audit/terminal-sessions?user_id=`).
+The Identity panel also reports the account's [second factor](mfa.md) — how many authenticator apps and recovery codes it holds, or that an OIDC/SAML account's factor belongs to its provider — and offers **Reset second factor** to another administrator.
+
+Left out on purpose: expired grants, grants on deleted clusters and memberships of deleted groups (nothing to act on). Issued kubeconfigs and recent sessions are read from their own endpoints (`GET /api/v1/kubeconfigs?user_id=`, `GET /api/v1/audit/terminal-sessions?user_id=`).
 
 ## Groups
 

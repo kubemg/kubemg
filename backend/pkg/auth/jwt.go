@@ -29,6 +29,11 @@ type Claims struct {
 	Scope string `json:"scope,omitempty"`
 	// ClusterID is the only cluster a scoped token may address.
 	ClusterID uint `json:"cid,omitempty"`
+	// MFA records that this session was opened with a second factor. It is a
+	// fact about how the session began, not a permission: nothing in the API
+	// is unlocked by it today, and a session minted before an account had to
+	// have a factor reads false rather than pretending otherwise.
+	MFA bool `json:"mfa,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -55,6 +60,12 @@ func (m *Manager) TTL() time.Duration { return m.ttl }
 // expiry time.
 func (m *Manager) Generate(userID uint, username, role string) (string, time.Time, error) {
 	return m.sign(Claims{UserID: userID, Username: username, Role: role}, m.ttl)
+}
+
+// GenerateWithMFA issues a session token for a sign-in that proved a second
+// factor.
+func (m *Manager) GenerateWithMFA(userID uint, username, role string) (string, time.Time, error) {
+	return m.sign(Claims{UserID: userID, Username: username, Role: role, MFA: true}, m.ttl)
 }
 
 // GenerateProxyToken issues a credential that only works against one cluster's

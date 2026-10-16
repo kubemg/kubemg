@@ -150,6 +150,7 @@ var secretModels = []any{
 	&HelmRepository{},
 	&AlarmChannel{},
 	&SSOProviderConfig{},
+	&MFAFactor{},
 }
 
 // SecretColumn is one credential column, addressed by table and primary key.

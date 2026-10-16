@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowRight, Moon, Sun } from 'lucide-react'
+import type { MFAChallenge } from '../api/types'
+import { SignInSecondStep } from '../components/MfaSteps'
 import { Button, Field, Notice, TextInput } from '../components/primitives'
 import { Lockup } from '../components/Mark'
 import { EnvironmentBanner } from '../components/EnvironmentBanner'
@@ -12,20 +14,28 @@ import { readSignInFailure, signInErrorText } from '../lib/signInError'
 import { useTheme } from '../lib/theme'
 
 export function Login() {
-  const { signIn, setupRequired } = useAuth()
+  const { signIn, adoptSession, setupRequired } = useAuth()
   const { theme, toggle } = useTheme()
   const providers = useSsoProviders()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // A right password with a second factor still owed: the card turns into the
+  // code step, and no session exists until it is done.
+  const [pending, setPending] = useState<{ challenge: MFAChallenge; account: string } | null>(null)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setBusy(true)
     setError(null)
     try {
-      await signIn(username, password)
+      const challenge = await signIn(username, password)
+      if (challenge) {
+        setPassword('')
+        setPending({ challenge, account: username })
+        setBusy(false)
+      }
     } catch (err) {
       // The console's words, never the server's: see lib/signInError for why a
       // wrong password and an unknown username must read the same.
@@ -137,62 +147,77 @@ export function Login() {
                 <OrganisationIdentity tone="page" />
               </div>
 
-              <h2 className="text-[22px] font-bold tracking-[-0.02em] text-fg">Sign in</h2>
-              <p className="mt-1.5 text-[13px] text-muted">
-                {setupRequired
-                  ? 'This bastion has not been set up yet. Sign in as the administrator to configure it.'
-                  : 'Use the account your administrator issued.'}
-              </p>
+              {pending ? (
+                <SignInSecondStep
+                  challenge={pending.challenge}
+                  account={pending.account}
+                  onSession={(session) => adoptSession(session.token, session.user)}
+                  onCancel={() => setPending(null)}
+                />
+              ) : (
+                <>
+                  <h2 className="text-[22px] font-bold tracking-[-0.02em] text-fg">Sign in</h2>
+                  <p className="mt-1.5 text-[13px] text-muted">
+                    {setupRequired
+                      ? 'This bastion has not been set up yet. Sign in as the administrator to configure it.'
+                      : 'Use the account your administrator issued.'}
+                  </p>
 
-              {/* Said here rather than after the sign-in, because the password
-                  somebody needs is in a place they may have to go and look. */}
-              {setupRequired ? (
-                <div className="mt-4">
-                  <Notice tone="info">
-                    With no administrator password configured, one was generated on first boot and
-                    printed once to the server’s log — <span className="font-mono">docker compose logs
-                    kubemg</span> on a compose install. Setup makes changing it the first step.
-                  </Notice>
-                </div>
-              ) : null}
+                  {/* Said here rather than after the sign-in, because the password
+                      somebody needs is in a place they may have to go and look. */}
+                  {setupRequired ? (
+                    <div className="mt-4">
+                      <Notice tone="info">
+                        With no administrator password configured, one was generated on first boot and
+                        printed once to the server’s log — <span className="font-mono">docker compose logs
+                        kubemg</span> on a compose install. Setup makes changing it the first step.
+                      </Notice>
+                    </div>
+                  ) : null}
 
-              <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
-                <Field label="Username" htmlFor="username">
-                  <TextInput
-                    id="username"
-                    name="username"
-                    autoComplete="username"
-                    autoFocus
-                    required
-                    value={username}
-                    onChange={(event) => setUsername(event.target.value)}
+                  <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
+                    <Field label="Username" htmlFor="username">
+                      <TextInput
+                        id="username"
+                        name="username"
+                        autoComplete="username"
+                        autoFocus
+                        required
+                        value={username}
+                        onChange={(event) => setUsername(event.target.value)}
+                      />
+                    </Field>
+
+                    <Field label="Password" htmlFor="password">
+                      <TextInput
+                        id="password"
+                        name="password"
+                        type="password"
+                        autoComplete="current-password"
+                        required
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                      />
+                    </Field>
+
+                    {error ? <Notice tone="error">{error}</Notice> : null}
+
+                    <Button type="submit" variant="primary" disabled={busy} className="mt-1 h-10 w-full">
+                      {busy ? 'Signing in…' : 'Sign in'}
+                      {busy ? null : <ArrowRight aria-hidden="true" className="size-4" />}
+                    </Button>
+                  </form>
+
+                  {/* Federated sign-in. The slot holds one provider's height whether
+                      or not any is configured, so the card is the same size on every
+                      install and does not grow once the read answers. */}
+                  <SsoProviderSlot
+                    providers={providers}
+                    onBusyChange={setBusy}
+                    onChallenge={(challenge, account) => setPending({ challenge, account })}
                   />
-                </Field>
-
-                <Field label="Password" htmlFor="password">
-                  <TextInput
-                    id="password"
-                    name="password"
-                    type="password"
-                    autoComplete="current-password"
-                    required
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                  />
-                </Field>
-
-                {error ? <Notice tone="error">{error}</Notice> : null}
-
-                <Button type="submit" variant="primary" disabled={busy} className="mt-1 h-10 w-full">
-                  {busy ? 'Signing in…' : 'Sign in'}
-                  {busy ? null : <ArrowRight aria-hidden="true" className="size-4" />}
-                </Button>
-              </form>
-
-              {/* Federated sign-in. The slot holds one provider's height whether
-                  or not any is configured, so the card is the same size on every
-                  install and does not grow once the read answers. */}
-              <SsoProviderSlot providers={providers} onBusyChange={setBusy} />
+                </>
+              )}
             </div>
           </div>
 

@@ -211,6 +211,10 @@ func main() {
 	gateway.UseAuditor(auditor)
 	go gateway.RunCredentialSweep(auditCtx)
 
+	// The second-factor break-glass runs once the trail can record it, so the
+	// reset is never an act with no record.
+	api.ResetMFAAtBoot(boot, store, auditor, cfg.MFAResetUsername, logger)
+
 	// Just-in-time elevated access. It shares the audit writer with the proxy, so
 	// "who was given production and why" lands in the same trail as the calls they
 	// then made; its approval notices go out through the alarm dispatcher, which is
@@ -301,6 +305,7 @@ func main() {
 			TLSSuppliedDir:    tlsMaterial.suppliedDir,
 			TLSSupplied:       tlsMaterial.supplied,
 			AgentCABundleSet:  strings.TrimSpace(cfg.TLS.AgentCABundle) != "",
+			MFAResetArmed:     strings.TrimSpace(cfg.MFAResetUsername) != "",
 		},
 		Background: auditCtx,
 		Logger:     logger,

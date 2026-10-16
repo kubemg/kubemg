@@ -133,7 +133,7 @@ The rule form suggests common reasons (`OOMKilled`, `FailedScheduling`, `BackOff
 ### Refusals at save time
 
 - A `cluster_event` rule with **neither** an `event_type` nor any `event_reasons` is refused, since it would match every event the cluster emits.
-- An `audit` rule naming a verb the trail never records is refused, since it could never fire. Valid verbs are the suppressible verbs, `replay`, `recording-get`, `recording-delete`, `agent-displaced` and `agent-token-rotate`.
+- An `audit` rule naming a verb the trail never records is refused, since it could never fire. Valid verbs are the suppressible verbs, `replay`, `recording-get`, `recording-delete`, `agent-displaced`, `agent-token-rotate`, `mfa-reset`, `mfa-remove` and `mfa-recovery-used`.
 
 ## Testing a channel
 

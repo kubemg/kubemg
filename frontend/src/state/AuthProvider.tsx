@@ -8,6 +8,7 @@ import {
   setUnauthorizedHandler,
   writeToken,
 } from '../api/client'
+import { isMFAChallenge } from '../lib/mfa'
 import type { User } from '../api/types'
 import { invalidateQueries } from '../lib/query'
 import { AuthContext } from './auth-context'
@@ -73,9 +74,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [signOut])
 
   const signIn = useCallback(async (username: string, password: string) => {
-    const session = await login(username, password)
-    writeToken(session.token)
-    setUser(session.user)
+    const result = await login(username, password)
+    if (isMFAChallenge(result)) return result
+    writeToken(result.token)
+    setUser(result.user)
+    return null
   }, [])
 
   const adoptSession = useCallback(async (token: string, session?: User) => {

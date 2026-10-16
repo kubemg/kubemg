@@ -5,7 +5,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import type { User } from '../api/types'
+import type { MFAStatus, User } from '../api/types'
 import { profileAbilities } from '../lib/profile'
 import { ProfileBody } from './Profile'
 
@@ -30,12 +30,20 @@ function account(over: Partial<User>): User {
   } as User
 }
 
-function draw(user: User) {
+function draw(user: User, mfa?: MFAStatus | null) {
   return render(
     <MemoryRouter>
-      <ProfileBody user={user} onEdit={() => {}} onChangePassword={() => {}} />
+      <ProfileBody user={user} mfa={mfa} onEdit={() => {}} onChangePassword={() => {}} />
     </MemoryRouter>,
   )
+}
+
+const noFactor: MFAStatus = {
+  applies: true,
+  required: false,
+  enrolled: false,
+  factors: [],
+  recovery_codes_remaining: 0,
 }
 
 afterEach(cleanup)
@@ -84,5 +92,38 @@ describe('what the page shows', () => {
     expect(screen.getByRole('link', { name: /my credentials/i }).getAttribute('href')).toBe(
       '/me/credentials',
     )
+  })
+})
+
+describe('the second factor', () => {
+  it('offers a local account to set one up', () => {
+    draw(account({}), noFactor)
+    expect(screen.getByText('Two-factor authentication')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /set up/i })).toBeTruthy()
+  })
+
+  it('offers an LDAP account the same, because a bind is only a password', () => {
+    draw(account({ auth_source: 'ldap' }), noFactor)
+    expect(screen.getByRole('button', { name: /set up/i })).toBeTruthy()
+  })
+
+  it('draws no panel for an OIDC account, whose factor is its provider’s', () => {
+    draw(account({ auth_source: 'oidc' }), noFactor)
+    expect(screen.queryByText('Two-factor authentication')).toBeNull()
+  })
+
+  it('lists factors with a way to remove each and says how many codes are left', () => {
+    draw(account({}), {
+      ...noFactor,
+      enrolled: true,
+      required: true,
+      factors: [{ id: 4, kind: 'totp', name: 'Work phone', created_at: '2026-10-01T00:00:00Z' }],
+      recovery_codes_remaining: 1,
+    })
+    expect(screen.getByText('Work phone')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeTruthy()
+    expect(screen.getByText('1 recovery code left.')).toBeTruthy()
+    expect(screen.getByText(/organisation requires/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /add a factor/i })).toBeTruthy()
   })
 })
