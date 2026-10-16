@@ -8,7 +8,9 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -46,13 +48,20 @@ const usage = `kubemg — sign in to kubemg and give kubectl short-lived access.
 
 Usage:
   kubemg login --server URL [--ca-file FILE] [--no-browser]
-  kubemg update-kubeconfig --cluster NAME|ID [--server URL] [--namespace NS]
+  kubemg clusters [--server URL] [-o table|json]       (also: kubemg cluster list)
+  kubemg update-kubeconfig [NAME|ID ...] [--all] [--server URL] [--namespace NS]
                            [--alias NAME] [--kubeconfig FILE] [--no-set-context]
                            [--static [--ttl 8h]] [--ca-file FILE  (with KUBEMG_TOKEN)]
-  kubemg clusters [--server URL]
   kubemg logout [--server URL]
   kubemg credential --server URL --cluster-id N     (run by kubectl, not by you)
   kubemg version
+
+update-kubeconfig with no cluster named lists the ones you can reach and asks
+which to add; --all adds every one. --cluster NAME is the same as naming it.
+
+The first login to a server whose certificate this system does not trust shows
+its SHA-256 fingerprint and asks before trusting it; --ca-file trusts a CA
+without asking. Verification is never turned off.
 
 KUBEMG_TOKEN, set to a machine account token, stands in for a session — the
 CI path. KUBEMG_SERVER names the server when --server is not given.
@@ -68,6 +77,14 @@ type app struct {
 	newClient      func(server string, caPEM []byte) (*client.Client, error)
 	openBrowser    func(url string) error
 	executable     func() string
+	// peerChain reads the chain a server presents, unverified, so that login
+	// can show a certificate this system does not trust before pinning it.
+	peerChain func(ctx context.Context, server string) ([]*x509.Certificate, error)
+	// stdin and interactive are the person at the keyboard: questions are asked
+	// only when there is one, never of a script.
+	stdin       io.Reader
+	interactive func() bool
+	lines       *bufio.Reader
 }
 
 func main() {
@@ -85,6 +102,9 @@ func main() {
 		newClient:   client.New,
 		openBrowser: openBrowser,
 		executable:  execCommand,
+		peerChain:   client.PeerChain,
+		stdin:       os.Stdin,
+		interactive: stdinIsTerminal,
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	code := a.run(ctx, os.Args[1:])
@@ -106,6 +126,13 @@ func (a *app) run(ctx context.Context, args []string) int {
 		err = a.logout(ctx, rest)
 	case "clusters":
 		err = a.clusters(ctx, rest)
+	case "cluster":
+		// `kubemg cluster list` is the noun-verb spelling of `kubemg clusters`.
+		if len(rest) == 0 || (rest[0] != "list" && rest[0] != "ls") {
+			fmt.Fprint(a.stderr, "Usage: kubemg cluster list [--server URL] [-o table|json]\n")
+			return 2
+		}
+		err = a.clusters(ctx, rest[1:])
 	case "update-kubeconfig":
 		err = a.updateKubeconfig(ctx, rest)
 	case "credential":
@@ -217,6 +244,12 @@ func (a *app) login(ctx context.Context, args []string) error {
 			return fmt.Errorf("read the CA file: %w", err)
 		}
 		caPEM = data
+	} else {
+		trusted, err := a.trustServer(ctx, resolved)
+		if err != nil {
+			return err
+		}
+		caPEM = trusted
 	}
 	c, err := a.newClient(resolved, caPEM)
 	if err != nil {
@@ -258,7 +291,7 @@ func (a *app) login(ctx context.Context, args []string) error {
 	}
 	fmt.Fprintf(a.stdout, "Signed in to %s as %s until %s.\n", resolved, approved.User.Username,
 		approved.ExpiresAt.Local().Format("Mon 15:04"))
-	fmt.Fprintln(a.stdout, "Next: kubemg update-kubeconfig --cluster NAME   (kubemg clusters lists them)")
+	fmt.Fprintln(a.stdout, "Next: kubemg update-kubeconfig   (lists your clusters and asks which to add)")
 	return nil
 }
 
@@ -293,8 +326,13 @@ func (a *app) logout(ctx context.Context, args []string) error {
 func (a *app) clusters(ctx context.Context, args []string) error {
 	flags := newFlags("clusters")
 	server := flags.String("server", "", "")
+	output := flags.String("output", "table", "")
+	flags.StringVar(output, "o", "table", "")
 	if err := parse(flags, args); err != nil {
 		return err
+	}
+	if *output != "table" && *output != "json" {
+		return usageError("--output is table or json")
 	}
 	resolved, err := a.resolveServer(*server)
 	if err != nil {
@@ -308,26 +346,69 @@ func (a *app) clusters(ctx context.Context, args []string) error {
 	if err != nil {
 		return a.explain(resolved, err)
 	}
+	if *output == "json" {
+		type row struct {
+			ID             uint     `json:"id"`
+			Name           string   `json:"name"`
+			Environment    string   `json:"environment,omitempty"`
+			ConnectionMode string   `json:"connection_mode"`
+			Role           string   `json:"role"`
+			Namespaces     []string `json:"namespaces"`
+			CLI            bool     `json:"cli"`
+			Note           string   `json:"note,omitempty"`
+		}
+		rows := make([]row, 0, len(list))
+		for _, cluster := range list {
+			namespaces := cluster.Namespaces
+			if namespaces == nil {
+				namespaces = []string{}
+			}
+			rows = append(rows, row{
+				ID: cluster.ID, Name: cluster.Name, Environment: cluster.Environment,
+				ConnectionMode: cluster.ConnectionMode, Role: cluster.Role, Namespaces: namespaces,
+				CLI: cluster.Server != "", Note: cluster.Note,
+			})
+		}
+		encoder := json.NewEncoder(a.stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(rows)
+	}
+	if len(list) == 0 {
+		fmt.Fprintf(a.stdout, "%s can reach no cluster on %s.\n", session.Username, resolved)
+		return nil
+	}
 	table := tabwriter.NewWriter(a.stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(table, "NAME\tENVIRONMENT\tROLE\tNAMESPACES\tACCESS")
 	for _, cluster := range list {
-		namespaces := "all"
-		if len(cluster.Namespaces) > 0 {
-			namespaces = strings.Join(cluster.Namespaces, ",")
-		}
-		access := "kubemg update-kubeconfig --cluster " + cluster.Name
+		access := "kubemg update-kubeconfig " + cluster.Name
 		if cluster.Server == "" {
 			access = "console download (direct API access)"
 		}
-		fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n", cluster.Name, cluster.Environment, cluster.Role, namespaces, access)
+		fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n", cluster.Name, cluster.Environment, cluster.Role, namespacesWord(cluster), access)
 	}
 	return table.Flush()
+}
+
+func namespacesWord(cluster client.Cluster) string {
+	if len(cluster.Namespaces) == 0 {
+		return "all"
+	}
+	return strings.Join(cluster.Namespaces, ",")
+}
+
+// entryOptions is what update-kubeconfig was asked for, applied to each
+// cluster it adds.
+type entryOptions struct {
+	namespace, alias string
+	static           bool
+	ttl              time.Duration
 }
 
 func (a *app) updateKubeconfig(ctx context.Context, args []string) error {
 	flags := newFlags("update-kubeconfig")
 	server := flags.String("server", "", "")
 	clusterArg := flags.String("cluster", "", "")
+	all := flags.Bool("all", false, "")
 	namespace := flags.String("namespace", "", "")
 	alias := flags.String("alias", "", "")
 	path := flags.String("kubeconfig", "", "")
@@ -335,14 +416,21 @@ func (a *app) updateKubeconfig(ctx context.Context, args []string) error {
 	static := flags.Bool("static", false, "")
 	ttl := flags.Duration("ttl", 0, "")
 	caFile := flags.String("ca-file", "", "")
-	if err := parse(flags, args); err != nil {
+	names, err := parseInterspersed(flags, args)
+	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(*clusterArg) == "" {
-		return usageError("--cluster is required (kubemg clusters lists them)")
+	if name := strings.TrimSpace(*clusterArg); name != "" {
+		names = append([]string{name}, names...)
+	}
+	if *all && len(names) > 0 {
+		return usageError("--all takes no cluster names")
 	}
 	if *ttl != 0 && !*static {
 		return usageError("--ttl applies only with --static")
+	}
+	if *alias != "" && (*all || len(names) != 1) {
+		return usageError("--alias names one context — give exactly one cluster")
 	}
 	resolved, err := a.resolveServer(*server)
 	if err != nil {
@@ -361,13 +449,16 @@ func (a *app) updateKubeconfig(ctx context.Context, args []string) error {
 	// path names the cluster by id and the entries are built here.
 	if token := strings.TrimSpace(a.getenv("KUBEMG_TOKEN")); token != "" {
 		if _, loadErr := a.store.LoadSession(resolved); errors.Is(loadErr, store.ErrNoSession) {
+			if *all || len(names) != 1 {
+				return usageError("with KUBEMG_TOKEN, name exactly one cluster by its numeric id (a machine token is bound to one cluster)")
+			}
 			var caPEM []byte
 			if *caFile != "" {
 				if caPEM, err = os.ReadFile(*caFile); err != nil {
 					return fmt.Errorf("read the CA file: %w", err)
 				}
 			}
-			return a.machineKubeconfig(file, resolved, *clusterArg, *namespace, *alias, caPEM, !*noSetContext)
+			return a.machineKubeconfig(file, resolved, names[0], *namespace, *alias, caPEM, !*noSetContext)
 		}
 	}
 
@@ -379,97 +470,233 @@ func (a *app) updateKubeconfig(ctx context.Context, args []string) error {
 	if err != nil {
 		return a.explain(resolved, err)
 	}
-	idx := slices.IndexFunc(list, func(cl client.Cluster) bool {
-		return cl.Name == *clusterArg || strconv.FormatUint(uint64(cl.ID), 10) == *clusterArg
-	})
-	if idx < 0 {
-		return fmt.Errorf("no cluster %q that %s can reach — kubemg clusters lists them", *clusterArg, session.Username)
+	selected, err := a.selectClusters(list, names, *all, resolved, session.Username)
+	if err != nil || len(selected) == 0 {
+		return err
 	}
-	cluster := list[idx]
-	if cluster.Server == "" {
-		note := cluster.Note
-		if note == "" {
-			note = "it cannot be reached through the CLI"
+
+	opts := entryOptions{namespace: *namespace, alias: *alias, static: *static, ttl: *ttl}
+	var contexts, notes []string
+	for _, cluster := range selected {
+		contextName, note, err := a.addCluster(ctx, file, resolved, session, c, cluster, opts)
+		if err != nil {
+			return err
 		}
-		return fmt.Errorf("%s: %s", cluster.Name, note)
+		contexts = append(contexts, contextName)
+		if note != "" {
+			notes = append(notes, note)
+		}
 	}
+	// One cluster becomes the current context, as aws eks does; several leave
+	// the current one alone rather than picking one of them for the person.
+	setCurrent := !*noSetContext && len(contexts) == 1
+	if setCurrent {
+		file.SetCurrentContext(contexts[0])
+	}
+	if err := file.Save(); err != nil {
+		return err
+	}
+	for _, note := range notes {
+		fmt.Fprintln(a.stdout, note)
+	}
+	if *static {
+		return nil
+	}
+	switch {
+	case setCurrent:
+		fmt.Fprintf(a.stdout, "Added context %s to %s, and made it the current context.\n", contexts[0], file.Path())
+	case len(contexts) == 1:
+		fmt.Fprintf(a.stdout, "Added context %s to %s.\n", contexts[0], file.Path())
+	default:
+		fmt.Fprintf(a.stdout, "Added %d contexts to %s:\n", len(contexts), file.Path())
+		for _, name := range contexts {
+			fmt.Fprintf(a.stdout, "  %s\n", name)
+		}
+		fmt.Fprintf(a.stdout, "Switch with: kubectl config use-context %s\n", contexts[0])
+	}
+	return nil
+}
+
+// selectClusters turns what update-kubeconfig was given into clusters: the
+// names asked for, every one the CLI can reach with --all, or — with neither,
+// and a person at the keyboard — the ones they pick from a numbered list.
+func (a *app) selectClusters(list []client.Cluster, names []string, all bool, server, username string) ([]client.Cluster, error) {
+	var reachable []client.Cluster
+	for _, cluster := range list {
+		if cluster.Server != "" {
+			reachable = append(reachable, cluster)
+		}
+	}
+	if all {
+		if len(reachable) == 0 {
+			return nil, fmt.Errorf("%s can reach no cluster through the CLI on %s", username, server)
+		}
+		for _, cluster := range list {
+			if cluster.Server == "" {
+				fmt.Fprintf(a.stderr, "Skipped %s: %s\n", cluster.Name, directNote(cluster))
+			}
+		}
+		return reachable, nil
+	}
+	if len(names) > 0 {
+		var out []client.Cluster
+		for _, name := range names {
+			idx := slices.IndexFunc(list, func(cl client.Cluster) bool {
+				return cl.Name == name || strconv.FormatUint(uint64(cl.ID), 10) == name
+			})
+			if idx < 0 {
+				return nil, fmt.Errorf("no cluster %q that %s can reach — kubemg clusters lists them", name, username)
+			}
+			cluster := list[idx]
+			if cluster.Server == "" {
+				return nil, fmt.Errorf("%s: %s", cluster.Name, directNote(cluster))
+			}
+			if !slices.ContainsFunc(out, func(cl client.Cluster) bool { return cl.ID == cluster.ID }) {
+				out = append(out, cluster)
+			}
+		}
+		return out, nil
+	}
+	if !a.interactive() {
+		return nil, usageError("name a cluster (kubemg clusters lists them), or pass --all")
+	}
+	if len(reachable) == 0 {
+		return nil, fmt.Errorf("%s can reach no cluster through the CLI on %s", username, server)
+	}
+
+	fmt.Fprintf(a.stderr, "Clusters %s can reach on %s:\n\n", username, server)
+	table := tabwriter.NewWriter(a.stderr, 0, 0, 2, ' ', 0)
+	for i, cluster := range reachable {
+		fmt.Fprintf(table, "  %d)\t%s\t%s\t%s\t%s\n", i+1, cluster.Name, cluster.Environment, cluster.Role, namespacesWord(cluster))
+	}
+	for _, cluster := range list {
+		if cluster.Server == "" {
+			fmt.Fprintf(table, "  \t%s\t%s\t\t%s\n", cluster.Name, cluster.Environment, "not through the CLI — "+directNote(cluster))
+		}
+	}
+	_ = table.Flush()
+	answer, err := a.ask("\nAdd which? Numbers like 1,3 — or all. Enter adds none: ")
+	if err != nil {
+		return nil, err
+	}
+	if answer == "" {
+		fmt.Fprintln(a.stderr, "Nothing added.")
+		return nil, nil
+	}
+	if answer == "all" || answer == "a" {
+		return reachable, nil
+	}
+	var out []client.Cluster
+	for _, field := range strings.FieldsFunc(answer, func(r rune) bool { return r == ',' || r == ' ' }) {
+		n, err := strconv.Atoi(field)
+		if err != nil || n < 1 || n > len(reachable) {
+			return nil, usageError(fmt.Sprintf("%q is not one of the numbers above", field))
+		}
+		if cluster := reachable[n-1]; !slices.ContainsFunc(out, func(cl client.Cluster) bool { return cl.ID == cluster.ID }) {
+			out = append(out, cluster)
+		}
+	}
+	return out, nil
+}
+
+func directNote(cluster client.Cluster) string {
+	if cluster.Note != "" {
+		return cluster.Note
+	}
+	return "it cannot be reached through the CLI"
+}
+
+// addCluster writes one cluster's entries into the loaded file, unsaved. It
+// returns the context's name and, for a static entry, the line that says how
+// long its token lives.
+func (a *app) addCluster(
+	ctx context.Context, file *kubeconfig.File, server string, session store.Session, c *client.Client,
+	cluster client.Cluster, opts entryOptions,
+) (string, string, error) {
 	// The address goes into the kubeconfig, and kubectl sends credentials to
 	// it: it has to be https whatever the server said.
 	if parsed, err := url.Parse(cluster.Server); err != nil || parsed.Scheme != "https" || parsed.Host == "" {
-		return fmt.Errorf("the server described %s with an address that is not https (%q); refusing to write it", cluster.Name, cluster.Server)
+		return "", "", fmt.Errorf("the server described %s with an address that is not https (%q); refusing to write it", cluster.Name, cluster.Server)
 	}
-	ns := *namespace
+	ns := opts.namespace
 	if ns == "" && len(cluster.Namespaces) > 0 {
 		ns = cluster.Namespaces[0]
 	}
 	if ns != "" && len(cluster.Namespaces) > 0 && !slices.Contains(cluster.Namespaces, ns) {
-		return fmt.Errorf("%s is outside your grant on %s, which covers %s", ns, cluster.Name, strings.Join(cluster.Namespaces, ", "))
+		return "", "", fmt.Errorf("%s is outside your grant on %s, which covers %s", ns, cluster.Name, strings.Join(cluster.Namespaces, ", "))
+	}
+	// kubectl must trust what this CLI trusts. The server names its own CA
+	// when it serves a certificate of its own; when it names none, the CA this
+	// session was signed in with — a --ca-file, or a certificate pinned at
+	// login — is the one kubectl needs too.
+	caData := cluster.CAData
+	if caData == "" && session.CAPEM != "" {
+		caData = base64.StdEncoding.EncodeToString([]byte(session.CAPEM))
 	}
 
 	// Every name is under the server's host as you typed it, with the server's
 	// own part reduced to safe characters: a server cannot name an entry into
 	// somebody else's — and the ownership marker refuses anything it did not
 	// write even if it tried.
-	clusterEntry := entryBase(resolved) + "/" + safeName(cluster.Name)
+	clusterEntry := entryBase(server) + "/" + safeName(cluster.Name)
 	userEntry := clusterEntry + "/" + safeName(session.Username)
 	contextName := clusterEntry
-	if *static {
-		rendered, err := c.Static(ctx, session.RefreshToken, cluster.ID, ns, *ttl)
+	if opts.alias != "" {
+		contextName = opts.alias
+	}
+	if opts.static {
+		rendered, err := c.Static(ctx, session.RefreshToken, cluster.ID, ns, opts.ttl)
 		if err != nil {
-			return a.explain(resolved, err)
+			return "", "", a.explain(server, err)
 		}
 		token, err := kubeconfig.TokenFrom([]byte(rendered.Kubeconfig))
 		if err != nil {
-			return err
-		}
-		if *alias != "" {
-			contextName = *alias
+			return "", "", err
 		}
 		if err := writeEntries(file,
-			func() error { return file.SetCluster(resolved, clusterEntry, cluster.Server, cluster.CAData) },
-			func() error { return file.SetTokenUser(resolved, userEntry, token) },
-			func() error { return file.SetContext(resolved, contextName, clusterEntry, userEntry, ns) },
+			func() error { return file.SetCluster(server, clusterEntry, cluster.Server, caData) },
+			func() error { return file.SetTokenUser(server, userEntry, token) },
+			func() error { return file.SetContext(server, contextName, clusterEntry, userEntry, ns) },
 		); err != nil {
-			return err
+			return "", "", err
 		}
-		if !*noSetContext {
-			file.SetCurrentContext(contextName)
-		}
-		if err := file.Save(); err != nil {
-			return err
-		}
-		fmt.Fprintf(a.stdout, "Wrote a static kubeconfig for %s to %s — its token works until %s, whatever happens to this session.\n",
-			cluster.Name, file.Path(), rendered.ExpiresAt.Local().Format("Mon 2 Jan 15:04"))
-		return nil
+		return contextName, fmt.Sprintf("Wrote a static kubeconfig for %s to %s — its token works until %s, whatever happens to this session.",
+			cluster.Name, file.Path(), rendered.ExpiresAt.Local().Format("Mon 2 Jan 15:04")), nil
 	}
 
-	if *alias != "" {
-		contextName = *alias
-	}
 	exec := kubeconfig.Exec{
 		Command:     a.executable(),
-		Args:        []string{"credential", "--server", resolved, "--cluster-id", strconv.FormatUint(uint64(cluster.ID), 10)},
+		Args:        []string{"credential", "--server", server, "--cluster-id", strconv.FormatUint(uint64(cluster.ID), 10)},
 		InstallHint: "kubemg is needed for this context: " + docsURL,
 	}
 	if err := writeEntries(file,
-		func() error { return file.SetCluster(resolved, clusterEntry, cluster.Server, cluster.CAData) },
-		func() error { return file.SetExecUser(resolved, userEntry, exec) },
-		func() error { return file.SetContext(resolved, contextName, clusterEntry, userEntry, ns) },
+		func() error { return file.SetCluster(server, clusterEntry, cluster.Server, caData) },
+		func() error { return file.SetExecUser(server, userEntry, exec) },
+		func() error { return file.SetContext(server, contextName, clusterEntry, userEntry, ns) },
 	); err != nil {
-		return err
+		return "", "", err
 	}
-	if !*noSetContext {
-		file.SetCurrentContext(contextName)
+	return contextName, "", nil
+}
+
+// parseInterspersed parses flags that may come before, between or after the
+// positional arguments, and returns the positional ones.
+func parseInterspersed(flags *flag.FlagSet, args []string) ([]string, error) {
+	var positional []string
+	for {
+		if err := flags.Parse(args); err != nil {
+			return nil, usageError(err.Error())
+		}
+		args = flags.Args()
+		if len(args) == 0 {
+			return positional, nil
+		}
+		if args[0] == "--" {
+			return append(positional, args[1:]...), nil
+		}
+		positional = append(positional, args[0])
+		args = args[1:]
 	}
-	if err := file.Save(); err != nil {
-		return err
-	}
-	current := ""
-	if !*noSetContext {
-		current = ", and made it the current context"
-	}
-	fmt.Fprintf(a.stdout, "Added context %s to %s%s.\n", contextName, file.Path(), current)
-	return nil
 }
 
 // writeEntries runs the entry writes in order and stops at the first refusal,

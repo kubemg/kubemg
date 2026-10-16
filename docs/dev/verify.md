@@ -105,7 +105,10 @@ make cli-dist CLI_VERSION=0.0.0-dev   # every published platform, into cli/dist
 
 `cli/` is its own module, like the agent. The tests run the whole command line
 against an `httptest` server standing in for the CLI routes, and the kubeconfig
-merge against files with comments and foreign entries in them. `cli-dist` runs
+merge against files with comments and foreign entries in them. The certificate
+question at login and the cluster picker read from an injected stdin and an
+injected "is there a terminal" check, so both the asked and the scripted paths
+are tested without a TTY. `cli-dist` runs
 `hack/cli-dist.sh`, the script the release workflow runs, so the archives a
 developer builds are the ones a tag publishes.
 

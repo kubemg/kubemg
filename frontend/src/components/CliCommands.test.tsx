@@ -21,7 +21,22 @@ describe('the CLI commands', () => {
   it('are rendered from the server address and the cluster, never typed by the reader', async () => {
     await draw({ serverURL: 'https://kubemg.example.com', cluster: 'edge-us' })
     expect(screen.getByText('kubemg login --server https://kubemg.example.com')).toBeTruthy()
-    expect(screen.getByText('kubemg update-kubeconfig --cluster edge-us')).toBeTruthy()
+    expect(screen.getByText('kubemg update-kubeconfig edge-us')).toBeTruthy()
+  })
+
+  it('without a cluster, run the command that asks which ones to add', async () => {
+    await draw({ serverURL: 'https://kubemg.example.com' })
+    expect(screen.getByText('kubemg update-kubeconfig')).toBeTruthy()
+    expect(screen.getByText(/asks which to add/)).toBeTruthy()
+  })
+
+  it('show the certificate fingerprint the first sign-in asks about, and none when there is none', async () => {
+    const fingerprint = Array.from({ length: 32 }, () => 'AB').join(':')
+    await draw({ serverURL: 'https://kubemg.example.com', fingerprints: [fingerprint] })
+    expect(screen.getByText(fingerprint)).toBeTruthy()
+    cleanup()
+    await draw({ serverURL: 'https://kubemg.example.com', fingerprints: [] })
+    expect(screen.queryByText(/certificate \(SHA-256\)/)).toBeNull()
   })
 
   it('fall back to this console’s own address when the server names none', async () => {

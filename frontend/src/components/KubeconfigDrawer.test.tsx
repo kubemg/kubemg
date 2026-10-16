@@ -12,6 +12,7 @@ let policy: KubeconfigPolicy = { min_ttl_seconds: 600, default_ttl_seconds: 3600
 vi.mock('../api/client', () => ({
   fetchKubeconfigPolicy: () => Promise.resolve(policy),
   generateKubeconfig: () => Promise.reject(new Error('not used')),
+  fetchCLIDownloads: () => Promise.resolve({ available: false, downloads: [], releases_url: 'https://github.com/kubemg/kubemg/releases' }),
   errorMessage: (_e: unknown, f: string) => f,
 }))
 
@@ -30,7 +31,7 @@ describe('the kubeconfig sheet under cli_only', () => {
     policy = { ...policy, issuance: 'cli_only', server_url: 'https://kubemg.example.com', cli_session_max_hours: 12 }
     await draw(agent)
     expect(screen.getByText('kubemg login --server https://kubemg.example.com')).toBeTruthy()
-    expect(screen.getByText('kubemg update-kubeconfig --cluster edge-us')).toBeTruthy()
+    expect(screen.getByText('kubemg update-kubeconfig edge-us')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /generate kubeconfig/i })).toBeNull()
   })
 
@@ -44,5 +45,20 @@ describe('the kubeconfig sheet under cli_only', () => {
     policy = { ...policy, issuance: 'allowed' }
     await draw(agent)
     expect(screen.getByRole('button', { name: /generate kubeconfig/i })).toBeTruthy()
+  })
+})
+
+describe('the kubeconfig sheet when files are allowed', () => {
+  it('offers the command line beside the file for an agent-mode cluster', async () => {
+    policy = { ...policy, issuance: 'allowed', server_url: 'https://kubemg.example.com' }
+    await draw(agent)
+    expect(screen.getByText('Or skip the file: use the kubemg command line')).toBeTruthy()
+    expect(screen.getByText('kubemg update-kubeconfig edge-us')).toBeTruthy()
+  })
+
+  it('offers no command line for a direct-mode cluster, which has no CLI path', async () => {
+    policy = { ...policy, issuance: 'allowed' }
+    await draw(direct)
+    expect(screen.queryByText('Or skip the file: use the kubemg command line')).toBeNull()
   })
 })

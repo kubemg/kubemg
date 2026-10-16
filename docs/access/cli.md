@@ -9,7 +9,10 @@ It works the way `aws eks update-kubeconfig` does: the CLI writes an `exec` entr
 
 ## Installing it
 
-**From your kubemg server.** The server's image carries the binary for every platform, so the people who use it can get it from the server they already reach — no internet access needed. **My credentials → Use the command line** offers the one for your system, with a `curl` line for a terminal:
+**From your kubemg server.** The server's image carries the binary for every platform, so the people who use it can get it from the server they already reach — no internet access needed. The console offers the one for your system, with a `curl` line for a terminal, in two places:
+
+- **My credentials → Use the command line** (the **You** group in the sidebar).
+- The kubeconfig sheet of any agent-mode cluster, under **Or skip the file: use the kubemg command line** — with that cluster's name already filled into the commands.
 
 ```bash
 curl -fLo kubemg https://kubemg.example.com/downloads/cli/linux/amd64 && chmod +x kubemg
@@ -30,10 +33,10 @@ It is one static binary with no dependencies, released with the server and versi
 
 ## Signing in
 
-1. Run `kubemg login --server https://kubemg.example.com`. It prints a code like `BCDF-GHJK` and opens your browser at **/cli/activate** with the code filled in. On a machine with no browser, open the printed address yourself, on any device.
-2. Sign in to the console if you are not already — with your second factor, if your account has one. You come back to the approval page afterwards.
-3. Check what the page shows: the machine name, the system, **the address the request came from**, and how long the session will last. If the address is not where you are, the page says so.
-4. **Approve sign-in.** The terminal finishes on its own within a few seconds.
+1. Run `kubemg login --server https://kubemg.example.com`. It prints a code like `BCDF-GHJK` and opens your browser at **/cli/activate** with the code filled in. On a machine with no browser, open the printed address yourself, on any device. If your system does not trust the server's certificate — a self-signed install — it first shows the certificate and asks you to confirm it; see [Trusting the server's certificate](#trusting-the-servers-certificate).
+2. Sign in to the console if you are not already — with your second factor, if your account has one. The sign-in page says a command line is waiting, and brings you to the approval afterwards.
+3. Check what the page shows: **the code, which must match the one in your terminal**, the machine name, the system, **the address the request came from**, how long the session will last, and the account it will sign in as. If the address is not where you are, the page says so. To approve as somebody else, **Use another account** signs you out and brings you back to the same code.
+4. **Approve sign-in.** The terminal finishes on its own within a few seconds, and the tab can be closed.
 
 !!! warning "Only approve a sign-in you started just now"
     Approving gives the command line that asked *your* access. Somebody who starts a sign-in and sends you the link gets your clusters if you approve it. When in doubt, **Deny** — the CLI is told no and nothing is signed in.
@@ -45,20 +48,42 @@ A code waits ten minutes. One address can have at most ten sign-ins waiting at a
 ## Adding clusters to your kubeconfig
 
 ```bash
-kubemg clusters                                   # what you can reach
-kubemg update-kubeconfig --cluster edge-us        # add it, make it current
+kubemg clusters                    # what you can reach (also: kubemg cluster list)
+kubemg update-kubeconfig           # pick from that list
 kubectl get pods
 ```
 
-`update-kubeconfig` writes three entries — the cluster (the console's proxy address and, for a self-signed server, its CA), a user that runs `kubemg credential`, and a context — into the first file in `$KUBECONFIG`, or `~/.kube/config`. Everything else in the file, comments included, is left as it was, and the previous version is kept beside it as `config.bak`. Running it again replaces kubemg's entries rather than adding more.
+With no cluster named, `update-kubeconfig` lists the clusters you can reach and asks which to add:
+
+```text
+$ kubemg update-kubeconfig
+Clusters dana can reach on https://kubemg.example.com:
+
+  1)  edge-us   production  view  payments
+  2)  edge-eu   staging     edit  all
+      legacy    production        not through the CLI — registered for direct API access
+
+Add which? Numbers like 1,3 — or all. Enter adds none: 1,2
+Added 2 contexts to /home/dana/.kube/config:
+  kubemg.example.com/edge-us
+  kubemg.example.com/edge-eu
+Switch with: kubectl config use-context kubemg.example.com/edge-us
+```
+
+To skip the question, name the clusters — `kubemg update-kubeconfig edge-us` (or `--cluster edge-us`, by name or numeric id) — or add every one you can reach with `--all`. A single cluster becomes the current context; adding several leaves the current context alone. A script never gets the question: with no terminal and no cluster named, the command stops and says to name one or pass `--all`.
+
+`kubemg clusters -o json` prints the same list as JSON — `id`, `name`, `environment`, `connection_mode`, `role`, `namespaces` (empty means every namespace) and `cli` (whether the CLI can reach it) — for scripts.
+
+`update-kubeconfig` writes three entries — the cluster (the console's proxy address and, for a server whose certificate is not publicly trusted, the CA to verify it with), a user that runs `kubemg credential`, and a context — into the first file in `$KUBECONFIG`, or `~/.kube/config`. Everything else in the file, comments included, is left as it was, and the previous version is kept beside it as `config.bak`. Running it again replaces kubemg's entries rather than adding more.
 
 Every entry is named under the server's host as you typed it at login — `kubemg.example.com/edge-us` for the cluster and context, `kubemg.example.com/edge-us/dana` for the user — and carries a `kubemg` extension naming its server. kubemg only ever replaces an entry carrying its own marker for the same server: if a name it would write is already taken by an entry it did not write, it stops, changes nothing, and names the entry. A server therefore cannot point one of your existing contexts, users or clusters somewhere else.
 
 | Flag | |
 |---|---|
-| `--cluster NAME\|ID` | Which cluster. Required |
+| `NAME\|ID …` or `--cluster NAME\|ID` | Which clusters. Without one, a terminal is asked; a script is refused |
+| `--all` | Every cluster the CLI can reach. Direct-mode clusters are skipped and named |
 | `--namespace NS` | The context's namespace. Defaults to the first one your grant covers; one outside it is refused |
-| `--alias NAME` | Name the context something else |
+| `--alias NAME` | Name the context something else. One cluster only |
 | `--kubeconfig FILE` | Write to this file instead |
 | `--no-set-context` | Add the context without making it current |
 | `--static --ttl 8h` | Write a kubeconfig that carries its own token instead of running kubemg — the console download, for a tool that cannot run a credential plugin. It is registered like any download and refused under `cli_only`. Only the token is taken from what the server sends; the entries are written by kubemg itself, so a server can never put a command into your kubeconfig |
@@ -88,11 +113,37 @@ If a session is ended while kubectl still holds one of its credentials — from 
 
 With `KUBEMG_TOKEN`, the variable has to be in the environment kubectl runs in, since kubectl is what starts `kubemg credential`.
 
-## A self-signed server
+## Trusting the server's certificate
 
-kubemg talks to its server over **https only** — the session's refresh token is a credential, and kubectl would not use a plaintext server anyway. It writes only https cluster addresses into a kubeconfig, and opens the approval page in your browser only when it is an https address (anything else is printed for you to follow).
+kubemg talks to its server over **https only** — the session's refresh token is a credential, and kubectl would not use a plaintext server anyway. It writes only https cluster addresses into a kubeconfig, and opens the approval page in your browser only when it is an https address (anything else is printed for you to follow). **There is no flag that turns certificate verification off.** What `kubemg login` trusts is decided once, at sign-in, in one of three ways:
 
-Pass the server's CA once, at sign-in: `kubemg login --server https://kubemg.internal --ca-file kubemg-ca.pem`. It is kept with the session and written into every kubeconfig entry, so neither kubemg nor kubectl skips verification. There is no flag that turns verification off.
+1. **A publicly trusted certificate** — or one your system already trusts, such as a company CA installed on the laptop. Nothing to do.
+2. **Confirming it at the first sign-in**, the way `ssh` asks about a new host. When your system does not trust the certificate, `kubemg login` shows it before sending anything:
+
+    ```text
+    The certificate https://kubemg.internal presents is not trusted by this system.
+
+      Subject:     CN=kubemg
+      Issued by:   CN=kubemg (self-signed)
+      Valid until: 16 Oct 2027
+      SHA-256:     3F:A2:…:9C
+
+    Compare the fingerprint with the one the console shows under My credentials → Use the command line,
+    or the one your administrator gave you.
+
+    Trust this certificate for https://kubemg.internal? [y/N]
+    ```
+
+    Answer **y** only if the fingerprint matches. The console shows it under **My credentials → Use the command line** and in the kubeconfig sheet's command-line section whenever kubemg serves a certificate of its own (a self-signed one, or one it pins into agent installs); an administrator can also read it off the certificate file with `openssl x509 -in tls.crt -noout -fingerprint -sha256`. The certificate is then kept with the session and is **the only one trusted** for that server from then on — by kubemg and by every kubeconfig entry it writes. Later sign-ins ask nothing while the server presents the same certificate.
+
+3. **`--ca-file`**: `kubemg login --server https://kubemg.internal --ca-file kubemg-ca.pem` trusts that CA without asking — the way to do it from a script, and for a company CA presented with intermediates. It is kept with the session the same way.
+
+The question is never asked without a terminal: a script that meets an untrusted certificate stops, shows the fingerprint and says to pass `--ca-file`. A certificate for a different name than the one you typed is refused outright rather than offered, as is one that is expired.
+
+!!! warning "When the certificate changes"
+    If the server presents a different certificate from the one you trusted at your last sign-in, `kubemg login` says so in a **WARNING** before asking again. A planned renewal causes this; if nobody renewed the certificate, somebody may be intercepting the connection — answer no and ask your administrator.
+
+When the server names a CA for its clusters (a self-signed install does), that CA goes into the kubeconfig. When it names none, the CA the session was signed in with — the one you confirmed or passed with `--ca-file` — goes in instead, so kubectl verifies the server exactly as kubemg does.
 
 ## In CI: machine accounts
 

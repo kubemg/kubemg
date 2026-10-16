@@ -472,6 +472,9 @@ type server struct {
 	// debugImage is what an ephemeral debug container runs; see Options.DebugImage.
 	debugImage string
 	bastionCA  string
+	// tlsFingerprints are the SHA-256s of bastionCA's certificates, shown
+	// beside the CLI's commands so a first `kubemg login` can be checked.
+	tlsFingerprints []string
 	// recordings is the directory terminal recordings are read back from. Empty
 	// means this server is not recording sessions.
 	recordings     string
@@ -586,6 +589,7 @@ func NewRouter(opts Options) *gin.Engine {
 		shellEnabled:         opts.ShellEnabled && strings.TrimSpace(opts.ShellImage) != "",
 		debugImage:           strings.TrimSpace(opts.DebugImage),
 		bastionCA:            opts.BastionCA,
+		tlsFingerprints:      certFingerprints(opts.BastionCA),
 		recordings:           strings.TrimSpace(opts.RecordingDir),
 		cliDir:               strings.TrimSpace(opts.CLIDir),
 		recordingKey:         opts.RecordingKey,

@@ -30,10 +30,13 @@ function browserOS(): string {
 export function CliCommands({
   serverURL,
   cluster,
+  fingerprints = [],
   showInstall = false,
 }: {
   serverURL: string
   cluster?: string
+  /** The server's certificate, for checking the first sign-in against. */
+  fingerprints?: string[]
   showInstall?: boolean
 }) {
   const server = serverURL || window.location.origin
@@ -100,11 +103,27 @@ export function CliCommands({
         </p>
       ) : null}
       <CodeBlock label="Sign in (once a day)" value={`kubemg login --server ${server}`} wrap />
-      <CodeBlock
-        label="Add the cluster to your kubeconfig"
-        value={`kubemg update-kubeconfig --cluster ${cluster ?? '<cluster>'}`}
-        wrap
-      />
+      {fingerprints.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          <CodeBlock label="This server’s certificate (SHA-256)" value={fingerprints.join('\n')} wrap />
+          <p className="text-[12.5px] leading-relaxed text-muted">
+            The first sign-in shows the fingerprint of the certificate it reached and asks before
+            trusting it. Answer yes only if it matches this one.
+          </p>
+        </div>
+      ) : null}
+      {cluster ? (
+        <CodeBlock label="Add the cluster to your kubeconfig" value={`kubemg update-kubeconfig ${cluster}`} wrap />
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <CodeBlock label="Add clusters to your kubeconfig" value="kubemg update-kubeconfig" wrap />
+          <p className="text-[12.5px] leading-relaxed text-muted">
+            Lists the clusters you can reach and asks which to add. Name one to skip the question,
+            or pass <span className="font-mono">--all</span>; <span className="font-mono">kubemg clusters</span>{' '}
+            lists them.
+          </p>
+        </div>
+      )}
       <p className="text-[12.5px] leading-relaxed text-muted">
         Then use kubectl, k9s or helm as usual. kubemg hands them a fifteen-minute credential at a
         time and nothing long-lived is written to disk.
