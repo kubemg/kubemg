@@ -318,3 +318,54 @@ jobs:
             --notes-file notes.md \
             --generate-notes \
             --verify-tag
+
+  # The kubemg CLI: six archives and a SHA256SUMS, attached to the draft release
+  # the job above opened — the same files `make cli-dist` builds, from the same
+  # script. A workflow_dispatch run builds them and attaches nothing, which is
+  # how the script is exercised without a tag.
+  cli:
+    name: Build and attach the kubemg CLI
+    needs: draft-release
+    if: ${{ !cancelled() && (needs.draft-release.result == 'success' || needs.draft-release.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Resolve version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            version="$INPUT_VERSION"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::'$version' is not a semver version; refusing to publish it"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+
+      - name: Build the archives
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: hack/cli-dist.sh "$VERSION"
+
+      - name: Attach them to the draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release upload "$TAG" cli/dist/* --clobber --repo "$GITHUB_REPOSITORY"

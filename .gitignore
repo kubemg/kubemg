@@ -2,6 +2,8 @@
 # the tree, and the backend one is ~90 MB.
 /backend/server
 /agent/kubemg-agent
+/cli/kubemg
+/cli/dist/
 *.exe
 *.dll
 *.so

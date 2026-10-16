@@ -38,6 +38,7 @@ and in agent mode the plane stores no cluster credential at all.
 | Prometheus metrics | `backend/pkg/metrics` | Per-request HTTP metrics, DB query metrics, and build-info gauge. Exposed at `GET /metrics` when `KUBEMG_METRICS_ENABLED=true`. WebSocket connections (tunnels, shell attach, exec) are excluded from the latency histogram. |
 | Console | `frontend/` | Vite + React + TypeScript, embedded into the binary for production. |
 | Agent | `agent/` | A separate Go module with one dependency. Dials out, forwards, does nothing else. |
+| CLI | `cli/` | A separate Go module (Apache-2.0) with one dependency, a YAML library. Signs in through the console's device flow, writes an `exec` entry into the kubeconfig, and is the credential plugin kubectl runs. No client-go. |
 
 ## Four decisions everything else follows from
 
