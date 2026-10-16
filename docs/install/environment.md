@@ -29,6 +29,7 @@ to the default.
 | Variable | Default | What it is |
 |---|---|---|
 | `KUBEMG_LISTEN_ADDR` | `:8080` (dev) / `:8443` (production image) | Listen address. Must be loopback if `KUBEMG_TLS_ENABLED=false` unless `KUBEMG_ALLOW_INSECURE=true` — see [TLS](tls.md). |
+| `KUBEMG_MEMORY_LIMIT_BYTES` | — | The container's memory limit in bytes. The server sets the Go runtime's soft limit to 80% of it, so it reclaims memory harder as it nears the limit instead of being OOM-killed. The Helm chart fills it from `resources.limits.memory`; unset, the runtime is left alone. An explicit `GOMEMLIMIT` wins. |
 
 ## Database
 
