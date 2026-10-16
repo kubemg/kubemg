@@ -98,7 +98,11 @@ import type {
   ShellState,
   ServerVersion,
   LogQueryResponse,
-  LoginResponse,
+  MFAConfirmResult,
+  MFAEnrollment,
+  MFASessionResponse,
+  MFAStatus,
+  SignInResult,
   ManifestDiff,
   Namespace,
   NetworkPolicy,
@@ -334,8 +338,67 @@ export function guardrailRefusal(error: unknown): GuardrailRefusal | null {
   return { message: data.error ?? 'Blocked by a guardrail policy.', policy: data.policy ?? '', scope: data.scope ?? '' }
 }
 
-export async function login(username: string, password: string): Promise<LoginResponse> {
-  const { data } = await http.post<LoginResponse>('/auth/login', { username, password })
+export async function login(username: string, password: string): Promise<SignInResult> {
+  const { data } = await http.post<SignInResult>('/auth/login', { username, password })
+  return data
+}
+
+/* ---------------------------------------------------------------- mfa --- */
+
+/** The code step of a sign-in: a TOTP code or a recovery code. */
+export async function verifyMFA(challenge: string, code: string): Promise<MFASessionResponse> {
+  const { data } = await http.post<MFASessionResponse>('/auth/mfa/verify', { challenge, code })
+  return data
+}
+
+export async function fetchMFA(): Promise<MFAStatus> {
+  const { data } = await http.get<MFAStatus>('/auth/mfa')
+  return { ...data, factors: data.factors ?? [] }
+}
+
+/**
+ * Starts an enrolment. With a challenge it is a sign-in's — the account must
+ * hold a factor and has no session yet — and goes to the unauthenticated route;
+ * without one the session authorises it.
+ */
+export async function enrollMFA(input: {
+  name?: string
+  challenge?: string
+  current_code?: string
+}): Promise<MFAEnrollment> {
+  const path = input.challenge ? '/auth/mfa/challenge/enroll' : '/auth/mfa/enroll'
+  const { data } = await http.post<MFAEnrollment>(path, input)
+  return data
+}
+
+export async function confirmMFA(input: {
+  factor_id: number
+  code: string
+  challenge?: string
+}): Promise<MFAConfirmResult> {
+  const path = input.challenge ? '/auth/mfa/challenge/enroll/confirm' : '/auth/mfa/enroll/confirm'
+  const { data } = await http.post<MFAConfirmResult>(path, input)
+  return data
+}
+
+export async function removeMFAFactor(id: number, code: string): Promise<MFAStatus> {
+  const { data } = await http.delete<MFAStatus>(`/auth/mfa/factors/${id}`, { data: { code } })
+  return { ...data, factors: data.factors ?? [] }
+}
+
+export async function regenerateRecoveryCodes(code: string): Promise<string[]> {
+  const { data } = await http.post<{ recovery_codes: string[] }>('/auth/mfa/recovery-codes', { code })
+  return data.recovery_codes
+}
+
+/** Somebody else's second factor, for the access review (admin). */
+export async function fetchUserMFA(userId: number): Promise<MFAStatus> {
+  const { data } = await http.get<MFAStatus>(`/users/${userId}/mfa`)
+  return { ...data, factors: data.factors ?? [] }
+}
+
+export async function resetUserMFA(userId: number): Promise<{ factors_removed: number }> {
+  const { data } = await http.post<{ factors_removed: number }>(`/users/${userId}/mfa/reset`)
   return data
 }
 
@@ -372,8 +435,8 @@ export async function ssoPasswordLogin(
   providerId: number,
   username: string,
   password: string,
-): Promise<LoginResponse> {
-  const { data } = await http.post<LoginResponse>(`/auth/sso/providers/${providerId}/login`, {
+): Promise<SignInResult> {
+  const { data } = await http.post<SignInResult>(`/auth/sso/providers/${providerId}/login`, {
     username,
     password,
   })

@@ -6,6 +6,7 @@ The audit trail records every call kubemg proxies to a cluster, plus kubemg's ow
 
 - Every call the bastion proxies for a user: list, get, watch, create, update, patch, delete and the streaming verbs.
 - kubemg's own sensitive acts: watching or deleting a [session recording](session-recording.md), and every [JIT](../access/jit.md) workflow event (`jit-request`, `jit-approve`, `jit-reject`, `jit-revoke`, `jit-expire`).
+- Second-factor events: `mfa-enroll`, `mfa-remove`, `mfa-reset` (the administrator as the user, the account reset as the impersonated user), `mfa-recovery-used` and `mfa-recovery-regenerate`. See [Two-factor authentication](../access/mfa.md#in-the-audit-trail).
 - Agent credential events: an administrator rotating a registration token (`agent-token-rotate`), and a new connection taking over a cluster's tunnel (`agent-displaced`, under the user `kubemg:agent`, with both agents' versions, connection times and addresses in the path query). See [The agent](../clusters/agent.md#when-a-connection-displaces-the-agent).
 
 A refusal is recorded like a success: a guardrail block, a namespace-scope violation, a tunnel failure. There is no separate "denied" table. A denial is a row whose `status` is 4xx/5xx or whose `error` is set.
@@ -104,7 +105,7 @@ On a busy fleet most rows are `list`/`get` that nobody reads. Selective audit na
 Suppressible verbs: `get`, `list`, `watch`, `create`, `update`, `patch`, `delete`, `log`, `exec`, `attach`, `portforward`.
 
 - It applies only to the database table, never to the structured log or a forwarder.
-- **Never suppressed:** any refusal or error, any streaming call, and kubemg's own `replay`, `recording-get`, `recording-delete`, `jit-*`, `agent-token-rotate` and `agent-displaced`.
+- **Never suppressed:** any refusal or error, any streaming call, and kubemg's own `replay`, `recording-get`, `recording-delete`, `jit-*`, `agent-token-rotate`, `agent-displaced`, `mfa-reset`, `mfa-remove` and `mfa-recovery-used`.
 - A verb this build does not recognise is always recorded.
 - An empty selection means "record every verb again", not "record nothing".
 

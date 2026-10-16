@@ -65,6 +65,23 @@ type Store interface {
 	// Programmatic access. A service account is a User row (see db.User's
 	// AccountType), so it needs no identity methods of its own — only its
 	// credentials do.
+	// Second factors — see mfa.go. Accepting a code is always a conditional
+	// write (AdvanceMFAStep, UseMFARecoveryCode, TakeMFAChallenge), so the same
+	// code or challenge cannot be spent twice across replicas.
+	MFAState(ctx context.Context, userID uint) (db.MFAState, error)
+	MFAEnrolledUserIDs(ctx context.Context) ([]uint, error)
+	MFAFactorByID(ctx context.Context, userID, id uint) (*db.MFAFactor, error)
+	CreatePendingMFAFactor(ctx context.Context, factor *db.MFAFactor) error
+	ConfirmMFAFactor(ctx context.Context, userID, id uint, step int64, at time.Time, recoveryHashes []string) error
+	AdvanceMFAStep(ctx context.Context, factorID uint, step int64, at time.Time) (bool, error)
+	DeleteMFAFactor(ctx context.Context, userID, id uint) error
+	ReplaceMFARecoveryCodes(ctx context.Context, userID uint, hashes []string) error
+	UseMFARecoveryCode(ctx context.Context, userID uint, hash string, at time.Time) (bool, error)
+	ResetMFA(ctx context.Context, userID uint) (int64, error)
+	PutMFAChallenge(ctx context.Context, challenge *db.MFAChallenge) error
+	MFAChallengeByHash(ctx context.Context, hash string) (*db.MFAChallenge, error)
+	TakeMFAChallenge(ctx context.Context, hash string) (bool, error)
+
 	CreateMachineToken(ctx context.Context, token *db.MachineToken) error
 	MachineTokenByHash(ctx context.Context, hash string) (*db.MachineToken, error)
 	MachineTokenByID(ctx context.Context, id uint) (*db.MachineToken, error)
@@ -682,6 +699,20 @@ func NewRouter(opts Options) *gin.Engine {
 		// a live session is not enough to change it.
 		v1.POST("/auth/password", requireAuth, s.changePassword)
 
+		// A second factor. The code step of a sign-in and the challenge half of
+		// enrolment are unauthenticated by necessity — the person holds a
+		// challenge, not yet a session — and each is single-use and throttled
+		// like the password it follows. Everything else is the caller's own
+		// factor, behind a session. See mfa.go.
+		v1.POST("/auth/mfa/verify", s.verifyMFA)
+		v1.POST("/auth/mfa/challenge/enroll", s.enrollMFA)
+		v1.POST("/auth/mfa/challenge/enroll/confirm", s.confirmMFA)
+		v1.GET("/auth/mfa", requireAuth, s.getMFA)
+		v1.POST("/auth/mfa/enroll", requireAuth, s.enrollMFA)
+		v1.POST("/auth/mfa/enroll/confirm", requireAuth, s.confirmMFA)
+		v1.DELETE("/auth/mfa/factors/:id", requireAuth, s.removeMFAFactor)
+		v1.POST("/auth/mfa/recovery-codes", requireAuth, s.regenerateRecoveryCodes)
+
 		// First-run setup. The state route is unauthenticated by necessity — the
 		// sign-in page has to know whether this server has been configured before
 		// anybody has a session — and is narrow for the same reason the public SSO
@@ -1221,6 +1252,10 @@ func NewRouter(opts Options) *gin.Engine {
 		// The access review: what this person can reach, and why. See
 		// user_access.go for why the merge happens on the server.
 		users.GET("/:id/access", s.userAccess)
+		// Somebody else's second factor: read for the access review, reset for
+		// the person who lost their phone. Never your own — see resetUserMFA.
+		users.GET("/:id/mfa", s.getUserMFA)
+		users.POST("/:id/mfa/reset", s.resetUserMFA)
 
 		groups := v1.Group("/groups", requireAuth, requireAdmin)
 		groups.GET("", s.listGroups)

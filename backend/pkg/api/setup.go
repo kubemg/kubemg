@@ -53,6 +53,9 @@ type Deployment struct {
 	// SecretKeySet reports that KUBEMG_SECRET_KEY is in force, so the
 	// credentials stored in the database are encrypted at rest.
 	SecretKeySet bool
+	// MFAResetArmed reports that KUBEMG_MFA_RESET_USERNAME is set, so an
+	// account's second factor is stripped at every restart until it is removed.
+	MFAResetArmed bool
 }
 
 // SetupStore is the slice of persistence the boot-time decision below needs.
@@ -196,7 +199,7 @@ type deploymentPostureResponse struct {
 // has to be able to find these later — and a second implementation of the same
 // facts would be free to drift into disagreeing with the first.
 func (s *server) deploymentPosture(c *gin.Context) {
-	checks := s.deploymentChecks()
+	checks := append(s.deploymentChecks(), s.mfaChecks(c.Request.Context())...)
 	attention := 0
 	for _, check := range checks {
 		if check.Severity != checkOK {

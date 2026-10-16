@@ -52,6 +52,7 @@ dependencies are, in full:
     golang.org/x/crypto, golang.org/x/oauth2                     BSD-3-Clause
     k8s.io/api, k8s.io/apimachinery, k8s.io/client-go            Apache-2.0
     sigs.k8s.io/yaml                                             MIT / BSD-3-Clause
+    rsc.io/qr                                                    BSD-3-Clause
 
   Go, agent (agent/go.mod)
     github.com/gorilla/websocket                                 BSD-2-Clause

@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { AxiosError, AxiosHeaders } from 'axios'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { SSOProviderSummary } from '../api/types'
+import type { MFAChallenge, MFASessionResponse, SSOProviderSummary, User } from '../api/types'
 import { SIGN_IN_TEXT } from '../lib/signInError'
 import { AuthContext } from '../state/auth-context'
 import type { AuthState } from '../state/auth-context'
@@ -22,21 +22,34 @@ import { Login } from './Login'
 
 let answer: () => Promise<SSOProviderSummary[]> = () => Promise.resolve([])
 
+const mfa = vi.hoisted(() => ({
+  verifyMFA: vi.fn(),
+  enrollMFA: vi.fn(),
+  confirmMFA: vi.fn(),
+}))
+
 vi.mock('../api/client', () => ({
   fetchSSOProviders: () => answer(),
   ssoLoginURL: (id: number) => `/api/v1/auth/sso/providers/${id}/login`,
   ssoPasswordLogin: () => Promise.reject(new Error('not used here')),
+  errorMessage: (_err: unknown, fallback: string) => fallback,
+  verifyMFA: mfa.verifyMFA,
+  enrollMFA: mfa.enrollMFA,
+  confirmMFA: mfa.confirmMFA,
 }))
 
 const oidc: SSOProviderSummary = { id: 3, name: 'Okta', protocol: 'oidc', interactive: true }
 const ldap: SSOProviderSummary = { id: 4, name: 'Corp directory', protocol: 'ldap', interactive: false }
 
-function auth(signIn: AuthState['signIn'] = async () => {}): AuthState {
+function auth(
+  signIn: AuthState['signIn'] = async () => null,
+  adoptSession: AuthState['adoptSession'] = async () => {},
+): AuthState {
   return {
     user: null,
     loading: false,
     signIn,
-    adoptSession: async () => {},
+    adoptSession,
     signOut: () => {},
     replaceUser: () => {},
     setupRequired: false,
@@ -45,10 +58,10 @@ function auth(signIn: AuthState['signIn'] = async () => {}): AuthState {
   }
 }
 
-async function draw(signIn?: AuthState['signIn']) {
+async function draw(signIn?: AuthState['signIn'], adoptSession?: AuthState['adoptSession']) {
   const view = render(
     <BrandingContext.Provider value={{ branding: {}, refresh: async () => {} }}>
-      <AuthContext.Provider value={auth(signIn)}>
+      <AuthContext.Provider value={auth(signIn, adoptSession)}>
         <Login />
       </AuthContext.Provider>
     </BrandingContext.Provider>,
@@ -87,6 +100,7 @@ function refused(status: number, error: string) {
 afterEach(() => {
   cleanup()
   answer = () => Promise.resolve([])
+  vi.clearAllMocks()
 })
 
 describe('Login provider slot', () => {
@@ -167,5 +181,98 @@ describe('Login refusals', () => {
     await submitRefused(refused(403, 'this account is disabled'))
     expect(screen.getByText(SIGN_IN_TEXT.disabled)).toBeTruthy()
     expect(screen.queryByText('this account is disabled')).toBeNull()
+  })
+})
+
+describe('Login second factor', () => {
+  const user = { id: 1, username: 'dev' } as User
+  const session: MFASessionResponse = { token: 'session-token', expires_at: '2026-10-16T12:00:00Z', user }
+
+  async function passwordStep(challenge: MFAChallenge, adoptSession = vi.fn(async () => {})) {
+    await draw(async () => challenge, adoptSession)
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'dev' } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } })
+    await act(async () => {
+      fireEvent.submit(screen.getByLabelText('Username').closest('form') as HTMLFormElement)
+    })
+    return adoptSession
+  }
+
+  it('turns the card into the code step and opens the session only after the code', async () => {
+    mfa.verifyMFA.mockResolvedValue(session)
+    const adopt = await passwordStep({
+      mfa_required: true,
+      challenge: 'kmgc_abc',
+      challenge_expires_at: '2026-10-16T12:05:00Z',
+      methods: ['totp'],
+    })
+    expect(screen.getByText('Two-factor check')).toBeTruthy()
+    expect(screen.queryByLabelText('Password')).toBeNull()
+    expect(adopt).not.toHaveBeenCalled()
+    // No recovery codes left means no door to them.
+    expect(screen.queryByRole('button', { name: 'Use a recovery code' })).toBeNull()
+
+    fireEvent.change(screen.getByLabelText('Code'), { target: { value: '123 456' } })
+    await act(async () => {
+      fireEvent.submit(screen.getByLabelText('Code').closest('form') as HTMLFormElement)
+    })
+    expect(mfa.verifyMFA).toHaveBeenCalledWith('kmgc_abc', '123 456')
+    expect(adopt).toHaveBeenCalledWith('session-token', user)
+  })
+
+  it('offers a recovery code when the account has some, and says how many are left', async () => {
+    mfa.verifyMFA.mockResolvedValue({ ...session, recovery_codes_remaining: 2 })
+    const adopt = await passwordStep({
+      mfa_required: true,
+      challenge: 'kmgc_abc',
+      challenge_expires_at: '2026-10-16T12:05:00Z',
+      methods: ['totp', 'recovery'],
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Use a recovery code' }))
+    fireEvent.change(screen.getByLabelText('Recovery code'), { target: { value: 'abcde-fghjk' } })
+    await act(async () => {
+      fireEvent.submit(screen.getByLabelText('Recovery code').closest('form') as HTMLFormElement)
+    })
+    expect(screen.getByText(/You have 2 left/)).toBeTruthy()
+    expect(adopt).not.toHaveBeenCalled()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
+    })
+    expect(adopt).toHaveBeenCalledWith('session-token', user)
+  })
+
+  it('walks an account that must enrol through the QR code and its recovery codes before the session', async () => {
+    mfa.enrollMFA.mockResolvedValue({
+      factor_id: 9,
+      secret: 'JBSWY3DPEHPK3PXP',
+      otpauth_uri: 'otpauth://totp/KubeMG:dev',
+      qr: 'data:image/png;base64,AAAA',
+    })
+    mfa.confirmMFA.mockResolvedValue({ recovery_codes: ['abcde-fghjk', 'mnpqr-stuvw'], session })
+    const adopt = await passwordStep({
+      mfa_enrollment_required: true,
+      challenge: 'kmgc_enrol',
+      challenge_expires_at: '2026-10-16T12:05:00Z',
+    })
+    await act(async () => {})
+    expect(mfa.enrollMFA).toHaveBeenCalledWith(expect.objectContaining({ challenge: 'kmgc_enrol' }))
+    expect(screen.getByAltText(/QR code/).getAttribute('src')).toBe('data:image/png;base64,AAAA')
+
+    fireEvent.change(screen.getByLabelText('Code from the app'), { target: { value: '123456' } })
+    await act(async () => {
+      fireEvent.submit(screen.getByLabelText('Code from the app').closest('form') as HTMLFormElement)
+    })
+    expect(mfa.confirmMFA).toHaveBeenCalledWith({ factor_id: 9, code: '123456', challenge: 'kmgc_enrol' })
+    expect(screen.getByText(/abcde-fghjk/)).toBeTruthy()
+
+    // The codes must be acknowledged before the console opens.
+    const go = screen.getByRole('button', { name: 'Continue to kubemg' }) as HTMLButtonElement
+    expect(go.disabled).toBe(true)
+    fireEvent.click(screen.getByLabelText('I have saved these codes'))
+    expect(go.disabled).toBe(false)
+    await act(async () => {
+      fireEvent.click(go)
+    })
+    expect(adopt).toHaveBeenCalledWith('session-token', user)
   })
 })

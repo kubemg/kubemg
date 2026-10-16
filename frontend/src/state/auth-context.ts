@@ -1,11 +1,16 @@
 import { createContext, useContext } from 'react'
-import type { User } from '../api/types'
+import type { MFAChallenge, User } from '../api/types'
 
 export interface AuthState {
   user: User | null
   /** True until the stored token has been checked against the server. */
   loading: boolean
-  signIn: (username: string, password: string) => Promise<void>
+  /**
+   * The password step. It resolves to null when the password was the whole
+   * sign-in, and to a challenge when a second factor is still owed — in which
+   * case no session exists yet and the caller finishes it with `adoptSession`.
+   */
+  signIn: (username: string, password: string) => Promise<MFAChallenge | null>
   /**
    * Adopt a session issued somewhere other than the password form: an LDAP
    * provider's own check, or an interactive sign-in coming back from an IdP with

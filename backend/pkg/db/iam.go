@@ -124,6 +124,11 @@ func (s *Store) DeleteUser(ctx context.Context, id uint) error {
 		if err := tx.Where("requester_id = ?", id).Delete(&JitRequest{}).Error; err != nil {
 			return fmt.Errorf("delete jit requests: %w", err)
 		}
+		// The second factor goes with the account: a factor row whose user id a
+		// later account could be given is a secret waiting for the wrong owner.
+		if err := deleteMFA(tx, id); err != nil {
+			return err
+		}
 		return nil
 	})
 }

@@ -1,11 +1,14 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { ChevronRight, FileKey, KeyRound, Pencil, Timer } from 'lucide-react'
-import type { SystemRole, User } from '../api/types'
+import { ChevronRight, FileKey, KeyRound, Pencil, ShieldCheck, Timer } from 'lucide-react'
+import { fetchMFA } from '../api/client'
+import type { MFAFactor, MFAStatus, SystemRole, User } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { AddFactorSheet, RecoveryCodesSheet, RemoveFactorSheet } from '../components/MfaSheets'
 import { PasswordSheet } from '../components/PasswordSheet'
 import { ProfileSheet } from '../components/ProfileSheet'
 import { Button, Panel, Pill } from '../components/primitives'
+import { secondFactorApplies } from '../lib/mfa'
 import { ACCESS_HOME, CREDENTIALS_HOME } from '../lib/navigation'
 import { profileAbilities } from '../lib/profile'
 import { formatInstant, relativeAge } from '../lib/time'
@@ -31,6 +34,19 @@ export function Profile() {
   const report = useResult()
   const [editing, setEditing] = useState(false)
   const [changingPassword, setChangingPassword] = useState(false)
+  const [mfa, setMfa] = useState<MFAStatus | null>(null)
+  const [mfaSheet, setMfaSheet] = useState<
+    { kind: 'add' } | { kind: 'remove'; factor: MFAFactor } | { kind: 'recovery' } | null
+  >(null)
+  const applies = user ? secondFactorApplies(user) : false
+
+  const loadMfa = useCallback(() => {
+    if (!applies) return
+    fetchMFA()
+      .then(setMfa)
+      .catch(() => setMfa(null))
+  }, [applies])
+  useEffect(loadMfa, [loadMfa])
 
   if (!user) return null
 
@@ -62,10 +78,53 @@ export function Profile() {
       ) : null}
       {changingPassword ? <PasswordSheet onClose={() => setChangingPassword(false)} /> : null}
 
+      {mfa && mfaSheet?.kind === 'add' ? (
+        <AddFactorSheet
+          status={mfa}
+          account={user.username}
+          onClose={() => setMfaSheet(null)}
+          onAdded={() => {
+            setMfaSheet(null)
+            loadMfa()
+            report({ tone: 'ok', title: 'Factor added', body: 'Your next sign-in asks for its code.' })
+          }}
+        />
+      ) : null}
+      {mfa && mfaSheet?.kind === 'remove' ? (
+        <RemoveFactorSheet
+          factor={mfaSheet.factor}
+          last={mfa.factors.length === 1}
+          onClose={() => setMfaSheet(null)}
+          onRemoved={(next) => {
+            setMfaSheet(null)
+            setMfa(next)
+            report({
+              tone: 'ok',
+              title: 'Factor removed',
+              body: `${mfaSheet.factor.name} no longer signs you in.`,
+            })
+          }}
+        />
+      ) : null}
+      {mfaSheet?.kind === 'recovery' ? (
+        <RecoveryCodesSheet
+          account={user.username}
+          onClose={() => setMfaSheet(null)}
+          onReplaced={() => {
+            setMfaSheet(null)
+            loadMfa()
+          }}
+        />
+      ) : null}
+
       <ProfileBody
         user={user}
+        mfa={applies ? mfa : undefined}
         onEdit={() => setEditing(true)}
         onChangePassword={() => setChangingPassword(true)}
+        onAddFactor={() => setMfaSheet({ kind: 'add' })}
+        onRemoveFactor={(factor) => setMfaSheet({ kind: 'remove', factor })}
+        onNewRecoveryCodes={() => setMfaSheet({ kind: 'recovery' })}
       />
     </AppShell>
   )
@@ -80,12 +139,21 @@ const ROLE_WORD: Record<SystemRole, string> = {
 /** The page without its shell, so the decisions it makes are testable alone. */
 export function ProfileBody({
   user,
+  mfa,
   onEdit,
   onChangePassword,
+  onAddFactor = () => {},
+  onRemoveFactor = () => {},
+  onNewRecoveryCodes = () => {},
 }: {
   user: User
+  /** The account's second factor. Undefined draws no panel; null is loading. */
+  mfa?: MFAStatus | null
   onEdit: () => void
   onChangePassword: () => void
+  onAddFactor?: () => void
+  onRemoveFactor?: (factor: MFAFactor) => void
+  onNewRecoveryCodes?: () => void
 }) {
   const can = profileAbilities(user)
   const federated = user.auth_source !== 'local'
@@ -169,6 +237,15 @@ export function ProfileBody({
             : 'This account signs in with a token, not a password.'}
       </Panel>
 
+      {mfa !== undefined && secondFactorApplies(user) ? (
+        <SecondFactorPanel
+          status={mfa}
+          onAdd={onAddFactor}
+          onRemove={onRemoveFactor}
+          onNewRecoveryCodes={onNewRecoveryCodes}
+        />
+      ) : null}
+
       <div className="grid gap-4 sm:grid-cols-2">
         <Door
           to={ACCESS_HOME}
@@ -184,6 +261,78 @@ export function ProfileBody({
         />
       </div>
     </div>
+  )
+}
+
+/**
+ * The account's second factor: what it holds, adding one, removing one, and
+ * new recovery codes. Absent, not empty, for an account whose factor is its
+ * identity provider's or that has no password at all.
+ */
+function SecondFactorPanel({
+  status,
+  onAdd,
+  onRemove,
+  onNewRecoveryCodes,
+}: {
+  status: MFAStatus | null
+  onAdd: () => void
+  onRemove: (factor: MFAFactor) => void
+  onNewRecoveryCodes: () => void
+}) {
+  return (
+    <Panel
+      title="Two-factor authentication"
+      description={
+        status?.required
+          ? 'Your organisation requires a second factor for this account.'
+          : 'A code from an authenticator app after your password, so a password alone does not open your account.'
+      }
+      actions={
+        status ? (
+          <Button size="sm" onClick={onAdd}>
+            <ShieldCheck aria-hidden="true" className="size-3.5" />
+            {status.enrolled ? 'Add a factor' : 'Set up'}
+          </Button>
+        ) : null
+      }
+      bodyClassName="flex flex-col gap-3 px-5 py-4 text-[13px] leading-relaxed text-muted"
+    >
+      {!status ? (
+        <p>Loading…</p>
+      ) : !status.enrolled ? (
+        <p>Sign-in asks for your password only.</p>
+      ) : (
+        <>
+          <ul className="flex flex-col divide-y divide-line-soft">
+            {status.factors.map((factor) => (
+              <li key={factor.id} className="flex min-w-0 items-center gap-3 py-2 first:pt-0">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13.5px] text-fg">{factor.name}</span>
+                  <span className="block text-[12px] text-muted">
+                    Authenticator app · added {relativeAge(factor.created_at)}
+                    {factor.last_used_at ? ` · last used ${relativeAge(factor.last_used_at)}` : ''}
+                  </span>
+                </span>
+                <Button size="sm" variant="ghost" onClick={() => onRemove(factor)}>
+                  Remove
+                </Button>
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line-soft pt-3">
+            <span>
+              {status.recovery_codes_remaining === 0
+                ? 'No recovery codes left.'
+                : `${status.recovery_codes_remaining} recovery ${status.recovery_codes_remaining === 1 ? 'code' : 'codes'} left.`}
+            </span>
+            <Button size="sm" onClick={onNewRecoveryCodes}>
+              New recovery codes
+            </Button>
+          </div>
+        </>
+      )}
+    </Panel>
   )
 }
 
