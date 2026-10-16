@@ -41,7 +41,9 @@ kubemg update-kubeconfig --cluster edge-us        # add it, make it current
 kubectl get pods
 ```
 
-`update-kubeconfig` writes three entries — the cluster (the console's proxy address and, for a self-signed server, its CA), a user that runs `kubemg credential`, and a context — into the first file in `$KUBECONFIG`, or `~/.kube/config`. Everything else in the file, comments included, is left as it was, and the previous version is kept beside it as `config.bak`. Running it again replaces kubemg's entries rather than adding more. The names are the ones the console download uses (`<you>@<cluster>`), so the two never disagree.
+`update-kubeconfig` writes three entries — the cluster (the console's proxy address and, for a self-signed server, its CA), a user that runs `kubemg credential`, and a context — into the first file in `$KUBECONFIG`, or `~/.kube/config`. Everything else in the file, comments included, is left as it was, and the previous version is kept beside it as `config.bak`. Running it again replaces kubemg's entries rather than adding more.
+
+Every entry is named under the server's host as you typed it at login — `kubemg.example.com/edge-us` for the cluster and context, `kubemg.example.com/edge-us/dana` for the user — and carries a `kubemg` extension naming its server. kubemg only ever replaces an entry carrying its own marker for the same server: if a name it would write is already taken by an entry it did not write, it stops, changes nothing, and names the entry. A server therefore cannot point one of your existing contexts, users or clusters somewhere else.
 
 | Flag | |
 |---|---|
@@ -57,7 +59,7 @@ The entry kubectl runs looks like this, and needs no editing:
 
 ```yaml
 users:
-- name: dana@edge-us
+- name: kubemg.example.com/edge-us/dana
   user:
     exec:
       apiVersion: client.authentication.k8s.io/v1

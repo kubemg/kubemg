@@ -139,34 +139,89 @@ func (f *File) list(key string) *yaml.Node {
 	return node
 }
 
-// upsert replaces the body of the named entry in a list (`cluster:`, `user:`
-// or `context:`), or appends a new entry. The entry's own node — and any
-// comment on it — survives a replace.
-func (f *File) upsert(listKey, bodyKey, name string, body *yaml.Node) {
+// MarkerName is the extension kubemg writes into every entry it owns. It is
+// what lets a later run tell its own entries from everybody else's.
+const MarkerName = "kubemg"
+
+// ForeignEntryError is an entry kubemg was asked to write over that it did not
+// write. It is refused, not replaced: an entry another tool or person made —
+// a production cluster, an admin user — is exactly what a lying server would
+// most like to point somewhere else, and replacing its address would send that
+// entry's own credentials there.
+type ForeignEntryError struct {
+	Kind, Name string
+}
+
+func (e *ForeignEntryError) Error() string {
+	return fmt.Sprintf("there is already a %s named %q that kubemg did not write; it was left alone — remove it, or choose another name", e.Kind, e.Name)
+}
+
+// marker is the ownership extension, naming the server the entry belongs to.
+func marker(owner string) *yaml.Node {
+	ext := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	setKey(ext, "server", scalar(owner))
+	item := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	setKey(item, "name", scalar(MarkerName))
+	setKey(item, "extension", ext)
+	return &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Content: []*yaml.Node{item}}
+}
+
+// ownedBy reports whether an entry's body carries kubemg's marker for owner.
+func ownedBy(body *yaml.Node, owner string) bool {
+	if body == nil || body.Kind != yaml.MappingNode {
+		return false
+	}
+	extensions := getKey(body, "extensions")
+	if extensions == nil || extensions.Kind != yaml.SequenceNode {
+		return false
+	}
+	for _, item := range extensions.Content {
+		if name := getKey(item, "name"); name == nil || name.Value != MarkerName {
+			continue
+		}
+		if ext := getKey(item, "extension"); ext != nil {
+			if server := getKey(ext, "server"); server != nil && server.Value == owner {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// upsert writes the body of the named entry in a list (`cluster:`, `user:` or
+// `context:`), marked as owner's. An existing entry is replaced only if this
+// owner wrote it; anything else is refused with a ForeignEntryError. The
+// entry's own node — and any comment on it — survives a replace.
+func (f *File) upsert(listKey, bodyKey, name string, body *yaml.Node, owner string) error {
+	setKey(body, "extensions", marker(owner))
 	list := f.list(listKey)
 	for _, item := range list.Content {
 		if item.Kind != yaml.MappingNode {
 			continue
 		}
 		if n := getKey(item, "name"); n != nil && n.Value == name {
+			if !ownedBy(getKey(item, bodyKey), owner) {
+				return &ForeignEntryError{Kind: bodyKey, Name: name}
+			}
 			setKey(item, bodyKey, body)
-			return
+			return nil
 		}
 	}
 	item := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	setKey(item, "name", scalar(name))
 	setKey(item, bodyKey, body)
 	list.Content = append(list.Content, item)
+	return nil
 }
 
-// SetCluster writes a cluster entry.
-func (f *File) SetCluster(name, server, caData string) {
+// SetCluster writes a cluster entry owned by owner.
+func (f *File) SetCluster(owner, name, server, caData string) error {
 	body := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	setKey(body, "server", scalar(server))
 	if caData != "" {
 		setKey(body, "certificate-authority-data", scalar(caData))
 	}
-	f.upsert("clusters", "cluster", name, body)
+	return f.upsert("clusters", "cluster", name, body, owner)
 }
 
 // Exec is the credential plugin a user entry runs.
@@ -180,7 +235,7 @@ type Exec struct {
 // interactiveMode is Never because the plugin never prompts: an ended session
 // is an error that says to run `kubemg login`, not a prompt kubectl would hang
 // on inside a script.
-func (f *File) SetExecUser(name string, exec Exec) {
+func (f *File) SetExecUser(owner, name string, exec Exec) error {
 	execNode := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	setKey(execNode, "apiVersion", scalar(ExecAPIVersion))
 	setKey(execNode, "command", scalar(exec.Command))
@@ -196,18 +251,18 @@ func (f *File) SetExecUser(name string, exec Exec) {
 	}
 	body := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	setKey(body, "exec", execNode)
-	f.upsert("users", "user", name, body)
+	return f.upsert("users", "user", name, body, owner)
 }
 
-// SetContext writes a context entry.
-func (f *File) SetContext(name, cluster, user, namespace string) {
+// SetContext writes a context entry owned by owner.
+func (f *File) SetContext(owner, name, cluster, user, namespace string) error {
 	body := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	setKey(body, "cluster", scalar(cluster))
 	setKey(body, "user", scalar(user))
 	if namespace != "" {
 		setKey(body, "namespace", scalar(namespace))
 	}
-	f.upsert("contexts", "context", name, body)
+	return f.upsert("contexts", "context", name, body, owner)
 }
 
 // SetCurrentContext makes a context the one kubectl uses.
@@ -249,11 +304,11 @@ func TokenFrom(rendered []byte) (string, error) {
 	return token.Value, nil
 }
 
-// SetTokenUser writes a user entry that carries a bearer token.
-func (f *File) SetTokenUser(name, token string) {
+// SetTokenUser writes a user entry, owned by owner, that carries a token.
+func (f *File) SetTokenUser(owner, name, token string) error {
 	body := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	setKey(body, "token", scalar(token))
-	f.upsert("users", "user", name, body)
+	return f.upsert("users", "user", name, body, owner)
 }
 
 // Save writes the file: the previous version kept beside it as `.bak`, the new

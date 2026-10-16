@@ -406,7 +406,13 @@ func (a *app) updateKubeconfig(ctx context.Context, args []string) error {
 		return fmt.Errorf("%s is outside your grant on %s, which covers %s", ns, cluster.Name, strings.Join(cluster.Namespaces, ", "))
 	}
 
-	contextName := cluster.ContextName
+	// Every name is under the server's host as you typed it, with the server's
+	// own part reduced to safe characters: a server cannot name an entry into
+	// somebody else's — and the ownership marker refuses anything it did not
+	// write even if it tried.
+	clusterEntry := entryBase(resolved) + "/" + safeName(cluster.Name)
+	userEntry := clusterEntry + "/" + safeName(session.Username)
+	contextName := clusterEntry
 	if *static {
 		rendered, err := c.Static(ctx, session.RefreshToken, cluster.ID, ns, *ttl)
 		if err != nil {
@@ -419,9 +425,13 @@ func (a *app) updateKubeconfig(ctx context.Context, args []string) error {
 		if *alias != "" {
 			contextName = *alias
 		}
-		file.SetCluster(cluster.Name, cluster.Server, cluster.CAData)
-		file.SetTokenUser(cluster.ContextName, token)
-		file.SetContext(contextName, cluster.Name, cluster.ContextName, ns)
+		if err := writeEntries(file,
+			func() error { return file.SetCluster(resolved, clusterEntry, cluster.Server, cluster.CAData) },
+			func() error { return file.SetTokenUser(resolved, userEntry, token) },
+			func() error { return file.SetContext(resolved, contextName, clusterEntry, userEntry, ns) },
+		); err != nil {
+			return err
+		}
 		if !*noSetContext {
 			file.SetCurrentContext(contextName)
 		}
@@ -436,13 +446,18 @@ func (a *app) updateKubeconfig(ctx context.Context, args []string) error {
 	if *alias != "" {
 		contextName = *alias
 	}
-	file.SetCluster(cluster.Name, cluster.Server, cluster.CAData)
-	file.SetExecUser(cluster.ContextName, kubeconfig.Exec{
+	exec := kubeconfig.Exec{
 		Command:     a.executable(),
 		Args:        []string{"credential", "--server", resolved, "--cluster-id", strconv.FormatUint(uint64(cluster.ID), 10)},
 		InstallHint: "kubemg is needed for this context: " + docsURL,
-	})
-	file.SetContext(contextName, cluster.Name, cluster.ContextName, ns)
+	}
+	if err := writeEntries(file,
+		func() error { return file.SetCluster(resolved, clusterEntry, cluster.Server, cluster.CAData) },
+		func() error { return file.SetExecUser(resolved, userEntry, exec) },
+		func() error { return file.SetContext(resolved, contextName, clusterEntry, userEntry, ns) },
+	); err != nil {
+		return err
+	}
 	if !*noSetContext {
 		file.SetCurrentContext(contextName)
 	}
@@ -457,6 +472,46 @@ func (a *app) updateKubeconfig(ctx context.Context, args []string) error {
 	return nil
 }
 
+// writeEntries runs the entry writes in order and stops at the first refusal,
+// before anything is saved — a half-written set never reaches the disk.
+func writeEntries(file *kubeconfig.File, writes ...func() error) error {
+	for _, write := range writes {
+		if err := write(); err != nil {
+			var foreign *kubeconfig.ForeignEntryError
+			if errors.As(err, &foreign) {
+				return fmt.Errorf("%s: %w", file.Path(), err)
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+// entryBase is the prefix of every entry name kubemg writes: the server's host
+// as the person typed it at login — never a name the server chose.
+func entryBase(server string) string {
+	if parsed, err := url.Parse(server); err == nil && parsed.Host != "" {
+		return parsed.Host
+	}
+	return safeName(server)
+}
+
+// safeName reduces a name the server supplied to characters that cannot
+// change what an entry name means.
+func safeName(name string) string {
+	out := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+			return r
+		}
+		return '-'
+	}, name)
+	if out == "" {
+		return "unnamed"
+	}
+	return out
+}
+
 // machineKubeconfig writes the entries for a machine account, which has no
 // session to list clusters with: the cluster is named by id, and the proxy
 // address follows from the server.
@@ -467,7 +522,8 @@ func (a *app) machineKubeconfig(
 	if err != nil || id == 0 {
 		return usageError("with KUBEMG_TOKEN, --cluster must be the cluster's numeric id (a machine token is bound to one cluster)")
 	}
-	name := "kubemg-" + store.Key(server) + "-" + clusterArg
+	name := entryBase(server) + "/cluster-" + clusterArg
+	user := name + "/machine"
 	contextName := name
 	if alias != "" {
 		contextName = alias
@@ -476,13 +532,20 @@ func (a *app) machineKubeconfig(
 	if len(caPEM) > 0 {
 		caData = base64.StdEncoding.EncodeToString(caPEM)
 	}
-	file.SetCluster(name, fmt.Sprintf("%s/api/v1/clusters/%d/proxy", server, id), caData)
-	file.SetExecUser(name, kubeconfig.Exec{
+	exec := kubeconfig.Exec{
 		Command:     a.executable(),
 		Args:        []string{"credential", "--server", server, "--cluster-id", clusterArg},
 		InstallHint: "kubemg is needed for this context: " + docsURL,
-	})
-	file.SetContext(contextName, name, name, namespace)
+	}
+	if err := writeEntries(file,
+		func() error {
+			return file.SetCluster(server, name, fmt.Sprintf("%s/api/v1/clusters/%d/proxy", server, id), caData)
+		},
+		func() error { return file.SetExecUser(server, user, exec) },
+		func() error { return file.SetContext(server, contextName, name, user, namespace) },
+	); err != nil {
+		return err
+	}
 	if setCurrent {
 		file.SetCurrentContext(contextName)
 	}

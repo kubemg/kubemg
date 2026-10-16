@@ -43,7 +43,7 @@ func newFakeServer(t *testing.T) *fakeServer {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"device_code": "kmgd_x", "user_code": "BCDF-GHJK",
 			"verification_uri_complete": verify,
-			"expires_in": 600, "interval": 5,
+			"expires_in":                600, "interval": 5,
 		})
 	})
 	mux.HandleFunc("POST /api/v1/auth/cli/token", func(w http.ResponseWriter, r *http.Request) {
@@ -111,6 +111,8 @@ type harness struct {
 func trustPEM(f *fakeServer) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: f.Certificate().Raw})
 }
+
+func host(f *fakeServer) string { return strings.TrimPrefix(f.URL, "https://") }
 
 func caFile(t *testing.T, f *fakeServer) string {
 	t.Helper()
@@ -186,7 +188,9 @@ func TestUpdateKubeconfigWritesAnExecEntryAndRefusesDirectMode(t *testing.T) {
 		"args: [credential, --server, '" + srv.URL + "', --cluster-id, \"7\"]",
 		"interactiveMode: Never",
 		"namespace: payments",
-		"current-context: dana@edge-us",
+		"current-context: " + host(srv) + "/edge-us",
+		"name: " + host(srv) + "/edge-us/dana",
+		"name: kubemg",
 	} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("missing %q in:\n%s", want, data)
@@ -290,7 +294,7 @@ func TestStaticWritesTheServersKubeconfig(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, h.stderr)
 	}
 	data, _ := os.ReadFile(kubeconfig)
-	if !strings.Contains(string(data), "token: static-token") || !strings.Contains(string(data), "current-context: dana@edge-us") {
+	if !strings.Contains(string(data), "token: static-token") || !strings.Contains(string(data), "current-context: "+host(srv)+"/edge-us") {
 		t.Fatalf("static:\n%s", data)
 	}
 	if code := h.run("update-kubeconfig", "--cluster", "7", "--ttl", "8h", "--kubeconfig", kubeconfig); code != 2 {
@@ -387,5 +391,28 @@ func TestASessionIsKeyedByScheme(t *testing.T) {
 	}
 	if strings.ContainsAny(store.Key("https://../../etc:443"), "/") {
 		t.Fatal("a key climbs out of its directory")
+	}
+}
+
+// A server that names its cluster after something already in the kubeconfig
+// lands under its own host prefix, and cannot reach the existing entry.
+func TestAServerCannotNameItsWayIntoSomebodyElsesEntry(t *testing.T) {
+	srv := newFakeServer(t)
+	h := newHarness(t)
+	h.run("login", "--server", srv.URL, "--no-browser", "--ca-file", caFile(t, srv))
+	kubeconfig := filepath.Join(h.dir, "kube-config")
+	existing := "apiVersion: v1\nkind: Config\nclusters:\n- name: " + host(srv) + "/edge-us\n  cluster: {server: https://prod.internal:6443}\nusers: []\ncontexts: []\n"
+	if err := os.WriteFile(kubeconfig, []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code := h.run("update-kubeconfig", "--cluster", "edge-us", "--kubeconfig", kubeconfig); code != 1 ||
+		!strings.Contains(h.stderr.String(), "kubemg did not write") {
+		t.Fatalf("exit %d: %s", code, h.stderr)
+	}
+	if data, _ := os.ReadFile(kubeconfig); string(data) != existing {
+		t.Fatalf("the file changed:\n%s", data)
+	}
+	if safeName("../prod\nx y") != "..-prod-x-y" {
+		t.Fatalf("safeName: %q", safeName("../prod\nx y"))
 	}
 }

