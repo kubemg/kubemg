@@ -52,7 +52,7 @@ import {
 import { CardSkeleton, SkeletonBlock } from '../components/SkeletonLoader'
 import { useDisclosureState } from '../lib/disclosures'
 import { isBehind, newestAgentVersion } from '../lib/fleet'
-import { useLiveTick } from '../lib/live'
+import { useLiveTick, useRefusalHold } from '../lib/live'
 import { DEFAULT_RESOURCE, resourceHref } from '../lib/navigation'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { formatInstant } from '../lib/time'
@@ -474,15 +474,25 @@ function AdminDashboard({ cluster, username }: { cluster: Cluster; username: str
           this cluster", answered now and then over time. */}
       {viaAgent ? (
         <section className="flex flex-col gap-3">
-          <Capacity cluster={cluster} />
-          {/* CPU and memory are read together — a spike in one is only worth
-              anything beside the other at the same instant — so where there is
-              room they sit side by side rather than a screen apart. Below xl
-              they stack: half of a narrow column is not a chart. */}
-          <div className="grid gap-3 xl:grid-cols-2">
-            <MetricsChart cluster={cluster} title="Cluster CPU" metric="cluster_cpu" />
-            <MetricsChart cluster={cluster} title="Cluster memory" metric="cluster_memory" />
-          </div>
+          {/* Node usage and the two cluster charts are cluster-wide readings,
+              which a namespace-scoped grant is refused. The answer is known
+              before asking, so it is said rather than requested — a refused
+              read is a row in the audit trail, and this page is opened often. */}
+          {cluster.namespaces.length > 0 ? (
+            <UsageOutsideGrant cluster={cluster} />
+          ) : (
+            <>
+              <Capacity cluster={cluster} />
+              {/* CPU and memory are read together — a spike in one is only worth
+                  anything beside the other at the same instant — so where there is
+                  room they sit side by side rather than a screen apart. Below xl
+                  they stack: half of a narrow column is not a chart. */}
+              <div className="grid gap-3 xl:grid-cols-2">
+                <MetricsChart cluster={cluster} title="Cluster CPU" metric="cluster_cpu" />
+                <MetricsChart cluster={cluster} title="Cluster memory" metric="cluster_memory" />
+              </div>
+            </>
+          )}
           {/* The charts say what shape the cluster is in. This says what
               is worst inside it and whether that is new, which is the
               question somebody opening a cluster page arrived with — and
@@ -665,6 +675,21 @@ function WorkloadDashboard({ cluster, username }: { cluster: Cluster; username: 
  * would invent history the cluster does not have. The dials are meters, one
  * sample each; the history sits under this panel, read from a datasource.
  */
+function UsageOutsideGrant({ cluster }: { cluster: Cluster }) {
+  return (
+    <Panel
+      title="Usage"
+      description="What the cluster is consuming right now against allocatable, read from its Metrics API."
+      bodyClassName="p-4"
+    >
+      <Notice tone="info">
+        Node usage is a cluster-wide reading, and your access to this cluster is limited to{' '}
+        {cluster.namespaces.join(', ')}. What your namespaces use is below.
+      </Notice>
+    </Panel>
+  )
+}
+
 function Capacity({ cluster }: { cluster: Cluster }) {
   const [metrics, setMetrics] = useState<NodeMetrics | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -673,6 +698,7 @@ function Capacity({ cluster }: { cluster: Cluster }) {
   // Which cluster the newest sample belongs to, so an answer that lands after
   // the page has moved on is dropped rather than drawn under another name.
   const active = useRef(cluster.id)
+  const { refused, settle } = useRefusalHold()
 
   const read = useCallback(
     async (quiet = false) => {
@@ -683,8 +709,10 @@ function Capacity({ cluster }: { cluster: Cluster }) {
         if (active.current !== target) return
         setMetrics(next)
         setError(null)
+        settle(null)
       } catch (err) {
         if (active.current !== target) return
+        settle(err)
         // A background sample that fails leaves the last one on screen: this
         // panel is a reading, and taking the numbers away because one poll
         // missed says less than the numbers did.
@@ -693,7 +721,7 @@ function Capacity({ cluster }: { cluster: Cluster }) {
         if (active.current === target) setLoading(false)
       }
     },
-    [cluster.id],
+    [cluster.id, settle],
   )
 
   useEffect(() => {
@@ -705,7 +733,8 @@ function Capacity({ cluster }: { cluster: Cluster }) {
   // without spending tunnel round trips on numbers that have not moved — and it
   // stops entirely behind a hidden tab, because a cluster should not be sampled
   // for a panel nobody is looking at.
-  useLiveTick(useCallback(() => read(true), [read]))
+  // A refused sample is not asked again on the tick (`isRefusal`).
+  useLiveTick(useCallback(() => read(true), [read]), { enabled: !refused })
 
   const summary = metrics?.summary
   const nodes = [...(metrics?.nodes ?? [])].sort(

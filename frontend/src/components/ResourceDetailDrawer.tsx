@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { errorMessage, fetchObservability, fetchResourceDescribe } from '../api/client'
 import { queryKey, useCachedQuery } from '../lib/query'
-import { useLiveTick } from '../lib/live'
+import { useLiveTick, useRefusalHold } from '../lib/live'
 import type {
   Alarm,
   Cluster,
@@ -294,6 +294,10 @@ export function ResourceDetailDrawer({
    */
   const workloadPods = !pod && !!target.namespace && supportsWorkloadPods(target.kind)
 
+  // A describe refused (the object was deleted, the grant changed) is not asked
+  // again on the tick; opening the drawer again or Refresh does.
+  const { refused, settle } = useRefusalHold()
+
   const load = useCallback(
     async (quiet = false) => {
       // There is no object to describe for a Helm release, and asking would be a
@@ -309,7 +313,9 @@ export function ResourceDetailDrawer({
         )
         setDescribe(next)
         setError(null)
+        settle(null)
       } catch (err) {
+        settle(err)
         // A quiet re-read that fails leaves the description on screen. The next
         // one says the same thing if it is real, and an object that has actually
         // been deleted is a state the list behind this drawer already shows.
@@ -321,7 +327,7 @@ export function ResourceDetailDrawer({
         if (!quiet) setLoading(false)
       }
     },
-    [cluster.id, target.kind, target.name, target.namespace, release],
+    [cluster.id, target.kind, target.name, target.namespace, release, settle],
   )
 
   // The describe read backs both the overview and the events tab, so it happens
@@ -342,7 +348,7 @@ export function ResourceDetailDrawer({
    * fifteen seconds that nobody is looking at.
    */
   useLiveTick(useCallback(() => load(true), [load]), {
-    enabled: !release && (tab === 'overview' || tab === 'describe'),
+    enabled: !release && !refused && (tab === 'overview' || tab === 'describe'),
   })
 
   // Closing on a half-typed manifest or set of values throws the edit away, so

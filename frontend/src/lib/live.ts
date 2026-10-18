@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import axios from 'axios'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
  * Live reads: keeping what is on screen true, without spending a cluster on a
@@ -35,6 +36,14 @@ import { useEffect, useRef, useState } from 'react'
  * is a very different cost model from a poll that stops when the tab is hidden.
  * A poll also degrades correctly: a tick that fails leaves the last answer on
  * screen, where a broken stream leaves a page that has quietly stopped updating.
+ *
+ * And a tick never re-asks a question that was **refused** (`isRefusal`). A
+ * failure is worth retrying — the tunnel blinked, the agent restarted — but a
+ * 403 or a 404 is the same answer next time, and since KubeMG records its own
+ * refusals in the audit trail, asking again every fifteen seconds would write a
+ * row every fifteen seconds for every viewer of a page that cannot be answered.
+ * The refusal stands on screen until the question changes, the operator presses
+ * Refresh, or the page is opened again.
  */
 
 /** How often a live read re-runs. metrics-server's own resample period. */
@@ -254,4 +263,31 @@ export function useLiveTick(
 
     return () => window.clearInterval(timer)
   }, [on, live, watched, interval])
+}
+
+/**
+ * isRefusal reports whether a read was refused rather than failed: a 4xx is the
+ * cluster or KubeMG answering "no" (outside the grant, not found, not
+ * configured), and asking again on a timer gets the same answer and another
+ * audit row. 408 and 429 are 4xx that mean "not now", so they stay retryable,
+ * and so does anything without a status — a dropped connection is a failure.
+ */
+export function isRefusal(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false
+  const status = error.response?.status
+  if (status === undefined || status < 400 || status > 499) return false
+  return status !== 408 && status !== 429
+}
+
+/**
+ * useRefusalHold is `isRefusal` for a hand-written poller: `settle` is called
+ * with the error a read threw, or null when it succeeded, and `refused` is what
+ * the poller passes to `useLiveTick` as `enabled: !refused`. A read the page
+ * makes on its own — on mount, on a new object, on Refresh — always goes out
+ * and settles the hold again, so only the timer is stopped.
+ */
+export function useRefusalHold(): { refused: boolean; settle: (error: unknown) => void } {
+  const [refused, setRefused] = useState(false)
+  const settle = useCallback((error: unknown) => setRefused(isRefusal(error)), [])
+  return { refused, settle }
 }

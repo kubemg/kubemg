@@ -58,6 +58,7 @@ import { MAX_SHORT_NAME, deriveChip, normalizeShortName, railChip } from '../lib
 import { useClusters } from '../state/clusters-context'
 import { useConfirm } from '../state/confirm-context'
 import { useUnsavedGuard } from '../lib/unsavedGuard'
+import { isRefusal } from '../lib/live'
 
 const ENVIRONMENTS: Environment[] = ['prod', 'staging', 'dev']
 const K8S_ROLES: K8sRole[] = ['cluster-admin', 'edit', 'view']
@@ -657,9 +658,14 @@ function HandshakeStep({
       try {
         const next = await fetchCluster(clusterId)
         if (!cancelled) report.current(next)
-      } catch {
+      } catch (err) {
         // A transient failure while waiting is not worth interrupting the wait
-        // for; the next tick will say the same thing if it is real.
+        // for; the next tick will say the same thing if it is real. A refusal
+        // is not transient — the cluster was removed, or this account lost it —
+        // so the wait ends and says why.
+        if (cancelled || !isRefusal(err)) return
+        setPolling(false)
+        setError(errorMessage(err, 'Could not read this cluster.'))
       }
     }, POLL_INTERVAL_MS)
 

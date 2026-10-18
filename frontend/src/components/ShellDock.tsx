@@ -4,6 +4,7 @@ import { errorMessage, fetchShell, startShell, stopShell } from '../api/client'
 import type { ShellState } from '../api/types'
 import { IconButton, Pill } from './primitives'
 import { shellLifetime, shellReach, shellSecondsLeft, shellView } from '../lib/shell'
+import { isRefusal } from '../lib/live'
 import { formatDuration } from '../lib/time'
 import { useShellDock } from '../state/shell-dock-context'
 
@@ -40,6 +41,10 @@ export function ShellDock() {
   const [state, setState] = useState<ShellState | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // A read of a starting pod that was refused (the grant went, the cluster was
+  // removed) is the same answer every three seconds; the poll stops on it and
+  // the error stays on the strip.
+  const [refused, setRefused] = useState(false)
 
   const clusterId = dock.clusterId
 
@@ -56,6 +61,7 @@ export function ShellDock() {
       return next
     } catch (cause) {
       setError(errorMessage(cause, 'Could not read the shell.'))
+      if (isRefusal(cause)) setRefused(true)
       return null
     }
   }, [])
@@ -70,6 +76,7 @@ export function ShellDock() {
     shownFor.current = clusterId
     setState(null)
     setError(null)
+    setRefused(false)
     setBusy(true)
 
     let cancelled = false
@@ -94,10 +101,10 @@ export function ShellDock() {
   // own and somebody is waiting on it. A running session is watched by its
   // socket, and a closed dock is watched by nobody.
   useEffect(() => {
-    if (!dock.open || clusterId === null || view?.kind !== 'starting') return
+    if (!dock.open || clusterId === null || view?.kind !== 'starting' || refused) return
     const timer = window.setInterval(() => void read(clusterId), STARTING_POLL_MS)
     return () => window.clearInterval(timer)
-  }, [dock.open, clusterId, view?.kind, read])
+  }, [dock.open, clusterId, view?.kind, read, refused])
 
   async function end() {
     if (clusterId === null) return

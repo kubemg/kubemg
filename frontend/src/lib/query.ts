@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { withFreshReads } from '../api/client'
-import { LIVE_INTERVAL, useLiveTick } from './live'
+import { isRefusal, LIVE_INTERVAL, useLiveTick } from './live'
 
 /**
  * A small stale-while-revalidate cache for reads.
@@ -231,6 +231,9 @@ export function useCachedQuery<T>(
   // And whether one is in flight at all, which is what stops a live tick from
   // asking the same question twice at once.
   const inFlight = useRef(false)
+  // The key whose last answer was a refusal. A tick does not ask it again: see
+  // `isRefusal` — the answer would be the same, and so would the audit row.
+  const refusedKey = useRef<string | null>(null)
 
   const run = useCallback(async (target: string, fresh: boolean, background = false) => {
     activeKey.current = target
@@ -238,6 +241,7 @@ export function useCachedQuery<T>(
     try {
       const value = fresh ? await withFreshReads(() => readRef.current()) : await readRef.current()
       if (activeKey.current !== target) return
+      if (refusedKey.current === target) refusedKey.current = null
       writeEntry(target, value)
       setState((previous) => {
         // A live tick that changed nothing keeps the data it already has, so
@@ -256,6 +260,7 @@ export function useCachedQuery<T>(
       })
     } catch (error) {
       if (activeKey.current !== target) return
+      refusedKey.current = isRefusal(error) ? target : null
       setState((previous) => {
         // A background tick keeps what is on screen. The operator did not ask
         // for this read, and answering their list with an error because one
@@ -353,10 +358,13 @@ export function useCachedQuery<T>(
    * same console — a list, the drawer over it, the same page open twice —
    * collapse into one tunnel round trip and one audit record instead of one
    * each. Refresh is what asks the cluster, and it stays that way.
+   *
+   * Nor does it re-ask a question that was refused. The refusal stays on screen
+   * until the key changes, Refresh asks again, or the page is opened again.
    */
   useLiveTick(
     useCallback(() => {
-      if (key === null || inFlight.current) return
+      if (key === null || inFlight.current || refusedKey.current === key) return
       const age = entryAge(key)
       if (age !== null && age < interval / 2) return
       return run(key, false, true)

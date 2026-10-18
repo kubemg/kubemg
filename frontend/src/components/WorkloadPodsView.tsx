@@ -4,7 +4,7 @@ import { errorMessage, fetchPodListMetrics, fetchWorkloadPods } from '../api/cli
 import type { Cluster, Pod, PodUsage } from '../api/types'
 import type { InsightBucket, InsightSegment } from '../lib/insights'
 import { matchesPodBucket, podFailureReason, podInsights } from '../lib/insights'
-import { useLiveTick } from '../lib/live'
+import { useLiveTick, useRefusalHold } from '../lib/live'
 import type { ResourceKey } from '../lib/resources'
 import { TONE_FILL, TONE_SOFT, podTone } from '../lib/status'
 import type { Tone } from '../lib/status'
@@ -83,6 +83,8 @@ export function WorkloadPodsView({
   /** Which state plate the table is narrowed to, or null for every pod. */
   const [bucket, setBucket] = useState<InsightBucket | null>(null)
 
+  const { refused, settle } = useRefusalHold()
+
   const load = useCallback(
     async (quiet = false) => {
       if (!quiet) setLoading(true)
@@ -96,7 +98,9 @@ export function WorkloadPodsView({
         setUsage(metrics?.available ? podUsageIndex(metrics.pods) : null)
         setUsageReason(metrics && !metrics.available ? metrics.reason : undefined)
         setError(null)
+        settle(null)
       } catch (err) {
+        settle(err)
         // A quiet re-read that fails leaves the list on screen — the same rule
         // every other live tab in this drawer follows.
         if (!quiet) {
@@ -107,7 +111,7 @@ export function WorkloadPodsView({
         if (!quiet) setLoading(false)
       }
     },
-    [cluster.id, kind, name, namespace, label],
+    [cluster.id, kind, name, namespace, label, settle],
   )
 
   useEffect(() => {
@@ -118,7 +122,8 @@ export function WorkloadPodsView({
   // narrowing left over from the last one would silently hide rows.
   useEffect(() => setBucket(null), [kind, name, namespace])
 
-  useLiveTick(useCallback(() => load(true), [load]))
+  // A refused read is not asked again on the tick (`isRefusal`).
+  useLiveTick(useCallback(() => load(true), [load]), { enabled: !refused })
 
   const insight = useMemo(() => podInsights(pods ?? [], usage), [pods, usage])
 

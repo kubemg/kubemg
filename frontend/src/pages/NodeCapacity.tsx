@@ -427,9 +427,13 @@ export function NodeCapacity() {
   // Which row the heatmap last asked for, and how many times — a counter so
   // asking for the same node twice still brings it back into view.
   const [focused, setFocused] = useState<{ name: string; count: number } | null>(null)
+  // Node capacity is cluster-wide, which a namespace-scoped grant is refused.
+  // The answer is known before asking, so it is said rather than requested — a
+  // refused read is a row in the audit trail.
+  const scoped = cluster !== null && cluster.namespaces.length > 0
 
   const report = useCachedQuery(
-    cluster ? queryKey('capacity', cluster.id) : null,
+    cluster && !scoped ? queryKey('capacity', cluster.id) : null,
     async () => {
       if (!cluster) throw new Error('no cluster is selected')
       return fetchClusterCapacity(cluster.id)
@@ -466,6 +470,22 @@ export function NodeCapacity() {
             ) : (
               <>Pick a cluster from the fleet list to read its capacity.</>
             )}
+          </EmptyState>
+        </div>
+      </AppShell>
+    )
+  }
+
+  if (cluster && scoped) {
+    return (
+      <AppShell title="Capacity">
+        <div className="card">
+          <EmptyState
+            icon={<Cpu aria-hidden="true" className="size-5" />}
+            title="Capacity is a cluster-wide reading"
+          >
+            Your access to {cluster.name} is limited to {cluster.namespaces.join(', ')}, and node
+            allocation covers every namespace on a node, so it is not read for a namespace grant.
           </EmptyState>
         </div>
       </AppShell>

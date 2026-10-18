@@ -57,6 +57,12 @@ export function NamespaceDetail() {
 
   const cluster = clusters.find((entry) => entry.id === clusterId)
   const live = cluster ? hasTunnel(cluster) : false
+  // A namespace the grant does not name is refused by every read below, so it
+  // is explained rather than asked — the same check Explore makes before it
+  // reads, and a refused read is a row in the audit trail.
+  const outside =
+    !!cluster && cluster.namespaces.length > 0 && !cluster.namespaces.includes(name)
+  const readable = live && !outside
   // A hop opened from the traffic map, read in the same drawer Explore uses.
   const [detail, setDetail] = useState<DetailTarget | null>(null)
 
@@ -64,13 +70,13 @@ export function NamespaceDetail() {
   // phase, its age, and whether the caller's grant covers it. It is the same
   // read the list one level up made, so it is usually already cached.
   const namespaces = useCachedQuery<{ namespaces: Namespace[]; scoped: boolean }>(
-    live ? queryKey('namespaces', clusterId) : null,
+    readable ? queryKey('namespaces', clusterId) : null,
     () => fetchNamespaces(clusterId),
   )
   const entry = namespaces.data?.namespaces.find((row) => row.name === name)
 
   const limits = useCachedQuery(
-    live ? queryKey('namespace-limits', clusterId, name) : null,
+    readable ? queryKey('namespace-limits', clusterId, name) : null,
     async () => {
       const [quotas, ranges] = await Promise.all([
         fetchResourceQuotas(clusterId, name),
@@ -81,7 +87,7 @@ export function NamespaceDetail() {
   )
 
   const events = useCachedQuery(
-    live ? queryKey('namespace-events', clusterId, name, range) : null,
+    readable ? queryKey('namespace-events', clusterId, name, range) : null,
     () => fetchClusterEvents(clusterId, name, { range }),
     { live: true },
   )
@@ -123,6 +129,22 @@ export function NamespaceDetail() {
             <Link to={clusterPageHref(cluster.id, 'dashboard')} className="text-accent hover:underline">
               Its dashboard explains the connection.
             </Link>
+          </EmptyState>
+        </div>
+      </AppShell>
+    )
+  }
+
+  if (outside) {
+    return (
+      <AppShell title={name} parent={{ label: 'Namespaces', to: resourceHref(cluster.id, 'namespaces') }}>
+        <div className="card">
+          <EmptyState
+            icon={<Boxes aria-hidden="true" className="size-5" />}
+            title={`${name} is outside your access`}
+          >
+            Your access to {cluster.name} is limited to {cluster.namespaces.join(', ')}, so nothing
+            in {name} is read for you.
           </EmptyState>
         </div>
       </AppShell>
