@@ -175,3 +175,32 @@ func TestARecordedActCarriesWhereItCameFrom(t *testing.T) {
 		t.Fatalf("expected the caller's user agent, got %q", sources[0].UserAgent)
 	}
 }
+
+// Half the columns are text somebody else chose, and a spreadsheet evaluates a
+// cell that starts like a formula rather than showing it. The export prefixes
+// such a cell with `'` — the value is kept whole, it just never runs.
+func TestAuditExportNeverHandsASpreadsheetAFormula(t *testing.T) {
+	row := auditExportRow(db.AuditEvent{
+		UserAgent: "=HYPERLINK(\"http://x\")",
+		Path:      "+cmd",
+		Name:      "@SUM(A1)",
+		Error:     "-2+3",
+		Resource:  "pods",
+	})
+	got := map[string]string{}
+	for i, col := range auditExportColumns {
+		got[col] = row[i]
+	}
+	for col, want := range map[string]string{
+		"user_agent": "'=HYPERLINK(\"http://x\")",
+		"path":       "'+cmd",
+		"name":       "'@SUM(A1)",
+		"error":      "'-2+3",
+		"resource":   "pods",
+		"namespace":  "",
+	} {
+		if got[col] != want {
+			t.Errorf("%s = %q, want %q", col, got[col], want)
+		}
+	}
+}

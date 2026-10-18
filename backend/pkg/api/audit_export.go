@@ -137,7 +137,7 @@ func auditExportRow(event db.AuditEvent) []string {
 	if event.Streaming {
 		streaming = "true"
 	}
-	return []string{
+	return neutralizeFormulas([]string{
 		event.At.UTC().Format(time.RFC3339),
 		event.Username,
 		strconv.FormatUint(uint64(event.UserID), 10),
@@ -160,5 +160,22 @@ func auditExportRow(event db.AuditEvent) []string {
 		event.GuardrailPolicy,
 		event.GuardrailAction,
 		event.Error,
+	})
+}
+
+// neutralizeFormulas keeps a cell from being read as a formula when the file is
+// opened in a spreadsheet. Half the columns are text somebody else chose — the
+// user agent, the path, the object's name the cluster answered with, the error
+// — and a cell starting `=`, `+`, `-`, `@`, tab or CR is evaluated by Excel and
+// LibreOffice rather than shown, which turns the auditor's copy of the evidence
+// into something that runs. A leading `'` is the convention both honour: the
+// cell reads as the literal text, the quote is visible in a text editor, and no
+// value is dropped or reworded — the file still says exactly what was recorded.
+func neutralizeFormulas(row []string) []string {
+	for i, cell := range row {
+		if cell != "" && strings.ContainsRune("=+-@\t\r", rune(cell[0])) {
+			row[i] = "'" + cell
+		}
 	}
+	return row
 }
