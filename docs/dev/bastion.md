@@ -106,6 +106,20 @@ Three things the proxy does itself, and one it deliberately does not:
 is a 415, and because the patchers are best-effort it failed silently — which is
 exactly the kind of bug the content-type helper exists to prevent.
 
+Every record carries the **object's name** (`Event.Name`, `audit_events.name`),
+decided by `ObjectName`. Every verb but `create` names its object in the path, so
+`ParsePath` answers. A create posts to the collection, so its name is read off the
+**API server's answer** (`metadata.name`, generateName already resolved) — never
+off the request body, because what was asked for is not what was made. In `Call`
+it is read after `decodeBody`, so it costs no second decode; in the kubectl
+passthrough the whole body is already in hand, but a name is taken only from a
+plain-JSON answer — a gzip or protobuf answer is forwarded as it came and the row
+goes unnamed rather than the proxy decoding it for the trail. A refused create
+(any non-2xx) is never named, and a value that is not a plausible object name
+(control characters, past 253 bytes) is dropped: the tunnel is a trust boundary.
+Streams take the name from the path only. `SlogAuditor` and the forwarder emit it
+as `name`.
+
 ## Revocation
 
 An agent-mode kubeconfig carries a proxy-scoped JWT with a `jti`. Revoking it

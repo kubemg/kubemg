@@ -22,6 +22,7 @@ A refusal is recorded like a success: a guardrail block, a namespace-scope viola
 | `verb` / `method` | The Kubernetes verb (`list`, `get`, `create`, `exec`, ...) and the raw HTTP method. See [Verb naming](#verb-naming) |
 | `path` | The full API path with its query string |
 | `namespace` / `resource` | Parsed out of the path when it looks like a Kubernetes API URL |
+| `name` | The object the call addressed. Taken from the path for every verb that names its object there. A `create` names only the collection in its path, so its name is the one the cluster answered with — including a name the cluster generated. Empty on a create the cluster refused (nothing was made), on a list or watch, and on rows written before kubemg recorded it |
 | `impersonated_user` / `impersonated_groups` | The identity kubemg asserted to the cluster. It ties a kubemg account to the Kubernetes subject that acted |
 | `status` | The HTTP status the call ended with |
 | `duration_ms` | How long the call took |
@@ -89,7 +90,7 @@ It is off by default because a manifest body can hold values as sensitive as a S
 | `failed` | `true` keeps only refusals and errors (a stream's opening `101` is not a failure) |
 | `since` / `until` **or** `from` / `to` | RFC 3339 timestamps. Both pairs are accepted, so saved links keep working |
 | `range` | Fixed preset resolved on the server: `15m`, `1h`, `6h`, `24h`, `7d`, `30d`, or `all` |
-| `q` | Free text against path, username, resource, namespace |
+| `q` | Free text against path, username, resource, namespace, name |
 | `limit` / `offset` | Paging, capped at 100 rows per page |
 
 - An explicit `from`/`since` wins over a `range` preset. `range=all` means no lower bound.
@@ -133,7 +134,7 @@ Neither the log nor a forwarder applies the `audit_verbs` selection.
 RFC 5424 syslog, with one JSON object per record as the message:
 
 ```
-<134>1 2026-08-25T09:14:02.913Z bastion-0 kubemg - kubemg-audit - {"audit":"kubemg.proxy","timestamp":"2026-08-25T09:14:02.913Z","user_id":7,"username":"ada","cluster_id":4,"cluster":"prod-eu","verb":"delete","method":"DELETE","uri":"/api/v1/namespaces/checkout/pods/checkout-7d9f","namespace":"checkout","resource":"pods","impersonate_user":"kubemg:u:ada","impersonate_groups":"kubemg:edit","status_code":403,"duration_ms":4,"source_addr":"10.4.1.9","user_agent":"kubectl/v1.31.0","error":"refused by guardrail"}
+<134>1 2026-08-25T09:14:02.913Z bastion-0 kubemg - kubemg-audit - {"audit":"kubemg.proxy","timestamp":"2026-08-25T09:14:02.913Z","user_id":7,"username":"ada","cluster_id":4,"cluster":"prod-eu","verb":"delete","method":"DELETE","uri":"/api/v1/namespaces/checkout/pods/checkout-7d9f","namespace":"checkout","resource":"pods","name":"checkout-7d9f","impersonate_user":"kubemg:u:ada","impersonate_groups":"kubemg:edit","status_code":403,"duration_ms":4,"source_addr":"10.4.1.9","user_agent":"kubectl/v1.31.0","error":"refused by guardrail"}
 ```
 
 The JSON field names are the structured log's, so one parser reads both. **The manifest diff is never forwarded.**

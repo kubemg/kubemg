@@ -259,6 +259,7 @@ func (p *Proxy) Handle(c *gin.Context) {
 	parsed := ParsePath(path)
 	event.Namespace = parsed.Namespace
 	event.Resource = parsed.Resource
+	event.Name = parsed.Name
 
 	if allowed, reason := allowedNamespace(grant, parsed, path); !allowed {
 		p.fail(c, &event, http.StatusForbidden, reason)
@@ -350,6 +351,9 @@ func (p *Proxy) Handle(c *gin.Context) {
 		return
 	}
 
+	// The body is already whole here; ObjectName reads a create's name off it
+	// only when it is plain JSON, and leaves a compressed or protobuf answer be.
+	event.Name = ObjectName(parsed, event.Verb, resp)
 	event.Status = resp.Status
 	event.Duration = time.Since(started)
 	p.auditor.Record(c.Request.Context(), event)
@@ -390,6 +394,7 @@ func (p *Proxy) Call(
 		Path:               path,
 		Namespace:          parsed.Namespace,
 		Resource:           parsed.Resource,
+		Name:               parsed.Name,
 		ImpersonatedUser:   ImpersonationUser(user),
 		ImpersonatedGroups: ImpersonationGroups(grant.K8sRole),
 	}
@@ -464,6 +469,9 @@ func (p *Proxy) Call(
 	// The diff is attached only once the round trip is known to have
 	// succeeded — see diffForAuditRow.
 	event.Diff = diffForAuditRow(auditDiff, resp.Status)
+	// Read off the body decodeBody already undid, so a create's name costs no
+	// second decode.
+	event.Name = ObjectName(parsed, event.Verb, resp)
 	record(resp.Status, nil)
 	return resp, nil
 }
@@ -511,6 +519,7 @@ func (p *Proxy) Watch(
 		Path:               path,
 		Namespace:          parsed.Namespace,
 		Resource:           parsed.Resource,
+		Name:               parsed.Name,
 		ImpersonatedUser:   ImpersonationUser(user),
 		ImpersonatedGroups: ImpersonationGroups(grant.K8sRole),
 	}

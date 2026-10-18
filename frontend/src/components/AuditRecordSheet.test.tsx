@@ -72,6 +72,23 @@ describe('an audit record, opened', () => {
     expect(screen.getByText(/Neither can be filled in afterwards/)).toBeTruthy()
   })
 
+  it('names the object a create made, and says a refused one made nothing', () => {
+    const create = {
+      verb: 'create',
+      method: 'POST',
+      path: '/apis/apps/v1/namespaces/prod/deployments',
+      resource: 'deployments',
+    }
+    const { unmount } = render(
+      <AuditRecordSheet event={record({ ...create, name: 'cert-manager', status: 201 })} onClose={() => {}} />,
+    )
+    expect(screen.getByText('cert-manager')).toBeTruthy()
+    unmount()
+
+    render(<AuditRecordSheet event={record({ ...create, status: 409 })} onClose={() => {}} />)
+    expect(screen.getByText('none — nothing was created')).toBeTruthy()
+  })
+
   it('shows the guardrail decision only where a rule matched', () => {
     const { unmount } = render(<AuditRecordSheet event={record()} onClose={() => {}} />)
     expect(screen.queryByText('Guardrail')).toBeNull()

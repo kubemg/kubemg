@@ -70,6 +70,9 @@ func encode(ctx context.Context, event bastion.Event) (record, bool) {
 	if event.Resource != "" {
 		fields["resource"] = event.Resource
 	}
+	if event.Name != "" {
+		fields["name"] = event.Name
+	}
 	if event.Error != "" {
 		fields["error"] = event.Error
 	}
