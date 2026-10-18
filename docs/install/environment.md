@@ -53,6 +53,8 @@ See [Database](database.md) for how the schema is applied.
 | `KUBEMG_SECRET_KEY` | — | 32 bytes, hex or base64 (`openssl rand -base64 32`). Encrypts the credentials stored in the database — the generated signing key, agent tunnel tokens, direct-mode ServiceAccount tokens, and datasource, Helm repository, alarm channel and SSO credentials — with AES-256-GCM. Unset, they are stored in plaintext and the server warns at boot. With a key set, every plaintext value is encrypted in place on the next boot. A key that is not exactly 32 bytes **refuses to boot**; so does a database holding values encrypted under a different key, or under a key that has since been removed. **Back it up separately from the database** — see [Database](database.md#credentials-encrypted-at-rest). |
 | `KUBEMG_ADMIN_USERNAME` | `admin` | Bootstrap administrator's username, created only when the users table is empty. |
 | `KUBEMG_ADMIN_PASSWORD` | generated, printed once to the log | Bootstrap administrator's password. Left unset, a random 20-character password (drawn from an alphabet with no visually-ambiguous characters) is generated and logged exactly once. Setup will not let you finish until it's changed either way. |
+| `KUBEMG_MFA_RESET_USERNAME` | unset | **Break-glass.** The account named has its second factor removed at every boot, with an `ERROR` log line and a `mfa-reset` audit record. For a sole super admin who lost both phone and recovery codes; unset it once they have enrolled again. See [Two-factor authentication](../access/mfa.md#break-glass-the-only-super-admin-lost-both-phone-and-codes). |
+| `KUBEMG_CLI_DIR` | `/usr/share/kubemg/cli` | Where the image keeps the `kubemg` CLI binaries served at `/downloads/cli` (one `<os>-<arch>/` directory each). The published image fills it; point it elsewhere only to serve binaries you built yourself. |
 | `KUBEMG_SA_NAMESPACE` | `kubemg-system` | The namespace on a **direct-mode** target cluster that holds the per-user service accounts kubemg's TokenRequest calls create. Irrelevant to agent-mode clusters. |
 
 ## Public URL & agent
@@ -158,9 +160,9 @@ KUBEMG_TLS_SUPPLIED_DIR=/etc/kubemg/ssl
 # KUBEMG_AGENT_CA_BUNDLE=/etc/kubemg/ssl/proxy-ca.crt
 
 # --- air-gapped / internal registry --------------------------------------
-# KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.15.0
+# KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.16.0
 # KUBEMG_POSTGRES_IMAGE=registry.internal/postgres:16-alpine
-# KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.15.0
+# KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.16.0
 # KUBEMG_AGENT_IMAGE_PULL_SECRET=registry-internal
 KUBEMG_AGENT_NAMESPACE=kubemg-system
 

@@ -65,6 +65,26 @@ type Store interface {
 	// Programmatic access. A service account is a User row (see db.User's
 	// AccountType), so it needs no identity methods of its own — only its
 	// credentials do.
+	// Second factors — see mfa.go. Accepting a code is always a conditional
+	// write (AdvanceMFAStep, AdvanceMFACounter, UseMFARecoveryCode,
+	// TakeMFAChallenge, TakeMFACeremony), so the same code, signature or
+	// challenge cannot be spent twice across replicas.
+	MFAState(ctx context.Context, userID uint) (db.MFAState, error)
+	MFAEnrolledUserIDs(ctx context.Context) ([]uint, error)
+	MFAFactorByID(ctx context.Context, userID, id uint) (*db.MFAFactor, error)
+	CreatePendingMFAFactor(ctx context.Context, factor *db.MFAFactor) error
+	ConfirmMFAFactor(ctx context.Context, userID, id uint, step int64, secret string, at time.Time, recoveryHashes []string) error
+	AdvanceMFAStep(ctx context.Context, factorID uint, step int64, at time.Time) (bool, error)
+	AdvanceMFACounter(ctx context.Context, factorID uint, counter int64, at time.Time) (bool, error)
+	DeleteMFAFactor(ctx context.Context, userID, id uint) error
+	ReplaceMFARecoveryCodes(ctx context.Context, userID uint, hashes []string) error
+	UseMFARecoveryCode(ctx context.Context, userID uint, hash string, at time.Time) (bool, error)
+	ResetMFA(ctx context.Context, userID uint) (int64, error)
+	PutMFAChallenge(ctx context.Context, challenge *db.MFAChallenge) error
+	MFAChallengeByHash(ctx context.Context, hash string) (*db.MFAChallenge, error)
+	TakeMFAChallenge(ctx context.Context, hash string) (bool, error)
+	TakeMFACeremony(ctx context.Context, hash string) (*db.MFAChallenge, error)
+
 	CreateMachineToken(ctx context.Context, token *db.MachineToken) error
 	MachineTokenByHash(ctx context.Context, hash string) (*db.MachineToken, error)
 	MachineTokenByID(ctx context.Context, id uint) (*db.MachineToken, error)
@@ -152,6 +172,26 @@ type Store interface {
 	RevokedKubeconfigTokenIDs(ctx context.Context, now time.Time) ([]string, error)
 	TouchKubeconfigIssuance(ctx context.Context, tokenID string, at time.Time) error
 	PruneKubeconfigIssuances(ctx context.Context, before time.Time) (int64, error)
+
+	// Signed-in `kubemg` CLIs and the device-code requests that create them —
+	// see cli_auth.go. A session's id is the jti of every token it mints, so
+	// RevokedCLISessionIDs joins the same published snapshot.
+	CreateCLIDeviceCode(ctx context.Context, code *db.CLIDeviceCode) error
+	PendingCLIDeviceCodesFrom(ctx context.Context, sourceIP string, now time.Time) (int64, error)
+	CLIDeviceCodeByUserCode(ctx context.Context, userCode string, now time.Time) (*db.CLIDeviceCode, error)
+	CLIDeviceCodeByHash(ctx context.Context, hash string) (*db.CLIDeviceCode, error)
+	DecideCLIDeviceCode(ctx context.Context, userCode, status string, userID uint, now time.Time) (bool, error)
+	PollCLIDeviceCode(ctx context.Context, hash string, now time.Time) error
+	TakeCLIDeviceCode(ctx context.Context, hash string) (*db.CLIDeviceCode, error)
+	CreateCLISession(ctx context.Context, session *db.CLISession) error
+	CLISessionByRefreshHash(ctx context.Context, hash string) (*db.CLISession, error)
+	CLISessionByID(ctx context.Context, id string) (*db.CLISession, error)
+	ListCLISessions(ctx context.Context, filter db.CLISessionFilter) ([]db.CLISession, int64, error)
+	RevokeCLISession(ctx context.Context, id string, at time.Time, by uint, byName string) (*db.CLISession, error)
+	RevokeCLISessionsForUser(ctx context.Context, userID uint, at time.Time, by uint, byName string) ([]db.CLISession, error)
+	RevokedCLISessionIDs(ctx context.Context, now time.Time) ([]string, error)
+	TouchCLISession(ctx context.Context, id string, at time.Time) error
+	PruneCLISessions(ctx context.Context, before time.Time) (int64, error)
 
 	ListAuditEvents(ctx context.Context, filter db.AuditFilter) ([]db.AuditEvent, int64, error)
 	ExportAuditEvents(ctx context.Context, filter db.AuditFilter) ([]db.AuditEvent, bool, error)
@@ -298,6 +338,10 @@ type Options struct {
 	// answer "recording is not enabled" while it is empty rather than trusting
 	// whatever a row happens to name.
 	RecordingDir string
+	// CLIDir is where the kubemg CLI binaries the image carries live, one
+	// `<os>-<arch>/` directory each. Empty, or a directory without them, and
+	// the download routes say so and point at the releases page.
+	CLIDir string
 	// RecordingKey decrypts recordings on the way out. It has to be the key they
 	// were written with; a recording written without one is read without one, so
 	// this being empty is not an error until an encrypted file is opened.
@@ -428,6 +472,9 @@ type server struct {
 	// debugImage is what an ephemeral debug container runs; see Options.DebugImage.
 	debugImage string
 	bastionCA  string
+	// tlsFingerprints are the SHA-256s of bastionCA's certificates, shown
+	// beside the CLI's commands so a first `kubemg login` can be checked.
+	tlsFingerprints []string
 	// recordings is the directory terminal recordings are read back from. Empty
 	// means this server is not recording sessions.
 	recordings     string
@@ -480,6 +527,9 @@ type server struct {
 	signIns *auth.LoginThrottle
 	// deployment is what this process was started with; see Options.Deployment.
 	deployment Deployment
+	// cliDir holds the CLI binaries; cliSums their digests. See cli_downloads.go.
+	cliDir  string
+	cliSums cliDigests
 	// version is the release this binary was built as; see Options.Version.
 	version string
 }
@@ -539,7 +589,9 @@ func NewRouter(opts Options) *gin.Engine {
 		shellEnabled:         opts.ShellEnabled && strings.TrimSpace(opts.ShellImage) != "",
 		debugImage:           strings.TrimSpace(opts.DebugImage),
 		bastionCA:            opts.BastionCA,
+		tlsFingerprints:      certFingerprints(opts.BastionCA),
 		recordings:           strings.TrimSpace(opts.RecordingDir),
+		cliDir:               strings.TrimSpace(opts.CLIDir),
 		recordingKey:         opts.RecordingKey,
 		recordingInput:       opts.RecordingInput,
 		auditor:              opts.Auditor,
@@ -661,6 +713,12 @@ func NewRouter(opts Options) *gin.Engine {
 		// The installer is fetched by kubectl, which cannot carry a KubeMG
 		// session; a single-use download ticket in the path is the credential —
 		// never the tunnel credential itself. See agent_install.go.
+		// The kubemg CLI, for a site that cannot reach the releases page. Open
+		// on purpose — it is the open-source binary, and whoever needs it has
+		// not signed in yet. See cli_downloads.go.
+		router.GET("/downloads/cli", s.listCLIDownloads)
+		router.GET("/downloads/cli/:os/:arch", s.downloadCLI)
+
 		install := router.Group("/install/:token")
 		install.GET("/agent.yaml", s.installManifest)
 		install.GET("/kustomize.tar.gz", s.installArchive)
@@ -681,6 +739,23 @@ func NewRouter(opts Options) *gin.Engine {
 		// else's account. The handler requires the current password, which is why
 		// a live session is not enough to change it.
 		v1.POST("/auth/password", requireAuth, s.changePassword)
+
+		// A second factor. The code step of a sign-in, the challenge half of
+		// enrolment and a security key's ceremony for either are
+		// unauthenticated by necessity — the person holds a challenge, not yet
+		// a session — and each is single-use and throttled like the password it
+		// follows. Everything else is the caller's own factor, behind a
+		// session. See mfa.go and mfa_webauthn.go.
+		v1.POST("/auth/mfa/verify", s.verifyMFA)
+		v1.POST("/auth/mfa/challenge/enroll", s.enrollMFA)
+		v1.POST("/auth/mfa/challenge/enroll/confirm", s.confirmMFA)
+		v1.POST("/auth/mfa/challenge/webauthn", s.beginWebAuthnAssertion)
+		v1.GET("/auth/mfa", requireAuth, s.getMFA)
+		v1.POST("/auth/mfa/enroll", requireAuth, s.enrollMFA)
+		v1.POST("/auth/mfa/enroll/confirm", requireAuth, s.confirmMFA)
+		v1.DELETE("/auth/mfa/factors/:id", requireAuth, s.removeMFAFactor)
+		v1.POST("/auth/mfa/recovery-codes", requireAuth, s.regenerateRecoveryCodes)
+		v1.POST("/auth/mfa/webauthn", requireAuth, s.beginWebAuthnAssertion)
 
 		// First-run setup. The state route is unauthenticated by necessity — the
 		// sign-in page has to know whether this server has been configured before
@@ -740,6 +815,27 @@ func NewRouter(opts Options) *gin.Engine {
 		// you know you lost must not require finding an administrator, and you
 		// cannot revoke what you cannot see. The handlers enforce the other half:
 		// revoking somebody else's is administrative, revoking your own never is.
+		// The `kubemg` CLI. Starting and polling a sign-in are unauthenticated by
+		// necessity and narrow for it (a request does nothing until a signed-in
+		// person approves it); reading and deciding one is the person's, behind
+		// their session; and the CLI's own calls ride its refresh token, which
+		// RequireAuth refuses everywhere else. See cli_auth.go.
+		v1.POST("/auth/cli/device", s.startDeviceLogin)
+		v1.POST("/auth/cli/token", s.pollDeviceLogin)
+		v1.GET("/auth/cli/device/:code", requireAuth, s.describeDeviceLogin)
+		v1.POST("/auth/cli/device/:code/approve", requireAuth, s.approveDeviceLogin)
+		v1.POST("/auth/cli/device/:code/deny", requireAuth, s.denyDeviceLogin)
+		cli := v1.Group("/auth/cli", s.requireCLISession)
+		cli.GET("/clusters", s.cliClusters)
+		cli.POST("/credential", s.cliCredential)
+		cli.POST("/logout", s.cliLogout)
+
+		// The CLI sessions in the register, under the kubeconfig register's read
+		// rule: everyone reads their own, an administrator anybody's.
+		cliSessions := v1.Group("/cli-sessions", requireAuth)
+		cliSessions.GET("", s.listCLISessions)
+		cliSessions.POST("/:id/revoke", s.revokeCLISession)
+
 		kubeconfigs := v1.Group("/kubeconfigs", requireAuth)
 		kubeconfigs.GET("", s.listKubeconfigs)
 		// The blanket action is registered before the parameterised route so
@@ -1221,6 +1317,10 @@ func NewRouter(opts Options) *gin.Engine {
 		// The access review: what this person can reach, and why. See
 		// user_access.go for why the merge happens on the server.
 		users.GET("/:id/access", s.userAccess)
+		// Somebody else's second factor: read for the access review, reset for
+		// the person who lost their phone. Never your own — see resetUserMFA.
+		users.GET("/:id/mfa", s.getUserMFA)
+		users.POST("/:id/mfa/reset", s.resetUserMFA)
 
 		groups := v1.Group("/groups", requireAuth, requireAdmin)
 		groups.GET("", s.listGroups)

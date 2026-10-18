@@ -69,7 +69,8 @@ const PAGE_SIZE = 50
    touches a cluster — but they belong in this filter: they are how the trail
    answers who watched, or destroyed, a recording of somebody else's shell. The
    agent verbs are here for the same reason: they answer who is, or became,
-   a cluster's agent. */
+   a cluster's agent — and the second-factor ones answer whose sign-in was
+   weakened, and by whom. */
 const VERBS = [
   'get',
   'list',
@@ -84,6 +85,11 @@ const VERBS = [
   'recording-delete',
   'agent-displaced',
   'agent-token-rotate',
+  'mfa-reset',
+  'mfa-remove',
+  'mfa-recovery-used',
+  'cli-login',
+  'cli-session-revoke',
 ]
 
 const MUTATING = new Set(['create', 'update', 'patch', 'delete'])

@@ -73,6 +73,21 @@ const (
 	// shadows KUBEMG_DEBUG_IMAGE, which is what an air-gapped site points at
 	// its mirror — the same reason SettingShellImage exists.
 	SettingDebugImage = "debug_image"
+	// SettingMFAEnforcement says whose sign-in needs a second factor: "off"
+	// (the default — a factor is the person's choice), "admins" or "all". It
+	// governs only the accounts KubeMG's factor applies to (see
+	// User.MFAApplies); an OIDC or SAML account's factor is its provider's.
+	SettingMFAEnforcement = "mfa_enforcement"
+	// SettingCLISessionMaxHours is how long a `kubemg login` lasts before it has
+	// to be done again — and with it the second factor. It is clamped at the
+	// point of use to the kubeconfig ceiling: a CLI session must never outlive
+	// what a downloaded file could.
+	SettingCLISessionMaxHours = "cli_session_max_hours"
+	// SettingKubeconfigIssuance is "allowed" (the default) or "cli_only". Under
+	// cli_only no agent-mode kubeconfig carrying a long-lived token is handed
+	// out: the CLI's short-lived credentials are the only way kubectl reaches an
+	// agent-mode cluster.
+	SettingKubeconfigIssuance = "kubeconfig_issuance"
 	// The console's own identity — see pkg/api/branding.go for what each one is
 	// for and why the mark is stored inline rather than linked.
 	//
@@ -142,6 +157,9 @@ var SettingKeys = []string{
 	SettingShellIdleTimeoutMinutes,
 	SettingShellMaxLifetimeHours,
 	SettingDebugImage,
+	SettingMFAEnforcement,
+	SettingCLISessionMaxHours,
+	SettingKubeconfigIssuance,
 }
 
 // Setting is one operator-configurable value. An empty Value means "unset" and

@@ -98,7 +98,17 @@ import type {
   ShellState,
   ServerVersion,
   LogQueryResponse,
-  LoginResponse,
+  CLIDeviceRequest,
+  CLIDownloads,
+  CLISession,
+  FactorProof,
+  MFAConfirmResult,
+  MFAEnrollment,
+  MFASessionResponse,
+  MFAStatus,
+  WebAuthnCeremony,
+  WebAuthnProof,
+  SignInResult,
   ManifestDiff,
   Namespace,
   NetworkPolicy,
@@ -334,8 +344,119 @@ export function guardrailRefusal(error: unknown): GuardrailRefusal | null {
   return { message: data.error ?? 'Blocked by a guardrail policy.', policy: data.policy ?? '', scope: data.scope ?? '' }
 }
 
-export async function login(username: string, password: string): Promise<LoginResponse> {
-  const { data } = await http.post<LoginResponse>('/auth/login', { username, password })
+export async function login(username: string, password: string): Promise<SignInResult> {
+  const { data } = await http.post<SignInResult>('/auth/login', { username, password })
+  return data
+}
+
+/* ---------------------------------------------------------------- mfa --- */
+
+/** The code step of a sign-in: a TOTP code or a recovery code, or a key's answer. */
+export async function verifyMFA(
+  challenge: string,
+  code: string,
+  webauthn?: WebAuthnProof,
+): Promise<MFASessionResponse> {
+  const body = webauthn ? { challenge, webauthn } : { challenge, code }
+  const { data } = await http.post<MFASessionResponse>('/auth/mfa/verify', body)
+  return data
+}
+
+/**
+ * Opens a ceremony for a security key to sign. With a challenge it is a
+ * sign-in's code step, on the unauthenticated route; without one the session
+ * authorises it, for proving a change to the factors.
+ */
+export async function beginKeyCheck(challenge?: string): Promise<WebAuthnCeremony> {
+  const path = challenge ? '/auth/mfa/challenge/webauthn' : '/auth/mfa/webauthn'
+  const { data } = await http.post<WebAuthnCeremony>(path, challenge ? { challenge } : {})
+  return data
+}
+
+export async function fetchMFA(): Promise<MFAStatus> {
+  const { data } = await http.get<MFAStatus>('/auth/mfa')
+  return { ...data, factors: data.factors ?? [] }
+}
+
+/**
+ * Starts an enrolment. With a challenge it is a sign-in's — the account must
+ * hold a factor and has no session yet — and goes to the unauthenticated route;
+ * without one the session authorises it.
+ */
+export async function enrollMFA(input: {
+  kind?: 'totp' | 'webauthn'
+  name?: string
+  challenge?: string
+  current_code?: string
+  current_webauthn?: WebAuthnProof
+}): Promise<MFAEnrollment> {
+  const path = input.challenge ? '/auth/mfa/challenge/enroll' : '/auth/mfa/enroll'
+  const { data } = await http.post<MFAEnrollment>(path, input)
+  return data
+}
+
+export async function confirmMFA(input: {
+  factor_id: number
+  /** An app's first code. */
+  code?: string
+  /** What a key made. */
+  credential?: Record<string, unknown>
+  challenge?: string
+}): Promise<MFAConfirmResult> {
+  const path = input.challenge ? '/auth/mfa/challenge/enroll/confirm' : '/auth/mfa/enroll/confirm'
+  const { data } = await http.post<MFAConfirmResult>(path, input)
+  return data
+}
+
+export async function removeMFAFactor(id: number, proof: FactorProof): Promise<MFAStatus> {
+  const { data } = await http.delete<MFAStatus>(`/auth/mfa/factors/${id}`, { data: proof })
+  return { ...data, factors: data.factors ?? [] }
+}
+
+export async function regenerateRecoveryCodes(proof: FactorProof): Promise<string[]> {
+  const { data } = await http.post<{ recovery_codes: string[] }>('/auth/mfa/recovery-codes', proof)
+  return data.recovery_codes
+}
+
+/** Somebody else's second factor, for the access review (admin). */
+export async function fetchUserMFA(userId: number): Promise<MFAStatus> {
+  const { data } = await http.get<MFAStatus>(`/users/${userId}/mfa`)
+  return { ...data, factors: data.factors ?? [] }
+}
+
+/* ---------------------------------------------------------------- cli --- */
+
+/** A `kubemg login` waiting for approval, by the code it showed. */
+export async function fetchCLIDeviceRequest(code: string): Promise<CLIDeviceRequest> {
+  const { data } = await http.get<CLIDeviceRequest>(`/auth/cli/device/${encodeURIComponent(code)}`)
+  return data
+}
+
+export async function decideCLIDeviceRequest(code: string, decision: 'approve' | 'deny'): Promise<void> {
+  await http.post(`/auth/cli/device/${encodeURIComponent(code)}/${decision}`)
+}
+
+/** The CLI binaries this server hands out. Unauthenticated on the server. */
+export async function fetchCLIDownloads(): Promise<CLIDownloads> {
+  const { data } = await axios.get<CLIDownloads>(`${apiOrigin}/downloads/cli`)
+  return { ...data, downloads: data.downloads ?? [] }
+}
+
+export async function fetchCLISessions(input: { userId?: number; activeOnly?: boolean } = {}): Promise<CLISession[]> {
+  const params: Record<string, string> = {}
+  if (input.userId) params.user_id = String(input.userId)
+  if (input.activeOnly) params.status = 'active'
+  const { data } = await http.get<{ sessions: CLISession[] }>('/cli-sessions', { params })
+  return data.sessions ?? []
+}
+
+export async function revokeCLISession(id: string): Promise<CLISession> {
+  const { data } = await http.post<CLISession>(`/cli-sessions/${encodeURIComponent(id)}/revoke`)
+  return data
+}
+
+export async function resetUserMFA(userId: number): Promise<{ factors_removed: number }> {
+  const { data } = await http.post<{ factors_removed: number }>(`/users/${userId}/mfa/reset`)
   return data
 }
 
@@ -372,8 +493,8 @@ export async function ssoPasswordLogin(
   providerId: number,
   username: string,
   password: string,
-): Promise<LoginResponse> {
-  const { data } = await http.post<LoginResponse>(`/auth/sso/providers/${providerId}/login`, {
+): Promise<SignInResult> {
+  const { data } = await http.post<SignInResult>(`/auth/sso/providers/${providerId}/login`, {
     username,
     password,
   })

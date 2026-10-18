@@ -120,7 +120,9 @@ nav:
           - The access model: access/model.md
           - Users and groups: access/users-and-groups.md
           - Single sign-on: access/sso.md
+          - Two-factor authentication: access/mfa.md
           - Kubeconfigs: access/kubeconfigs.md
+          - The kubemg command line: access/cli.md
           - Machine accounts: access/machine-accounts.md
           - Just-in-time access: access/jit.md
           - Command guardrails: access/guardrails.md

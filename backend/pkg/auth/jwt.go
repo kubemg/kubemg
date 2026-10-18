@@ -29,6 +29,11 @@ type Claims struct {
 	Scope string `json:"scope,omitempty"`
 	// ClusterID is the only cluster a scoped token may address.
 	ClusterID uint `json:"cid,omitempty"`
+	// MFA records that this session was opened with a second factor. It is a
+	// fact about how the session began, not a permission: nothing in the API
+	// is unlocked by it today, and a session minted before an account had to
+	// have a factor reads false rather than pretending otherwise.
+	MFA bool `json:"mfa,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -57,6 +62,12 @@ func (m *Manager) Generate(userID uint, username, role string) (string, time.Tim
 	return m.sign(Claims{UserID: userID, Username: username, Role: role}, m.ttl)
 }
 
+// GenerateWithMFA issues a session token for a sign-in that proved a second
+// factor.
+func (m *Manager) GenerateWithMFA(userID uint, username, role string) (string, time.Time, error) {
+	return m.sign(Claims{UserID: userID, Username: username, Role: role, MFA: true}, m.ttl)
+}
+
 // GenerateProxyToken issues a credential that only works against one cluster's
 // kubectl proxy, for the given lifetime. This is the token a generated
 // kubeconfig carries when KubeMG reaches the cluster through an agent tunnel
@@ -71,10 +82,25 @@ func (m *Manager) Generate(userID uint, username, role string) (string, time.Tim
 func (m *Manager) GenerateProxyToken(
 	userID uint, username, role string, clusterID uint, ttl time.Duration,
 ) (token string, tokenID string, expiresAt time.Time, err error) {
+	tokenID = uuid.NewString()
+	token, expiresAt, err = m.GenerateProxyTokenWithID(userID, username, role, clusterID, ttl, tokenID)
+	if err != nil {
+		return "", "", time.Time{}, err
+	}
+	return token, tokenID, expiresAt, nil
+}
+
+// GenerateProxyTokenWithID is GenerateProxyToken with the id chosen by the
+// caller. The CLI is its one user: every short-lived token a CLI session mints
+// carries the session's own id, so withdrawing the session in the register
+// withdraws every token it ever minted through the snapshot the gateway already
+// consults — one row, one id, no second question on the hot path.
+func (m *Manager) GenerateProxyTokenWithID(
+	userID uint, username, role string, clusterID uint, ttl time.Duration, tokenID string,
+) (string, time.Time, error) {
 	if ttl <= 0 {
 		ttl = m.ttl
 	}
-	tokenID = uuid.NewString()
 	claims := Claims{
 		UserID:    userID,
 		Username:  username,
@@ -85,11 +111,7 @@ func (m *Manager) GenerateProxyToken(
 	// A promoted field cannot be set in a composite literal, and sign rebuilds
 	// the registered claims from this one anyway.
 	claims.ID = tokenID
-	token, expiresAt, err = m.sign(claims, ttl)
-	if err != nil {
-		return "", "", time.Time{}, err
-	}
-	return token, tokenID, expiresAt, nil
+	return m.sign(claims, ttl)
 }
 
 func (m *Manager) sign(claims Claims, ttl time.Duration) (string, time.Time, error) {

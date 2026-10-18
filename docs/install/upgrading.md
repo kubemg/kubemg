@@ -8,9 +8,9 @@ Pin an explicit tag rather than tracking `latest`, in three places:
 
 | Image | Set with | Read when |
 |---|---|---|
-| Management plane (`ghcr.io/kubemg/kubemg:0.15.0`) | `KUBEMG_IMAGE`/`KUBEMG_VERSION` in Compose, or the Deployment's `image:` in Kubernetes | The server starts |
-| Agent (`ghcr.io/kubemg/kubemg-agent:0.15.0`) | `KUBEMG_AGENT_IMAGE` | A package is rendered. Changing it affects *future* installs, not agents already running. |
-| Browser shell (`ghcr.io/kubemg/kubemg-shell:0.15.0`) | `KUBEMG_SHELL_IMAGE` | A shell is *started*. Changing it affects the next shell, not one already open. |
+| Management plane (`ghcr.io/kubemg/kubemg:0.16.0`) | `KUBEMG_IMAGE`/`KUBEMG_VERSION` in Compose, or the Deployment's `image:` in Kubernetes | The server starts |
+| Agent (`ghcr.io/kubemg/kubemg-agent:0.16.0`) | `KUBEMG_AGENT_IMAGE` | A package is rendered. Changing it affects *future* installs, not agents already running. |
+| Browser shell (`ghcr.io/kubemg/kubemg-shell:0.16.0`) | `KUBEMG_SHELL_IMAGE` | A shell is *started*. Changing it affects the next shell, not one already open. |
 
 All three are published as multi-arch (amd64 and arm64) images on a `v*` tag, after a vulnerability scan gate.
 
@@ -95,6 +95,11 @@ A release that asks something beyond pulling the image is listed here.
     - **On Kubernetes, give the server a memory limit** (Helm: `resources.limits.memory`, set by default). The chart now passes it as [`KUBEMG_MEMORY_LIMIT_BYTES`](environment.md), and the server keeps its heap under 80% of it. With no limit, nothing changes.
     - **Cost & waste** is a new cluster page, under the sidebar's new collapsed **Insights** section with Capacity and the other report pages. Its over-requested workloads need a [metrics datasource](../observability/datasources.md); the rest needs nothing. Money appears only after an administrator [sets the cluster's rates](../clusters/waste.md#rates).
     - **Machine accounts** were listed as empty in the console since 0.10.0, so a cluster granted from an account's sheet seemed not to land. Nothing needs to be redone: grants made then are in place.
+- **0.16.0**, from 0.15.x: no manual schema step (the second-factor and CLI tables are created at boot). The agent binary, its roles and the tunnel protocol are unchanged, so **no re-apply is needed**: a 0.15.0 agent stays attached.
+    - **[Two-factor authentication](../access/mfa.md)** is new, for local and LDAP accounts, with an authenticator app or a security key. It is **off until you turn it on**: [`mfa_enforcement`](../reference/settings.md#mfa_enforcement) starts at `off`, and nobody is asked for a code until they set one up themselves. Requiring it applies at each account's next sign-in; sessions already open run to their expiry. Before requiring it of administrators, know the break-glass, [`KUBEMG_MFA_RESET_USERNAME`](environment.md), and unset it again once it has been used.
+    - **A security key works only at the [public URL](../reference/settings.md#public_url)'s own address**, which must be https with a hostname (not an IP address). [Where a security key works](../access/mfa.md#where-a-security-key-works) says what the profile shows when it is not.
+    - **The [`kubemg` command line](../access/cli.md)** is new: kubectl access to agent-mode clusters through a console sign-in, with fifteen-minute credentials and no kubeconfig file. The server image now carries the CLI for every platform, so an air-gapped site serves it itself. Nothing changes for anyone who does not use it. [`kubeconfig_issuance: cli_only`](../access/cli.md#withholding-kubeconfig-files) withholds agent-mode kubeconfig files once it is the only way you want, and is not the default.
+    - **Behind an ingress or a load balancer, check [`KUBEMG_TRUSTED_PROXIES`](environment.md#client-addresses-behind-a-proxy)** if you have not since 0.14.2: the CLI's approval page warns when a sign-in came from another address, and that comparison needs the caller's real address.
 
 An install that runs from a clone of the repository has one more thing to get right: see [Upgrading a git checkout](#upgrading-a-git-checkout).
 
@@ -109,7 +114,7 @@ A rollback does **not** undo:
 
 ## Documentation versioning
 
-This manual is versioned against release tags. An install running `0.15.0` matches the `0.15.0` docs; check the version selector.
+This manual is versioned against release tags. An install running `0.16.0` matches the `0.16.0` docs; check the version selector.
 
 ## Upgrading to 0.11.0
 

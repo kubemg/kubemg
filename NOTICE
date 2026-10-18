@@ -11,8 +11,9 @@ only one half runs inside somebody else's cluster.
 
   agent/            the in-cluster Dumb Agent
   deploy/kustomize/ the agent's install manifests
+  cli/              the kubemg command line
       Apache License, Version 2.0
-      See agent/LICENSE and deploy/LICENSE.
+      See agent/LICENSE, deploy/LICENSE and cli/LICENSE.
 
 The agent is deliberately the permissive half. It is the only component that
 runs inside a customer's cluster, so a SecOps team has to be able to read it,
@@ -52,9 +53,14 @@ dependencies are, in full:
     golang.org/x/crypto, golang.org/x/oauth2                     BSD-3-Clause
     k8s.io/api, k8s.io/apimachinery, k8s.io/client-go            Apache-2.0
     sigs.k8s.io/yaml                                             MIT / BSD-3-Clause
+    rsc.io/qr                                                    BSD-3-Clause
+    github.com/go-webauthn/webauthn                              BSD-3-Clause
 
   Go, agent (agent/go.mod)
     github.com/gorilla/websocket                                 BSD-2-Clause
+
+  Go, CLI (cli/go.mod)
+    go.yaml.in/yaml/v3                                           MIT / Apache-2.0
 
   Browser (frontend/package.json)
     react, react-dom, react-router-dom                           MIT

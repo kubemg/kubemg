@@ -2,7 +2,8 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { ArrowRight, Building2, KeyRound, Network } from 'lucide-react'
 import { ssoLoginURL, ssoPasswordLogin } from '../api/client'
-import type { SSOProtocol, SSOProviderSummary } from '../api/types'
+import type { MFAChallenge, SSOProtocol, SSOProviderSummary } from '../api/types'
+import { isMFAChallenge } from '../lib/mfa'
 import { Button, Field, Notice, TextInput } from './primitives'
 import { readSignInFailure, signInErrorText } from '../lib/signInError'
 import { useAuth } from '../state/auth-context'
@@ -35,9 +36,13 @@ const PROTOCOL_ICON: Record<SSOProtocol, typeof KeyRound> = {
 export function SsoProviderSlot({
   providers,
   onBusyChange,
+  onChallenge,
 }: {
   providers: SSOProviderSummary[] | null
   onBusyChange?: (busy: boolean) => void
+  /** A directory sign-in that still owes KubeMG's second factor — a bind is
+      only a password, so LDAP accounts are covered the way local ones are. */
+  onChallenge?: (challenge: MFAChallenge, account: string) => void
 }) {
   const [active, setActive] = useState<SSOProviderSummary | null>(null)
   const shown = providers ?? []
@@ -96,7 +101,7 @@ export function SsoProviderSlot({
                   )}
 
                   {expanded ? (
-                    <DirectoryForm provider={provider} onBusyChange={onBusyChange} />
+                    <DirectoryForm provider={provider} onBusyChange={onBusyChange} onChallenge={onChallenge} />
                   ) : null}
                 </div>
               )
@@ -116,9 +121,11 @@ export function SsoProviderSlot({
 function DirectoryForm({
   provider,
   onBusyChange,
+  onChallenge,
 }: {
   provider: SSOProviderSummary
   onBusyChange?: (busy: boolean) => void
+  onChallenge?: (challenge: MFAChallenge, account: string) => void
 }) {
   const { adoptSession } = useAuth()
   const [username, setUsername] = useState('')
@@ -132,8 +139,14 @@ function DirectoryForm({
     onBusyChange?.(true)
     setError(null)
     try {
-      const session = await ssoPasswordLogin(provider.id, username, password)
-      await adoptSession(session.token, session.user)
+      const result = await ssoPasswordLogin(provider.id, username, password)
+      if (isMFAChallenge(result)) {
+        setBusy(false)
+        onBusyChange?.(false)
+        onChallenge?.(result, username)
+        return
+      }
+      await adoptSession(result.token, result.user)
     } catch (err) {
       setError(signInErrorText(readSignInFailure(err), 'directory'))
       setBusy(false)

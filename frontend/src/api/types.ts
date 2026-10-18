@@ -1,4 +1,5 @@
 import type { TimeRangeId } from '../lib/timerange'
+import type { CreationOptionsJSON, RequestOptionsJSON } from '../lib/webauthn'
 
 export type Role = 'admin' | 'user'
 
@@ -184,6 +185,8 @@ export type IssuedKubeconfigStatus = 'active' | 'expired' | 'revoked'
 /** What a blanket revoke actually reached. The second half is the honest half. */
 export interface KubeconfigRevokeAllResult {
   revoked: number
+  /** Signed-in kubemg CLIs the blanket revoke ended. */
+  cli_sessions_revoked?: number
   still_valid: number
   clusters_not_reached?: string[]
   explanation?: string
@@ -297,6 +300,107 @@ export interface LoginResponse {
   expires_at: string
   user: User
 }
+
+/**
+ * What a right password is answered with when a second factor is still owed:
+ * a challenge and no token. `mfa_required` means prove a factor the account
+ * holds; `mfa_enrollment_required` means the account must hold one and does
+ * not, so the challenge opens enrolment and nothing else.
+ */
+export interface MFAChallenge {
+  mfa_required?: boolean
+  mfa_enrollment_required?: boolean
+  challenge: string
+  challenge_expires_at: string
+  /**
+   * What the step accepts. For a verify challenge, the factors the account
+   * holds — `webauthn` first when a key works here, then `totp` — and
+   * `recovery` when codes are left. For an enrolment, the kinds that can be set
+   * up: `totp`, and `webauthn` when this install can use a key.
+   */
+  methods?: string[]
+}
+
+/** Either half of a password sign-in's answer. */
+export type SignInResult = LoginResponse | MFAChallenge
+
+/** A session finished by a second factor. The count is there only when a
+    recovery code did it, so the person knows how close they are to a reset. */
+export interface MFASessionResponse extends LoginResponse {
+  recovery_codes_remaining?: number
+}
+
+export interface MFAFactor {
+  id: number
+  kind: 'totp' | 'webauthn' | string
+  name: string
+  /** A key's: the host it was registered for. It answers nowhere else. */
+  rp_id?: string
+  confirmed_at?: string
+  last_used_at?: string
+  created_at: string
+}
+
+/** An account's second factor. `applies` is false for an account whose factor
+    is its identity provider's (OIDC, SAML) or that has none by construction
+    (a machine account). */
+export interface MFAStatus {
+  applies: boolean
+  required: boolean
+  enrolled: boolean
+  factors: MFAFactor[]
+  recovery_codes_remaining: number
+  /** Whether a security key can be added and used here, and the host keys
+      are bound to. Absent from a server older than security keys. */
+  webauthn?: WebAuthnAvailability
+}
+
+export interface WebAuthnAvailability {
+  available: boolean
+  rp_id?: string
+  /** Why not, when not. */
+  reason?: string
+}
+
+export interface MFAEnrollment {
+  factor_id: number
+  kind?: 'totp' | 'webauthn'
+  /** An app's: Base32, for typing in by hand when the QR code cannot be scanned. */
+  secret?: string
+  otpauth_uri?: string
+  /** An app's: a PNG data: URI, drawn by the server. */
+  qr?: string
+  /** A key's: the options the browser makes a credential with. */
+  webauthn?: { publicKey: CreationOptionsJSON }
+}
+
+/** A security key's answer to a ceremony the server opened. */
+export interface WebAuthnProof {
+  ceremony: string
+  credential: Record<string, unknown>
+}
+
+/** A ceremony opened for a key to sign. */
+export interface WebAuthnCeremony {
+  ceremony: string
+  expires_at: string
+  options: { publicKey: RequestOptionsJSON }
+}
+
+/** What a change to the factors is proved with: a code, or a key. */
+export interface FactorProof {
+  code?: string
+  webauthn?: WebAuthnProof
+}
+
+export interface MFAConfirmResult {
+  /** Present only for an account's first factor — shown once. */
+  recovery_codes?: string[]
+  /** Present when the enrolment finished a sign-in. */
+  session?: MFASessionResponse
+}
+
+export type MFAEnforcement = 'off' | 'admins' | 'all'
 
 export interface ClusterListResponse {
   clusters: Cluster[]
@@ -2136,6 +2240,63 @@ export interface KubeconfigPolicy {
   min_ttl_seconds: number
   default_ttl_seconds: number
   max_ttl_seconds: number
+  /** `cli_only` means no agent-mode kubeconfig file is handed out: kubectl
+      reaches an agent-mode cluster through the kubemg CLI's short-lived
+      credentials only. */
+  issuance?: KubeconfigIssuance
+  /** How long a `kubemg login` lasts. */
+  cli_session_max_hours?: number
+  /** What `kubemg login --server` takes. */
+  server_url?: string
+  /** SHA-256s of the certificate kubemg serves when it is one of its own
+      (self-signed or a pinned bundle) — what the first `kubemg login` shows
+      before asking to trust it. Empty when the certificate is publicly
+      trusted. */
+  tls_fingerprints?: string[]
+}
+
+export type KubeconfigIssuance = 'allowed' | 'cli_only'
+
+/** The kubemg CLI binaries this server carries, for an air-gapped site. */
+export interface CLIDownloads {
+  /** False on a server built without them; `releases_url` is the fallback. */
+  available: boolean
+  downloads: { os: string; arch: string; path: string; size: number; sha256: string }[]
+  releases_url: string
+}
+
+/** One `kubemg login` waiting for approval, as the approval page shows it. */
+export interface CLIDeviceRequest {
+  user_code: string
+  client_name?: string
+  client_host?: string
+  client_os?: string
+  client_version?: string
+  source_ip: string
+  /** Whether the request came from the address this browser is at. */
+  same_address: boolean
+  status: 'pending' | 'approved' | 'denied'
+  created_at: string
+  expires_at: string
+  session_hours: number
+}
+
+/** A signed-in kubemg CLI, in the credential register. */
+export interface CLISession {
+  id: string
+  user_id: number
+  username: string
+  client_name?: string
+  client_host?: string
+  client_os?: string
+  client_version?: string
+  source_ip?: string
+  expires_at: string
+  revoked_at?: string
+  revoked_by_username?: string
+  last_used_at?: string
+  created_at: string
+  status: 'active' | 'expired' | 'revoked'
 }
 
 /**
@@ -2144,6 +2305,13 @@ export interface KubeconfigPolicy {
  * clearing a field restores the default rather than emptying it.
  */
 export interface RuntimeSettings {
+  /** Whose password sign-in also needs a second factor. Empty in `overrides`
+      means unset, which is off. */
+  mfa_enforcement: MFAEnforcement | ''
+  /** How long a `kubemg login` lasts. 0 in `overrides` means unset. */
+  cli_session_max_hours: number
+  /** Empty in `overrides` means unset, which is allowed. */
+  kubeconfig_issuance: KubeconfigIssuance | ''
   public_url: string
   agent_image: string
   agent_namespace: string

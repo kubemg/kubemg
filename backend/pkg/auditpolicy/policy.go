@@ -56,6 +56,10 @@ var Verbs = []string{
 //     replaced, and a live tunnel being taken over by a newer connection. The
 //     second is how somebody holding a leaked token becomes the agent; a trail
 //     that could be told to forget it would make the takeover silent.
+//   - mfa-reset / mfa-remove / mfa-recovery-used: somebody's second factor
+//     being taken away or stood in for. Each one weakens how an account
+//     authenticates, which is exactly what an attacker holding a session wants
+//     done quietly.
 //   - jit-*: somebody being granted a stronger role than they hold, and for how
 //     long. These are the *fewest* rows in the table and the ones an auditor opens
 //     first — a suppressible privilege escalation record would make the whole
@@ -71,6 +75,9 @@ var alwaysRecorded = map[string]bool{
 	"secret-reveal":      true,
 	"agent-token-rotate": true,
 	"agent-displaced":    true,
+	"mfa-reset":          true,
+	"mfa-remove":         true,
+	"mfa-recovery-used":  true,
 	"jit-request":        true,
 	"jit-approve":        true,
 	"jit-reject":         true,

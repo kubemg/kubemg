@@ -30,6 +30,31 @@ COPY frontend/ ./
 # than shipping a console that was never type-checked.
 RUN npm run build
 
+# --- kubemg CLI ---------------------------------------------------------------
+# The command line for every platform it is published for, carried in the image
+# so an air-gapped site can hand it out from the server people already reach
+# (GET /downloads/cli). Pinned to the builder and cross-compiled, like the
+# server below: pure Go with CGO off, so emulating each target would only be
+# slower. Same platforms as hack/cli-dist.sh — keep the two lists in step.
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS cli
+
+ARG VERSION=dev
+
+WORKDIR /src
+
+COPY cli/go.mod cli/go.sum ./
+RUN go mod download
+
+COPY cli/ ./
+
+RUN for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do \
+      os=${target%/*}; arch=${target#*/}; ext=""; \
+      [ "$os" = windows ] && ext=".exe"; \
+      CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
+        -ldflags "-s -w -X main.version=${VERSION}" \
+        -o /out/cli/$os-$arch/kubemg$ext ./cmd/kubemg || exit 1; \
+    done
+
 # --- server ------------------------------------------------------------------
 # Same approach as agent/Dockerfile: pinned to the builder, cross-compiled to the
 # target. Pure Go with CGO off produces the same binary either way, and QEMU
@@ -73,6 +98,9 @@ LABEL org.opencontainers.image.title="KubeMG" \
       org.opencontainers.image.licenses="AGPL-3.0"
 
 COPY --from=build /out/kubemg /kubemg
+# Served by GET /downloads/cli (KUBEMG_CLI_DIR). Read-only, owned by root: the
+# server hands these out and never writes them.
+COPY --from=cli /out/cli /usr/share/kubemg/cli
 COPY --from=build --chown=65532:65532 /state/etc/kubemg /etc/kubemg
 COPY --from=build --chown=65532:65532 /state/var/lib/kubemg /var/lib/kubemg
 

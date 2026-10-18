@@ -24,6 +24,12 @@ import (
 // and are revoked in different places is how the wrong one gets revoked.
 const MachineTokenPrefix = "kmgm_"
 
+// CLIRefreshPrefix marks a `kubemg` CLI session's refresh token. It is accepted
+// by the CLI's own routes and nothing else: RequireAuth refuses it by name, so
+// the token on a laptop can mint a fifteen-minute kubectl credential and cannot
+// open the rest of the API.
+const CLIRefreshPrefix = "kmgr_"
+
 // machineTokenBytes is the entropy behind the secret. 256 bits is what makes a
 // plain hash the right thing to store: there is nothing here to guess, so a
 // password KDF would defend nothing and would put its work factor in front of

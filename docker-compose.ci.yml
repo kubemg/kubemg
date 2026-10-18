@@ -57,6 +57,35 @@ services:
       - go-build-cache:/root/.cache/go-build
     command: go vet ./...
 
+  cli-build:
+    image: golang:1.26-alpine
+    working_dir: /app
+    volumes:
+      - ./cli:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    environment:
+      - CGO_ENABLED=0
+    command: go build -trimpath -ldflags "-s -w" -o kubemg ./cmd/kubemg
+
+  cli-test:
+    image: golang:1.26-alpine
+    working_dir: /app
+    volumes:
+      - ./cli:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    command: go test ./...
+
+  cli-vet:
+    image: golang:1.26-alpine
+    working_dir: /app
+    volumes:
+      - ./cli:/app
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    command: go vet ./...
+
   # The bastion embeds a copy of the agent manifests; drift between the two is
   # a build failure rather than a surprise at install time.
   manifest-check:

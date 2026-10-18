@@ -406,12 +406,19 @@ func (s *server) ldapLogin(c *gin.Context) {
 
 	attempt.Succeed()
 
-	session, err := s.completeSSOLogin(c.Request.Context(), provider, identity)
+	result, err := s.syncSSOAccount(c.Request.Context(), provider, identity)
 	if err != nil {
 		c.JSON(ssoStatusFor(err), gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, session)
+	// A directory bind is a password and nothing else, so an LDAP account owes
+	// KubeMG's second factor exactly as a local one does — see User.MFAApplies.
+	user := result.User
+	user.Normalize()
+	if s.challengeSignIn(c, user) {
+		return
+	}
+	s.issueSession(c, user, false)
 }
 
 // ssoMetadata serves KubeMG's SAML SP metadata, which is what an operator
@@ -444,7 +451,7 @@ func (s *server) ssoMetadata(c *gin.Context) {
 func (s *server) completeSSOLogin(
 	ctx context.Context, provider *db.SSOProviderConfig, identity db.SSOIdentity,
 ) (loginResponse, error) {
-	result, err := s.store.SyncSSOUserAndGroups(ctx, provider, identity)
+	result, err := s.syncSSOAccount(ctx, provider, identity)
 	if err != nil {
 		return loginResponse{}, err
 	}
@@ -452,6 +459,24 @@ func (s *server) completeSSOLogin(
 	token, expiresAt, err := s.jwt.Generate(result.User.ID, result.User.Username, result.User.Role)
 	if err != nil {
 		return loginResponse{}, errors.New("could not issue token")
+	}
+
+	return loginResponse{
+		Token:     token,
+		ExpiresAt: expiresAt,
+		User:      toUserResponse(result.User),
+	}, nil
+}
+
+// syncSSOAccount provisions and reconciles the account a verified identity
+// names. It is completeSSOLogin without the session, for the one federated
+// path — LDAP — whose sign-in may still owe a second factor.
+func (s *server) syncSSOAccount(
+	ctx context.Context, provider *db.SSOProviderConfig, identity db.SSOIdentity,
+) (*db.SSOSyncResult, error) {
+	result, err := s.store.SyncSSOUserAndGroups(ctx, provider, identity)
+	if err != nil {
+		return nil, err
 	}
 
 	if s.logger != nil {
@@ -464,12 +489,7 @@ func (s *server) completeSSOLogin(
 			"cluster_grants", result.ClusterGrants,
 		)
 	}
-
-	return loginResponse{
-		Token:     token,
-		ExpiresAt: expiresAt,
-		User:      toUserResponse(result.User),
-	}, nil
+	return result, nil
 }
 
 // ssoStatusFor maps the sync's refusals onto status codes. They are all
