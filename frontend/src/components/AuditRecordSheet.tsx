@@ -194,6 +194,11 @@ export function AuditRecordSheet({
           columns={2}
           rows={[
             { term: 'Status', value: String(event.status), tone: event.status >= 400 ? 'warn' : 'default' },
+            // Only drawn when marked: an unmarked refusal is the cluster's on a
+            // new row, but unknown on one written before the field existed.
+            ...(event.refused_by === 'kubemg'
+              ? [{ term: 'Refused by', value: 'KubeMG, before the cluster was asked', tone: 'warn' as const }]
+              : []),
             { term: 'Streaming', value: event.streaming ? (event.phase ?? 'yes') : 'no' },
             ...(event.streaming
               ? [

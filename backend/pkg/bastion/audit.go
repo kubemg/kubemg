@@ -38,6 +38,11 @@ type Event struct {
 	Duration           time.Duration
 	// Error explains a call that never reached the API server.
 	Error string
+	// RefusedBy is RefusedByKubeMG when KubeMG refused the call itself — a
+	// namespace outside the grant, a guardrail, a check the API layer makes
+	// before the tunnel — and empty otherwise, so an auditor can tell "KubeMG
+	// said no" from "the cluster said no" without reading the message.
+	RefusedBy string
 
 	// Streaming marks a long-lived call — exec, attach, watch, logs -f. Such a
 	// call is recorded twice, once when it opens and once when it ends, because
@@ -138,6 +143,9 @@ func (a *SlogAuditor) Record(ctx context.Context, event Event) {
 	}
 	if event.Error != "" {
 		attrs = append(attrs, slog.String("error", event.Error))
+	}
+	if event.RefusedBy != "" {
+		attrs = append(attrs, slog.String("refused_by", event.RefusedBy))
 	}
 	if event.Streaming {
 		attrs = append(attrs, slog.Bool("streaming", true), slog.String("phase", event.Phase))

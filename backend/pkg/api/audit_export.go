@@ -66,6 +66,7 @@ var auditExportColumns = []string{
 	"guardrail_policy",
 	"guardrail_action",
 	"error",
+	"refused_by",
 }
 
 // exportAudit writes the filtered trail as CSV.
@@ -158,5 +159,6 @@ func auditExportRow(event db.AuditEvent) []string {
 		event.GuardrailPolicy,
 		event.GuardrailAction,
 		event.Error,
+		event.RefusedBy,
 	}
 }

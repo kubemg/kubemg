@@ -620,6 +620,12 @@ func (s *server) recordSilence(c *gin.Context, user *db.User, cluster *db.Cluste
 	if id != "" && verb == verbSilenceCreate {
 		path += "/" + id
 	}
+	// The only 4xx recorded here is KubeMG's own edit-grant check; the
+	// Alertmanager's failures arrive as a 502.
+	refusedBy := ""
+	if status >= http.StatusBadRequest && status < http.StatusInternalServerError {
+		refusedBy = bastion.RefusedByKubeMG
+	}
 	s.auditor.Record(c.Request.Context(), bastion.Event{
 		At:        time.Now().UTC(),
 		UserID:    user.ID,
@@ -633,6 +639,7 @@ func (s *server) recordSilence(c *gin.Context, user *db.User, cluster *db.Cluste
 		Resource:  "silences",
 		Status:    status,
 		Error:     reason,
+		RefusedBy: refusedBy,
 	})
 }
 

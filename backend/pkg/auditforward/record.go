@@ -73,6 +73,9 @@ func encode(ctx context.Context, event bastion.Event) (record, bool) {
 	if event.Error != "" {
 		fields["error"] = event.Error
 	}
+	if event.RefusedBy != "" {
+		fields["refused_by"] = event.RefusedBy
+	}
 	if event.Streaming {
 		fields["streaming"] = true
 		fields["phase"] = event.Phase

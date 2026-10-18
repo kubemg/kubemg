@@ -594,7 +594,7 @@ func NewRouter(opts Options) *gin.Engine {
 		cliDir:               strings.TrimSpace(opts.CLIDir),
 		recordingKey:         opts.RecordingKey,
 		recordingInput:       opts.RecordingInput,
-		auditor:              opts.Auditor,
+		auditor:              bastion.NoteAttempts(opts.Auditor),
 		auditRetentionDays:   retention,
 		auditPolicy:          opts.AuditPolicy,
 		guardrails:           opts.Guardrails,
@@ -941,21 +941,26 @@ func NewRouter(opts Options) *gin.Engine {
 		// window. A range query is also the most expensive read here, so it is
 		// cached on the same terms — a chart genuinely asking for a different
 		// window still misses, because the window is part of the key.
-		sources.GET("/metrics/query", s.cachedRead(), s.queryMetrics)
+		// KubeMG's own refusals on every route that reaches a cluster or its
+		// data are recorded by one middleware rather than at forty call sites.
+		// See audit_refusals.go for what it records and what it leaves out.
+		refusals := s.auditRefusals()
+
+		sources.GET("/metrics/query", refusals, s.cachedRead(), s.queryMetrics)
 		// The comparison table, cached on the same terms and for the same
 		// reason — it costs two queries rather than one, and a page carrying a
 		// chart row and a table asks for both on every render.
-		sources.GET("/metrics/compare", s.cachedRead(), s.compareMetrics)
-		sources.GET("/logs/query", s.queryLogs)
+		sources.GET("/metrics/compare", refusals, s.cachedRead(), s.compareMetrics)
+		sources.GET("/logs/query", refusals, s.queryLogs)
 
 		// The cluster's Alertmanager: what is firing and what is muted, read as
 		// the datasource and narrowed to the caller's grant like the query path.
 		// A silence is the one write; KubeMG decides it (an edit grant over the
 		// alert's namespace) and records it, because no cluster RBAC sees it.
-		sources.GET("/alerts", s.cachedRead(), s.listFiringAlerts)
-		sources.GET("/silences", s.listSilences)
-		sources.POST("/silences", s.createSilence)
-		sources.DELETE("/silences/:sid", s.expireSilence)
+		sources.GET("/alerts", refusals, s.cachedRead(), s.listFiringAlerts)
+		sources.GET("/silences", refusals, s.listSilences)
+		sources.POST("/silences", refusals, s.createSilence)
+		sources.DELETE("/silences/:sid", refusals, s.expireSilence)
 		// Which labels a rule needs for this cluster's Prometheus to load it —
 		// read for the administrator registering the Alertmanager.
 		sources.GET("/alerting/rule-selectors", requireAdmin, s.prometheusRuleSelectors)
@@ -982,7 +987,7 @@ func NewRouter(opts Options) *gin.Engine {
 			 * attach is a WebSocket, so it authenticates on the query parameter the
 			 * same way the pod terminal does — see auth.RequireAuth.
 			 */
-			shellRoutes := clusters.Group("/:id/shell")
+			shellRoutes := clusters.Group("/:id/shell", refusals)
 			shellRoutes.GET("", s.showShell)
 			shellRoutes.POST("", s.startShell)
 			shellRoutes.DELETE("", s.stopShell)
@@ -990,7 +995,7 @@ func NewRouter(opts Options) *gin.Engine {
 
 			// kubectl's server URL points here, so every verb has to land on
 			// the same handler.
-			clusters.Any("/:id/proxy/*path", opts.Proxy.Handle)
+			clusters.Any("/:id/proxy/*path", refusals, opts.Proxy.Handle)
 
 			// Live cluster state, read on demand through the same tunnel and
 			// under the same impersonated identity as a kubectl call — the UI
@@ -999,7 +1004,7 @@ func NewRouter(opts Options) *gin.Engine {
 			// keyed by caller and question and served from memory for a few
 			// seconds, and every write here drops the cluster's entries so a
 			// scale or a restart is visible in the next list.
-			resources := clusters.Group("/:id/resources", s.cachedRead())
+			resources := clusters.Group("/:id/resources", refusals, s.cachedRead())
 
 			// How many of each kind the caller can see, read at limit=1 so the
 			// cost is flat in the size of the cluster rather than proportional
@@ -1104,7 +1109,7 @@ func NewRouter(opts Options) *gin.Engine {
 			// second copy of it in a second place. It needs a capability of its
 			// own on top of the cluster's RBAC, and it writes its own audit
 			// record before the bytes leave. See resources_secret_value.go.
-			clusters.GET("/:id/resources/secret/value", s.revealSecretValue)
+			clusters.GET("/:id/resources/secret/value", refusals, s.revealSecretValue)
 
 			resources.GET("/crds", s.listCRDs)
 			resources.GET("/nodes", s.listNodes)
@@ -1128,7 +1133,7 @@ func NewRouter(opts Options) *gin.Engine {
 			// cluster's refusal. Deliberately outside the cached group: it is a
 			// write down the tunnel, and the middleware would drop the cluster's
 			// cached reads on every question asked.
-			clusters.POST("/:id/resources/access-review", s.accessReview)
+			clusters.POST("/:id/resources/access-review", refusals, s.accessReview)
 			resources.GET("/access-review/verbs", s.accessReviewVerbs)
 			// Who KubeMG impersonates for this caller on this cluster — the
 			// subject to ask a review about to find out what your own grant is
@@ -1201,7 +1206,7 @@ func NewRouter(opts Options) *gin.Engine {
 			// resources group all the same, since a diff has to be computed on the
 			// live object every time it is asked for, the same reasoning as
 			// access-review below.
-			clusters.POST("/:id/resources/object/diff", s.previewResourceObjectDiff)
+			clusters.POST("/:id/resources/object/diff", refusals, s.previewResourceObjectDiff)
 
 			// The workload writes that are not worth hand-editing a manifest
 			// for. All three are read-modify-writes down the same impersonated
@@ -1264,8 +1269,8 @@ func NewRouter(opts Options) *gin.Engine {
 			// applies here too, and doubly so: caching a write's own response
 			// makes no sense, and this one needs no cache invalidation on the
 			// cluster's resources at all since nothing on the cluster changed.
-			clusters.POST("/:id/resources/posture/ack", s.acknowledgePostureFinding)
-			clusters.DELETE("/:id/resources/posture/ack", s.unacknowledgePostureFinding)
+			clusters.POST("/:id/resources/posture/ack", refusals, s.acknowledgePostureFinding)
+			clusters.DELETE("/:id/resources/posture/ack", refusals, s.unacknowledgePostureFinding)
 
 			// Live utilisation from the cluster's own Metrics API. It rides the
 			// same tunnel, grant and audit trail as the lists above; a cluster
@@ -1273,7 +1278,7 @@ func NewRouter(opts Options) *gin.Engine {
 			// Cached on the same terms as the lists above. metrics-server
 			// resamples every 15s or so, so a reading a few seconds old is
 			// the same reading — and the console polls these on a timer.
-			metrics := clusters.Group("/:id/metrics", s.cachedRead())
+			metrics := clusters.Group("/:id/metrics", refusals, s.cachedRead())
 			metrics.GET("/nodes", s.nodeMetrics)
 			metrics.GET("/pods", s.podMetrics)
 			metrics.GET("/pods/:pod", s.showPodMetrics)

@@ -12,6 +12,25 @@ The audit trail records every call kubemg proxies to a cluster, plus kubemg's ow
 
 A refusal is recorded like a success: a guardrail block, a namespace-scope violation, a tunnel failure. There is no separate "denied" table. A denial is a row whose `status` is 4xx/5xx or whose `error` is set.
 
+### Refusals kubemg makes itself
+
+The trail records every attempt, not only the calls that reached a cluster. When kubemg refuses a request before asking the cluster, that refusal is a row too. Examples:
+
+- A namespace outside your grant.
+- A cluster-wide list (nodes, persistent volumes, storage classes) asked for under a namespace-scoped grant.
+- A kind kubemg will not create (roles, bindings, nodes).
+- A manifest addressed at a different namespace from the one it is being created in.
+- A metrics or logs chart that would cover namespaces outside your grant.
+- A `kubectl` call on a cluster you hold no grant on.
+
+These rows carry `refused_by: kubemg` and the message you were given as `error`. They carry no impersonated identity, because nothing was asserted to the cluster. A refusal the cluster gave has no `refused_by` and is recorded once, by the call that carried it.
+
+Not recorded:
+
+- A request with no valid session (`401`). There is no account to put on the row.
+- A server error (`5xx`). That is a failure, not a refusal. Calls that reached a cluster are recorded either way.
+- Refusals on kubemg's own configuration pages for a cluster (consoles, cost rates, sidebar curation, datasource settings) and on kubeconfig generation. These reach neither the cluster nor its data.
+
 ## The record
 
 | Field | Meaning |
@@ -31,6 +50,7 @@ A refusal is recorded like a success: a guardrail block, a namespace-scope viola
 | `guardrail_policy` / `guardrail_action` | Which [guardrail](../access/guardrails.md) matched and what it did (`block` or `warn`) |
 | `source_addr` / `user_agent` | Where the call came from. See [Where a call came from](#where-a-call-came-from) |
 | `error` | Set when the call never reached the API server |
+| `refused_by` | `kubemg` when kubemg refused the call itself instead of asking the cluster. See [Refusals kubemg makes itself](#refusals-kubemg-makes-itself) |
 | `diff` | Field-level diff of a manifest write. Only when [manifest diff recording](#manifest-diff-recording) is on |
 
 <figure markdown>

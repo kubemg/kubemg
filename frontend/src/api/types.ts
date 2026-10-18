@@ -540,6 +540,12 @@ export interface AuditEvent {
   guardrail_policy?: string
   guardrail_action?: string
   /**
+   * `kubemg` when KubeMG refused the call itself — before the tunnel, or a
+   * guardrail — rather than the cluster. Absent when the cluster answered, and
+   * on every row written before the field existed.
+   */
+  refused_by?: string
+  /**
    * Where the call came from, as the server saw it. Both are absent on a record
    * with no caller (something this server did on its own) and on every row
    * written before the columns existed — which is a real state and reads as
