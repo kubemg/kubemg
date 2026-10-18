@@ -10,7 +10,7 @@ import {
 import type { Cluster, ContainerUsage, Pod, PodContainer, PodUsage } from '../api/types'
 import { MetricsChart } from './MetricsChart'
 import { ArcGauge, Button, Chip, Meter, Notice, Panel, Pill, SearchInput } from './primitives'
-import { useLiveTick } from '../lib/live'
+import { useLiveTick, useRefusalHold } from '../lib/live'
 import { formatCPU, formatMemory, podLimit, ratio } from '../lib/units'
 
 /*
@@ -42,6 +42,7 @@ function usePodUsage(cluster: Cluster, pod: Pod, enabled: boolean) {
   // Which pod the newest sample belongs to, so an answer that lands after the
   // drawer has moved to another one is dropped rather than drawn under its name.
   const active = useRef('')
+  const { refused, settle } = useRefusalHold()
 
   const read = useCallback(
     async (quiet = false) => {
@@ -53,14 +54,16 @@ function usePodUsage(cluster: Cluster, pod: Pod, enabled: boolean) {
         setUsage(result.pod)
         setUnavailable(result.available ? null : (result.reason ?? 'No metrics for this cluster.'))
         setError(null)
+        settle(null)
       } catch (err) {
         if (active.current !== target) return
+        settle(err)
         // A background sample that fails keeps the last one: bars that vanish
         // because one poll missed say less than the bars did.
         if (!quiet) setError(errorMessage(err, 'Could not read this pod’s usage.'))
       }
     },
-    [cluster.id, pod.namespace, pod.name],
+    [cluster.id, pod.namespace, pod.name, settle],
   )
 
   useEffect(() => {
@@ -72,7 +75,8 @@ function usePodUsage(cluster: Cluster, pod: Pod, enabled: boolean) {
   // round trip every fifteen seconds for a panel nobody is looking at.
   useLiveTick(useCallback(() => read(true), [read]), {
     interval: USAGE_POLL_MS,
-    enabled,
+    // A refused sample is not asked again on the tick (`isRefusal`).
+    enabled: enabled && !refused,
   })
 
   return { usage, unavailable, error }

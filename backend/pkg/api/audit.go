@@ -47,6 +47,9 @@ type auditEventResponse struct {
 	GuardrailPolicy string `json:"guardrail_policy,omitempty"`
 	GuardrailAction string `json:"guardrail_action,omitempty"`
 	Error           string `json:"error,omitempty"`
+	// RefusedBy is "kubemg" when KubeMG refused the call itself, before or
+	// instead of asking the cluster; empty when the cluster answered.
+	RefusedBy string `json:"refused_by,omitempty"`
 	// Where the call came from. Empty on a record with no caller and on every
 	// row written before the columns existed, which the console states as "not
 	// recorded" rather than drawing a blank cell that reads as an unknown host.
@@ -96,6 +99,7 @@ func toAuditResponse(event db.AuditEvent) auditEventResponse {
 		GuardrailPolicy:    event.GuardrailPolicy,
 		GuardrailAction:    event.GuardrailAction,
 		Error:              event.Error,
+		RefusedBy:          event.RefusedBy,
 		Diff:               diff,
 		SourceAddr:         event.SourceAddr,
 		UserAgent:          event.UserAgent,

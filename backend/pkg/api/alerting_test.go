@@ -218,12 +218,21 @@ func TestSilencingTakesAnEditGrantAndCopiesTheAlert(t *testing.T) {
 		t.Fatalf("createdBy = %v, want the KubeMG user", posted["createdBy"])
 	}
 
+	// Every attempt is in the trail: the handler's own refusal and silence, and
+	// the three refusals it answered without a record of its own, which the
+	// refusal recorder files under the same verb and marks as KubeMG's.
 	verbs := []string{}
 	for _, event := range a.auditor.all() {
-		verbs = append(verbs, event.Verb+":"+itoaInt(event.Status))
+		verb := event.Verb + ":" + itoaInt(event.Status)
+		if event.RefusedBy != "" {
+			verb += ":" + event.RefusedBy
+		}
+		verbs = append(verbs, verb)
 	}
-	if strings.Join(verbs, ",") != "silence-create:403,silence-create:201" {
-		t.Fatalf("audit = %v, want the refusal and the silence", verbs)
+	want := "silence-create:403:kubemg,silence-create:404:kubemg,silence-create:400:kubemg," +
+		"silence-create:400:kubemg,silence-create:201"
+	if strings.Join(verbs, ",") != want {
+		t.Fatalf("audit = %v, want %s", verbs, want)
 	}
 }
 

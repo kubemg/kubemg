@@ -42,13 +42,22 @@ the cache it needs is the same short-TTL, identity-keyed cache the server
 implements, and matching it exactly was cheaper than configuring a library into
 the same shape.
 
-Live reads (`lib/live.ts`) follow four rules:
+Live reads (`lib/live.ts`) follow five rules:
 
 - Ticks run **only while somebody is looking**.
 - A tick is invisible: it never draws a skeleton.
 - A failed tick **keeps what is on screen** and reports staleness.
 - A tick does not send `Cache-Control: no-cache`. **Refresh** stays the thing
   that actually asks the cluster.
+- A tick **never re-asks a refused read** (`isRefusal`: any 4xx but 408 and
+  429). KubeMG records its own refusals in the audit trail, so a page that
+  cannot be answered and kept asking would write a row every fifteen seconds
+  for every viewer. The refusal stands until the key changes, Refresh asks
+  again, or the page is reopened. `useCachedQuery` does this itself; a
+  hand-written poller uses `useRefusalHold` and passes `enabled: !refused` to
+  `useLiveTick`. Where the answer is known before asking — a cluster-wide
+  reading for a namespace-scoped grant (`cluster.namespaces` non-empty), a
+  namespace the grant does not name — the page says so and does not read.
 
 State reads as a word, never a spinner. The YAML tab, the logs and terminal tab,
 the fleet capacity fan-out and the wizard's handshake step are deliberately not

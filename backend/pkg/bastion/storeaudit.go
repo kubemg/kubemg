@@ -207,6 +207,7 @@ func toAuditRow(ctx context.Context, event Event) db.AuditEvent {
 		GuardrailPolicy:    event.GuardrailPolicy,
 		GuardrailAction:    event.GuardrailAction,
 		Error:              event.Error,
+		RefusedBy:          event.RefusedBy,
 		Diff:               string(event.Diff),
 		SourceAddr:         source.Addr,
 		UserAgent:          source.UserAgent,

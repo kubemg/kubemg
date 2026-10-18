@@ -176,6 +176,10 @@ func NewProxy(opts ProxyOptions) *Proxy {
 	if auditor == nil {
 		auditor = NewAuditor(nil)
 	}
+	// Every record the proxy writes marks the inbound request it was written
+	// under, so the API layer's refusal recorder never writes a second row for
+	// a refusal already here — see attempt.go.
+	auditor = NoteAttempts(auditor)
 	registry := opts.Registry
 	if registry == nil {
 		registry = NewRegistry()
@@ -262,6 +266,7 @@ func (p *Proxy) Handle(c *gin.Context) {
 	event.Name = parsed.Name
 
 	if allowed, reason := allowedNamespace(grant, parsed, path); !allowed {
+		event.RefusedBy = RefusedByKubeMG
 		p.fail(c, &event, http.StatusForbidden, reason)
 		return
 	}
@@ -296,6 +301,7 @@ func (p *Proxy) Handle(c *gin.Context) {
 	// port-forward is carried in its WebSocket form only. A SPDY client is
 	// refused here rather than left to hang on an upgrade nobody will answer.
 	if reason, refused := unsupportedStream(c.Request, parsed); refused {
+		event.RefusedBy = RefusedByKubeMG
 		p.fail(c, &event, http.StatusNotImplemented, reason)
 		return
 	}
@@ -328,6 +334,7 @@ func (p *Proxy) Handle(c *gin.Context) {
 
 	body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, maxRequestBody))
 	if err != nil {
+		event.RefusedBy = RefusedByKubeMG
 		p.fail(c, &event, http.StatusRequestEntityTooLarge, "request body is too large to proxy")
 		return
 	}
@@ -410,6 +417,7 @@ func (p *Proxy) Call(
 
 	if allowed, reason := allowedNamespace(grant, parsed, path); !allowed {
 		err := errors.New(reason)
+		event.RefusedBy = RefusedByKubeMG
 		record(http.StatusForbidden, err)
 		return nil, &CallError{Status: http.StatusForbidden, Message: reason}
 	}
@@ -422,6 +430,7 @@ func (p *Proxy) Call(
 	noteGuardrail(&event, decision)
 	if decision.Blocked() {
 		message := decision.Message()
+		event.RefusedBy = RefusedByKubeMG
 		record(http.StatusForbidden, errors.New(message))
 		return nil, &CallError{Status: http.StatusForbidden, Message: message, Policy: decision.Policy, Scope: decision.Scope}
 	}
@@ -535,6 +544,7 @@ func (p *Proxy) Watch(
 
 	if allowed, reason := allowedNamespace(grant, parsed, path); !allowed {
 		err := errors.New(reason)
+		event.RefusedBy = RefusedByKubeMG
 		record(http.StatusForbidden, err)
 		return nil, &CallError{Status: http.StatusForbidden, Message: reason}
 	}
@@ -543,6 +553,7 @@ func (p *Proxy) Watch(
 	noteGuardrail(&event, decision)
 	if decision.Blocked() {
 		message := decision.Message()
+		event.RefusedBy = RefusedByKubeMG
 		record(http.StatusForbidden, errors.New(message))
 		return nil, &CallError{Status: http.StatusForbidden, Message: message}
 	}

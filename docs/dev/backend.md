@@ -183,6 +183,37 @@ Every proxied call is recorded, refusals included, and a streaming call is
 recorded twice — once when it opens and once when it closes. Persistence is
 asynchronous and **drops on a full queue rather than blocking the proxy**.
 
+A refusal the API layer makes **before** the tunnel — a namespace outside the
+grant, `requireClusterScope`, a kind kubemg will not create, a manifest
+addressed at another namespace, a scoped caller asking the query path for a
+cluster-wide chart — is recorded by one middleware, `auditRefusals`
+(`pkg/api/audit_refusals.go`), not at the forty call sites that answer it. It
+sits on `/clusters/:id/resources` (and the `/:id/resources/...` routes
+registered outside that group), `/:id/metrics`, `/:id/shell`, `/:id/proxy`,
+and the observability query, alert and silence routes. It writes a row for a
+4xx answer, with `refused_by: "kubemg"`, the message the caller was given as
+the error, and the verb the tunnel call would have carried (`scale` is an
+`update`). Never a 401 (no identity), never a 5xx.
+
+"Already in the trail" is decided per status. The request carries a
+`bastion.Attempt` on its context, and every record written through the proxy's
+or the API's auditor (both wrapped by `bastion.NoteAttempts`) notes its status
+on it. The middleware stays quiet only when the status it is answering with was
+already recorded under the request — the cluster's own 403 carried back through
+`Proxy.Call`, the proxy's namespace check, a guardrail — so one refusal is never
+two rows. *Any* earlier refusal is deliberately not enough: Helm discovery
+404ing an absent group, then the pre-flight refusing with 403, would otherwise
+hide KubeMG's refusal behind an unrelated one. A same-status collision loses the
+second reason, never the fact of a refusal. The proxy marks its
+own refusals (namespace, guardrail, SPDY, oversized body) `refused_by: "kubemg"`
+too; an empty `refused_by` on a refused row means the cluster or the tunnel
+answered.
+
+Left out on purpose: kubeconfig issuance and the cluster's KubeMG-side
+configuration (consoles, cost rates, CRD visibility, datasource settings) —
+those reach neither a cluster nor its data, and the acts that matter there have
+verbs of their own.
+
 Selective audit (`pkg/auditpolicy`) publishes an immutable snapshot the gateway
 reads without a lock. Three things no selection suppresses: a refusal or error,
 any streaming call, and kubemg's own replay and recording routes. An empty

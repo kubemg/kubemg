@@ -425,6 +425,9 @@ type AuditEvent struct {
 	GuardrailAction string `gorm:"size:16" json:"guardrail_action,omitempty"`
 
 	Error string `gorm:"type:text" json:"error,omitempty"`
+	// RefusedBy is "kubemg" when KubeMG refused the call itself and empty when
+	// the answer came from the cluster (or nothing was refused).
+	RefusedBy string `gorm:"size:16" json:"refused_by,omitempty"`
 
 	// Where the call came from, as the server saw it: the client address
 	// resolved through whatever proxy headers are trusted, and the client's own
