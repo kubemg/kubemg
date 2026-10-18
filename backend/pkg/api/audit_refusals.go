@@ -26,11 +26,12 @@ import (
  * cluster or its data, for any 4xx answer whose refusal is not already in the
  * trail.
  *
- * "Already in the trail" is decided by bastion.Attempt rather than by status
- * code: every record written under this request's context notes itself on it,
- * so a cluster's own 403 handed back through Proxy.Call — recorded by Call — is
- * never written a second time, and a refusal of KubeMG's own is never missed
- * because some read before it succeeded.
+ * "Already in the trail" is decided by bastion.Attempt: every record written
+ * under this request's context notes its status on it, so a cluster's own 403
+ * handed back through Proxy.Call — recorded by Call — is never written a second
+ * time, and a refusal of KubeMG's own is never hidden behind an unrelated
+ * refusal recorded earlier in the same request (a different status is a
+ * different answer, and gets its own row).
  *
  * What it does not record: a 401 (no identity to put on the row — the session
  * is missing, expired or revoked before anything here runs), a 5xx (a failure,
@@ -63,7 +64,7 @@ func (s *server) auditRefusals() gin.HandlerFunc {
 
 		status := writer.Status()
 		if status < http.StatusBadRequest || status >= http.StatusInternalServerError ||
-			status == http.StatusUnauthorized || attempt.RefusalRecorded() {
+			status == http.StatusUnauthorized || attempt.RefusalRecorded(status) {
 			return
 		}
 		claims, ok := auth.ClaimsFrom(c)

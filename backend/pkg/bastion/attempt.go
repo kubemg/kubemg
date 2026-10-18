@@ -19,9 +19,15 @@ import (
  * recording it again would put one refusal in the trail twice.
  *
  * So the request carries an Attempt, and every record written under that
- * request's context notes itself on it. A refusal already recorded means the
- * middleware stays quiet; none means the answer was KubeMG's own and nobody has
- * written it down yet.
+ * request's context notes its status on it. The middleware stays quiet only
+ * when the status it is answering with is one already recorded — the cluster's
+ * answer being handed back. Any recorded refusal at all is not enough: a
+ * handler that reads first and refuses after (Helm discovery 404s an absent
+ * group, then the pre-flight refuses a cluster-scoped object with 403; a fan-out
+ * where one namespace is denied, then an answer of KubeMG's own) would hide its
+ * own refusal behind an unrelated one, and a caller could pick the request
+ * shape that does that. What remains is a same-status collision, which loses
+ * the second reason but never the fact of a refusal.
  */
 
 // RefusedByKubeMG marks a record whose refusal KubeMG made itself, before or
@@ -31,9 +37,10 @@ const RefusedByKubeMG = "kubemg"
 
 type attemptKey struct{}
 
-// Attempt is the audit state of one inbound request.
+// Attempt is the audit state of one inbound request: which 4xx statuses have
+// already been written to the trail under it.
 type Attempt struct {
-	refusalRecorded atomic.Bool
+	recorded [100]atomic.Bool
 }
 
 // WithAttempt starts tracking a request. Records written under the returned
@@ -43,10 +50,13 @@ func WithAttempt(ctx context.Context) (context.Context, *Attempt) {
 	return context.WithValue(ctx, attemptKey{}, attempt), attempt
 }
 
-// RefusalRecorded reports whether a refused or failed call has already been
+// RefusalRecorded reports whether a refusal with this status has already been
 // written to the trail under this request.
-func (a *Attempt) RefusalRecorded() bool {
-	return a != nil && a.refusalRecorded.Load()
+func (a *Attempt) RefusalRecorded(status int) bool {
+	if a == nil || status < 400 || status > 499 {
+		return false
+	}
+	return a.recorded[status-400].Load()
 }
 
 func noteRecorded(ctx context.Context, event Event) {
@@ -57,8 +67,8 @@ func noteRecorded(ctx context.Context, event Event) {
 	if attempt == nil {
 		return
 	}
-	if event.Status >= 400 || event.Error != "" {
-		attempt.refusalRecorded.Store(true)
+	if event.Status >= 400 && event.Status <= 499 {
+		attempt.recorded[event.Status-400].Store(true)
 	}
 }
 

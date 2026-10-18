@@ -195,12 +195,16 @@ and the observability query, alert and silence routes. It writes a row for a
 the error, and the verb the tunnel call would have carried (`scale` is an
 `update`). Never a 401 (no identity), never a 5xx.
 
-"Already in the trail" is not guessed from the status code. The request carries
-a `bastion.Attempt` on its context, and every record written through the
-proxy's or the API's auditor (both wrapped by `bastion.NoteAttempts`) marks it.
-If any record under the request was a refusal — the cluster's own 403 carried
-back through `Proxy.Call`, the proxy's namespace check, a guardrail — the
-middleware stays quiet, so one refusal is never two rows. The proxy marks its
+"Already in the trail" is decided per status. The request carries a
+`bastion.Attempt` on its context, and every record written through the proxy's
+or the API's auditor (both wrapped by `bastion.NoteAttempts`) notes its status
+on it. The middleware stays quiet only when the status it is answering with was
+already recorded under the request — the cluster's own 403 carried back through
+`Proxy.Call`, the proxy's namespace check, a guardrail — so one refusal is never
+two rows. *Any* earlier refusal is deliberately not enough: Helm discovery
+404ing an absent group, then the pre-flight refusing with 403, would otherwise
+hide KubeMG's refusal behind an unrelated one. A same-status collision loses the
+second reason, never the fact of a refusal. The proxy marks its
 own refusals (namespace, guardrail, SPDY, oversized body) `refused_by: "kubemg"`
 too; an empty `refused_by` on a refused row means the cluster or the tunnel
 answered.
