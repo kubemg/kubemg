@@ -520,6 +520,12 @@ export interface AuditEvent {
   path: string
   namespace?: string
   resource?: string
+  /**
+   * The object the call addressed. Read off the path for every verb that names
+   * one there; a `create` posts to the collection, so its name comes from the
+   * cluster's answer and is absent when the create was refused.
+   */
+  name?: string
   impersonated_user?: string
   impersonated_groups: string[]
   status: number

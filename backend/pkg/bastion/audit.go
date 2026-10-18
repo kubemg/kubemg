@@ -2,6 +2,7 @@ package bastion
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -29,6 +30,11 @@ type Event struct {
 	// Kubernetes API URL, and empty when it does not.
 	Namespace string
 	Resource  string
+	// Name is the object the call addressed. Every verb but one names it in
+	// the path; a create posts to the collection, so its name is taken from
+	// the API server's answer instead (see ObjectName) and is empty when the
+	// create was refused — a name that was never written is not guessed at.
+	Name string
 	// Impersonated* is the identity KubeMG asserted to the API server. This is
 	// the crux of the record: it ties a KubeMG account to the Kubernetes
 	// subject that actually performed the action.
@@ -140,6 +146,9 @@ func (a *SlogAuditor) Record(ctx context.Context, event Event) {
 	}
 	if event.Resource != "" {
 		attrs = append(attrs, slog.String("resource", event.Resource))
+	}
+	if event.Name != "" {
+		attrs = append(attrs, slog.String("name", event.Name))
 	}
 	if event.Error != "" {
 		attrs = append(attrs, slog.String("error", event.Error))
@@ -281,4 +290,47 @@ func ParsePath(path string) APIPath {
 		out.Subresource = parts[2]
 	}
 	return out
+}
+
+// maxObjectName is the longest name the API server accepts for any object (a
+// DNS subdomain), and the width of the audit column that stores it.
+const maxObjectName = 253
+
+// ObjectName is the name an audit record carries for the object a call
+// addressed. The path is the answer for every verb that names its object in the
+// URL. A create posts to the collection, so the only honest source is the API
+// server's own answer: on success it returns the object it wrote, generateName
+// resolved, as metadata.name. The request body is never read for it — what the
+// caller asked for is not what the cluster created.
+//
+// It answers empty rather than guessing for a create that did not succeed, and
+// for an answer it cannot read as it stands: a body still compressed, or
+// encoded as anything but JSON (kubectl may ask for protobuf). The tunnel is a
+// trust boundary, so a name that is not a plausible object name is dropped.
+func ObjectName(parsed APIPath, verb string, resp *Response) string {
+	if parsed.Name != "" {
+		return parsed.Name
+	}
+	if verb != "create" || resp == nil || resp.Status < 200 || resp.Status > 299 || len(resp.Body) == 0 {
+		return ""
+	}
+	if encoding := strings.TrimSpace(headerValue(resp.Header, "Content-Encoding")); encoding != "" && !strings.EqualFold(encoding, "identity") {
+		return ""
+	}
+	if contentType := headerValue(resp.Header, "Content-Type"); contentType != "" && !strings.Contains(strings.ToLower(contentType), "json") {
+		return ""
+	}
+	var object struct {
+		Metadata struct {
+			Name string `json:"name"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal(resp.Body, &object); err != nil {
+		return ""
+	}
+	name := object.Metadata.Name
+	if len(name) > maxObjectName || strings.ContainsFunc(name, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return ""
+	}
+	return name
 }

@@ -390,6 +390,10 @@ type AuditEvent struct {
 	Path      string `gorm:"type:text" json:"path"`
 	Namespace string `gorm:"size:190;index" json:"namespace,omitempty"`
 	Resource  string `gorm:"size:120" json:"resource,omitempty"`
+	// Name is the object the call addressed — from the path, or for a create
+	// from the API server's answer. Empty on a refused create, on a call that
+	// addresses no single object (a list), and on rows written before it existed.
+	Name string `gorm:"size:253" json:"name,omitempty"`
 
 	// The identity KubeMG asserted to the API server. This is the crux of the
 	// record: it ties a KubeMG account to the Kubernetes subject that acted.

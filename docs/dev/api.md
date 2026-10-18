@@ -378,7 +378,7 @@ See [Runtime settings](../reference/settings.md) for what each field means.
 
 | Method & path | Auth | Notes |
 | --- | --- | --- |
-| `GET /audit` | Session, narrows | Filters `verb[], status, from/to, since/until,` or a fixed range preset. Non-admin forced to their own `user_id`; the query cannot widen it. |
+| `GET /audit` | Session, narrows | Filters `verb[], status, from/to, since/until,` or a fixed range preset. Non-admin forced to their own `user_id`; the query cannot widen it. Each row carries `name` (the object addressed; for a `create`, the name the cluster answered with, absent when it refused); `q` matches it too. |
 | `GET /audit/summary` | Admin | 24-hour rollup: `{total, failed, streams, window_hours}`. |
 | `GET /audit/export` | Session, narrows | The same filter as `GET /audit`, as CSV. `limit`/`offset` ignored — paging is the page's, not the file's. Bounded at 5000 rows; past that the file says so and `X-Kubemg-Export-Truncated` carries the bound. Not itself audited. |
 | `GET /audit/recording-policy` | Session | `{enabled, input_recorded, encrypted, retention_days}` — disclosed to anyone, since anyone might be recorded. |

@@ -25,6 +25,7 @@ import type { AuditEvent, AuditQuery, AuditSummary, User } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { AuditRecordSheet } from '../components/AuditRecordSheet'
 import { ManifestDiffView } from '../components/ManifestDiffView'
+import { nameBesidePath } from '../lib/fleet'
 import { timeRangeLabel } from '../lib/timerange'
 import { useUrlFlag, useUrlList, useUrlText } from '../lib/urlState'
 import { useTimeRange } from '../state/timerange-context'
@@ -601,6 +602,11 @@ export function AuditTrail() {
                   </Td>
                   <Td className="hidden truncate font-data text-[12px] text-muted lg:table-cell">
                     {event.path}
+                    {/* A create's path is the collection; the object it made
+                        is named only on the record. */}
+                    {nameBesidePath(event) ? (
+                      <span className="text-fg"> · {nameBesidePath(event)}</span>
+                    ) : null}
                   </Td>
                   <Td>
                     <Pill tone={statusTone(event)} title={event.error}>

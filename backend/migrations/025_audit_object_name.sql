@@ -1,0 +1,24 @@
+-- 025 — the object a call addressed, by name.
+--
+-- Reference DDL. The schema is applied by db.Migrate (AutoMigrate); this file
+-- exists because on an on-prem install the database is often owned by a DBA who
+-- will not read struct tags and may pre-apply a change under change control.
+-- Every statement is idempotent. If this and the Go code disagree, the Go code
+-- is what ran.
+--
+-- Every verb but one names its object in the request path, so a `get`, an
+-- `update` or a `delete` row always said which object it touched. A `create`
+-- posts to the collection: its row named a kind and a namespace and nothing
+-- else, and a Helm install that writes forty objects left forty rows that could
+-- not say which forty. `name` is that answer — taken from the path where the
+-- path carries it, and for a create from the API server's own answer
+-- (`metadata.name`, generateName already resolved), never from the request.
+--
+-- Nullable, and empty on: a create the cluster refused (nothing was made, and
+-- the name it was asked for is not guessed at); a call that addresses no single
+-- object, such as a list; an answer that was not plain JSON; and every row
+-- written before this migration. 253 is the longest name the API server accepts
+-- for any object. Not indexed — it is matched by the trail's free-text search
+-- alongside the path, which is a scan already.
+
+ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS name VARCHAR(253);

@@ -688,7 +688,7 @@ func (f *fakeStore) ListAuditEvents(_ context.Context, filter db.AuditFilter) ([
 			continue
 		}
 		if filter.Search != "" && !strings.Contains(
-			strings.ToLower(event.Path+event.Username+event.Resource+event.Namespace),
+			strings.ToLower(event.Path+event.Username+event.Resource+event.Namespace+event.Name),
 			strings.ToLower(filter.Search),
 		) {
 			continue

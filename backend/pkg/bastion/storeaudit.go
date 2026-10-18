@@ -194,6 +194,7 @@ func toAuditRow(ctx context.Context, event Event) db.AuditEvent {
 		Path:               event.Path,
 		Namespace:          event.Namespace,
 		Resource:           event.Resource,
+		Name:               event.Name,
 		ImpersonatedUser:   event.ImpersonatedUser,
 		ImpersonatedGroups: strings.Join(event.ImpersonatedGroups, ","),
 		Status:             event.Status,

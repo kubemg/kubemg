@@ -27,7 +27,8 @@ type auditEventResponse struct {
 	Path               string    `json:"path"`
 	Namespace          string    `json:"namespace,omitempty"`
 	Resource           string    `json:"resource,omitempty"`
-	ImpersonatedUser   string    `json:"impersonated_user,omitempty"`
+	Name               string    `json:"name,omitempty"`
+	ImpersonatedUser  string    `json:"impersonated_user,omitempty"`
 	ImpersonatedGroups []string  `json:"impersonated_groups"`
 	Status             int       `json:"status"`
 	DurationMS         int64     `json:"duration_ms"`
@@ -85,6 +86,7 @@ func toAuditResponse(event db.AuditEvent) auditEventResponse {
 		Path:               event.Path,
 		Namespace:          event.Namespace,
 		Resource:           event.Resource,
+		Name:               event.Name,
 		ImpersonatedUser:   event.ImpersonatedUser,
 		ImpersonatedGroups: groups,
 		Status:             event.Status,

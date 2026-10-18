@@ -34,6 +34,20 @@ function Absent({ children = 'not recorded' }: { children?: ReactNode }) {
   return <span className="text-faint italic">{children}</span>
 }
 
+/**
+ * Why a record carries no object name. A refused create made nothing, and a
+ * list or watch addresses no single object; anything else is a record whose
+ * name was not taken — written before it was, or answered in a form the server
+ * does not read.
+ */
+function absentName(event: AuditEvent): string {
+  if (event.verb === 'create' && (event.error || event.status >= 400)) {
+    return 'none — nothing was created'
+  }
+  if (event.verb === 'list' || event.verb === 'watch') return 'none'
+  return 'not recorded'
+}
+
 function statusTone(event: AuditEvent): Tone {
   if (event.error || event.status >= 500) return 'bad'
   if (event.status >= 400) return 'warn'
@@ -159,6 +173,10 @@ export function AuditRecordSheet({
             { term: 'Cluster', value: event.cluster || <Absent /> },
             { term: 'Namespace', value: event.namespace || <Absent>cluster-scoped</Absent> },
             { term: 'Resource', value: event.resource || <Absent /> },
+            {
+              term: 'Name',
+              value: event.name || <Absent>{absentName(event)}</Absent>,
+            },
             { term: 'Method', value: event.method || <Absent /> },
           ]}
         />

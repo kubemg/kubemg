@@ -30,7 +30,9 @@ type AuditFilter struct {
 	FailedOnly bool
 	Since      *time.Time
 	Until      *time.Time
-	// Search matches the path, the username or the resource.
+	// Search matches the path, the username, the resource, the namespace or the
+	// object's name — the last being the only way to find a create by what it
+	// made, since a create's path names the collection.
 	Search string
 
 	Limit  int
@@ -93,8 +95,8 @@ func auditQuery(query *gorm.DB, filter AuditFilter) *gorm.DB {
 	if search := strings.TrimSpace(filter.Search); search != "" {
 		like := "%" + strings.ToLower(search) + "%"
 		query = query.Where(
-			"LOWER(path) LIKE ? OR LOWER(username) LIKE ? OR LOWER(resource) LIKE ? OR LOWER(namespace) LIKE ?",
-			like, like, like, like,
+			"LOWER(path) LIKE ? OR LOWER(username) LIKE ? OR LOWER(resource) LIKE ? OR LOWER(namespace) LIKE ? OR LOWER(name) LIKE ?",
+			like, like, like, like, like,
 		)
 	}
 	return query
