@@ -26,6 +26,7 @@ KubeMG starts a second listener on that address serving only `/metrics`. Bind it
 | `kubemg_db_queries_total` | Counter | `operation`, `error` | `error="true"` means a real database error. `ErrRecordNotFound` is not an error — it is normal flow for existence checks. |
 | `kubemg_build_info` | Gauge | `version` | Always `1`. Use the `version` label to correlate anomalies with deploys. |
 | `kubemg_audit_records_dropped_total` | Counter | `sink` | Audit records discarded because a sink's queue was full. `sink="store"` is the database table the audit page reads; `sink="forward"` is the push to your syslog collector. Both series start at `0`. |
+| `kubemg_proxy_throttled_total` | Counter | `outcome` | Calls into a cluster the [per-account rate limit](../reference/settings.md#proxy_rate_limit_per_second-and-proxy_rate_limit_burst) held back. `outcome="delayed"` waited its turn and went through; `outcome="refused"` was answered `429`. Both series start at `0`. |
 | `kubemg_audit_queue_depth` | Gauge | `sink` | Records waiting in that sink's queue. Each queue holds 4096; a record that arrives while it is full is dropped. |
 
 Go runtime and process metrics (goroutines, GC pauses, file descriptors) come from the standard Prometheus registry and are included automatically.

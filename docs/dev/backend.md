@@ -233,6 +233,35 @@ an entry is **never served to another identity**, only a `200` is stored, and an
 non-GET invalidates the whole cluster scope. A negative TTL turns caching off
 entirely.
 
+The cache is not a limiter and must not be read as one: a path that varies at
+all bypasses it, and a write loop does not merely evade it but empties it for
+everyone on that cluster.
+
+## Pacing
+
+`pkg/bastion/ratelimit.go` is a token bucket per **(identity, cluster)** — the
+resource it protects is a cluster's API server, not this process. Saved
+accounts are keyed by id; an unsaved `kubemg:` service identity by name, so the
+alarm and event watchers never share an operator's budget. `Handle`, `Call`,
+`Watch`, `ServeShell` and `ExecOnce` each spend one token, after the grant and
+guardrail checks (which cost the cluster nothing) and before the tunnel lookup
+(so a refusal does not depend on an agent being attached). The unit is a call
+down the tunnel, not a request to kubemg: one console page is up to fifty.
+
+- **Wait, then refuse.** A call over budget is held up to `maxThrottleWait`
+  (2s); only a queue deeper than that is refused, `429` + `Retry-After`, a
+  `refused_by: kubemg` row. On the kubectl path the body is a Kubernetes
+  `Status` (`reason: TooManyRequests`, `details.retryAfterSeconds`), which
+  client-go honours by retrying. A refused or abandoned reservation gives its
+  token back.
+- **Streams are never touched** once open — only the handshake spends.
+- **On by default, never off.** `proxy_rate_limit_per_second`/`_burst`
+  (defaults 50/300, kubectl's own client-side numbers) are runtime settings with
+  no environment variable; `0` is the default. Published by `publishRateLimit` on
+  save and on the audit policy's 30s timer; a failed settings read keeps the
+  budget in force rather than resetting it.
+- `kubemg_proxy_throttled_total{outcome=delayed|refused}`.
+
 ## Leases
 
 Several background jobs must run on exactly one replica: the alarm watcher, the

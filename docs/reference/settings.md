@@ -196,6 +196,36 @@ refusal or error, any streaming call (`exec`/`attach`/`portforward`/`log
 | Clear with | `0` |
 | Takes effect | At once, counted from each password's last change. An open console session whose password is now past due is held at the change screen at its next request |
 
+### `proxy_rate_limit_per_second` and `proxy_rate_limit_burst`
+
+| | |
+|---|---|
+| Meaning | How many calls one account may make into one cluster through kubemg: a steady rate per second, and a burst that may go at once before the rate applies. Every call counts — a `kubectl` command, each read behind a console page (one page across every namespace is up to fifty), a CLI session, a machine token, a shell being opened |
+| Default | 50 per second, bursts of 300 — the same as kubectl's own client-side limit, so one kubectl never notices it. No environment variable |
+| Range | 1 to 10000 per second; 1 to 100000 for the burst |
+| Unusable stored value | Read as the default |
+| Clear with | `0` |
+| Takes effect | At once, for budgets already in use too |
+
+**The limit cannot be turned off.** It protects the clusters' API servers, and
+a limit somebody has to remember to enable protects nobody. The top of the range
+is as far out of the way as it goes.
+
+What happens to a call over budget:
+
+- **It waits** for its turn, up to two seconds. The console's reads and a Helm
+  install's applies are paced rather than failed.
+- **Past that, it is refused** with `429 Too Many Requests` and a `Retry-After`
+  header. kubectl waits that long and retries on its own; the console shows the
+  message. The refusal is in the [audit trail](../audit/trail.md#refusals-kubemg-makes-itself).
+- **An open stream is never cut off.** A shell, `exec`, `logs -f`, watch or
+  `port-forward` spends one call when it opens and nothing after.
+
+Each account has its own budget per cluster. kubemg's own background reads (the
+alarm and event watchers) have budgets of their own, so a busy operator cannot
+starve them. `kubemg_proxy_throttled_total` on the [metrics port](../install/metrics.md)
+counts calls that were held back or refused.
+
 ## Branding (a separate surface, on purpose)
 
 The console's own identity — your organisation's name and mark, an environment

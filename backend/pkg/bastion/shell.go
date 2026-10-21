@@ -102,6 +102,13 @@ func (p *Proxy) ServeShell(c *gin.Context, spec ShellSpec) {
 		SessionID:          newSessionID(),
 	}
 
+	// Paced as the person, who is the one driving it, whatever identity the
+	// cluster is shown.
+	if err := p.limiter.Wait(c.Request.Context(), spec.User.ID, spec.User.Username, spec.Cluster.ID, spec.Cluster.Name); err != nil {
+		p.failThrottled(c, &event, err)
+		return
+	}
+
 	tunnel, ok := p.registry.Get(spec.Cluster.ID)
 	if !ok {
 		p.fail(c, &event, http.StatusServiceUnavailable, ErrNoTunnel.Error())
@@ -118,8 +125,8 @@ func (p *Proxy) ServeShell(c *gin.Context, spec ShellSpec) {
 // ExecSpec is one non-interactive command in a pod, with an optional payload on
 // its standard input.
 type ExecSpec struct {
-	User      *db.User
-	Cluster   *db.Cluster
+	User        *db.User
+	Cluster     *db.Cluster
 	Impersonate string
 	Groups      []string
 
@@ -169,6 +176,16 @@ func (p *Proxy) ExecOnce(ctx context.Context, spec ExecSpec) (*ExecResult, error
 		ImpersonatedUser:   spec.Impersonate,
 		ImpersonatedGroups: spec.Groups,
 		Streaming:          true,
+	}
+
+	if err := p.limiter.Wait(ctx, spec.User.ID, spec.User.Username, spec.Cluster.ID, spec.Cluster.Name); err != nil {
+		callErr := throttledCallError(err)
+		event.RefusedBy = RefusedByKubeMG
+		event.Status = callErr.Status
+		event.Error = callErr.Message
+		event.Duration = time.Since(started)
+		p.auditor.Record(ctx, event)
+		return nil, callErr
 	}
 
 	tunnel, ok := p.registry.Get(spec.Cluster.ID)

@@ -16,6 +16,7 @@ import (
 
 	"github.com/kubemg/kubemg/backend/pkg/agentpkg"
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
+	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
 	"github.com/kubemg/kubemg/backend/pkg/shell"
@@ -88,6 +89,11 @@ type runtimeSettings struct {
 	// PasswordMaxAgeDays is how long a local password lives before its owner
 	// must change it. Zero is off — the default, and the override's "unset".
 	PasswordMaxAgeDays int `json:"password_max_age_days"`
+	// ProxyRateLimitPerSecond and ProxyRateLimitBurst are the call budget one
+	// identity has against one cluster. Zero in the overrides means unset,
+	// which is the build's default — never "off".
+	ProxyRateLimitPerSecond int `json:"proxy_rate_limit_per_second"`
+	ProxyRateLimitBurst     int `json:"proxy_rate_limit_burst"`
 }
 
 type settingsResponse struct {
@@ -145,6 +151,10 @@ type updateSettingsRequest struct {
 	KubeconfigIssuance *string `json:"kubeconfig_issuance"`
 	// PasswordMaxAgeDays accepts 0 to turn the policy off.
 	PasswordMaxAgeDays *int `json:"password_max_age_days"`
+	// ProxyRateLimitPerSecond and ProxyRateLimitBurst accept 0 to clear back
+	// to the default. There is no value that turns the limit off.
+	ProxyRateLimitPerSecond *int `json:"proxy_rate_limit_per_second"`
+	ProxyRateLimitBurst     *int `json:"proxy_rate_limit_burst"`
 }
 
 // Audit retention bounds. The floor stops an operator from silently emptying
@@ -173,6 +183,17 @@ var (
 	maxShellIdleTimeoutMinutes = int(shell.MaxIdleTimeout / time.Minute)
 	minShellMaxLifetimeHours   = int(shell.MinMaxLifetime / time.Hour)
 	maxShellMaxLifetimeHours   = int(shell.MaxMaxLifetime / time.Hour)
+)
+
+// Rate limit bounds. The floor is one call: lower would be a setting that
+// refuses every request. The ceilings are far past what any API server serves
+// from one client, which is what an operator who wants the limit out of the
+// way sets — the limit itself stays on, and says so on the settings page.
+const (
+	minProxyRateLimitPerSecond = 1
+	maxProxyRateLimitPerSecond = 10000
+	minProxyRateLimitBurst     = 1
+	maxProxyRateLimitBurst     = 100000
 )
 
 // settings resolves the effective configuration. A database failure falls back
@@ -209,6 +230,10 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 		MFAEnforcement:     mfaEnforcementOff,
 		CLISessionMaxHours: defaultCLISessionHours,
 		KubeconfigIssuance: issuanceAllowed,
+		// No environment variable either: the default is on, and changing it is
+		// a policy decision about somebody else's API server.
+		ProxyRateLimitPerSecond: bastion.DefaultRateLimitPerSecond,
+		ProxyRateLimitBurst:     bastion.DefaultRateLimitBurst,
 	}
 	stored, err := s.store.Settings(ctx)
 	if err != nil {
@@ -272,6 +297,14 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 	out.KubeconfigIssuance = normalizeIssuance(stored[db.SettingKubeconfigIssuance])
 	out.PasswordMaxAgeDays = storedBounded(stored, db.SettingPasswordMaxAgeDays,
 		minPasswordMaxAgeDays, maxPasswordMaxAgeDays)
+	if v := storedBounded(stored, db.SettingProxyRateLimitPerSecond,
+		minProxyRateLimitPerSecond, maxProxyRateLimitPerSecond); v > 0 {
+		out.ProxyRateLimitPerSecond = v
+	}
+	if v := storedBounded(stored, db.SettingProxyRateLimitBurst,
+		minProxyRateLimitBurst, maxProxyRateLimitBurst); v > 0 {
+		out.ProxyRateLimitBurst = v
+	}
 	out.SessionRecordingRetentionDays = clampRecordingRetention(
 		storedDays(stored, db.SettingSessionRecordingRetentionDays), out.AuditRetentionDays)
 	return out
@@ -388,6 +421,27 @@ func (s *server) publishAuditPolicy(ctx context.Context) {
 	s.auditPolicy.Store(s.auditPolicySnapshot(ctx))
 }
 
+// publishRateLimit hands the resolved call budget to the gateway, which reads
+// it on every proxied call. Called at boot, after every settings write and on
+// the audit policy's timer, for the same reasons that policy is.
+//
+// A settings read that fails keeps the budget in force rather than resetting
+// it: s.settings would answer the defaults, and an outage of the database must
+// not quietly raise a limit an operator lowered.
+func (s *server) publishRateLimit(ctx context.Context) {
+	if s.rateLimit == nil {
+		return
+	}
+	if _, err := s.store.Settings(ctx); err != nil {
+		return
+	}
+	resolved := s.settings(ctx)
+	s.rateLimit.Store(bastion.RateLimit{
+		PerSecond: resolved.ProxyRateLimitPerSecond,
+		Burst:     resolved.ProxyRateLimitBurst,
+	})
+}
+
 // storedRetentionDays reads the audit retention override. A value that is not a
 // usable number reads as unset, so a hand-edited row cannot turn the pruner
 // into something that deletes everything.
@@ -432,6 +486,10 @@ func (s *server) getSettings(c *gin.Context) {
 		KubeconfigIssuance: storedIssuance(stored),
 		PasswordMaxAgeDays: storedBounded(stored, db.SettingPasswordMaxAgeDays,
 			minPasswordMaxAgeDays, maxPasswordMaxAgeDays),
+		ProxyRateLimitPerSecond: storedBounded(stored, db.SettingProxyRateLimitPerSecond,
+			minProxyRateLimitPerSecond, maxProxyRateLimitPerSecond),
+		ProxyRateLimitBurst: storedBounded(stored, db.SettingProxyRateLimitBurst,
+			minProxyRateLimitBurst, maxProxyRateLimitBurst),
 	}
 
 	c.JSON(http.StatusOK, settingsResponse{
@@ -460,6 +518,8 @@ func (s *server) getSettings(c *gin.Context) {
 			MFAEnforcement:          mfaEnforcementOff,
 			CLISessionMaxHours:      defaultCLISessionHours,
 			KubeconfigIssuance:      issuanceAllowed,
+			ProxyRateLimitPerSecond: bastion.DefaultRateLimitPerSecond,
+			ProxyRateLimitBurst:     bastion.DefaultRateLimitBurst,
 		},
 		Warnings: append(settingsWarnings(effective), s.passwordPolicyWarnings(c.Request.Context(), effective)...),
 	})
@@ -675,6 +735,36 @@ func (s *server) updateSettings(c *gin.Context) {
 		}
 	}
 
+	for _, bound := range []struct {
+		value     *int
+		key       string
+		low, high int
+		what      string
+		fallback  int
+	}{
+		{req.ProxyRateLimitPerSecond, db.SettingProxyRateLimitPerSecond,
+			minProxyRateLimitPerSecond, maxProxyRateLimitPerSecond,
+			"the call rate per account and cluster must be between %d and %d per second, or 0 to use the default of %d",
+			bastion.DefaultRateLimitPerSecond},
+		{req.ProxyRateLimitBurst, db.SettingProxyRateLimitBurst,
+			minProxyRateLimitBurst, maxProxyRateLimitBurst,
+			"the call burst per account and cluster must be between %d and %d, or 0 to use the default of %d",
+			bastion.DefaultRateLimitBurst},
+	} {
+		if bound.value == nil {
+			continue
+		}
+		switch v := *bound.value; {
+		case v == 0:
+			values[bound.key] = ""
+		case v < bound.low || v > bound.high:
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf(bound.what, bound.low, bound.high, bound.fallback)})
+			return
+		default:
+			values[bound.key] = strconv.Itoa(v)
+		}
+	}
+
 	if err := s.store.PutSettings(c.Request.Context(), values, caller.ID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save the settings"})
 		return
@@ -684,6 +774,7 @@ func (s *server) updateSettings(c *gin.Context) {
 	// that did not republish it would take effect at the next refresh tick instead
 	// of now — which reads as a settings page that does not work.
 	s.publishAuditPolicy(c.Request.Context())
+	s.publishRateLimit(c.Request.Context())
 	// The password gate likewise: a policy change moves every due date.
 	if req.PasswordMaxAgeDays != nil {
 		s.publishPasswordGate(c.Request.Context())
