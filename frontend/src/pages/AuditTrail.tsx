@@ -91,6 +91,7 @@ const VERBS = [
   'mfa-recovery-used',
   'cli-login',
   'cli-session-revoke',
+  'password-expire',
 ]
 
 const MUTATING = new Set(['create', 'update', 'patch', 'delete'])

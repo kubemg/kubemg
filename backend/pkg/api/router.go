@@ -22,6 +22,7 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/guardrails"
 	"github.com/kubemg/kubemg/backend/pkg/jit"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
+	"github.com/kubemg/kubemg/backend/pkg/mailer"
 	"github.com/kubemg/kubemg/backend/pkg/metrics"
 	"github.com/kubemg/kubemg/backend/pkg/observability"
 )
@@ -239,6 +240,15 @@ type Store interface {
 	// means somebody else holds it, an error means do not run.
 	AcquireLease(ctx context.Context, name, holder string, ttl time.Duration) (bool, error)
 
+	// The password age policy and its reminders — see password_policy.go and
+	// password_notices.go — and the relay those reminders go through.
+	PasswordAccounts(ctx context.Context) ([]db.PasswordAccount, error)
+	ExpirePassword(ctx context.Context, userID uint, at time.Time) (bool, error)
+	RecordPasswordNotice(ctx context.Context, userID uint, due time.Time, days int) error
+	SMTPConfig(ctx context.Context) (*db.SMTPConfig, error)
+	PutSMTPConfig(ctx context.Context, config *db.SMTPConfig) error
+	DeleteSMTPConfig(ctx context.Context) error
+
 	// Identity federation: the providers, the rules that say what an external
 	// group is worth, and the sync that applies them on every federated sign-in.
 	ListSSOProviders(ctx context.Context) ([]db.SSOProviderConfig, error)
@@ -423,6 +433,9 @@ type Options struct {
 	// origin, whether recordings are encrypted. The setup wizard reports them
 	// rather than pretending to own them; see setup.go.
 	Deployment Deployment
+	// MailSender delivers KubeMG's own mail. Nil sends through mailer.Send;
+	// tests substitute a recorder.
+	MailSender func(context.Context, mailer.Config, mailer.Message) error
 	// Background scopes the housekeeping goroutines that run alongside the
 	// handlers — today just the audit retention pruner. Left nil, as the tests
 	// leave it, nothing is started and the router is purely request-driven.
@@ -532,6 +545,14 @@ type server struct {
 	cliSums cliDigests
 	// version is the release this binary was built as; see Options.Version.
 	version string
+	// passwords is the published password expiry snapshot; see
+	// password_policy.go.
+	passwords *passwordGate
+	// mail delivers KubeMG's own mail; see Options.MailSender.
+	mail func(context.Context, mailer.Config, mailer.Message) error
+	// jobs is the background context, for work a request kicks off but must
+	// not wait for. Nil when this server runs no background work.
+	jobs context.Context
 }
 
 // NewRouter builds the KubeMG HTTP router. Authenticated routes are only
@@ -609,6 +630,12 @@ func NewRouter(opts Options) *gin.Engine {
 		signIns:              auth.NewLoginThrottle(),
 		deployment:           opts.Deployment,
 		version:              strings.TrimSpace(opts.Version),
+		passwords:            &passwordGate{},
+		mail:                 opts.MailSender,
+		jobs:                 opts.Background,
+	}
+	if s.mail == nil {
+		s.mail = mailer.Send
 	}
 	if opts.Bastion != nil {
 		s.tunnels = opts.Bastion.Registry()
@@ -696,12 +723,20 @@ func NewRouter(opts Options) *gin.Engine {
 		if s.jit != nil {
 			go s.jit.RunExpirer(opts.Background)
 		}
+		// A password falls due by the clock, and a sibling replica's write moves
+		// a due date; both reach this process's gate on a timer.
+		go s.startPasswordGateRefresher(opts.Background)
+		// Reminders before a password expires. One replica mails them; see
+		// password_notices.go.
+		go s.startPasswordNotices(opts.Background)
 	}
 	// A service account's credential is verified against a stored row rather
 	// than parsed, which is what makes it revocable — see
 	// machineTokenVerifier. Everything past the middleware sees one shape of
 	// claims and cannot tell the two credentials apart.
-	requireAuth := auth.RequireAuth(s.jwt, newMachineTokenVerifier(s.store))
+	// A console session whose password is due reaches only the routes that
+	// change it; see password_policy.go.
+	requireAuth := auth.RequireAuthGated(s.jwt, newMachineTokenVerifier(s.store), s.gatePasswordAge)
 	requireAdmin := auth.RequireRole(db.RoleAdmin)
 
 	if opts.Bastion != nil {
@@ -1326,6 +1361,8 @@ func NewRouter(opts Options) *gin.Engine {
 		// the person who lost their phone. Never your own — see resetUserMFA.
 		users.GET("/:id/mfa", s.getUserMFA)
 		users.POST("/:id/mfa/reset", s.resetUserMFA)
+		// "Change it at next sign-in". Never your own — see expireUserPassword.
+		users.POST("/:id/password/expire", s.expireUserPassword)
 
 		groups := v1.Group("/groups", requireAuth, requireAdmin)
 		groups.GET("", s.listGroups)
@@ -1466,6 +1503,12 @@ func NewRouter(opts Options) *gin.Engine {
 		settings := v1.Group("/settings", requireAuth, requireAdmin)
 		settings.GET("", s.getSettings)
 		settings.PUT("", s.updateSettings)
+		// The relay KubeMG's own mail goes through. Its own rows rather than
+		// settings keys, because the password must be sealed; see smtp.go.
+		settings.GET("/smtp", s.getSMTP)
+		settings.PUT("/smtp", s.putSMTP)
+		settings.DELETE("/smtp", s.deleteSMTP)
+		settings.POST("/smtp/test", s.testSMTP)
 		// Read-only, and read-only by nature: these are the boot-time facts the
 		// setup wizard reports, on a page that outlives the wizard. Nothing here
 		// can be written from a browser — see Deployment.

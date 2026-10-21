@@ -48,6 +48,20 @@ own `Status` object, not reshaped into kubemg's envelope — see
 [Troubleshooting](../reference/troubleshooting.md#kubectl-through-the-proxy) for how to
 tell the two apart.
 
+A second: a console session whose password is due — the
+`password_max_age_days` window passed, or an administrator expired it —
+answers `403` with a stable `code` beside the sentence on every route except
+`GET /auth/me` and `POST /auth/password`:
+
+```json
+{"error": "your password has expired — change it to continue", "code": "password_change_required"}
+```
+
+Proxy-scoped credentials (kubeconfigs, CLI tokens) and machine tokens are never
+held this way. `GET /auth/me` and a sign-in's `user` carry
+`password_expires_at` and `password_change_required` for an account the policy
+governs.
+
 ## Conventions used in the tables below
 
 - **Admin** — requires `RequireRole("admin")` (a super admin qualifies too).
@@ -316,6 +330,7 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | `DELETE /users/:id` | Admin | `403` deleting your own account. |
 | `GET /users/:id/mfa` | Admin | The account's second factor, the `GET /auth/mfa` shape; never a secret. |
 | `POST /users/:id/mfa/reset` | Admin | Removes every factor and recovery code. `403` on your own account or (for a non-super-admin) a super admin, `409` where kubemg's factor does not apply. `{factors_removed}`. Audited `mfa-reset` with the target as `impersonated_user` (never suppressed). |
+| `POST /users/:id/password/expire` | Admin | The account must change its password before anything else — at its next sign-in, or at the next call of a session already open. `403` on your own account or (for a non-super-admin) a super admin, `404` a machine account, `409` a federated account (its password is not held here). Already expired is answered, not re-recorded. Returns the user. Audited `password-expire` with the target as `impersonated_user`. Lifted only by the account's own `POST /auth/password` — a `PUT /users/:id` password restarts the age clock but does not lift it. |
 
 ## Groups
 
@@ -341,6 +356,10 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | `GET /settings` | Admin | `{effective, overrides, defaults, warnings}` — three-tier resolution. |
 | `PUT /settings` | Admin | An empty string or `0` clears an override back to the default. `public_url`, `agent_namespace`, and the TTL/retention fields are each validated on the way in. |
 | `GET /settings/deployment` | Admin | `{checks[], attention}` — deployment posture; see [Troubleshooting](../reference/troubleshooting.md). |
+| `GET /settings/smtp` | Admin | The mail relay: `{configured, host, port, security, username, has_password, from, updated_at}`. The password is never returned. |
+| `PUT /settings/smtp` | Admin | Body `{host, port, security (starttls\|tls\|none), username, password?, from}`. `password` absent keeps the stored one — only while `host` (case-insensitive) and `username` are unchanged, else `400` — `""` clears it; an empty `username` drops it. Validated, never dialled: `400` for a host with a scheme or port, a bad port or sender, or a login over `none` to anything but a loopback host. Password stored sealed. |
+| `DELETE /settings/smtp` | Admin | Mail stops. `204`. |
+| `POST /settings/smtp/test` | Admin | Body `{to?}` (defaults to the caller's email). Sends one message through the stored relay. `409` no relay, `400` no recipient, `502` with the relay's own refusal. |
 
 See [Runtime settings](../reference/settings.md) for what each field means.
 

@@ -121,6 +121,7 @@ nav:
           - Users and groups: access/users-and-groups.md
           - Single sign-on: access/sso.md
           - Two-factor authentication: access/mfa.md
+          - Password expiry: access/password-expiry.md
           - Kubeconfigs: access/kubeconfigs.md
           - The kubemg command line: access/cli.md
           - Machine accounts: access/machine-accounts.md

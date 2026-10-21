@@ -18,6 +18,7 @@ import { NamespaceDetail } from './pages/NamespaceDetail'
 import { NodeCapacity } from './pages/NodeCapacity'
 import { Waste } from './pages/Waste'
 import { Overview } from './pages/Overview'
+import { PasswordExpired } from './pages/PasswordExpired'
 import { IssuedCredentials } from './pages/IssuedCredentials'
 import { MachineAccounts } from './pages/MachineAccounts'
 import { PermissionsMatrix } from './pages/PermissionsMatrix'
@@ -30,6 +31,7 @@ import { AlertingSettings } from './pages/settings/AlertingSettings'
 import { AuditSettings } from './pages/settings/AuditSettings'
 import { BrandingSettings } from './pages/settings/BrandingSettings'
 import { DeploymentSettings } from './pages/settings/DeploymentSettings'
+import { EmailSettings } from './pages/settings/EmailSettings'
 import { GeneralSettings } from './pages/settings/GeneralSettings'
 import { GuardrailsSettings } from './pages/settings/GuardrailsSettings'
 import { HelmSettings } from './pages/settings/HelmSettings'
@@ -85,6 +87,10 @@ function RequireAuth({ children, adminOnly = false }: { children: ReactNode; adm
     rememberReturnTo(location.pathname + location.search)
     return <Navigate to="/login" replace />
   }
+  // The server holds a session whose password is due to two routes, so the
+  // change screen stands in for every page — including setup — until it is
+  // changed. The address is kept: changing the password lands on it.
+  if (user.password_change_required) return <PasswordExpired />
   if (setupRequired) {
     return user.role === 'admin' ? <Navigate to="/setup" replace /> : <SetupPending />
   }
@@ -654,6 +660,14 @@ export default function App() {
               element={
                 <RequireAuth adminOnly>
                   <SsoSettings />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/settings/email"
+              element={
+                <RequireAuth adminOnly>
+                  <EmailSettings />
                 </RequireAuth>
               }
             />

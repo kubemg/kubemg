@@ -185,6 +185,17 @@ refusal or error, any streaming call (`exec`/`attach`/`portforward`/`log
 | Unusable stored value | Read as `allowed` |
 | Clear with | `""` |
 
+### `password_max_age_days`
+
+| | |
+|---|---|
+| Meaning | How many days a password held by kubemg lasts before its owner must choose a new one. Local accounts only. See [Password expiry](../access/password-expiry.md). |
+| Default | Off; no environment variable |
+| Range | 1 to 3650 days |
+| Unusable stored value | Read as off |
+| Clear with | `0` |
+| Takes effect | At once, counted from each password's last change. An open console session whose password is now past due is held at the change screen at its next request |
+
 ## Branding (a separate surface, on purpose)
 
 The console's own identity — your organisation's name and mark, an environment

@@ -7,6 +7,7 @@ The audit trail records every call kubemg proxies to a cluster, plus kubemg's ow
 - Every call the bastion proxies for a user: list, get, watch, create, update, patch, delete and the streaming verbs.
 - kubemg's own sensitive acts: watching or deleting a [session recording](session-recording.md), and every [JIT](../access/jit.md) workflow event (`jit-request`, `jit-approve`, `jit-reject`, `jit-revoke`, `jit-expire`).
 - Second-factor events: `mfa-enroll`, `mfa-remove`, `mfa-reset` (the administrator as the user, the account reset as the impersonated user), `mfa-recovery-used` and `mfa-recovery-regenerate`. See [Two-factor authentication](../access/mfa.md#in-the-audit-trail).
+- Password events: `password-change` (an account changing its own password) and `password-expire` (an administrator forcing somebody's to be changed — the administrator as the user, the account as the impersonated user). See [Password expiry](../access/password-expiry.md#in-the-audit-trail).
 - CLI sign-in events: `cli-login` (an approved `kubemg login`, with the machine and source address in the path query) and `cli-session-revoke`. See [The kubemg command line](../access/cli.md#in-the-audit-trail).
 - Agent credential events: an administrator rotating a registration token (`agent-token-rotate`), and a new connection taking over a cluster's tunnel (`agent-displaced`, under the user `kubemg:agent`, with both agents' versions, connection times and addresses in the path query). See [The agent](../clusters/agent.md#when-a-connection-displaces-the-agent).
 

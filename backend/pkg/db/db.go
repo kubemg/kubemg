@@ -3,6 +3,7 @@ package db
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -71,6 +72,7 @@ func Migrate(gdb *gorm.DB) error {
 		&MFAChallenge{},
 		&CLIDeviceCode{},
 		&CLISession{},
+		&SMTPConfig{},
 	); err != nil {
 		return fmt.Errorf("automigrate: %w", err)
 	}
@@ -105,6 +107,16 @@ func Migrate(gdb *gorm.DB) error {
 		Where("source IS NULL OR source = ''").
 		Update("source", GrantSourceLocal).Error; err != nil {
 		return fmt.Errorf("backfill membership source: %w", err)
+	}
+
+	// A password set before the age policy existed has no recorded age. It
+	// starts counting from the upgrade rather than from the account's creation:
+	// an install that turns the policy on must not find every old account
+	// already expired, with no reminder ever sent.
+	if err := gdb.Model(&User{}).
+		Where("password_changed_at IS NULL AND password_hash <> ''").
+		UpdateColumn("password_changed_at", time.Now().UTC()).Error; err != nil {
+		return fmt.Errorf("backfill password_changed_at: %w", err)
 	}
 
 	// Accounts predating the IAM schema have an empty system_role. Derive it

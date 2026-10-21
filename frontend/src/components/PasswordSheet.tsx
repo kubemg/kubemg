@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { changeOwnPassword, errorMessage } from '../api/client'
 import type { PasswordChangeResult } from '../api/types'
-import { Button, Field, Notice, Sheet, TextInput } from './primitives'
+import { Button, Notice, Sheet } from './primitives'
+import { EMPTY_PASSWORD_DRAFT, passwordDraftBlocker } from '../lib/passwordDraft'
+import { PasswordFields } from './PasswordFields'
 
 /**
  * Changing your own password.
@@ -11,27 +13,20 @@ import { Button, Field, Notice, Sheet, TextInput } from './primitives'
  * it optionally does — taking the issued kubeconfigs with the rotation — is the
  * register sitting behind it. Somebody rotating a password because they think
  * it leaked wants both; somebody rotating one on a schedule wants only the
- * first, which is why the revoke is a choice here and never silent.
- *
- * The current password is asked for because the server requires it: a live
- * session must not be enough to lock its owner out of their own account. The
- * confirmation field is this side's only extra rule, and it is not a policy —
- * it catches a typo in a value nobody can read back.
+ * first, which is why the revoke is a choice here and never silent. The three
+ * fields are `PasswordFields`, shared with the screen a due password lands on.
  */
 export function PasswordSheet({ onClose, onRevoked }: {
   onClose: () => void
   /** Called when the rotation also revoked, so the register behind reloads. */
   onRevoked?: (result: PasswordChangeResult) => void
 }) {
-  const [current, setCurrent] = useState('')
-  const [next, setNext] = useState('')
-  const [confirm, setConfirm] = useState('')
+  const [draft, setDraft] = useState(EMPTY_PASSWORD_DRAFT)
   const [revoke, setRevoke] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<PasswordChangeResult | null>(null)
 
-  const mismatch = confirm !== '' && confirm !== next
   // Set by the first submit: from then an empty field says so under itself.
   const [tried, setTried] = useState(false)
 
@@ -39,13 +34,7 @@ export function PasswordSheet({ onClose, onRevoked }: {
     event.preventDefault()
     if (busy) return
     setTried(true)
-    const missing = !current
-      ? 'password-current'
-      : !next
-        ? 'password-new'
-        : !confirm || mismatch
-          ? 'password-confirm'
-          : null
+    const missing = passwordDraftBlocker(draft)
     if (missing) {
       document.getElementById(missing)?.focus()
       return
@@ -54,14 +43,12 @@ export function PasswordSheet({ onClose, onRevoked }: {
     setError(null)
     try {
       const result = await changeOwnPassword({
-        current_password: current,
-        new_password: next,
+        current_password: draft.current,
+        new_password: draft.next,
         revoke_kubeconfigs: revoke,
       })
       setDone(result)
-      setCurrent('')
-      setNext('')
-      setConfirm('')
+      setDraft(EMPTY_PASSWORD_DRAFT)
       if (result.credentials) onRevoked?.(result)
     } catch (err) {
       setError(errorMessage(err, 'Could not change the password.'))
@@ -126,52 +113,7 @@ export function PasswordSheet({ onClose, onRevoked }: {
         </Notice>
       ) : (
         <>
-          <Field
-            label="Current password"
-            htmlFor="password-current"
-            error={tried && !current ? 'Enter the password you signed in with.' : undefined}
-          >
-            <TextInput
-              id="password-current"
-              type="password"
-              autoComplete="current-password"
-              value={current}
-              onChange={(event) => setCurrent(event.target.value)}
-            />
-          </Field>
-          <Field
-            label="New password"
-            htmlFor="password-new"
-            hint="At least 8 characters — the rule your account was created under."
-            error={tried && !next ? 'Choose the new password.' : undefined}
-          >
-            <TextInput
-              id="password-new"
-              type="password"
-              autoComplete="new-password"
-              value={next}
-              onChange={(event) => setNext(event.target.value)}
-            />
-          </Field>
-          <Field
-            label="Confirm the new password"
-            htmlFor="password-confirm"
-            error={
-              mismatch
-                ? 'The two do not match.'
-                : tried && !confirm
-                  ? 'Type the new password again.'
-                  : undefined
-            }
-          >
-            <TextInput
-              id="password-confirm"
-              type="password"
-              autoComplete="new-password"
-              value={confirm}
-              onChange={(event) => setConfirm(event.target.value)}
-            />
-          </Field>
+          <PasswordFields draft={draft} onChange={setDraft} tried={tried} />
 
           <label htmlFor="password-revoke" className="flex cursor-pointer items-start gap-3">
             <input

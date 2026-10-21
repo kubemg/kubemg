@@ -427,3 +427,41 @@ func TestRequireAuthWebSocketUpgrade(t *testing.T) {
 		}
 	})
 }
+
+// The session gate holds console sessions only: a proxy-scoped credential (a
+// kubeconfig, a CLI token) is never asked about.
+func TestSessionGateSeesOnlySessions(t *testing.T) {
+	m := NewManager("secret", time.Hour)
+	session, _, err := m.Generate(3, "devops", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy, _, _, err := m.GenerateProxyToken(3, "devops", "user", 7, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asked := 0
+	gate := func(c *gin.Context, _ *Claims) bool {
+		asked++
+		c.AbortWithStatus(http.StatusForbidden)
+		return false
+	}
+	router := gin.New()
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	router.GET("/api/v1/clusters/:id/proxy/*path", RequireAuthGated(m, nil, gate), ok)
+	router.GET("/protected", RequireAuthGated(m, nil, gate), ok)
+
+	serve := func(path, token string) int {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := serve("/protected", session); code != http.StatusForbidden || asked != 1 {
+		t.Fatalf("a session was not gated: %d (asked %d)", code, asked)
+	}
+	if code := serve("/api/v1/clusters/7/proxy/api", proxy); code != http.StatusOK || asked != 1 {
+		t.Fatalf("a proxy token was gated: %d (asked %d)", code, asked)
+	}
+}

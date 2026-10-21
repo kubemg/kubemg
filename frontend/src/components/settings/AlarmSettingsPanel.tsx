@@ -1009,6 +1009,7 @@ const AUDIT_VERBS = [
   'mfa-recovery-used',
   'cli-login',
   'cli-session-revoke',
+  'password-expire',
 ]
 
 function splitList(raw: string | undefined): string[] {
