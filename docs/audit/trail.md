@@ -23,6 +23,7 @@ The trail records every attempt, not only the calls that reached a cluster. When
 - A manifest addressed at a different namespace from the one it is being created in.
 - A metrics or logs chart that would cover namespaces outside your grant.
 - A `kubectl` call on a cluster you hold no grant on.
+- A call over your [rate limit](../reference/settings.md#proxy_rate_limit_per_second-and-proxy_rate_limit_burst) for that cluster (`status` `429`). A call that only waited for its turn is recorded as normal.
 
 These rows carry `refused_by: kubemg` and the message you were given as `error`. They carry no impersonated identity, because nothing was asserted to the cluster. A refusal the cluster gave has no `refused_by` and is recorded once, by the call that carried it.
 

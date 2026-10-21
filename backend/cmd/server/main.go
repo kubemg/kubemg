@@ -230,6 +230,11 @@ func main() {
 		Logger:         logger,
 	})
 
+	// Published from the settings by the router; the default budget is in
+	// force from the first call, before the first publish lands.
+	rateLimit := bastion.NewRateLimiter(bastion.RateLimit{})
+	rateLimit.OnThrottle(met.ProxyThrottleHook())
+
 	proxy := bastion.NewProxy(bastion.ProxyOptions{
 		Store:          store,
 		Registry:       gateway.Registry(),
@@ -238,6 +243,7 @@ func main() {
 		Policy:         policy,
 		Guard:          guard,
 		Credentials:    issued,
+		RateLimit:      rateLimit,
 		AllowedOrigins: cfg.AllowedOrigins,
 		PublicURL:      cfg.PublicURL,
 	})
@@ -289,6 +295,7 @@ func main() {
 		RecordingInput:     recording.input,
 		Auditor:            auditor,
 		AuditPolicy:        policy,
+		RateLimit:          rateLimit,
 		Guardrails:         guard,
 		Credentials:        issued,
 		Alarms:             alarms,

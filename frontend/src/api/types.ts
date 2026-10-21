@@ -2418,6 +2418,11 @@ export interface RuntimeSettings {
       the default, and the override's "unset". Federated accounts' passwords
       are their provider's and are never governed by it. */
   password_max_age_days: number
+  /** The call budget one account has against one cluster through kubemg, per
+      second and as a burst. 0 in `overrides` means unset, which is the build's
+      default — the limit is never off. */
+  proxy_rate_limit_per_second: number
+  proxy_rate_limit_burst: number
 }
 
 export interface SettingsResponse {

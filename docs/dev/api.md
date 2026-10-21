@@ -354,7 +354,7 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | Method & path | Auth | Notes |
 | --- | --- | --- |
 | `GET /settings` | Admin | `{effective, overrides, defaults, warnings}` — three-tier resolution. |
-| `PUT /settings` | Admin | An empty string or `0` clears an override back to the default. `public_url`, `agent_namespace`, and the TTL/retention fields are each validated on the way in. |
+| `PUT /settings` | Admin | An empty string or `0` clears an override back to the default. `public_url`, `agent_namespace`, and the TTL/retention fields are each validated on the way in. `proxy_rate_limit_per_second` (1–10000) and `proxy_rate_limit_burst` (1–100000) are published to the gateway on save; `0` is the default, never off. |
 | `GET /settings/deployment` | Admin | `{checks[], attention}` — deployment posture; see [Troubleshooting](../reference/troubleshooting.md). |
 | `GET /settings/smtp` | Admin | The mail relay: `{configured, host, port, security, username, has_password, from, updated_at}`. The password is never returned. |
 | `PUT /settings/smtp` | Admin | Body `{host, port, security (starttls\|tls\|none), username, password?, from}`. `password` absent keeps the stored one — only while `host` (case-insensitive) and `username` are unchanged, else `400` — `""` clears it; an empty `username` drops it. Validated, never dialled: `400` for a host with a scheme or port, a bad port or sender, or a login over `none` to anything but a loopback host. Password stored sealed. |

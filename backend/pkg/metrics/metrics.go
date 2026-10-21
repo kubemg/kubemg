@@ -28,6 +28,7 @@ type Metrics struct {
 	dbQueriesTotal       *prometheus.CounterVec
 	buildInfo            *prometheus.GaugeVec
 	auditDropped         *prometheus.CounterVec
+	proxyThrottled       *prometheus.CounterVec
 	registerer           prometheus.Registerer
 	gatherer             prometheus.Gatherer
 }
@@ -81,6 +82,11 @@ func New(reg prometheus.Registerer, gath prometheus.Gatherer) *Metrics {
 		Help: "Audit records an audit sink discarded because its queue was full. The server's own log stream still carries them.",
 	}, []string{"sink"})
 
+	m.proxyThrottled = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "kubemg_proxy_throttled_total",
+		Help: "Proxied calls the per-account, per-cluster rate limit held back (delayed) or refused with 429 (refused).",
+	}, []string{"outcome"})
+
 	reg.MustRegister(
 		m.httpRequestsTotal,
 		m.httpRequestDuration,
@@ -89,6 +95,7 @@ func New(reg prometheus.Registerer, gath prometheus.Gatherer) *Metrics {
 		m.dbQueriesTotal,
 		m.buildInfo,
 		m.auditDropped,
+		m.proxyThrottled,
 	)
 
 	return m
@@ -124,6 +131,20 @@ func (m *Metrics) AuditDropHook(sink string) func() {
 		return nil
 	}
 	return m.auditDropped.WithLabelValues(sink).Inc
+}
+
+// ProxyThrottleHook returns what the gateway's rate limiter calls for every
+// call it delays or refuses. Both series are created at zero, so an alert on
+// refusals sees a quiet gateway rather than a missing series. A nil Metrics
+// returns nil, which the limiter reads as "no hook".
+func (m *Metrics) ProxyThrottleHook() func(outcome string) {
+	if m == nil {
+		return nil
+	}
+	for _, outcome := range []string{"delayed", "refused"} {
+		m.proxyThrottled.WithLabelValues(outcome)
+	}
+	return func(outcome string) { m.proxyThrottled.WithLabelValues(outcome).Inc() }
 }
 
 // ObserveAuditQueue publishes a sink's queue depth, read from depth at scrape

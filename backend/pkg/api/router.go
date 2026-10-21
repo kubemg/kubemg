@@ -374,6 +374,10 @@ type Options struct {
 	// publishes it; the gateway reads it. Nil means the gateway records everything,
 	// which is what a server wired without it does.
 	AuditPolicy *auditpolicy.Policy
+	// RateLimit is the gateway's per-identity, per-cluster call budget. This
+	// router resolves it from the settings and publishes it on the audit
+	// policy's schedule. Nil leaves the settings readable and paces nothing.
+	RateLimit *bastion.RateLimiter
 	// Credentials is the shared snapshot of which issued kubeconfigs have been
 	// withdrawn. This router resolves it from the register and publishes it; the
 	// gateway reads it lock-free. Nil leaves the register readable and the revoke
@@ -498,6 +502,8 @@ type server struct {
 	auditRetentionDays int
 	// auditPolicy is published from the settings; see Options.AuditPolicy.
 	auditPolicy *auditpolicy.Policy
+	// rateLimit is published from the settings; see Options.RateLimit.
+	rateLimit *bastion.RateLimiter
 	// guardrails is the compiled rule set the gateway enforces; see
 	// Options.Guardrails. Nil means this server does not manage them.
 	guardrails *guardrails.Engine
@@ -618,6 +624,7 @@ func NewRouter(opts Options) *gin.Engine {
 		auditor:              bastion.NoteAttempts(opts.Auditor),
 		auditRetentionDays:   retention,
 		auditPolicy:          opts.AuditPolicy,
+		rateLimit:            opts.RateLimit,
 		guardrails:           opts.Guardrails,
 		credentials:          opts.Credentials,
 		alarms:               opts.Alarms,
@@ -680,7 +687,8 @@ func NewRouter(opts Options) *gin.Engine {
 		go s.startAuditPruner(opts.Background)
 		// What reaches that table is a setting, and the gateway reads it from
 		// memory on every call — so it has to be resolved here and republished.
-		if s.auditPolicy != nil {
+		// The rate limit rides the same timer: it is read on every call too.
+		if s.auditPolicy != nil || s.rateLimit != nil {
 			go s.startAuditPolicyRefresher(opts.Background)
 		}
 		// The same handoff for the safety policies. It publishes once before

@@ -116,6 +116,17 @@ just the status:
 | A fixed sentence: `namespace <ns> is outside your granted scope`, `no access to this cluster`, `this token may only be used against its cluster's kubectl proxy`, or a guardrail's message | kubemg | The call never reached the cluster. |
 | Kubernetes' own words, e.g. `pods is forbidden: User "kubemg:dev@corp" cannot list resource "pods"…` | The cluster's RBAC | The call reached the API server. The kubemg grant is fine but the `kubemg:view`/`edit`/`cluster-admin` bindings do not cover it. Check the agent's RBAC manifests were applied and are current, especially after an upgrade. |
 
+**`kubectl` or a console page fails with `429` / `too many calls to cluster <name>`.**
+
+- Cause: the account made more calls into that cluster than its
+  [rate limit](settings.md#proxy_rate_limit_per_second-and-proxy_rate_limit_burst)
+  allows. kubectl has already waited and retried before it shows this; a
+  script running many kubectl processes in parallel, or a loop with no pause,
+  is the usual source. Each refusal is in the audit trail with `status` `429`.
+- Fix: slow the caller down, spread the work across time, or — if the load is
+  legitimate — raise the limit under **Settings → General**. An open shell,
+  `exec`, `logs -f` or `port-forward` is never cut off by it.
+
 ## The console
 
 **Requests fail with a CORS error in the browser, but `curl` works.**

@@ -134,6 +134,9 @@ type Proxy struct {
 	// revokes nothing, which is what a gateway wired without one does — see
 	// pkg/credentials for why an unreadable register must fail open.
 	issued *credentials.Register
+	// limiter paces what one identity drives into one cluster. Nil paces
+	// nothing — see ratelimit.go.
+	limiter *RateLimiter
 	// clientUpgrader accepts the browser terminal's / kubectl's WebSocket, built
 	// once with this server's origin allowlist. See newClientUpgrader.
 	clientUpgrader websocket.Upgrader
@@ -160,6 +163,9 @@ type ProxyOptions struct {
 	// nothing — the correct failure mode for a control whose unavailability must
 	// not lock a fleet out of kubectl.
 	Credentials *credentials.Register
+	// RateLimit is the per-identity, per-cluster call budget. Nil paces
+	// nothing, which is what the tests get; the server always wires one.
+	RateLimit *RateLimiter
 	// AllowedOrigins are the browser origins the API's CORS config already
 	// trusts, and PublicURL is this server's own address — together they are
 	// checked against the Origin header on the browser terminal's WebSocket
@@ -192,6 +198,7 @@ func NewProxy(opts ProxyOptions) *Proxy {
 		policy:         opts.Policy,
 		guard:          opts.Guard,
 		issued:         opts.Credentials,
+		limiter:        opts.RateLimit,
 		clientUpgrader: newClientUpgrader(buildOriginAllowlist(opts.AllowedOrigins, opts.PublicURL)),
 	}
 }
@@ -303,6 +310,15 @@ func (p *Proxy) Handle(c *gin.Context) {
 	if reason, refused := unsupportedStream(c.Request, parsed); refused {
 		event.RefusedBy = RefusedByKubeMG
 		p.fail(c, &event, http.StatusNotImplemented, reason)
+		return
+	}
+
+	// Paced here, after every check that costs the cluster nothing and before
+	// the tunnel is looked up: a refusal must not depend on an agent being
+	// attached, any more than a guardrail's does. A stream spends its token on
+	// the handshake and is never touched again.
+	if err := p.limiter.Wait(c.Request.Context(), user.ID, user.Username, cluster.ID, cluster.Name); err != nil {
+		p.failThrottled(c, &event, err)
 		return
 	}
 
@@ -435,6 +451,13 @@ func (p *Proxy) Call(
 		return nil, &CallError{Status: http.StatusForbidden, Message: message, Policy: decision.Policy, Scope: decision.Scope}
 	}
 
+	if err := p.limiter.Wait(ctx, user.ID, user.Username, cluster.ID, cluster.Name); err != nil {
+		callErr := throttledCallError(err)
+		event.RefusedBy = RefusedByKubeMG
+		record(callErr.Status, errors.New(callErr.Message))
+		return nil, callErr
+	}
+
 	tunnel, ok := p.registry.Get(cluster.ID)
 	if !ok {
 		record(http.StatusServiceUnavailable, ErrNoTunnel)
@@ -558,6 +581,13 @@ func (p *Proxy) Watch(
 		return nil, &CallError{Status: http.StatusForbidden, Message: message}
 	}
 
+	if err := p.limiter.Wait(ctx, user.ID, user.Username, cluster.ID, cluster.Name); err != nil {
+		callErr := throttledCallError(err)
+		event.RefusedBy = RefusedByKubeMG
+		record(callErr.Status, errors.New(callErr.Message))
+		return nil, callErr
+	}
+
 	tunnel, ok := p.registry.Get(cluster.ID)
 	if !ok {
 		record(http.StatusServiceUnavailable, ErrNoTunnel)
@@ -622,6 +652,9 @@ type CallError struct {
 	Message string
 	Policy  string
 	Scope   string
+	// RetryAfter is set on a call refused by the rate limit: whole seconds
+	// before the caller's budget would take it.
+	RetryAfter int
 }
 
 func (e *CallError) Error() string { return e.Message }
@@ -732,6 +765,50 @@ func (p *Proxy) fail(c *gin.Context, event *Event, status int, message string) {
 	p.auditor.Record(c.Request.Context(), *event)
 
 	c.AbortWithStatusJSON(status, gin.H{"error": message})
+}
+
+// throttleCancelled is a caller that left while its call was being paced. It is
+// still the limit's doing, so it is recorded as the same refusal.
+const throttleCancelled = "the call was cancelled while waiting for its turn under the rate limit"
+
+// throttledCallError is a rate-limit refusal as the resource API carries it.
+func throttledCallError(err error) *CallError {
+	var throttled *ThrottledError
+	if errors.As(err, &throttled) {
+		return &CallError{
+			Status:     http.StatusTooManyRequests,
+			Message:    throttled.Error(),
+			RetryAfter: throttled.RetryAfterSeconds(),
+		}
+	}
+	return &CallError{Status: http.StatusTooManyRequests, Message: throttleCancelled}
+}
+
+// failThrottled answers a call the rate limit refused. kubectl is the caller
+// here, so the answer is a Kubernetes Status with Retry-After: client-go waits
+// that long and retries on its own, and prints the message if it gives up.
+func (p *Proxy) failThrottled(c *gin.Context, event *Event, err error) {
+	callErr := throttledCallError(err)
+	event.RefusedBy = RefusedByKubeMG
+	event.Status = callErr.Status
+	event.Error = callErr.Message
+	event.Duration = time.Since(event.At)
+	p.auditor.Record(c.Request.Context(), *event)
+
+	status := gin.H{
+		"kind":       "Status",
+		"apiVersion": "v1",
+		"metadata":   gin.H{},
+		"status":     "Failure",
+		"message":    callErr.Message,
+		"reason":     "TooManyRequests",
+		"code":       callErr.Status,
+	}
+	if callErr.RetryAfter > 0 {
+		c.Header("Retry-After", strconv.Itoa(callErr.RetryAfter))
+		status["details"] = gin.H{"retryAfterSeconds": callErr.RetryAfter}
+	}
+	c.AbortWithStatusJSON(callErr.Status, status)
 }
 
 // contentTypeFor names the media type a body is sent as.

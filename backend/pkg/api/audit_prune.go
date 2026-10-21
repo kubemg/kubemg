@@ -57,6 +57,7 @@ func (s *server) startAuditPolicyRefresher(ctx context.Context) {
 
 	for {
 		s.publishAuditPolicy(ctx)
+		s.publishRateLimit(ctx)
 
 		select {
 		case <-ctx.Done():

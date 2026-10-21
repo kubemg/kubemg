@@ -18,6 +18,7 @@ require (
 	github.com/russellhaering/goxmldsig v1.6.0
 	golang.org/x/crypto v0.57.0
 	golang.org/x/oauth2 v0.36.0
+	golang.org/x/time v0.14.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.2
 	helm.sh/helm/v3 v3.21.4
@@ -107,7 +108,6 @@ require (
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
-	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
