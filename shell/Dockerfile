@@ -38,7 +38,7 @@
 # Versions are build arguments so an air-gapped site can rebuild this against
 # whatever it has mirrored without editing the file.
 ARG KUBECTL_VERSION=v1.37.1
-ARG GO_IMAGE=golang:1.26.9-alpine
+ARG GO_IMAGE=golang:1.26.10-alpine
 ARG XNET_VERSION=v0.60.0
 ARG BUSYBOX_IMAGE=busybox:1.37.0-musl
 ARG BASE_IMAGE=gcr.io/distroless/static-debian13:nonroot
