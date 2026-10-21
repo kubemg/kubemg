@@ -126,6 +126,8 @@ The image is set by `KUBEMG_AGENT_IMAGE` (default `ghcr.io/kubemg/kubemg-agent:0
 2. Open **the cluster's dashboard → Agent install** (admin only, agent-mode clusters). It re-renders the package from the stored token against current settings and mints a new single-use URL, nothing else. It is offered whether or not the agent is attached, since a down tunnel is when you need it.
 3. Apply it with `kubectl apply -f` (or `-k`). The old pod stops before the new one starts, so the tunnel drops and reconnects. That is normal.
 
+A tunnel drop ends every session open through it: shells, `kubectl exec` and `attach`, `logs -f`, port-forwards. An `exec` or `attach` ended this way fails rather than looking finished — kubectl prints `error: kubemg lost the session before the command finished: …` and exits non-zero, and the console's terminals show the same line. A script can tell a command that finished from one whose tunnel went away by its exit code. Run it again once the agent has reconnected.
+
 !!! danger "Re-apply after any kubemg upgrade that touches RBAC"
     When kubemg adds a ClusterRole the agent depends on (as it did for `kubemg-crd-discovery` and the custom-resource roles), existing installs **must re-apply their manifests**. Until then, CRD discovery answers 403 and Explore shows no custom resources, with no other symptom: the tunnel stays up and pods, services and nodes keep working. If custom-resource sections are unexpectedly empty, re-apply first.
 

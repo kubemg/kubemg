@@ -2,6 +2,7 @@ package bastion
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -202,9 +203,24 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 		return
 	}
 	// Say goodbye properly. Dropping the socket instead makes every finished
-	// exec look like a crash to kubectl and to the browser terminal.
+	// exec look like a crash to kubectl and to the browser terminal. The cause
+	// is read when the session ends, not here: a deferred call's arguments are
+	// evaluated at the defer, and stream.Err() is always nil this early — which
+	// is how every broken session used to close as 1000, a clean finish.
+	// reported is set once the session's failure has gone out as a Status. The
+	// close after it is then a normal one, as the API server's is after its own
+	// Failure: client-go reads the error channel to EOF, and a 1011 arriving
+	// behind the Status fails that read — kubectl prints the close reason as
+	// "error reading from error stream" and never decodes the Status at all.
+	var reported bool
 	defer conn.Close()
-	defer closeClient(conn, stream.Err())
+	defer func() {
+		if reported {
+			closeClient(conn, nil)
+			return
+		}
+		closeClient(conn, stream.Err())
+	}()
 	defer stream.Close(nil)
 	// Bounded to what the agent writes as a single frame. A larger message
 	// would reach the cluster cut short with nothing said; refusing it closes
@@ -231,6 +247,15 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 	// guardrails no cluster-side control can reach: everything done inside an
 	// interactive session happens behind one API call that was already allowed.
 	guard := newCommandGuard(p.guard, event.ClusterID, parsed, event.Path)
+
+	// An exec or attach on v4/v5 takes its outcome from the error channel, not
+	// from the close code, and kubectl reads a missing Status as success — exit
+	// 0, nothing on stderr. The cluster writes one at every end it sees, Success
+	// included, so a session that closes without one ended somewhere between:
+	// the tunnel dropped, or the agent stopped — which an agent reports as a
+	// clean close. One is written for it whatever the stream said.
+	reportsStatus := carriesStatusChannel(parsed, head.Subprotocol)
+	statusRelayed := false
 
 	var fromClient, fromCluster int64
 	done := make(chan struct{})
@@ -299,8 +324,18 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 		select {
 		case chunk, open := <-stream.Chunks():
 			if !open {
-				p.recordStreamClose(c, event, fromCluster, fromClient, stream.Err())
+				cause := stream.Err()
+				if reportsStatus && !statusRelayed {
+					if cause == nil {
+						cause = errNoSessionStatus
+					}
+					reported = writeFailureStatus(conn, cause)
+				}
+				p.recordStreamClose(c, event, fromCluster, fromClient, cause)
 				return
+			}
+			if reportsStatus && len(chunk.Data) > 0 && chunk.Data[0] == channelError {
+				statusRelayed = true
 			}
 			kind := websocket.TextMessage
 			if chunk.Binary {
@@ -341,6 +376,10 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 	}
 }
 
+// errNoSessionStatus is why a session ended when the stream closed cleanly but
+// the cluster never said how the command finished.
+var errNoSessionStatus = errors.New("the session closed without the cluster reporting how the command finished")
+
 // errSessionMessageTooBig is the closing record's reason for a session ended by
 // a message over MaxSessionMessage.
 var errSessionMessageTooBig = fmt.Errorf(
@@ -358,6 +397,41 @@ func (p *Proxy) recordStreamClose(c *gin.Context, event *Event, out, in int64, c
 		closing.Error = cause.Error()
 	}
 	p.auditor.Record(c.Request.Context(), closing)
+}
+
+// carriesStatusChannel reports whether a session's outcome is read off the
+// error channel as a Status: an exec or attach on v4 or v5. The original
+// channel.k8s.io carries a bare string there, and port-forward's channels mean
+// something else entirely — a Status frame on either would be read as data.
+func carriesStatusChannel(parsed APIPath, subprotocol string) bool {
+	if parsed.Subresource != "exec" && parsed.Subresource != "attach" {
+		return false
+	}
+	return subprotocol == "v4.channel.k8s.io" || subprotocol == "v5.channel.k8s.io"
+}
+
+// writeFailureStatus tells the client, on the error channel, that the session
+// ended without the command finishing. kubectl prints a Failure here as
+// `error: <message>` and exits non-zero, which is
+// what a script needs to tell a finished command from a dropped one; the
+// browser terminals print the message. It reports whether the frame went out.
+func writeFailureStatus(conn *websocket.Conn, cause error) bool {
+	status, err := json.Marshal(map[string]any{
+		"kind":       "Status",
+		"apiVersion": "v1",
+		"metadata":   map[string]any{},
+		"status":     "Failure",
+		"message":    "kubemg lost the session before the command finished: " + cause.Error(),
+		"reason":     "InternalError",
+		"code":       http.StatusInternalServerError,
+	})
+	if err != nil {
+		return false
+	}
+	if conn.SetWriteDeadline(time.Now().Add(writeTimeout)) != nil {
+		return false
+	}
+	return conn.WriteMessage(websocket.BinaryMessage, append([]byte{channelError}, status...)) == nil
 }
 
 // closeClient sends a WebSocket close frame so the far end can tell a finished

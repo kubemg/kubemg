@@ -116,6 +116,15 @@ just the status:
 | A fixed sentence: `namespace <ns> is outside your granted scope`, `no access to this cluster`, `this token may only be used against its cluster's kubectl proxy`, or a guardrail's message | kubemg | The call never reached the cluster. |
 | Kubernetes' own words, e.g. `pods is forbidden: User "kubemg:dev@corp" cannot list resource "pods"…` | The cluster's RBAC | The call reached the API server. The kubemg grant is fine but the `kubemg:view`/`edit`/`cluster-admin` bindings do not cover it. Check the agent's RBAC manifests were applied and are current, especially after an upgrade. |
 
+**`kubectl exec` fails with `kubemg lost the session before the command finished`.**
+
+- Cause: the session's tunnel went away while the command was running: the
+  agent pod restarted or was rescheduled, the agent was re-applied, or the
+  network between the cluster and kubemg dropped. Whether the command itself
+  completed inside the pod is unknown — only that its result never came back.
+- Fix: wait for the cluster to show as connected again and run it again. If it
+  keeps happening, read the agent's log for why the tunnel is dropping.
+
 **`kubectl` or a console page fails with `429` / `too many calls to cluster <name>`.**
 
 - Cause: the account made more calls into that cluster than its

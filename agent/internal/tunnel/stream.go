@@ -270,7 +270,12 @@ func (c *Client) runUpgradeStream(ctx context.Context, s *stream, open protocol.
 			// rather than as a session that was pushed harder than it could carry.
 			if cause := s.err(); cause != nil {
 				message = cause.Error()
-			} else if ctx.Err() == nil && !websocket.IsCloseError(
+			} else if ctx.Err() != nil {
+				// The agent is stopping (a rollout, an eviction, a deleted pod)
+				// and closed the session itself. That is not the command
+				// finishing, and a clean close would read as if it had.
+				message = errAgentStopping
+			} else if !websocket.IsCloseError(
 				err, websocket.CloseNormalClosure, websocket.CloseGoingAway,
 			) {
 				message = err.Error()
@@ -293,6 +298,9 @@ func (c *Client) runUpgradeStream(ctx context.Context, s *stream, open protocol.
 		}
 	}
 }
+
+// errAgentStopping is why a session ended when the agent shut down under it.
+const errAgentStopping = "the kubemg agent stopped before the session ended"
 
 // streamTable tracks the streams this tunnel is servicing.
 type streamTable struct {
