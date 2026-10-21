@@ -11,6 +11,8 @@ These rules are kubemg's own, about cluster Events and the audit trail. Rules ab
 
 They are separate so rules can be edited and toggled without reading a credential back. `GET /api/v1/alarms/channels` returns `has_secret: true/false` instead of the credential, and omitting `secret` on an edit keeps the stored one. Extra headers are treated the same way, because a header can carry a token as well as the secret field can: they are stored encrypted, the console shows only their names, an empty box on an edit keeps them, and **Remove the stored headers** clears them. Typing a new JSON object replaces the whole set.
 
+So is the URL. A Slack or Teams incoming webhook has no token of its own — the path is the token — so every channel's URL is stored encrypted and read back as `url_masked`, the scheme and host with `/…` for the rest (`https://hooks.slack.com/…`). An empty URL box on an edit keeps the stored one; to change it, type the whole new URL. A failed delivery's `last_message` and a Test answer name the endpoint the same way, never by its full address.
+
 **Deleting a channel deletes its rules**, since a rule with no channel looks like coverage while doing nothing.
 
 ## Channel kinds

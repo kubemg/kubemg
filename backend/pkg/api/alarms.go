@@ -31,7 +31,9 @@ import (
  * re-typing a routing key nobody can read.
  *
  * The extra headers follow the same rule, by name only, because a header is as
- * good a place for a token as the secret field is.
+ * good a place for a token as the secret field is. So does the URL, by scheme
+ * and host only: a Slack or Teams webhook's path is its credential, and an edit
+ * that omits the URL keeps the stored one.
  */
 
 // Field bounds. A name and a URL both end up in a delivered payload, so they are
@@ -43,13 +45,15 @@ const (
 )
 
 type alarmChannelResponse struct {
-	ID       uint   `json:"id"`
-	Name     string `json:"name"`
-	Kind     string `json:"kind"`
-	URL      string `json:"url"`
-	AuthMode string `json:"auth_mode"`
-	Username string `json:"username,omitempty"`
-	Enabled  bool   `json:"enabled"`
+	ID   uint   `json:"id"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+	// URLMasked stands in for the URL: its scheme and host, never the path or
+	// query, which is where a webhook keeps its token.
+	URLMasked string `json:"url_masked"`
+	AuthMode  string `json:"auth_mode"`
+	Username  string `json:"username,omitempty"`
+	Enabled   bool   `json:"enabled"`
 
 	// HeaderNames stands in for the extra headers the way HasSecret stands in for
 	// the credential: which headers are sent, never what they carry.
@@ -73,7 +77,7 @@ func toAlarmChannelResponse(channel db.AlarmChannel) alarmChannelResponse {
 		ID:            channel.ID,
 		Name:          channel.Name,
 		Kind:          channel.Kind,
-		URL:           channel.URL,
+		URLMasked:     observability.MaskChannelURL(channel.URL),
 		AuthMode:      channel.AuthMode,
 		Username:      channel.Username,
 		Enabled:       channel.Enabled,
@@ -88,8 +92,10 @@ func toAlarmChannelResponse(channel db.AlarmChannel) alarmChannelResponse {
 }
 
 type alarmChannelRequest struct {
-	Name     string `json:"name"`
-	Kind     string `json:"kind"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+	// URL is write-only like Secret: required on create, omitted (or empty) on
+	// an update keeps the stored one.
 	URL      string `json:"url"`
 	AuthMode string `json:"auth_mode"`
 	Username string `json:"username"`
@@ -246,7 +252,7 @@ func (s *server) testAlarmChannel(c *gin.Context) {
 }
 
 // channelFrom validates a request into a channel row. existing is nil on create;
-// on update it supplies the stored secret and headers when the request omits them.
+// on update it supplies the stored URL, secret and headers when the request omits them.
 func (s *server) channelFrom(
 	c *gin.Context, req alarmChannelRequest, existing *db.AlarmChannel,
 ) (*db.AlarmChannel, bool) {
@@ -267,6 +273,9 @@ func (s *server) channelFrom(
 	}
 
 	rawURL := strings.TrimSpace(req.URL)
+	if rawURL == "" && existing != nil {
+		rawURL = existing.URL
+	}
 	if len(rawURL) > maxAlarmURLLength {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "webhook URL is too long"})
 		return nil, false

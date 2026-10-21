@@ -77,6 +77,7 @@ func TestSecretColumnsCoverEveryCredential(t *testing.T) {
 		"clusters.service_account_token",
 		"observability_sources.credential",
 		"helm_repositories.credential",
+		"alarm_channels.url",
 		"alarm_channels.secret",
 		"alarm_channels.headers",
 		"sso_providers.client_secret",
@@ -279,6 +280,78 @@ func TestMigrateSecretsRefusesForeignOrMissingKey(t *testing.T) {
 	}
 	if _, err := MigrateSecrets(context.Background(), rows, nil); !errors.Is(err, ErrSecretKeyMismatch) {
 		t.Fatalf("key removed: err = %v", err)
+	}
+}
+
+func secretRotatingBox(t *testing.T, current, previous byte) *secretbox.Box {
+	t.Helper()
+	box, err := secretbox.NewRotating(
+		bytes.Repeat([]byte{current}, secretbox.KeySize), bytes.Repeat([]byte{previous}, secretbox.KeySize))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return box
+}
+
+// A rotation re-seals every value the previous key opens, so the boot that
+// finishes leaves nothing the previous key is needed for: the next boot without
+// it opens everything under the new key alone.
+func TestMigrateSecretsRotatesToTheCurrentKey(t *testing.T) {
+	rows := newFakeRows()
+	if _, err := MigrateSecrets(context.Background(), rows, secretTestBox(t, 1)); err != nil {
+		t.Fatal(err)
+	}
+	// One value written in the clear after the first pass, the way a value
+	// stored before any key would read.
+	rows.values["alarm_channels.secret"]["5"] = "late-plaintext"
+
+	report, err := MigrateSecrets(context.Background(), rows, secretRotatingBox(t, 2, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Rotated != 3 || report.Sealed != 1 || report.Encrypted != 0 {
+		t.Fatalf("rotation pass = %+v, want 3 rotated and 1 sealed", report)
+	}
+	if rows.hashes["1"] != HashAgentToken("kmg_token_one") {
+		t.Fatal("the agent token hash must survive a rotation")
+	}
+
+	newOnly := secretTestBox(t, 2)
+	report, err = MigrateSecrets(context.Background(), rows, newOnly)
+	if err != nil {
+		t.Fatalf("the new key alone must open everything after a rotation: %v", err)
+	}
+	if report.Encrypted != 4 || report.Rotated != 0 {
+		t.Fatalf("post-rotation pass = %+v", report)
+	}
+	if opened, _ := newOnly.Open(rows.values["server_secrets.value"]["jwt_signing_key"]); opened != "signing-key" {
+		t.Fatalf("signing key after rotation = %q", opened)
+	}
+	if _, err := MigrateSecrets(context.Background(), rows, secretTestBox(t, 1)); !errors.Is(err, ErrSecretKeyMismatch) {
+		t.Fatalf("the retired key must no longer open anything: err = %v", err)
+	}
+}
+
+// A rotation cut short leaves values under both keys; the next boot with both
+// set finishes it, and one with the previous key already removed refuses.
+func TestMigrateSecretsFinishesAnInterruptedRotation(t *testing.T) {
+	rows := newFakeRows()
+	if _, err := MigrateSecrets(context.Background(), rows, secretTestBox(t, 1)); err != nil {
+		t.Fatal(err)
+	}
+	newer := secretTestBox(t, 2)
+	resealed, _ := newer.Seal("signing-key")
+	rows.values["server_secrets.value"]["jwt_signing_key"] = resealed
+
+	if _, err := MigrateSecrets(context.Background(), rows, newer); !errors.Is(err, ErrSecretKeyMismatch) {
+		t.Fatalf("previous key removed mid-rotation: err = %v, want a refusal", err)
+	}
+	report, err := MigrateSecrets(context.Background(), rows, secretRotatingBox(t, 2, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Rotated != 2 || report.Encrypted != 1 {
+		t.Fatalf("finishing pass = %+v, want 2 rotated and 1 already current", report)
 	}
 }
 

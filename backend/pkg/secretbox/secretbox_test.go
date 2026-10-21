@@ -119,3 +119,66 @@ func TestParseKey(t *testing.T) {
 		t.Fatal("New accepted a 31-byte key")
 	}
 }
+
+func rotatingBox(t *testing.T, current, previous byte) *Box {
+	t.Helper()
+	box, err := NewRotating(bytes.Repeat([]byte{current}, KeySize), bytes.Repeat([]byte{previous}, KeySize))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return box
+}
+
+func TestRotatingBoxOpensBothAndSealsUnderCurrent(t *testing.T) {
+	underOld, _ := testBox(t, 1).Seal("old-secret")
+	box := rotatingBox(t, 2, 1)
+	if !box.Rotating() {
+		t.Fatal("a box with a previous key must report rotating")
+	}
+
+	plain, previous, err := box.OpenRotated(underOld)
+	if err != nil || plain != "old-secret" || !previous {
+		t.Fatalf("OpenRotated(old) = %q, %v, %v; want the value, under the previous key", plain, previous, err)
+	}
+
+	resealed, _ := box.Seal(plain)
+	if _, err := testBox(t, 1).Open(resealed); !errors.Is(err, ErrKeyMismatch) {
+		t.Fatal("a rotating box must seal under the current key, never the previous one")
+	}
+	if opened, err := testBox(t, 2).Open(resealed); err != nil || opened != "old-secret" {
+		t.Fatalf("current key Open(resealed) = %q, %v", opened, err)
+	}
+	if _, previous, err := box.OpenRotated(resealed); err != nil || previous {
+		t.Fatalf("a value under the current key reported previous=%v, err=%v", previous, err)
+	}
+	if _, previous, _ := box.OpenRotated("legacy"); previous {
+		t.Fatal("plaintext is never under the previous key")
+	}
+}
+
+func TestRotatingBoxStillRefusesAThirdKey(t *testing.T) {
+	sealed, _ := testBox(t, 3).Seal("secret")
+	if _, _, err := rotatingBox(t, 2, 1).OpenRotated(sealed); !errors.Is(err, ErrKeyMismatch) {
+		t.Fatalf("err = %v, want ErrKeyMismatch", err)
+	}
+}
+
+func TestRotationRefusals(t *testing.T) {
+	key := bytes.Repeat([]byte{1}, KeySize)
+	if _, err := NewRotating(nil, key); !errors.Is(err, ErrPreviousWithoutKey) {
+		t.Fatalf("previous without a key: err = %v, want ErrPreviousWithoutKey", err)
+	}
+	if _, err := NewRotating(key, key); !errors.Is(err, ErrPreviousIsCurrent) {
+		t.Fatalf("same key twice: err = %v, want ErrPreviousIsCurrent", err)
+	}
+	if _, err := NewRotating(key, key[:16]); err == nil {
+		t.Fatal("a wrong-length previous key was accepted")
+	}
+	if _, err := ParseRotating(base64.StdEncoding.EncodeToString(key), "not a key"); err == nil {
+		t.Fatal("ParseRotating accepted a malformed previous key")
+	}
+	box, err := ParseRotating(base64.StdEncoding.EncodeToString(key), "")
+	if err != nil || box.Rotating() {
+		t.Fatalf("no previous key: box rotating=%v, err=%v", box.Rotating(), err)
+	}
+}

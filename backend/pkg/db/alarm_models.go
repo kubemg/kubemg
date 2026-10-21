@@ -105,7 +105,15 @@ type AlarmChannel struct {
 	// URL is the endpoint. It is dialled from the bastion rather than from inside
 	// a cluster, so it has to be reachable from here — which is usually the point:
 	// a central Alertmanager or a hosted ITSM is exactly what a fleet has one of.
-	URL string `gorm:"type:text;not null" json:"url"`
+	//
+	// It is a credential, sealed at rest and never serialized: a Slack or Teams
+	// incoming webhook has no token of its own because the path *is* the token,
+	// and a query string is where an Azure function or a Power Automate flow puts
+	// its signature. Which URLs carry one is a guess, the same guess the headers
+	// refuse to make, so every URL is treated as if it did. The API reads back
+	// the scheme and host alone (observability.MaskChannelURL); an edit that
+	// omits it keeps what is stored.
+	URL string `gorm:"type:text;not null;serializer:secret" json:"-"`
 
 	AuthMode string `gorm:"size:16;not null;default:'none'" json:"auth_mode"`
 	// Username pairs with Secret for basic auth. It is not a credential on its

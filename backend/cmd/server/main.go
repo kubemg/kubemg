@@ -54,7 +54,7 @@ func main() {
 	// is set but malformed is an operator who believes the credentials are
 	// encrypted, and a server that quietly stored them in the clear instead
 	// would be worse than one that refuses to start.
-	secretKey, err := secretbox.Parse(cfg.SecretKey)
+	secretKey, err := secretbox.ParseRotating(cfg.SecretKey, cfg.SecretKeyPrevious)
 	if err != nil {
 		log.Fatalf("KUBEMG_SECRET_KEY is unusable: %v", err)
 	}
@@ -300,6 +300,7 @@ func main() {
 		Deployment: api.Deployment{
 			SigningKeyFromEnv: strings.TrimSpace(cfg.JWTSecret) != "",
 			SecretKeySet:      secretKey.Enabled(),
+			SecretKeyRotating: secretKey.Rotating(),
 			TLSEnabled:        cfg.TLS.Enabled,
 			TLSSelfSigned:     tlsMaterial.selfSigned,
 			TLSCertFile:       tlsMaterial.certFile,
@@ -385,7 +386,8 @@ func sealStoredSecrets(ctx context.Context, gdb *gorm.DB, box *secretbox.Box, lo
 			return fmt.Errorf("refusing to start: %v. The database holds credentials encrypted under a "+
 				"KUBEMG_SECRET_KEY this server does not have. Restore the key the database was "+
 				"encrypted with; a different or missing key cannot read them, and nothing here will "+
-				"treat ciphertext as a credential", err)
+				"treat ciphertext as a credential. To move to a new key, set the old one as "+
+				"KUBEMG_SECRET_KEY_PREVIOUS for one boot", err)
 		}
 		return fmt.Errorf("stored credential migration failed: %v", err)
 	}
@@ -401,6 +403,14 @@ func sealStoredSecrets(ctx context.Context, gdb *gorm.DB, box *secretbox.Box, lo
 	logger.Info("stored credentials are encrypted at rest",
 		slog.Int("encrypted_now", report.Sealed),
 		slog.Int("already_encrypted", report.Encrypted))
+	if box.Rotating() {
+		// Every value the previous key opened has been re-sealed by now, so it
+		// is no longer needed by anything this database holds — only by backups
+		// taken before this boot, which is where it belongs.
+		logger.Warn("rotated stored credentials to the new KUBEMG_SECRET_KEY; "+
+			"remove KUBEMG_SECRET_KEY_PREVIOUS and keep it only with the backups taken before this boot",
+			slog.Int("rotated", report.Rotated))
+	}
 	return nil
 }
 

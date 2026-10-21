@@ -2501,7 +2501,9 @@ export interface AlarmChannel {
   id: number
   name: string
   kind: AlarmChannelKind
-  url: string
+  /** The URL's scheme and host, `/…` for the rest. The path and query are never
+      read back: a Slack or Teams webhook's path is its credential. */
+  url_masked: string
   auth_mode: AlarmAuthMode
   username?: string
   enabled: boolean
@@ -2518,7 +2520,8 @@ export interface AlarmChannel {
 export interface AlarmChannelInput {
   name: string
   kind: AlarmChannelKind
-  url: string
+  /** Required on create; omit on an update to keep the stored URL. */
+  url?: string
   auth_mode: AlarmAuthMode
   username?: string
   /** Omit to keep the stored credential. */

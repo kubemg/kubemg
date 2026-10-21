@@ -259,7 +259,9 @@ export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
                     {channel.enabled ? null : <Pill tone="idle">disabled</Pill>}
                     {channel.has_secret ? <Pill tone="ok">credential stored</Pill> : null}
                   </div>
-                  <p className="mt-1 truncate font-data text-[12px] text-muted">{channel.url}</p>
+                  <p className="mt-1 truncate font-data text-[12px] text-muted">
+                    {channel.url_masked}
+                  </p>
 
                   {/* Delivery health. An integration that quietly stopped working
                       is the failure mode that matters: nobody notices a page that
@@ -443,7 +445,9 @@ function ChannelSheet({
       ? {
           name: channel.name,
           kind: channel.kind,
-          url: channel.url,
+          // Always blank: only the host is read back, since a webhook's path is
+          // its credential, and leaving it empty is what keeps the stored URL.
+          url: '',
           auth_mode: channel.auth_mode,
           username: channel.username ?? '',
           // Always blank: the stored credential is never read back, and leaving
@@ -472,7 +476,8 @@ function ChannelSheet({
       const payload: AlarmChannelInput = {
         ...draft,
         name: draft.name.trim(),
-        url: draft.url.trim(),
+        // Like the secret: empty on an edit means "keep the stored URL".
+        url: draft.url?.trim() ? draft.url.trim() : undefined,
         // An empty secret means "keep the stored one", so it is omitted rather
         // than sent blank.
         secret: draft.secret?.trim() ? draft.secret.trim() : undefined,
@@ -546,14 +551,20 @@ function ChannelSheet({
         <Field
           label="Endpoint URL"
           htmlFor="channel_url"
-          hint="Dialled from kubemg, so it has to be reachable from here. An internal address is the usual case."
+          hint={
+            channel
+              ? `Stored for ${channel.url_masked || 'this channel'} and never read back — a webhook's path is its credential. Leave this empty to keep it.`
+              : 'Dialled from kubemg, so it has to be reachable from here. An internal address is the usual case. Stored encrypted; only the host is shown again.'
+          }
         >
           <TextInput
             id="channel_url"
             className="font-data text-[12.5px]"
-            value={draft.url}
+            value={draft.url ?? ''}
             onChange={(event) => set('url', event.target.value)}
-            placeholder="https://alertmanager.example.com/api/v2/alerts"
+            placeholder={
+              channel ? channel.url_masked : 'https://alertmanager.example.com/api/v2/alerts'
+            }
           />
         </Field>
 

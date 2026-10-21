@@ -1,8 +1,8 @@
 {{- include "kubemg.validate" . -}}
 {{- $passthrough := include "kubemg.passthrough" . -}}
 {{- $port := include "kubemg.portName" . -}}
-{{- $secretKeys := list "JWT_SECRET" "KUBEMG_SECRET_KEY" "KUBEMG_SESSION_RECORDING_KEY" "KUBEMG_ADMIN_PASSWORD" -}}
-{{- $secretValues := dict "JWT_SECRET" .Values.secrets.jwtSecret "KUBEMG_SECRET_KEY" .Values.secrets.secretKey "KUBEMG_SESSION_RECORDING_KEY" .Values.secrets.sessionRecordingKey "KUBEMG_ADMIN_PASSWORD" .Values.secrets.adminPassword -}}
+{{- $secretKeys := list "JWT_SECRET" "KUBEMG_SECRET_KEY" "KUBEMG_SECRET_KEY_PREVIOUS" "KUBEMG_SESSION_RECORDING_KEY" "KUBEMG_ADMIN_PASSWORD" -}}
+{{- $secretValues := dict "JWT_SECRET" .Values.secrets.jwtSecret "KUBEMG_SECRET_KEY" .Values.secrets.secretKey "KUBEMG_SECRET_KEY_PREVIOUS" .Values.secrets.secretKeyPrevious "KUBEMG_SESSION_RECORDING_KEY" .Values.secrets.sessionRecordingKey "KUBEMG_ADMIN_PASSWORD" .Values.secrets.adminPassword -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

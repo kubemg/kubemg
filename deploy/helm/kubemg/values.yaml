@@ -111,13 +111,19 @@ postgresql:
 
 secrets:
   # -- A Secret holding any of JWT_SECRET, KUBEMG_SECRET_KEY,
-  # KUBEMG_SESSION_RECORDING_KEY and KUBEMG_ADMIN_PASSWORD. When set, the four
-  # values below are ignored and every key is optional.
+  # KUBEMG_SECRET_KEY_PREVIOUS, KUBEMG_SESSION_RECORDING_KEY and
+  # KUBEMG_ADMIN_PASSWORD. When set, the five values below are ignored and
+  # every key is optional.
   existingSecret: ""
   # -- Encrypts every credential KubeMG stores in the database (32 bytes,
   # `openssl rand -base64 32`). Unset, they are stored in plaintext. Once set it
-  # can never be removed: the server refuses to start without it.
+  # can never be removed: the server refuses to start without it. To change it,
+  # move the old key to secretKeyPrevious.
   secretKey: ""
+  # -- The key secretKey replaces, set only for the upgrade that rotates to a
+  # new one: the next boot re-seals every stored credential under secretKey.
+  # Remove it once that boot has finished.
+  secretKeyPrevious: ""
   # -- Encrypts session recordings at rest (32 bytes). Unset, recordings are
   # written in plaintext.
   sessionRecordingKey: ""
