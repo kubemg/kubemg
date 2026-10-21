@@ -357,7 +357,7 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | `PUT /settings` | Admin | An empty string or `0` clears an override back to the default. `public_url`, `agent_namespace`, and the TTL/retention fields are each validated on the way in. |
 | `GET /settings/deployment` | Admin | `{checks[], attention}` — deployment posture; see [Troubleshooting](../reference/troubleshooting.md). |
 | `GET /settings/smtp` | Admin | The mail relay: `{configured, host, port, security, username, has_password, from, updated_at}`. The password is never returned. |
-| `PUT /settings/smtp` | Admin | Body `{host, port, security (starttls\|tls\|none), username, password?, from}`. `password` absent keeps the stored one, `""` clears it; an empty `username` drops it. Validated, never dialled: `400` for a host with a scheme or port, a bad port or sender, or a login over `none` to anything but a loopback host. Password stored sealed. |
+| `PUT /settings/smtp` | Admin | Body `{host, port, security (starttls\|tls\|none), username, password?, from}`. `password` absent keeps the stored one — only while `host` (case-insensitive) and `username` are unchanged, else `400` — `""` clears it; an empty `username` drops it. Validated, never dialled: `400` for a host with a scheme or port, a bad port or sender, or a login over `none` to anything but a loopback host. Password stored sealed. |
 | `DELETE /settings/smtp` | Admin | Mail stops. `204`. |
 | `POST /settings/smtp/test` | Admin | Body `{to?}` (defaults to the caller's email). Sends one message through the stored relay. `409` no relay, `400` no recipient, `502` with the relay's own refusal. |
 

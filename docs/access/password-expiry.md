@@ -94,7 +94,7 @@ Under **Admin → Settings → Email**:
 | Port | Usually 587 for STARTTLS, 465 for TLS, 25 for none. |
 | Security | **STARTTLS** (default) upgrades the connection before anything is sent; a relay that does not offer it is refused, never used in plain text. **TLS** is encrypted from the first byte. **None** is plain text, and only for a relay that needs no login — a password is never sent unencrypted except to a relay on the same host. |
 | Sender address | The *From* of every message, for example `KubeMG <kubemg@example.com>`. |
-| Username / Password | For a relay that needs a login. The password is stored encrypted (under `KUBEMG_SECRET_KEY` when set) and never shown again; leave the field empty to keep it. |
+| Username / Password | For a relay that needs a login. The password is stored encrypted (under `KUBEMG_SECRET_KEY` when set) and never shown again; leave the field empty to keep it. A stored password is kept only while the host and username stay the same — change either and it has to be entered again, so the relay cannot be pointed somewhere else with the stored password still attached. |
 
 Saving checks the values but does not contact the relay. **Send test message**
 sends one message through the saved relay — to your own address unless you name

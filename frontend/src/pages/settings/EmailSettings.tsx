@@ -105,6 +105,13 @@ export function EmailSettings() {
   const dirty = relay !== null && !sameDraft(draft, draftOf(stored))
   useUnsavedGuard(dirty, 'the mail relay')
 
+  // The server keeps a stored password only for the host and login it was
+  // given for; anywhere else it has to be typed again.
+  const passwordMoved =
+    draft.keepPassword &&
+    draft.password === '' &&
+    stored !== null &&
+    (draft.host.trim().toLowerCase() !== (stored.host ?? '').toLowerCase() || draft.username.trim() !== (stored.username ?? ''))
   const port = Number(draft.port.trim())
   const portError =
     draft.port.trim() === '' || (Number.isInteger(port) && port >= 1 && port <= 65535)
@@ -120,6 +127,10 @@ export function EmailSettings() {
     event.preventDefault()
     if (portError) {
       document.getElementById('smtp-port')?.focus()
+      return
+    }
+    if (passwordMoved && draft.username.trim() !== '') {
+      document.getElementById('smtp-password')?.focus()
       return
     }
     setBusy(true)
@@ -312,6 +323,11 @@ export function EmailSettings() {
                   draft.keepPassword
                     ? 'A password is stored. Type to replace it.'
                     : 'Stored encrypted and never shown again.'
+                }
+                error={
+                  passwordMoved && draft.username.trim() !== ''
+                    ? 'Enter the password again — a stored password is kept only for the host and login it was given for.'
+                    : undefined
                 }
               >
                 <TextInput

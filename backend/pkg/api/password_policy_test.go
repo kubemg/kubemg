@@ -377,10 +377,28 @@ func TestSMTPRelaySettings(t *testing.T) {
 	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "relay-password") {
 		t.Fatalf("put: %d %s", rec.Code, rec.Body.String())
 	}
-	// Omitting the password keeps it.
+	// Omitting the password keeps it — for the same host and login only.
+	env.do(t, http.MethodPut, "/api/v1/settings/smtp", token, map[string]any{
+		"host": "SMTP.example.com", "port": 465, "security": "tls", "username": "relay-user",
+		"from": "kubemg@example.com",
+	})
+	if env.store.smtp.Password != "relay-password" || env.store.smtp.Port != 465 {
+		t.Fatalf("stored relay = %+v", env.store.smtp)
+	}
+	for name, body := range map[string]map[string]any{
+		"another host":  {"host": "attacker.example.net", "port": 465, "security": "tls", "username": "relay-user", "from": "kubemg@example.com"},
+		"another login": {"host": "smtp.example.com", "port": 465, "security": "tls", "username": "other", "from": "kubemg@example.com"},
+	} {
+		if rec := env.do(t, http.MethodPut, "/api/v1/settings/smtp", token, body); rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s kept the stored password: %d", name, rec.Code)
+		}
+	}
+	if env.store.smtp.Host != "SMTP.example.com" {
+		t.Fatalf("a refused save was written: %+v", env.store.smtp)
+	}
 	env.do(t, http.MethodPut, "/api/v1/settings/smtp", token, map[string]any{
 		"host": "smtp2.example.com", "port": 587, "security": "starttls", "username": "relay-user",
-		"from": "kubemg@example.com",
+		"password": "relay-password", "from": "kubemg@example.com",
 	})
 	if env.store.smtp.Password != "relay-password" || env.store.smtp.Host != "smtp2.example.com" {
 		t.Fatalf("stored relay = %+v", env.store.smtp)

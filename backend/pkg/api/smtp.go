@@ -124,7 +124,14 @@ func (s *server) putSMTP(c *gin.Context) {
 	switch {
 	case req.Password != nil:
 		config.Password = *req.Password
-	case existing != nil:
+	case existing != nil && existing.Password != "":
+		// A kept password goes only where it was given. Otherwise pointing the
+		// relay at another host and sending a test would hand the stored
+		// password to that host without anyone having typed it.
+		if !strings.EqualFold(existing.Host, config.Host) || existing.Username != config.Username {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "enter the relay password again — a stored password is kept only for the host and login it was given for"})
+			return
+		}
 		config.Password = existing.Password
 	}
 	// A login with no password, or a password with no login, is a relay that
