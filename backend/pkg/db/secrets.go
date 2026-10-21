@@ -208,13 +208,22 @@ type SecretMigration struct {
 	Sealed int
 	// Plaintext is how many values remain in the clear (no key configured).
 	Plaintext int
-	// Encrypted is how many values were already encrypted and opened.
+	// Encrypted is how many values were already encrypted under the current key.
 	Encrypted int
+	// Rotated is how many values were sealed under the previous key and have
+	// been re-sealed under the current one.
+	Rotated int
 }
 
 // MigrateSecrets verifies every stored credential against the configured key
 // and, with a key set, encrypts in place every value still in the clear. It is
 // idempotent: a value already carrying the prefix is only checked.
+//
+// With a previous key configured it is also the rotation: a value the previous
+// key opens is re-sealed under the current one, so a boot that finishes leaves
+// nothing the previous key is still needed for. A pass cut short is finished by
+// the next boot with both keys still set; removing the previous key before then
+// is a value under a key the server does not have, refused like any other.
 //
 // It refuses — and the server must not boot — when a stored value is encrypted
 // and no key is set, or is encrypted under a different key. Either would
@@ -234,21 +243,22 @@ func MigrateSecrets(ctx context.Context, rows SecretRows, box *secretbox.Box) (S
 			return report, fmt.Errorf("read %s.%s: %w", col.Table, col.Column, err)
 		}
 		for _, row := range values {
-			plain, err := box.Open(row.Value)
+			plain, underPrevious, err := box.OpenRotated(row.Value)
 			if err != nil {
 				return report, fmt.Errorf("%w: %s.%s (%s=%s): %v",
 					ErrSecretKeyMismatch, col.Table, col.Column, col.PrimaryKey, row.ID, err)
 			}
 			switch {
+			case underPrevious:
+				if err := reseal(ctx, rows, box, col, row.ID, plain); err != nil {
+					return report, err
+				}
+				report.Rotated++
 			case secretbox.IsSealed(row.Value):
 				report.Encrypted++
 			case box.Enabled():
-				sealed, err := box.Seal(plain)
-				if err != nil {
+				if err := reseal(ctx, rows, box, col, row.ID, plain); err != nil {
 					return report, err
-				}
-				if err := rows.Write(ctx, col, row.ID, sealed); err != nil {
-					return report, fmt.Errorf("encrypt %s.%s (%s=%s): %w", col.Table, col.Column, col.PrimaryKey, row.ID, err)
 				}
 				report.Sealed++
 			default:
@@ -262,6 +272,18 @@ func MigrateSecrets(ctx context.Context, rows SecretRows, box *secretbox.Box) (S
 		}
 	}
 	return report, nil
+}
+
+// reseal writes one value back sealed under the current key.
+func reseal(ctx context.Context, rows SecretRows, box *secretbox.Box, col SecretColumn, id, plain string) error {
+	sealed, err := box.Seal(plain)
+	if err != nil {
+		return err
+	}
+	if err := rows.Write(ctx, col, id, sealed); err != nil {
+		return fmt.Errorf("encrypt %s.%s (%s=%s): %w", col.Table, col.Column, col.PrimaryKey, id, err)
+	}
+	return nil
 }
 
 // gormSecretRows is SecretRows over the real database. It goes around the

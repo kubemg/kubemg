@@ -617,3 +617,20 @@ func TestValidateChannelURL(t *testing.T) {
 		}
 	}
 }
+
+func TestMaskChannelURL(t *testing.T) {
+	for raw, want := range map[string]string{
+		"https://hooks.slack.com/services/T0/B0/xyz":   "https://hooks.slack.com/…",
+		"https://am.example.com":                       "https://am.example.com",
+		"https://am.example.com/":                      "https://am.example.com",
+		"http://am.internal:9093/api/v2/alerts":        "http://am.internal:9093/…",
+		"https://prod.westus.logic.azure.com/?sig=abc": "https://prod.westus.logic.azure.com/…",
+		"https://x.webhook.office.com#token":           "https://x.webhook.office.com/…",
+		"not a url":                                    "",
+		"":                                             "",
+	} {
+		if got := MaskChannelURL(raw); got != want {
+			t.Errorf("MaskChannelURL(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}

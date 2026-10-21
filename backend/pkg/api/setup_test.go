@@ -320,6 +320,26 @@ func TestDeploymentPostureDistinguishesASuppliedCertificate(t *testing.T) {
 	}
 }
 
+// A previous key left in the environment after the rotating boot is a second key
+// that opens old backups, and nothing in the database needs it any more.
+func TestDeploymentPostureWarnsOfALingeringPreviousKey(t *testing.T) {
+	for _, rotating := range []bool{false, true} {
+		env := newTestEnvWith(t, func(o *Options) {
+			o.Deployment = Deployment{SecretKeySet: true, SecretKeyRotating: rotating}
+		})
+		admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+		body := decode[deploymentPostureResponse](t,
+			env.do(t, http.MethodGet, "/api/v1/settings/deployment", env.tokenFor(t, admin), nil))
+		check, ok := checkByKey(body.Checks, "secret-key-previous")
+		if ok != rotating {
+			t.Fatalf("rotating=%v: secret-key-previous present=%v", rotating, ok)
+		}
+		if rotating && (check.Severity != checkWarn || !strings.Contains(check.Fix, "KUBEMG_SECRET_KEY_PREVIOUS")) {
+			t.Fatalf("the lingering previous key must warn and name the variable, got %+v", check)
+		}
+	}
+}
+
 func checkByKey(checks []setupCheck, key string) (setupCheck, bool) {
 	for _, check := range checks {
 		if check.Key == key {

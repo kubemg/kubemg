@@ -26,14 +26,19 @@ and rule out half of this page.
 
 - Cause: the key is not 32 bytes written as hex or base64.
 - Fix: `openssl rand -base64 32`. A passphrase is refused on purpose.
+- The same message names `KUBEMG_SECRET_KEY_PREVIOUS` when that is the
+  problem: it is malformed, set without `KUBEMG_SECRET_KEY`, or the same key as
+  it. See [Rotating the key](../install/database.md#rotating-the-key).
 
 **Refuses to start: `refusing to start: stored credentials cannot be decrypted…`.**
 
 - Cause: the database holds credentials encrypted under a `KUBEMG_SECRET_KEY`
   this server does not have (changed, removed, or restored without it). The
   message names the first unreadable value.
-- Fix: restore the original key. If it is truly lost, see
-  [Database](../install/database.md#credentials-encrypted-at-rest).
+- Fix: restore the original key. If you meant to change it, set the old
+  key as `KUBEMG_SECRET_KEY_PREVIOUS` for one boot — see
+  [Rotating the key](../install/database.md#rotating-the-key). If it is truly
+  lost, see [Database](../install/database.md#credentials-encrypted-at-rest).
 
 **Refuses to start: `refusing to serve plaintext HTTP on <addr>: it is reachable from more than this machine…`.**
 

@@ -75,12 +75,16 @@ record, and local password hashes. The rest depends on `KUBEMG_SECRET_KEY`:
 
 - **Without it**, stored credentials are readable as written: the signing key,
   every agent's tunnel credential, direct-mode ServiceAccount tokens, and
-  datasource, Helm repository, alarm channel and SSO secrets. The signing key
+  datasource, Helm repository, alarm channel (webhook URLs included) and SSO
+  secrets. The signing key
   alone mints a super-admin session, which is cluster-admin on every agent-mode
   cluster. **A database dump without the key is the bastion.**
 - **With it**, each is AES-256-GCM ciphertext under a key that lives in the
   server's environment. A stolen dump, replica or backup is no longer a working
   credential. Machine tokens and install tickets were never stored in the clear.
+  A key you suspect has leaked is replaced with one restart
+  ([Rotating the key](../install/database.md#rotating-the-key)); backups taken
+  before it still open under the old key.
 
 `JWT_SECRET` in the environment keeps the signing key out of the database.
 Session recordings are files on disk, encrypted under

@@ -459,3 +459,73 @@ func TestTestingAChannelReportsARefusalAsAnAnswer(t *testing.T) {
 		t.Fatalf("the endpoint's own words are the useful part, got %q", body.Message)
 	}
 }
+
+// A Slack or Teams webhook's path is its credential, so a channel reads back by
+// scheme and host alone, and an edit that does not retype the URL keeps it.
+func TestAlarmChannelURLIsNeverReadBack(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+	const hook = "https://hooks.slack.com/services/T000/B000/XXXXXXXXXXXXXXXXXXXXXXXX"
+
+	rec := env.do(t, http.MethodPost, "/api/v1/alarms/channels", token, map[string]any{
+		"name": "oncall", "kind": db.ChannelSlack, "url": hook,
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected %d, got %d (%s)", http.StatusCreated, rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "XXXXXXXX") || strings.Contains(rec.Body.String(), "/services/") {
+		t.Fatalf("the webhook path must never be serialized: %s", rec.Body.String())
+	}
+	created := decode[alarmChannelResponse](t, rec)
+	if created.URLMasked != "https://hooks.slack.com/…" {
+		t.Fatalf("url_masked = %q, want the scheme and host", created.URLMasked)
+	}
+
+	list := env.do(t, http.MethodGet, "/api/v1/alarms/channels", token, nil)
+	if strings.Contains(list.Body.String(), "XXXXXXXX") {
+		t.Fatalf("the list must not carry the webhook path: %s", list.Body.String())
+	}
+
+	rec = env.do(t, http.MethodPut, fmt.Sprintf("/api/v1/alarms/channels/%d", created.ID), token, map[string]any{
+		"name": "oncall-renamed", "kind": db.ChannelSlack,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("an edit without the URL must keep it, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	stored, _ := env.store.AlarmChannelByID(t.Context(), created.ID)
+	if stored.URL != hook {
+		t.Fatalf("the stored URL should survive an edit that omits it, got %q", stored.URL)
+	}
+
+	if rec := env.do(t, http.MethodPost, "/api/v1/alarms/channels", token, map[string]any{
+		"name": "no-url", "kind": db.ChannelSlack,
+	}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("a new channel still needs a URL: expected %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+// net/http wraps a transport failure as `Post "<url>": …`, which would hand an
+// unreachable webhook's token back as the Test answer and the last message.
+func TestTestingAnUnreachableChannelDoesNotEchoTheURL(t *testing.T) {
+	endpoint := httptest.NewServer(http.NotFoundHandler())
+	addr := endpoint.URL
+	endpoint.Close()
+
+	env := newTestEnvWith(t, withAlarms)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	channel := env.store.addAlarmChannel(db.AlarmChannel{
+		Name: "slack", Kind: db.ChannelSlack, URL: addr + "/services/T000/B000/sekrit-token", Enabled: true,
+	})
+
+	rec := env.do(t, http.MethodPost, fmt.Sprintf("/api/v1/alarms/channels/%d/test", channel.ID),
+		env.tokenFor(t, admin), nil)
+	if strings.Contains(rec.Body.String(), "sekrit-token") {
+		t.Fatalf("the test answer must not carry the webhook path: %s", rec.Body.String())
+	}
+	stored, _ := env.store.AlarmChannelByID(t.Context(), channel.ID)
+	if strings.Contains(stored.LastMessage, "sekrit-token") || stored.LastStatus == "" {
+		t.Fatalf("the recorded failure must say what happened without the path, got %q/%q",
+			stored.LastStatus, stored.LastMessage)
+	}
+}

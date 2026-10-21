@@ -48,6 +48,13 @@ type Config struct {
 	// Like the recording key it is read from the environment and never stored:
 	// a key kept in the database beside its ciphertext protects nothing.
 	SecretKey string
+	// SecretKeyPrevious is the key SecretKey replaces, from
+	// KUBEMG_SECRET_KEY_PREVIOUS, set only for the boot that rotates to it: it
+	// opens what it sealed and never seals, and the boot re-seals every value it
+	// opened under SecretKey. Set without SecretKey, or equal to it, refuses to
+	// boot.
+	SecretKeyPrevious string
+
 	JWTTTL    time.Duration
 	DB        DB
 	// AdminUsername names the bootstrap administrator.
@@ -225,6 +232,9 @@ func Load() Config {
 		ListenAddr: env("KUBEMG_LISTEN_ADDR", ":8080"),
 		JWTSecret:  env("JWT_SECRET", ""),
 		SecretKey:  env("KUBEMG_SECRET_KEY", ""),
+
+		SecretKeyPrevious: env("KUBEMG_SECRET_KEY_PREVIOUS", ""),
+
 		JWTTTL:     envDuration("JWT_TTL", 12*time.Hour),
 		DB: DB{
 			Host:     env("DB_HOST", "localhost"),
