@@ -54,6 +54,15 @@ export interface User {
       never signed in, and for every sign-in older than the column — the console
       says which rather than drawing a blank that reads as an unknown host. */
   last_login_addr?: string
+  /** When a password held here was last set. Absent for an account whose
+      password is not held here. */
+  password_changed_at?: string
+  /** When the password age policy, or an administrator, makes the password
+      due. Absent when nothing does. */
+  password_expires_at?: string
+  /** That moment has passed: the session reaches nothing but the change
+      screen until the password is changed. */
+  password_change_required?: boolean
   created_at: string
 }
 
@@ -204,6 +213,34 @@ export interface KubeconfigRevokeAllResult {
  */
 export interface ProfileUpdate {
   email?: string
+}
+
+/** How the mail relay is reached. STARTTLS on 587 is what most relays want;
+    `tls` is implicit TLS (465); `none` is plain text and never carries a login
+    to anything but this host. */
+export type SMTPSecurity = 'starttls' | 'tls' | 'none'
+
+/** The relay KubeMG's own mail — password expiry reminders — goes through.
+    The password is write-only: it reads back as `has_password`. */
+export interface SMTPRelay {
+  configured: boolean
+  host?: string
+  port?: number
+  security?: SMTPSecurity
+  username?: string
+  has_password: boolean
+  from?: string
+  updated_at?: string
+}
+
+export interface SMTPRelayInput {
+  host: string
+  port: number
+  security: SMTPSecurity
+  username: string
+  /** Omitted keeps the stored password; `''` clears it. */
+  password?: string
+  from: string
 }
 
 export interface PasswordChange {
@@ -2377,6 +2414,10 @@ export interface RuntimeSettings {
       matching enable switch — any grant that can already exec into a pod can
       already ask for one. */
   debug_image: string
+  /** Days a local password lives before its owner must change it. 0 is off —
+      the default, and the override's "unset". Federated accounts' passwords
+      are their provider's and are never governed by it. */
+  password_max_age_days: number
 }
 
 export interface SettingsResponse {

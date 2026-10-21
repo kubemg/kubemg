@@ -63,6 +63,11 @@ const (
 	// customer clusters, and every replica running it would mean every replica
 	// deleting the same pods and filing the same audit records for it.
 	LeaseShellReaper = "shell_reaper"
+
+	// LeasePasswordNotices covers mailing password expiry reminders. It reads
+	// no cluster, but every replica sending the same reminder to the same person
+	// is the duplication a lease exists to prevent.
+	LeasePasswordNotices = "password_notices"
 )
 
 // Lease is one held claim on a background job.

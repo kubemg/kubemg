@@ -40,6 +40,7 @@ export function GeneralSettings() {
   const [mfaPolicy, setMfaPolicy] = useState<MFAEnforcement>('off')
   const [cliHours, setCliHours] = useState('')
   const [issuance, setIssuance] = useState<KubeconfigIssuance>('allowed')
+  const [passwordDays, setPasswordDays] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -54,6 +55,7 @@ export function GeneralSettings() {
       setMfaPolicy(next.effective.mfa_enforcement || 'off')
       setCliHours(cliHoursDraft(next))
       setIssuance(next.effective.kubeconfig_issuance || 'allowed')
+      setPasswordDays(passwordDaysDraft(next))
       setError(null)
     } catch (err) {
       setError(errorMessage(err, 'Could not load the settings.'))
@@ -78,6 +80,10 @@ export function GeneralSettings() {
       document.getElementById('cli_session_max_hours')?.focus()
       return
     }
+    if (passwordDaysError !== undefined) {
+      document.getElementById('password_max_age_days')?.focus()
+      return
+    }
     setBusy(true)
     setError(null)
     setSaved(false)
@@ -91,6 +97,8 @@ export function GeneralSettings() {
         mfa_enforcement: mfaPolicy === 'off' ? '' : mfaPolicy,
         cli_session_max_hours: Number(cliHours.trim()) || 0,
         kubeconfig_issuance: issuance === 'allowed' ? '' : issuance,
+        // Empty is "no expiry", which the API spells 0.
+        password_max_age_days: Number(passwordDays.trim()) || 0,
       })
       setSettings(next)
       setPublicUrl(next.overrides.public_url)
@@ -98,6 +106,7 @@ export function GeneralSettings() {
       setMfaPolicy(next.effective.mfa_enforcement || 'off')
       setCliHours(cliHoursDraft(next))
       setIssuance(next.effective.kubeconfig_issuance || 'allowed')
+      setPasswordDays(passwordDaysDraft(next))
       setSaved(true)
     } catch (err) {
       setError(errorMessage(err, 'Could not save the settings.'))
@@ -118,19 +127,25 @@ export function GeneralSettings() {
       ? undefined
       : 'Enter a whole number of hours between 1 and 720, or leave it empty for the default.'
 
+  const passwordDaysError =
+    passwordDays.trim() === '' || withinBounds(passwordDays, 1, 3650)
+      ? undefined
+      : 'Enter a whole number of days between 1 and 3650, or leave it empty for no expiry.'
+
   const dirty =
     settings !== null &&
     (publicUrl.trim() !== settings.overrides.public_url ||
       ceiling.trim() !== ceilingDraft(settings) ||
       mfaPolicy !== (settings.effective.mfa_enforcement || 'off') ||
       cliHours.trim() !== cliHoursDraft(settings) ||
-      issuance !== (settings.effective.kubeconfig_issuance || 'allowed'))
+      issuance !== (settings.effective.kubeconfig_issuance || 'allowed') ||
+      passwordDays.trim() !== passwordDaysDraft(settings))
   useUnsavedGuard(dirty, 'these settings')
 
   return (
     <SettingsLayout
       title="General settings"
-      description="Where clusters reach this server, how long a kubeconfig may live, and who needs a second factor to sign in. A value set here overrides what the server read from its environment at boot; clearing it falls back to that."
+      description="Where clusters reach this server, how long a kubeconfig may live, who needs a second factor to sign in, and how long a password lasts. A value set here overrides what the server read from its environment at boot; clearing it falls back to that."
       aside={
         settings ? (
           <>
@@ -152,6 +167,16 @@ export function GeneralSettings() {
               source={settingSource(settings.overrides.mfa_enforcement, '')}
               reach="Sign-ins from now on. A session already open runs to its own expiry — requiring a factor does not end it."
             />
+            <SettingsAside
+              label="Password expiry"
+              value={
+                settings.effective.password_max_age_days > 0
+                  ? `Every ${settings.effective.password_max_age_days} days`
+                  : 'Never'
+              }
+              source={settingSource(settings.overrides.password_max_age_days, 0)}
+              reach="Takes effect at once, counted from each password's last change: an open session whose password is now past due is held at the change screen at its next click. Kubeconfigs and CLI sessions are not affected."
+            />
           </>
         ) : null
       }
@@ -168,6 +193,7 @@ export function GeneralSettings() {
                 setMfaPolicy(settings.effective.mfa_enforcement || 'off')
                 setCliHours(cliHoursDraft(settings))
                 setIssuance(settings.effective.kubeconfig_issuance || 'allowed')
+                setPasswordDays(passwordDaysDraft(settings))
                 setSaved(false)
               }}
             >
@@ -342,6 +368,38 @@ export function GeneralSettings() {
             </Field>
           </Panel>
         ) : null}
+
+        {settings ? (
+          <Panel
+            eyebrow="Sign-in"
+            title="Password expiry"
+            description="How long a password held here lasts before its owner has to choose a new one. It covers local accounts only; an LDAP, OIDC or SAML account's password is its directory's."
+            bodyClassName="flex flex-col gap-4 p-4"
+          >
+            <Field
+              label="Passwords expire after (days)"
+              htmlFor="password_max_age_days"
+              hint="Leave empty for no expiry. People are mailed 14, 7, 3 and 1 days before, through the relay under Settings → Email. One account's password can also be expired by hand from its page under Users."
+              error={passwordDaysError}
+            >
+              <TextInput
+                id="password_max_age_days"
+                type="number"
+                min={1}
+                max={3650}
+                step={1}
+                inputMode="numeric"
+                className="max-w-40 font-data text-[12.5px]"
+                placeholder="Never"
+                value={passwordDays}
+                onChange={(event) => {
+                  setPasswordDays(event.target.value)
+                  setSaved(false)
+                }}
+              />
+            </Field>
+          </Panel>
+        ) : null}
       </form>
     </SettingsLayout>
   )
@@ -354,6 +412,12 @@ function withinCeilingBounds(raw: string): boolean {
 function withinBounds(raw: string, min: number, max: number): boolean {
   const hours = Number(raw)
   return Number.isInteger(hours) && hours >= min && hours <= max
+}
+
+/** The policy as the form shows it: 0 (off) is an empty box. */
+function passwordDaysDraft(settings: SettingsResponse): string {
+  const days = settings.overrides.password_max_age_days
+  return days > 0 ? String(days) : ''
 }
 
 /** The stored override as the form shows it: 0 from the API is an empty box. */

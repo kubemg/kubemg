@@ -645,6 +645,7 @@ var auditVerbVocabulary = append(
 	bastion.VerbAgentDisplaced, bastion.VerbAgentTokenRotate,
 	verbMFAReset, verbMFARemove, verbMFARecoveryUsed,
 	verbCLILogin, verbCLISessionRevoke,
+	verbPasswordExpire,
 )
 
 // joinList renders a submitted list into the stored comma-separated form,

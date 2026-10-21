@@ -82,6 +82,7 @@ func TestSecretColumnsCoverEveryCredential(t *testing.T) {
 		"sso_providers.client_secret",
 		"sso_providers.ldap_bind_password",
 		"user_mfa_factors.secret",
+		"smtp_configs.password",
 	} {
 		if !got[want] {
 			t.Errorf("%s is not tagged serializer:secret", want)
@@ -337,6 +338,28 @@ func TestKeptTLSPairIsSealed(t *testing.T) {
 	}
 	got := varsString(vars)
 	if strings.Contains(got, "private-key-material") || !strings.Contains(got, secretbox.Prefix) {
+		t.Fatalf("upsert sent %s", got)
+	}
+}
+
+// The relay's password is replaced by an upsert too.
+func TestSMTPPasswordIsSealed(t *testing.T) {
+	box := secretTestBox(t, 1)
+	withBox(t, box)
+	gdb := dryRunDB(t)
+
+	var vars []any
+	if err := gdb.Callback().Create().After("gorm:create").Register("test:capture", func(tx *gorm.DB) {
+		vars = tx.Statement.Vars
+	}); err != nil {
+		t.Fatal(err)
+	}
+	config := &SMTPConfig{Host: "smtp.example.com", Port: 587, Password: "relay-password", From: "kubemg@example.com"}
+	if err := NewStore(gdb).PutSMTPConfig(context.Background(), config); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	got := varsString(vars)
+	if strings.Contains(got, "relay-password") || !strings.Contains(got, secretbox.Prefix) {
 		t.Fatalf("upsert sent %s", got)
 	}
 }

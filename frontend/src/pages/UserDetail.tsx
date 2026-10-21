@@ -6,10 +6,11 @@ import {
   fetchIssuedKubeconfigs,
   fetchTerminalSessions,
   fetchUserAccess,
+  expireUserPassword,
   fetchUserMFA,
   resetUserMFA,
 } from '../api/client'
-import type { IssuedKubeconfig, MFAStatus, TerminalSession, UserAccessReview } from '../api/types'
+import type { IssuedKubeconfig, MFAStatus, TerminalSession, User, UserAccessReview } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import {
   Age,
@@ -26,6 +27,7 @@ import {
 } from '../components/primitives'
 import { railChip } from '../lib/branding'
 import { mfaResettable, mfaSummary } from '../lib/mfa'
+import { passwordExpirable, passwordHeldHere, passwordStatus } from '../lib/passwordExpiry'
 import { formatInstant, relativeAge } from '../lib/time'
 import { useAuth } from '../state/auth-context'
 import { useConfirm } from '../state/confirm-context'
@@ -128,7 +130,12 @@ export function UserDetail() {
 
         {review ? (
           <>
-            <Identity review={review} mfa={mfa} onMfaReset={setMfa} />
+            <Identity
+              review={review}
+              mfa={mfa}
+              onMfaReset={setMfa}
+              onUserChange={(user) => setReview((current) => (current ? { ...current, user } : current))}
+            />
             <Reach review={review} />
             <Credentials rows={credentials} live={liveCredentials} />
             <Sessions rows={sessions} />
@@ -151,10 +158,12 @@ function Identity({
   review,
   mfa,
   onMfaReset,
+  onUserChange,
 }: {
   review: UserAccessReview
   mfa: MFAStatus | null
   onMfaReset: (next: MFAStatus) => void
+  onUserChange: (next: User) => void
 }) {
   const { user } = review
   const { user: caller } = useAuth()
@@ -162,6 +171,33 @@ function Identity({
   const report = useResult()
   const [resetting, setResetting] = useState(false)
   const canReset = mfa !== null && mfaResettable(user, mfa, caller)
+  const [expiring, setExpiring] = useState(false)
+  const canExpire = passwordExpirable(user, caller)
+  const password = passwordStatus(user)
+
+  async function expire() {
+    const ok = await confirm({
+      title: 'Expire password',
+      body: `${user.username} has to choose a new password before doing anything else — at their next sign-in, or at their next click if they are signed in now. The current password still signs them in once, to get to that screen. Kubeconfigs and command-line sessions they hold are not affected; revoke those separately if the password may have leaked.${user.email ? ` They are told by email at ${user.email} when a mail relay is configured.` : ''}`,
+      confirmLabel: 'Expire',
+      tone: 'danger',
+    })
+    if (!ok) return
+    setExpiring(true)
+    try {
+      onUserChange(await expireUserPassword(user.id))
+      report({
+        tone: 'ok',
+        title: 'Password expired',
+        body: `${user.username} will choose a new password before anything else.`,
+        link: { to: '/admin/audit', label: 'See it in the audit trail' },
+      })
+    } catch (err) {
+      report({ tone: 'error', title: 'Could not expire', body: errorMessage(err, 'The password was not expired.') })
+    } finally {
+      setExpiring(false)
+    }
+  }
 
   async function reset() {
     const ok = await confirm({
@@ -257,6 +293,27 @@ function Identity({
           </div>
         )}
       </div>
+
+      {passwordHeldHere(user) ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 sm:col-span-2 xl:col-span-4">
+          <div className="min-w-0">
+            <p className="label text-faint">Password</p>
+            <p className="mt-1 flex flex-wrap items-center gap-2 text-[13px] text-fg">
+              <Pill tone={password.tone}>{password.text}</Pill>
+              {user.password_changed_at ? (
+                <span className="text-muted" title={formatInstant(user.password_changed_at)}>
+                  changed {relativeAge(user.password_changed_at)}
+                </span>
+              ) : null}
+            </p>
+          </div>
+          {canExpire ? (
+            <Button size="sm" variant="danger" disabled={expiring} onClick={() => void expire()}>
+              {expiring ? 'Expiring…' : 'Expire password'}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-3 sm:col-span-2 xl:col-span-4">
         <div className="min-w-0">

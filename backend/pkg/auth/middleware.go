@@ -33,6 +33,18 @@ func RequireAuth(m *Manager, service ...MachineTokenVerifier) gin.HandlerFunc {
 	if len(service) > 0 {
 		verifier = service[0]
 	}
+	return RequireAuthGated(m, verifier, nil)
+}
+
+// SessionGate is asked about every verified full session token — never a
+// proxy-scoped one (a kubeconfig, a CLI credential) or a machine token. It
+// answers false after writing its own refusal.
+type SessionGate func(c *gin.Context, claims *Claims) bool
+
+// RequireAuthGated is RequireAuth with a gate on console sessions. It exists
+// for the password age policy: a session whose password is due is held to the
+// routes that let its owner change it.
+func RequireAuthGated(m *Manager, verifier MachineTokenVerifier, gate SessionGate) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var (
 			claims *Claims
@@ -91,6 +103,10 @@ func RequireAuth(m *Manager, service ...MachineTokenVerifier) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"error": "this token may only be used against its cluster's kubectl proxy",
 			})
+			return
+		}
+
+		if gate != nil && claims.Scope == "" && !gate(c, claims) {
 			return
 		}
 

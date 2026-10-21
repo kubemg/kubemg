@@ -179,8 +179,25 @@ type User struct {
 	// account that has never signed in, and for every sign-in that happened
 	// before this column existed — which the console says as such rather than
 	// drawing a blank that reads as an unknown host.
-	LastLoginAddr string    `gorm:"size:64" json:"last_login_addr,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
+	LastLoginAddr string `gorm:"size:64" json:"last_login_addr,omitempty"`
+
+	// PasswordChangedAt is when the local password was last set, by its owner
+	// or by an administrator. It is the clock the password age policy reads
+	// (see pkg/api/password_policy.go); every write of PasswordHash through
+	// UpdateUser stamps it, so no handler can forget to.
+	PasswordChangedAt *time.Time `json:"-"`
+	// PasswordExpiredAt is an administrator's "change it at next sign-in". It
+	// is cleared only by the account's own change: a password an administrator
+	// typed is one somebody else knows, so setting one does not clear it.
+	PasswordExpiredAt *time.Time `json:"-"`
+	// PasswordNoticeDue and PasswordNoticeDays record the last expiry reminder
+	// mailed: the due date it was about and the stage (days before) it was
+	// for. A reminder about another due date is no reminder at all, so a new
+	// password starts the stages again without anything having to reset them.
+	PasswordNoticeDue  *time.Time `json:"-"`
+	PasswordNoticeDays int        `gorm:"not null;default:0" json:"-"`
+
+	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 

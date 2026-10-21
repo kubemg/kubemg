@@ -291,6 +291,11 @@ export function UserManagement() {
                             you
                           </Pill>
                         ) : null}
+                        {row.password_change_required ? (
+                          <Pill tone="bad" dot={false}>
+                            password expired
+                          </Pill>
+                        ) : null}
                       </span>
                     </Td>
                     <Td

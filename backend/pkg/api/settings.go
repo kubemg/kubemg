@@ -85,6 +85,9 @@ type runtimeSettings struct {
 	// KubeconfigIssuance is allowed or cli_only. Empty in the overrides means
 	// unset, which is allowed.
 	KubeconfigIssuance string `json:"kubeconfig_issuance"`
+	// PasswordMaxAgeDays is how long a local password lives before its owner
+	// must change it. Zero is off — the default, and the override's "unset".
+	PasswordMaxAgeDays int `json:"password_max_age_days"`
 }
 
 type settingsResponse struct {
@@ -140,6 +143,8 @@ type updateSettingsRequest struct {
 	CLISessionMaxHours *int `json:"cli_session_max_hours"`
 	// KubeconfigIssuance accepts "" to clear back to allowed.
 	KubeconfigIssuance *string `json:"kubeconfig_issuance"`
+	// PasswordMaxAgeDays accepts 0 to turn the policy off.
+	PasswordMaxAgeDays *int `json:"password_max_age_days"`
 }
 
 // Audit retention bounds. The floor stops an operator from silently emptying
@@ -265,6 +270,8 @@ func (s *server) settings(ctx context.Context) runtimeSettings {
 		out.CLISessionMaxHours = v
 	}
 	out.KubeconfigIssuance = normalizeIssuance(stored[db.SettingKubeconfigIssuance])
+	out.PasswordMaxAgeDays = storedBounded(stored, db.SettingPasswordMaxAgeDays,
+		minPasswordMaxAgeDays, maxPasswordMaxAgeDays)
 	out.SessionRecordingRetentionDays = clampRecordingRetention(
 		storedDays(stored, db.SettingSessionRecordingRetentionDays), out.AuditRetentionDays)
 	return out
@@ -423,6 +430,8 @@ func (s *server) getSettings(c *gin.Context) {
 		CLISessionMaxHours: storedBounded(stored, db.SettingCLISessionMaxHours,
 			minCLISessionHours, maxCLISessionHours),
 		KubeconfigIssuance: storedIssuance(stored),
+		PasswordMaxAgeDays: storedBounded(stored, db.SettingPasswordMaxAgeDays,
+			minPasswordMaxAgeDays, maxPasswordMaxAgeDays),
 	}
 
 	c.JSON(http.StatusOK, settingsResponse{
@@ -452,7 +461,7 @@ func (s *server) getSettings(c *gin.Context) {
 			CLISessionMaxHours:      defaultCLISessionHours,
 			KubeconfigIssuance:      issuanceAllowed,
 		},
-		Warnings: settingsWarnings(effective),
+		Warnings: append(settingsWarnings(effective), s.passwordPolicyWarnings(c.Request.Context(), effective)...),
 	})
 }
 
@@ -650,6 +659,21 @@ func (s *server) updateSettings(c *gin.Context) {
 		}
 		values[db.SettingKubeconfigIssuance] = value
 	}
+	if req.PasswordMaxAgeDays != nil {
+		days := *req.PasswordMaxAgeDays
+		switch {
+		case days == 0:
+			values[db.SettingPasswordMaxAgeDays] = ""
+		case days < minPasswordMaxAgeDays || days > maxPasswordMaxAgeDays:
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("password expiry must be between %d and %d days, or 0 to turn it off",
+					minPasswordMaxAgeDays, maxPasswordMaxAgeDays),
+			})
+			return
+		default:
+			values[db.SettingPasswordMaxAgeDays] = strconv.Itoa(days)
+		}
+	}
 
 	if err := s.store.PutSettings(c.Request.Context(), values, caller.ID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save the settings"})
@@ -660,6 +684,10 @@ func (s *server) updateSettings(c *gin.Context) {
 	// that did not republish it would take effect at the next refresh tick instead
 	// of now — which reads as a settings page that does not work.
 	s.publishAuditPolicy(c.Request.Context())
+	// The password gate likewise: a policy change moves every due date.
+	if req.PasswordMaxAgeDays != nil {
+		s.publishPasswordGate(c.Request.Context())
+	}
 
 	s.getSettings(c)
 }

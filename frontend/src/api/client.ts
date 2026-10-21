@@ -74,6 +74,8 @@ import type {
   NewMachineToken,
   PasswordChange,
   PasswordChangeResult,
+  SMTPRelay,
+  SMTPRelayInput,
   ProfileUpdate,
   HelmChartList,
   HelmHistory,
@@ -211,6 +213,27 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
   onUnauthorized = handler
 }
 
+/** The server's stable answer for a session whose password is due. */
+export const PASSWORD_CHANGE_REQUIRED = 'password_change_required'
+
+let onPasswordChangeRequired: (() => void) | null = null
+
+/**
+ * Called when the server holds this session until its password is changed —
+ * the password fell due, or an administrator expired it, while it was open.
+ * The handler re-reads the account, which carries the flag the gate reads.
+ */
+export function setPasswordChangeRequiredHandler(handler: (() => void) | null) {
+  onPasswordChangeRequired = handler
+}
+
+/** Whether an API failure is the password gate's refusal. */
+export function isPasswordChangeRequired(error: unknown): boolean {
+  if (!axios.isAxiosError(error) || error.response?.status !== 403) return false
+  const code = (error.response.data as { code?: string } | undefined)?.code
+  return code === PASSWORD_CHANGE_REQUIRED
+}
+
 /*
  * Asking the cluster rather than a cache.
  *
@@ -305,6 +328,8 @@ http.interceptors.response.use(
   (error: unknown) => {
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       onUnauthorized?.()
+    } else if (isPasswordChangeRequired(error)) {
+      onPasswordChangeRequired?.()
     }
     return Promise.reject(error)
   },
@@ -457,6 +482,32 @@ export async function revokeCLISession(id: string): Promise<CLISession> {
 
 export async function resetUserMFA(userId: number): Promise<{ factors_removed: number }> {
   const { data } = await http.post<{ factors_removed: number }>(`/users/${userId}/mfa/reset`)
+  return data
+}
+
+/** "Change it at next sign-in" — and at the next call of a session already open. */
+export async function expireUserPassword(userId: number): Promise<User> {
+  const { data } = await http.post<User>(`/users/${userId}/password/expire`)
+  return data
+}
+
+export async function fetchSMTPRelay(): Promise<SMTPRelay> {
+  const { data } = await http.get<SMTPRelay>('/settings/smtp')
+  return data
+}
+
+export async function saveSMTPRelay(body: SMTPRelayInput): Promise<SMTPRelay> {
+  const { data } = await http.put<SMTPRelay>('/settings/smtp', body)
+  return data
+}
+
+export async function deleteSMTPRelay(): Promise<void> {
+  await http.delete('/settings/smtp')
+}
+
+/** Sends one message through the stored relay; `to` defaults to the caller. */
+export async function testSMTPRelay(to?: string): Promise<{ sent: boolean; to: string }> {
+  const { data } = await http.post<{ sent: boolean; to: string }>('/settings/smtp/test', to ? { to } : {})
   return data
 }
 

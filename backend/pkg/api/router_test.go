@@ -128,6 +128,8 @@ type fakeStore struct {
 	// engine agree about what time it is — two clocks would make the expiry
 	// assertions depend on how long the test took to run.
 	now func() time.Time
+	// smtp stands in for smtp_configs; see password_policy_test.go.
+	smtp *db.SMTPConfig
 }
 
 func newFakeStore() *fakeStore {
@@ -441,6 +443,10 @@ func (f *fakeStore) CreateUser(_ context.Context, user *db.User) error {
 	user.Normalize()
 	user.ID = f.nextID
 	user.CreatedAt = time.Now()
+	if user.PasswordHash != "" && user.PasswordChangedAt == nil {
+		changed := user.CreatedAt
+		user.PasswordChangedAt = &changed
+	}
 	f.nextID++
 	stored := *user
 	f.users[user.ID] = &stored
@@ -465,6 +471,11 @@ func (f *fakeStore) UpdateUser(_ context.Context, id uint, update db.UserUpdate)
 	}
 	if update.PasswordHash != nil {
 		user.PasswordHash = *update.PasswordHash
+		changed := time.Now().UTC()
+		user.PasswordChangedAt = &changed
+	}
+	if update.ClearPasswordExpiry {
+		user.PasswordExpiredAt = nil
 	}
 	if update.SystemRole != nil {
 		user.SystemRole = *update.SystemRole

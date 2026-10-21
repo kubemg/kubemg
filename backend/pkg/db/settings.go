@@ -88,6 +88,10 @@ const (
 	// out: the CLI's short-lived credentials are the only way kubectl reaches an
 	// agent-mode cluster.
 	SettingKubeconfigIssuance = "kubeconfig_issuance"
+	// SettingPasswordMaxAgeDays is how many days a local password lives before
+	// its owner must change it. Unset (the default) is no expiry. It governs only
+	// the passwords held here — a federated account's is its provider's.
+	SettingPasswordMaxAgeDays = "password_max_age_days"
 	// The console's own identity — see pkg/api/branding.go for what each one is
 	// for and why the mark is stored inline rather than linked.
 	//
@@ -160,6 +164,7 @@ var SettingKeys = []string{
 	SettingMFAEnforcement,
 	SettingCLISessionMaxHours,
 	SettingKubeconfigIssuance,
+	SettingPasswordMaxAgeDays,
 }
 
 // Setting is one operator-configurable value. An empty Value means "unset" and
