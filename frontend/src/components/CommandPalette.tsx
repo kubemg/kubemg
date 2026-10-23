@@ -79,6 +79,13 @@ function clusterViewTargets(cluster: Cluster): CommandTarget[] {
       cluster,
     })
     views.push({
+      id: `cluster-${cluster.id}-gitops`,
+      label: `${cluster.name} — GitOps`,
+      hint: 'Cluster · GitOps sync state',
+      to: clusterPageHref(cluster.id, 'gitops'),
+      cluster,
+    })
+    views.push({
       id: `cluster-${cluster.id}-security`,
       label: `${cluster.name} — Security posture`,
       hint: 'Cluster · Security posture',

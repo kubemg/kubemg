@@ -41,6 +41,7 @@ import { ConditionTiles, ObjectGlance } from './ObjectGlance'
 import { DebugContainerSheet } from './DebugContainerSheet'
 import { AlarmComposer } from './AlarmComposer'
 import type { AlarmTarget } from './AlarmComposer'
+import { GitopsObjectPanel } from './GitopsObjectPanel'
 import { ObjectAlertsPanel } from './ObjectAlertsPanel'
 import { hasAlerting, supportsAlarms } from '../lib/alerting'
 import { HelmHistoryPanel } from './HelmHistoryPanel'
@@ -876,6 +877,13 @@ function OverviewTab({
           using against its own limit, and how often it has restarted. The list
           row already carries all of it. */}
       {pod ? <PodOverview cluster={cluster} pod={pod} /> : null}
+
+      {/* Whether it still matches Git, where its own metadata says a GitOps
+          tool tracks it — the question a hand edit raises, so it sits with the
+          object's identity rather than under the wiring. */}
+      {describe.managed_by?.manager === 'argocd' || describe.managed_by?.manager === 'flux' ? (
+        <GitopsObjectPanel cluster={cluster} kind={kind} name={name} namespace={namespace} />
+      ) : null}
 
       {/* A ConfigMap or a Secret is opened for what it holds, not for its
           metadata — so that leads, one key at a time. */}
