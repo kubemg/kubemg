@@ -176,26 +176,31 @@ func gitopsToolLabel(tool string) string {
  *     they are always in the count.
  *   - The record is visible when any entry survived, or when it lives in or
  *     deploys to one of the caller's namespaces.
+ *   - A view grant never sees a Secret entry, scoped or not. The cluster's own
+ *     view role refuses Secrets, and these records were read as KubeMG, so the
+ *     name would otherwise leave through a read the caller could not make.
  *   - When anything was cut the message goes too: Argo CD's sync failure lists
  *     the objects that failed, and those may be the cut ones.
  */
-func narrowGitopsRecord(record gitopsRecord, allowed []string) (gitopsRecord, bool) {
-	if len(allowed) == 0 {
-		return record, true
-	}
-	if record.Remote != "" {
+func narrowGitopsRecord(record gitopsRecord, grant db.UserClusterAccess) (gitopsRecord, bool) {
+	allowed := grant.NamespaceList()
+	if len(allowed) > 0 && record.Remote != "" {
 		return gitopsRecord{}, false
 	}
+	hideSecrets := grant.K8sRole == "" || grant.K8sRole == db.K8sRoleView
 
 	kept := make([]gitopsResource, 0, len(record.Resources))
 	for _, resource := range record.Resources {
-		if resource.Namespace != "" && slices.Contains(allowed, resource.Namespace) {
+		if hideSecrets && resource.Group == "" && resource.Kind == "Secret" {
+			continue
+		}
+		if len(allowed) == 0 || (resource.Namespace != "" && slices.Contains(allowed, resource.Namespace)) {
 			kept = append(kept, resource)
 		}
 	}
 	hidden := len(record.Resources) - len(kept)
 
-	visible := len(kept) > 0 ||
+	visible := len(allowed) == 0 || len(kept) > 0 ||
 		slices.Contains(allowed, record.Namespace) ||
 		(record.destinationNamespace != "" && slices.Contains(allowed, record.destinationNamespace))
 	if !visible {
@@ -230,11 +235,10 @@ func (s *server) listGitopsRecords(c *gin.Context) {
 		return
 	}
 
-	allowed := grant.NamespaceList()
 	records := make([]gitopsRecord, 0, len(read.records))
 	summary := gitopsSummary{}
 	for _, record := range read.records {
-		narrowed, visible := narrowGitopsRecord(record, allowed)
+		narrowed, visible := narrowGitopsRecord(record, grant)
 		if !visible {
 			continue
 		}
@@ -322,8 +326,7 @@ func (s *server) showGitopsObject(c *gin.Context) {
 		return
 	}
 
-	view, err := resolveGitopsObject(gitopsServiceReader{s: s, c: c, cluster: cluster},
-		object, grant.NamespaceList())
+	view, err := resolveGitopsObject(gitopsServiceReader{s: s, c: c, cluster: cluster}, object, grant)
 	if err != nil {
 		writeGitopsReadError(c, err)
 		return
@@ -333,7 +336,7 @@ func (s *server) showGitopsObject(c *gin.Context) {
 
 // resolveGitopsObject finds the record tracking an object from the object's own
 // metadata and narrows it for the caller.
-func resolveGitopsObject(read trafficReader, object gitopsObjectMeta, allowed []string) (gitopsObjectView, error) {
+func resolveGitopsObject(read trafficReader, object gitopsObjectMeta, grant db.UserClusterAccess) (gitopsObjectView, error) {
 	meta := object.Metadata
 	managed := managedBy(object.Kind, meta.Labels, meta.Annotations, meta.OwnerReferences)
 	view := gitopsObjectView{ManagedBy: managed}
@@ -365,12 +368,13 @@ func resolveGitopsObject(read trafficReader, object gitopsObjectMeta, allowed []
 		return view, nil
 	}
 
-	narrowed, visible := narrowGitopsRecord(record, allowed)
+	narrowed, visible := narrowGitopsRecord(record, grant)
 	if !visible {
 		// The caller can read the object, so its namespace is in their grant
 		// and its entry would have kept the record visible; only an entry the
-		// record does not list gets here.
-		view.Reason = "the " + gitopsToolLabel(tool) + " record tracking this object is outside your grant"
+		// record does not list gets here. It reads exactly as a record that is
+		// not here, so the answer is no oracle for records outside the grant.
+		view.Reason = gitopsNotHere(tool, managed.Name)
 		return view, nil
 	}
 	for i := range narrowed.Resources {
@@ -402,10 +406,7 @@ func findGitopsRecord(read trafficReader, toolName string, managed *managedByVie
 	target gitopsResource,
 ) (gitopsRecord, bool, string, error) {
 	tool := gitopsToolByName(toolName)
-	notHere := "no " + gitopsKindLabel(toolName) + " named " + managed.Name + " in this cluster"
-	if toolName == gitopsArgoCD {
-		notHere += " — Argo CD may run in another cluster and deploy here"
-	}
+	notHere := gitopsNotHere(toolName, managed.Name)
 
 	if !alarmObjectName.MatchString(managed.Name) ||
 		(managed.Namespace != "" && !validNamespaceName(managed.Namespace)) {
@@ -429,7 +430,10 @@ func findGitopsRecord(read trafficReader, toolName string, managed *managedByVie
 				continue
 			}
 			if code < 200 || code >= 300 {
-				return gitopsRecord{}, false, kubeErrorMessage(body, code), nil
+				// Read as KubeMG, so the cluster's own words describe KubeMG's
+				// access rather than the caller's; they are not handed on.
+				return gitopsRecord{}, false, "the " + gitopsKindLabel(toolName) +
+					" tracking this object could not be read", nil
 			}
 			if record, ok := tool.decode(body); ok {
 				return record, true, "", nil
@@ -449,7 +453,8 @@ func findGitopsRecord(read trafficReader, toolName string, managed *managedByVie
 		if !status.Installed {
 			return gitopsRecord{}, false, notHere, nil
 		}
-		return gitopsRecord{}, false, status.Reason, nil
+		return gitopsRecord{}, false, "the " + gitopsKindLabel(toolName) +
+			" tracking this object could not be read", nil
 	}
 	var match *gitopsRecord
 	for i := range records {
@@ -469,6 +474,16 @@ func findGitopsRecord(read trafficReader, toolName string, managed *managedByVie
 		return *match, true, "", nil
 	}
 	return gitopsRecord{}, false, notHere, nil
+}
+
+// gitopsNotHere is the one answer for a record the caller cannot have: absent
+// from this cluster, or present and outside their grant.
+func gitopsNotHere(tool, name string) string {
+	reason := "no " + gitopsKindLabel(tool) + " named " + name + " in this cluster"
+	if tool == gitopsArgoCD {
+		reason += " — Argo CD may run in another cluster and deploy here"
+	}
+	return reason
 }
 
 func gitopsToolByName(name string) gitopsTool {

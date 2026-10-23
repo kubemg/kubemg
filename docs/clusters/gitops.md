@@ -44,6 +44,7 @@ Applications usually live in Argo CD's namespace and Kustomizations in `flux-sys
 
 - With access to the whole cluster, you see every record.
 - With access to some namespaces, you see a record only when it manages something in one of them, or lives in or deploys to one of them. Inside it you see only the objects in your namespaces. The rest are counted ("3 objects are outside your grant") but not named. A record's error message is hidden when anything was cut, because it can name those objects.
+- With view access, Secret entries are never listed — the cluster's view role cannot read Secrets, so their names are not shown here either. They are counted with the hidden objects.
 - An Application that deploys to another cluster is never shown to a namespace-scoped grant.
 
 KubeMG never shows the parts of a record that can hold secrets: Helm values, Argo CD parameters and plugin environment, Flux `postBuild` substitutions, and HelmRelease values. Credentials written into a repository URL are removed.

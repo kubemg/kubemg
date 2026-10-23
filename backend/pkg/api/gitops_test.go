@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
 /*
@@ -25,6 +27,12 @@ const (
 	pagedSuffix  = "?limit=250"
 	secretMarker = "s3cr3t-value"
 )
+
+var adminGrant = db.UserClusterAccess{K8sRole: db.K8sRoleClusterAdmin}
+
+func viewOn(namespaces ...string) db.UserClusterAccess {
+	return db.UserClusterAccess{K8sRole: db.K8sRoleView, Namespaces: db.JoinNamespaces(namespaces)}
+}
 
 func argoApp(namespace, name string, sync, health string, resources ...map[string]any) map[string]any {
 	if resources == nil {
@@ -267,14 +275,14 @@ func TestGitopsNarrowingToAScopedGrant(t *testing.T) {
 	}
 
 	t.Run("unscoped sees everything", func(t *testing.T) {
-		got, visible := narrowGitopsRecord(record, nil)
+		got, visible := narrowGitopsRecord(record, adminGrant)
 		if !visible || len(got.Resources) != 3 || got.ResourcesHidden != 0 || got.Message == "" {
 			t.Fatalf("expected the record untouched, got %+v", got)
 		}
 	})
 
 	t.Run("scoped sees its own entries and a count of the rest", func(t *testing.T) {
-		got, visible := narrowGitopsRecord(record, []string{"team-a"})
+		got, visible := narrowGitopsRecord(record, viewOn("team-a"))
 		if !visible {
 			t.Fatal("expected the record visible through its team-a entry")
 		}
@@ -291,7 +299,7 @@ func TestGitopsNarrowingToAScopedGrant(t *testing.T) {
 	})
 
 	t.Run("no entry and no namespace of the caller's hides the record", func(t *testing.T) {
-		if _, visible := narrowGitopsRecord(record, []string{"team-c"}); visible {
+		if _, visible := narrowGitopsRecord(record, viewOn("team-c")); visible {
 			t.Fatal("expected the record invisible to a grant it touches nothing of")
 		}
 	})
@@ -299,7 +307,7 @@ func TestGitopsNarrowingToAScopedGrant(t *testing.T) {
 	t.Run("a destination namespace in the grant keeps an empty record visible", func(t *testing.T) {
 		empty := gitopsRecord{Tool: gitopsFluxHelmRelease, Namespace: "flux-system", Name: "redis",
 			destinationNamespace: "team-c"}
-		if _, visible := narrowGitopsRecord(empty, []string{"team-c"}); !visible {
+		if _, visible := narrowGitopsRecord(empty, viewOn("team-c")); !visible {
 			t.Fatal("expected a release installing into team-c visible to team-c")
 		}
 	})
@@ -307,7 +315,7 @@ func TestGitopsNarrowingToAScopedGrant(t *testing.T) {
 	t.Run("a remote record is invisible to a scoped grant", func(t *testing.T) {
 		remote := record
 		remote.Remote = "edge-eu"
-		if _, visible := narrowGitopsRecord(remote, []string{"team-a"}); visible {
+		if _, visible := narrowGitopsRecord(remote, viewOn("team-a")); visible {
 			t.Fatal("expected another cluster's namespaces never matched against this grant")
 		}
 	})
@@ -359,7 +367,7 @@ func TestGitopsObjectRecordComesFromTheObjectsOwnTracking(t *testing.T) {
 			argoEntry("apps", "Deployment", "shop", "web", "OutOfSync", "Healthy")))
 
 	object := trackedObject(map[string]string{argoTrackingAnnotation: "shop:apps/Deployment:shop/web"}, nil)
-	view, err := resolveGitopsObject(cluster, object, nil)
+	view, err := resolveGitopsObject(cluster, object, adminGrant)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +393,7 @@ func TestGitopsObjectFallsBackToTheApplicationThatListsIt(t *testing.T) {
 	)
 
 	object := trackedObject(nil, map[string]string{argoInstanceLabel: "shop"})
-	view, err := resolveGitopsObject(cluster, object, nil)
+	view, err := resolveGitopsObject(cluster, object, adminGrant)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +404,7 @@ func TestGitopsObjectFallsBackToTheApplicationThatListsIt(t *testing.T) {
 
 func TestGitopsObjectNotFoundHereSaysWhereItMayBe(t *testing.T) {
 	object := trackedObject(nil, map[string]string{argoInstanceLabel: "shop"})
-	view, err := resolveGitopsObject(newFakeCluster(), object, nil)
+	view, err := resolveGitopsObject(newFakeCluster(), object, adminGrant)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +415,7 @@ func TestGitopsObjectNotFoundHereSaysWhereItMayBe(t *testing.T) {
 
 func TestGitopsObjectUntrackedReadsNothing(t *testing.T) {
 	cluster := newFakeCluster()
-	view, err := resolveGitopsObject(cluster, trackedObject(nil, nil), nil)
+	view, err := resolveGitopsObject(cluster, trackedObject(nil, nil), adminGrant)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,7 +429,7 @@ func TestGitopsObjectUntrackedReadsNothing(t *testing.T) {
 func TestGitopsObjectRefusesATrackingValueThatIsNotAName(t *testing.T) {
 	cluster := newFakeCluster()
 	object := trackedObject(map[string]string{argoTrackingAnnotation: "../../secrets:x/y:z/w"}, nil)
-	view, err := resolveGitopsObject(cluster, object, nil)
+	view, err := resolveGitopsObject(cluster, object, adminGrant)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +446,7 @@ func TestGitopsObjectFluxKustomizationIsReadByItsLabels(t *testing.T) {
 	object := trackedObject(nil, map[string]string{
 		fluxKustomizeName: "apps", fluxKustomizeNamespace: "flux-system",
 	})
-	view, err := resolveGitopsObject(cluster, object, []string{"shop"})
+	view, err := resolveGitopsObject(cluster, object, viewOn("shop"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -482,5 +490,92 @@ func TestGitopsObjectRefusesANamespaceOutsideTheGrant(t *testing.T) {
 		"/gitops/object?kind=deployments&namespace=team-b&name=web", token, nil)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected %d, got %d (%s)", http.StatusForbidden, rec.Code, rec.Body.String())
+	}
+}
+
+// The records are read as KubeMG, which can list Secrets; a view grant cannot.
+// A Secret's name must not leave through a read the caller could not make.
+func TestGitopsNarrowingHidesSecretEntriesFromAViewGrant(t *testing.T) {
+	record := gitopsRecord{
+		Tool: gitopsArgoCD, Namespace: "argocd", Name: "shop",
+		Resources: []gitopsResource{
+			{Kind: "Secret", Namespace: "team-a", Name: "db-password"},
+			{Kind: "Deployment", Group: "apps", Namespace: "team-a", Name: "web"},
+			{Kind: "Secret", Group: "example.com", Namespace: "team-a", Name: "not-core"},
+		},
+	}
+
+	for name, grant := range map[string]db.UserClusterAccess{
+		"scoped view":   viewOn("team-a"),
+		"unscoped view": {K8sRole: db.K8sRoleView},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, visible := narrowGitopsRecord(record, grant)
+			if !visible || len(got.Resources) != 2 || got.ResourcesHidden != 1 {
+				t.Fatalf("expected the core Secret cut and counted, got %+v", got)
+			}
+			for _, resource := range got.Resources {
+				if resource.Name == "db-password" {
+					t.Fatalf("a view grant saw a Secret entry: %+v", got.Resources)
+				}
+			}
+		})
+	}
+
+	edit := db.UserClusterAccess{K8sRole: db.K8sRoleEdit, Namespaces: db.JoinNamespaces([]string{"team-a"})}
+	if got, _ := narrowGitopsRecord(record, edit); len(got.Resources) != 3 {
+		t.Fatalf("expected an edit grant, which reads Secrets, to see all three, got %+v", got.Resources)
+	}
+}
+
+// A record outside the grant reads exactly as a record that is not here, so the
+// per-object answer is no oracle for what KubeMG can see and the caller cannot.
+func TestGitopsObjectOutsideTheGrantReadsAsNotHere(t *testing.T) {
+	present := newFakeCluster()
+	present.object("/apis/helm.toolkit.fluxcd.io/v2/namespaces/flux-system/helmreleases/redis",
+		fluxHelmFixture("flux-system", "redis"))
+	absent := newFakeCluster()
+
+	object := trackedObject(nil, map[string]string{fluxHelmName: "redis", fluxHelmNamespace: "flux-system"})
+	hidden, err := resolveGitopsObject(present, object, viewOn("shop"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing, err := resolveGitopsObject(absent, object, viewOn("shop"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hidden.Record != nil || hidden.Reason != missing.Reason {
+		t.Fatalf("expected the same answer for hidden and absent, got %q vs %q", hidden.Reason, missing.Reason)
+	}
+}
+
+func TestGitopsServiceReadRefusalIsNotHandedOn(t *testing.T) {
+	cluster := newFakeCluster()
+	cluster.refuse("/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations/apps", http.StatusForbidden)
+	object := trackedObject(nil, map[string]string{fluxKustomizeName: "apps", fluxKustomizeNamespace: "flux-system"})
+
+	view, err := resolveGitopsObject(cluster, object, viewOn("shop"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(view.Reason, "forbidden") || strings.Contains(view.Reason, "kubemg:") {
+		t.Fatalf("expected KubeMG's own refusal kept out of the answer, got %q", view.Reason)
+	}
+}
+
+func TestRedactRepoURLFailsClosed(t *testing.T) {
+	for raw, want := range map[string]string{
+		"https://deploy:tok@git.example.com/shop.git":          "https://git.example.com/shop.git",
+		"https://git.example.com/shop.git?private_token=tok#x": "https://git.example.com/shop.git",
+		"git@github.com:org/shop.git":                          "git@github.com:org/shop.git",
+		"https://user:p%zz@git.example.com/shop.git":           "git.example.com/shop.git",
+		"registry-1.docker.io/bitnamicharts":                   "registry-1.docker.io/bitnamicharts",
+		"https://charts.bitnami.com/bitnami":                   "https://charts.bitnami.com/bitnami",
+		"https://u:tok@host.example/repo?x=1 bad\x7f":          "",
+	} {
+		if got := redactRepoURL(raw); got != want {
+			t.Errorf("redactRepoURL(%q) = %q, want %q", raw, got, want)
+		}
 	}
 }

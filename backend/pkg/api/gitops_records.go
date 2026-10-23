@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -559,15 +560,35 @@ func fluxState(conditions []gitopsCondition, suspended, attemptPending bool) (sy
 
 /* ---------------------------------------------------------------- shared --- */
 
+// scpLikeRepo is git's `user@host:path` form, which url.Parse refuses. Its user
+// is an SSH login (`git`), never a secret; the key is elsewhere.
+var scpLikeRepo = regexp.MustCompile(`^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[^/:@][^@]*$`)
+
 // redactRepoURL drops credentials an operator put in a repository URL. Argo CD
 // advises against it and accepts it anyway; the URL is shown to everyone the
 // record is visible to, and a token in it would leave with the page.
+//
+// It fails closed: a value that parses neither as a URL nor as git's scp form
+// is cut back to what follows its last `@`, or dropped if that leaves nothing
+// recognisable. The query and fragment go too — a token parameter is the other
+// place a credential rides.
 func redactRepoURL(raw string) string {
+	if scpLikeRepo.MatchString(raw) {
+		return raw
+	}
 	parsed, err := url.Parse(raw)
-	if err != nil || parsed.User == nil {
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		if at := strings.LastIndex(raw, "@"); at >= 0 {
+			raw = raw[at+1:]
+		}
+		if raw == "" || strings.ContainsAny(raw, "?#") {
+			return ""
+		}
 		return raw
 	}
 	parsed.User = nil
+	parsed.RawQuery, parsed.ForceQuery = "", false
+	parsed.Fragment, parsed.RawFragment = "", ""
 	return parsed.String()
 }
 
