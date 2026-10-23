@@ -1,0 +1,62 @@
+# GitOps sync state
+
+The GitOps page (`/clusters/:id/gitops`) shows which objects in a cluster no longer match what Argo CD or Flux declares in Git. Each object that a GitOps tool manages also shows its own sync state in its drawer.
+
+KubeMG **reads the answer from the GitOps tool and never from Git**. Argo CD has already rendered your repository, compared the result with the cluster and recorded the outcome for each object. Flux has recorded which revision it applied. KubeMG shows those answers. It does not clone repositories or render manifests, so it cannot report a difference between two renders as drift, and it needs no repository credentials.
+
+## What is read
+
+| Tool | Record | What it tells you |
+|---|---|---|
+| **Argo CD** | `Application` | Sync and health for the application, and for **each object it manages**; the source, the compared revision and whether self-heal is on |
+| **Flux** (kustomize-controller) | `Kustomization` | Ready or failed, the applied revision and, when they differ, the last attempted one; the objects in its inventory |
+| **Flux** (helm-controller) | `HelmRelease` | Ready or failed, the chart version and whether drift detection is on |
+
+A tool that is not installed in the cluster is skipped. If the cluster refuses a list, KubeMG shows the cluster's own message above the table, and the other tools are still shown.
+
+### Flux does not record drift per object
+
+Flux puts a hand edit back at its next reconcile and records nothing about it. So the state of each object in a Kustomization is shown as **Unknown**, never as Synced. A Kustomization reads **Out of sync** only when its last apply failed or a newer revision has been attempted but not applied. helm-controller does not list the objects a release made at all.
+
+## The page
+
+The page leads with three counts: the records you can see, how many are **out of sync**, and how many are **degraded** (something they manage is broken or missing). The table below puts records that are out of sync first, then broken ones.
+
+Open a record to see its source, the applied revision, when it was last compared and what happens to a hand edit:
+
+- **Argo CD with self-heal on** puts a hand edit back. With self-heal off, the edit stays until the next sync.
+- **A Flux Kustomization** always puts a hand edit back, unless it is suspended.
+- **A Flux HelmRelease** puts it back only when drift detection is set to `enabled`.
+
+Click an object in the record to open it in the cluster's resource drawer. An object of a kind the console has no list for is shown as text.
+
+An Application that deploys to **another cluster** is labelled with its destination. Its objects belong to that cluster, so they cannot be opened from here.
+
+## In the resource drawer
+
+When an object's metadata says that Argo CD or Flux tracks it, its drawer shows a **GitOps** panel. The panel finds the tracking record from the object's own tracking label or annotation and shows this object's sync and health. If the record is not in this cluster (Argo CD often runs in a separate management cluster), the panel says so.
+
+The panel is read when the drawer opens. It does not refresh on its own; use the drawer's Refresh.
+
+## Who sees what
+
+Applications usually live in Argo CD's namespace and Kustomizations in `flux-system`, and a namespace-scoped grant covers neither. So KubeMG reads the records itself and narrows them to your grant before showing them:
+
+- With access to the whole cluster, you see every record.
+- With access to some namespaces, you see a record only when it manages something in one of them, or lives in or deploys to one of them. Inside it you see only the objects in your namespaces. The rest are counted ("3 objects are outside your grant") but not named. A record's error message is hidden when anything was cut, because it can name those objects.
+- An Application that deploys to another cluster is never shown to a namespace-scoped grant.
+
+KubeMG never shows the parts of a record that can hold secrets: Helm values, Argo CD parameters and plugin environment, Flux `postBuild` substitutions, and HelmRelease values. Credentials written into a repository URL are removed.
+
+These reads appear in the audit trail as `kubemg:gitops-reader`. They use the same identity setup as KubeMG's alarm and event watchers, so they need no change to the agent's manifests.
+
+## Requirements
+
+- An agent-mode cluster. A direct-mode cluster is refused, like every live read.
+- Argo CD (any version with `argoproj.io/v1alpha1` Applications) or Flux v2 (`kustomize.toolkit.fluxcd.io/v1` or `v1beta2`; `helm.toolkit.fluxcd.io/v2`, `v2beta2` or `v2beta1`) installed in the cluster.
+
+## Not yet
+
+- **The field-level difference** between Git and the cluster for one object is planned. It will read Argo CD's own diff through its API.
+- **An alarm when something goes out of sync** is planned.
+- KubeMG does not offer Sync or Refresh buttons. Use the Argo CD console, which a cluster can link to from [other consoles](managing.md#linking-other-consoles).

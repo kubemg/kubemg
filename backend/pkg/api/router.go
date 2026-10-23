@@ -1049,6 +1049,14 @@ func NewRouter(opts Options) *gin.Engine {
 			// scale or a restart is visible in the next list.
 			resources := clusters.Group("/:id/resources", refusals, s.cachedRead())
 
+			// GitOps sync state — see pkg/api/gitops.go. The controllers'
+			// records are read as KubeMG and narrowed per caller, so the cache
+			// key being the caller's is what keeps one narrowing from serving
+			// another.
+			gitops := clusters.Group("/:id/gitops", refusals, s.cachedRead())
+			gitops.GET("/applications", s.listGitopsRecords)
+			gitops.GET("/object", s.showGitopsObject)
+
 			// How many of each kind the caller can see, read at limit=1 so the
 			// cost is flat in the size of the cluster rather than proportional
 			// to it. One batched route rather than a field on every list: the

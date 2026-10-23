@@ -177,6 +177,7 @@ import type {
 } from './types'
 import { completeCapacity } from './capacity'
 import { completeWaste, type ClusterWaste, type CostRates, type WasteSpan } from './waste'
+import { completeGitopsObject, completeGitopsState, type GitopsObject, type GitopsState } from './gitops'
 
 const TOKEN_KEY = 'kubemg.token'
 
@@ -2211,6 +2212,29 @@ export async function fetchClusterWaste(clusterId: number, span: WasteSpan): Pro
     params: { window: span },
   })
   return completeWaste(data)
+}
+
+/**
+ * Which objects have drifted from what Argo CD or Flux declares, from the
+ * controllers' own records. A controller that is not installed is reported in
+ * `tools`, not as a failure.
+ */
+export async function fetchGitopsState(clusterId: number): Promise<GitopsState> {
+  const { data } = await http.get<Partial<GitopsState>>(`/clusters/${clusterId}/gitops/applications`)
+  return completeGitopsState(data)
+}
+
+/** The record tracking one object, found from the object's own metadata. */
+export async function fetchGitopsObject(
+  clusterId: number,
+  kind: string,
+  name: string,
+  namespace?: string,
+): Promise<GitopsObject> {
+  const { data } = await http.get<Partial<GitopsObject>>(`/clusters/${clusterId}/gitops/object`, {
+    params: { kind, name, namespace },
+  })
+  return completeGitopsObject(data)
 }
 
 /** Set a cluster's unit prices (admin). */
