@@ -403,6 +403,29 @@ func (p *Proxy) Call(
 	body []byte,
 	auditDiff []byte,
 ) (*Response, error) {
+	return p.CallWithHeader(ctx, user, cluster, grant, method, path, nil, body, auditDiff)
+}
+
+// callerHeaders are the only headers a CallWithHeader caller may add. Argo CD's
+// API server reads its session from the `argocd.token` cookie, and a cookie is
+// what survives the API server's Service proxy: the cluster's authentication
+// filter consumes Authorization before the request is proxied on. Everything
+// else — identity, encoding, content type — stays KubeMG's to decide.
+var callerHeaders = []string{"Cookie"}
+
+// CallWithHeader is Call with extra request headers, limited to callerHeaders;
+// any other name is dropped. Neither the header nor its value is recorded: the
+// audit row carries the path, as it does for every call.
+func (p *Proxy) CallWithHeader(
+	ctx context.Context,
+	user *db.User,
+	cluster *db.Cluster,
+	grant db.UserClusterAccess,
+	method, path string,
+	extra http.Header,
+	body []byte,
+	auditDiff []byte,
+) (*Response, error) {
 	started := time.Now()
 	parsed := ParsePath(path)
 
@@ -478,6 +501,11 @@ func (p *Proxy) Call(
 	}
 	if len(body) > 0 {
 		header["Content-Type"] = []string{contentTypeFor(method)}
+	}
+	for _, name := range callerHeaders {
+		if values := extra.Values(name); len(values) > 0 {
+			header[name] = slices.Clone(values)
+		}
 	}
 
 	resp, err := tunnel.Do(ctx, &Request{Method: method, Path: path, Header: header, Body: body})

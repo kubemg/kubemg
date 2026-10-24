@@ -289,6 +289,9 @@ type gitopsObjectView struct {
 	// not list it (helm-controller lists nothing; Argo CD omits what it ignores).
 	Entry  *gitopsResource `json:"entry"`
 	Reason string          `json:"reason,omitempty"`
+	// Diff says whether live and desired state can be compared for this
+	// object. Set only for an object an Argo CD record here tracks.
+	Diff *gitopsDiffOffer `json:"diff,omitempty"`
 }
 
 type gitopsObjectMeta struct {
@@ -330,6 +333,13 @@ func (s *server) showGitopsObject(c *gin.Context) {
 	if err != nil {
 		writeGitopsReadError(c, err)
 		return
+	}
+	if view.Record != nil && view.Record.Tool == gitopsArgoCD {
+		offer := gitopsDiffOffer{Reason: diffSecretRefusal}
+		if apiGroupOf(object.APIVersion) != "" || object.Kind != "Secret" {
+			offer = gitopsDiffOfferFor(s.gitopsSourceLookup(c.Request.Context(), cluster))
+		}
+		view.Diff = &offer
 	}
 	c.JSON(http.StatusOK, view)
 }

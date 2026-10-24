@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { Link } from 'react-router'
+import { GitCompareArrows } from 'lucide-react'
 import { errorMessage, fetchGitopsObject } from '../api/client'
 import type { Cluster } from '../api/types'
 import {
@@ -13,7 +15,8 @@ import {
 } from '../lib/gitops'
 import { clusterPageHref } from '../lib/navigation'
 import { queryKey, useCachedQuery } from '../lib/query'
-import { Age, Notice, Panel, Pill } from './primitives'
+import { GitopsDiffSheet } from './GitopsDiffSheet'
+import { Age, Button, Notice, Panel, Pill } from './primitives'
 
 /*
  * Whether this object matches what Git declares, as Argo CD or Flux recorded
@@ -23,6 +26,10 @@ import { Age, Notice, Panel, Pill } from './primitives'
  *
  * Read once, on open — not live. A sync state changes on the controller's
  * clock, and Refresh in the drawer is what asks again.
+ *
+ * Show diff is offered on an out-of-sync object an Argo CD record tracks, and
+ * only when the cluster has an Argo CD datasource to ask; without one the
+ * button is absent and the panel says why.
  */
 
 export function GitopsObjectPanel({
@@ -45,6 +52,9 @@ export function GitopsObjectPanel({
   // The object's own line where the record lists it; the record's otherwise.
   const sync = entry?.sync ?? record?.sync
   const note = record ? perObjectNote(record.tool) : null
+  const [diffOpen, setDiffOpen] = useState(false)
+  const outOfSync = entry?.sync === 'out_of_sync'
+  const offer = outOfSync ? view?.diff : undefined
 
   return (
     <Panel
@@ -114,8 +124,27 @@ export function GitopsObjectPanel({
             <p className="text-[12.5px] text-muted">{view.reason}</p>
           ) : null}
           {record.message ? <Notice tone="warn">{record.message}</Notice> : null}
+          {offer?.available ? (
+            <div>
+              <Button size="sm" onClick={() => setDiffOpen(true)}>
+                <GitCompareArrows aria-hidden="true" className="size-3.5" />
+                Show diff
+              </Button>
+            </div>
+          ) : offer?.reason ? (
+            <p className="text-[12.5px] text-muted">{offer.reason}</p>
+          ) : null}
         </>
       )}
+      {diffOpen ? (
+        <GitopsDiffSheet
+          cluster={cluster}
+          kind={kind}
+          name={name}
+          namespace={namespace}
+          onClose={() => setDiffOpen(false)}
+        />
+      ) : null}
     </Panel>
   )
 }

@@ -184,7 +184,7 @@ func TestProbeRefusesAnInClusterTargetWithNoTunnel(t *testing.T) {
 
 func TestProbeUsesTheTunnelForAnInClusterTarget(t *testing.T) {
 	var path string
-	tunnel := func(_ context.Context, _, requested string, _ []byte) (int, []byte, error) {
+	tunnel := func(_ context.Context, _, requested string, _ http.Header, _ []byte) (int, []byte, error) {
 		path = requested
 		return http.StatusOK, []byte(`{"status":"success"}`), nil
 	}

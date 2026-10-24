@@ -177,7 +177,14 @@ import type {
 } from './types'
 import { completeCapacity } from './capacity'
 import { completeWaste, type ClusterWaste, type CostRates, type WasteSpan } from './waste'
-import { completeGitopsObject, completeGitopsState, type GitopsObject, type GitopsState } from './gitops'
+import {
+  completeGitopsDiff,
+  completeGitopsObject,
+  completeGitopsState,
+  type GitopsDiff,
+  type GitopsObject,
+  type GitopsState,
+} from './gitops'
 
 const TOKEN_KEY = 'kubemg.token'
 
@@ -2235,6 +2242,19 @@ export async function fetchGitopsObject(
     params: { kind, name, namespace },
   })
   return completeGitopsObject(data)
+}
+
+/** One Argo CD-tracked object's live state against its desired state. */
+export async function fetchGitopsDiff(
+  clusterId: number,
+  kind: string,
+  name: string,
+  namespace?: string,
+): Promise<GitopsDiff> {
+  const { data } = await http.get<Partial<GitopsDiff>>(`/clusters/${clusterId}/gitops/diff`, {
+    params: { kind, name, namespace },
+  })
+  return completeGitopsDiff(data)
 }
 
 /** Set a cluster's unit prices (admin). */

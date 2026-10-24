@@ -5,6 +5,7 @@ import {
   BellRing,
   Check,
   ExternalLink,
+  GitCompareArrows,
   Pencil,
   Plug,
   RefreshCw,
@@ -40,7 +41,9 @@ import {
   KIND_LABEL,
   KIND_PURPOSE,
   PROVIDERS,
+  bearerOnly,
   formatRuleLabels,
+  hasGrafanaRef,
   parseRuleLabels,
   providersFor,
   sourceStateLabel,
@@ -259,9 +262,14 @@ export function DatasourcePanel({
 }
 
 const DESCRIPTION =
-  "Where this cluster's history and alerts live. kubemg's live meters read the cluster's own Metrics API, which keeps about two minutes — anything over time comes from here."
+  "Where this cluster's history, alerts and GitOps desired state live. kubemg's live meters read the cluster's own Metrics API, which keeps about two minutes — anything over time comes from here."
 
-const KIND_ICON = { metrics: Activity, logs: ScrollText, alerts: BellRing } as const
+const KIND_ICON = {
+  metrics: Activity,
+  logs: ScrollText,
+  alerts: BellRing,
+  gitops: GitCompareArrows,
+} as const
 
 /** SourceTile is one kind of datasource: connected, or the offer to connect it. */
 function SourceTile({
@@ -460,16 +468,19 @@ interface Draft {
 
 function blankDraft(kind: DatasourceKind, canUseTunnel: boolean): Draft {
   const provider = providersFor(kind)[0]
+  // argocd-server in the argocd namespace, on its own TLS, is what both of
+  // Argo CD's install manifests create.
+  const argo = kind === 'gitops'
   return {
     provider,
     access_mode: canUseTunnel ? 'in-cluster' : 'direct',
     url: '',
-    service_namespace: '',
-    service_name: '',
+    service_namespace: argo ? 'argocd' : '',
+    service_name: argo ? 'argocd-server' : '',
     service_port: PROVIDERS[provider].defaultPort,
-    service_scheme: 'http',
+    service_scheme: argo ? 'https' : 'http',
     path_prefix: PROVIDERS[provider].defaultPrefix,
-    auth_mode: 'none',
+    auth_mode: bearerOnly(kind) ? 'bearer' : 'none',
     username: '',
     credential: '',
     insecure_skip_verify: false,
@@ -512,7 +523,7 @@ function toInput(draft: Draft, hasStoredCredential: boolean, kind: DatasourceKin
     auth_mode: draft.auth_mode,
     username: draft.auth_mode === 'basic' ? draft.username.trim() : '',
     enabled: draft.enabled,
-    grafana_datasource: kind === 'alerts' ? '' : draft.grafana_datasource.trim(),
+    grafana_datasource: hasGrafanaRef(kind) ? draft.grafana_datasource.trim() : '',
     ...(kind === 'alerts' ? { rule_labels: parseRuleLabels(draft.rule_labels) } : {}),
   }
 
@@ -847,7 +858,7 @@ export function DatasourceSheet({
           the datasource rather than on the Grafana row because it identifies
           *this* backend: one Grafana holds the metrics datasource and the logs
           one, and they are two different uids. */}
-      {kind === 'alerts' ? null : (
+      {!hasGrafanaRef(kind) ? null : (
       <Field
         label="Grafana datasource uid"
         htmlFor="grafana_datasource"
@@ -869,9 +880,15 @@ export function DatasourceSheet({
           value={draft.auth_mode}
           onChange={(event) => update('auth_mode', event.target.value as DatasourceAuth)}
         >
-          <option value="none">None</option>
-          <option value="bearer">Bearer token</option>
-          <option value="basic">Username and password</option>
+          {bearerOnly(kind) ? (
+            <option value="bearer">Account token</option>
+          ) : (
+            <>
+              <option value="none">None</option>
+              <option value="bearer">Bearer token</option>
+              <option value="basic">Username and password</option>
+            </>
+          )}
         </Select>
       </Field>
 
@@ -893,7 +910,9 @@ export function DatasourceSheet({
           hint={
             hasStoredCredential
               ? 'A credential is stored. Leave this empty to keep it.'
-              : 'Stored on the server and never sent back to a browser.'
+              : bearerOnly(kind)
+                ? 'From argocd account generate-token --account <name>. Stored on the server and never sent back to a browser.'
+                : 'Stored on the server and never sent back to a browser.'
           }
         >
           <TextInput
@@ -907,7 +926,13 @@ export function DatasourceSheet({
         </Field>
       ) : null}
 
-      {inCluster && draft.auth_mode !== 'none' ? (
+      {inCluster && bearerOnly(kind) ? (
+        <Notice tone="info">
+          Inside the cluster the token travels as Argo CD&rsquo;s session cookie, which the API
+          server&rsquo;s Service proxy passes on. kubemg reads one object&rsquo;s desired state at a
+          time, when somebody asks for its diff.
+        </Notice>
+      ) : inCluster && draft.auth_mode !== 'none' ? (
         <Notice tone="info">
           An in-cluster read is made by the cluster&rsquo;s own API server on kubemg&rsquo;s behalf,
           so there is nowhere to put this header. A datasource that needs a credential should be

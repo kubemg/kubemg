@@ -1,4 +1,4 @@
-import type { ManagedBy } from './types'
+import type { ManagedBy, ManifestDiff } from './types'
 
 /**
  * GitOps sync state, as the controllers recorded it and the server narrowed it.
@@ -83,6 +83,46 @@ export interface GitopsObject {
   record: GitopsRecord | null
   entry: GitopsResource | null
   reason?: string
+  /** Whether live and desired state can be compared. Set only for an object an
+      Argo CD record tracks; absent otherwise. */
+  diff?: GitopsDiffOffer
+}
+
+export interface GitopsDiffOffer {
+  available: boolean
+  reason?: string
+}
+
+/**
+ * One object's live state against the state Argo CD would sync it to. `diff`
+ * reads live → desired, in the shape the manifest editor's diff has; `live`
+ * and `desired` are both sides as YAML with what the cluster writes stripped.
+ */
+export interface GitopsDiff {
+  available: boolean
+  reason?: string
+  application?: { namespace: string; name: string }
+  /** Argo CD's own verdict on this object. */
+  modified: boolean
+  diff?: ManifestDiff
+  live: string
+  desired: string
+  live_truncated: boolean
+  desired_truncated: boolean
+}
+
+export function completeGitopsDiff(data: Partial<GitopsDiff>): GitopsDiff {
+  return {
+    available: data.available ?? false,
+    reason: data.reason,
+    application: data.application,
+    modified: data.modified ?? false,
+    diff: data.diff ? { changes: data.diff.changes ?? [], truncated: data.diff.truncated ?? false } : undefined,
+    live: data.live ?? '',
+    desired: data.desired ?? '',
+    live_truncated: data.live_truncated ?? false,
+    desired_truncated: data.desired_truncated ?? false,
+  }
 }
 
 export function completeGitopsRecord(record: Partial<GitopsRecord>): GitopsRecord {
@@ -124,5 +164,6 @@ export function completeGitopsObject(data: Partial<GitopsObject>): GitopsObject 
     record: data.record ? completeGitopsRecord(data.record) : null,
     entry: data.entry ?? null,
     reason: data.reason,
+    diff: data.diff,
   }
 }

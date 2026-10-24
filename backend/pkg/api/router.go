@@ -1056,6 +1056,7 @@ func NewRouter(opts Options) *gin.Engine {
 			gitops := clusters.Group("/:id/gitops", refusals, s.cachedRead())
 			gitops.GET("/applications", s.listGitopsRecords)
 			gitops.GET("/object", s.showGitopsObject)
+			gitops.GET("/diff", s.showGitopsDiff)
 
 			// How many of each kind the caller can see, read at limit=1 so the
 			// cost is flat in the size of the cluster rather than proportional

@@ -35,10 +35,14 @@ const (
 	// silenced, and — through its RuleLabels — how an alarm KubeMG writes as a
 	// PrometheusRule gets picked up by the Prometheus that routes to it.
 	SourceAlerts = "alerts"
+	// SourceGitOps is the cluster's Argo CD API server, read for one thing PR 1's
+	// record cannot give: an object's desired state, to diff against the live
+	// one. Sync state needs no source — it is read from the cluster.
+	SourceGitOps = "gitops"
 )
 
 // SourceKinds enumerates the datasource kinds a cluster can carry.
-var SourceKinds = []string{SourceMetrics, SourceLogs, SourceAlerts}
+var SourceKinds = []string{SourceMetrics, SourceLogs, SourceAlerts, SourceGitOps}
 
 // Providers KubeMG knows how to talk to. The metrics four all speak the
 // Prometheus query API, which is why they share one probe; the logs two do not
@@ -53,6 +57,8 @@ const (
 	ProviderLoki         = "loki"
 
 	ProviderAlertmanager = "alertmanager"
+
+	ProviderArgoCD = "argocd"
 )
 
 // ProvidersFor lists the providers assignable to a datasource kind.
@@ -64,6 +70,8 @@ func ProvidersFor(kind string) []string {
 		return []string{ProviderVictoriaLogs, ProviderLoki}
 	case SourceAlerts:
 		return []string{ProviderAlertmanager}
+	case SourceGitOps:
+		return []string{ProviderArgoCD}
 	default:
 		return nil
 	}
