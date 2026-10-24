@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/db"
+	"github.com/kubemg/kubemg/backend/pkg/observability"
 )
 
 /*
@@ -56,14 +58,14 @@ const argoDefaultNamespace = "argocd"
 // is the request's failure, not one tool's.
 type gitopsServiceReader struct {
 	s       *server
-	c       *gin.Context
+	ctx     context.Context
 	cluster *db.Cluster
 }
 
 func (r gitopsServiceReader) get(path string) (int, []byte, error) {
 	user := &db.User{Username: gitopsReaderUser}
 	grant := db.UserClusterAccess{ClusterID: r.cluster.ID, K8sRole: db.K8sRoleClusterAdmin}
-	resp, err := r.s.proxy.Call(r.c.Request.Context(), user, r.cluster, grant,
+	resp, err := r.s.proxy.Call(r.ctx, user, r.cluster, grant,
 		http.MethodGet, path, nil, nil)
 	if err != nil {
 		return 0, nil, err
@@ -229,20 +231,73 @@ func (s *server) listGitopsRecords(c *gin.Context) {
 		return
 	}
 
-	read, err := readGitopsRecords(gitopsServiceReader{s: s, c: c, cluster: cluster})
+	read, err := readGitopsRecords(gitopsServiceReader{s: s, ctx: c.Request.Context(), cluster: cluster})
 	if err != nil {
 		writeGitopsReadError(c, err)
 		return
 	}
 
-	records := make([]gitopsRecord, 0, len(read.records))
+	console := s.argoConsoleBase(c.Request.Context(), cluster.ID)
+	records, summary := narrowGitopsList(read.records, grant, console)
+
+	available := slices.ContainsFunc(read.tools, func(t gitopsToolStatus) bool { return t.Available })
+	if read.truncated {
+		noteTruncated(c)
+	}
+	body := gin.H{
+		"available": available,
+		"tools":     read.tools,
+		"records":   records,
+		"summary":   summary,
+	}
+	if console != "" {
+		body["argocd_console_url"] = console
+	}
+	listResponse(c, body)
+}
+
+// argoConsoleBase is the cluster's Argo CD console, as a browser opens it: the
+// `argocd` row in cluster_consoles. Never the gitops datasource's URL — that is
+// the address KubeMG dials, often argocd-server through the API server's
+// Service proxy, which no browser can open. No row, or a row that cannot be
+// read, is no link.
+func (s *server) argoConsoleBase(ctx context.Context, clusterID uint) string {
+	consoles, err := s.store.ClusterConsoles(ctx, clusterID)
+	if err != nil {
+		return ""
+	}
+	for _, console := range consoles {
+		if console.Kind == db.ConsoleArgoCD {
+			return console.URL
+		}
+	}
+	return ""
+}
+
+// linkConsole sets the deep link to an Argo CD record's own page. It is called
+// only on a record narrowing kept, so a record the caller cannot see never
+// produces a link; Flux has no console and gets none.
+func (r *gitopsRecord) linkConsole(base string) {
+	if r.Tool != gitopsArgoCD {
+		return
+	}
+	r.ConsoleURL = observability.ArgoApplication(base, r.Namespace, r.Name)
+}
+
+// narrowGitopsList narrows every record for a grant, links each one the
+// grant kept to its console page, and counts what the page leads with. The
+// link is set after narrowing, so a record the caller cannot see never
+// produces one.
+func narrowGitopsList(all []gitopsRecord, grant db.UserClusterAccess, console string) ([]gitopsRecord, gitopsSummary) {
+	records := make([]gitopsRecord, 0, len(all))
 	summary := gitopsSummary{}
-	for _, record := range read.records {
+	for _, record := range all {
 		narrowed, visible := narrowGitopsRecord(record, grant)
 		if !visible {
 			continue
 		}
 		narrowed.finishResources()
+		narrowed.linkConsole(console)
 		records = append(records, narrowed)
 
 		summary.Records++
@@ -254,17 +309,7 @@ func (s *server) listGitopsRecords(c *gin.Context) {
 		}
 	}
 	sortGitopsRecords(records)
-
-	available := slices.ContainsFunc(read.tools, func(t gitopsToolStatus) bool { return t.Available })
-	if read.truncated {
-		noteTruncated(c)
-	}
-	listResponse(c, gin.H{
-		"available": available,
-		"tools":     read.tools,
-		"records":   records,
-		"summary":   summary,
-	})
+	return records, summary
 }
 
 func writeGitopsReadError(c *gin.Context, err error) {
@@ -329,10 +374,13 @@ func (s *server) showGitopsObject(c *gin.Context) {
 		return
 	}
 
-	view, err := resolveGitopsObject(gitopsServiceReader{s: s, c: c, cluster: cluster}, object, grant)
+	view, err := resolveGitopsObject(gitopsServiceReader{s: s, ctx: c.Request.Context(), cluster: cluster}, object, grant)
 	if err != nil {
 		writeGitopsReadError(c, err)
 		return
+	}
+	if view.Record != nil {
+		view.Record.linkConsole(s.argoConsoleBase(c.Request.Context(), cluster.ID))
 	}
 	if view.Record != nil && view.Record.Tool == gitopsArgoCD {
 		offer := gitopsDiffOffer{Reason: diffSecretRefusal}

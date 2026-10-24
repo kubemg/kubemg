@@ -708,6 +708,9 @@ func NewRouter(opts Options) *gin.Engine {
 		// Nothing is read until a cluster-event rule exists; see alarms_watch.go.
 		if s.alarms != nil && opts.Proxy != nil {
 			go s.startAlarmWatcher(opts.Background)
+			// GitOps drift is read the same way, from the controllers' records,
+			// and likewise nothing is read until a gitops_drift rule exists.
+			go s.startGitopsWatcher(opts.Background)
 		}
 		// Stops the event watches nobody is reading. It is a sweeper rather than
 		// a timer per cluster, for the reason the JIT expirer is: one loop that

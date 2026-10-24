@@ -50,6 +50,9 @@ export interface GitopsRecord {
   message?: string
   /** The destination cluster, when the record deploys somewhere other than here. */
   remote?: string
+  /** This record's page in Argo CD's own console. Present only on an Argo CD
+      record the caller can see, when the cluster has an Argo CD console link. */
+  console_url?: string
   resources: GitopsResource[]
   /** Entries outside the caller's grant, counted rather than shown. */
   resources_hidden: number
@@ -75,6 +78,8 @@ export interface GitopsState {
   records: GitopsRecord[]
   summary: GitopsSummary
   truncated?: boolean
+  /** The cluster's Argo CD console, when one is registered. */
+  argocd_console_url?: string
 }
 
 export interface GitopsObject {
@@ -86,6 +91,17 @@ export interface GitopsObject {
   /** Whether live and desired state can be compared. Set only for an object an
       Argo CD record tracks; absent otherwise. */
   diff?: GitopsDiffOffer
+}
+
+/** The last write to an object that went through KubeMG, read under the
+    audit trail's rule: an administrator sees anyone's, anyone else their own. */
+export interface GitopsAttribution {
+  change: { username: string; verb: string; at: string } | null
+  /** Argo CD's last finished sync; absent when it records none. */
+  since?: string
+  scoped_to_self: boolean
+  /** What an empty answer means. Absent when `change` is set. */
+  note?: string
 }
 
 export interface GitopsDiffOffer {
@@ -109,6 +125,7 @@ export interface GitopsDiff {
   desired: string
   live_truncated: boolean
   desired_truncated: boolean
+  attribution?: GitopsAttribution
 }
 
 export function completeGitopsDiff(data: Partial<GitopsDiff>): GitopsDiff {
@@ -122,6 +139,14 @@ export function completeGitopsDiff(data: Partial<GitopsDiff>): GitopsDiff {
     desired: data.desired ?? '',
     live_truncated: data.live_truncated ?? false,
     desired_truncated: data.desired_truncated ?? false,
+    attribution: data.attribution
+      ? {
+          change: data.attribution.change ?? null,
+          since: data.attribution.since,
+          scoped_to_self: data.attribution.scoped_to_self ?? false,
+          note: data.attribution.note,
+        }
+      : undefined,
   }
 }
 
@@ -141,6 +166,7 @@ export function completeGitopsRecord(record: Partial<GitopsRecord>): GitopsRecor
     reconciled_at: record.reconciled_at,
     message: record.message,
     remote: record.remote,
+    console_url: record.console_url,
     resources: record.resources ?? [],
     resources_hidden: record.resources_hidden ?? 0,
     resources_truncated: record.resources_truncated ?? false,
@@ -154,6 +180,7 @@ export function completeGitopsState(data: Partial<GitopsState>): GitopsState {
     records: (data.records ?? []).map(completeGitopsRecord),
     summary: data.summary ?? { records: 0, out_of_sync: 0, degraded: 0 },
     truncated: data.truncated,
+    argocd_console_url: data.argocd_console_url,
   }
 }
 

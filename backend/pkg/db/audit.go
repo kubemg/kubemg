@@ -34,6 +34,13 @@ type AuditFilter struct {
 	// object's name — the last being the only way to find a create by what it
 	// made, since a create's path names the collection.
 	Search string
+	// Resource and Name keep the calls that addressed one object, exactly —
+	// unlike Search, which matches a fragment anywhere.
+	Resource string
+	Name     string
+	// SucceededOnly keeps the calls the API server accepted: no error and a
+	// status below 400. A refused write changed nothing.
+	SucceededOnly bool
 
 	Limit  int
 	Offset int
@@ -77,6 +84,15 @@ func auditQuery(query *gorm.DB, filter AuditFilter) *gorm.DB {
 	}
 	if filter.Namespace != "" {
 		query = query.Where("namespace = ?", filter.Namespace)
+	}
+	if filter.Resource != "" {
+		query = query.Where("resource = ?", filter.Resource)
+	}
+	if filter.Name != "" {
+		query = query.Where("name = ?", filter.Name)
+	}
+	if filter.SucceededOnly {
+		query = query.Where("(error = '' OR error IS NULL) AND status > 0 AND status < ?", 400)
 	}
 	if filter.Streaming {
 		query = query.Where("streaming = ?", true)

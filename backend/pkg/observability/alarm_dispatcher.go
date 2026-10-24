@@ -75,6 +75,7 @@ const (
 const (
 	SourceClusterEvent = db.TriggerClusterEvent
 	SourceAudit        = db.TriggerAudit
+	SourceGitOpsDrift  = db.TriggerGitOpsDrift
 )
 
 // Signal is one thing that happened, normalised so that a rule can be matched
@@ -116,6 +117,13 @@ type Signal struct {
 	Path     string `json:"path,omitempty"`
 	Denied   bool   `json:"denied,omitempty"`
 	Error    string `json:"error,omitempty"`
+
+	// GitOps-drift fields: which controller recorded the drift, and the
+	// Application, Kustomization or HelmRelease it recorded it on. Username and
+	// UserID, when set on a drift signal, name the last write to the object
+	// that went through KubeMG — never a claim about writes that did not.
+	Tool        string `json:"tool,omitempty"`
+	Application string `json:"application,omitempty"`
 
 	// Fingerprint identifies the *thing*, not the occurrence, and is what the
 	// cool-off is keyed by. It is set by the producer because only the producer
@@ -584,6 +592,19 @@ func Matches(rule db.AlarmRule, signal Signal) bool {
 		}
 		if verbs := splitList(rule.Verbs); len(verbs) > 0 {
 			if !containsFold(verbs, signal.Verb) {
+				return false
+			}
+		}
+		return true
+
+	case db.TriggerGitOpsDrift:
+		if tools := splitList(rule.GitOpsTools); len(tools) > 0 {
+			if !containsFold(tools, signal.Tool) {
+				return false
+			}
+		}
+		if apps := splitList(rule.GitOpsApps); len(apps) > 0 {
+			if !containsFold(apps, signal.Application) {
 				return false
 			}
 		}

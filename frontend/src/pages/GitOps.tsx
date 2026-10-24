@@ -4,6 +4,7 @@ import { CircleAlert, GitCompareArrows, HeartPulse, Layers, RefreshCw } from 'lu
 import { errorMessage, fetchGitopsState } from '../api/client'
 import type { GitopsRecord, GitopsResource } from '../api/gitops'
 import { AppShell } from '../components/AppShell'
+import { ArgoConsoleLink } from '../components/ArgoConsoleLink'
 import { ResourceDetailDrawer } from '../components/ResourceDetailDrawer'
 import type { DetailTarget } from '../components/ResourceDetailDrawer'
 import {
@@ -31,6 +32,7 @@ import {
   perObjectNote,
   resourceKeyFor,
   sourceLine,
+  syncElsewhereNote,
   syncTone,
 } from '../lib/gitops'
 import { clusterPageHref } from '../lib/navigation'
@@ -118,10 +120,13 @@ export function GitOps() {
       title="GitOps"
       fullWidth
       actions={
-        <Button onClick={() => void state.refresh()} disabled={busy}>
-          <RefreshCw aria-hidden="true" className={`size-4 ${busy ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <>
+          <ArgoConsoleLink href={loaded?.argocd_console_url} label="Argo CD console" />
+          <Button onClick={() => void state.refresh()} disabled={busy}>
+            <RefreshCw aria-hidden="true" className={`size-4 ${busy ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </>
       }
     >
       <div className="flex min-w-0 flex-col gap-4">
@@ -218,6 +223,7 @@ export function RecordsTable({
   records: GitopsRecord[]
   onOpen: (record: GitopsRecord) => void
 }) {
+  const linked = records.some((record) => record.console_url)
   return (
     <section className="card min-w-0 overflow-hidden" aria-labelledby="gitops-records">
       <div className="border-b border-line-soft px-5 pt-4 pb-3.5">
@@ -241,6 +247,7 @@ export function RecordsTable({
               <Th className="w-[13%]">Health</Th>
               <Th className="hidden lg:table-cell">Source</Th>
               <Th className="w-[12%]">Drifted</Th>
+              {linked ? <Th className="w-[10%]">Argo CD</Th> : null}
             </tr>
           </thead>
           <tbody>
@@ -281,6 +288,15 @@ export function RecordsTable({
                       </span>
                     )}
                   </Td>
+                  {linked ? (
+                    <Td>
+                      <ArgoConsoleLink
+                        href={record.console_url}
+                        label="Open"
+                        ariaLabel={`Open ${record.name} in Argo CD`}
+                      />
+                    </Td>
+                  ) : null}
                 </Row>
               )
             })}
@@ -303,6 +319,7 @@ export function RecordSheet({
   const { discovered } = useInventory()
   const note = perObjectNote(record.tool)
   const hidden = hiddenNote(record)
+  const elsewhere = syncElsewhereNote(record)
 
   function targetOf(resource: GitopsResource): DetailTarget | null {
     // Another cluster's objects are not this cluster's to open.
@@ -374,6 +391,12 @@ export function RecordSheet({
         </dl>
 
         <p className="text-[13px] leading-relaxed text-muted">{autoHealSentence(record)}</p>
+        {elsewhere ? (
+          <div className="flex flex-col items-start gap-1.5">
+            <p className="text-[12.5px] text-muted">{elsewhere}</p>
+            <ArgoConsoleLink href={record.console_url} />
+          </div>
+        ) : null}
         {record.message ? (
           <Notice tone="warn">
             <span className="inline-flex items-start gap-1.5">

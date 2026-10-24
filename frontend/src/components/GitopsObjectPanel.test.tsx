@@ -36,10 +36,16 @@ vi.mock('../api/client', async (importOriginal) => {
   }
 })
 
-function argoObject(sync: 'synced' | 'out_of_sync', diff?: GitopsObject['diff']): GitopsObject {
+function argoObject(
+  sync: 'synced' | 'out_of_sync',
+  diff?: GitopsObject['diff'],
+  consoleURL?: string,
+): GitopsObject {
   return completeGitopsObject({
     tracked: true,
-    record: completeGitopsRecord({ tool: 'argocd', namespace: 'argocd', name: 'shop', sync, health: 'healthy' }),
+    record: completeGitopsRecord({
+      tool: 'argocd', namespace: 'argocd', name: 'shop', sync, health: 'healthy', console_url: consoleURL,
+    }),
     entry: { group: 'apps', kind: 'Deployment', namespace: 'shop', name: 'web', sync, health: 'healthy' },
     diff,
   })
@@ -143,5 +149,74 @@ describe('GitopsObjectPanel', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Show diff/ }))
     expect(await screen.findByText(/no longer accepts the stored token/)).toBeTruthy()
+  })
+
+  it('links the record to its page in Argo CD, and says where Sync lives', async () => {
+    answer = argoObject('synced', undefined, 'https://argo.example.com/applications/argocd/shop')
+    draw()
+
+    const link = await screen.findByRole('link', { name: /Open in Argo CD/ })
+    expect(link.getAttribute('href')).toBe('https://argo.example.com/applications/argocd/shop')
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(screen.getByText(/kubemg does not sync/)).toBeTruthy()
+  })
+
+  it('draws no link without a console, and no link at all for Flux', async () => {
+    answer = argoObject('synced')
+    draw()
+    expect(await screen.findByText(/link it under the cluster’s consoles/)).toBeTruthy()
+    expect(screen.queryByRole('link', { name: /Open in Argo CD/ })).toBeNull()
+    cleanup()
+    invalidateQueries()
+
+    answer = completeGitopsObject({
+      tracked: true,
+      record: completeGitopsRecord({ tool: 'flux-kustomization', namespace: 'flux-system', name: 'apps', sync: 'synced' }),
+    })
+    draw()
+    expect(await screen.findByText(/Flux puts a hand edit back/)).toBeTruthy()
+    expect(screen.queryByRole('link', { name: /Argo CD/ })).toBeNull()
+    expect(screen.queryByText(/kubemg does not sync/)).toBeNull()
+  })
+
+  it('carries the link into the diff sheet and names the last change through kubemg', async () => {
+    answer = argoObject('out_of_sync', { available: true }, 'https://argo.example.com/applications/argocd/shop')
+    diffAnswer = completeGitopsDiff({
+      available: true,
+      modified: true,
+      diff: { changes: [], truncated: false },
+      attribution: {
+        change: { username: 'alice', verb: 'patch', at: new Date().toISOString() },
+        since: '2026-10-24T10:00:00Z',
+        scoped_to_self: false,
+      },
+    })
+    draw()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Show diff/ }))
+    const sheet = await screen.findByRole('region', { name: 'Last change through kubemg' })
+    expect(sheet.textContent).toContain('alice')
+    expect(sheet.textContent).toContain('patch')
+    expect(sheet.textContent).toContain('outside kubemg')
+    expect(screen.getAllByRole('link', { name: /Open in Argo CD/ })).toHaveLength(2)
+  })
+
+  it('says a change outside kubemg leaves no record, rather than that nobody changed it', async () => {
+    answer = argoObject('out_of_sync', { available: true })
+    diffAnswer = completeGitopsDiff({
+      available: true,
+      modified: true,
+      diff: { changes: [], truncated: false },
+      attribution: {
+        change: null,
+        scoped_to_self: true,
+        note: 'You made no write to this object through KubeMG since Argo CD last synced it. Writes by others are shown to an administrator only. A change made outside KubeMG leaves no record here.',
+      },
+    })
+    draw()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Show diff/ }))
+    expect(await screen.findByText(/Writes by others are shown to an administrator only/)).toBeTruthy()
+    expect(screen.queryByRole('link', { name: /Open in Argo CD/ })).toBeNull()
   })
 })

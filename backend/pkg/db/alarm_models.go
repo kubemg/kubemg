@@ -80,10 +80,14 @@ const (
 	// action becomes a page. This is the half no cluster-side alerting can see:
 	// the request never reached the API server, so the cluster has no event for it.
 	TriggerAudit = "audit"
+	// TriggerGitOpsDrift matches an object going out of sync with what Argo CD
+	// or Flux declares, read from the controller's own records. It fires on the
+	// transition, never on a state that was already there when it was switched on.
+	TriggerGitOpsDrift = "gitops_drift"
 )
 
 // AlarmTriggers enumerates the supported rule sources.
-var AlarmTriggers = []string{TriggerClusterEvent, TriggerAudit}
+var AlarmTriggers = []string{TriggerClusterEvent, TriggerAudit, TriggerGitOpsDrift}
 
 // Alarm severities, ordered least to most urgent. They are KubeMG's own word for
 // it and each channel renders them into its vendor's vocabulary.
@@ -221,6 +225,15 @@ type AlarmRule struct {
 	DeniedOnly bool `gorm:"not null;default:false" json:"denied_only"`
 	// MinStatus keeps records at or above an HTTP status. Zero means any.
 	MinStatus int `json:"min_status,omitempty"`
+
+	// GitOps drift matching.
+	//
+	// GitOpsTools is a comma-separated list of `argocd`, `flux-kustomization`,
+	// `flux-helmrelease`. Empty means any tool.
+	GitOpsTools string `gorm:"column:gitops_tools;type:text" json:"gitops_tools,omitempty"`
+	// GitOpsApps is a comma-separated list of Application, Kustomization or
+	// HelmRelease names. Empty means any.
+	GitOpsApps string `gorm:"column:gitops_apps;type:text" json:"gitops_apps,omitempty"`
 
 	// Severity is what the delivered alarm claims about itself.
 	Severity string `gorm:"size:16;not null;default:'warning'" json:"severity"`

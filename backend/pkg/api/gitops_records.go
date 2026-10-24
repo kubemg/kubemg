@@ -59,6 +59,15 @@ const (
 	argoInClusterName   = "in-cluster"
 )
 
+// gitopsToolNames lists the tools a drift rule may name.
+func gitopsToolNames() []string {
+	names := make([]string, 0, len(gitopsTools))
+	for _, tool := range gitopsTools {
+		names = append(names, tool.name)
+	}
+	return names
+}
+
 // gitopsTool is one controller's list: which API serves it, newest version
 // first, and how its objects decode.
 type gitopsTool struct {
@@ -111,6 +120,11 @@ type gitopsResource struct {
 	Name      string `json:"name"`
 	Sync      string `json:"sync"`
 	Health    string `json:"health,omitempty"`
+
+	// version is the API version Argo CD reports the entry at. It is what the
+	// drift poller asks discovery for the entry's resource name with, and is
+	// never sent.
+	version string
 }
 
 // gitopsRecord is one Application, Kustomization or HelmRelease.
@@ -137,6 +151,10 @@ type gitopsRecord struct {
 	// Remote names the destination when the record deploys to a cluster other
 	// than the one it lives in. Its resources are that cluster's, not this one's.
 	Remote string `json:"remote,omitempty"`
+	// ConsoleURL opens this record in Argo CD's own console, where Sync and
+	// Refresh live. Set only on an Argo CD record, only after narrowing, and
+	// only when the cluster has an `argocd` console row.
+	ConsoleURL string `json:"console_url,omitempty"`
 
 	Resources          []gitopsResource `json:"resources"`
 	ResourcesHidden    int              `json:"resources_hidden"`
@@ -145,6 +163,10 @@ type gitopsRecord struct {
 	// destinationNamespace is where the record deploys by default. It decides
 	// visibility for a scoped grant alongside the resources, and is never sent.
 	destinationNamespace string
+	// lastSyncAt is when Argo CD last finished a sync operation. A write to a
+	// tracked object after it is what drifted the object; it bounds the audit
+	// read that names who made it, and is never sent.
+	lastSyncAt *time.Time
 }
 
 type gitopsMeta struct {
@@ -205,6 +227,7 @@ type argoApplication struct {
 		} `json:"health"`
 		Resources []struct {
 			Group     string `json:"group"`
+			Version   string `json:"version"`
 			Kind      string `json:"kind"`
 			Namespace string `json:"namespace"`
 			Name      string `json:"name"`
@@ -215,8 +238,9 @@ type argoApplication struct {
 		} `json:"resources"`
 		ReconciledAt   *time.Time `json:"reconciledAt"`
 		OperationState *struct {
-			Phase   string `json:"phase"`
-			Message string `json:"message"`
+			Phase      string     `json:"phase"`
+			Message    string     `json:"message"`
+			FinishedAt *time.Time `json:"finishedAt"`
 		} `json:"operationState"`
 		Conditions []struct {
 			Type    string `json:"type"`
@@ -287,6 +311,9 @@ func decodeArgoApplication(raw json.RawMessage) (gitopsRecord, bool) {
 		record.Message = op.Message
 	}
 	record.Message = boundMessage(record.Message)
+	if op := app.Status.OperationState; op != nil {
+		record.lastSyncAt = op.FinishedAt
+	}
 
 	for _, entry := range app.Status.Resources {
 		resource := gitopsResource{
@@ -295,6 +322,7 @@ func decodeArgoApplication(raw json.RawMessage) (gitopsRecord, bool) {
 			Namespace: entry.Namespace,
 			Name:      entry.Name,
 			Sync:      argoSync(entry.Status),
+			version:   entry.Version,
 		}
 		if entry.Health != nil {
 			resource.Health = argoHealth(entry.Health.Status)

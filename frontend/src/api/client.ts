@@ -2474,6 +2474,7 @@ export async function fetchAlarmRules(): Promise<AlarmRuleList> {
     severities: data.severities ?? [],
     suggested_reasons: data.suggested_reasons ?? [],
     cluster_events_available: data.cluster_events_available ?? false,
+    gitops_tools: data.gitops_tools,
     dispatcher_running: data.dispatcher_running ?? false,
   }
 }

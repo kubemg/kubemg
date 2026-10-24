@@ -692,6 +692,15 @@ func (f *fakeStore) ListAuditEvents(_ context.Context, filter db.AuditFilter) ([
 		if filter.Namespace != "" && event.Namespace != filter.Namespace {
 			continue
 		}
+		if filter.Resource != "" && event.Resource != filter.Resource {
+			continue
+		}
+		if filter.Name != "" && event.Name != filter.Name {
+			continue
+		}
+		if filter.SucceededOnly && (event.Error != "" || event.Status <= 0 || event.Status >= 400) {
+			continue
+		}
 		if filter.Streaming && !event.Streaming {
 			continue
 		}
