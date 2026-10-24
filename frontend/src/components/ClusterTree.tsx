@@ -11,6 +11,7 @@ import {
   Package,
   Puzzle,
   Recycle,
+  GitCompareArrows,
   ScrollText,
   Search,
   Server,
@@ -124,6 +125,7 @@ const PAGE_ROWS: readonly PageEntry[] = [
 const INSIGHT_ROWS: readonly PageEntry[] = [
   { page: 'capacity', label: 'Capacity', icon: Cpu },
   { page: 'waste', label: 'Cost & waste', icon: Recycle },
+  { page: 'gitops', label: 'GitOps', icon: GitCompareArrows },
   { page: 'security', label: 'Security', icon: ShieldAlert },
   { page: 'audit', label: 'Audit trail', icon: ScrollText },
 ]

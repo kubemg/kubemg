@@ -17,6 +17,7 @@ import { CliActivate } from './pages/CliActivate'
 import { NamespaceDetail } from './pages/NamespaceDetail'
 import { NodeCapacity } from './pages/NodeCapacity'
 import { Waste } from './pages/Waste'
+import { GitOps } from './pages/GitOps'
 import { Overview } from './pages/Overview'
 import { PasswordExpired } from './pages/PasswordExpired'
 import { IssuedCredentials } from './pages/IssuedCredentials'
@@ -357,6 +358,17 @@ export default function App() {
               element={
                 <RequireAuth>
                   <Waste />
+                </RequireAuth>
+              }
+            />
+            {/* Which objects have drifted from what Argo CD or Flux declares,
+                read from the controllers' own records and narrowed to the
+                caller's namespaces. Open to anyone granted. */}
+            <Route
+              path="/clusters/:id/gitops"
+              element={
+                <RequireAuth>
+                  <GitOps />
                 </RequireAuth>
               }
             />

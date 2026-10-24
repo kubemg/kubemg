@@ -115,6 +115,7 @@ nav:
           - Events timeline: clusters/events.md
           - Node capacity: clusters/capacity.md
           - Cost & waste: clusters/waste.md
+          - GitOps sync state: clusters/gitops.md
           - Security posture: clusters/security-posture.md
       - Access:
           - The access model: access/model.md
