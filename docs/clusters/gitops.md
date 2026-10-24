@@ -38,6 +38,22 @@ When an object's metadata says that Argo CD or Flux tracks it, its drawer shows 
 
 The panel is read when the drawer opens. It does not refresh on its own; use the drawer's Refresh.
 
+## Comparing live and desired state
+
+For an object that Argo CD reports **out of sync**, the panel offers **Show diff**. It opens the object's live state next to the state Argo CD would sync it to, as a table of changed fields (live on the left, desired on the right) and both manifests in full.
+
+The desired state is **Argo CD's own**: KubeMG asks Argo CD's API for that one object, already normalized the way Argo CD's diff view shows it, with `ignoreDifferences` applied. What reads as a difference here is what Argo CD counts as one. Status, `managedFields`, `resourceVersion`, `uid`, `generation`, `creationTimestamp` and the `last-applied-configuration` annotation are removed from both sides. Each manifest is cut at 256 KiB, and the diff says so when it is.
+
+It needs an [Argo CD datasource](../observability/datasources.md#gitops-argo-cd) on the cluster. Without one the button is absent and the panel says why. Sync state does not depend on it.
+
+What is refused, and in what order:
+
+1. **A Secret is never compared.** Argo CD masks Secret values, but KubeMG does not rely on that: a Secret's values leave only through the audited reveal.
+2. **You must be able to read the object.** It is read as you first. If the cluster refuses, that is the answer and Argo CD is not asked.
+3. **The application comes from the object.** It is the one the object's own tracking annotation names, found and narrowed exactly as the panel finds it.
+
+Flux keeps no desired state KubeMG can read, so Flux objects have no diff.
+
 ## Who sees what
 
 Applications usually live in Argo CD's namespace and Kustomizations in `flux-system`, and a namespace-scoped grant covers neither. So KubeMG reads the records itself and narrows them to your grant before showing them:
@@ -58,6 +74,5 @@ These reads appear in the audit trail as `kubemg:gitops-reader`. They use the sa
 
 ## Not yet
 
-- **The field-level difference** between Git and the cluster for one object is planned. It will read Argo CD's own diff through its API.
 - **An alarm when something goes out of sync** is planned.
 - KubeMG does not offer Sync or Refresh buttons. Use the Argo CD console, which a cluster can link to from [other consoles](managing.md#linking-other-consoles).

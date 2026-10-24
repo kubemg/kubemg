@@ -1,11 +1,17 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { completeGitopsObject, completeGitopsRecord, type GitopsObject } from '../api/gitops'
+import {
+  completeGitopsDiff,
+  completeGitopsObject,
+  completeGitopsRecord,
+  type GitopsDiff,
+  type GitopsObject,
+} from '../api/gitops'
 import type { Cluster } from '../api/types'
 import { invalidateQueries } from '../lib/query'
 import { GitopsObjectPanel } from './GitopsObjectPanel'
@@ -15,11 +21,29 @@ import { GitopsObjectPanel } from './GitopsObjectPanel'
 // rather than a pass.
 
 let answer: GitopsObject
+let diffAnswer: GitopsDiff
+const diffCalls = vi.fn()
 
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>()
-  return { ...actual, fetchGitopsObject: () => Promise.resolve(answer) }
+  return {
+    ...actual,
+    fetchGitopsObject: () => Promise.resolve(answer),
+    fetchGitopsDiff: (...args: unknown[]) => {
+      diffCalls(...args)
+      return Promise.resolve(diffAnswer)
+    },
+  }
 })
+
+function argoObject(sync: 'synced' | 'out_of_sync', diff?: GitopsObject['diff']): GitopsObject {
+  return completeGitopsObject({
+    tracked: true,
+    record: completeGitopsRecord({ tool: 'argocd', namespace: 'argocd', name: 'shop', sync, health: 'healthy' }),
+    entry: { group: 'apps', kind: 'Deployment', namespace: 'shop', name: 'web', sync, health: 'healthy' },
+    diff,
+  })
+}
 
 const cluster = { id: 4, name: 'edge' } as Cluster
 
@@ -75,5 +99,49 @@ describe('GitopsObjectPanel', () => {
     draw()
 
     expect(await screen.findByText(/may run in another cluster/)).toBeTruthy()
+  })
+
+  it('offers the diff on an out-of-sync object and opens it live against desired', async () => {
+    answer = argoObject('out_of_sync', { available: true })
+    diffAnswer = completeGitopsDiff({
+      available: true,
+      modified: true,
+      application: { namespace: 'argocd', name: 'shop' },
+      diff: { changes: [{ path: 'spec.replicas', kind: 'changed', old: 3, new: 1 }], truncated: false },
+      live: 'spec:\n  replicas: 3\n',
+      desired: 'spec:\n  replicas: 1\n',
+    })
+    draw()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Show diff/ }))
+    expect(await screen.findByText('spec.replicas')).toBeTruthy()
+    expect(screen.getByRole('columnheader', { name: 'Live' })).toBeTruthy()
+    expect(screen.getByRole('columnheader', { name: 'Desired' })).toBeTruthy()
+    expect(diffCalls).toHaveBeenCalledWith(4, 'deployments', 'web', 'shop')
+  })
+
+  it('leaves the button out and says why without a source', async () => {
+    answer = argoObject('out_of_sync', { available: false, reason: 'no Argo CD datasource is registered for this cluster' })
+    draw()
+
+    expect(await screen.findByText(/no Argo CD datasource is registered/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Show diff/ })).toBeNull()
+  })
+
+  it('offers no diff for an object in sync', async () => {
+    answer = argoObject('synced', { available: true })
+    draw()
+
+    expect(await screen.findByText('Synced')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Show diff/ })).toBeNull()
+  })
+
+  it('names the reason when Argo CD cannot answer', async () => {
+    answer = argoObject('out_of_sync', { available: true })
+    diffAnswer = completeGitopsDiff({ available: false, reason: 'Argo CD no longer accepts the stored token' })
+    draw()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Show diff/ }))
+    expect(await screen.findByText(/no longer accepts the stored token/)).toBeTruthy()
   })
 })

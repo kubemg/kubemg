@@ -2,6 +2,7 @@ package observability
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -130,7 +131,7 @@ func TestDecodeProfileReportsARefusal(t *testing.T) {
 
 func TestQueryUsageProfileJoinsBothReadingsInScope(t *testing.T) {
 	var asked []string
-	tunnel := func(_ context.Context, _, path string, _ []byte) (int, []byte, error) {
+	tunnel := func(_ context.Context, _, path string, _ http.Header, _ []byte) (int, []byte, error) {
 		parsed, err := url.Parse(path)
 		if err != nil {
 			t.Fatal(err)
@@ -199,7 +200,7 @@ func TestQueryUsageProfileRefusesWhatItCannotRead(t *testing.T) {
 		t.Error("a logs source does not serve metrics")
 	}
 	tooLong := Window{Start: end.Add(-31 * 24 * time.Hour), End: end}
-	tunnel := func(context.Context, string, string, []byte) (int, []byte, error) { return 200, nil, nil }
+	tunnel := func(context.Context, string, string, http.Header, []byte) (int, []byte, error) { return 200, nil, nil }
 	if _, err := QueryUsageProfile(context.Background(), inClusterMetrics(), tunnel, Scope{}, tooLong); err == nil {
 		t.Error("a window past thirty days should be refused")
 	}

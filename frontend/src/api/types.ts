@@ -2856,12 +2856,13 @@ export interface LogQueryResponse {
  * now"; a datasource is what answers "since when", and it belongs to the
  * cluster rather than to the server — two clusters have two Prometheuses.
  */
-export type DatasourceKind = 'metrics' | 'logs' | 'alerts'
+export type DatasourceKind = 'metrics' | 'logs' | 'alerts' | 'gitops'
 
 export type MetricsProvider = 'victoriametrics' | 'prometheus' | 'thanos' | 'mimir'
 export type LogsProvider = 'victorialogs' | 'loki'
 export type AlertsProvider = 'alertmanager'
-export type DatasourceProvider = MetricsProvider | LogsProvider | AlertsProvider
+export type GitopsProvider = 'argocd'
+export type DatasourceProvider = MetricsProvider | LogsProvider | AlertsProvider | GitopsProvider
 
 /** How KubeMG reaches it: down the agent tunnel, or dialled from here. */
 export type DatasourceAccess = 'in-cluster' | 'direct'

@@ -2,6 +2,7 @@ package observability
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -108,7 +109,31 @@ func (t Target) Validate() error {
 	if t.AuthMode == db.AuthBasic && t.Username == "" {
 		return fmt.Errorf("basic authentication needs a username")
 	}
+	if t.Kind == db.SourceGitOps {
+		// Argo CD answers nothing useful anonymously, and basic auth is a
+		// session login rather than an API credential. A token from an account
+		// with the apiKey capability is the one shape it documents for this.
+		if t.AuthMode != db.AuthBearer {
+			return fmt.Errorf("Argo CD is read with an account token: choose bearer authentication")
+		}
+		if strings.TrimSpace(t.Credential) == "" {
+			return fmt.Errorf("Argo CD needs the account token — an account with the apiKey capability, " +
+				"bound to role:readonly")
+		}
+	}
 	return nil
+}
+
+// tunnelHeader is what an in-cluster call carries for the target itself. Only
+// Argo CD gets anything: its API server takes the session from the
+// `argocd.token` cookie, which passes the API server's Service proxy where an
+// Authorization header would be consumed by the cluster's own authentication.
+// Every other in-cluster source is reached without a credential, as before.
+func tunnelHeader(t Target) http.Header {
+	if t.Provider != db.ProviderArgoCD || t.AuthMode != db.AuthBearer || t.Credential == "" {
+		return nil
+	}
+	return http.Header{"Cookie": {(&http.Cookie{Name: "argocd.token", Value: t.Credential}).String()}}
 }
 
 // scheme answers http when nothing says otherwise: an in-cluster metrics backend
