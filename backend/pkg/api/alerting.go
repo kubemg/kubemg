@@ -656,7 +656,7 @@ func (s *server) prometheusRuleSelectors(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "reading the cluster's Prometheus needs a connected agent"})
 		return
 	}
-	status, body, err := tunnel(c.Request.Context(), http.MethodGet, prometheusRuleGroup+"/prometheuses", nil)
+	status, body, err := tunnel(c.Request.Context(), http.MethodGet, prometheusRuleGroup+"/prometheuses", nil, nil)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return

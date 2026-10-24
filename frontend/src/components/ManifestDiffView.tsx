@@ -47,11 +47,17 @@ function renderValue(value: unknown): string {
 export function ManifestDiffView({
   diff,
   emptyLabel = 'No differences from the object on the cluster.',
+  beforeLabel = 'Before',
+  afterLabel = 'After',
 }: {
   diff: ManifestDiff
   /** Shown when the two objects compare equal — a real answer, not a loading
       state, so it is worth letting the caller phrase it for its own context. */
   emptyLabel?: string
+  /** Column headings, for a diff whose sides are not two moments in time —
+      GitOps compares live with desired. */
+  beforeLabel?: string
+  afterLabel?: string
 }) {
   if (diff.changes.length === 0) {
     return <p className="text-[13px] text-muted">{emptyLabel}</p>
@@ -64,8 +70,8 @@ export function ManifestDiffView({
           <thead>
             <tr className="border-b border-line-soft bg-raised text-left">
               <th className="px-3 py-2 font-medium text-muted">Field</th>
-              <th className="px-3 py-2 font-medium text-muted">Before</th>
-              <th className="px-3 py-2 font-medium text-muted">After</th>
+              <th className="px-3 py-2 font-medium text-muted">{beforeLabel}</th>
+              <th className="px-3 py-2 font-medium text-muted">{afterLabel}</th>
             </tr>
           </thead>
           <tbody>

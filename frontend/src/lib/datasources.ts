@@ -74,6 +74,13 @@ export const PROVIDERS: Record<DatasourceProvider, ProviderInfo> = {
     defaultPrefix: '',
     hint: 'The Service kube-prometheus-stack installs next to Prometheus — not the headless alertmanager-operated one.',
   },
+  argocd: {
+    label: 'Argo CD',
+    kind: 'gitops',
+    defaultPort: '443',
+    defaultPrefix: '',
+    hint: 'The argocd-server Service. Read with an account token — an account with the apiKey capability, bound to role:readonly.',
+  },
 }
 
 export const METRICS_PROVIDERS: DatasourceProvider[] = [
@@ -87,8 +94,11 @@ export const LOGS_PROVIDERS: DatasourceProvider[] = ['victorialogs', 'loki']
 
 export const ALERTS_PROVIDERS: DatasourceProvider[] = ['alertmanager']
 
+export const GITOPS_PROVIDERS: DatasourceProvider[] = ['argocd']
+
 export function providersFor(kind: DatasourceKind): DatasourceProvider[] {
   if (kind === 'alerts') return ALERTS_PROVIDERS
+  if (kind === 'gitops') return GITOPS_PROVIDERS
   return kind === 'metrics' ? METRICS_PROVIDERS : LOGS_PROVIDERS
 }
 
@@ -96,6 +106,7 @@ export const KIND_LABEL: Record<DatasourceKind, string> = {
   metrics: 'Metrics',
   logs: 'Logs',
   alerts: 'Alerts',
+  gitops: 'GitOps',
 }
 
 /** What each kind is *for*, said once rather than in every panel. */
@@ -105,9 +116,22 @@ export const KIND_PURPOSE: Record<DatasourceKind, string> = {
   logs: 'Searchable logs across pods. Without it a log is only readable while the pod that wrote it is still alive.',
   alerts:
     'What is firing and what is silenced, on every object. It is also what alarms need: an alarm is a PrometheusRule carrying the labels the cluster\'s Prometheus loads rules by.',
+  gitops:
+    'What an object Argo CD tracks should look like, field by field, next to what it is. Sync state shows without it; the comparison needs it.',
 }
 
-export const DATASOURCE_KINDS: DatasourceKind[] = ['metrics', 'logs', 'alerts']
+export const DATASOURCE_KINDS: DatasourceKind[] = ['metrics', 'logs', 'alerts', 'gitops']
+
+/** Whether a kind is read with a credential and nothing else: Argo CD answers
+    nothing useful anonymously and takes no basic login as an API credential. */
+export function bearerOnly(kind: DatasourceKind): boolean {
+  return kind === 'gitops'
+}
+
+/** Whether a kind carries a Grafana datasource uid. Only series backends do. */
+export function hasGrafanaRef(kind: DatasourceKind): boolean {
+  return kind === 'metrics' || kind === 'logs'
+}
 
 /** `k=v, k=v` as an operator types it, read into a label map. */
 export function parseRuleLabels(text: string): Record<string, string> {
