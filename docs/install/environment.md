@@ -119,7 +119,7 @@ also validated on the way in (1–3650 days) and on the way out.*
 
 | Variable | Default | What it is |
 |---|---|---|
-| `KUBEMG_METRICS_ADDR` | — | `host:port` for a separate internal listener that serves only `GET /metrics` for Prometheus scraping. Unset, the endpoint is not exposed at all. Bind to a loopback or private address (e.g. `127.0.0.1:9090`) — **never** to the same address as `KUBEMG_LISTEN_ADDR`, which is reachable from agent clusters. See [Prometheus metrics](metrics.md). |
+| `KUBEMG_METRICS_ADDR` | — | `host:port` for a separate internal listener that serves only `GET /metrics` for Prometheus scraping. Unset, the endpoint is not exposed at all. Bind to a loopback or private address (e.g. `127.0.0.1:9090`), or to `:9090` in a container — **never** to the port of `KUBEMG_LISTEN_ADDR`, which is reachable from agent clusters; the server refuses to start if the two share one. A non-loopback address logs a warning at boot, since the endpoint is plaintext and unauthenticated. See [Prometheus metrics](metrics.md#in-a-container). |
 
 ## Client addresses behind a proxy
 

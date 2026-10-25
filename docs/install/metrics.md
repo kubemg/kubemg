@@ -15,6 +15,66 @@ KubeMG starts a second listener on that address serving only `/metrics`. Bind it
 !!! warning "Do not use the public port"
     `KUBEMG_LISTEN_ADDR` is the port `KUBEMG_PUBLIC_URL` points at — the one agent clusters dial into from outside. `KUBEMG_METRICS_ADDR` must be a **different** address. The endpoint discloses the exact build version (CVE-targeting material), per-route traffic and error rates, and process details (goroutine count, heap size, open file descriptors).
 
+KubeMG enforces the first half of that at boot: a `KUBEMG_METRICS_ADDR` on the same port as `KUBEMG_LISTEN_ADDR`, on an interface the two share, stops the server before either listener opens, with a message naming both variables. `:8443` and `127.0.0.1:8443` count as sharing one, since `:8443` already listens on every interface.
+
+A metrics address that is not loopback starts normally, with one warning in the log that the endpoint is plaintext and unauthenticated. That is the expected shape in a container — see below — and the warning is a reminder to restrict it at the network layer, not a fault.
+
+## In a container
+
+`127.0.0.1` inside a container is that container alone, so a Prometheus running anywhere else cannot reach the example above. In a container, bind every interface on a port of its own and let the network decide who can connect.
+
+**Docker Compose.** Set the address on the `kubemg` service, for example in a `docker-compose.override.yml` beside the shipped file, and do **not** add the port to `ports:` — the scrape stays on the Compose network instead of being published on the host:
+
+```yaml
+services:
+  kubemg:
+    environment:
+      - KUBEMG_METRICS_ADDR=:9090
+```
+
+Run Prometheus as a service on the same Compose network and point it at the service name:
+
+```yaml
+scrape_configs:
+  - job_name: kubemg
+    static_configs:
+      - targets: ['kubemg:9090']
+```
+
+**Kubernetes.** With the Helm chart, `metrics.enabled=true` binds `:9090` (`metrics.port`) and puts it behind a `ClusterIP` Service of its own — never the Service agents and browsers reach, and never an Ingress, a `NodePort` or a `LoadBalancer`. `metrics.serviceMonitor.enabled=true` adds a ServiceMonitor for the Prometheus Operator; see [the chart's values](kubernetes.md).
+
+A `ClusterIP` is still reachable from every pod in the cluster, so admit only the scraper with a NetworkPolicy. Adjust the namespace and pod labels to your Prometheus:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kubemg-metrics
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kubemg
+      app.kubernetes.io/component: server
+  policyTypes: [Ingress]
+  ingress:
+    # The API port, from everywhere — agents, browsers and the ingress
+    # controller all arrive here.
+    - ports:
+        - port: 8443
+    # The metrics port, from the scraper only.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: 9090
+```
+
+A NetworkPolicy that selects the pod denies every port it does not list, which is why the API port is listed as well. Without a CNI that enforces NetworkPolicy the object has no effect.
+
 ## Metrics exposed
 
 | Metric | Type | Labels | Notes |
