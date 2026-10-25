@@ -11,10 +11,12 @@ import {
   healthTone,
   perObjectNote,
   sourceLine,
+  syncElsewhereNote,
   syncTone,
 } from '../lib/gitops'
 import { clusterPageHref } from '../lib/navigation'
 import { queryKey, useCachedQuery } from '../lib/query'
+import { ArgoConsoleLink } from './ArgoConsoleLink'
 import { GitopsDiffSheet } from './GitopsDiffSheet'
 import { Age, Button, Notice, Panel, Pill } from './primitives'
 
@@ -55,6 +57,7 @@ export function GitopsObjectPanel({
   const [diffOpen, setDiffOpen] = useState(false)
   const outOfSync = entry?.sync === 'out_of_sync'
   const offer = outOfSync ? view?.diff : undefined
+  const elsewhere = record ? syncElsewhereNote(record) : null
 
   return (
     <Panel
@@ -118,21 +121,26 @@ export function GitopsObjectPanel({
           </dl>
 
           <p className="text-[12.5px] text-muted">{autoHealSentence(record)}</p>
+          {elsewhere ? <p className="text-[12.5px] text-muted">{elsewhere}</p> : null}
           {note ? (
             <p className="text-[12.5px] text-muted">{note}</p>
           ) : !entry && view?.reason ? (
             <p className="text-[12.5px] text-muted">{view.reason}</p>
           ) : null}
           {record.message ? <Notice tone="warn">{record.message}</Notice> : null}
-          {offer?.available ? (
-            <div>
-              <Button size="sm" onClick={() => setDiffOpen(true)}>
-                <GitCompareArrows aria-hidden="true" className="size-3.5" />
-                Show diff
-              </Button>
-            </div>
-          ) : offer?.reason ? (
+          {offer?.reason && !offer.available ? (
             <p className="text-[12.5px] text-muted">{offer.reason}</p>
+          ) : null}
+          {offer?.available || record.console_url ? (
+            <div className="flex flex-wrap items-center gap-3">
+              {offer?.available ? (
+                <Button size="sm" onClick={() => setDiffOpen(true)}>
+                  <GitCompareArrows aria-hidden="true" className="size-3.5" />
+                  Show diff
+                </Button>
+              ) : null}
+              <ArgoConsoleLink href={record.console_url} />
+            </div>
           ) : null}
         </>
       )}
@@ -142,6 +150,7 @@ export function GitopsObjectPanel({
           kind={kind}
           name={name}
           namespace={namespace}
+          consoleURL={record?.console_url}
           onClose={() => setDiffOpen(false)}
         />
       ) : null}

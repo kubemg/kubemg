@@ -265,7 +265,8 @@ down the tunnel, not a request to kubemg: one console page is up to fifty.
 ## Leases
 
 Several background jobs must run on exactly one replica: the alarm watcher, the
-Helm index sync, the browser shell reaper. Each takes a conditional-upsert lease
+GitOps drift watcher, the Helm index sync, the browser shell reaper, the password
+notices. Each takes a conditional-upsert lease
 in the database rather than a Postgres advisory lock, so the holder survives a
 connection blip. **A store error while taking the lease means do not run**, not
 run anyway.

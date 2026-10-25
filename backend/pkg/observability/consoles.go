@@ -152,20 +152,22 @@ func GrafanaExplore(base, datasourceUID, provider, expr string, from, to time.Ti
 
 /* ------------------------------------------------------------------ Argo CD --- */
 
-// ArgoApplication builds a link to one Argo CD application. Argo's application
-// view is a path — `/applications/{name}`, which redirects to the namespaced
-// form — so this is stable in a way a query string is not.
+// ArgoApplication builds a link to one Argo CD application, in Argo's
+// namespaced form `/applications/{namespace}/{name}`. The bare
+// `/applications/{name}` resolves only in the controller's own namespace, so
+// under apps-in-any-namespace it opens the wrong Application or none.
 //
-// The name is escaped rather than validated against a pattern: it comes off a
-// Kubernetes label written by Argo itself, so what matters is that it cannot
+// Both segments are escaped rather than validated against a pattern: they come
+// off the Application's own metadata, and what matters is that neither can
 // leave the path segment it was put in.
-func ArgoApplication(base, name string) string {
+func ArgoApplication(base, namespace, name string) string {
 	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	namespace = strings.TrimSpace(namespace)
 	name = strings.TrimSpace(name)
-	if base == "" || name == "" {
+	if base == "" || namespace == "" || name == "" {
 		return ""
 	}
-	return base + "/applications/" + url.PathEscape(name)
+	return base + "/applications/" + url.PathEscape(namespace) + "/" + url.PathEscape(name)
 }
 
 /* --------------------------------------------------- the datasource's own UI --- */

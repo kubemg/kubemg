@@ -68,6 +68,12 @@ const (
 	// no cluster, but every replica sending the same reminder to the same person
 	// is the duplication a lease exists to prevent.
 	LeasePasswordNotices = "password_notices"
+
+	// LeaseGitOpsWatcher covers polling the GitOps controllers' records for
+	// drift alarms. It is the alarm watcher's shape exactly: a fleet-wide read
+	// per interval, which every replica running would multiply on the clusters,
+	// and every replica alarming would multiply on the pager.
+	LeaseGitOpsWatcher = "gitops_watcher"
 )
 
 // Lease is one held claim on a background job.

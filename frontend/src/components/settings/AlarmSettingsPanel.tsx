@@ -23,7 +23,9 @@ import type {
   AlarmTrigger,
   Cluster,
 } from '../../api/types'
+import type { GitopsTool } from '../../api/gitops'
 import { headersHint, headersPayload } from '../../lib/alarmHeaders'
+import { TOOL_LABEL } from '../../lib/gitops'
 import type { Tone } from '../../lib/status'
 import {
   Age,
@@ -423,6 +425,12 @@ function describeRule(rule: AlarmRule, clusters: Cluster[]): string {
     return `${type} (${reasons}) on ${scope}`
   }
 
+  if (rule.trigger === 'gitops_drift') {
+    const tools = rule.gitops_tools || 'any tool'
+    const apps = rule.gitops_apps ? ` in ${rule.gitops_apps}` : ''
+    return `drift recorded by ${tools}${apps} on ${scope}`
+  }
+
   const verbs = rule.verbs || 'any action'
   const outcome = rule.denied_only ? 'refused' : 'audited'
   const status = rule.min_status ? ` at or above HTTP ${rule.min_status}` : ''
@@ -700,6 +708,8 @@ function RuleSheet({
   const [verbs, setVerbs] = useState<string[]>(splitList(rule?.verbs))
   const [deniedOnly, setDeniedOnly] = useState(rule?.denied_only ?? true)
   const [minStatus, setMinStatus] = useState(rule?.min_status ? String(rule.min_status) : '')
+  const [gitopsTools, setGitopsTools] = useState<string[]>(splitList(rule?.gitops_tools))
+  const [gitopsApps, setGitopsApps] = useState(rule?.gitops_apps ?? '')
   const [severity, setSeverity] = useState<AlarmSeverity>(rule?.severity ?? 'warning')
   const [cooloff, setCooloff] = useState(rule?.cooloff_seconds ? String(rule.cooloff_seconds) : '')
 
@@ -723,6 +733,8 @@ function RuleSheet({
         verbs: trigger === 'audit' ? verbs : [],
         denied_only: trigger === 'audit' ? deniedOnly : false,
         min_status: trigger === 'audit' && minStatus ? Number(minStatus) : 0,
+        gitops_tools: trigger === 'gitops_drift' ? gitopsTools : [],
+        gitops_apps: trigger === 'gitops_drift' ? splitList(gitopsApps) : [],
         severity,
         cooloff_seconds: cooloff ? Number(cooloff) : 0,
       }
@@ -744,6 +756,12 @@ function RuleSheet({
       current.includes(reason)
         ? current.filter((entry) => entry !== reason)
         : [...current, reason],
+    )
+  }
+
+  function toggleTool(tool: string) {
+    setGitopsTools((current) =>
+      current.includes(tool) ? current.filter((entry) => entry !== tool) : [...current, tool],
     )
   }
 
@@ -817,7 +835,11 @@ function RuleSheet({
               ? vocabulary.cluster_events_available
                 ? 'Kubernetes Events read down the agent tunnel, once a minute per cluster a rule covers.'
                 : 'This server has no proxy, so there is no tunnel to read cluster events down. A rule here would never fire.'
-              : 'kubemg’s own audit records — including the refusals no cluster ever sees.'
+              : trigger === 'gitops_drift'
+                ? vocabulary.cluster_events_available
+                  ? 'The sync state Argo CD and Flux record, read once a minute per cluster a rule covers. Fires when something goes out of sync, never for drift already there.'
+                  : 'This server has no proxy, so there is no tunnel to read GitOps records down. A rule here would never fire.'
+                : 'kubemg’s own audit records — including the refusals no cluster ever sees.'
           }
         >
           <Select
@@ -827,6 +849,7 @@ function RuleSheet({
           >
             <option value="cluster_event">Cluster events</option>
             <option value="audit">kubemg audit records</option>
+            <option value="gitops_drift">GitOps drift</option>
           </Select>
         </Field>
 
@@ -896,6 +919,42 @@ function RuleSheet({
                 would fire on everything the cluster says, and is refused.
               </p>
             </div>
+          </>
+        ) : trigger === 'gitops_drift' ? (
+          <>
+            <div className="flex flex-col gap-2">
+              <p className="label">Tools</p>
+              <div className="flex flex-wrap gap-2">
+                {(vocabulary.gitops_tools ?? GITOPS_TOOLS).map((tool) => (
+                  <Chip key={tool} active={gitopsTools.includes(tool)} onClick={() => toggleTool(tool)}>
+                    {TOOL_LABEL[tool as GitopsTool] ?? tool}
+                  </Chip>
+                ))}
+              </div>
+              <p className="text-[12px] leading-snug text-muted">
+                None selected means any tool. Argo CD fires per object going from Synced to
+                OutOfSync; Flux fires when a Kustomization or HelmRelease stops being ready.
+              </p>
+            </div>
+
+            <Field
+              label="Applications"
+              htmlFor="rule_gitops_apps"
+              hint="Comma-separated Application, Kustomization or HelmRelease names. Empty means any."
+            >
+              <TextInput
+                id="rule_gitops_apps"
+                className="font-data text-[12.5px]"
+                value={gitopsApps}
+                onChange={(event) => setGitopsApps(event.target.value)}
+                placeholder="payments,checkout"
+              />
+            </Field>
+
+            <p className="text-[12px] leading-snug text-muted">
+              The alarm names the last write to the object that went through kubemg. A change made
+              outside kubemg leaves no record here, and the alarm says so.
+            </p>
           </>
         ) : (
           <>
@@ -997,6 +1056,9 @@ function RuleSheet({
     </Sheet>
   )
 }
+
+/** The tools a drift rule can name, when the server does not list them. */
+const GITOPS_TOOLS: GitopsTool[] = ['argocd', 'flux-kustomization', 'flux-helmrelease']
 
 /** The verbs an audit rule can match, matching what the server accepts. */
 const AUDIT_VERBS = [

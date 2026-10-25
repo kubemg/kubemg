@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/observability"
@@ -298,5 +299,41 @@ func TestGitopsDiffOffer(t *testing.T) {
 	}
 	if offer := gitopsDiffOfferFor(func() (*db.ObservabilitySource, error) { return argoDatasource(), nil }); !offer.Available {
 		t.Fatalf("expected an enabled source offered, got %+v", offer)
+	}
+}
+
+func TestGitopsDiffAttributionRunsOnlyOnceArgoAnswered(t *testing.T) {
+	probe := &diffProbe{}
+	live := trackedLive(t)
+	state := observability.ArgoState{
+		NormalizedLive: `{"kind":"Deployment","spec":{"replicas":3}}`,
+		PredictedLive:  `{"kind":"Deployment","spec":{"replicas":1}}`,
+		Modified:       true,
+	}
+	asked := 0
+	attribute := func(*time.Time) *gitopsAttribution {
+		asked++
+		return &gitopsAttribution{Note: attributionOutside}
+	}
+
+	refused := probe.steps(func() ([]byte, bool) { return live, true }, argoCluster(), argoDatasource(),
+		observability.ArgoState{}, &observability.ArgoError{Status: 403, Message: "no"})
+	refused.attribute = attribute
+	if _, _, err := refused.run("deployments", adminGrant); err != nil {
+		t.Fatal(err)
+	}
+	if asked != 0 {
+		t.Fatal("an Argo CD refusal must not read the trail")
+	}
+
+	steps := probe.steps(func() ([]byte, bool) { return live, true }, argoCluster(), argoDatasource(), state, nil)
+	steps.attribute = attribute
+	_, body, err := steps.run("deployments", adminGrant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := body.(gitopsDiffView)
+	if asked != 1 || view.Attribution == nil || view.Attribution.Note != attributionOutside {
+		t.Fatalf("expected the attribution on the diff, got %+v", view.Attribution)
 	}
 }

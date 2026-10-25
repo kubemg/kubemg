@@ -87,6 +87,18 @@ export function autoHealSentence(record: GitopsRecord): string {
   }
 }
 
+/**
+ * Where to act on a record. kubemg reads sync state and never writes to the
+ * controller, so Sync and Refresh are in Argo CD's own console — linked when
+ * the cluster has one registered.
+ */
+export function syncElsewhereNote(record: GitopsRecord): string | null {
+  if (record.tool !== 'argocd') return null
+  return record.console_url
+    ? 'kubemg does not sync. Sync and Refresh are in Argo CD, signed in as yourself.'
+    : 'kubemg does not sync. Sync and Refresh are in Argo CD’s own console; an administrator can link it under the cluster’s consoles.'
+}
+
 /** Why an entry's own state reads `unknown`, where the tool explains it. */
 export function perObjectNote(tool: GitopsTool): string | null {
   switch (tool) {

@@ -34,6 +34,25 @@ describe('RecordsTable', () => {
     expect(rows[1].lastElementChild?.textContent).toBe('—')
   })
 
+  it('links an Argo CD row to its console page and leaves Flux without one', () => {
+    const linked = { ...drifted, console_url: 'https://argo.example.com/applications/argocd/shop' }
+    const opened: string[] = []
+    render(<RecordsTable records={[linked, flux]} onOpen={(record) => opened.push(record.name)} />)
+
+    const link = screen.getByRole('link', { name: 'Open shop in Argo CD' })
+    expect(link.getAttribute('href')).toBe('https://argo.example.com/applications/argocd/shop')
+    // Following the link does not also open the record's sheet.
+    fireEvent.click(link)
+    expect(opened).toEqual([])
+    expect(screen.queryByRole('link', { name: 'Open apps in Argo CD' })).toBeNull()
+  })
+
+  it('draws no console column when no record carries a link', () => {
+    render(<RecordsTable records={[drifted, flux]} onOpen={() => {}} />)
+    expect(screen.queryByRole('columnheader', { name: 'Argo CD' })).toBeNull()
+    expect(screen.queryByRole('link')).toBeNull()
+  })
+
   it('says so when nothing is visible, rather than drawing an empty table', () => {
     render(<RecordsTable records={[]} onOpen={() => {}} />)
     expect(screen.getByText(/No record manages anything/)).toBeTruthy()

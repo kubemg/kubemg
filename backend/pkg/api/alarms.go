@@ -408,6 +408,9 @@ type alarmRuleRequest struct {
 	DeniedOnly bool     `json:"denied_only"`
 	MinStatus  int      `json:"min_status"`
 
+	GitOpsTools []string `json:"gitops_tools"`
+	GitOpsApps  []string `json:"gitops_apps"`
+
 	Severity       string `json:"severity"`
 	CooloffSeconds int    `json:"cooloff_seconds"`
 }
@@ -436,6 +439,7 @@ func (s *server) listAlarmRules(c *gin.Context) {
 		// server. Without a proxy there are no tunnels to read events down, and a
 		// rule that can never fire should say so rather than look configured.
 		"cluster_events_available": s.proxy != nil && s.alarms != nil,
+		"gitops_tools":             gitopsToolNames(),
 		"dispatcher_running":       s.alarms != nil,
 	})
 }
@@ -619,6 +623,28 @@ func (s *server) ruleFrom(c *gin.Context, req alarmRuleRequest) (*db.AlarmRule, 
 		return nil, false
 	}
 
+	tools := joinList(req.GitOpsTools)
+	for _, tool := range splitTrimmed(tools) {
+		if !slices.Contains(gitopsToolNames(), tool) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": tool + " is not a GitOps tool; use one of " + strings.Join(gitopsToolNames(), ", "),
+			})
+			return nil, false
+		}
+	}
+	apps := joinList(req.GitOpsApps)
+	for _, app := range splitTrimmed(apps) {
+		if !alarmObjectName.MatchString(app) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": app + " is not a valid application name"})
+			return nil, false
+		}
+	}
+	// The drift matchers mean nothing on another trigger, and a stored value
+	// there would read as a narrowing that does nothing.
+	if trigger != db.TriggerGitOpsDrift {
+		tools, apps = "", ""
+	}
+
 	enabled := true
 	if req.Enabled != nil {
 		enabled = *req.Enabled
@@ -637,6 +663,8 @@ func (s *server) ruleFrom(c *gin.Context, req alarmRuleRequest) (*db.AlarmRule, 
 		Verbs:          verbs,
 		DeniedOnly:     req.DeniedOnly,
 		MinStatus:      req.MinStatus,
+		GitOpsTools:    tools,
+		GitOpsApps:     apps,
 		Severity:       severity,
 		CooloffSeconds: req.CooloffSeconds,
 	}, true

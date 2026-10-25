@@ -54,6 +54,26 @@ What is refused, and in what order:
 
 Flux keeps no desired state KubeMG can read, so Flux objects have no diff.
 
+### Last change through KubeMG
+
+The diff also names the **last write to the object that went through KubeMG** since Argo CD last finished a sync: who made it, which verb (`create`, `update`, `patch` or `delete`) and when. Refused writes do not count. If the Application records no finished sync, the whole retained audit trail is searched.
+
+This follows the audit trail's own rule. An administrator sees anyone's write; anyone else sees only their own, and is told that writes by others are shown to an administrator only.
+
+KubeMG can only name writes it carried. A `kubectl` with another credential, a controller, an admission webhook or Argo CD itself writes without passing through KubeMG. When nothing is found, the sheet says that a change made outside KubeMG leaves no record here — it never says that nobody changed the object.
+
+## Opening it in Argo CD
+
+KubeMG's view is read-only and narrowed to your grant. Sync, Refresh and the full resource tree are in Argo CD's own console, so every Argo CD record links to **its own page there**: each row on the GitOps page, the record's sheet, the drawer's GitOps panel and the diff. The page header links to the console itself.
+
+The links need the cluster's [Argo CD console](managing.md#linking-other-consoles). They are built from that address, never from the Argo CD datasource's: the datasource is the address KubeMG dials, often an in-cluster Service a browser cannot open. Without a console link the links are absent, not disabled.
+
+A link opens `/applications/<namespace>/<name>` in a new tab, so an Application outside Argo CD's own namespace opens correctly. You sign in to Argo CD as yourself, and Argo CD's own RBAC decides what you see there. A record hidden from you here never produces a link. Flux has no console, so Flux records have none.
+
+## Alarms on drift
+
+An alarm rule with the trigger **GitOps drift** fires when something goes out of sync. See [Alarms](../audit/alarms.md#gitops-drift).
+
 ## Who sees what
 
 Applications usually live in Argo CD's namespace and Kustomizations in `flux-system`, and a namespace-scoped grant covers neither. So KubeMG reads the records itself and narrows them to your grant before showing them:
@@ -72,7 +92,6 @@ These reads appear in the audit trail as `kubemg:gitops-reader`. They use the sa
 - An agent-mode cluster. A direct-mode cluster is refused, like every live read.
 - Argo CD (any version with `argoproj.io/v1alpha1` Applications) or Flux v2 (`kustomize.toolkit.fluxcd.io/v1` or `v1beta2`; `helm.toolkit.fluxcd.io/v2`, `v2beta2` or `v2beta1`) installed in the cluster.
 
-## Not yet
+## Not offered
 
-- **An alarm when something goes out of sync** is planned.
-- KubeMG does not offer Sync or Refresh buttons. Use the Argo CD console, which a cluster can link to from [other consoles](managing.md#linking-other-consoles).
+- KubeMG does not offer Sync or Refresh buttons. They would be writes into Argo CD's API outside the tunnel, which the cluster's audit never sees. Use the [link into Argo CD](#opening-it-in-argo-cd).

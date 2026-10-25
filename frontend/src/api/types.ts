@@ -2495,7 +2495,7 @@ export type AlarmChannelKind =
 
 export type AlarmAuthMode = 'none' | 'bearer' | 'basic' | 'key'
 
-export type AlarmTrigger = 'cluster_event' | 'audit'
+export type AlarmTrigger = 'cluster_event' | 'audit' | 'gitops_drift'
 
 export type AlarmSeverity = 'info' | 'warning' | 'critical'
 
@@ -2559,6 +2559,9 @@ export interface AlarmRule {
   verbs?: string
   denied_only: boolean
   min_status?: number
+  /** gitops_drift only: tools and application names, comma-separated. */
+  gitops_tools?: string
+  gitops_apps?: string
   severity: AlarmSeverity
   cooloff_seconds?: number
   last_fired_at?: string
@@ -2580,6 +2583,8 @@ export interface AlarmRuleInput {
   verbs?: string[]
   denied_only?: boolean
   min_status?: number
+  gitops_tools?: string[]
+  gitops_apps?: string[]
   severity: AlarmSeverity
   cooloff_seconds?: number
 }
@@ -2591,6 +2596,8 @@ export interface AlarmRuleList {
   suggested_reasons: string[]
   /** False when this server has no proxy, so no tunnel to read events down. */
   cluster_events_available: boolean
+  /** The tools a gitops_drift rule may name. */
+  gitops_tools?: string[]
   /** False when no dispatcher is running: rules would never fire, and the panel
       says so rather than looking configured. */
   dispatcher_running: boolean

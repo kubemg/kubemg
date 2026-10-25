@@ -6,10 +6,12 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"sigs.k8s.io/yaml"
 
+	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/objdiff"
 	"github.com/kubemg/kubemg/backend/pkg/observability"
@@ -60,6 +62,9 @@ type gitopsDiffView struct {
 	Desired          string          `json:"desired"`
 	LiveTruncated    bool            `json:"live_truncated"`
 	DesiredTruncated bool            `json:"desired_truncated"`
+	// Attribution is the last write to the object that went through KubeMG,
+	// read under the audit trail's own rule.
+	Attribution *gitopsAttribution `json:"attribution,omitempty"`
 }
 
 // gitopsDiffOffer tells the per-object panel whether a diff can be asked for,
@@ -90,6 +95,9 @@ type gitopsDiffSteps struct {
 	service trafficReader
 	source  func() (*db.ObservabilitySource, error)
 	argo    func(db.ObservabilitySource, observability.ArgoObject) (observability.ArgoState, error)
+	// attribute names the last write through KubeMG since a sync. It runs only
+	// once Argo CD has answered, so a refusal earlier says nothing about the trail.
+	attribute func(since *time.Time) *gitopsAttribution
 }
 
 // run walks the steps. A zero status means readLive already answered.
@@ -142,7 +150,11 @@ func (steps gitopsDiffSteps) run(kindKey string, grant db.UserClusterAccess) (in
 	if err != nil {
 		return http.StatusOK, gitopsDiffView{Application: app, Reason: argoReason(err)}, nil
 	}
-	return http.StatusOK, renderGitopsDiff(app, state), nil
+	rendered := renderGitopsDiff(app, state)
+	if rendered.Available && steps.attribute != nil {
+		rendered.Attribution = steps.attribute(view.Record.lastSyncAt)
+	}
+	return http.StatusOK, rendered, nil
 }
 
 // gitopsDiffOfferFor answers whether a source exists to ask. It does not dial
@@ -259,11 +271,18 @@ func (s *server) showGitopsDiff(c *gin.Context) {
 		readLive: func() ([]byte, bool) {
 			return s.readObject(c, user, cluster, grant, kind, namespace, name)
 		},
-		service: gitopsServiceReader{s: s, c: c, cluster: cluster},
+		service: gitopsServiceReader{s: s, ctx: c.Request.Context(), cluster: cluster},
 		source:  s.gitopsSourceLookup(ctx, cluster),
 		argo: func(source db.ObservabilitySource, object observability.ArgoObject) (observability.ArgoState, error) {
 			return observability.ArgoManagedResource(ctx, observability.TargetOf(source),
 				s.gitopsTunnel(cluster), object)
+		},
+		attribute: func(since *time.Time) *gitopsAttribution {
+			resource := ""
+			if paths := kind.objectPaths(namespace, name); len(paths) > 0 {
+				resource = bastion.ParsePath(paths[0]).Resource
+			}
+			return attributeFor(ctx, s.store, user, cluster.ID, namespace, resource, name, since)
 		},
 	}
 	status, body, err := steps.run(strings.TrimSpace(c.Query("kind")), grant)
