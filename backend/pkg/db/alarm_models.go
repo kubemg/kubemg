@@ -80,10 +80,14 @@ const (
 	// action becomes a page. This is the half no cluster-side alerting can see:
 	// the request never reached the API server, so the cluster has no event for it.
 	TriggerAudit = "audit"
+	// TriggerGitOpsDrift matches an object going out of sync with what Argo CD
+	// or Flux declares, read from the controller's own records. It fires on the
+	// transition, never on a state that was already there when it was switched on.
+	TriggerGitOpsDrift = "gitops_drift"
 )
 
 // AlarmTriggers enumerates the supported rule sources.
-var AlarmTriggers = []string{TriggerClusterEvent, TriggerAudit}
+var AlarmTriggers = []string{TriggerClusterEvent, TriggerAudit, TriggerGitOpsDrift}
 
 // Alarm severities, ordered least to most urgent. They are KubeMG's own word for
 // it and each channel renders them into its vendor's vocabulary.
@@ -105,7 +109,15 @@ type AlarmChannel struct {
 	// URL is the endpoint. It is dialled from the bastion rather than from inside
 	// a cluster, so it has to be reachable from here — which is usually the point:
 	// a central Alertmanager or a hosted ITSM is exactly what a fleet has one of.
-	URL string `gorm:"type:text;not null" json:"url"`
+	//
+	// It is a credential, sealed at rest and never serialized: a Slack or Teams
+	// incoming webhook has no token of its own because the path *is* the token,
+	// and a query string is where an Azure function or a Power Automate flow puts
+	// its signature. Which URLs carry one is a guess, the same guess the headers
+	// refuse to make, so every URL is treated as if it did. The API reads back
+	// the scheme and host alone (observability.MaskChannelURL); an edit that
+	// omits it keeps what is stored.
+	URL string `gorm:"type:text;not null;serializer:secret" json:"-"`
 
 	AuthMode string `gorm:"size:16;not null;default:'none'" json:"auth_mode"`
 	// Username pairs with Secret for basic auth. It is not a credential on its
@@ -213,6 +225,15 @@ type AlarmRule struct {
 	DeniedOnly bool `gorm:"not null;default:false" json:"denied_only"`
 	// MinStatus keeps records at or above an HTTP status. Zero means any.
 	MinStatus int `json:"min_status,omitempty"`
+
+	// GitOps drift matching.
+	//
+	// GitOpsTools is a comma-separated list of `argocd`, `flux-kustomization`,
+	// `flux-helmrelease`. Empty means any tool.
+	GitOpsTools string `gorm:"column:gitops_tools;type:text" json:"gitops_tools,omitempty"`
+	// GitOpsApps is a comma-separated list of Application, Kustomization or
+	// HelmRelease names. Empty means any.
+	GitOpsApps string `gorm:"column:gitops_apps;type:text" json:"gitops_apps,omitempty"`
 
 	// Severity is what the delivered alarm claims about itself.
 	Severity string `gorm:"size:16;not null;default:'warning'" json:"severity"`

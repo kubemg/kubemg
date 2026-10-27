@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { AuditEvent, Cluster } from '../api/types'
-import { activityLine, activityRefused, fleetLinkCounts } from './fleet'
+import { activityLine, activityRefused, fleetLinkCounts, nameBesidePath } from './fleet'
 
 function cluster(over: Partial<Cluster> = {}): Cluster {
   return {
@@ -61,6 +61,17 @@ describe('activityLine', () => {
     )
   })
 
+  it('names the object itself when the record carries its name', () => {
+    expect(
+      activityLine(
+        event({ verb: 'create', namespace: 'payments', resource: 'deployments', name: 'api' }),
+      ),
+    ).toBe('create · payments/deployments/api · prod-eu-1')
+    expect(activityLine(event({ verb: 'delete', resource: 'nodes', name: 'worker-1' }))).toBe(
+      'delete · nodes/worker-1 · prod-eu-1',
+    )
+  })
+
   it('falls back to the path when the record names no resource', () => {
     expect(activityLine(event({ verb: 'list' }))).toBe(
       'list · /api/v1/namespaces/payments/pods · prod-eu-1',
@@ -71,6 +82,53 @@ describe('activityLine', () => {
     expect(activityLine(event({ verb: 'replay', resource: 'recording', cluster: '' }))).toBe(
       'replay · recording',
     )
+  })
+})
+
+describe('nameBesidePath', () => {
+  it("gives a create's name, which its collection path cannot show", () => {
+    expect(
+      nameBesidePath(
+        event({
+          verb: 'create',
+          path: '/apis/apps/v1/namespaces/payments/deployments?fieldManager=kubectl',
+          namespace: 'payments',
+          resource: 'deployments',
+          name: 'api',
+        }),
+      ),
+    ).toBe('api')
+  })
+
+  it('stays out of the way when the path already names the object', () => {
+    expect(
+      nameBesidePath(
+        event({ path: '/api/v1/namespaces/payments/pods/web-0', resource: 'pods', name: 'web-0' }),
+      ),
+    ).toBeUndefined()
+    expect(
+      nameBesidePath(
+        event({ path: '/api/v1/namespaces/payments/pods/web-0/log', resource: 'pods', name: 'web-0' }),
+      ),
+    ).toBeUndefined()
+  })
+
+  it('is not fooled by a namespace that shares the name', () => {
+    expect(
+      nameBesidePath(
+        event({
+          verb: 'create',
+          path: '/apis/apps/v1/namespaces/web/deployments',
+          namespace: 'web',
+          resource: 'deployments',
+          name: 'web',
+        }),
+      ),
+    ).toBe('web')
+  })
+
+  it('has nothing to add to a record without a name', () => {
+    expect(nameBesidePath(event({ verb: 'list', resource: 'pods' }))).toBeUndefined()
   })
 })
 

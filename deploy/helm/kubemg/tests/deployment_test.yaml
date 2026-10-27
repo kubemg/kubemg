@@ -324,6 +324,24 @@ tests:
           content:
             name: JWT_SECRET
 
+  - it: passes the previous key only for a rotation
+    set:
+      secrets.secretKey: new-key
+      secrets.secretKeyPrevious: old-key
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_SECRET_KEY_PREVIOUS
+            valueFrom:
+              secretKeyRef:
+                name: kubemg
+                key: KUBEMG_SECRET_KEY_PREVIOUS
+      # Adding or removing it restarts the pod: the rotation runs at boot.
+      - equal:
+          path: spec.template.metadata.annotations["kubemg.io/secret-keys"]
+          value: DB_PASSWORD,KUBEMG_SECRET_KEY,KUBEMG_SECRET_KEY_PREVIOUS
+
   - it: reads the database password from an existing Secret
     set:
       database.password: ""

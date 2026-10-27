@@ -183,6 +183,37 @@ Every proxied call is recorded, refusals included, and a streaming call is
 recorded twice — once when it opens and once when it closes. Persistence is
 asynchronous and **drops on a full queue rather than blocking the proxy**.
 
+A refusal the API layer makes **before** the tunnel — a namespace outside the
+grant, `requireClusterScope`, a kind kubemg will not create, a manifest
+addressed at another namespace, a scoped caller asking the query path for a
+cluster-wide chart — is recorded by one middleware, `auditRefusals`
+(`pkg/api/audit_refusals.go`), not at the forty call sites that answer it. It
+sits on `/clusters/:id/resources` (and the `/:id/resources/...` routes
+registered outside that group), `/:id/metrics`, `/:id/shell`, `/:id/proxy`,
+and the observability query, alert and silence routes. It writes a row for a
+4xx answer, with `refused_by: "kubemg"`, the message the caller was given as
+the error, and the verb the tunnel call would have carried (`scale` is an
+`update`). Never a 401 (no identity), never a 5xx.
+
+"Already in the trail" is decided per status. The request carries a
+`bastion.Attempt` on its context, and every record written through the proxy's
+or the API's auditor (both wrapped by `bastion.NoteAttempts`) notes its status
+on it. The middleware stays quiet only when the status it is answering with was
+already recorded under the request — the cluster's own 403 carried back through
+`Proxy.Call`, the proxy's namespace check, a guardrail — so one refusal is never
+two rows. *Any* earlier refusal is deliberately not enough: Helm discovery
+404ing an absent group, then the pre-flight refusing with 403, would otherwise
+hide KubeMG's refusal behind an unrelated one. A same-status collision loses the
+second reason, never the fact of a refusal. The proxy marks its
+own refusals (namespace, guardrail, SPDY, oversized body) `refused_by: "kubemg"`
+too; an empty `refused_by` on a refused row means the cluster or the tunnel
+answered.
+
+Left out on purpose: kubeconfig issuance and the cluster's KubeMG-side
+configuration (consoles, cost rates, CRD visibility, datasource settings) —
+those reach neither a cluster nor its data, and the acts that matter there have
+verbs of their own.
+
 Selective audit (`pkg/auditpolicy`) publishes an immutable snapshot the gateway
 reads without a lock. Three things no selection suppresses: a refusal or error,
 any streaming call, and kubemg's own replay and recording routes. An empty
@@ -202,10 +233,40 @@ an entry is **never served to another identity**, only a `200` is stored, and an
 non-GET invalidates the whole cluster scope. A negative TTL turns caching off
 entirely.
 
+The cache is not a limiter and must not be read as one: a path that varies at
+all bypasses it, and a write loop does not merely evade it but empties it for
+everyone on that cluster.
+
+## Pacing
+
+`pkg/bastion/ratelimit.go` is a token bucket per **(identity, cluster)** — the
+resource it protects is a cluster's API server, not this process. Saved
+accounts are keyed by id; an unsaved `kubemg:` service identity by name, so the
+alarm and event watchers never share an operator's budget. `Handle`, `Call`,
+`Watch`, `ServeShell` and `ExecOnce` each spend one token, after the grant and
+guardrail checks (which cost the cluster nothing) and before the tunnel lookup
+(so a refusal does not depend on an agent being attached). The unit is a call
+down the tunnel, not a request to kubemg: one console page is up to fifty.
+
+- **Wait, then refuse.** A call over budget is held up to `maxThrottleWait`
+  (2s); only a queue deeper than that is refused, `429` + `Retry-After`, a
+  `refused_by: kubemg` row. On the kubectl path the body is a Kubernetes
+  `Status` (`reason: TooManyRequests`, `details.retryAfterSeconds`), which
+  client-go honours by retrying. A refused or abandoned reservation gives its
+  token back.
+- **Streams are never touched** once open — only the handshake spends.
+- **On by default, never off.** `proxy_rate_limit_per_second`/`_burst`
+  (defaults 50/300, kubectl's own client-side numbers) are runtime settings with
+  no environment variable; `0` is the default. Published by `publishRateLimit` on
+  save and on the audit policy's 30s timer; a failed settings read keeps the
+  budget in force rather than resetting it.
+- `kubemg_proxy_throttled_total{outcome=delayed|refused}`.
+
 ## Leases
 
 Several background jobs must run on exactly one replica: the alarm watcher, the
-Helm index sync, the browser shell reaper. Each takes a conditional-upsert lease
+GitOps drift watcher, the Helm index sync, the browser shell reaper, the password
+notices. Each takes a conditional-upsert lease
 in the database rather than a Postgres advisory lock, so the holder survives a
 connection blip. **A store error while taking the lease means do not run**, not
 run anyway.

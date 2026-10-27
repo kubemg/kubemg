@@ -68,7 +68,13 @@ func summary(signal Signal, severity string) string {
 	b.WriteString(strings.ToUpper(severity))
 	b.WriteString("] ")
 
-	if signal.Source == SourceAudit {
+	switch signal.Source {
+	case SourceGitOpsDrift:
+		fmt.Fprintf(&b, "Out of sync: %s", orDash(signal.Object))
+		if signal.Application != "" {
+			fmt.Fprintf(&b, " (%s)", signal.Application)
+		}
+	case SourceAudit:
 		verb := signal.Verb
 		if verb == "" {
 			verb = "request"
@@ -78,7 +84,7 @@ func summary(signal Signal, severity string) string {
 		} else {
 			fmt.Fprintf(&b, "%s by %s", verb, orDash(signal.Username))
 		}
-	} else {
+	default:
 		fmt.Fprintf(&b, "%s", orDash(signal.Reason))
 		if signal.Object != "" {
 			fmt.Fprintf(&b, " on %s", signal.Object)
@@ -125,6 +131,10 @@ func labels(rule db.AlarmRule, signal Signal, severity string) map[string]string
 	// The username is bounded by the size of the user directory, which is the same
 	// order as the namespace count Alertmanager already carries fine.
 	put("username", signal.Username)
+	// The tool is one of three; the application is bounded by the cluster's
+	// record count, the namespace label's order again.
+	put("tool", signal.Tool)
+	put("application", signal.Application)
 	if signal.Status != 0 {
 		out["status"] = strconv.Itoa(signal.Status)
 	}
@@ -135,6 +145,9 @@ func labels(rule db.AlarmRule, signal Signal, severity string) map[string]string
 // Alertmanager groups, silences and inhibits by — so it must not contain the
 // object it fired on.
 func alertName(signal Signal) string {
+	if signal.Source == SourceGitOpsDrift {
+		return "KubeMGGitOpsDrift"
+	}
 	if signal.Source == SourceAudit {
 		if signal.Denied {
 			return "KubeMGActionDenied"
@@ -190,6 +203,9 @@ func (d *Dispatcher) generatorURL(signal Signal) string {
 	}
 	if signal.Source == SourceAudit {
 		return fmt.Sprintf("%s/audit", d.origin)
+	}
+	if signal.Source == SourceGitOpsDrift && signal.ClusterID != 0 {
+		return fmt.Sprintf("%s/clusters/%d/gitops", d.origin, signal.ClusterID)
 	}
 	if signal.ClusterID != 0 {
 		return fmt.Sprintf("%s/explore/%d", d.origin, signal.ClusterID)

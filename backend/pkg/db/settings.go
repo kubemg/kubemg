@@ -88,6 +88,16 @@ const (
 	// out: the CLI's short-lived credentials are the only way kubectl reaches an
 	// agent-mode cluster.
 	SettingKubeconfigIssuance = "kubeconfig_issuance"
+	// SettingPasswordMaxAgeDays is how many days a local password lives before
+	// its owner must change it. Unset (the default) is no expiry. It governs only
+	// the passwords held here — a federated account's is its provider's.
+	SettingPasswordMaxAgeDays = "password_max_age_days"
+	// SettingProxyRateLimitPerSecond and SettingProxyRateLimitBurst are the call
+	// budget one identity has against one cluster through the gateway. Unset is
+	// the build's default, which is on: a ceiling nobody enabled protects nobody,
+	// so there is no value that means "off".
+	SettingProxyRateLimitPerSecond = "proxy_rate_limit_per_second"
+	SettingProxyRateLimitBurst     = "proxy_rate_limit_burst"
 	// The console's own identity — see pkg/api/branding.go for what each one is
 	// for and why the mark is stored inline rather than linked.
 	//
@@ -160,6 +170,9 @@ var SettingKeys = []string{
 	SettingMFAEnforcement,
 	SettingCLISessionMaxHours,
 	SettingKubeconfigIssuance,
+	SettingPasswordMaxAgeDays,
+	SettingProxyRateLimitPerSecond,
+	SettingProxyRateLimitBurst,
 }
 
 // Setting is one operator-configurable value. An empty Value means "unset" and

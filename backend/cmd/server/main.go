@@ -47,6 +47,17 @@ func main() {
 	if err := config.ParseTrustedProxies(cfg.TrustedProxies); err != nil {
 		log.Fatalf("refusing to start: %v", err)
 	}
+	// The metrics listener binds long before the API does, so a metrics address
+	// that collides with the API's wins the port, and the API dies afterwards
+	// with "address already in use" — an error that names neither variable.
+	// Refuse it here, before either listener starts.
+	if sameListener(cfg.ListenAddr, cfg.MetricsAddr) {
+		log.Fatalf(
+			"refusing to start: KUBEMG_METRICS_ADDR (%s) and KUBEMG_LISTEN_ADDR (%s) bind the same port "+
+				"on an overlapping interface. Give the metrics listener a port of its own, e.g. 127.0.0.1:9090",
+			cfg.MetricsAddr, cfg.ListenAddr,
+		)
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	applyMemoryLimit(logger)
 
@@ -54,7 +65,7 @@ func main() {
 	// is set but malformed is an operator who believes the credentials are
 	// encrypted, and a server that quietly stored them in the clear instead
 	// would be worse than one that refuses to start.
-	secretKey, err := secretbox.Parse(cfg.SecretKey)
+	secretKey, err := secretbox.ParseRotating(cfg.SecretKey, cfg.SecretKeyPrevious)
 	if err != nil {
 		log.Fatalf("KUBEMG_SECRET_KEY is unusable: %v", err)
 	}
@@ -79,11 +90,19 @@ func main() {
 		go func() {
 			mux := http.NewServeMux()
 			mux.Handle("/metrics", met.Handler())
-			logger.Info("serving prometheus metrics",
-				slog.String("addr", cfg.MetricsAddr),
-				slog.String("note", "bind to loopback or a private interface — not the public agent port"),
-			)
-			if err := newHTTPServer(cfg.MetricsAddr, mux).ListenAndServe(); err != nil {
+			// Warned rather than refused, unlike a plaintext API bind: the
+			// endpoint carries no credential, and plaintext scraping is how
+			// Prometheus works. It is still said once, because nothing else in
+			// front of this listener will restrict it.
+			if metricsReachableOffHost(cfg.MetricsAddr) {
+				logger.Warn("serving prometheus metrics on a listener reachable from beyond this machine",
+					slog.String("addr", cfg.MetricsAddr),
+					slog.String("note", "plaintext and unauthenticated: restrict it to the scraper at the network layer"),
+				)
+			} else {
+				logger.Info("serving prometheus metrics", slog.String("addr", cfg.MetricsAddr))
+			}
+			if err := newMetricsServer(cfg.MetricsAddr, mux).ListenAndServe(); err != nil {
 				logger.Error("metrics listener exited", slog.String("error", err.Error()))
 			}
 		}()
@@ -230,6 +249,11 @@ func main() {
 		Logger:         logger,
 	})
 
+	// Published from the settings by the router; the default budget is in
+	// force from the first call, before the first publish lands.
+	rateLimit := bastion.NewRateLimiter(bastion.RateLimit{})
+	rateLimit.OnThrottle(met.ProxyThrottleHook())
+
 	proxy := bastion.NewProxy(bastion.ProxyOptions{
 		Store:          store,
 		Registry:       gateway.Registry(),
@@ -238,6 +262,7 @@ func main() {
 		Policy:         policy,
 		Guard:          guard,
 		Credentials:    issued,
+		RateLimit:      rateLimit,
 		AllowedOrigins: cfg.AllowedOrigins,
 		PublicURL:      cfg.PublicURL,
 	})
@@ -289,6 +314,7 @@ func main() {
 		RecordingInput:     recording.input,
 		Auditor:            auditor,
 		AuditPolicy:        policy,
+		RateLimit:          rateLimit,
 		Guardrails:         guard,
 		Credentials:        issued,
 		Alarms:             alarms,
@@ -300,6 +326,7 @@ func main() {
 		Deployment: api.Deployment{
 			SigningKeyFromEnv: strings.TrimSpace(cfg.JWTSecret) != "",
 			SecretKeySet:      secretKey.Enabled(),
+			SecretKeyRotating: secretKey.Rotating(),
 			TLSEnabled:        cfg.TLS.Enabled,
 			TLSSelfSigned:     tlsMaterial.selfSigned,
 			TLSCertFile:       tlsMaterial.certFile,
@@ -385,7 +412,8 @@ func sealStoredSecrets(ctx context.Context, gdb *gorm.DB, box *secretbox.Box, lo
 			return fmt.Errorf("refusing to start: %v. The database holds credentials encrypted under a "+
 				"KUBEMG_SECRET_KEY this server does not have. Restore the key the database was "+
 				"encrypted with; a different or missing key cannot read them, and nothing here will "+
-				"treat ciphertext as a credential", err)
+				"treat ciphertext as a credential. To move to a new key, set the old one as "+
+				"KUBEMG_SECRET_KEY_PREVIOUS for one boot", err)
 		}
 		return fmt.Errorf("stored credential migration failed: %v", err)
 	}
@@ -401,11 +429,19 @@ func sealStoredSecrets(ctx context.Context, gdb *gorm.DB, box *secretbox.Box, lo
 	logger.Info("stored credentials are encrypted at rest",
 		slog.Int("encrypted_now", report.Sealed),
 		slog.Int("already_encrypted", report.Encrypted))
+	if box.Rotating() {
+		// Every value the previous key opened has been re-sealed by now, so it
+		// is no longer needed by anything this database holds — only by backups
+		// taken before this boot, which is where it belongs.
+		logger.Warn("rotated stored credentials to the new KUBEMG_SECRET_KEY; "+
+			"remove KUBEMG_SECRET_KEY_PREVIOUS and keep it only with the backups taken before this boot",
+			slog.Int("rotated", report.Rotated))
+	}
 	return nil
 }
 
 // headerTimeout bounds how long a client may take to send its request headers.
-// It is the only deadline these listeners set: a read or write timeout would
+// It is the only deadline the API listener sets: a read or write timeout would
 // apply to the whole request, and this server holds exec sessions, `logs -f`,
 // watches and the agent tunnel open for hours. Without it, a client that
 // trickles a header a byte at a time holds a connection forever, and enough of
@@ -413,10 +449,31 @@ func sealStoredSecrets(ctx context.Context, gdb *gorm.DB, box *secretbox.Box, lo
 // http.ListenAndServe both leave open.
 const headerTimeout = 10 * time.Second
 
-// newHTTPServer is every listener this binary opens: the API (TLS or not) and
-// the metrics port.
+// newHTTPServer is the base of every listener this binary opens: the API (TLS
+// or not) and the metrics port.
 func newHTTPServer(addr string, handler http.Handler) *http.Server {
 	return &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: headerTimeout}
+}
+
+// The metrics listener can bound the whole request where the API cannot: a
+// scrape is one short GET with nothing streamed, so there is no session for a
+// deadline to cut off. The write bound sits well above Prometheus' own 10s
+// default scrape timeout, and the idle bound above its 1m default interval,
+// so a scraper keeps one connection across scrapes.
+const (
+	metricsReadTimeout  = 10 * time.Second
+	metricsWriteTimeout = 30 * time.Second
+	metricsIdleTimeout  = 2 * time.Minute
+)
+
+// newMetricsServer is the metrics listener: newHTTPServer, with the
+// whole-request deadlines the API listener has to go without.
+func newMetricsServer(addr string, handler http.Handler) *http.Server {
+	srv := newHTTPServer(addr, handler)
+	srv.ReadTimeout = metricsReadTimeout
+	srv.WriteTimeout = metricsWriteTimeout
+	srv.IdleTimeout = metricsIdleTimeout
+	return srv
 }
 
 // isLoopbackAddr reports whether a listen address (as passed to
@@ -436,6 +493,78 @@ func isLoopbackAddr(addr string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// metricsReachableOffHost reports whether the metrics listener is worth a
+// warning at boot: anything isLoopbackAddr would not call loopback-only.
+func metricsReachableOffHost(addr string) bool {
+	return !isLoopbackAddr(addr)
+}
+
+// sameListener reports whether the metrics address would compete with the API
+// for the same socket: the same port on an overlapping interface. An empty
+// metrics address is the endpoint switched off, and port 0 asks the kernel for
+// a free port each time, so neither collides with anything.
+//
+// A wildcard host — empty, 0.0.0.0 or :: — is read as covering every address.
+// That is the safe reading: being wrong one way costs picking another port,
+// being wrong the other way is the failure this exists to name. Two different
+// hostnames are not resolved, because that would make the boot depend on DNS;
+// they are taken as distinct, and if they do name one address the bind itself
+// still fails.
+func sameListener(listen, metrics string) bool {
+	if listen == "" || metrics == "" {
+		return false
+	}
+	listenHost, listenPort, err := net.SplitHostPort(listen)
+	if err != nil {
+		return false
+	}
+	metricsHost, metricsPort, err := net.SplitHostPort(metrics)
+	if err != nil {
+		return false
+	}
+
+	lp, err := net.LookupPort("tcp", listenPort)
+	if err != nil {
+		return false
+	}
+	mp, err := net.LookupPort("tcp", metricsPort)
+	if err != nil {
+		return false
+	}
+	if lp != mp || lp == 0 {
+		return false
+	}
+	return hostsOverlap(listenHost, metricsHost)
+}
+
+// hostsOverlap reports whether two listen hosts could bind the same address.
+func hostsOverlap(a, b string) bool {
+	if isWildcardHost(a) || isWildcardHost(b) || strings.EqualFold(a, b) {
+		return true
+	}
+	ipA, ipB := net.ParseIP(a), net.ParseIP(b)
+	if ipA != nil && ipB != nil {
+		return ipA.Equal(ipB)
+	}
+	// localhost is bound as a loopback address, so it meets a literal one.
+	if strings.EqualFold(a, "localhost") {
+		return ipB != nil && ipB.IsLoopback()
+	}
+	if strings.EqualFold(b, "localhost") {
+		return ipA != nil && ipA.IsLoopback()
+	}
+	return false
+}
+
+// isWildcardHost reports whether a listen host binds every interface.
+func isWildcardHost(host string) bool {
+	if host == "" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsUnspecified()
 }
 
 // recordingSetup is what the HTTP layer needs to serve recordings back: where

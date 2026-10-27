@@ -74,6 +74,8 @@ import type {
   NewMachineToken,
   PasswordChange,
   PasswordChangeResult,
+  SMTPRelay,
+  SMTPRelayInput,
   ProfileUpdate,
   HelmChartList,
   HelmHistory,
@@ -175,6 +177,14 @@ import type {
 } from './types'
 import { completeCapacity } from './capacity'
 import { completeWaste, type ClusterWaste, type CostRates, type WasteSpan } from './waste'
+import {
+  completeGitopsDiff,
+  completeGitopsObject,
+  completeGitopsState,
+  type GitopsDiff,
+  type GitopsObject,
+  type GitopsState,
+} from './gitops'
 
 const TOKEN_KEY = 'kubemg.token'
 
@@ -209,6 +219,27 @@ let onUnauthorized: (() => void) | null = null
 
 export function setUnauthorizedHandler(handler: (() => void) | null) {
   onUnauthorized = handler
+}
+
+/** The server's stable answer for a session whose password is due. */
+export const PASSWORD_CHANGE_REQUIRED = 'password_change_required'
+
+let onPasswordChangeRequired: (() => void) | null = null
+
+/**
+ * Called when the server holds this session until its password is changed —
+ * the password fell due, or an administrator expired it, while it was open.
+ * The handler re-reads the account, which carries the flag the gate reads.
+ */
+export function setPasswordChangeRequiredHandler(handler: (() => void) | null) {
+  onPasswordChangeRequired = handler
+}
+
+/** Whether an API failure is the password gate's refusal. */
+export function isPasswordChangeRequired(error: unknown): boolean {
+  if (!axios.isAxiosError(error) || error.response?.status !== 403) return false
+  const code = (error.response.data as { code?: string } | undefined)?.code
+  return code === PASSWORD_CHANGE_REQUIRED
 }
 
 /*
@@ -305,6 +336,8 @@ http.interceptors.response.use(
   (error: unknown) => {
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       onUnauthorized?.()
+    } else if (isPasswordChangeRequired(error)) {
+      onPasswordChangeRequired?.()
     }
     return Promise.reject(error)
   },
@@ -457,6 +490,32 @@ export async function revokeCLISession(id: string): Promise<CLISession> {
 
 export async function resetUserMFA(userId: number): Promise<{ factors_removed: number }> {
   const { data } = await http.post<{ factors_removed: number }>(`/users/${userId}/mfa/reset`)
+  return data
+}
+
+/** "Change it at next sign-in" — and at the next call of a session already open. */
+export async function expireUserPassword(userId: number): Promise<User> {
+  const { data } = await http.post<User>(`/users/${userId}/password/expire`)
+  return data
+}
+
+export async function fetchSMTPRelay(): Promise<SMTPRelay> {
+  const { data } = await http.get<SMTPRelay>('/settings/smtp')
+  return data
+}
+
+export async function saveSMTPRelay(body: SMTPRelayInput): Promise<SMTPRelay> {
+  const { data } = await http.put<SMTPRelay>('/settings/smtp', body)
+  return data
+}
+
+export async function deleteSMTPRelay(): Promise<void> {
+  await http.delete('/settings/smtp')
+}
+
+/** Sends one message through the stored relay; `to` defaults to the caller. */
+export async function testSMTPRelay(to?: string): Promise<{ sent: boolean; to: string }> {
+  const { data } = await http.post<{ sent: boolean; to: string }>('/settings/smtp/test', to ? { to } : {})
   return data
 }
 
@@ -2162,6 +2221,42 @@ export async function fetchClusterWaste(clusterId: number, span: WasteSpan): Pro
   return completeWaste(data)
 }
 
+/**
+ * Which objects have drifted from what Argo CD or Flux declares, from the
+ * controllers' own records. A controller that is not installed is reported in
+ * `tools`, not as a failure.
+ */
+export async function fetchGitopsState(clusterId: number): Promise<GitopsState> {
+  const { data } = await http.get<Partial<GitopsState>>(`/clusters/${clusterId}/gitops/applications`)
+  return completeGitopsState(data)
+}
+
+/** The record tracking one object, found from the object's own metadata. */
+export async function fetchGitopsObject(
+  clusterId: number,
+  kind: string,
+  name: string,
+  namespace?: string,
+): Promise<GitopsObject> {
+  const { data } = await http.get<Partial<GitopsObject>>(`/clusters/${clusterId}/gitops/object`, {
+    params: { kind, name, namespace },
+  })
+  return completeGitopsObject(data)
+}
+
+/** One Argo CD-tracked object's live state against its desired state. */
+export async function fetchGitopsDiff(
+  clusterId: number,
+  kind: string,
+  name: string,
+  namespace?: string,
+): Promise<GitopsDiff> {
+  const { data } = await http.get<Partial<GitopsDiff>>(`/clusters/${clusterId}/gitops/diff`, {
+    params: { kind, name, namespace },
+  })
+  return completeGitopsDiff(data)
+}
+
 /** Set a cluster's unit prices (admin). */
 export async function putClusterCostRates(clusterId: number, rates: CostRates): Promise<CostRates> {
   const { data } = await http.put<{ rates: CostRates }>(`/clusters/${clusterId}/cost-rates`, rates)
@@ -2379,6 +2474,7 @@ export async function fetchAlarmRules(): Promise<AlarmRuleList> {
     severities: data.severities ?? [],
     suggested_reasons: data.suggested_reasons ?? [],
     cluster_events_available: data.cluster_events_available ?? false,
+    gitops_tools: data.gitops_tools,
     dispatcher_running: data.dispatcher_running ?? false,
   }
 }

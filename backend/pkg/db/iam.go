@@ -33,6 +33,9 @@ type UserUpdate struct {
 	CanViewRecordings *bool
 	// CanRevealSecrets is the secret-reveal capability, on the same terms.
 	CanRevealSecrets *bool
+	// ClearPasswordExpiry lifts an administrator's forced expiry. Only the
+	// account's own change sets it — see User.PasswordExpiredAt.
+	ClearPasswordExpiry bool
 }
 
 // UpdateUser applies a partial update and returns the stored record.
@@ -58,13 +61,18 @@ func (s *Store) UpdateUser(ctx context.Context, id uint, update UserUpdate) (*Us
 	if update.CanRevealSecrets != nil {
 		fields["can_reveal_secrets"] = *update.CanRevealSecrets
 	}
+	now := time.Now().UTC()
 	if update.PasswordHash != nil {
 		fields["password_hash"] = *update.PasswordHash
+		fields["password_changed_at"] = now
+	}
+	if update.ClearPasswordExpiry {
+		fields["password_expired_at"] = nil
 	}
 	if len(fields) == 0 {
 		return s.UserByID(ctx, id)
 	}
-	fields["updated_at"] = time.Now().UTC()
+	fields["updated_at"] = now
 
 	res := s.gdb.WithContext(ctx).Model(&User{}).Where("id = ?", id).Updates(fields)
 	if errors.Is(res.Error, gorm.ErrDuplicatedKey) {

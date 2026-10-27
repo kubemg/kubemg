@@ -1,12 +1,12 @@
 # Datasources
 
-A datasource tells kubemg where a cluster's metrics, logs or alerts backend lives, so the console can draw history. An administrator registers one per cluster and kind; everyone granted the cluster then sees the charts and log searches it feeds.
+A datasource tells kubemg where a cluster's metrics, logs or alerts backend lives, so the console can draw history, or where its Argo CD API server is, so it can compare an object with its desired state. An administrator registers one per cluster and kind; everyone granted the cluster then sees the charts and log searches it feeds.
 
 The Kubernetes Metrics API keeps about two minutes of history. Anything older, such as an hour-long chart or a log line from a pod that is gone, has to come from a backend the cluster already runs.
 
 ## Per cluster, per kind
 
-A datasource is stored per cluster **and per kind**: `metrics`, `logs` or `alerts`. A cluster has one of each, not a list of candidates. Registering a new one for a kind replaces the old one.
+A datasource is stored per cluster **and per kind**: `metrics`, `logs`, `alerts` or `gitops`. A cluster has one of each, not a list of candidates. Registering a new one for a kind replaces the old one.
 
 ## The two access shapes
 
@@ -14,7 +14,7 @@ A datasource is stored per cluster **and per kind**: `metrics`, `logs` or `alert
 
     kubemg asks the cluster's API server to proxy to a Service, down the agent tunnel. Nothing has to be exposed outside the cluster, and the call is impersonated and audited like every other tunnel read. This is the usual shape for kube-prometheus-stack or a VictoriaMetrics cluster install.
 
-    - A credential is pointless here and is flagged: the cluster's API server makes the onward call, so kubemg cannot attach an `Authorization` header. If the backend needs auth, use `direct`.
+    - A credential is pointless here and is flagged: the cluster's API server makes the onward call, so kubemg cannot attach an `Authorization` header. If the backend needs auth, use `direct`. Argo CD is the exception: its token travels as Argo CD's session cookie, which the Service proxy passes on.
     - It needs a connected agent. Registering one on a **direct-mode** cluster is refused with `409 Conflict`: *"an in-cluster datasource is reached through the agent tunnel, which a direct-mode cluster does not have — give its external address instead"*.
 
 === "direct"
@@ -32,6 +32,7 @@ A datasource is stored per cluster **and per kind**: `metrics`, `logs` or `alert
 | logs | VictoriaLogs | `9428` | none |
 | logs | Loki | `3100` | none (point at the gateway or the query frontend, not an ingester) |
 | alerts | Alertmanager | `9093` | none (the Service, not the headless `alertmanager-operated`) |
+| gitops | Argo CD | `443` over `https` (the `argocd-server` Service in `argocd`) | none, unless Argo CD runs under a root path |
 
 A wrong path prefix is the most common reason a correctly addressed datasource answers `404`. vmselect serves the Prometheus API per tenant (`/select/0/prometheus` for the default tenant), and Mimir's gateway serves it under `/prometheus`.
 
@@ -45,6 +46,7 @@ A save does not require the backend to exist yet. Every save still runs a **prob
 | VictoriaLogs | `GET /select/logsql/query?limit=1&query=%2A` |
 | Loki | `GET /loki/api/v1/labels`, then `GET /loki/api/v1/status/buildinfo` for the version |
 | Alertmanager | `GET /api/v2/status`, which carries the version too |
+| Argo CD | `GET /api/v1/session/userinfo`, which must say the token is signed in; then `GET /api/v1/applications?fields=items.metadata.name`, which must succeed; `GET /api/version` for the version. An account that can see no applications passes, with a note to check its RBAC policy if some exist. |
 
 A failed probe says what to try next:
 
@@ -76,6 +78,18 @@ It has one extra setting, **rule labels**: the labels given to every alarm's `Pr
 - `app.kubernetes.io/managed-by` and anything under `kubemg.io/` are kubemg's own and are refused.
 
 An alarm with the wrong labels is a valid object that nothing evaluates, which is why the field is read from the cluster rather than guessed.
+
+## GitOps (Argo CD)
+
+The `gitops` kind is the cluster's Argo CD API server. The [GitOps page](../clusters/gitops.md) shows sync state without it; it is needed only to compare one object's live state with its desired state.
+
+It is read with an **account token**, and nothing else is accepted. Create a dedicated account that can only read:
+
+1. In `argocd-cm`, add the account with the `apiKey` capability: `accounts.kubemg: apiKey`.
+2. In `argocd-rbac-cm`, bind it to the read-only role: `g, kubemg, role:readonly`.
+3. Generate a token: `argocd account generate-token --account kubemg`.
+
+Paste the token into the form. Inside the cluster, the defaults (`argocd` / `argocd-server` / `443` / `https`) match both of Argo CD's install manifests. A core install has no `argocd-server`, so it cannot be used for this.
 
 ## Who may read, who may write
 

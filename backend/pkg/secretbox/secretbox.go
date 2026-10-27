@@ -18,12 +18,20 @@
 //
 // The prefix makes an encrypted value recognisable — which is what lets the
 // boot migration skip what it has already done, and lets a server with no key
-// refuse ciphertext by name instead of handing it to a cluster as a token. The
-// version is where a key-rotation scheme goes when one is needed: a v2 can name
-// its key without every v1 value having to be rewritten first.
+// refuse ciphertext by name instead of handing it to a cluster as a token.
+//
+// Moving to a new key is a rotation, not a format change. A Box can carry the
+// key it replaces (KUBEMG_SECRET_KEY_PREVIOUS) as an opener only: it seals under
+// the current key, opens under either, and says which one answered, so the boot
+// pass re-seals every value the old key opened. No key id is written into the
+// value — a v1 value under either key is still a v1 value, so a rotation needs
+// no rewrite of the prefix and a rollback to the release before it reads what
+// was sealed. Trying the previous key costs one extra GCM open, and only while a
+// rotation is configured.
 package secretbox
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -47,6 +55,16 @@ var ErrKeyRequired = errors.New("value is encrypted and KUBEMG_SECRET_KEY is not
 // or a value that was altered. AEAD cannot tell the two apart, and neither
 // answer changes what an operator does next.
 var ErrKeyMismatch = errors.New("value could not be decrypted with KUBEMG_SECRET_KEY (wrong key, or the value was altered)")
+
+// ErrPreviousWithoutKey is a previous key with no current one. A rotation moves
+// values to a new key; it is never a way to take encryption off.
+var ErrPreviousWithoutKey = errors.New("KUBEMG_SECRET_KEY_PREVIOUS is set but KUBEMG_SECRET_KEY is not: " +
+	"a rotation moves the stored credentials to a new key, it does not remove encryption")
+
+// ErrPreviousIsCurrent is a rotation to the key already in use: an operator who
+// set it believes the key was changed, and it was not.
+var ErrPreviousIsCurrent = errors.New("KUBEMG_SECRET_KEY_PREVIOUS is the same key as KUBEMG_SECRET_KEY, " +
+	"so nothing would be rotated: set KUBEMG_SECRET_KEY to the new key")
 
 // DecodeKey reads a 32-byte key written as hex or base64. Empty input is no key
 // (nil, nil). Anything else — including a passphrase, which would need a KDF
@@ -75,6 +93,8 @@ func DecodeKey(raw string) ([]byte, error) {
 // passes plaintext through and Open refuses ciphertext.
 type Box struct {
 	aead cipher.AEAD
+	// previous is the key being rotated away from. It opens, it never seals.
+	previous cipher.AEAD
 }
 
 // New builds a Box from a raw key. An empty key returns a nil Box, which is
@@ -83,6 +103,37 @@ func New(key []byte) (*Box, error) {
 	if len(key) == 0 {
 		return nil, nil
 	}
+	aead, err := newAEAD(key)
+	if err != nil {
+		return nil, err
+	}
+	return &Box{aead: aead}, nil
+}
+
+// NewRotating builds a Box that seals under key and also opens what previous
+// sealed. An empty previous is New(key). A previous with no key, or the same
+// key twice, is refused rather than read as "no rotation".
+func NewRotating(key, previous []byte) (*Box, error) {
+	if len(previous) == 0 {
+		return New(key)
+	}
+	if len(key) == 0 {
+		return nil, ErrPreviousWithoutKey
+	}
+	if bytes.Equal(key, previous) {
+		return nil, ErrPreviousIsCurrent
+	}
+	box, err := New(key)
+	if err != nil {
+		return nil, err
+	}
+	if box.previous, err = newAEAD(previous); err != nil {
+		return nil, fmt.Errorf("previous %w", err)
+	}
+	return box, nil
+}
+
+func newAEAD(key []byte) (cipher.AEAD, error) {
 	if len(key) != KeySize {
 		return nil, fmt.Errorf("key must be %d bytes, got %d", KeySize, len(key))
 	}
@@ -90,24 +141,32 @@ func New(key []byte) (*Box, error) {
 	if err != nil {
 		return nil, err
 	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	return &Box{aead: aead}, nil
+	return cipher.NewGCM(block)
 }
 
 // Parse is DecodeKey followed by New.
 func Parse(raw string) (*Box, error) {
+	return ParseRotating(raw, "")
+}
+
+// ParseRotating is DecodeKey on both keys followed by NewRotating.
+func ParseRotating(raw, rawPrevious string) (*Box, error) {
 	key, err := DecodeKey(raw)
 	if err != nil {
 		return nil, err
 	}
-	return New(key)
+	previous, err := DecodeKey(rawPrevious)
+	if err != nil {
+		return nil, fmt.Errorf("previous %w", err)
+	}
+	return NewRotating(key, previous)
 }
 
 // Enabled reports whether values sealed now are encrypted.
 func (b *Box) Enabled() bool { return b != nil }
+
+// Rotating reports whether a previous key is configured.
+func (b *Box) Rotating() bool { return b != nil && b.previous != nil }
 
 // IsSealed reports whether a stored value carries the encrypted prefix.
 func IsSealed(stored string) bool { return strings.HasPrefix(stored, Prefix) }
@@ -132,23 +191,42 @@ func (b *Box) Seal(plaintext string) (string, error) {
 // or one that fails to authenticate, is an error — never returned as if it were
 // the credential.
 func (b *Box) Open(stored string) (string, error) {
+	plain, _, err := b.OpenRotated(stored)
+	return plain, err
+}
+
+// OpenRotated is Open that also reports whether the value was sealed under the
+// previous key — a value the boot pass has still to re-seal.
+func (b *Box) OpenRotated(stored string) (plain string, underPrevious bool, err error) {
 	if !IsSealed(stored) {
-		return stored, nil
+		return stored, false, nil
 	}
 	if b == nil {
-		return "", ErrKeyRequired
+		return "", false, ErrKeyRequired
 	}
 	raw, err := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(stored, Prefix))
 	if err != nil {
-		return "", ErrKeyMismatch
+		return "", false, ErrKeyMismatch
 	}
-	size := b.aead.NonceSize()
-	if len(raw) < size+b.aead.Overhead() {
-		return "", ErrKeyMismatch
+	if opened, ok := openWith(b.aead, raw); ok {
+		return opened, false, nil
 	}
-	plain, err := b.aead.Open(nil, raw[:size], raw[size:], []byte(Prefix))
+	if b.previous != nil {
+		if opened, ok := openWith(b.previous, raw); ok {
+			return opened, true, nil
+		}
+	}
+	return "", false, ErrKeyMismatch
+}
+
+func openWith(aead cipher.AEAD, raw []byte) (string, bool) {
+	size := aead.NonceSize()
+	if len(raw) < size+aead.Overhead() {
+		return "", false
+	}
+	plain, err := aead.Open(nil, raw[:size], raw[size:], []byte(Prefix))
 	if err != nil {
-		return "", ErrKeyMismatch
+		return "", false
 	}
-	return string(plain), nil
+	return string(plain), true
 }

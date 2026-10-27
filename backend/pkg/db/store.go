@@ -52,6 +52,10 @@ func (s *Store) CreateUser(ctx context.Context, user *User) error {
 		return err
 	}
 	user.Normalize()
+	if user.PasswordHash != "" && user.PasswordChangedAt == nil {
+		now := time.Now().UTC()
+		user.PasswordChangedAt = &now
+	}
 	if err := s.gdb.WithContext(ctx).Create(user).Error; err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			return ErrConflict

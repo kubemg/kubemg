@@ -55,8 +55,16 @@ type userResponse struct {
 	// LastLoginAddr is where the most recent sign-in came from. Empty for an
 	// account that has never signed in and for every sign-in older than the
 	// column — the console says which rather than drawing a blank.
-	LastLoginAddr string    `json:"last_login_addr,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
+	LastLoginAddr string `json:"last_login_addr,omitempty"`
+	// PasswordChangedAt is when a password held here was last set. Absent for
+	// an account whose password is not held here.
+	PasswordChangedAt *time.Time `json:"password_changed_at,omitempty"`
+	// PasswordExpiresAt is when the password age policy, or an administrator,
+	// makes it due; absent when nothing does. PasswordChangeRequired is that
+	// moment having passed — the console's cue to show its change screen.
+	PasswordExpiresAt      *time.Time `json:"password_expires_at,omitempty"`
+	PasswordChangeRequired bool       `json:"password_change_required,omitempty"`
+	CreatedAt              time.Time  `json:"created_at"`
 }
 
 type loginResponse struct {
@@ -83,8 +91,17 @@ func toUserResponse(u *db.User) userResponse {
 		AccountType:       accountTypeOf(normalized),
 		LastLoginAt:       normalized.LastLoginAt,
 		LastLoginAddr:     normalized.LastLoginAddr,
+		PasswordChangedAt: passwordChangedAt(normalized),
 		CreatedAt:         normalized.CreatedAt,
 	}
+}
+
+// passwordChangedAt is reported only for a password held here.
+func passwordChangedAt(user db.User) *time.Time {
+	if user.IsMachine() || user.IsFederated() {
+		return nil
+	}
+	return user.PasswordChangedAt
 }
 
 // accountTypeOf reads a row written before machine accounts existed as the
@@ -197,7 +214,9 @@ func (s *server) newSession(c *gin.Context, user *db.User, mfa bool) (loginRespo
 		return loginResponse{}, false
 	}
 	s.recordLogin(c, user.ID)
-	return loginResponse{Token: token, ExpiresAt: expiresAt, User: toUserResponse(user)}, true
+	out := toUserResponse(user)
+	s.annotatePassword(&out)
+	return loginResponse{Token: token, ExpiresAt: expiresAt, User: out}, true
 }
 
 // signInAccount is the account side of the throttle's key: the route, so a
@@ -245,7 +264,9 @@ func (s *server) me(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, toUserResponse(user))
+	out := toUserResponse(user)
+	s.annotatePassword(&out)
+	c.JSON(http.StatusOK, out)
 }
 
 type wsTicketResponse struct {

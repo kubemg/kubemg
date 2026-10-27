@@ -67,6 +67,7 @@ is stored encrypted (AES-256-GCM, written as `enc:v1:…`):
 | Direct-mode ServiceAccount tokens | `clusters.service_account_token` |
 | Observability datasource credentials | `observability_sources.credential` |
 | Helm repository credentials | `helm_repositories.credential` |
+| Alarm channel URLs (a Slack or Teams incoming webhook's path is its token) | `alarm_channels.url` |
 | Alarm channel secrets (tokens, routing keys, passwords) | `alarm_channels.secret` |
 | Alarm channel extra headers (a header can carry a token as well as the secret field can) | `alarm_channels.headers` |
 | OIDC client secrets | `sso_providers.client_secret` |
@@ -96,7 +97,8 @@ usable with the key it was encrypted under:
 - **Key changed, or removed, after values were encrypted** — the server
   refuses to start and names the first value it could not read. It never
   treats ciphertext as a credential and never falls back to plaintext.
-  Restore the original key.
+  Restore the original key, or — to move to a new one — follow
+  [Rotating the key](#rotating-the-key).
 - **Key lost** — the encrypted credentials cannot be recovered. Recovery
   means clearing those columns and re-entering each credential: re-register
   direct-mode clusters, rotate every agent token and re-apply the install
@@ -109,6 +111,34 @@ own schedule — **never inside the database backup it protects**, where it
 would protect nothing. `JWT_SECRET` from the environment still takes
 precedence over the stored signing key, and is recommended for any
 production install alongside `KUBEMG_SECRET_KEY`.
+
+### Rotating the key
+
+Replacing `KUBEMG_SECRET_KEY` takes one restart with both keys set:
+
+1. Take a database backup, and keep the current key with it.
+2. Generate the new key (`openssl rand -base64 32`).
+3. Set `KUBEMG_SECRET_KEY` to the **new** key and
+   `KUBEMG_SECRET_KEY_PREVIOUS` to the **old** one (Helm:
+   `secrets.secretKey` and `secrets.secretKeyPrevious`), and restart.
+4. The boot opens every stored credential under either key and re-seals
+   the ones the old key opened under the new one. The log says how many
+   (`rotated stored credentials to the new KUBEMG_SECRET_KEY`, `rotated=N`).
+5. Remove `KUBEMG_SECRET_KEY_PREVIOUS` and restart. Until you do, the
+   **Deployment** posture page warns that it is still set.
+
+The credentials themselves do not change: sessions, issued kubeconfigs, agent
+tunnels and integrations carry on as before. The old key is still what opens
+the backups taken before the rotation, so keep it with those.
+
+- **`KUBEMG_SECRET_KEY_PREVIOUS` without `KUBEMG_SECRET_KEY`**, or the same
+  key in both — the server refuses to start. A rotation moves credentials to
+  a new key; it is not a way to remove encryption.
+- **A restart interrupted mid-rotation** — leave both keys set and start
+  again; the next boot finishes it. Removing the old key first is refused
+  like any other key change, naming the value it cannot read.
+- **One previous key at a time.** To rotate again, finish the first rotation
+  and remove the old key before setting the next.
 
 ## Backup and restore
 

@@ -2,6 +2,7 @@ package observability
 
 import (
 	"context"
+	"net/http"
 	"testing"
 )
 
@@ -13,7 +14,7 @@ func TestAlertsAreReadThroughTheServiceProxy(t *testing.T) {
 		ServiceNamespace: "monitoring", ServiceName: "alertmanager", ServicePort: "9093",
 	}
 	var asked string
-	tunnel := func(_ context.Context, method, path string, _ []byte) (int, []byte, error) {
+	tunnel := func(_ context.Context, method, path string, _ http.Header, _ []byte) (int, []byte, error) {
 		asked = method + " " + path
 		return 200, []byte(`[{"fingerprint":"f","labels":{"alertname":"X","namespace":"a"},"status":{"state":"suppressed","silencedBy":["s1"]}}]`), nil
 	}
@@ -31,7 +32,9 @@ func TestAlertsAreReadThroughTheServiceProxy(t *testing.T) {
 }
 
 func TestAnObjectFilterRefusesNamesThatAreNotNames(t *testing.T) {
-	tunnel := func(context.Context, string, string, []byte) (int, []byte, error) { return 200, []byte(`[]`), nil }
+	tunnel := func(context.Context, string, string, http.Header, []byte) (int, []byte, error) {
+		return 200, []byte(`[]`), nil
+	}
 	target := Target{AccessMode: "in-cluster", ServiceNamespace: "m", ServiceName: "am", ServicePort: "9093"}
 	if _, err := ListAlerts(context.Background(), target, tunnel, Scope{}, AlertFilter{Namespace: "a", Name: "x.*"}); err == nil {
 		t.Fatal("a regex in an object name must be refused, never quoted")

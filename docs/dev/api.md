@@ -48,6 +48,20 @@ own `Status` object, not reshaped into kubemg's envelope — see
 [Troubleshooting](../reference/troubleshooting.md#kubectl-through-the-proxy) for how to
 tell the two apart.
 
+A second: a console session whose password is due — the
+`password_max_age_days` window passed, or an administrator expired it —
+answers `403` with a stable `code` beside the sentence on every route except
+`GET /auth/me` and `POST /auth/password`:
+
+```json
+{"error": "your password has expired — change it to continue", "code": "password_change_required"}
+```
+
+Proxy-scoped credentials (kubeconfigs, CLI tokens) and machine tokens are never
+held this way. `GET /auth/me` and a sign-in's `user` carry
+`password_expires_at` and `password_change_required` for an account the policy
+governs.
+
 ## Conventions used in the tables below
 
 - **Admin** — requires `RequireRole("admin")` (a super admin qualifies too).
@@ -159,7 +173,7 @@ curl -sk -X POST https://localhost:8443/api/v1/clusters/3/kubeconfig/generate \
 | Method & path | Auth | Notes |
 | --- | --- | --- |
 | `GET /clusters/:id/observability` | Session | `{sources, agent_attached, connection_mode, editable}`. Readable by anyone the cluster is granted to. |
-| `PUT /clusters/:id/observability/sources/:kind` | Admin | `kind` is `metrics`, `logs` or `alerts`. `409` registering an in-cluster source on a direct-mode cluster. Probes live on save. An `alerts` source takes `rule_labels` (`{key: value}`, Kubernetes label grammar; `app.kubernetes.io/managed-by` and `kubemg.io/*` refused). |
+| `PUT /clusters/:id/observability/sources/:kind` | Admin | `kind` is `metrics`, `logs`, `alerts` or `gitops`. A `gitops` source is provider `argocd`, **bearer only** with a token required (`400` otherwise); in-cluster it sends the token as the `argocd.token` cookie — the only header `Proxy.CallWithHeader` lets a caller add — because the API server's authentication consumes `Authorization` before the Service proxy. Its probe needs `userinfo` to say `loggedIn` and the application list to succeed. `409` registering an in-cluster source on a direct-mode cluster. Probes live on save. An `alerts` source takes `rule_labels` (`{key: value}`, Kubernetes label grammar; `app.kubernetes.io/managed-by` and `kubemg.io/*` refused). |
 | `DELETE /clusters/:id/observability/sources/:kind` | Admin | `204`; `404` no such source. |
 | `POST /clusters/:id/observability/sources/:kind/test` | Admin | Probes a draft nobody has saved yet — what makes the wizard's "check connection" honest. |
 | `POST /clusters/:id/observability/sources/:kind/check` | Admin | Re-probes the stored source and records the verdict. |
@@ -285,6 +299,14 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | `GET /clusters/:id/metrics/capacity` | Allocation (requests/limits) against allocatable, plus usage, per node: taints and `placeable`, `headroom`, `qos`, and `top_borrowers` from the per-pod Metrics API (`pod_usage_available`; a 403 there is reported, not fatal). `summary.placement` is the fragmentation reading. |
 | `GET /clusters/:id/metrics/waste?window=1d\|7d\|14d\|30d` | Reserved and not used. `workloads` (Deployments/StatefulSets/DaemonSets over-requesting by >1.5× the CPU p95 / memory peak from the metrics datasource, with `recommended` requests and `reclaimable`; absent datasource → `workloads_available: false` + `workloads_reason`, not an error), `volumes` (unmounted bound PVCs with StatefulSet attribution, Released/Available PVs — PVs not read for a scoped grant, `volumes_pv_reason`), `load_balancers` (no ready EndpointSlice endpoint; `load_balancers_available` false when the slices are refused). `query` carries the PromQL asked. `reserved` totals every placed pod's requests (the scheduler's sum: sidecars, init peaks, overhead) per namespace and workload — 100 namespaces, 25 workloads each, counts exact, `unscheduled` pods left out — with or without a datasource. With rates set, `cost` `{currency, rates, hours_per_month: 730}` and a `monthly` figure on reserved rows, listed workloads, volumes (storage rate) and load balancers (LB rate), plus `summary.monthly {reclaimable, unused_storage?, idle_load_balancers?, total, unpriced}`; a category without its rate is absent and named in `unpriced`. A rates store error is `cost_reason`, never a failed report. Default window `7d`; anything else 400. Scoped grants read their own namespaces. |
 
+## GitOps sync state
+
+| Method & path | Notes |
+| --- | --- |
+| `GET /clusters/:id/gitops/applications` | Argo CD Applications, Flux Kustomizations and Flux HelmReleases in one shape: `{tool, namespace, name, project?, sources[{repo, path?, chart?, target_revision?}], revision?, attempted_revision?, sync: synced\|out_of_sync\|unknown, health, auto_heal: bool\|null, suspended, reconciled_at?, message?, remote?, console_url?, resources[{group, kind, namespace?, name, sync, health?}], resources_hidden, resources_truncated}`. Read as the service identity `kubemg:gitops-reader` (group `kubemg:cluster-admin`, the watchers' posture) and **narrowed server-side**: a scoped grant sees a record only when one of its entries, its own namespace or its destination namespace is in the grant, sees only those entries (`resources_hidden` counts the rest, cluster-scoped entries always hidden), never a `remote` record, and loses `message` when anything was cut; a **view** grant (scoped or not) never sees a core `Secret` entry — counted in `resources_hidden` — because the cluster's view role refuses Secrets. Response structs are allowlists — Helm values, `parameters`, plugin env, `postBuild` and HelmRelease values are never decoded; repository URLs lose their userinfo. `tools[{tool, installed, available, reason?}]`: an absent CRD is `installed: false`, a refused list keeps the cluster's words — neither fails the request. Flux entries are always `sync: unknown`. Out of sync first, then degraded. ≤500 entries per record. `console_url` = `/applications/{namespace}/{name}` (both escaped) on the cluster's `argocd` console row — **never the `gitops` datasource URL** — set on an Argo CD record **after** narrowing, absent with no console row and on Flux; the response's `argocd_console_url` is the row itself. Through `listResponse`. Agent mode only (`409` direct). |
+| `GET /clusters/:id/gitops/object?kind=&namespace=&name=` | The object is read **as the caller** first (the cluster's refusal is the answer); its tracking record is then found from its own `managed_by` — never from the query — by a direct read where the namespace is known (Argo CD's default `argocd` is tried for a tracking id without one), else by listing and preferring the record that lists the object. A tracking value that is not a valid name is refused without a read. A record outside the grant answers **exactly as an absent one** (no oracle), and a refusal of KubeMG's own read is reported generically, never in the cluster's words. `{tracked, managed_by, record (narrowed and linked as above) \| null, entry \| null, reason?, diff?: {available, reason?}}` — `diff` only for an Argo CD record, from the stored `gitops` source (absent, off or a core Secret → `available: false` + reason); Argo CD is not dialled. |
+| `GET /clusters/:id/gitops/diff?kind=&namespace=&name=` | Steps in order, each can end it: grant (namespace / cluster scope); **core `Secret` refused `409` before any read**; the object read **as the caller** (the cluster's refusal is the answer, Argo CD never asked); the record resolved from the object's own `managed_by` exactly as `/object` does — not Argo CD-tracked or not found → `409`; then Argo CD's `GET /api/v1/applications/{app}/managed-resources?appNamespace=&group=&kind=&namespace=&name=` as `kubemg:gitops-reader` (in-cluster) for that one item. `{available, reason?, application?, modified, diff?: {changes[{path, kind, old?, new?}], truncated}, live, desired, live_truncated, desired_truncated}`: `normalizedLiveState` → `predictedLiveState` through `objdiff.Diff` (the editor's diff), each side YAML with `status`, `managedFields`, `resourceVersion`, `generation`, `uid`, `creationTimestamp`, `selfLink` and the last-applied annotation stripped, cut at 256 KiB on a line. No source, source off, Argo CD refusing (401/403/404 named, never "does not exist") or unreachable → `200 available: false` + reason. On an available diff, `attribution: {change: {username, verb, at} \| null, since?, scoped_to_self, note?}` — the newest accepted `create`/`update`/`patch`/`delete` in the audit trail on that cluster + namespace + resource + name since the Application's `operationState.finishedAt` (absent → no lower bound), under the trail's read rule (non-admin narrowed to own `user_id`); `note` says a change outside KubeMG leaves no record. Not separately audited — the live read is. |
+
 ## Machine accounts
 
 | Method & path | Auth | Notes |
@@ -316,6 +338,7 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | `DELETE /users/:id` | Admin | `403` deleting your own account. |
 | `GET /users/:id/mfa` | Admin | The account's second factor, the `GET /auth/mfa` shape; never a secret. |
 | `POST /users/:id/mfa/reset` | Admin | Removes every factor and recovery code. `403` on your own account or (for a non-super-admin) a super admin, `409` where kubemg's factor does not apply. `{factors_removed}`. Audited `mfa-reset` with the target as `impersonated_user` (never suppressed). |
+| `POST /users/:id/password/expire` | Admin | The account must change its password before anything else — at its next sign-in, or at the next call of a session already open. `403` on your own account or (for a non-super-admin) a super admin, `404` a machine account, `409` a federated account (its password is not held here). Already expired is answered, not re-recorded. Returns the user. Audited `password-expire` with the target as `impersonated_user`. Lifted only by the account's own `POST /auth/password` — a `PUT /users/:id` password restarts the age clock but does not lift it. |
 
 ## Groups
 
@@ -339,8 +362,12 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | Method & path | Auth | Notes |
 | --- | --- | --- |
 | `GET /settings` | Admin | `{effective, overrides, defaults, warnings}` — three-tier resolution. |
-| `PUT /settings` | Admin | An empty string or `0` clears an override back to the default. `public_url`, `agent_namespace`, and the TTL/retention fields are each validated on the way in. |
+| `PUT /settings` | Admin | An empty string or `0` clears an override back to the default. `public_url`, `agent_namespace`, and the TTL/retention fields are each validated on the way in. `proxy_rate_limit_per_second` (1–10000) and `proxy_rate_limit_burst` (1–100000) are published to the gateway on save; `0` is the default, never off. |
 | `GET /settings/deployment` | Admin | `{checks[], attention}` — deployment posture; see [Troubleshooting](../reference/troubleshooting.md). |
+| `GET /settings/smtp` | Admin | The mail relay: `{configured, host, port, security, username, has_password, from, updated_at}`. The password is never returned. |
+| `PUT /settings/smtp` | Admin | Body `{host, port, security (starttls\|tls\|none), username, password?, from}`. `password` absent keeps the stored one — only while `host` (case-insensitive) and `username` are unchanged, else `400` — `""` clears it; an empty `username` drops it. Validated, never dialled: `400` for a host with a scheme or port, a bad port or sender, or a login over `none` to anything but a loopback host. Password stored sealed. |
+| `DELETE /settings/smtp` | Admin | Mail stops. `204`. |
+| `POST /settings/smtp/test` | Admin | Body `{to?}` (defaults to the caller's email). Sends one message through the stored relay. `409` no relay, `400` no recipient, `502` with the relay's own refusal. |
 
 See [Runtime settings](../reference/settings.md) for what each field means.
 
@@ -357,10 +384,10 @@ See [Runtime settings](../reference/settings.md) for what each field means.
 
 | Method & path | Auth | Notes |
 | --- | --- | --- |
-| `GET /alarms/channels` `POST /alarms/channels` | Admin | A channel's secret and extra-header values are write-only — never read back; the response carries `has_secret` and `header_names`. On `PUT`, omitting `headers` (or sending `null`) keeps the stored set, `""` clears it, and a JSON object replaces it whole. |
+| `GET /alarms/channels` `POST /alarms/channels` | Admin | A channel's URL, secret and extra-header values are write-only — never read back; the response carries `url_masked` (scheme + host, `/…` for any path or query), `has_secret` and `header_names`. On `PUT`, an omitted or empty `url` keeps the stored one. On `PUT`, omitting `headers` (or sending `null`) keeps the stored set, `""` clears it, and a JSON object replaces it whole. |
 | `PUT /alarms/channels/:id` `DELETE /alarms/channels/:id` | Admin | `409` duplicate name. `400` invalid header JSON, or a missing PagerDuty routing key/basic-auth username. |
 | `POST /alarms/channels/:id/test` | Admin | Bypasses the matcher and cool-off. `200` even if delivery itself failed — the test is about the endpoint, not the rule. |
-| `GET /alarms/rules` `POST /alarms/rules` | Admin | Response includes the trigger/severity vocabulary alongside the rules. |
+| `GET /alarms/rules` `POST /alarms/rules` | Admin | Response includes the trigger/severity vocabulary alongside the rules, and `gitops_tools`. A `gitops_drift` rule takes `gitops_tools[]` (unknown tool `400` by name) and `gitops_apps[]` (RFC 1123 names); both are dropped on any other trigger. |
 | `PUT /alarms/rules/:id` `DELETE /alarms/rules/:id` | Admin | |
 
 ## Just-in-time access
@@ -378,7 +405,7 @@ See [Runtime settings](../reference/settings.md) for what each field means.
 
 | Method & path | Auth | Notes |
 | --- | --- | --- |
-| `GET /audit` | Session, narrows | Filters `verb[], status, from/to, since/until,` or a fixed range preset. Non-admin forced to their own `user_id`; the query cannot widen it. |
+| `GET /audit` | Session, narrows | Filters `verb[], status, from/to, since/until,` or a fixed range preset. Non-admin forced to their own `user_id`; the query cannot widen it. Each row carries `name` (the object addressed; for a `create`, the name the cluster answered with, absent when it refused); `q` matches it too. |
 | `GET /audit/summary` | Admin | 24-hour rollup: `{total, failed, streams, window_hours}`. |
 | `GET /audit/export` | Session, narrows | The same filter as `GET /audit`, as CSV. `limit`/`offset` ignored — paging is the page's, not the file's. Bounded at 5000 rows; past that the file says so and `X-Kubemg-Export-Truncated` carries the bound. Not itself audited. |
 | `GET /audit/recording-policy` | Session | `{enabled, input_recorded, encrypted, retention_days}` — disclosed to anyone, since anyone might be recorded. |

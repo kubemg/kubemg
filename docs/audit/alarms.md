@@ -11,6 +11,8 @@ These rules are kubemg's own, about cluster Events and the audit trail. Rules ab
 
 They are separate so rules can be edited and toggled without reading a credential back. `GET /api/v1/alarms/channels` returns `has_secret: true/false` instead of the credential, and omitting `secret` on an edit keeps the stored one. Extra headers are treated the same way, because a header can carry a token as well as the secret field can: they are stored encrypted, the console shows only their names, an empty box on an edit keeps them, and **Remove the stored headers** clears them. Typing a new JSON object replaces the whole set.
 
+So is the URL. A Slack or Teams incoming webhook has no token of its own — the path is the token — so every channel's URL is stored encrypted and read back as `url_masked`, the scheme and host with `/…` for the rest (`https://hooks.slack.com/…`). An empty URL box on an edit keeps the stored one; to change it, type the whole new URL. A failed delivery's `last_message` and a Test answer name the endpoint the same way, never by its full address.
+
 **Deleting a channel deletes its rules**, since a rule with no channel looks like coverage while doing nothing.
 
 ## Channel kinds
@@ -114,8 +116,9 @@ A rule watches exactly one signal:
 
 - **`cluster_event`**: Kubernetes Events read down the agent tunnel (`OOMKilled`, `FailedScheduling`, anything of `type: Warning`).
 - **`audit`**: kubemg's own audit records. Only kubemg can see these. A call it refused never reached the cluster, so there is no Event for it.
+- **`gitops_drift`**: an object going out of sync with what Argo CD or Flux declares. See [GitOps drift](#gitops-drift).
 
-Cover both streams with two rules.
+Cover several streams with one rule each.
 
 ### Matchers
 
@@ -125,6 +128,7 @@ Every rule may narrow by `cluster_id` (0 means every cluster, including ones reg
 |---|---|
 | `cluster_event` | `event_type` (`Normal` or `Warning`); `event_reasons` (comma-separated, e.g. `OOMKilled,BackOff`) |
 | `audit` | `verbs` (comma-separated audit verbs); `denied_only` (only refusals: a 4xx/5xx or a call that never reached the API server); `min_status` (records at or above an HTTP status) |
+| `gitops_drift` | `gitops_tools` (comma-separated: `argocd`, `flux-kustomization`, `flux-helmrelease`); `gitops_apps` (comma-separated Application, Kustomization or HelmRelease names). For Argo CD the namespace is the drifted object's; for Flux it is the record's target namespace, else its own |
 
 `agent-displaced` fires whenever a new connection takes over a cluster's agent tunnel. Every agent rollout does this once per cluster, so expect it after each re-apply. Outside a rollout it means someone else holding the registration token has become the agent. The message names the new and previous addresses and versions. `agent-token-rotate` fires on each rotation.
 
@@ -133,7 +137,8 @@ The rule form suggests common reasons (`OOMKilled`, `FailedScheduling`, `BackOff
 ### Refusals at save time
 
 - A `cluster_event` rule with **neither** an `event_type` nor any `event_reasons` is refused, since it would match every event the cluster emits.
-- An `audit` rule naming a verb the trail never records is refused, since it could never fire. Valid verbs are the suppressible verbs, `replay`, `recording-get`, `recording-delete`, `agent-displaced`, `agent-token-rotate`, `mfa-reset`, `mfa-remove`, `mfa-recovery-used`, `cli-login` and `cli-session-revoke`.
+- A `gitops_drift` rule naming an unknown tool, or an application name that is not a valid Kubernetes name, is refused. Drift matchers sent with another trigger are dropped.
+- An `audit` rule naming a verb the trail never records is refused, since it could never fire. Valid verbs are the suppressible verbs, `replay`, `recording-get`, `recording-delete`, `agent-displaced`, `agent-token-rotate`, `mfa-reset`, `mfa-remove`, `mfa-recovery-used`, `cli-login`, `cli-session-revoke` and `password-expire`.
 
 ## Testing a channel
 
@@ -163,6 +168,19 @@ The poller reads as `kubemg:alarm-watcher`, so its reads appear in the audit tra
 
 ??? info "Exactly one replica polls"
     With several replicas, a lease row in the database lets exactly one poll, so cluster API load does not multiply with replica count. The lease lasts three polling intervals and is renewed every tick. If the holder dies, another replica takes over within about three minutes. If the database errors, no replica polls, which avoids all of them hitting the clusters at once.
+
+## GitOps drift
+
+A `gitops_drift` rule reads the same records as the [GitOps page](../clusters/gitops.md), once a minute, and fires when one of them **changes** into drift:
+
+- **Argo CD**: an object in an Application goes from `Synced` to `OutOfSync`. One alarm per object.
+- **Flux**: a Kustomization or HelmRelease stops being ready (its `Ready` condition turns `False`, or a revision was attempted but not applied). One alarm per record.
+
+It fires on the transition only. Something already out of sync when the rule is enabled, or that first appears out of sync, is on the page and does not page. The poller follows the cluster-event poller's rules: only clusters an enabled rule covers, only clusters with an attached agent, nothing delivered on the first pass, exactly one replica polling. Its reads appear in the audit trail as `kubemg:gitops-reader`.
+
+The alarm (`alertname` `KubeMGGitOpsDrift`, labels `tool` and `application`) names the **last write to the object that went through kubemg** since Argo CD last synced it, and carries that person as `username`. When there is none it says that a change made outside kubemg leaves no record here. Flux alarms name no writer, because Flux records no per-object state.
+
+A helm-controller drift report in `warn` mode does not change the release's `Ready` condition, so it does not fire this trigger. helm-controller emits it as a Kubernetes Event with reason `DriftDetected`, which a `cluster_event` rule can match.
 
 ## JIT approval notices
 

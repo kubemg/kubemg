@@ -214,7 +214,7 @@ func sourceKind(c *gin.Context) (string, bool) {
 	kind := c.Param("kind")
 	if !db.ValidSourceKind(kind) {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "a datasource is metrics, logs or alerts",
+			"error": "a datasource is metrics, logs, alerts or gitops",
 		})
 		return "", false
 	}
@@ -778,8 +778,8 @@ func (s *server) tunnelCall(user *db.User, cluster *db.Cluster) observability.Tu
 		ClusterID: cluster.ID,
 		K8sRole:   db.K8sRoleClusterAdmin,
 	}
-	return func(ctx context.Context, method, path string, body []byte) (int, []byte, error) {
-		resp, err := s.proxy.Call(ctx, user, cluster, grant, method, path, body, nil)
+	return func(ctx context.Context, method, path string, header http.Header, body []byte) (int, []byte, error) {
+		resp, err := s.proxy.CallWithHeader(ctx, user, cluster, grant, method, path, header, body, nil)
 		if err != nil {
 			return 0, nil, err
 		}

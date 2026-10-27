@@ -26,14 +26,19 @@ and rule out half of this page.
 
 - Cause: the key is not 32 bytes written as hex or base64.
 - Fix: `openssl rand -base64 32`. A passphrase is refused on purpose.
+- The same message names `KUBEMG_SECRET_KEY_PREVIOUS` when that is the
+  problem: it is malformed, set without `KUBEMG_SECRET_KEY`, or the same key as
+  it. See [Rotating the key](../install/database.md#rotating-the-key).
 
 **Refuses to start: `refusing to start: stored credentials cannot be decrypted…`.**
 
 - Cause: the database holds credentials encrypted under a `KUBEMG_SECRET_KEY`
   this server does not have (changed, removed, or restored without it). The
   message names the first unreadable value.
-- Fix: restore the original key. If it is truly lost, see
-  [Database](../install/database.md#credentials-encrypted-at-rest).
+- Fix: restore the original key. If you meant to change it, set the old
+  key as `KUBEMG_SECRET_KEY_PREVIOUS` for one boot — see
+  [Rotating the key](../install/database.md#rotating-the-key). If it is truly
+  lost, see [Database](../install/database.md#credentials-encrypted-at-rest).
 
 **Refuses to start: `refusing to serve plaintext HTTP on <addr>: it is reachable from more than this machine…`.**
 
@@ -110,6 +115,26 @@ just the status:
 | --- | --- | --- |
 | A fixed sentence: `namespace <ns> is outside your granted scope`, `no access to this cluster`, `this token may only be used against its cluster's kubectl proxy`, or a guardrail's message | kubemg | The call never reached the cluster. |
 | Kubernetes' own words, e.g. `pods is forbidden: User "kubemg:dev@corp" cannot list resource "pods"…` | The cluster's RBAC | The call reached the API server. The kubemg grant is fine but the `kubemg:view`/`edit`/`cluster-admin` bindings do not cover it. Check the agent's RBAC manifests were applied and are current, especially after an upgrade. |
+
+**`kubectl exec` fails with `kubemg lost the session before the command finished`.**
+
+- Cause: the session's tunnel went away while the command was running: the
+  agent pod restarted or was rescheduled, the agent was re-applied, or the
+  network between the cluster and kubemg dropped. Whether the command itself
+  completed inside the pod is unknown — only that its result never came back.
+- Fix: wait for the cluster to show as connected again and run it again. If it
+  keeps happening, read the agent's log for why the tunnel is dropping.
+
+**`kubectl` or a console page fails with `429` / `too many calls to cluster <name>`.**
+
+- Cause: the account made more calls into that cluster than its
+  [rate limit](settings.md#proxy_rate_limit_per_second-and-proxy_rate_limit_burst)
+  allows. kubectl has already waited and retried before it shows this; a
+  script running many kubectl processes in parallel, or a loop with no pause,
+  is the usual source. Each refusal is in the audit trail with `status` `429`.
+- Fix: slow the caller down, spread the work across time, or — if the load is
+  legitimate — raise the limit under **Settings → General**. An open shell,
+  `exec`, `logs -f` or `port-forward` is never cut off by it.
 
 ## The console
 

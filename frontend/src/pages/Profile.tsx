@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { ChevronRight, FileKey, KeyRound, Pencil, ShieldCheck, Timer } from 'lucide-react'
-import { fetchMFA } from '../api/client'
+import { fetchMe, fetchMFA } from '../api/client'
 import type { MFAFactor, MFAStatus, SystemRole, User } from '../api/types'
 import { AppShell } from '../components/AppShell'
 import { AddFactorSheet, RecoveryCodesSheet, RemoveFactorSheet } from '../components/MfaSheets'
@@ -9,6 +9,7 @@ import { PasswordSheet } from '../components/PasswordSheet'
 import { ProfileSheet } from '../components/ProfileSheet'
 import { Button, Panel, Pill } from '../components/primitives'
 import { factorKindLabel, keyIsStale, secondFactorApplies } from '../lib/mfa'
+import { passwordStatus } from '../lib/passwordExpiry'
 import { ACCESS_HOME, CREDENTIALS_HOME } from '../lib/navigation'
 import { profileAbilities } from '../lib/profile'
 import { formatInstant, relativeAge } from '../lib/time'
@@ -76,7 +77,17 @@ export function Profile() {
           }}
         />
       ) : null}
-      {changingPassword ? <PasswordSheet onClose={() => setChangingPassword(false)} /> : null}
+      {changingPassword ? (
+        <PasswordSheet
+          onClose={() => {
+            setChangingPassword(false)
+            // A change moves the expiry date shown on the page.
+            void fetchMe()
+              .then(replaceUser)
+              .catch(() => undefined)
+          }}
+        />
+      ) : null}
 
       {mfa && mfaSheet?.kind === 'add' ? (
         <AddFactorSheet
@@ -231,9 +242,17 @@ export function ProfileBody({
           ) : null
         }
       >
-        {can.changePassword
-          ? 'Changing it needs the current one, so a session left open somewhere cannot lock you out. You can revoke your issued kubeconfigs with it.'
-          : federated
+        {can.changePassword ? (
+          <>
+            {user.password_expires_at ? (
+              <span className="mb-2 flex">
+                <Pill tone={passwordStatus(user).tone}>{passwordStatus(user).text}</Pill>
+              </span>
+            ) : null}
+            Changing it needs the current one, so a session left open somewhere cannot lock you out.
+            You can revoke your issued kubeconfigs with it.
+          </>
+        ) : federated
             ? 'Your password is held by your identity provider — change it there.'
             : 'This account signs in with a token, not a password.'}
       </Panel>

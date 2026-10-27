@@ -5,6 +5,7 @@ import {
   fetchSetupState,
   login,
   readToken,
+  setPasswordChangeRequiredHandler,
   setUnauthorizedHandler,
   writeToken,
 } from '../api/client'
@@ -72,6 +73,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUnauthorizedHandler(signOut)
     return () => setUnauthorizedHandler(null)
   }, [signOut])
+
+  // A session held by the password gate mid-flight: re-read the account, whose
+  // flag is what puts the change screen in front of the console.
+  useEffect(() => {
+    setPasswordChangeRequiredHandler(() => {
+      void fetchMe()
+        .then(setUser)
+        .catch(() => undefined)
+    })
+    return () => setPasswordChangeRequiredHandler(null)
+  }, [])
 
   const signIn = useCallback(async (username: string, password: string) => {
     const result = await login(username, password)

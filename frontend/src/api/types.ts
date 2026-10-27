@@ -54,6 +54,15 @@ export interface User {
       never signed in, and for every sign-in older than the column — the console
       says which rather than drawing a blank that reads as an unknown host. */
   last_login_addr?: string
+  /** When a password held here was last set. Absent for an account whose
+      password is not held here. */
+  password_changed_at?: string
+  /** When the password age policy, or an administrator, makes the password
+      due. Absent when nothing does. */
+  password_expires_at?: string
+  /** That moment has passed: the session reaches nothing but the change
+      screen until the password is changed. */
+  password_change_required?: boolean
   created_at: string
 }
 
@@ -204,6 +213,34 @@ export interface KubeconfigRevokeAllResult {
  */
 export interface ProfileUpdate {
   email?: string
+}
+
+/** How the mail relay is reached. STARTTLS on 587 is what most relays want;
+    `tls` is implicit TLS (465); `none` is plain text and never carries a login
+    to anything but this host. */
+export type SMTPSecurity = 'starttls' | 'tls' | 'none'
+
+/** The relay KubeMG's own mail — password expiry reminders — goes through.
+    The password is write-only: it reads back as `has_password`. */
+export interface SMTPRelay {
+  configured: boolean
+  host?: string
+  port?: number
+  security?: SMTPSecurity
+  username?: string
+  has_password: boolean
+  from?: string
+  updated_at?: string
+}
+
+export interface SMTPRelayInput {
+  host: string
+  port: number
+  security: SMTPSecurity
+  username: string
+  /** Omitted keeps the stored password; `''` clears it. */
+  password?: string
+  from: string
 }
 
 export interface PasswordChange {
@@ -520,6 +557,12 @@ export interface AuditEvent {
   path: string
   namespace?: string
   resource?: string
+  /**
+   * The object the call addressed. Read off the path for every verb that names
+   * one there; a `create` posts to the collection, so its name comes from the
+   * cluster's answer and is absent when the create was refused.
+   */
+  name?: string
   impersonated_user?: string
   impersonated_groups: string[]
   status: number
@@ -539,6 +582,12 @@ export interface AuditEvent {
    */
   guardrail_policy?: string
   guardrail_action?: string
+  /**
+   * `kubemg` when KubeMG refused the call itself — before the tunnel, or a
+   * guardrail — rather than the cluster. Absent when the cluster answered, and
+   * on every row written before the field existed.
+   */
+  refused_by?: string
   /**
    * Where the call came from, as the server saw it. Both are absent on a record
    * with no caller (something this server did on its own) and on every row
@@ -2365,6 +2414,15 @@ export interface RuntimeSettings {
       matching enable switch — any grant that can already exec into a pod can
       already ask for one. */
   debug_image: string
+  /** Days a local password lives before its owner must change it. 0 is off —
+      the default, and the override's "unset". Federated accounts' passwords
+      are their provider's and are never governed by it. */
+  password_max_age_days: number
+  /** The call budget one account has against one cluster through kubemg, per
+      second and as a burst. 0 in `overrides` means unset, which is the build's
+      default — the limit is never off. */
+  proxy_rate_limit_per_second: number
+  proxy_rate_limit_burst: number
 }
 
 export interface SettingsResponse {
@@ -2437,7 +2495,7 @@ export type AlarmChannelKind =
 
 export type AlarmAuthMode = 'none' | 'bearer' | 'basic' | 'key'
 
-export type AlarmTrigger = 'cluster_event' | 'audit'
+export type AlarmTrigger = 'cluster_event' | 'audit' | 'gitops_drift'
 
 export type AlarmSeverity = 'info' | 'warning' | 'critical'
 
@@ -2448,7 +2506,9 @@ export interface AlarmChannel {
   id: number
   name: string
   kind: AlarmChannelKind
-  url: string
+  /** The URL's scheme and host, `/…` for the rest. The path and query are never
+      read back: a Slack or Teams webhook's path is its credential. */
+  url_masked: string
   auth_mode: AlarmAuthMode
   username?: string
   enabled: boolean
@@ -2465,7 +2525,8 @@ export interface AlarmChannel {
 export interface AlarmChannelInput {
   name: string
   kind: AlarmChannelKind
-  url: string
+  /** Required on create; omit on an update to keep the stored URL. */
+  url?: string
   auth_mode: AlarmAuthMode
   username?: string
   /** Omit to keep the stored credential. */
@@ -2498,6 +2559,9 @@ export interface AlarmRule {
   verbs?: string
   denied_only: boolean
   min_status?: number
+  /** gitops_drift only: tools and application names, comma-separated. */
+  gitops_tools?: string
+  gitops_apps?: string
   severity: AlarmSeverity
   cooloff_seconds?: number
   last_fired_at?: string
@@ -2519,6 +2583,8 @@ export interface AlarmRuleInput {
   verbs?: string[]
   denied_only?: boolean
   min_status?: number
+  gitops_tools?: string[]
+  gitops_apps?: string[]
   severity: AlarmSeverity
   cooloff_seconds?: number
 }
@@ -2530,6 +2596,8 @@ export interface AlarmRuleList {
   suggested_reasons: string[]
   /** False when this server has no proxy, so no tunnel to read events down. */
   cluster_events_available: boolean
+  /** The tools a gitops_drift rule may name. */
+  gitops_tools?: string[]
   /** False when no dispatcher is running: rules would never fire, and the panel
       says so rather than looking configured. */
   dispatcher_running: boolean
@@ -2795,12 +2863,13 @@ export interface LogQueryResponse {
  * now"; a datasource is what answers "since when", and it belongs to the
  * cluster rather than to the server — two clusters have two Prometheuses.
  */
-export type DatasourceKind = 'metrics' | 'logs' | 'alerts'
+export type DatasourceKind = 'metrics' | 'logs' | 'alerts' | 'gitops'
 
 export type MetricsProvider = 'victoriametrics' | 'prometheus' | 'thanos' | 'mimir'
 export type LogsProvider = 'victorialogs' | 'loki'
 export type AlertsProvider = 'alertmanager'
-export type DatasourceProvider = MetricsProvider | LogsProvider | AlertsProvider
+export type GitopsProvider = 'argocd'
+export type DatasourceProvider = MetricsProvider | LogsProvider | AlertsProvider | GitopsProvider
 
 /** How KubeMG reaches it: down the agent tunnel, or dialled from here. */
 export type DatasourceAccess = 'in-cluster' | 'direct'

@@ -23,7 +23,9 @@ import type {
   AlarmTrigger,
   Cluster,
 } from '../../api/types'
+import type { GitopsTool } from '../../api/gitops'
 import { headersHint, headersPayload } from '../../lib/alarmHeaders'
+import { TOOL_LABEL } from '../../lib/gitops'
 import type { Tone } from '../../lib/status'
 import {
   Age,
@@ -259,7 +261,9 @@ export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
                     {channel.enabled ? null : <Pill tone="idle">disabled</Pill>}
                     {channel.has_secret ? <Pill tone="ok">credential stored</Pill> : null}
                   </div>
-                  <p className="mt-1 truncate font-data text-[12px] text-muted">{channel.url}</p>
+                  <p className="mt-1 truncate font-data text-[12px] text-muted">
+                    {channel.url_masked}
+                  </p>
 
                   {/* Delivery health. An integration that quietly stopped working
                       is the failure mode that matters: nobody notices a page that
@@ -421,6 +425,12 @@ function describeRule(rule: AlarmRule, clusters: Cluster[]): string {
     return `${type} (${reasons}) on ${scope}`
   }
 
+  if (rule.trigger === 'gitops_drift') {
+    const tools = rule.gitops_tools || 'any tool'
+    const apps = rule.gitops_apps ? ` in ${rule.gitops_apps}` : ''
+    return `drift recorded by ${tools}${apps} on ${scope}`
+  }
+
   const verbs = rule.verbs || 'any action'
   const outcome = rule.denied_only ? 'refused' : 'audited'
   const status = rule.min_status ? ` at or above HTTP ${rule.min_status}` : ''
@@ -443,7 +453,9 @@ function ChannelSheet({
       ? {
           name: channel.name,
           kind: channel.kind,
-          url: channel.url,
+          // Always blank: only the host is read back, since a webhook's path is
+          // its credential, and leaving it empty is what keeps the stored URL.
+          url: '',
           auth_mode: channel.auth_mode,
           username: channel.username ?? '',
           // Always blank: the stored credential is never read back, and leaving
@@ -472,7 +484,8 @@ function ChannelSheet({
       const payload: AlarmChannelInput = {
         ...draft,
         name: draft.name.trim(),
-        url: draft.url.trim(),
+        // Like the secret: empty on an edit means "keep the stored URL".
+        url: draft.url?.trim() ? draft.url.trim() : undefined,
         // An empty secret means "keep the stored one", so it is omitted rather
         // than sent blank.
         secret: draft.secret?.trim() ? draft.secret.trim() : undefined,
@@ -546,14 +559,20 @@ function ChannelSheet({
         <Field
           label="Endpoint URL"
           htmlFor="channel_url"
-          hint="Dialled from kubemg, so it has to be reachable from here. An internal address is the usual case."
+          hint={
+            channel
+              ? `Stored for ${channel.url_masked || 'this channel'} and never read back — a webhook's path is its credential. Leave this empty to keep it.`
+              : 'Dialled from kubemg, so it has to be reachable from here. An internal address is the usual case. Stored encrypted; only the host is shown again.'
+          }
         >
           <TextInput
             id="channel_url"
             className="font-data text-[12.5px]"
-            value={draft.url}
+            value={draft.url ?? ''}
             onChange={(event) => set('url', event.target.value)}
-            placeholder="https://alertmanager.example.com/api/v2/alerts"
+            placeholder={
+              channel ? channel.url_masked : 'https://alertmanager.example.com/api/v2/alerts'
+            }
           />
         </Field>
 
@@ -689,6 +708,8 @@ function RuleSheet({
   const [verbs, setVerbs] = useState<string[]>(splitList(rule?.verbs))
   const [deniedOnly, setDeniedOnly] = useState(rule?.denied_only ?? true)
   const [minStatus, setMinStatus] = useState(rule?.min_status ? String(rule.min_status) : '')
+  const [gitopsTools, setGitopsTools] = useState<string[]>(splitList(rule?.gitops_tools))
+  const [gitopsApps, setGitopsApps] = useState(rule?.gitops_apps ?? '')
   const [severity, setSeverity] = useState<AlarmSeverity>(rule?.severity ?? 'warning')
   const [cooloff, setCooloff] = useState(rule?.cooloff_seconds ? String(rule.cooloff_seconds) : '')
 
@@ -712,6 +733,8 @@ function RuleSheet({
         verbs: trigger === 'audit' ? verbs : [],
         denied_only: trigger === 'audit' ? deniedOnly : false,
         min_status: trigger === 'audit' && minStatus ? Number(minStatus) : 0,
+        gitops_tools: trigger === 'gitops_drift' ? gitopsTools : [],
+        gitops_apps: trigger === 'gitops_drift' ? splitList(gitopsApps) : [],
         severity,
         cooloff_seconds: cooloff ? Number(cooloff) : 0,
       }
@@ -733,6 +756,12 @@ function RuleSheet({
       current.includes(reason)
         ? current.filter((entry) => entry !== reason)
         : [...current, reason],
+    )
+  }
+
+  function toggleTool(tool: string) {
+    setGitopsTools((current) =>
+      current.includes(tool) ? current.filter((entry) => entry !== tool) : [...current, tool],
     )
   }
 
@@ -806,7 +835,11 @@ function RuleSheet({
               ? vocabulary.cluster_events_available
                 ? 'Kubernetes Events read down the agent tunnel, once a minute per cluster a rule covers.'
                 : 'This server has no proxy, so there is no tunnel to read cluster events down. A rule here would never fire.'
-              : 'kubemg’s own audit records — including the refusals no cluster ever sees.'
+              : trigger === 'gitops_drift'
+                ? vocabulary.cluster_events_available
+                  ? 'The sync state Argo CD and Flux record, read once a minute per cluster a rule covers. Fires when something goes out of sync, never for drift already there.'
+                  : 'This server has no proxy, so there is no tunnel to read GitOps records down. A rule here would never fire.'
+                : 'kubemg’s own audit records — including the refusals no cluster ever sees.'
           }
         >
           <Select
@@ -816,6 +849,7 @@ function RuleSheet({
           >
             <option value="cluster_event">Cluster events</option>
             <option value="audit">kubemg audit records</option>
+            <option value="gitops_drift">GitOps drift</option>
           </Select>
         </Field>
 
@@ -885,6 +919,42 @@ function RuleSheet({
                 would fire on everything the cluster says, and is refused.
               </p>
             </div>
+          </>
+        ) : trigger === 'gitops_drift' ? (
+          <>
+            <div className="flex flex-col gap-2">
+              <p className="label">Tools</p>
+              <div className="flex flex-wrap gap-2">
+                {(vocabulary.gitops_tools ?? GITOPS_TOOLS).map((tool) => (
+                  <Chip key={tool} active={gitopsTools.includes(tool)} onClick={() => toggleTool(tool)}>
+                    {TOOL_LABEL[tool as GitopsTool] ?? tool}
+                  </Chip>
+                ))}
+              </div>
+              <p className="text-[12px] leading-snug text-muted">
+                None selected means any tool. Argo CD fires per object going from Synced to
+                OutOfSync; Flux fires when a Kustomization or HelmRelease stops being ready.
+              </p>
+            </div>
+
+            <Field
+              label="Applications"
+              htmlFor="rule_gitops_apps"
+              hint="Comma-separated Application, Kustomization or HelmRelease names. Empty means any."
+            >
+              <TextInput
+                id="rule_gitops_apps"
+                className="font-data text-[12.5px]"
+                value={gitopsApps}
+                onChange={(event) => setGitopsApps(event.target.value)}
+                placeholder="payments,checkout"
+              />
+            </Field>
+
+            <p className="text-[12px] leading-snug text-muted">
+              The alarm names the last write to the object that went through kubemg. A change made
+              outside kubemg leaves no record here, and the alarm says so.
+            </p>
           </>
         ) : (
           <>
@@ -987,6 +1057,9 @@ function RuleSheet({
   )
 }
 
+/** The tools a drift rule can name, when the server does not list them. */
+const GITOPS_TOOLS: GitopsTool[] = ['argocd', 'flux-kustomization', 'flux-helmrelease']
+
 /** The verbs an audit rule can match, matching what the server accepts. */
 const AUDIT_VERBS = [
   'get',
@@ -1009,6 +1082,7 @@ const AUDIT_VERBS = [
   'mfa-recovery-used',
   'cli-login',
   'cli-session-revoke',
+  'password-expire',
 ]
 
 function splitList(raw: string | undefined): string[] {

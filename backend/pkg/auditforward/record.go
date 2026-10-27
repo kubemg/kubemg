@@ -70,8 +70,14 @@ func encode(ctx context.Context, event bastion.Event) (record, bool) {
 	if event.Resource != "" {
 		fields["resource"] = event.Resource
 	}
+	if event.Name != "" {
+		fields["name"] = event.Name
+	}
 	if event.Error != "" {
 		fields["error"] = event.Error
+	}
+	if event.RefusedBy != "" {
+		fields["refused_by"] = event.RefusedBy
 	}
 	if event.Streaming {
 		fields["streaming"] = true

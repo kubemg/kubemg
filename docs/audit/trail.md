@@ -7,10 +7,31 @@ The audit trail records every call kubemg proxies to a cluster, plus kubemg's ow
 - Every call the bastion proxies for a user: list, get, watch, create, update, patch, delete and the streaming verbs.
 - kubemg's own sensitive acts: watching or deleting a [session recording](session-recording.md), and every [JIT](../access/jit.md) workflow event (`jit-request`, `jit-approve`, `jit-reject`, `jit-revoke`, `jit-expire`).
 - Second-factor events: `mfa-enroll`, `mfa-remove`, `mfa-reset` (the administrator as the user, the account reset as the impersonated user), `mfa-recovery-used` and `mfa-recovery-regenerate`. See [Two-factor authentication](../access/mfa.md#in-the-audit-trail).
+- Password events: `password-change` (an account changing its own password) and `password-expire` (an administrator forcing somebody's to be changed — the administrator as the user, the account as the impersonated user). See [Password expiry](../access/password-expiry.md#in-the-audit-trail).
 - CLI sign-in events: `cli-login` (an approved `kubemg login`, with the machine and source address in the path query) and `cli-session-revoke`. See [The kubemg command line](../access/cli.md#in-the-audit-trail).
 - Agent credential events: an administrator rotating a registration token (`agent-token-rotate`), and a new connection taking over a cluster's tunnel (`agent-displaced`, under the user `kubemg:agent`, with both agents' versions, connection times and addresses in the path query). See [The agent](../clusters/agent.md#when-a-connection-displaces-the-agent).
 
 A refusal is recorded like a success: a guardrail block, a namespace-scope violation, a tunnel failure. There is no separate "denied" table. A denial is a row whose `status` is 4xx/5xx or whose `error` is set.
+
+### Refusals kubemg makes itself
+
+The trail records every attempt, not only the calls that reached a cluster. When kubemg refuses a request before asking the cluster, that refusal is a row too. Examples:
+
+- A namespace outside your grant.
+- A cluster-wide list (nodes, persistent volumes, storage classes) asked for under a namespace-scoped grant.
+- A kind kubemg will not create (roles, bindings, nodes).
+- A manifest addressed at a different namespace from the one it is being created in.
+- A metrics or logs chart that would cover namespaces outside your grant.
+- A `kubectl` call on a cluster you hold no grant on.
+- A call over your [rate limit](../reference/settings.md#proxy_rate_limit_per_second-and-proxy_rate_limit_burst) for that cluster (`status` `429`). A call that only waited for its turn is recorded as normal.
+
+These rows carry `refused_by: kubemg` and the message you were given as `error`. They carry no impersonated identity, because nothing was asserted to the cluster. A refusal the cluster gave has no `refused_by` and is recorded once, by the call that carried it.
+
+Not recorded:
+
+- A request with no valid session (`401`). There is no account to put on the row.
+- A server error (`5xx`). That is a failure, not a refusal. Calls that reached a cluster are recorded either way.
+- Refusals on kubemg's own configuration pages for a cluster (consoles, cost rates, sidebar curation, datasource settings) and on kubeconfig generation. These reach neither the cluster nor its data.
 
 ## The record
 
@@ -22,6 +43,7 @@ A refusal is recorded like a success: a guardrail block, a namespace-scope viola
 | `verb` / `method` | The Kubernetes verb (`list`, `get`, `create`, `exec`, ...) and the raw HTTP method. See [Verb naming](#verb-naming) |
 | `path` | The full API path with its query string |
 | `namespace` / `resource` | Parsed out of the path when it looks like a Kubernetes API URL |
+| `name` | The object the call addressed. Taken from the path for every verb that names its object there. A `create` names only the collection in its path, so its name is the one the cluster answered with — including a name the cluster generated. Empty on a create the cluster refused (nothing was made), on a list or watch, and on rows written before kubemg recorded it |
 | `impersonated_user` / `impersonated_groups` | The identity kubemg asserted to the cluster. It ties a kubemg account to the Kubernetes subject that acted |
 | `status` | The HTTP status the call ended with |
 | `duration_ms` | How long the call took |
@@ -31,6 +53,7 @@ A refusal is recorded like a success: a guardrail block, a namespace-scope viola
 | `guardrail_policy` / `guardrail_action` | Which [guardrail](../access/guardrails.md) matched and what it did (`block` or `warn`) |
 | `source_addr` / `user_agent` | Where the call came from. See [Where a call came from](#where-a-call-came-from) |
 | `error` | Set when the call never reached the API server |
+| `refused_by` | `kubemg` when kubemg refused the call itself instead of asking the cluster. See [Refusals kubemg makes itself](#refusals-kubemg-makes-itself) |
 | `diff` | Field-level diff of a manifest write. Only when [manifest diff recording](#manifest-diff-recording) is on |
 
 <figure markdown>
@@ -89,7 +112,7 @@ It is off by default because a manifest body can hold values as sensitive as a S
 | `failed` | `true` keeps only refusals and errors (a stream's opening `101` is not a failure) |
 | `since` / `until` **or** `from` / `to` | RFC 3339 timestamps. Both pairs are accepted, so saved links keep working |
 | `range` | Fixed preset resolved on the server: `15m`, `1h`, `6h`, `24h`, `7d`, `30d`, or `all` |
-| `q` | Free text against path, username, resource, namespace |
+| `q` | Free text against path, username, resource, namespace, name |
 | `limit` / `offset` | Paging, capped at 100 rows per page |
 
 - An explicit `from`/`since` wins over a `range` preset. `range=all` means no lower bound.
@@ -133,7 +156,7 @@ Neither the log nor a forwarder applies the `audit_verbs` selection.
 RFC 5424 syslog, with one JSON object per record as the message:
 
 ```
-<134>1 2026-08-25T09:14:02.913Z bastion-0 kubemg - kubemg-audit - {"audit":"kubemg.proxy","timestamp":"2026-08-25T09:14:02.913Z","user_id":7,"username":"ada","cluster_id":4,"cluster":"prod-eu","verb":"delete","method":"DELETE","uri":"/api/v1/namespaces/checkout/pods/checkout-7d9f","namespace":"checkout","resource":"pods","impersonate_user":"kubemg:u:ada","impersonate_groups":"kubemg:edit","status_code":403,"duration_ms":4,"source_addr":"10.4.1.9","user_agent":"kubectl/v1.31.0","error":"refused by guardrail"}
+<134>1 2026-08-25T09:14:02.913Z bastion-0 kubemg - kubemg-audit - {"audit":"kubemg.proxy","timestamp":"2026-08-25T09:14:02.913Z","user_id":7,"username":"ada","cluster_id":4,"cluster":"prod-eu","verb":"delete","method":"DELETE","uri":"/api/v1/namespaces/checkout/pods/checkout-7d9f","namespace":"checkout","resource":"pods","name":"checkout-7d9f","impersonate_user":"kubemg:u:ada","impersonate_groups":"kubemg:edit","status_code":403,"duration_ms":4,"source_addr":"10.4.1.9","user_agent":"kubectl/v1.31.0","error":"refused by guardrail"}
 ```
 
 The JSON field names are the structured log's, so one parser reads both. **The manifest diff is never forwarded.**

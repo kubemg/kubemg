@@ -458,8 +458,11 @@ func (a *alarmAuditor) Record(_ context.Context, event bastion.Event) {
 	denied := event.Error != "" || event.Status >= 400
 
 	object := event.Resource
+	if object != "" && event.Name != "" {
+		object += "/" + event.Name
+	}
 	if object != "" && event.Namespace != "" {
-		object = event.Namespace + "/" + event.Resource
+		object = event.Namespace + "/" + object
 	}
 
 	a.dispatcher.Observe(observability.Signal{

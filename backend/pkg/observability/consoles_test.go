@@ -172,18 +172,26 @@ func TestGrafanaExploreDatasourceType(t *testing.T) {
 }
 
 func TestArgoApplication(t *testing.T) {
-	got := ArgoApplication("https://argocd.example.com/", "payments-api")
-	if got != "https://argocd.example.com/applications/payments-api" {
+	// The namespaced form: the bare /applications/{name} resolves only in the
+	// controller's own namespace.
+	got := ArgoApplication("https://argocd.example.com/", "argocd", "payments-api")
+	if got != "https://argocd.example.com/applications/argocd/payments-api" {
 		t.Fatalf("link = %q", got)
 	}
-	// The name comes off a label Argo wrote, so it is escaped into its segment
-	// rather than trusted to be one.
-	if got := ArgoApplication("https://argocd.example.com", "a/b"); got !=
-		"https://argocd.example.com/applications/a%2Fb" {
+	// Both segments come off the Application's metadata, so each is escaped
+	// into its segment rather than trusted to be one.
+	if got := ArgoApplication("https://argocd.example.com", "team/a", "a/b"); got !=
+		"https://argocd.example.com/applications/team%2Fa/a%2Fb" {
 		t.Fatalf("escaped link = %q", got)
 	}
-	if got := ArgoApplication("https://argocd.example.com", ""); got != "" {
-		t.Fatalf("nameless link = %q", got)
+	for _, args := range [][3]string{
+		{"https://argocd.example.com", "argocd", ""},
+		{"https://argocd.example.com", "", "payments-api"},
+		{"", "argocd", "payments-api"},
+	} {
+		if got := ArgoApplication(args[0], args[1], args[2]); got != "" {
+			t.Fatalf("ArgoApplication(%q, %q, %q) = %q, want no link", args[0], args[1], args[2], got)
+		}
 	}
 }
 

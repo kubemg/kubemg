@@ -74,6 +74,7 @@ func (p *Proxy) failGuardrail(c *gin.Context, event *Event, decision *guardrails
 
 	event.Status = http.StatusForbidden
 	event.Error = message
+	event.RefusedBy = RefusedByKubeMG
 	noteGuardrail(event, decision)
 	event.Duration = time.Since(event.At)
 	p.auditor.Record(c.Request.Context(), *event)
@@ -110,6 +111,7 @@ func (p *Proxy) recordGuardedCommand(c *gin.Context, event *Event, decision *gua
 	noteGuardrail(&record, decision)
 	if decision.Blocked() {
 		record.Status = http.StatusForbidden
+		record.RefusedBy = RefusedByKubeMG
 	}
 	p.auditor.Record(c.Request.Context(), record)
 }

@@ -51,6 +51,7 @@ See [Database](database.md) for how the schema is applied.
 | `JWT_SECRET` | generated, kept in the database | Signs sessions, generated kubeconfigs and JIT approval callback tokens. Unset, the server mints a 32-byte random key on first boot and stores it in the database; replicas booting together converge on the same key. Set it explicitly to supply your own key, or to be able to rotate it deliberately — which invalidates every issued token at once. |
 | `JWT_TTL` | `12h` | Session token lifetime. |
 | `KUBEMG_SECRET_KEY` | — | 32 bytes, hex or base64 (`openssl rand -base64 32`). Encrypts the credentials stored in the database — the generated signing key, agent tunnel tokens, direct-mode ServiceAccount tokens, and datasource, Helm repository, alarm channel and SSO credentials — with AES-256-GCM. Unset, they are stored in plaintext and the server warns at boot. With a key set, every plaintext value is encrypted in place on the next boot. A key that is not exactly 32 bytes **refuses to boot**; so does a database holding values encrypted under a different key, or under a key that has since been removed. **Back it up separately from the database** — see [Database](database.md#credentials-encrypted-at-rest). |
+| `KUBEMG_SECRET_KEY_PREVIOUS` | — | The key `KUBEMG_SECRET_KEY` replaces, set only for the restart that rotates to a new key. It opens what it encrypted and never encrypts: that boot re-encrypts every stored credential under `KUBEMG_SECRET_KEY`, then the Deployment posture page warns until it is removed. Set without `KUBEMG_SECRET_KEY`, or equal to it, **refuses to boot**. See [Rotating the key](database.md#rotating-the-key). |
 | `KUBEMG_ADMIN_USERNAME` | `admin` | Bootstrap administrator's username, created only when the users table is empty. |
 | `KUBEMG_ADMIN_PASSWORD` | generated, printed once to the log | Bootstrap administrator's password. Left unset, a random 20-character password (drawn from an alphabet with no visually-ambiguous characters) is generated and logged exactly once. Setup will not let you finish until it's changed either way. |
 | `KUBEMG_MFA_RESET_USERNAME` | unset | **Break-glass.** The account named has its second factor removed at every boot, with an `ERROR` log line and a `mfa-reset` audit record. For a sole super admin who lost both phone and recovery codes; unset it once they have enrolled again. See [Two-factor authentication](../access/mfa.md#break-glass-the-only-super-admin-lost-both-phone-and-codes). |
@@ -118,7 +119,7 @@ also validated on the way in (1–3650 days) and on the way out.*
 
 | Variable | Default | What it is |
 |---|---|---|
-| `KUBEMG_METRICS_ADDR` | — | `host:port` for a separate internal listener that serves only `GET /metrics` for Prometheus scraping. Unset, the endpoint is not exposed at all. Bind to a loopback or private address (e.g. `127.0.0.1:9090`) — **never** to the same address as `KUBEMG_LISTEN_ADDR`, which is reachable from agent clusters. See [Prometheus metrics](metrics.md). |
+| `KUBEMG_METRICS_ADDR` | — | `host:port` for a separate internal listener that serves only `GET /metrics` for Prometheus scraping. Unset, the endpoint is not exposed at all. Bind to a loopback or private address (e.g. `127.0.0.1:9090`), or to `:9090` in a container — **never** to the port of `KUBEMG_LISTEN_ADDR`, which is reachable from agent clusters; the server refuses to start if the two share one. A non-loopback address logs a warning at boot, since the endpoint is plaintext and unauthenticated. See [Prometheus metrics](metrics.md#in-a-container). |
 
 ## Client addresses behind a proxy
 
@@ -160,9 +161,9 @@ KUBEMG_TLS_SUPPLIED_DIR=/etc/kubemg/ssl
 # KUBEMG_AGENT_CA_BUNDLE=/etc/kubemg/ssl/proxy-ca.crt
 
 # --- air-gapped / internal registry --------------------------------------
-# KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.16.0
+# KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.17.0
 # KUBEMG_POSTGRES_IMAGE=registry.internal/postgres:16-alpine
-# KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.16.0
+# KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.17.0
 # KUBEMG_AGENT_IMAGE_PULL_SECRET=registry-internal
 KUBEMG_AGENT_NAMESPACE=kubemg-system
 

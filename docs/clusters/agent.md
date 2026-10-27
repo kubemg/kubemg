@@ -120,11 +120,13 @@ The agent holds almost nothing itself: its only privilege is to *impersonate*. W
 
 ## Upgrading the agent image
 
-The image is set by `KUBEMG_AGENT_IMAGE` (default `ghcr.io/kubemg/kubemg-agent:0.16.0`), overridable in **Settings → Agent** without a restart. A change affects **future** install commands; a running agent keeps its image until you re-apply.
+The image is set by `KUBEMG_AGENT_IMAGE` (default `ghcr.io/kubemg/kubemg-agent:0.17.0`), overridable in **Settings → Agent** without a restart. A change affects **future** install commands; a running agent keeps its image until you re-apply.
 
 1. Set the new image.
 2. Open **the cluster's dashboard → Agent install** (admin only, agent-mode clusters). It re-renders the package from the stored token against current settings and mints a new single-use URL, nothing else. It is offered whether or not the agent is attached, since a down tunnel is when you need it.
 3. Apply it with `kubectl apply -f` (or `-k`). The old pod stops before the new one starts, so the tunnel drops and reconnects. That is normal.
+
+A tunnel drop ends every session open through it: shells, `kubectl exec` and `attach`, `logs -f`, port-forwards. An `exec` or `attach` ended this way fails rather than looking finished — kubectl prints `error: kubemg lost the session before the command finished: …` and exits non-zero, and the console's terminals show the same line. A script can tell a command that finished from one whose tunnel went away by its exit code. Run it again once the agent has reconnected.
 
 !!! danger "Re-apply after any kubemg upgrade that touches RBAC"
     When kubemg adds a ClusterRole the agent depends on (as it did for `kubemg-crd-discovery` and the custom-resource roles), existing installs **must re-apply their manifests**. Until then, CRD discovery answers 403 and Explore shows no custom resources, with no other symptom: the tunnel stays up and pods, services and nodes keep working. If custom-resource sections are unexpectedly empty, re-apply first.
@@ -162,7 +164,7 @@ A rollover of your own Deployment usually comes from the same network, runs the 
 The agent image is public at `ghcr.io/kubemg/kubemg-agent` (amd64 and arm64, no login needed). The **cluster**, not kubemg, must reach wherever it is pulled from. With no route to `ghcr.io`, mirror the image and point `KUBEMG_AGENT_IMAGE` at the mirror:
 
 ```dotenv
-KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.16.0
+KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.17.0
 ```
 
 If the mirror needs authentication, name a pull secret under **Agent settings → Image pull secret** (or `KUBEMG_AGENT_IMAGE_PULL_SECRET`). The manifest names it, and the install package's first step creates it from credentials in your shell; kubemg never holds them. For sites that receive images on physical media, `make save-images` writes every image an install needs into one `docker load` tarball. See [Air-gapped installs](../install/air-gapped.md).
@@ -170,9 +172,9 @@ If the mirror needs authentication, name a pull secret under **Agent settings �
 To build the image yourself:
 
 ```bash
-make agent-image AGENT_VERSION=0.16.0     # builds ghcr.io/kubemg/kubemg-agent:0.16.0 locally
+make agent-image AGENT_VERSION=0.17.0     # builds ghcr.io/kubemg/kubemg-agent:0.17.0 locally
 make agent-image-check                    # proves the amd64+arm64 matrix builds
-make agent-push AGENT_VERSION=0.16.0      # requires docker login; pushes both arches
+make agent-push AGENT_VERSION=0.17.0      # requires docker login; pushes both arches
 ```
 
 `REGISTRY` in the `Makefile` (default `ghcr.io/kubemg`) is what an air-gapped site overrides to retag both kubemg images under an internal registry. Building from source and the wire protocol are in the developer guide's [The agent module](../dev/agent.md).

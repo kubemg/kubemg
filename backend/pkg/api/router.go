@@ -22,6 +22,7 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/guardrails"
 	"github.com/kubemg/kubemg/backend/pkg/jit"
 	"github.com/kubemg/kubemg/backend/pkg/k8s"
+	"github.com/kubemg/kubemg/backend/pkg/mailer"
 	"github.com/kubemg/kubemg/backend/pkg/metrics"
 	"github.com/kubemg/kubemg/backend/pkg/observability"
 )
@@ -239,6 +240,15 @@ type Store interface {
 	// means somebody else holds it, an error means do not run.
 	AcquireLease(ctx context.Context, name, holder string, ttl time.Duration) (bool, error)
 
+	// The password age policy and its reminders — see password_policy.go and
+	// password_notices.go — and the relay those reminders go through.
+	PasswordAccounts(ctx context.Context) ([]db.PasswordAccount, error)
+	ExpirePassword(ctx context.Context, userID uint, at time.Time) (bool, error)
+	RecordPasswordNotice(ctx context.Context, userID uint, due time.Time, days int) error
+	SMTPConfig(ctx context.Context) (*db.SMTPConfig, error)
+	PutSMTPConfig(ctx context.Context, config *db.SMTPConfig) error
+	DeleteSMTPConfig(ctx context.Context) error
+
 	// Identity federation: the providers, the rules that say what an external
 	// group is worth, and the sync that applies them on every federated sign-in.
 	ListSSOProviders(ctx context.Context) ([]db.SSOProviderConfig, error)
@@ -364,6 +374,10 @@ type Options struct {
 	// publishes it; the gateway reads it. Nil means the gateway records everything,
 	// which is what a server wired without it does.
 	AuditPolicy *auditpolicy.Policy
+	// RateLimit is the gateway's per-identity, per-cluster call budget. This
+	// router resolves it from the settings and publishes it on the audit
+	// policy's schedule. Nil leaves the settings readable and paces nothing.
+	RateLimit *bastion.RateLimiter
 	// Credentials is the shared snapshot of which issued kubeconfigs have been
 	// withdrawn. This router resolves it from the register and publishes it; the
 	// gateway reads it lock-free. Nil leaves the register readable and the revoke
@@ -423,6 +437,9 @@ type Options struct {
 	// origin, whether recordings are encrypted. The setup wizard reports them
 	// rather than pretending to own them; see setup.go.
 	Deployment Deployment
+	// MailSender delivers KubeMG's own mail. Nil sends through mailer.Send;
+	// tests substitute a recorder.
+	MailSender func(context.Context, mailer.Config, mailer.Message) error
 	// Background scopes the housekeeping goroutines that run alongside the
 	// handlers — today just the audit retention pruner. Left nil, as the tests
 	// leave it, nothing is started and the router is purely request-driven.
@@ -485,6 +502,8 @@ type server struct {
 	auditRetentionDays int
 	// auditPolicy is published from the settings; see Options.AuditPolicy.
 	auditPolicy *auditpolicy.Policy
+	// rateLimit is published from the settings; see Options.RateLimit.
+	rateLimit *bastion.RateLimiter
 	// guardrails is the compiled rule set the gateway enforces; see
 	// Options.Guardrails. Nil means this server does not manage them.
 	guardrails *guardrails.Engine
@@ -532,6 +551,14 @@ type server struct {
 	cliSums cliDigests
 	// version is the release this binary was built as; see Options.Version.
 	version string
+	// passwords is the published password expiry snapshot; see
+	// password_policy.go.
+	passwords *passwordGate
+	// mail delivers KubeMG's own mail; see Options.MailSender.
+	mail func(context.Context, mailer.Config, mailer.Message) error
+	// jobs is the background context, for work a request kicks off but must
+	// not wait for. Nil when this server runs no background work.
+	jobs context.Context
 }
 
 // NewRouter builds the KubeMG HTTP router. Authenticated routes are only
@@ -594,9 +621,10 @@ func NewRouter(opts Options) *gin.Engine {
 		cliDir:               strings.TrimSpace(opts.CLIDir),
 		recordingKey:         opts.RecordingKey,
 		recordingInput:       opts.RecordingInput,
-		auditor:              opts.Auditor,
+		auditor:              bastion.NoteAttempts(opts.Auditor),
 		auditRetentionDays:   retention,
 		auditPolicy:          opts.AuditPolicy,
+		rateLimit:            opts.RateLimit,
 		guardrails:           opts.Guardrails,
 		credentials:          opts.Credentials,
 		alarms:               opts.Alarms,
@@ -609,6 +637,12 @@ func NewRouter(opts Options) *gin.Engine {
 		signIns:              auth.NewLoginThrottle(),
 		deployment:           opts.Deployment,
 		version:              strings.TrimSpace(opts.Version),
+		passwords:            &passwordGate{},
+		mail:                 opts.MailSender,
+		jobs:                 opts.Background,
+	}
+	if s.mail == nil {
+		s.mail = mailer.Send
 	}
 	if opts.Bastion != nil {
 		s.tunnels = opts.Bastion.Registry()
@@ -653,7 +687,8 @@ func NewRouter(opts Options) *gin.Engine {
 		go s.startAuditPruner(opts.Background)
 		// What reaches that table is a setting, and the gateway reads it from
 		// memory on every call — so it has to be resolved here and republished.
-		if s.auditPolicy != nil {
+		// The rate limit rides the same timer: it is read on every call too.
+		if s.auditPolicy != nil || s.rateLimit != nil {
 			go s.startAuditPolicyRefresher(opts.Background)
 		}
 		// The same handoff for the safety policies. It publishes once before
@@ -673,6 +708,9 @@ func NewRouter(opts Options) *gin.Engine {
 		// Nothing is read until a cluster-event rule exists; see alarms_watch.go.
 		if s.alarms != nil && opts.Proxy != nil {
 			go s.startAlarmWatcher(opts.Background)
+			// GitOps drift is read the same way, from the controllers' records,
+			// and likewise nothing is read until a gitops_drift rule exists.
+			go s.startGitopsWatcher(opts.Background)
 		}
 		// Stops the event watches nobody is reading. It is a sweeper rather than
 		// a timer per cluster, for the reason the JIT expirer is: one loop that
@@ -696,12 +734,20 @@ func NewRouter(opts Options) *gin.Engine {
 		if s.jit != nil {
 			go s.jit.RunExpirer(opts.Background)
 		}
+		// A password falls due by the clock, and a sibling replica's write moves
+		// a due date; both reach this process's gate on a timer.
+		go s.startPasswordGateRefresher(opts.Background)
+		// Reminders before a password expires. One replica mails them; see
+		// password_notices.go.
+		go s.startPasswordNotices(opts.Background)
 	}
 	// A service account's credential is verified against a stored row rather
 	// than parsed, which is what makes it revocable — see
 	// machineTokenVerifier. Everything past the middleware sees one shape of
 	// claims and cannot tell the two credentials apart.
-	requireAuth := auth.RequireAuth(s.jwt, newMachineTokenVerifier(s.store))
+	// A console session whose password is due reaches only the routes that
+	// change it; see password_policy.go.
+	requireAuth := auth.RequireAuthGated(s.jwt, newMachineTokenVerifier(s.store), s.gatePasswordAge)
 	requireAdmin := auth.RequireRole(db.RoleAdmin)
 
 	if opts.Bastion != nil {
@@ -941,21 +987,26 @@ func NewRouter(opts Options) *gin.Engine {
 		// window. A range query is also the most expensive read here, so it is
 		// cached on the same terms — a chart genuinely asking for a different
 		// window still misses, because the window is part of the key.
-		sources.GET("/metrics/query", s.cachedRead(), s.queryMetrics)
+		// KubeMG's own refusals on every route that reaches a cluster or its
+		// data are recorded by one middleware rather than at forty call sites.
+		// See audit_refusals.go for what it records and what it leaves out.
+		refusals := s.auditRefusals()
+
+		sources.GET("/metrics/query", refusals, s.cachedRead(), s.queryMetrics)
 		// The comparison table, cached on the same terms and for the same
 		// reason — it costs two queries rather than one, and a page carrying a
 		// chart row and a table asks for both on every render.
-		sources.GET("/metrics/compare", s.cachedRead(), s.compareMetrics)
-		sources.GET("/logs/query", s.queryLogs)
+		sources.GET("/metrics/compare", refusals, s.cachedRead(), s.compareMetrics)
+		sources.GET("/logs/query", refusals, s.queryLogs)
 
 		// The cluster's Alertmanager: what is firing and what is muted, read as
 		// the datasource and narrowed to the caller's grant like the query path.
 		// A silence is the one write; KubeMG decides it (an edit grant over the
 		// alert's namespace) and records it, because no cluster RBAC sees it.
-		sources.GET("/alerts", s.cachedRead(), s.listFiringAlerts)
-		sources.GET("/silences", s.listSilences)
-		sources.POST("/silences", s.createSilence)
-		sources.DELETE("/silences/:sid", s.expireSilence)
+		sources.GET("/alerts", refusals, s.cachedRead(), s.listFiringAlerts)
+		sources.GET("/silences", refusals, s.listSilences)
+		sources.POST("/silences", refusals, s.createSilence)
+		sources.DELETE("/silences/:sid", refusals, s.expireSilence)
 		// Which labels a rule needs for this cluster's Prometheus to load it —
 		// read for the administrator registering the Alertmanager.
 		sources.GET("/alerting/rule-selectors", requireAdmin, s.prometheusRuleSelectors)
@@ -982,7 +1033,7 @@ func NewRouter(opts Options) *gin.Engine {
 			 * attach is a WebSocket, so it authenticates on the query parameter the
 			 * same way the pod terminal does — see auth.RequireAuth.
 			 */
-			shellRoutes := clusters.Group("/:id/shell")
+			shellRoutes := clusters.Group("/:id/shell", refusals)
 			shellRoutes.GET("", s.showShell)
 			shellRoutes.POST("", s.startShell)
 			shellRoutes.DELETE("", s.stopShell)
@@ -990,7 +1041,7 @@ func NewRouter(opts Options) *gin.Engine {
 
 			// kubectl's server URL points here, so every verb has to land on
 			// the same handler.
-			clusters.Any("/:id/proxy/*path", opts.Proxy.Handle)
+			clusters.Any("/:id/proxy/*path", refusals, opts.Proxy.Handle)
 
 			// Live cluster state, read on demand through the same tunnel and
 			// under the same impersonated identity as a kubectl call — the UI
@@ -999,7 +1050,16 @@ func NewRouter(opts Options) *gin.Engine {
 			// keyed by caller and question and served from memory for a few
 			// seconds, and every write here drops the cluster's entries so a
 			// scale or a restart is visible in the next list.
-			resources := clusters.Group("/:id/resources", s.cachedRead())
+			resources := clusters.Group("/:id/resources", refusals, s.cachedRead())
+
+			// GitOps sync state — see pkg/api/gitops.go. The controllers'
+			// records are read as KubeMG and narrowed per caller, so the cache
+			// key being the caller's is what keeps one narrowing from serving
+			// another.
+			gitops := clusters.Group("/:id/gitops", refusals, s.cachedRead())
+			gitops.GET("/applications", s.listGitopsRecords)
+			gitops.GET("/object", s.showGitopsObject)
+			gitops.GET("/diff", s.showGitopsDiff)
 
 			// How many of each kind the caller can see, read at limit=1 so the
 			// cost is flat in the size of the cluster rather than proportional
@@ -1104,7 +1164,7 @@ func NewRouter(opts Options) *gin.Engine {
 			// second copy of it in a second place. It needs a capability of its
 			// own on top of the cluster's RBAC, and it writes its own audit
 			// record before the bytes leave. See resources_secret_value.go.
-			clusters.GET("/:id/resources/secret/value", s.revealSecretValue)
+			clusters.GET("/:id/resources/secret/value", refusals, s.revealSecretValue)
 
 			resources.GET("/crds", s.listCRDs)
 			resources.GET("/nodes", s.listNodes)
@@ -1128,7 +1188,7 @@ func NewRouter(opts Options) *gin.Engine {
 			// cluster's refusal. Deliberately outside the cached group: it is a
 			// write down the tunnel, and the middleware would drop the cluster's
 			// cached reads on every question asked.
-			clusters.POST("/:id/resources/access-review", s.accessReview)
+			clusters.POST("/:id/resources/access-review", refusals, s.accessReview)
 			resources.GET("/access-review/verbs", s.accessReviewVerbs)
 			// Who KubeMG impersonates for this caller on this cluster — the
 			// subject to ask a review about to find out what your own grant is
@@ -1201,7 +1261,7 @@ func NewRouter(opts Options) *gin.Engine {
 			// resources group all the same, since a diff has to be computed on the
 			// live object every time it is asked for, the same reasoning as
 			// access-review below.
-			clusters.POST("/:id/resources/object/diff", s.previewResourceObjectDiff)
+			clusters.POST("/:id/resources/object/diff", refusals, s.previewResourceObjectDiff)
 
 			// The workload writes that are not worth hand-editing a manifest
 			// for. All three are read-modify-writes down the same impersonated
@@ -1264,8 +1324,8 @@ func NewRouter(opts Options) *gin.Engine {
 			// applies here too, and doubly so: caching a write's own response
 			// makes no sense, and this one needs no cache invalidation on the
 			// cluster's resources at all since nothing on the cluster changed.
-			clusters.POST("/:id/resources/posture/ack", s.acknowledgePostureFinding)
-			clusters.DELETE("/:id/resources/posture/ack", s.unacknowledgePostureFinding)
+			clusters.POST("/:id/resources/posture/ack", refusals, s.acknowledgePostureFinding)
+			clusters.DELETE("/:id/resources/posture/ack", refusals, s.unacknowledgePostureFinding)
 
 			// Live utilisation from the cluster's own Metrics API. It rides the
 			// same tunnel, grant and audit trail as the lists above; a cluster
@@ -1273,7 +1333,7 @@ func NewRouter(opts Options) *gin.Engine {
 			// Cached on the same terms as the lists above. metrics-server
 			// resamples every 15s or so, so a reading a few seconds old is
 			// the same reading — and the console polls these on a timer.
-			metrics := clusters.Group("/:id/metrics", s.cachedRead())
+			metrics := clusters.Group("/:id/metrics", refusals, s.cachedRead())
 			metrics.GET("/nodes", s.nodeMetrics)
 			metrics.GET("/pods", s.podMetrics)
 			metrics.GET("/pods/:pod", s.showPodMetrics)
@@ -1321,6 +1381,8 @@ func NewRouter(opts Options) *gin.Engine {
 		// the person who lost their phone. Never your own — see resetUserMFA.
 		users.GET("/:id/mfa", s.getUserMFA)
 		users.POST("/:id/mfa/reset", s.resetUserMFA)
+		// "Change it at next sign-in". Never your own — see expireUserPassword.
+		users.POST("/:id/password/expire", s.expireUserPassword)
 
 		groups := v1.Group("/groups", requireAuth, requireAdmin)
 		groups.GET("", s.listGroups)
@@ -1461,6 +1523,12 @@ func NewRouter(opts Options) *gin.Engine {
 		settings := v1.Group("/settings", requireAuth, requireAdmin)
 		settings.GET("", s.getSettings)
 		settings.PUT("", s.updateSettings)
+		// The relay KubeMG's own mail goes through. Its own rows rather than
+		// settings keys, because the password must be sealed; see smtp.go.
+		settings.GET("/smtp", s.getSMTP)
+		settings.PUT("/smtp", s.putSMTP)
+		settings.DELETE("/smtp", s.deleteSMTP)
+		settings.POST("/smtp/test", s.testSMTP)
 		// Read-only, and read-only by nature: these are the boot-time facts the
 		// setup wizard reports, on a page that outlives the wizard. Nothing here
 		// can be written from a browser — see Deployment.

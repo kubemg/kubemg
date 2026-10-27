@@ -118,10 +118,14 @@ func (s *server) changePassword(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if _, err := s.store.UpdateUser(ctx, caller.ID, db.UserUpdate{PasswordHash: &hash}); err != nil {
+	// The owner's own change is the one thing that lifts an administrator's
+	// forced expiry, and it restarts the policy's clock.
+	update := db.UserUpdate{PasswordHash: &hash, ClearPasswordExpiry: true}
+	if _, err := s.store.UpdateUser(ctx, caller.ID, update); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not change the password"})
 		return
 	}
+	s.publishPasswordGate(ctx)
 
 	s.recordPasswordChange(c, caller)
 

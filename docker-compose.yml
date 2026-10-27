@@ -75,7 +75,7 @@ services:
       # Published as a multi-arch index (linux/amd64 + linux/arm64) by
       # `make agent-push`, because the clusters this is applied to include
       # Graviton and Ampere nodes that an amd64-only tag fails on.
-      - KUBEMG_AGENT_IMAGE=ghcr.io/kubemg/kubemg-agent:0.16.0
+      - KUBEMG_AGENT_IMAGE=ghcr.io/kubemg/kubemg-agent:0.17.0
       - KUBEMG_AGENT_NAMESPACE=kubemg-system
       # Every exec and attach is recorded for replay from the audit trail. Turn
       # it off with KUBEMG_SESSION_RECORDING_ENABLED=false; the directory is the
@@ -96,6 +96,9 @@ services:
       # never committed, set it in the untracked `.env`. Once a database has
       # been encrypted the server refuses to start without the same key.
       - KUBEMG_SECRET_KEY=${KUBEMG_SECRET_KEY:-}
+      # Only for the restart that rotates to a new key: the old one, which that
+      # boot re-encrypts everything away from. Remove it afterwards.
+      - KUBEMG_SECRET_KEY_PREVIOUS=${KUBEMG_SECRET_KEY_PREVIOUS:-}
       # Keystrokes are recorded as well as output. Set this to false where
       # operators type credentials into interactive tools: what is lost is exactly
       # what a prompt does not echo.

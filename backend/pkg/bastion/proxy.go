@@ -134,6 +134,9 @@ type Proxy struct {
 	// revokes nothing, which is what a gateway wired without one does — see
 	// pkg/credentials for why an unreadable register must fail open.
 	issued *credentials.Register
+	// limiter paces what one identity drives into one cluster. Nil paces
+	// nothing — see ratelimit.go.
+	limiter *RateLimiter
 	// clientUpgrader accepts the browser terminal's / kubectl's WebSocket, built
 	// once with this server's origin allowlist. See newClientUpgrader.
 	clientUpgrader websocket.Upgrader
@@ -160,6 +163,9 @@ type ProxyOptions struct {
 	// nothing — the correct failure mode for a control whose unavailability must
 	// not lock a fleet out of kubectl.
 	Credentials *credentials.Register
+	// RateLimit is the per-identity, per-cluster call budget. Nil paces
+	// nothing, which is what the tests get; the server always wires one.
+	RateLimit *RateLimiter
 	// AllowedOrigins are the browser origins the API's CORS config already
 	// trusts, and PublicURL is this server's own address — together they are
 	// checked against the Origin header on the browser terminal's WebSocket
@@ -176,6 +182,10 @@ func NewProxy(opts ProxyOptions) *Proxy {
 	if auditor == nil {
 		auditor = NewAuditor(nil)
 	}
+	// Every record the proxy writes marks the inbound request it was written
+	// under, so the API layer's refusal recorder never writes a second row for
+	// a refusal already here — see attempt.go.
+	auditor = NoteAttempts(auditor)
 	registry := opts.Registry
 	if registry == nil {
 		registry = NewRegistry()
@@ -188,6 +198,7 @@ func NewProxy(opts ProxyOptions) *Proxy {
 		policy:         opts.Policy,
 		guard:          opts.Guard,
 		issued:         opts.Credentials,
+		limiter:        opts.RateLimit,
 		clientUpgrader: newClientUpgrader(buildOriginAllowlist(opts.AllowedOrigins, opts.PublicURL)),
 	}
 }
@@ -259,8 +270,10 @@ func (p *Proxy) Handle(c *gin.Context) {
 	parsed := ParsePath(path)
 	event.Namespace = parsed.Namespace
 	event.Resource = parsed.Resource
+	event.Name = parsed.Name
 
 	if allowed, reason := allowedNamespace(grant, parsed, path); !allowed {
+		event.RefusedBy = RefusedByKubeMG
 		p.fail(c, &event, http.StatusForbidden, reason)
 		return
 	}
@@ -295,7 +308,17 @@ func (p *Proxy) Handle(c *gin.Context) {
 	// port-forward is carried in its WebSocket form only. A SPDY client is
 	// refused here rather than left to hang on an upgrade nobody will answer.
 	if reason, refused := unsupportedStream(c.Request, parsed); refused {
+		event.RefusedBy = RefusedByKubeMG
 		p.fail(c, &event, http.StatusNotImplemented, reason)
+		return
+	}
+
+	// Paced here, after every check that costs the cluster nothing and before
+	// the tunnel is looked up: a refusal must not depend on an agent being
+	// attached, any more than a guardrail's does. A stream spends its token on
+	// the handshake and is never touched again.
+	if err := p.limiter.Wait(c.Request.Context(), user.ID, user.Username, cluster.ID, cluster.Name); err != nil {
+		p.failThrottled(c, &event, err)
 		return
 	}
 
@@ -327,6 +350,7 @@ func (p *Proxy) Handle(c *gin.Context) {
 
 	body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, maxRequestBody))
 	if err != nil {
+		event.RefusedBy = RefusedByKubeMG
 		p.fail(c, &event, http.StatusRequestEntityTooLarge, "request body is too large to proxy")
 		return
 	}
@@ -350,6 +374,9 @@ func (p *Proxy) Handle(c *gin.Context) {
 		return
 	}
 
+	// The body is already whole here; ObjectName reads a create's name off it
+	// only when it is plain JSON, and leaves a compressed or protobuf answer be.
+	event.Name = ObjectName(parsed, event.Verb, resp)
 	event.Status = resp.Status
 	event.Duration = time.Since(started)
 	p.auditor.Record(c.Request.Context(), event)
@@ -376,6 +403,29 @@ func (p *Proxy) Call(
 	body []byte,
 	auditDiff []byte,
 ) (*Response, error) {
+	return p.CallWithHeader(ctx, user, cluster, grant, method, path, nil, body, auditDiff)
+}
+
+// callerHeaders are the only headers a CallWithHeader caller may add. Argo CD's
+// API server reads its session from the `argocd.token` cookie, and a cookie is
+// what survives the API server's Service proxy: the cluster's authentication
+// filter consumes Authorization before the request is proxied on. Everything
+// else — identity, encoding, content type — stays KubeMG's to decide.
+var callerHeaders = []string{"Cookie"}
+
+// CallWithHeader is Call with extra request headers, limited to callerHeaders;
+// any other name is dropped. Neither the header nor its value is recorded: the
+// audit row carries the path, as it does for every call.
+func (p *Proxy) CallWithHeader(
+	ctx context.Context,
+	user *db.User,
+	cluster *db.Cluster,
+	grant db.UserClusterAccess,
+	method, path string,
+	extra http.Header,
+	body []byte,
+	auditDiff []byte,
+) (*Response, error) {
 	started := time.Now()
 	parsed := ParsePath(path)
 
@@ -390,6 +440,7 @@ func (p *Proxy) Call(
 		Path:               path,
 		Namespace:          parsed.Namespace,
 		Resource:           parsed.Resource,
+		Name:               parsed.Name,
 		ImpersonatedUser:   ImpersonationUser(user),
 		ImpersonatedGroups: ImpersonationGroups(grant.K8sRole),
 	}
@@ -405,6 +456,7 @@ func (p *Proxy) Call(
 
 	if allowed, reason := allowedNamespace(grant, parsed, path); !allowed {
 		err := errors.New(reason)
+		event.RefusedBy = RefusedByKubeMG
 		record(http.StatusForbidden, err)
 		return nil, &CallError{Status: http.StatusForbidden, Message: reason}
 	}
@@ -417,8 +469,16 @@ func (p *Proxy) Call(
 	noteGuardrail(&event, decision)
 	if decision.Blocked() {
 		message := decision.Message()
+		event.RefusedBy = RefusedByKubeMG
 		record(http.StatusForbidden, errors.New(message))
 		return nil, &CallError{Status: http.StatusForbidden, Message: message, Policy: decision.Policy, Scope: decision.Scope}
+	}
+
+	if err := p.limiter.Wait(ctx, user.ID, user.Username, cluster.ID, cluster.Name); err != nil {
+		callErr := throttledCallError(err)
+		event.RefusedBy = RefusedByKubeMG
+		record(callErr.Status, errors.New(callErr.Message))
+		return nil, callErr
 	}
 
 	tunnel, ok := p.registry.Get(cluster.ID)
@@ -442,6 +502,11 @@ func (p *Proxy) Call(
 	if len(body) > 0 {
 		header["Content-Type"] = []string{contentTypeFor(method)}
 	}
+	for _, name := range callerHeaders {
+		if values := extra.Values(name); len(values) > 0 {
+			header[name] = slices.Clone(values)
+		}
+	}
 
 	resp, err := tunnel.Do(ctx, &Request{Method: method, Path: path, Header: header, Body: body})
 	if err != nil {
@@ -464,6 +529,9 @@ func (p *Proxy) Call(
 	// The diff is attached only once the round trip is known to have
 	// succeeded — see diffForAuditRow.
 	event.Diff = diffForAuditRow(auditDiff, resp.Status)
+	// Read off the body decodeBody already undid, so a create's name costs no
+	// second decode.
+	event.Name = ObjectName(parsed, event.Verb, resp)
 	record(resp.Status, nil)
 	return resp, nil
 }
@@ -511,6 +579,7 @@ func (p *Proxy) Watch(
 		Path:               path,
 		Namespace:          parsed.Namespace,
 		Resource:           parsed.Resource,
+		Name:               parsed.Name,
 		ImpersonatedUser:   ImpersonationUser(user),
 		ImpersonatedGroups: ImpersonationGroups(grant.K8sRole),
 	}
@@ -526,6 +595,7 @@ func (p *Proxy) Watch(
 
 	if allowed, reason := allowedNamespace(grant, parsed, path); !allowed {
 		err := errors.New(reason)
+		event.RefusedBy = RefusedByKubeMG
 		record(http.StatusForbidden, err)
 		return nil, &CallError{Status: http.StatusForbidden, Message: reason}
 	}
@@ -534,8 +604,16 @@ func (p *Proxy) Watch(
 	noteGuardrail(&event, decision)
 	if decision.Blocked() {
 		message := decision.Message()
+		event.RefusedBy = RefusedByKubeMG
 		record(http.StatusForbidden, errors.New(message))
 		return nil, &CallError{Status: http.StatusForbidden, Message: message}
+	}
+
+	if err := p.limiter.Wait(ctx, user.ID, user.Username, cluster.ID, cluster.Name); err != nil {
+		callErr := throttledCallError(err)
+		event.RefusedBy = RefusedByKubeMG
+		record(callErr.Status, errors.New(callErr.Message))
+		return nil, callErr
 	}
 
 	tunnel, ok := p.registry.Get(cluster.ID)
@@ -602,6 +680,9 @@ type CallError struct {
 	Message string
 	Policy  string
 	Scope   string
+	// RetryAfter is set on a call refused by the rate limit: whole seconds
+	// before the caller's budget would take it.
+	RetryAfter int
 }
 
 func (e *CallError) Error() string { return e.Message }
@@ -712,6 +793,50 @@ func (p *Proxy) fail(c *gin.Context, event *Event, status int, message string) {
 	p.auditor.Record(c.Request.Context(), *event)
 
 	c.AbortWithStatusJSON(status, gin.H{"error": message})
+}
+
+// throttleCancelled is a caller that left while its call was being paced. It is
+// still the limit's doing, so it is recorded as the same refusal.
+const throttleCancelled = "the call was cancelled while waiting for its turn under the rate limit"
+
+// throttledCallError is a rate-limit refusal as the resource API carries it.
+func throttledCallError(err error) *CallError {
+	var throttled *ThrottledError
+	if errors.As(err, &throttled) {
+		return &CallError{
+			Status:     http.StatusTooManyRequests,
+			Message:    throttled.Error(),
+			RetryAfter: throttled.RetryAfterSeconds(),
+		}
+	}
+	return &CallError{Status: http.StatusTooManyRequests, Message: throttleCancelled}
+}
+
+// failThrottled answers a call the rate limit refused. kubectl is the caller
+// here, so the answer is a Kubernetes Status with Retry-After: client-go waits
+// that long and retries on its own, and prints the message if it gives up.
+func (p *Proxy) failThrottled(c *gin.Context, event *Event, err error) {
+	callErr := throttledCallError(err)
+	event.RefusedBy = RefusedByKubeMG
+	event.Status = callErr.Status
+	event.Error = callErr.Message
+	event.Duration = time.Since(event.At)
+	p.auditor.Record(c.Request.Context(), *event)
+
+	status := gin.H{
+		"kind":       "Status",
+		"apiVersion": "v1",
+		"metadata":   gin.H{},
+		"status":     "Failure",
+		"message":    callErr.Message,
+		"reason":     "TooManyRequests",
+		"code":       callErr.Status,
+	}
+	if callErr.RetryAfter > 0 {
+		c.Header("Retry-After", strconv.Itoa(callErr.RetryAfter))
+		status["details"] = gin.H{"retryAfterSeconds": callErr.RetryAfter}
+	}
+	c.AbortWithStatusJSON(callErr.Status, status)
 }
 
 // contentTypeFor names the media type a body is sent as.

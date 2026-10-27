@@ -13,6 +13,11 @@ import { useUnsavedGuard } from '../../lib/unsavedGuard'
     from offering a value that would come back refused. */
 const MAX_CEILING_HOURS = 90 * 24
 
+/** The rate limit's bounds, mirroring the server's. There is no value that
+    turns it off: the top of the range is what "out of the way" looks like. */
+const MAX_RATE_PER_SECOND = 10000
+const MAX_RATE_BURST = 100000
+
 /** The words for each enforcement policy, in the order the select offers them. */
 const MFA_POLICY: { value: MFAEnforcement; label: string; reach: string }[] = [
   { value: 'off', label: 'Optional', reach: 'Anyone may set up a second factor; nobody is made to.' },
@@ -40,6 +45,9 @@ export function GeneralSettings() {
   const [mfaPolicy, setMfaPolicy] = useState<MFAEnforcement>('off')
   const [cliHours, setCliHours] = useState('')
   const [issuance, setIssuance] = useState<KubeconfigIssuance>('allowed')
+  const [passwordDays, setPasswordDays] = useState('')
+  const [ratePerSecond, setRatePerSecond] = useState('')
+  const [rateBurst, setRateBurst] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -54,6 +62,9 @@ export function GeneralSettings() {
       setMfaPolicy(next.effective.mfa_enforcement || 'off')
       setCliHours(cliHoursDraft(next))
       setIssuance(next.effective.kubeconfig_issuance || 'allowed')
+      setPasswordDays(passwordDaysDraft(next))
+      setRatePerSecond(overrideDraft(next.overrides.proxy_rate_limit_per_second))
+      setRateBurst(overrideDraft(next.overrides.proxy_rate_limit_burst))
       setError(null)
     } catch (err) {
       setError(errorMessage(err, 'Could not load the settings.'))
@@ -78,6 +89,18 @@ export function GeneralSettings() {
       document.getElementById('cli_session_max_hours')?.focus()
       return
     }
+    if (passwordDaysError !== undefined) {
+      document.getElementById('password_max_age_days')?.focus()
+      return
+    }
+    if (ratePerSecondError !== undefined) {
+      document.getElementById('proxy_rate_limit_per_second')?.focus()
+      return
+    }
+    if (rateBurstError !== undefined) {
+      document.getElementById('proxy_rate_limit_burst')?.focus()
+      return
+    }
     setBusy(true)
     setError(null)
     setSaved(false)
@@ -91,6 +114,11 @@ export function GeneralSettings() {
         mfa_enforcement: mfaPolicy === 'off' ? '' : mfaPolicy,
         cli_session_max_hours: Number(cliHours.trim()) || 0,
         kubeconfig_issuance: issuance === 'allowed' ? '' : issuance,
+        // Empty is "no expiry", which the API spells 0.
+        password_max_age_days: Number(passwordDays.trim()) || 0,
+        // Empty is the default, which the API spells 0 — never "off".
+        proxy_rate_limit_per_second: Number(ratePerSecond.trim()) || 0,
+        proxy_rate_limit_burst: Number(rateBurst.trim()) || 0,
       })
       setSettings(next)
       setPublicUrl(next.overrides.public_url)
@@ -98,6 +126,9 @@ export function GeneralSettings() {
       setMfaPolicy(next.effective.mfa_enforcement || 'off')
       setCliHours(cliHoursDraft(next))
       setIssuance(next.effective.kubeconfig_issuance || 'allowed')
+      setPasswordDays(passwordDaysDraft(next))
+      setRatePerSecond(overrideDraft(next.overrides.proxy_rate_limit_per_second))
+      setRateBurst(overrideDraft(next.overrides.proxy_rate_limit_burst))
       setSaved(true)
     } catch (err) {
       setError(errorMessage(err, 'Could not save the settings.'))
@@ -118,19 +149,37 @@ export function GeneralSettings() {
       ? undefined
       : 'Enter a whole number of hours between 1 and 720, or leave it empty for the default.'
 
+  const passwordDaysError =
+    passwordDays.trim() === '' || withinBounds(passwordDays, 1, 3650)
+      ? undefined
+      : 'Enter a whole number of days between 1 and 3650, or leave it empty for no expiry.'
+
+  const ratePerSecondError =
+    ratePerSecond.trim() === '' || withinBounds(ratePerSecond, 1, MAX_RATE_PER_SECOND)
+      ? undefined
+      : `Enter a whole number of calls between 1 and ${MAX_RATE_PER_SECOND}, or leave it empty for the default.`
+
+  const rateBurstError =
+    rateBurst.trim() === '' || withinBounds(rateBurst, 1, MAX_RATE_BURST)
+      ? undefined
+      : `Enter a whole number of calls between 1 and ${MAX_RATE_BURST}, or leave it empty for the default.`
+
   const dirty =
     settings !== null &&
     (publicUrl.trim() !== settings.overrides.public_url ||
       ceiling.trim() !== ceilingDraft(settings) ||
       mfaPolicy !== (settings.effective.mfa_enforcement || 'off') ||
       cliHours.trim() !== cliHoursDraft(settings) ||
-      issuance !== (settings.effective.kubeconfig_issuance || 'allowed'))
+      issuance !== (settings.effective.kubeconfig_issuance || 'allowed') ||
+      passwordDays.trim() !== passwordDaysDraft(settings) ||
+      ratePerSecond.trim() !== overrideDraft(settings.overrides.proxy_rate_limit_per_second) ||
+      rateBurst.trim() !== overrideDraft(settings.overrides.proxy_rate_limit_burst))
   useUnsavedGuard(dirty, 'these settings')
 
   return (
     <SettingsLayout
       title="General settings"
-      description="Where clusters reach this server, how long a kubeconfig may live, and who needs a second factor to sign in. A value set here overrides what the server read from its environment at boot; clearing it falls back to that."
+      description="Where clusters reach this server, how long a kubeconfig may live, how fast one account may call a cluster, who needs a second factor to sign in, and how long a password lasts. A value set here overrides what the server read from its environment at boot; clearing it falls back to that."
       aside={
         settings ? (
           <>
@@ -147,10 +196,29 @@ export function GeneralSettings() {
               reach="Credentials issued from now on. A kubeconfig already in somebody's hands keeps the window it was signed with — shortening the ceiling does not shorten it, revoking it does."
             />
             <SettingsAside
+              label="Calls per account and cluster"
+              value={`${settings.effective.proxy_rate_limit_per_second}/s, bursts of ${settings.effective.proxy_rate_limit_burst}`}
+              source={settingSource(
+                settings.overrides.proxy_rate_limit_per_second || settings.overrides.proxy_rate_limit_burst,
+                0,
+              )}
+              reach="Takes effect at once, for kubectl, the console, the CLI and machine tokens alike. A shell, exec, log follow or port-forward already open is never cut off — only opening one counts."
+            />
+            <SettingsAside
               label="Second factor"
               value={MFA_POLICY.find((p) => p.value === (settings.effective.mfa_enforcement || 'off'))?.label ?? 'Optional'}
               source={settingSource(settings.overrides.mfa_enforcement, '')}
               reach="Sign-ins from now on. A session already open runs to its own expiry — requiring a factor does not end it."
+            />
+            <SettingsAside
+              label="Password expiry"
+              value={
+                settings.effective.password_max_age_days > 0
+                  ? `Every ${settings.effective.password_max_age_days} days`
+                  : 'Never'
+              }
+              source={settingSource(settings.overrides.password_max_age_days, 0)}
+              reach="Takes effect at once, counted from each password's last change: an open session whose password is now past due is held at the change screen at its next click. Kubeconfigs and CLI sessions are not affected."
             />
           </>
         ) : null
@@ -168,6 +236,9 @@ export function GeneralSettings() {
                 setMfaPolicy(settings.effective.mfa_enforcement || 'off')
                 setCliHours(cliHoursDraft(settings))
                 setIssuance(settings.effective.kubeconfig_issuance || 'allowed')
+                setPasswordDays(passwordDaysDraft(settings))
+                setRatePerSecond(overrideDraft(settings.overrides.proxy_rate_limit_per_second))
+                setRateBurst(overrideDraft(settings.overrides.proxy_rate_limit_burst))
                 setSaved(false)
               }}
             >
@@ -314,6 +385,60 @@ export function GeneralSettings() {
 
         {settings ? (
           <Panel
+            eyebrow="Cluster access"
+            title="How fast one account may call a cluster"
+            description="Every call kubemg makes into a cluster on somebody's behalf spends from that person's budget for that cluster — a kubectl command, each read behind a console page, a CLI or machine token. A call over budget waits up to two seconds for its turn, then is refused with 429 and recorded in the audit trail; kubectl waits and retries on its own."
+            bodyClassName="flex flex-col gap-4 p-4"
+          >
+            <Field
+              label="Calls per second"
+              htmlFor="proxy_rate_limit_per_second"
+              hint={`Leave empty for the default of ${settings.defaults.proxy_rate_limit_per_second}, the same as kubectl's own client-side limit. The limit cannot be turned off; ${MAX_RATE_PER_SECOND} is as far out of the way as it goes.`}
+              error={ratePerSecondError}
+            >
+              <TextInput
+                id="proxy_rate_limit_per_second"
+                type="number"
+                min={1}
+                max={MAX_RATE_PER_SECOND}
+                step={1}
+                inputMode="numeric"
+                className="max-w-40 font-data text-[12.5px]"
+                placeholder={String(settings.defaults.proxy_rate_limit_per_second)}
+                value={ratePerSecond}
+                onChange={(event) => {
+                  setRatePerSecond(event.target.value)
+                  setSaved(false)
+                }}
+              />
+            </Field>
+            <Field
+              label="Burst"
+              htmlFor="proxy_rate_limit_burst"
+              hint={`Leave empty for the default of ${settings.defaults.proxy_rate_limit_burst}. How many calls may go at once before the rate applies — one console page across every namespace is up to fifty.`}
+              error={rateBurstError}
+            >
+              <TextInput
+                id="proxy_rate_limit_burst"
+                type="number"
+                min={1}
+                max={MAX_RATE_BURST}
+                step={1}
+                inputMode="numeric"
+                className="max-w-40 font-data text-[12.5px]"
+                placeholder={String(settings.defaults.proxy_rate_limit_burst)}
+                value={rateBurst}
+                onChange={(event) => {
+                  setRateBurst(event.target.value)
+                  setSaved(false)
+                }}
+              />
+            </Field>
+          </Panel>
+        ) : null}
+
+        {settings ? (
+          <Panel
             eyebrow="Sign-in"
             title="Second factor"
             description="Whose password sign-in also asks for a code from an authenticator app. It covers local and LDAP accounts; an OIDC or SAML account's second factor is its identity provider's."
@@ -342,6 +467,38 @@ export function GeneralSettings() {
             </Field>
           </Panel>
         ) : null}
+
+        {settings ? (
+          <Panel
+            eyebrow="Sign-in"
+            title="Password expiry"
+            description="How long a password held here lasts before its owner has to choose a new one. It covers local accounts only; an LDAP, OIDC or SAML account's password is its directory's."
+            bodyClassName="flex flex-col gap-4 p-4"
+          >
+            <Field
+              label="Passwords expire after (days)"
+              htmlFor="password_max_age_days"
+              hint="Leave empty for no expiry. People are mailed 14, 7, 3 and 1 days before, through the relay under Settings → Email. One account's password can also be expired by hand from its page under Users."
+              error={passwordDaysError}
+            >
+              <TextInput
+                id="password_max_age_days"
+                type="number"
+                min={1}
+                max={3650}
+                step={1}
+                inputMode="numeric"
+                className="max-w-40 font-data text-[12.5px]"
+                placeholder="Never"
+                value={passwordDays}
+                onChange={(event) => {
+                  setPasswordDays(event.target.value)
+                  setSaved(false)
+                }}
+              />
+            </Field>
+          </Panel>
+        ) : null}
       </form>
     </SettingsLayout>
   )
@@ -354,6 +511,18 @@ function withinCeilingBounds(raw: string): boolean {
 function withinBounds(raw: string, min: number, max: number): boolean {
   const hours = Number(raw)
   return Number.isInteger(hours) && hours >= min && hours <= max
+}
+
+/** The policy as the form shows it: 0 (off) is an empty box. */
+function passwordDaysDraft(settings: SettingsResponse): string {
+  const days = settings.overrides.password_max_age_days
+  return days > 0 ? String(days) : ''
+}
+
+/** A numeric override as the form shows it: 0 from the API is unset, which is
+    an empty box rather than a zero. */
+function overrideDraft(value: number): string {
+  return value > 0 ? String(value) : ''
 }
 
 /** The stored override as the form shows it: 0 from the API is an empty box. */

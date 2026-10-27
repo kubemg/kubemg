@@ -12,6 +12,7 @@ import {
   Layers,
   LayoutTemplate,
   LogOut,
+  Mail,
   Menu,
   Moon,
   Package,
@@ -147,6 +148,7 @@ const ADMIN_GROUPS: readonly AdminGroup[] = [
       // has to be in it. See SettingsLayout.
       { to: '/admin/settings/helm', label: 'Helm', icon: Package },
       { to: '/admin/settings/sso', label: 'SSO', icon: KeyRound },
+      { to: '/admin/settings/email', label: 'Email', icon: Mail },
       { to: '/admin/settings/branding', label: 'Branding', icon: Palette },
       { to: '/admin/settings/deployment', label: 'Deployment', icon: Server },
     ],

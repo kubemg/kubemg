@@ -87,7 +87,9 @@ func (s *server) listUsers(c *gin.Context) {
 		if users[i].IsMachine() {
 			continue
 		}
-		out = append(out, toUserResponse(&users[i]))
+		row := toUserResponse(&users[i])
+		s.annotatePassword(&row)
+		out = append(out, row)
 	}
 	c.JSON(http.StatusOK, gin.H{"users": out})
 }
@@ -253,9 +255,15 @@ func (s *server) updateUser(c *gin.Context) {
 	// is where the gate opens.
 	if update.PasswordHash != nil {
 		s.clearBootstrapAdmin(c.Request.Context(), target.ID, caller.ID)
+		// A new password restarts the policy's clock. It does not lift an
+		// administrator's forced expiry: a password somebody else typed is one
+		// its owner still has to replace.
+		s.publishPasswordGate(c.Request.Context())
 	}
 
-	c.JSON(http.StatusOK, toUserResponse(user))
+	out := toUserResponse(user)
+	s.annotatePassword(&out)
+	c.JSON(http.StatusOK, out)
 }
 
 // setUserStatus enables or disables an account (admin only).

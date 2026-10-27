@@ -53,6 +53,10 @@ type Deployment struct {
 	// SecretKeySet reports that KUBEMG_SECRET_KEY is in force, so the
 	// credentials stored in the database are encrypted at rest.
 	SecretKeySet bool
+	// SecretKeyRotating reports that KUBEMG_SECRET_KEY_PREVIOUS is set. The
+	// boot has re-sealed everything under the new key by the time this is
+	// read, so the previous key is only still in the environment.
+	SecretKeyRotating bool
 	// MFAResetArmed reports that KUBEMG_MFA_RESET_USERNAME is set, so an
 	// account's second factor is stripped at every restart until it is removed.
 	MFAResetArmed bool
@@ -331,6 +335,18 @@ func (s *server) deploymentChecks() []setupCheck {
 				"on the console and cluster-admin through every tunnel. With a key set they are " +
 				"encrypted in place on the next boot. Keep the key with your backups, never in them.",
 			Fix: "KUBEMG_SECRET_KEY=$(openssl rand -base64 32)",
+		})
+	}
+	if s.deployment.SecretKeyRotating {
+		checks = append(checks, setupCheck{
+			Key:      "secret-key-previous",
+			Title:    "The previous credential key is still set",
+			Severity: checkWarn,
+			Detail: "This boot re-sealed every stored credential under the new KUBEMG_SECRET_KEY, so " +
+				"nothing in the database needs KUBEMG_SECRET_KEY_PREVIOUS any more. Left in the " +
+				"environment it is a second key that opens the backups taken before the rotation — " +
+				"keep it with those backups instead.",
+			Fix: "unset KUBEMG_SECRET_KEY_PREVIOUS and restart",
 		})
 	}
 

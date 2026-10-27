@@ -133,6 +133,7 @@ func (s *server) userAccess(c *gin.Context) {
 		Groups:   []groupMembership{},
 		Clusters: []clusterAccess{},
 	}
+	s.annotatePassword(&out.User)
 
 	// The provider's name, where there is one. A provider that has since been
 	// deleted leaves the account federated with nothing to name, which reads as

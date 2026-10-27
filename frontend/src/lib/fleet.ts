@@ -152,16 +152,28 @@ export function fleetLinkCounts(clusters: Cluster[]): Record<LinkState, number> 
 
 /**
  * One audit record, said in a line: what was done, to what, on which cluster.
- * The object is the resource with its namespace when the record names one,
- * else the path the call went to — a record always has one of the two.
+ * The object is the resource with its namespace and name when the record names
+ * them, else the path the call went to — a record always has one of the two.
  */
 export function activityLine(event: AuditEvent): string {
   const object = event.resource
-    ? event.namespace
-      ? `${event.namespace}/${event.resource}`
-      : event.resource
+    ? [event.namespace, event.resource, event.name].filter(Boolean).join('/')
     : event.path
   return [event.verb, object, event.cluster].filter(Boolean).join(' · ')
+}
+
+/**
+ * The record's object name when its path does not already show it — which is
+ * a create's case: it posts to the collection, so the name the cluster gave the
+ * object is only on the record. Undefined everywhere the path says it already.
+ */
+export function nameBesidePath(event: AuditEvent): string | undefined {
+  if (!event.name || !event.resource) return undefined
+  // The segment after the resource is where a path names its object; reading
+  // it there keeps a namespace that shares the object's name from hiding it.
+  const segments = event.path.split('?')[0].split('/')
+  const at = segments.lastIndexOf(event.resource)
+  return at >= 0 && segments[at + 1] === event.name ? undefined : event.name
 }
 
 /** Whether a record is a refusal or a failure — what the feed flags. */

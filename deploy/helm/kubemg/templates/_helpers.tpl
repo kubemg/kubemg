@@ -139,6 +139,7 @@ was given under.
 {{- if not .Values.secrets.existingSecret -}}
 {{- with .Values.secrets.jwtSecret }}{{ $_ := set $data "JWT_SECRET" . }}{{ end -}}
 {{- with .Values.secrets.secretKey }}{{ $_ := set $data "KUBEMG_SECRET_KEY" . }}{{ end -}}
+{{- with .Values.secrets.secretKeyPrevious }}{{ $_ := set $data "KUBEMG_SECRET_KEY_PREVIOUS" . }}{{ end -}}
 {{- with .Values.secrets.sessionRecordingKey }}{{ $_ := set $data "KUBEMG_SESSION_RECORDING_KEY" . }}{{ end -}}
 {{- with .Values.secrets.adminPassword }}{{ $_ := set $data "KUBEMG_ADMIN_PASSWORD" . }}{{ end -}}
 {{- end -}}

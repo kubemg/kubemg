@@ -179,8 +179,25 @@ type User struct {
 	// account that has never signed in, and for every sign-in that happened
 	// before this column existed — which the console says as such rather than
 	// drawing a blank that reads as an unknown host.
-	LastLoginAddr string    `gorm:"size:64" json:"last_login_addr,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
+	LastLoginAddr string `gorm:"size:64" json:"last_login_addr,omitempty"`
+
+	// PasswordChangedAt is when the local password was last set, by its owner
+	// or by an administrator. It is the clock the password age policy reads
+	// (see pkg/api/password_policy.go); every write of PasswordHash through
+	// UpdateUser stamps it, so no handler can forget to.
+	PasswordChangedAt *time.Time `json:"-"`
+	// PasswordExpiredAt is an administrator's "change it at next sign-in". It
+	// is cleared only by the account's own change: a password an administrator
+	// typed is one somebody else knows, so setting one does not clear it.
+	PasswordExpiredAt *time.Time `json:"-"`
+	// PasswordNoticeDue and PasswordNoticeDays record the last expiry reminder
+	// mailed: the due date it was about and the stage (days before) it was
+	// for. A reminder about another due date is no reminder at all, so a new
+	// password starts the stages again without anything having to reset them.
+	PasswordNoticeDue  *time.Time `json:"-"`
+	PasswordNoticeDays int        `gorm:"not null;default:0" json:"-"`
+
+	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
@@ -390,6 +407,10 @@ type AuditEvent struct {
 	Path      string `gorm:"type:text" json:"path"`
 	Namespace string `gorm:"size:190;index" json:"namespace,omitempty"`
 	Resource  string `gorm:"size:120" json:"resource,omitempty"`
+	// Name is the object the call addressed — from the path, or for a create
+	// from the API server's answer. Empty on a refused create, on a call that
+	// addresses no single object (a list), and on rows written before it existed.
+	Name string `gorm:"size:253" json:"name,omitempty"`
 
 	// The identity KubeMG asserted to the API server. This is the crux of the
 	// record: it ties a KubeMG account to the Kubernetes subject that acted.
@@ -421,6 +442,9 @@ type AuditEvent struct {
 	GuardrailAction string `gorm:"size:16" json:"guardrail_action,omitempty"`
 
 	Error string `gorm:"type:text" json:"error,omitempty"`
+	// RefusedBy is "kubemg" when KubeMG refused the call itself and empty when
+	// the answer came from the cluster (or nothing was refused).
+	RefusedBy string `gorm:"size:16" json:"refused_by,omitempty"`
 
 	// Where the call came from, as the server saw it: the client address
 	// resolved through whatever proxy headers are trusted, and the client's own

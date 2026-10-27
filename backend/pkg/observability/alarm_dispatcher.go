@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -74,6 +75,7 @@ const (
 const (
 	SourceClusterEvent = db.TriggerClusterEvent
 	SourceAudit        = db.TriggerAudit
+	SourceGitOpsDrift  = db.TriggerGitOpsDrift
 )
 
 // Signal is one thing that happened, normalised so that a rule can be matched
@@ -115,6 +117,13 @@ type Signal struct {
 	Path     string `json:"path,omitempty"`
 	Denied   bool   `json:"denied,omitempty"`
 	Error    string `json:"error,omitempty"`
+
+	// GitOps-drift fields: which controller recorded the drift, and the
+	// Application, Kustomization or HelmRelease it recorded it on. Username and
+	// UserID, when set on a drift signal, name the last write to the object
+	// that went through KubeMG — never a claim about writes that did not.
+	Tool        string `json:"tool,omitempty"`
+	Application string `json:"application,omitempty"`
 
 	// Fingerprint identifies the *thing*, not the occurrence, and is what the
 	// cool-off is keyed by. It is set by the producer because only the producer
@@ -451,7 +460,7 @@ func (d *Dispatcher) post(
 
 	req, err := http.NewRequestWithContext(sendCtx, http.MethodPost, channel.URL, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+		return fmt.Errorf("build request: %w", redactURLError(err, channel.URL))
 	}
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("User-Agent", "kubemg-alarms")
@@ -472,7 +481,7 @@ func (d *Dispatcher) post(
 
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return err
+		return redactURLError(err, channel.URL)
 	}
 	defer resp.Body.Close()
 
@@ -588,6 +597,19 @@ func Matches(rule db.AlarmRule, signal Signal) bool {
 		}
 		return true
 
+	case db.TriggerGitOpsDrift:
+		if tools := splitList(rule.GitOpsTools); len(tools) > 0 {
+			if !containsFold(tools, signal.Tool) {
+				return false
+			}
+		}
+		if apps := splitList(rule.GitOpsApps); len(apps) > 0 {
+			if !containsFold(apps, signal.Application) {
+				return false
+			}
+		}
+		return true
+
 	default:
 		// An unknown trigger matches nothing. A rule this build cannot evaluate
 		// must not fall through to "everything" — that would page on every signal
@@ -624,6 +646,35 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max] + "…"
+}
+
+// MaskChannelURL is the part of a channel's URL that is not a credential: the
+// scheme and host, with "/…" standing in for whatever follows. A Slack or Teams
+// webhook's path is its token, so no part of the path or query is shown — not
+// even its length. An address that does not parse reads as nothing rather than
+// as itself.
+func MaskChannelURL(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	masked := parsed.Scheme + "://" + parsed.Host
+	if strings.Trim(parsed.Path, "/") != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		masked += "/…"
+	}
+	return masked
+}
+
+// redactURLError takes the channel's URL out of a transport error. net/http
+// wraps every failure as `Post "<url>": …`, and that text is recorded as the
+// channel's last message, logged and answered to Test — so an unreachable
+// Slack webhook would otherwise read its own token back to every admin.
+func redactURLError(err error, raw string) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return fmt.Errorf("%s %s: %w", urlErr.Op, MaskChannelURL(raw), urlErr.Err)
+	}
+	return err
 }
 
 // ValidateChannelURL checks a destination address.

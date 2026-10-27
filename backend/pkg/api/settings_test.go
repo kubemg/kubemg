@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
@@ -487,5 +488,54 @@ func TestAgentImagePullSecretRefusesWhatCannotBeAName(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("%q: status = %d, want %d", value, rec.Code, http.StatusBadRequest)
 		}
+	}
+}
+
+// The call budget is on by default, published to the gateway on save, and has
+// no value that turns it off: 0 clears back to the default, and anything past
+// the bounds is refused rather than stored.
+func TestProxyRateLimitSettingReachesTheGateway(t *testing.T) {
+	limiter := bastion.NewRateLimiter(bastion.RateLimit{})
+	env := newTestEnvWith(t, func(o *Options) { o.RateLimit = limiter })
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+
+	body := decode[settingsResponse](t, env.do(t, http.MethodGet, "/api/v1/settings", token, nil))
+	if body.Effective.ProxyRateLimitPerSecond != bastion.DefaultRateLimitPerSecond ||
+		body.Effective.ProxyRateLimitBurst != bastion.DefaultRateLimitBurst {
+		t.Fatalf("effective = %d/%d, want the defaults on", body.Effective.ProxyRateLimitPerSecond, body.Effective.ProxyRateLimitBurst)
+	}
+
+	rec := env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]any{
+		"proxy_rate_limit_per_second": 20, "proxy_rate_limit_burst": 40,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("save: %d (%s)", rec.Code, rec.Body.String())
+	}
+	if got := limiter.Limit(); got != (bastion.RateLimit{PerSecond: 20, Burst: 40}) {
+		t.Fatalf("published budget = %+v, want 20/40 at once, not at the next tick", got)
+	}
+
+	for _, bad := range []map[string]any{
+		{"proxy_rate_limit_per_second": -1},
+		{"proxy_rate_limit_per_second": 10001},
+		{"proxy_rate_limit_burst": 100001},
+	} {
+		if rec := env.do(t, http.MethodPut, "/api/v1/settings", token, bad); rec.Code != http.StatusBadRequest {
+			t.Fatalf("%v: expected %d, got %d", bad, http.StatusBadRequest, rec.Code)
+		}
+	}
+	if got := limiter.Limit(); got != (bastion.RateLimit{PerSecond: 20, Burst: 40}) {
+		t.Fatalf("a refused save must not move the budget, got %+v", got)
+	}
+
+	rec = env.do(t, http.MethodPut, "/api/v1/settings", token, map[string]any{
+		"proxy_rate_limit_per_second": 0, "proxy_rate_limit_burst": 0,
+	})
+	body = decode[settingsResponse](t, rec)
+	if body.Overrides.ProxyRateLimitPerSecond != 0 ||
+		limiter.Limit() != (bastion.RateLimit{PerSecond: bastion.DefaultRateLimitPerSecond, Burst: bastion.DefaultRateLimitBurst}) {
+		t.Fatalf("0 must clear back to the default, got override %d and budget %+v",
+			body.Overrides.ProxyRateLimitPerSecond, limiter.Limit())
 	}
 }

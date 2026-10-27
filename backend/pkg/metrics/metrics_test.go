@@ -230,6 +230,47 @@ func TestMiddlewareSkipsHistogramForFollowParam(t *testing.T) {
 	}
 }
 
+// The API server streams on `1` as much as on `true`, so both spellings stay
+// out of the histogram; a value that leaves streaming off is an ordinary,
+// timed request.
+func TestMiddlewareStreamingFlagSpellings(t *testing.T) {
+	cases := []struct {
+		query    string
+		recorded bool
+	}{
+		{"watch=1", false},
+		{"follow=1", false},
+		{"watch=true", false},
+		{"follow=true", false},
+		{"watch=0", true},
+		{"watch=false", true},
+		{"follow=0", true},
+		{"follow=false", true},
+		{"watch=", true},
+	}
+	for _, tc := range cases {
+		m, reg := NewStandalone()
+		r := gin.New()
+		r.Use(m.Middleware())
+		r.GET("/proxy", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+		r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/proxy?"+tc.query, nil))
+
+		var samples uint64
+		for _, f := range gatherMetric(t, reg, "kubemg_http_request_duration_seconds") {
+			for _, metric := range f.GetMetric() {
+				samples += metric.GetHistogram().GetSampleCount()
+			}
+		}
+		if got := samples > 0; got != tc.recorded {
+			t.Errorf("?%s: histogram recorded = %v, want %v", tc.query, got, tc.recorded)
+		}
+		if total := sumCounterFamily(gatherMetric(t, reg, "kubemg_http_requests_total")); total != 1 {
+			t.Errorf("?%s: kubemg_http_requests_total = %v, want 1 either way", tc.query, total)
+		}
+	}
+}
+
 func TestDBAfterDoesNotCountRecordNotFoundAsError(t *testing.T) {
 	m, reg := NewStandalone()
 	afterFn := m.dbAfter("query")
