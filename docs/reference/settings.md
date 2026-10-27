@@ -53,7 +53,7 @@ registered under the old one.
 | | |
 |---|---|
 | Meaning | The container image installed into a target cluster when it registers in agent mode. |
-| Environment default | `KUBEMG_AGENT_IMAGE` (falls back to the build's own default, currently `ghcr.io/kubemg/kubemg-agent:0.16.0`) |
+| Environment default | `KUBEMG_AGENT_IMAGE` (falls back to the build's own default, currently `ghcr.io/kubemg/kubemg-agent:0.17.0`) |
 | Validation | none beyond trimming |
 
 ### `agent_namespace`

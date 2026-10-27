@@ -24,8 +24,8 @@ sudo mv kubemg /usr/local/bin/
 **From the releases page.** Download the archive for your system from the [releases page](https://github.com/kubemg/kubemg/releases) — `kubemg_<version>_<os>_<arch>.tar.gz`, or `.zip` for Windows — check it against `SHA256SUMS`, and put the `kubemg` binary on your `PATH`:
 
 ```bash
-tar -xzf kubemg_0.16.0_darwin_arm64.tar.gz
-sudo install kubemg_0.16.0_darwin_arm64/kubemg /usr/local/bin/
+tar -xzf kubemg_0.17.0_darwin_arm64.tar.gz
+sudo install kubemg_0.17.0_darwin_arm64/kubemg /usr/local/bin/
 kubemg version
 ```
 

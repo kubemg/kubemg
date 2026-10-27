@@ -8,9 +8,9 @@ Pin an explicit tag rather than tracking `latest`, in three places:
 
 | Image | Set with | Read when |
 |---|---|---|
-| Management plane (`ghcr.io/kubemg/kubemg:0.16.0`) | `KUBEMG_IMAGE`/`KUBEMG_VERSION` in Compose, or the Deployment's `image:` in Kubernetes | The server starts |
-| Agent (`ghcr.io/kubemg/kubemg-agent:0.16.0`) | `KUBEMG_AGENT_IMAGE` | A package is rendered. Changing it affects *future* installs, not agents already running. |
-| Browser shell (`ghcr.io/kubemg/kubemg-shell:0.16.0`) | `KUBEMG_SHELL_IMAGE` | A shell is *started*. Changing it affects the next shell, not one already open. |
+| Management plane (`ghcr.io/kubemg/kubemg:0.17.0`) | `KUBEMG_IMAGE`/`KUBEMG_VERSION` in Compose, or the Deployment's `image:` in Kubernetes | The server starts |
+| Agent (`ghcr.io/kubemg/kubemg-agent:0.17.0`) | `KUBEMG_AGENT_IMAGE` | A package is rendered. Changing it affects *future* installs, not agents already running. |
+| Browser shell (`ghcr.io/kubemg/kubemg-shell:0.17.0`) | `KUBEMG_SHELL_IMAGE` | A shell is *started*. Changing it affects the next shell, not one already open. |
 
 All three are published as multi-arch (amd64 and arm64) images on a `v*` tag, after a vulnerability scan gate.
 
@@ -100,6 +100,16 @@ A release that asks something beyond pulling the image is listed here.
     - **A security key works only at the [public URL](../reference/settings.md#public_url)'s own address**, which must be https with a hostname (not an IP address). [Where a security key works](../access/mfa.md#where-a-security-key-works) says what the profile shows when it is not.
     - **The [`kubemg` command line](../access/cli.md)** is new: kubectl access to agent-mode clusters through a console sign-in, with fifteen-minute credentials and no kubeconfig file. The server image now carries the CLI for every platform, so an air-gapped site serves it itself. Nothing changes for anyone who does not use it. [`kubeconfig_issuance: cli_only`](../access/cli.md#withholding-kubeconfig-files) withholds agent-mode kubeconfig files once it is the only way you want, and is not the default.
     - **Behind an ingress or a load balancer, check [`KUBEMG_TRUSTED_PROXIES`](environment.md#client-addresses-behind-a-proxy)** if you have not since 0.14.2: the CLI's approval page warns when a sign-in came from another address, and that comparison needs the caller's real address.
+- **0.17.0**, from 0.16.x: no manual schema step (the new audit columns, the relay and reminder tables are created at boot). The agent's roles and the tunnel protocol are unchanged, so a 0.16.0 agent stays attached.
+    - **Re-apply every agent's install package** when convenient. The agent binary is rebuilt on Go 1.26.10 for GO-2026-6809, and now says so when it stops under an open session. Nothing stops working in the meantime: the server alone makes a `kubectl exec` the tunnel ended exit non-zero.
+    - **Calls into a cluster are [paced](../reference/settings.md#proxy_rate_limit_per_second-and-proxy_rate_limit_burst)** per account and cluster, on by default at 50 per second with bursts of 300, kubectl's own numbers. A script or controller driving harder than that through kubemg now waits, then gets `429` with `Retry-After`. Raise the limit in **Settings → General** if that is intended; it cannot be turned off.
+    - **The audit trail records kubemg's [own refusals](../audit/trail.md#refusals-kubemg-makes-itself)** (a namespace outside the grant, a cluster-wide read for a scoped grant, a throttled call), and every record names its object. The API and the forwarder gain `name` and `refused_by`; the CSV export gains a `name` column after `resource` and `refused_by` as the last one, so a script reading the export by column position must be checked.
+    - **Alarm channel webhook URLs are a credential now.** With `KUBEMG_SECRET_KEY` set they are encrypted in place at the first boot, and `GET /api/v1/alarms/channels` returns `url_masked` instead of `url`. A script that read the URL back must stop doing so. Rolling back to 0.16.0 after that boot leaves those channels with a URL 0.16.0 cannot read: re-enter it there.
+    - **`KUBEMG_SECRET_KEY` can be [rotated](database.md#rotating-the-key)** with `KUBEMG_SECRET_KEY_PREVIOUS` (Helm: `secrets.secretKeyPrevious`). Remove the previous key once the rotating boot has finished; Settings → Deployment warns until you do.
+    - **[Password expiry](../access/password-expiry.md)** is new and **off until you set** `password_max_age_days`. Existing accounts count from the upgrade, not from their creation, so turning it on never finds every old password already expired. Reminder mail needs a relay under **Settings → Email**.
+    - **A `KUBEMG_METRICS_ADDR` on the API's own port now refuses to boot**, naming both variables, instead of the API failing with "address already in use". A metrics address that is not loopback logs one warning; see [In a container](metrics.md#in-a-container).
+    - **[GitOps sync state](../clusters/gitops.md)** is a new cluster page, read from Argo CD and Flux with no agent re-apply. Its live/desired diff needs a new *gitops* datasource with an Argo CD account token, its link into Argo CD needs the cluster's `argocd` console row, and drift can raise an alarm. None is needed for the page itself.
+    - **A git checkout rebuilds its backend image with `--pull`** ([below](#the-backend-will-not-start-after-a-pull)), because the server now needs Go 1.26.10.
 
 An install that runs from a clone of the repository has one more thing to get right: see [Upgrading a git checkout](#upgrading-a-git-checkout).
 
@@ -114,7 +124,7 @@ A rollback does **not** undo:
 
 ## Documentation versioning
 
-This manual is versioned against release tags. An install running `0.16.0` matches the `0.16.0` docs; check the version selector.
+This manual is versioned against release tags. An install running `0.17.0` matches the `0.17.0` docs; check the version selector.
 
 ## Upgrading to 0.11.0
 
