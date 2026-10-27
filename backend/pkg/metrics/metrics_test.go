@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"gorm.io/gorm"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 func init() {
@@ -230,9 +232,37 @@ func TestMiddlewareSkipsHistogramForFollowParam(t *testing.T) {
 	}
 }
 
-// The API server streams on `1` as much as on `true`, so both spellings stay
-// out of the histogram; a value that leaves streaming off is an ordinary,
-// timed request.
+// The rule is the API server's own: its query decoding of watch and follow
+// goes through runtime.Convert_Slice_string_To_bool, so the two must agree on
+// every value, including no parameter at all.
+func TestStreamingFlagAgreesWithTheAPIServer(t *testing.T) {
+	values := []string{"", "0", "1", "true", "false", "TRUE", "FALSE", "True", "False", "t", "f", "yes", "no", "00", " false"}
+	for _, name := range []string{"watch", "follow"} {
+		for _, v := range append([]string{"<absent>"}, values...) {
+			target := "/proxy"
+			var query []string
+			if v != "<absent>" {
+				target += "?" + name + "=" + url.QueryEscape(v)
+				query = []string{v}
+			}
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodGet, target, nil)
+
+			var want bool
+			if err := runtime.Convert_Slice_string_To_bool(&query, &want, nil); err != nil {
+				t.Fatalf("convert %q: %v", v, err)
+			}
+			if got := streamingFlag(c, name); got != want {
+				t.Errorf("%s=%q: streamingFlag = %v, the API server reads %v", name, v, got, want)
+			}
+		}
+	}
+}
+
+// The API server streams on any watch or follow value but `0` and `false` in
+// any case, so every spelling it streams on stays out of the histogram; a
+// value that leaves streaming off, or no flag at all, is an ordinary, timed
+// request.
 func TestMiddlewareStreamingFlagSpellings(t *testing.T) {
 	cases := []struct {
 		query    string
@@ -242,11 +272,23 @@ func TestMiddlewareStreamingFlagSpellings(t *testing.T) {
 		{"follow=1", false},
 		{"watch=true", false},
 		{"follow=true", false},
+		{"watch=t", false},
+		{"watch=TRUE", false},
+		{"follow=True", false},
+		{"watch=yes", false},
+		{"watch=", false},
+		{"watch", false},
+		{"follow=", false},
 		{"watch=0", true},
 		{"watch=false", true},
+		{"watch=FALSE", true},
 		{"follow=0", true},
-		{"follow=false", true},
-		{"watch=", true},
+		{"follow=False", true},
+		// The API server reads the first value only.
+		{"watch=0&watch=1", true},
+		{"watch=1&watch=0", false},
+		{"limit=500", true},
+		{"", true},
 	}
 	for _, tc := range cases {
 		m, reg := NewStandalone()

@@ -171,13 +171,13 @@ func (m *Metrics) ObserveAuditQueue(sink string, depth func() int) {
 //     Upgrade: websocket header.
 //   - Streaming plain GETs (kubectl logs -f, kubectl get -w, informer watches
 //     through the proxy): the Kubernetes API streaming flags, watch and follow,
-//     set to true or 1 — the API server accepts both.
+//     read the way the API server reads them.
 func (m *Metrics) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		isUpgrade := strings.EqualFold(c.Request.Header.Get("Upgrade"), "websocket") ||
-			streamingFlag(c.Query("watch")) ||
-			streamingFlag(c.Query("follow"))
+			streamingFlag(c, "watch") ||
+			streamingFlag(c, "follow")
 
 		if !isUpgrade {
 			m.httpRequestsInFlight.Inc()
@@ -220,12 +220,14 @@ func (m *Metrics) Middleware() gin.HandlerFunc {
 	}
 }
 
-// streamingFlag reports whether a watch or follow query value turns streaming
-// on. The API server streams on `1` as well as `true`, and a stream that
-// reached the latency histogram would read as one request lasting the whole
-// watch.
-func streamingFlag(value string) bool {
-	return value == "true" || value == "1"
+// streamingFlag reports whether the watch or follow query parameter turns
+// streaming on, by the API server's rule: only an absent parameter, `0` or
+// `false` (in any case) leaves it off, so `t`, `True` and even an empty
+// `?watch=` stream. A stream that reached the latency histogram would read as
+// one request lasting the whole watch.
+func streamingFlag(c *gin.Context, name string) bool {
+	value, ok := c.GetQuery(name)
+	return ok && value != "0" && !strings.EqualFold(value, "false")
 }
 
 // Handler returns the HTTP handler that serves the /metrics scrape endpoint.
