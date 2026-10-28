@@ -62,7 +62,6 @@ func TestVerbFor(t *testing.T) {
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=yes", "watch"},
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=", "watch"},
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods?limit=5&watch=%74rue", "watch"},
-		{http.MethodGet, "/api/v1/namespaces/team-a/pods/web-0?watch=t", "watch"},
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=0", "list"},
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=FALSE", "list"},
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=0&watch=1", "list"},

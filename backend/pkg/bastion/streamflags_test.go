@@ -4,10 +4,12 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/kubemg/kubemg/backend/pkg/auditpolicy"
 	"github.com/kubemg/kubemg/backend/pkg/db"
+	"github.com/kubemg/kubemg/backend/pkg/kubeparams"
 )
 
 // throughSelection replays what the gateway recorded into a store auditor whose
@@ -132,5 +134,62 @@ func TestProxyStreamsAFollowedLogHoweverItIsSpelled(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Past net/url's parameter limit the gateway cannot read the query, so it
+// cannot tell a watch from a list. It refuses the call before the tunnel rather
+// than guess, and the refusal is recorded like its others.
+func TestProxyRefusesAQueryPastTheParameterLimit(t *testing.T) {
+	h := newHarness(t)
+	h.addCluster(1, "prod-eu", "kmg_valid")
+	admin := h.addUser(10, "admin", db.SystemRoleAdmin)
+
+	agent, err := h.dialStreamingAgent("kmg_valid", okResponse("{}"), echoStream(`{"type":"ADDED"}`+"\n"))
+	if err != nil {
+		t.Fatalf("dial agent: %v", err)
+	}
+	waitFor(t, func() bool { return h.gateway.Registry().Connected(1) })
+
+	query := "watch=true" + strings.Repeat("&x=1", kubeparams.MaxParams)
+	resp := h.proxyRequest(http.MethodGet,
+		"/api/v1/clusters/1/proxy/api/v1/namespaces/team-a/pods?"+query, h.token(admin))
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", resp.StatusCode, body)
+	}
+	if len(agent.streamOpens()) != 0 || len(agent.requests()) != 0 {
+		t.Fatalf("the call must never reach the agent, got %d opens and %d requests",
+			len(agent.streamOpens()), len(agent.requests()))
+	}
+
+	waitFor(t, func() bool { return len(h.audit.events()) >= 1 })
+	events := h.audit.events()
+	if len(events) != 1 || events[0].Status != http.StatusBadRequest || events[0].RefusedBy != RefusedByKubeMG {
+		t.Fatalf("want one 400 refusal by kubemg, got %+v", events)
+	}
+	if queued, suppressed := throughSelection(events); len(queued) != 1 || suppressed != 0 {
+		t.Fatalf("a refusal is never the selection's to drop: %d queued, %d suppressed", len(queued), suppressed)
+	}
+}
+
+// At the limit the query is still read in full, so the watch in it streams.
+func TestProxyStreamsAWatchAtTheParameterLimit(t *testing.T) {
+	h := newHarness(t)
+	h.addCluster(1, "prod-eu", "kmg_valid")
+	admin := h.addUser(10, "admin", db.SystemRoleAdmin)
+
+	agent, err := h.dialStreamingAgent("kmg_valid", okResponse("{}"), echoStream(`{"type":"ADDED"}`+"\n"))
+	if err != nil {
+		t.Fatalf("dial agent: %v", err)
+	}
+	waitFor(t, func() bool { return h.gateway.Registry().Connected(1) })
+
+	query := "watch=true" + strings.Repeat("&x=1", kubeparams.MaxParams-1)
+	resp := h.proxyRequest(http.MethodGet,
+		"/api/v1/clusters/1/proxy/api/v1/namespaces/team-a/pods?"+query, h.token(admin))
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != `{"type":"ADDED"}`+"\n" || len(agent.streamOpens()) != 1 {
+		t.Fatalf("a watch at the limit should stream, got %q and %d stream opens", body, len(agent.streamOpens()))
 	}
 }
