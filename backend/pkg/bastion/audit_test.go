@@ -56,6 +56,18 @@ func TestVerbFor(t *testing.T) {
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods/web-0", "get"},
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=true", "watch"},
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch", "watch"},
+		// Every spelling the API server watches on is a watch, and only those.
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=t", "watch"},
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=True", "watch"},
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=yes", "watch"},
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=", "watch"},
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods?limit=5&watch=%74rue", "watch"},
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods/web-0?watch=t", "watch"},
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=0", "list"},
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=FALSE", "list"},
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=0&watch=1", "list"},
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods/web-0?watch=false", "get"},
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods?resourceVersion=0", "list"},
 		// The sensitive ones are named for what they are, not for their method.
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods/web-0/exec?command=sh", "exec"},
 		{http.MethodPost, "/api/v1/namespaces/team-a/pods/web-0/exec?command=sh", "exec"},

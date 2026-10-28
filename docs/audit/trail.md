@@ -81,7 +81,7 @@ Both read "not recorded" in the console for calls with no caller (for example th
 
 A call is named by the Kubernetes verb it performs, not its HTTP method.
 
-- `GET` is `list` for a collection, `get` for one object, and `watch` with `?watch=true` (or `watch=1`).
+- `GET` is `list` for a collection, `get` for one object, and `watch` whenever the API server will watch: `?watch=true`, or any other value but `0` and `false` (`watch=1`, `watch=t`, a bare `?watch`). A `watch` is a streaming call, so no verb selection drops it.
 - `POST`/`PUT`/`PATCH`/`DELETE` are `create`/`update`/`patch`/`delete`.
 - A subresource names the call instead: `exec`, `attach`, `portforward`, and `GET` on `pods/log` is `log`. A shell in a production pod is never filed as a plain `get`.
 

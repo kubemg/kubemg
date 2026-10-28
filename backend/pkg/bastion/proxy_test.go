@@ -109,9 +109,20 @@ func TestStreamRouting(t *testing.T) {
 		{path: "/api/v1/namespaces/team-a/pods/web-0/log?follow=true", body: true},
 		{path: "/api/v1/namespaces/team-a/pods?watch=true", body: true},
 		{path: "/api/v1/namespaces/team-a/pods?watch=1&timeoutSeconds=60", body: true},
+		// However the API server is asked to stream, it streams.
+		{path: "/api/v1/namespaces/team-a/pods/web-0/log?follow=True", body: true},
+		{path: "/api/v1/namespaces/team-a/pods/web-0/log?follow=t&tailLines=10", body: true},
+		{path: "/api/v1/namespaces/team-a/pods/web-0/log?follow", body: true},
+		{path: "/api/v1/namespaces/team-a/pods?watch=TRUE", body: true},
+		{path: "/api/v1/namespaces/team-a/pods?watch=yes", body: true},
 		// A bounded log read is an ordinary request/response pair.
 		{path: "/api/v1/namespaces/team-a/pods/web-0/log?tailLines=100"},
+		{path: "/api/v1/namespaces/team-a/pods/web-0/log?follow=false"},
+		{path: "/api/v1/namespaces/team-a/pods/web-0/log?follow=0&follow=1"},
+		{path: "/api/v1/namespaces/team-a/pods?watch=False"},
 		{path: "/api/v1/namespaces/team-a/pods"},
+		// follow means something only on a log.
+		{path: "/api/v1/namespaces/team-a/pods?follow=true"},
 	}
 
 	for _, tc := range cases {

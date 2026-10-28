@@ -18,6 +18,7 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/credentials"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/guardrails"
+	"github.com/kubemg/kubemg/backend/pkg/kubeparams"
 )
 
 // GroupPrefix namespaces the Kubernetes groups KubeMG impersonates, so a
@@ -1004,17 +1005,12 @@ func unsupportedStream(r *http.Request, parsed APIPath) (string, bool) {
 		"The SPDY transport is not proxied.", true
 }
 
+// followRequested reports whether the API server will keep a log read open.
+// One it streams that the gateway took for a bounded read would go down the
+// request/response path: buffered whole, nothing reaching the client, and cut
+// off at proxyTimeout.
 func followRequested(path string) bool {
-	i := strings.IndexByte(path, '?')
-	if i < 0 {
-		return false
-	}
-	for _, param := range strings.Split(path[i+1:], "&") {
-		if param == "follow" || param == "follow=true" || param == "follow=1" {
-			return true
-		}
-	}
-	return false
+	return kubeparams.Bool(kubeparams.Query(path), "follow")
 }
 
 // tunnelFailure maps a tunnel error onto an HTTP status the client can act on.
