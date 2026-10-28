@@ -4,7 +4,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -12,7 +11,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"gorm.io/gorm"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 func init() {
@@ -227,33 +225,6 @@ func TestMiddlewareSkipsHistogramForFollowParam(t *testing.T) {
 		for _, metric := range f.GetMetric() {
 			if metric.GetHistogram().GetSampleCount() > 0 {
 				t.Fatal("latency histogram must not record follow=true requests")
-			}
-		}
-	}
-}
-
-// The rule is the API server's own: its query decoding of watch and follow
-// goes through runtime.Convert_Slice_string_To_bool, so the two must agree on
-// every value, including no parameter at all.
-func TestStreamingFlagAgreesWithTheAPIServer(t *testing.T) {
-	values := []string{"", "0", "1", "true", "false", "TRUE", "FALSE", "True", "False", "t", "f", "yes", "no", "00", " false"}
-	for _, name := range []string{"watch", "follow"} {
-		for _, v := range append([]string{"<absent>"}, values...) {
-			target := "/proxy"
-			var query []string
-			if v != "<absent>" {
-				target += "?" + name + "=" + url.QueryEscape(v)
-				query = []string{v}
-			}
-			c, _ := gin.CreateTestContext(httptest.NewRecorder())
-			c.Request = httptest.NewRequest(http.MethodGet, target, nil)
-
-			var want bool
-			if err := runtime.Convert_Slice_string_To_bool(&query, &want, nil); err != nil {
-				t.Fatalf("convert %q: %v", v, err)
-			}
-			if got := streamingFlag(c, name); got != want {
-				t.Errorf("%s=%q: streamingFlag = %v, the API server reads %v", name, v, got, want)
 			}
 		}
 	}

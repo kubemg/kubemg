@@ -18,6 +18,7 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/credentials"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/guardrails"
+	"github.com/kubemg/kubemg/backend/pkg/kubeparams"
 )
 
 // GroupPrefix namespaces the Kubernetes groups KubeMG impersonates, so a
@@ -271,6 +272,17 @@ func (p *Proxy) Handle(c *gin.Context) {
 	event.Namespace = parsed.Namespace
 	event.Resource = parsed.Resource
 	event.Name = parsed.Name
+
+	// Past net/url's parameter limit the query reads as empty here, so a watch
+	// in it would be routed and recorded as a plain list, while an API server
+	// built before that limit still opens the watch. Which one the cluster runs
+	// is unknown, so the call is refused rather than predicted.
+	if kubeparams.TooManyParams(path) {
+		event.RefusedBy = RefusedByKubeMG
+		p.fail(c, &event, http.StatusBadRequest, "the query has more than "+
+			strconv.Itoa(kubeparams.MaxParams)+" parameters, more than kubemg reads; split the call")
+		return
+	}
 
 	if allowed, reason := allowedNamespace(grant, parsed, path); !allowed {
 		event.RefusedBy = RefusedByKubeMG
@@ -1004,17 +1016,12 @@ func unsupportedStream(r *http.Request, parsed APIPath) (string, bool) {
 		"The SPDY transport is not proxied.", true
 }
 
+// followRequested reports whether the API server will keep a log read open.
+// One it streams that the gateway took for a bounded read would go down the
+// request/response path: buffered whole, nothing reaching the client, and cut
+// off at proxyTimeout.
 func followRequested(path string) bool {
-	i := strings.IndexByte(path, '?')
-	if i < 0 {
-		return false
-	}
-	for _, param := range strings.Split(path[i+1:], "&") {
-		if param == "follow" || param == "follow=true" || param == "follow=1" {
-			return true
-		}
-	}
-	return false
+	return kubeparams.Bool(kubeparams.Query(path), "follow")
 }
 
 // tunnelFailure maps a tunnel error onto an HTTP status the client can act on.
