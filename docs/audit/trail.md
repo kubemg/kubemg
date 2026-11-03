@@ -24,7 +24,7 @@ The trail records every attempt, not only the calls that reached a cluster. When
 - A metrics or logs chart that would cover namespaces outside your grant.
 - A `kubectl` call on a cluster you hold no grant on.
 - A call over your [rate limit](../reference/settings.md#proxy_rate_limit_per_second-and-proxy_rate_limit_burst) for that cluster (`status` `429`). A call that only waited for its turn is recorded as normal.
-- A `kubectl` call whose query has more than 10,000 parameters (`status` `400`). Past that, kubemg cannot read the query in full, so it cannot tell whether the call is a watch.
+- A `kubectl` call whose query has more parameters than Go's `net/url` reads, 10,000 by default (`status` `400`). Past that, whether the cluster reads the query depends on the Go its API server was built with, so kubemg cannot tell whether the call is a watch. The row names the verb the call asked for.
 
 These rows carry `refused_by: kubemg` and the message you were given as `error`. They carry no impersonated identity, because nothing was asserted to the cluster. A refusal the cluster gave has no `refused_by` and is recorded once, by the call that carried it.
 
