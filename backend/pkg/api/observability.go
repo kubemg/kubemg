@@ -78,7 +78,7 @@ func toSourceResponse(source db.ObservabilitySource) sourceResponse {
 		Provider:           source.Provider,
 		ProviderLabel:      observability.Label(source.Provider),
 		AccessMode:         source.AccessMode,
-		URL:                source.URL,
+		URL:                observability.WithoutUserinfo(source.URL),
 		ServiceNamespace:   source.ServiceNamespace,
 		ServiceName:        source.ServiceName,
 		ServicePort:        source.ServicePort,
@@ -171,6 +171,30 @@ func ruleLabelsOf(source db.ObservabilitySource) map[string]string {
 		return nil
 	}
 	return source.RuleLabelMap()
+}
+
+// keepsStoredCredential reports whether a request that leaves the credential
+// out may use the stored one: only while it goes to the same place (see
+// kept_credentials.go). A request that sends one, a row with none, or no auth
+// at all has nothing to keep.
+func (r sourceRequest) keepsStoredCredential(stored *db.ObservabilitySource) bool {
+	authMode := r.AuthMode
+	if authMode == "" {
+		authMode = db.AuthNone
+	}
+	if r.Credential != nil || stored == nil || stored.Credential == "" || authMode == db.AuthNone {
+		return true
+	}
+	if r.AccessMode != stored.AccessMode {
+		return false
+	}
+	if r.AccessMode == db.AccessDirect {
+		return sameOrigin(r.URL, stored.URL)
+	}
+	return strings.TrimSpace(r.ServiceNamespace) == stored.ServiceNamespace &&
+		strings.TrimSpace(r.ServiceName) == stored.ServiceName &&
+		strings.TrimSpace(r.ServicePort) == stored.ServicePort &&
+		r.ServiceScheme == stored.ServiceScheme
 }
 
 // target renders the request as something callable, folding in the stored
@@ -279,8 +303,17 @@ func (s *server) putObservabilitySource(c *gin.Context) {
 		return
 	}
 
+	if !req.keepsStoredCredential(stored) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errRetypeCredential})
+		return
+	}
 	target := req.target(kind, stored)
 	if err := target.Validate(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// The address is shown to everyone granted the cluster.
+	if err := observability.RefuseUserinfo(target.URL, "the credential fields, with basic or bearer auth"); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -406,8 +439,17 @@ func (s *server) testObservabilitySource(c *gin.Context) {
 		return
 	}
 
+	if !req.keepsStoredCredential(stored) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errRetypeCredential})
+		return
+	}
 	target := req.target(kind, stored)
 	if err := target.Validate(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// The address is shown to everyone granted the cluster.
+	if err := observability.RefuseUserinfo(target.URL, "the credential fields, with basic or bearer auth"); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
