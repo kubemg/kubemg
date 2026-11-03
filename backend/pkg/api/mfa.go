@@ -629,6 +629,15 @@ func (s *server) confirmMFA(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not read the second factor"})
 		return
 	}
+	// enrollMFA's rule, held at the confirm too: an enrolment challenge is for
+	// an account with no factor. One that gained a factor while this enrolment
+	// was pending (its owner enrolled meanwhile) signs in with that factor,
+	// or a second, pending enrolment started with the password alone would
+	// finish as a factor the owner never chose.
+	if hash != "" && state.Enrolled() {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": errChallengeGone.Error()})
+		return
+	}
 	var step int64
 	var record string
 	if factor.Kind == db.MFAKindWebAuthn {

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
@@ -206,6 +207,44 @@ func TestUpdateUserCannotChangeOwnSystemRole(t *testing.T) {
 		map[string]any{"system_role": db.SystemRoleUser})
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected status %d, got %d (%s)", http.StatusForbidden, rec.Code, rec.Body.String())
+	}
+}
+
+// An administrator's own password changes only on their own route, with the
+// current password: a stolen admin session must not set a new one here and
+// lock the owner out. Somebody else's is still set here.
+func TestUpdateUserRefusesYourOwnPassword(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	other := env.store.addUser("devops", "pw", db.RoleUser)
+
+	rec := env.do(t, http.MethodPut, "/api/v1/users/"+itoa(admin.ID), env.tokenFor(t, admin),
+		map[string]any{"password": "a-new-password"})
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "current password") {
+		t.Fatalf("own password: want 403 naming the current password, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	stored, err := env.store.UserByUsername(context.Background(), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !auth.CheckPassword(stored.PasswordHash, "pw") {
+		t.Fatal("the refused request changed the password anyway")
+	}
+
+	rec = env.do(t, http.MethodPut, "/api/v1/users/"+itoa(other.ID), env.tokenFor(t, admin),
+		map[string]any{"password": "a-new-password"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("somebody else's password: want 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// The seeded administrator still holds its original password, but setup is
+	// complete: the exception the wizard uses is closed.
+	env.store.settings[db.SettingBootstrapAdminID] = itoa(admin.ID)
+	env.store.settings[db.SettingSetupCompletedAt] = "2026-01-01T00:00:00Z"
+	rec = env.do(t, http.MethodPut, "/api/v1/users/"+itoa(admin.ID), env.tokenFor(t, admin),
+		map[string]any{"password": "a-new-password"})
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("seeded password after setup: want 403, got %d (%s)", rec.Code, rec.Body.String())
 	}
 }
 

@@ -167,7 +167,8 @@ that names `KUBECTL_PORT_FORWARD_WEBSOCKETS=true`, so the error tells the
 operator the fix rather than just failing.
 
 A browser terminal authenticates with `?access_token=<ticket>`, accepted **only
-on an upgrade request**, and the query is stripped before the request reaches
+on a `GET` upgrade to a route named in `wsTicketRoutes`** (`auth.Manager.AcceptWSTicketsOn`;
+`TestWSTicketRoutesAreRegistered` keeps the list in step with the router), and the query is stripped before the request reaches
 the cluster or the audit trail. The value is never the session JWT: the console
 mints a ticket with `POST /auth/ws-ticket` just before opening the socket —
 32 random bytes, single-use, twenty seconds (`pkg/auth/wsticket.go`). Tickets
