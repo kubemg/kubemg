@@ -70,6 +70,39 @@ var notCreatable = map[string]string{
 		"so there is no node to create here.",
 }
 
+// createRefusal looks a create up in notCreatable by what it addresses, not
+// only by its key: a `crd:` key can name a built-in API too
+// (`crd:rbac.authorization.k8s.io/v1/clusterrolebindings`), and the rule is
+// about the kind, whichever spelling reaches it. Matched by group and resource
+// with the version ignored, so an older version of the same API is the same
+// kind.
+func createRefusal(key string, kind objectKind) (string, bool) {
+	if reason, refused := notCreatable[key]; refused {
+		return reason, true
+	}
+	for _, target := range kind.versions {
+		for refusedKey, reason := range notCreatable {
+			for _, served := range objectKinds[refusedKey].versions {
+				if served.resource == target.resource && apiGroupOfPath(served.group) == apiGroupOfPath(target.group) {
+					return reason, true
+				}
+			}
+		}
+	}
+	return "", false
+}
+
+// apiGroupOfPath is the group an API path serves: "" for the core /api/v1,
+// "rbac.authorization.k8s.io" for /apis/rbac.authorization.k8s.io/v1.
+func apiGroupOfPath(path string) string {
+	rest, found := strings.CutPrefix(path, "/apis/")
+	if !found {
+		return ""
+	}
+	group, _, _ := strings.Cut(rest, "/")
+	return group
+}
+
 const rbacCreateRefusal = "kubemg does not author a cluster's RBAC. Create Roles and bindings " +
 	"with kubectl or whatever manages them, and read them back here."
 
@@ -155,7 +188,7 @@ func (s *server) resourceCreateTarget(c *gin.Context, grant db.UserClusterAccess
 			return none, "", false
 		}
 	}
-	if reason, refused := notCreatable[key]; refused {
+	if reason, refused := createRefusal(key, kind); refused {
 		c.JSON(http.StatusConflict, gin.H{"error": reason})
 		return none, "", false
 	}

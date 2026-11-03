@@ -348,7 +348,7 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | --- | --- | --- |
 | `GET /users` | Admin | Excludes machine accounts. |
 | `POST /users` | Admin | Body `{username, email?, password(min 8), system_role, can_view_recordings?}`. `403` a non-super-admin creating a super admin or granting recording access. `409` username taken. |
-| `PUT /users/:id` | Admin | `403` changing your own system role or your own password (that is `POST /auth/password`, with the current one; only the seeded administrator replacing its boot password before setup completes may set it here), or a non-super-admin granting super admin/recording access. |
+| `PUT /users/:id` | Admin | `slack_user_id` links a Slack member ID (`U…`/`W…`, `400` otherwise; `409` if another account holds it; `""` unlinks). `403` changing your own system role or your own password (that is `POST /auth/password`, with the current one; only the seeded administrator replacing its boot password before setup completes may set it here), or a non-super-admin granting super admin/recording access. |
 | `PATCH /users/:id/status` | Admin | `403` disabling your own account. |
 | `DELETE /users/:id` | Admin | `403` deleting your own account. |
 | `GET /users/:id/mfa` | Admin | The account's second factor, the `GET /auth/mfa` shape; never a secret. |
