@@ -98,7 +98,9 @@ the config struct it was booted with. Reading `s.publicURL` directly is the bug;
 
 The [Environment reference](../install/environment.md) and
 [Runtime settings](../reference/settings.md) in the user guide are the
-authoritative lists of both halves.
+authoritative lists of both halves. A variable `pkg/config` starts reading needs
+a row in the first, or a chart template that sets it; `make chart-test` fails
+on one with neither.
 
 ## Routes and authorisation
 

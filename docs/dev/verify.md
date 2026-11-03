@@ -49,6 +49,12 @@ A refusal the chart makes (`fail` in `_helpers.tpl`) and every value that
 reaches the pod belong in `tests/`, asserted with `failedTemplate`, `contains`
 and `equal` — not checked by installing the chart.
 
+`chart-test` also holds the chart to `backend/pkg/config`: every variable the
+server's config reads has to be set by a chart template or have a row in the
+[Environment reference](../install/environment.md), whose first cell names it.
+A new variable with neither fails here, so an operator installing from the
+chart can always find it and set it through `extraEnv`.
+
 **`make frontend-contrast`** reads the design tokens out of `frontend/src/index.css`
 and measures every colour pairing the components actually build against WCAG. It
 is a gate, not a report: a violation fails the build. Fix it by moving the
