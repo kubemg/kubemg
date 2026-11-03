@@ -302,6 +302,42 @@ func TestEnrolmentAtSignInEndsInASession(t *testing.T) {
 	}
 }
 
+// An enrolment challenge is for an account with no factor. enrollMFA holds
+// that rule, and starting an enrolment drops the account's other pending one,
+// so a pending factor beside a confirmed one is not reachable over HTTP today.
+// The confirm holds the rule as well, so that it does not rest on the store's
+// delete alone: a pending factor confirmed through a challenge once the account
+// has a factor would be one its owner never chose, and the session with it.
+func TestAnEnrolChallengeCannotConfirmOnceTheAccountHasAFactor(t *testing.T) {
+	env := newTestEnv(t)
+	user := env.store.addUser("root", "pw", db.RoleAdmin)
+	setEnforcement(env, mfaEnforcementAdmins)
+
+	challenge := passwordStep(t, env, "root", "pw").Challenge
+	giveFactor(t, env, user)
+	secret, err := auth.NewTOTPSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := &db.MFAFactor{UserID: user.ID, Kind: db.MFAKindTOTP, Name: "not the owner's", Secret: secret}
+	if err := env.store.CreatePendingMFAFactor(context.Background(), pending); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := env.do(t, http.MethodPost, mfaChallengeConfirm, "", map[string]any{
+		"challenge": challenge, "factor_id": pending.ID, "code": codeAt(t, secret, 0),
+	})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("confirm beside a confirmed factor: want 401, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if decode[mfaConfirmResponse](t, rec).Session != nil {
+		t.Fatal("the refused confirm handed out a session")
+	}
+	if factor, err := env.store.MFAFactorByID(context.Background(), user.ID, pending.ID); err != nil || factor.ConfirmedAt != nil {
+		t.Fatalf("the pending factor was confirmed anyway: %+v %v", factor, err)
+	}
+}
+
 func TestAWrongFirstCodeDoesNotConfirm(t *testing.T) {
 	env := newTestEnv(t)
 	user := env.store.addUser("dev", "pw", db.RoleUser)

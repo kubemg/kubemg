@@ -105,6 +105,10 @@ Adding a repository is an outbound-egress decision, like adding an [alarm channe
 
 The API reports only `has_credential`. Saving with the credential field **omitted keeps** the stored one; an **empty string clears** it.
 
+- **A kept credential goes only to the host it was given for.** Change the URL to another scheme, host or port and the credential has to be entered again. Otherwise the repository could be pointed somewhere else with the stored password still attached.
+- **The login goes only to the repository's own host.** An index may list chart archives on another host (a CDN, a release page). Those are fetched without the repository's username and password, as Helm itself does.
+- **The username and password go in their own fields, never in the URL.** A URL with `user:password@` in it is refused at save, because the catalogue shows the URL to everyone signed in. A repository saved that way before 0.17.2 keeps working, and the URL is shown without the login.
+
 ### What kind of repository
 
 Only `http://` and `https://` are accepted.

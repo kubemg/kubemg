@@ -58,7 +58,10 @@ A failed probe says what to try next:
 
 ## Credentials
 
-The console and API never return the credential, only a `has_credential` flag. Saving with the field omitted keeps the stored value, so you can fix a port without re-typing a token. Sending an empty string clears it.
+The console and API never return the credential, only a `has_credential` flag. Saving with the field omitted keeps the stored value, so you can fix a path prefix without re-typing a token. Sending an empty string clears it.
+
+- **A kept credential goes only where it was given.** It follows the datasource only while the destination stays the same: the same scheme, host and port for a direct source, or the same Service, port and scheme in-cluster. Change it, or switch between direct and in-cluster, and **Save** and **Test** both ask for the credential again before anything is dialled. Otherwise the stored token could be sent to another address without anyone typing it.
+- **A credential never goes in the URL.** An address with `user:password@` in it is refused, because everyone granted the cluster sees the address. Use basic or bearer auth and the credential fields instead. A datasource saved that way before 0.17.2 keeps working, and its address is shown without the login.
 
 ## Discovery
 

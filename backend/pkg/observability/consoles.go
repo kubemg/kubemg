@@ -208,7 +208,7 @@ func DatasourceUI(source db.ObservabilitySource) string {
 		return ""
 	}
 
-	base := strings.TrimRight(strings.TrimSpace(source.URL), "/")
+	base := strings.TrimRight(WithoutUserinfo(strings.TrimSpace(source.URL)), "/")
 	if base == "" {
 		return ""
 	}
