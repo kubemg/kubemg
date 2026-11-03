@@ -12,6 +12,7 @@ import {
 } from '../api/client'
 import type { IssuedKubeconfig, MFAStatus, TerminalSession, User, UserAccessReview } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { SlackLinkSheet } from '../components/SlackLinkSheet'
 import {
   Age,
   Button,
@@ -174,6 +175,7 @@ function Identity({
   const [expiring, setExpiring] = useState(false)
   const canExpire = passwordExpirable(user, caller)
   const password = passwordStatus(user)
+  const [linkingSlack, setLinkingSlack] = useState(false)
 
   async function expire() {
     const ok = await confirm({
@@ -313,6 +315,44 @@ function Identity({
             </Button>
           ) : null}
         </div>
+      ) : null}
+
+      {user.account_type !== 'machine' ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 sm:col-span-2 xl:col-span-4">
+          <div className="min-w-0">
+            <p className="label text-faint">Slack</p>
+            <p className="mt-1 text-[13px] text-fg">
+              {user.slack_user_id ? (
+                <>
+                  Decides access requests in Slack as{' '}
+                  <span className="font-data">{user.slack_user_id}</span>
+                </>
+              ) : (
+                <span className="text-muted">Not linked — a Slack click by this person decides nothing</span>
+              )}
+            </p>
+          </div>
+          <Button size="sm" onClick={() => setLinkingSlack(true)}>
+            {user.slack_user_id ? 'Change link' : 'Link Slack account'}
+          </Button>
+        </div>
+      ) : null}
+      {linkingSlack ? (
+        <SlackLinkSheet
+          user={user}
+          onClose={() => setLinkingSlack(false)}
+          onSaved={(next) => {
+            setLinkingSlack(false)
+            onUserChange(next)
+            report({
+              tone: 'ok',
+              title: next.slack_user_id ? 'Slack account linked' : 'Slack account unlinked',
+              body: next.slack_user_id
+                ? `Clicks by ${next.slack_user_id} on an access-request message now count as ${next.username}.`
+                : `A Slack click no longer counts as ${next.username}.`,
+            })
+          }}
+        />
       ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-3 sm:col-span-2 xl:col-span-4">

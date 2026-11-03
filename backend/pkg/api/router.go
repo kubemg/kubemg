@@ -40,6 +40,7 @@ var defaultAllowedOrigins = []string{"http://localhost:5173"}
 // Store is the persistence surface the HTTP layer depends on.
 type Store interface {
 	UserByUsername(ctx context.Context, username string) (*db.User, error)
+	UserBySlackID(ctx context.Context, slackUserID string) (*db.User, error)
 	UserByID(ctx context.Context, id uint) (*db.User, error)
 	ClustersForUser(ctx context.Context, user *db.User) ([]db.Cluster, error)
 	AccessForUser(ctx context.Context, userID uint) (map[uint]db.UserClusterAccess, error)

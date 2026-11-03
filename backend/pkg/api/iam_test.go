@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -698,5 +699,35 @@ func TestAssignPermissionRefusesANamespaceThatIsNotOne(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("%q: want 400, got %d (%s)", namespace, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+// A Slack member ID is linked by an administrator, checked for shape, and held
+// by one account at most; "" unlinks it.
+func TestLinkingASlackMemberToAnAccount(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	ada := env.store.addUser("ada", "pw", db.RoleAdmin)
+	bob := env.store.addUser("bob", "pw", db.RoleUser)
+	token := env.tokenFor(t, admin)
+	put := func(user *db.User, id string) *httptest.ResponseRecorder {
+		return env.do(t, http.MethodPut, "/api/v1/users/"+itoa(user.ID), token, map[string]any{"slack_user_id": id})
+	}
+
+	if rec := put(ada, "@ada"); rec.Code != http.StatusBadRequest {
+		t.Fatalf("a handle instead of a member ID: want 400, got %d", rec.Code)
+	}
+	if rec := put(ada, "u0ada1"); rec.Code != http.StatusOK || ada.SlackUserID != "U0ADA1" {
+		t.Fatalf("link: %d %q", rec.Code, ada.SlackUserID)
+	}
+	if rec := put(bob, "U0ADA1"); rec.Code != http.StatusConflict {
+		t.Fatalf("the same member on a second account: want 409, got %d", rec.Code)
+	}
+	if rec := put(ada, ""); rec.Code != http.StatusOK || ada.SlackUserID != "" {
+		t.Fatalf("unlink: %d %q", rec.Code, ada.SlackUserID)
+	}
+	if rec := env.do(t, http.MethodPut, "/api/v1/users/"+itoa(admin.ID), env.tokenFor(t, bob),
+		map[string]any{"slack_user_id": "U0BOB"}); rec.Code != http.StatusForbidden {
+		t.Fatalf("a non-admin linking: want 403, got %d", rec.Code)
 	}
 }
