@@ -236,6 +236,16 @@ func TestUpdateUserRefusesYourOwnPassword(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("somebody else's password: want 200, got %d (%s)", rec.Code, rec.Body.String())
 	}
+
+	// The seeded administrator still holds its original password, but setup is
+	// complete: the exception the wizard uses is closed.
+	env.store.settings[db.SettingBootstrapAdminID] = itoa(admin.ID)
+	env.store.settings[db.SettingSetupCompletedAt] = "2026-01-01T00:00:00Z"
+	rec = env.do(t, http.MethodPut, "/api/v1/users/"+itoa(admin.ID), env.tokenFor(t, admin),
+		map[string]any{"password": "a-new-password"})
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("seeded password after setup: want 403, got %d (%s)", rec.Code, rec.Body.String())
+	}
 }
 
 // An admin can strip every other admin, but never itself, so an active admin

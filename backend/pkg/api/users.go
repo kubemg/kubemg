@@ -204,7 +204,12 @@ func (s *server) updateUser(c *gin.Context) {
 		// Your own password changes only with your current one, on your own
 		// route: a stolen administrator session must not be able to set a new
 		// password here and lock the owner out of their account.
-		if target.ID == caller.ID {
+		//
+		// The one exception is the setup wizard's first step: the seeded
+		// administrator replacing the password the install was booted with,
+		// before setup is complete. That password came from the operator's own
+		// configuration, so asking for it again proves nothing.
+		if target.ID == caller.ID && !s.replacingSeededPassword(c.Request.Context(), caller.ID) {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": "change your own password from your profile, with your current password",
 			})
