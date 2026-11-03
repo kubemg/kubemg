@@ -24,6 +24,7 @@ The trail records every attempt, not only the calls that reached a cluster. When
 - A metrics or logs chart that would cover namespaces outside your grant.
 - A `kubectl` call on a cluster you hold no grant on.
 - A call over your [rate limit](../reference/settings.md#proxy_rate_limit_per_second-and-proxy_rate_limit_burst) for that cluster (`status` `429`). A call that only waited for its turn is recorded as normal.
+- A `kubectl` call whose query has more than 10,000 parameters (`status` `400`). Past that, kubemg cannot read the query in full, so it cannot tell whether the call is a watch.
 
 These rows carry `refused_by: kubemg` and the message you were given as `error`. They carry no impersonated identity, because nothing was asserted to the cluster. A refusal the cluster gave has no `refused_by` and is recorded once, by the call that carried it.
 
@@ -81,7 +82,7 @@ Both read "not recorded" in the console for calls with no caller (for example th
 
 A call is named by the Kubernetes verb it performs, not its HTTP method.
 
-- `GET` is `list` for a collection, `get` for one object, and `watch` with `?watch=true` (or `watch=1`).
+- `GET` is `list` for a collection, `get` for one object, and `watch` whenever the API server will watch: `?watch=true`, or any other value but `0` and `false` (`watch=1`, `watch=t`, a bare `?watch`). A `watch` is a streaming call, so no verb selection drops it.
 - `POST`/`PUT`/`PATCH`/`DELETE` are `create`/`update`/`patch`/`delete`.
 - A subresource names the call instead: `exec`, `attach`, `portforward`, and `GET` on `pods/log` is `log`. A shell in a production pod is never filed as a plain `get`.
 

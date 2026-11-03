@@ -295,6 +295,25 @@ func (s *server) mintWSTicket(c *gin.Context) {
 	c.JSON(http.StatusOK, wsTicketResponse{Ticket: ticket})
 }
 
+// requireAdmin admits a request only for an account that is an administrator
+// now. It reads the account rather than the token's role claim, which is the
+// role at sign-in: a demoted or disabled administrator's token still says
+// admin for up to the session's lifetime, and with it they could mint a new
+// admin account or point an identity provider at their own IdP. currentUser
+// has already refused a disabled or deleted account. Chained after
+// RequireAuth.
+func (s *server) requireAdmin(c *gin.Context) {
+	user, ok := s.currentUser(c)
+	if !ok {
+		return
+	}
+	if !user.IsAdmin() {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient privileges"})
+		return
+	}
+	c.Next()
+}
+
 // currentUser resolves the JWT subject against the database, writing the error
 // response itself when resolution fails.
 func (s *server) currentUser(c *gin.Context) (*db.User, bool) {

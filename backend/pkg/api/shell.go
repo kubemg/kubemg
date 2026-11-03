@@ -269,8 +269,12 @@ func (s *server) startShell(c *gin.Context) {
 	// A shell that has finished is a record of a terminal, not a terminal. It is
 	// cleared out of the way rather than reported, because the person asking for
 	// one has no use for the remains of the last.
-	if status.Exists && (status.Phase == "Succeeded" || status.Phase == "Failed") {
-		if err := s.deleteShellPod(ctx, cluster, config.Namespace, user.ID); err != nil {
+	//
+	// So is a pod under the shell's name that KubeMG did not render: the name is
+	// derived from the user id, so anyone able to create pods in the agent's
+	// namespace could have put one there to be handed its owner's kubeconfig.
+	if status.Exists && (status.Phase == "Succeeded" || status.Phase == "Failed" || status.ForeignFor(config.Image) != "") {
+		if err := s.deleteShellPod(ctx, cluster, config.Namespace, user.ID, true); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 			return
 		}
@@ -314,6 +318,9 @@ func (s *server) startShell(c *gin.Context) {
 		Status:             status,
 	}
 
+	if refuseForeignShell(c, status, config) {
+		return
+	}
 	if status.Ready {
 		if err := s.seedShellCredential(c, user, cluster, grant, k8sRole, config, status); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
@@ -321,6 +328,21 @@ func (s *server) startShell(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, response)
+}
+
+// refuseForeignShell answers 409 for a pod under the shell's name that KubeMG
+// did not render, and reports whether it did.
+func refuseForeignShell(c *gin.Context, status shell.Status, config shellConfig) bool {
+	reason := status.ForeignFor(config.Image)
+	if reason == "" {
+		return false
+	}
+	c.JSON(http.StatusConflict, gin.H{
+		"error": "the pod under this shell's name is not one KubeMG made (" + reason +
+			"), so nothing is written into it or attached to it; a cluster administrator should look at " +
+			config.Namespace + "/" + status.Name,
+	})
+	return true
 }
 
 // stopShell ends the caller's shell now, and withdraws the credential that was
@@ -335,7 +357,7 @@ func (s *server) stopShell(c *gin.Context) {
 	// Read before deleting, so the register row this shell was holding is known:
 	// a pod that is already gone cannot say what was inside it.
 	status, _ := s.readShellPod(ctx, cluster, config.Namespace, user.ID)
-	if err := s.deleteShellPod(ctx, cluster, config.Namespace, user.ID); err != nil {
+	if err := s.deleteShellPod(ctx, cluster, config.Namespace, user.ID, false); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
@@ -364,6 +386,11 @@ func (s *server) attachShell(c *gin.Context) {
 	}
 	if !status.Exists || !status.Ready {
 		c.JSON(http.StatusConflict, gin.H{"error": "no shell is running; start one first"})
+		return
+	}
+	// What is typed into a terminal is as much the person's as the credential
+	// is, so a pod KubeMG did not render is not attached to either.
+	if refuseForeignShell(c, status, config) {
 		return
 	}
 
@@ -521,11 +548,11 @@ func seedRefusal(err error) string {
 // deleteShellPod removes it. A pod that is already gone is a success: the caller
 // asked for there to be no shell, and there is none.
 func (s *server) deleteShellPod(
-	ctx context.Context, cluster *db.Cluster, namespace string, userID uint,
+	ctx context.Context, cluster *db.Cluster, namespace string, userID uint, replacing bool,
 ) error {
 	user, grant := shellRunner(cluster.ID)
 	resp, err := s.proxy.Call(ctx, user, cluster, grant,
-		http.MethodDelete, shellPodPath(namespace, userID)+"?propagationPolicy=Background", nil, nil)
+		http.MethodDelete, shellDeletePath(namespace, userID, replacing), nil, nil)
 	if err != nil {
 		return shellCallError(err, "could not delete the shell pod")
 	}
@@ -536,6 +563,25 @@ func (s *server) deleteShellPod(
 		return errors.New(kubeErrorMessage(resp.Body, resp.Status))
 	}
 	return nil
+}
+
+// replaceGracePeriod is how long a pod being replaced is given to stop. The
+// pod's own grace period is not honoured there: a finished shell has nothing
+// left running, and a pod KubeMG did not render chose its own (30 seconds by
+// default, any length by design) — longer than the start waits, which turned
+// every replacement into a refusal and a second click. One second rather than
+// zero, so the kubelet still stops the containers instead of the API server
+// forgetting a pod that is still running.
+const replaceGracePeriod = 1
+
+// shellDeletePath is the DELETE that clears the shell's name. Ending a shell
+// leaves the pod its rendered grace period; replacing one does not wait on it.
+func shellDeletePath(namespace string, userID uint, replacing bool) string {
+	path := shellPodPath(namespace, userID) + "?propagationPolicy=Background"
+	if replacing {
+		path += "&gracePeriodSeconds=" + strconv.Itoa(replaceGracePeriod)
+	}
+	return path
 }
 
 // touchShellPod moves the idle clock forward. A failure is logged and dropped:

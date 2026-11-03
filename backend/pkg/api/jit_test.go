@@ -576,3 +576,22 @@ func assertAudited(t *testing.T, env *jitEnv, verb, username string) {
 	}
 	t.Fatalf("no %s audit record for %q; got %+v", verb, username, env.auditor.all())
 }
+
+// The requester writes a JIT request's namespaces, and once approved they are
+// the scope KubeMG writes metrics and log queries around. A regex or a quote
+// must be refused at the request, not discovered in a query.
+func TestJitRequestRefusesANamespaceThatIsNotOne(t *testing.T) {
+	env := newJitEnv(t, fixedClock(time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)))
+	dev := env.store.addUser("dev", "pw", db.RoleUser)
+	cluster := env.store.addCluster("prod-eu", db.EnvProd)
+	env.store.grant(dev.ID, cluster.ID, db.K8sRoleView, []string{"team-a"})
+
+	for _, namespace := range []string{"[a-z0-9-]+", `team-a"} or vector(1) or {x="`, "Team-A", "-team"} {
+		body := requestBody(cluster.ID, db.K8sRoleEdit, 30)
+		body["namespaces"] = []string{"team-a", namespace}
+		rec := env.do(t, http.MethodPost, "/api/v1/jit/requests", env.tokenFor(t, dev), body)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%q: want 400, got %d: %s", namespace, rec.Code, rec.Body.String())
+		}
+	}
+}

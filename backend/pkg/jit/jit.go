@@ -243,6 +243,12 @@ func (e *Engine) CreateRequest(ctx context.Context, input Input) (*db.JitRequest
 		return nil, fmt.Errorf("%w: the reason is too long", ErrInvalid)
 	}
 
+	// The requester writes these, and an approved request's namespaces become
+	// the scope KubeMG writes metrics and log queries around.
+	if err := db.CheckNamespaces(input.Namespaces); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrInvalid, err.Error())
+	}
+
 	cluster, err := e.store.ClusterByID(ctx, input.ClusterID)
 	if errors.Is(err, db.ErrNotFound) {
 		return nil, fmt.Errorf("%w: that cluster does not exist", ErrInvalid)

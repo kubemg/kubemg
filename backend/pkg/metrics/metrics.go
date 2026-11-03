@@ -17,6 +17,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gorm.io/gorm"
+
+	"github.com/kubemg/kubemg/backend/pkg/kubeparams"
 )
 
 // Metrics carries all Prometheus instruments for one server process.
@@ -171,13 +173,15 @@ func (m *Metrics) ObserveAuditQueue(sink string, depth func() int) {
 //     Upgrade: websocket header.
 //   - Streaming plain GETs (kubectl logs -f, kubectl get -w, informer watches
 //     through the proxy): the Kubernetes API streaming flags, watch and follow,
-//     read the way the API server reads them.
+//     read the way the API server reads them. A stream that reached the
+//     latency histogram would read as one request lasting the whole watch.
 func (m *Metrics) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
+		query := c.Request.URL.Query()
 		isUpgrade := strings.EqualFold(c.Request.Header.Get("Upgrade"), "websocket") ||
-			streamingFlag(c, "watch") ||
-			streamingFlag(c, "follow")
+			kubeparams.Bool(query, "watch") ||
+			kubeparams.Bool(query, "follow")
 
 		if !isUpgrade {
 			m.httpRequestsInFlight.Inc()
@@ -218,16 +222,6 @@ func (m *Metrics) Middleware() gin.HandlerFunc {
 
 		c.Next()
 	}
-}
-
-// streamingFlag reports whether the watch or follow query parameter turns
-// streaming on, by the API server's rule: only an absent parameter, `0` or
-// `false` (in any case) leaves it off, so `t`, `True` and even an empty
-// `?watch=` stream. A stream that reached the latency histogram would read as
-// one request lasting the whole watch.
-func streamingFlag(c *gin.Context, name string) bool {
-	value, ok := c.GetQuery(name)
-	return ok && value != "0" && !strings.EqualFold(value, "false")
 }
 
 // Handler returns the HTTP handler that serves the /metrics scrape endpoint.

@@ -81,13 +81,31 @@ func TestAllowedNamespace(t *testing.T) {
 		{"group discovery", scoped, "/apis/apps/v1", true},
 		{"version", scoped, "/version", true},
 		{"openapi", scoped, "/openapi/v2", true},
+		// Discovery is let past the scope for reading only.
+		{"write to a discovery path", scoped, "/apis/apps/v1", false},
+		// Whatever the grant, a path the API server would read differently is
+		// refused before anything else reads it.
+		{"double-encoded slash, scoped", scoped, "/api/v1%2Fnamespaces%2Fkube-system%2Fsecrets", false},
+		{"double-encoded slash, unscoped", unscoped, "/api/v1/namespaces/team-a%2F..%2Fkube-system/secrets", false},
+		{"encoded namespace", unscoped, "/api/v1/namespaces/kubemg%2Dsystem/secrets", false},
+		{"fragment cuts the path", unscoped, "/api/v1/secrets#/x", false},
+		{"dot segments", scoped, "/api/v1/namespaces/team-a/pods/../../kube-system/pods", false},
+		{"empty segment", unscoped, "/api/v1/namespaces//pods", false},
+		{"trailing slash on discovery", scoped, "/apis/", true},
+		// Past a proxy subresource the path is the proxied service's.
+		{"service proxy tail", scoped, "/api/v1/namespaces/team-a/services/http:web:80/proxy/a%2Fb", true},
+		{"encoded service proxy head", scoped, "/api/v1/namespaces/team-a/services/http:web%3A80/proxy/", false},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, reason := allowedNamespace(tc.grant, ParsePath(tc.path), tc.path)
+			method := http.MethodGet
+			if strings.HasPrefix(tc.name, "write") {
+				method = http.MethodPost
+			}
+			got, reason := allowedPath(tc.grant, method, ParsePath(tc.path), tc.path)
 			if got != tc.want {
-				t.Fatalf("allowedNamespace(%q) = %v (%s), want %v", tc.path, got, reason, tc.want)
+				t.Fatalf("allowedPath(%s %q) = %v (%s), want %v", method, tc.path, got, reason, tc.want)
 			}
 			if !got && reason == "" {
 				t.Fatal("a refusal must explain itself")
@@ -109,9 +127,20 @@ func TestStreamRouting(t *testing.T) {
 		{path: "/api/v1/namespaces/team-a/pods/web-0/log?follow=true", body: true},
 		{path: "/api/v1/namespaces/team-a/pods?watch=true", body: true},
 		{path: "/api/v1/namespaces/team-a/pods?watch=1&timeoutSeconds=60", body: true},
+		// However the API server is asked to stream, it streams.
+		{path: "/api/v1/namespaces/team-a/pods/web-0/log?follow=True", body: true},
+		{path: "/api/v1/namespaces/team-a/pods/web-0/log?follow=t&tailLines=10", body: true},
+		{path: "/api/v1/namespaces/team-a/pods/web-0/log?follow", body: true},
+		{path: "/api/v1/namespaces/team-a/pods?watch=TRUE", body: true},
+		{path: "/api/v1/namespaces/team-a/pods?watch=yes", body: true},
 		// A bounded log read is an ordinary request/response pair.
 		{path: "/api/v1/namespaces/team-a/pods/web-0/log?tailLines=100"},
+		{path: "/api/v1/namespaces/team-a/pods/web-0/log?follow=false"},
+		{path: "/api/v1/namespaces/team-a/pods/web-0/log?follow=0&follow=1"},
+		{path: "/api/v1/namespaces/team-a/pods?watch=False"},
 		{path: "/api/v1/namespaces/team-a/pods"},
+		// follow means something only on a log.
+		{path: "/api/v1/namespaces/team-a/pods?follow=true"},
 	}
 
 	for _, tc := range cases {
@@ -276,5 +305,127 @@ func TestImpersonationUserPrefixesEveryAccount(t *testing.T) {
 				t.Fatalf("ImpersonationUser(%q, id %d) = %q, want %q", tc.user.Username, tc.user.ID, got, tc.want)
 			}
 		})
+	}
+}
+
+// A namespace-scoped caller must not reach another namespace by encoding the
+// slashes twice: the gateway decodes once, the API server once more. The call
+// is refused before the agent is asked anything, and the refusal is recorded.
+func TestProxyRefusesADoubleEncodedPath(t *testing.T) {
+	h := newHarness(t)
+	h.addCluster(1, "prod-eu", "kmg_valid")
+	dev := h.addUser(11, "dev", db.SystemRoleUser)
+	h.grant(dev.ID, 1, db.K8sRoleEdit, []string{"team-a"})
+
+	agent, err := h.dialAgent("kmg_valid", okResponse("{}"))
+	if err != nil {
+		t.Fatalf("dial agent: %v", err)
+	}
+	waitFor(t, func() bool { return h.gateway.Registry().Connected(1) })
+
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		resp := h.proxyRequest(method,
+			"/api/v1/clusters/1/proxy/api/v1%252Fnamespaces%252Fkube-system%252Fsecrets", h.token(dev))
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("%s: want 403, got %d", method, resp.StatusCode)
+		}
+	}
+	// %23 and %3F arrive decoded: forwarded, they would cut the path short or
+	// start the query early at the agent.
+	for _, path := range []string{
+		"/api/v1/namespaces/team-a/pods/x%23/y",
+		"/api/v1/namespaces/team-a/pods%3Fwatch=1",
+	} {
+		resp := h.proxyRequest(http.MethodGet, "/api/v1/clusters/1/proxy"+path, h.token(dev))
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("%s: want 403, got %d", path, resp.StatusCode)
+		}
+	}
+	if got := len(agent.requests()); got != 0 {
+		t.Fatalf("the call must never reach the agent, got %d requests", got)
+	}
+	waitFor(t, func() bool { return len(h.audit.events()) >= 4 })
+	for _, event := range h.audit.events() {
+		if event.RefusedBy != RefusedByKubeMG || event.Status != http.StatusForbidden {
+			t.Fatalf("want a refusal by kubemg, got %+v", event)
+		}
+	}
+}
+
+// Below cluster-admin, nothing reaches the agent's namespace — its Secret, its
+// ServiceAccount and every shell live there — and no kubectl read of every
+// Secret at once, which would carry the agent's. KubeMG's own unsaved service
+// identities manage that namespace and are not refused.
+func TestAgentNamespaceIsRefusedBelowClusterAdmin(t *testing.T) {
+	p := NewProxy(ProxyOptions{AgentNamespaces: []string{"kubemg-system"}})
+	p.SetAgentNamespaces("kubemg-agents", "kubemg-system", "")
+	person := &db.User{ID: 4, Username: "dev"}
+	runner := &db.User{Username: "kubemg:shell-runner"}
+	edit := db.UserClusterAccess{K8sRole: db.K8sRoleEdit}
+	admin := db.UserClusterAccess{K8sRole: db.K8sRoleClusterAdmin}
+
+	for _, path := range []string{
+		"/api/v1/namespaces/kubemg-system/secrets/kubemg-agent",
+		"/api/v1/namespaces/kubemg-agents/pods",
+		"/api/v1/namespaces/kubemg-system/pods/kubemg-shell-1/exec?command=sh",
+		"/api/v1/namespaces/kubemg-system/serviceaccounts/kubemg-agent/token",
+	} {
+		parsed := ParsePath(path)
+		if p.agentNamespaceRefusal(person, edit, parsed) == "" {
+			t.Errorf("%s: an edit grant was let in", path)
+		}
+		if reason := p.agentNamespaceRefusal(person, admin, parsed); reason != "" {
+			t.Errorf("%s: a cluster-admin grant was refused: %s", path, reason)
+		}
+		if reason := p.agentNamespaceRefusal(runner, db.UserClusterAccess{K8sRole: db.K8sRoleView}, parsed); reason != "" {
+			t.Errorf("%s: KubeMG's own runner was refused: %s", path, reason)
+		}
+	}
+	if reason := p.agentNamespaceRefusal(person, edit, ParsePath("/api/v1/namespaces/team-a/secrets")); reason != "" {
+		t.Fatalf("an ordinary namespace was refused: %s", reason)
+	}
+
+	if clusterWideSecretRefusal(person, edit, ParsePath("/api/v1/secrets?watch=1")) == "" {
+		t.Fatal("a cluster-wide Secret read was let through below cluster-admin")
+	}
+	if reason := clusterWideSecretRefusal(person, admin, ParsePath("/api/v1/secrets")); reason != "" {
+		t.Fatalf("a cluster-admin's cluster-wide Secret read was refused: %s", reason)
+	}
+	if reason := clusterWideSecretRefusal(person, edit, ParsePath("/api/v1/pods")); reason != "" {
+		t.Fatalf("a cluster-wide pod read was refused: %s", reason)
+	}
+}
+
+// Through the gateway: kubectl into the agent's namespace is refused by kubemg
+// and recorded, and the agent is never asked.
+func TestProxyRefusesTheAgentNamespaceToAnEditGrant(t *testing.T) {
+	h := newHarness(t)
+	h.proxy.SetAgentNamespaces("kubemg-system")
+	h.addCluster(1, "prod-eu", "kmg_valid")
+	dev := h.addUser(11, "dev", db.SystemRoleUser)
+	h.grant(dev.ID, 1, db.K8sRoleEdit, nil)
+
+	agent, err := h.dialAgent("kmg_valid", okResponse("{}"))
+	if err != nil {
+		t.Fatalf("dial agent: %v", err)
+	}
+	waitFor(t, func() bool { return h.gateway.Registry().Connected(1) })
+
+	for _, path := range []string{
+		"/api/v1/namespaces/kubemg-system/secrets/kubemg-agent",
+		"/api/v1/secrets",
+	} {
+		resp := h.proxyRequest(http.MethodGet, "/api/v1/clusters/1/proxy"+path, h.token(dev))
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("%s: want 403, got %d", path, resp.StatusCode)
+		}
+	}
+	if got := len(agent.requests()); got != 0 {
+		t.Fatalf("the call must never reach the agent, got %d requests", got)
+	}
+
+	resp := h.proxyRequest(http.MethodGet, "/api/v1/clusters/1/proxy/api/v1/namespaces/team-a/secrets", h.token(dev))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("an ordinary namespace: want 200, got %d", resp.StatusCode)
 	}
 }

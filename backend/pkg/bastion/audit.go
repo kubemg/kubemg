@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/kubemg/kubemg/backend/pkg/kubeparams"
 )
 
 // Event is one proxied API call, recorded whether it succeeded or not. It is
@@ -221,17 +223,12 @@ func VerbFor(method, path string) string {
 	}
 }
 
+// watchRequested reports whether the API server will treat the call as a
+// watch. Any spelling it streams on must be recorded as one: a watch filed
+// under "list" names the wrong verb and loses the floor selective audit keeps
+// for streaming calls.
 func watchRequested(path string) bool {
-	query := ""
-	if i := strings.IndexByte(path, '?'); i >= 0 {
-		query = path[i+1:]
-	}
-	for _, param := range strings.Split(query, "&") {
-		if param == "watch" || param == "watch=true" || param == "watch=1" {
-			return true
-		}
-	}
-	return false
+	return kubeparams.Bool(kubeparams.Query(path), "watch")
 }
 
 // APIPath is the Kubernetes-shaped decomposition of a request path. Fields are

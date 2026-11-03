@@ -74,7 +74,9 @@ If you bound a RoleBinding to a kubemg username directly (`kind: User, name: ada
 
 ## Where namespace scope is enforced
 
-Impersonation cannot express "only these namespaces", so the proxy enforces it: a scoped grant refuses any call naming a namespace outside its list. Discovery paths and cluster-scoped kinds are exempt (there is no namespace to check). A resource list for a scoped grant is answered by reading each granted namespace and merging the results, never by listing the whole cluster and filtering, so a scoped user cannot learn which other namespaces exist.
+A grant, a JIT request or an SSO mapping is refused if any namespace it names is not a Kubernetes namespace name (lowercase letters, digits and `-`, at most 63 characters): those names are written into the metrics and log queries kubemg runs for a scoped caller. A grant stored before this check that names something else makes those charts and searches refuse for that caller until an administrator corrects it.
+
+Impersonation cannot express "only these namespaces", so the proxy enforces it: a scoped grant refuses any call naming a namespace outside its list. Discovery paths are exempt for reading only (kubectl cannot resolve anything without them); a cluster-scoped call is refused, because there is no namespace to check. Whatever the grant, the proxy also refuses a path the cluster would read differently from KubeMG — one still carrying a percent-encoded character, a `.` or `..` segment, or an empty segment — because the API server decodes the path once more before it routes. No Kubernetes object name needs any of these. Below `cluster-admin`, a call into the agent's own namespace, or a kubectl read of every Secret at once, is refused as well; see [the agent's namespace](../introduction/security-model.md#the-agents-namespace-is-kubemgs-not-a-tenants). A resource list for a scoped grant is answered by reading each granted namespace and merging the results, never by listing the whole cluster and filtering, so a scoped user cannot learn which other namespaces exist.
 
 ## What each role can do
 
@@ -95,7 +97,7 @@ In direct mode kubemg mints a token but binds no RBAC to it, so the permission m
 
 ## Disabled accounts
 
-Disabling an account takes effect immediately, not when its session token expires. Every request re-reads the account and a disabled one gets `403 this account is disabled`. A machine token stops at its next call too.
+Disabling an account takes effect immediately, not when its session token expires. Every request re-reads the account and a disabled one gets `403 this account is disabled`. A machine token stops at its next call too. Demoting an administrator works the same way: an admin route reads the role from the account, not from the session token, so a demoted administrator's existing session loses the admin routes at its next request.
 
 ## Self-protection rules
 

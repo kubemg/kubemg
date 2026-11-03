@@ -181,52 +181,6 @@ func TestRequireAuth(t *testing.T) {
 	}
 }
 
-func TestRequireRole(t *testing.T) {
-	m := NewManager("secret", time.Hour)
-
-	router := gin.New()
-	router.GET("/admin", RequireAuth(m), RequireRole("admin"), func(c *gin.Context) {
-		c.Status(http.StatusOK)
-	})
-
-	for _, tc := range []struct {
-		role string
-		want int
-	}{
-		{"admin", http.StatusOK},
-		{"user", http.StatusForbidden},
-		{"", http.StatusForbidden},
-	} {
-		token, _, err := m.Generate(1, "devops", tc.role)
-		if err != nil {
-			t.Fatalf("generate: %v", err)
-		}
-
-		req := httptest.NewRequest(http.MethodGet, "/admin", nil)
-		req.Header.Set("Authorization", "Bearer "+token)
-		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec, req)
-
-		if rec.Code != tc.want {
-			t.Fatalf("role %q: expected status %d, got %d", tc.role, tc.want, rec.Code)
-		}
-	}
-}
-
-func TestRequireRoleWithoutAuthMiddleware(t *testing.T) {
-	router := gin.New()
-	router.GET("/admin", RequireRole("admin"), func(c *gin.Context) {
-		c.Status(http.StatusOK)
-	})
-
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin", nil))
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, rec.Code)
-	}
-}
-
 // wsUpgradeRequest builds a request that RequireAuth recognises as a
 // WebSocket handshake, with the ticket (if any) on the query string the way a
 // browser's WebSocket constructor has to send it.

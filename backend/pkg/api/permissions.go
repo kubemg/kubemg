@@ -138,6 +138,11 @@ func (s *server) assignPermission(c *gin.Context) {
 		return
 	}
 
+	if err := db.CheckNamespaces(req.Namespaces); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	ctx := c.Request.Context()
 	cluster, err := s.store.ClusterByID(ctx, req.ClusterID)
 	if errors.Is(err, db.ErrNotFound) {

@@ -296,10 +296,45 @@ func (s *server) createSSOProvider(c *gin.Context) {
 	c.JSON(http.StatusCreated, s.toSSOProviderResponse(*provider, publicURL))
 }
 
+// guardSuperAdminProvider refuses an administrator who is not a super admin a
+// change to a provider any super admin signs in through, and writes the
+// response itself. Whoever controls a provider's issuer, metadata or directory
+// decides who that provider says is signing in; repointing it at an IdP of
+// one's own and asserting the super admin's identifier is signing in as the
+// super admin, with no factor of KubeMG's in the way (OIDC and SAML bring
+// their own). Only a super admin manages a super admin, and this is managing
+// one. An unreadable account list refuses rather than guesses.
+func (s *server) guardSuperAdminProvider(c *gin.Context, providerID uint) bool {
+	caller, ok := s.currentUser(c)
+	if !ok {
+		return false
+	}
+	if caller.IsSuperAdmin() {
+		return true
+	}
+	users, err := s.store.ListUsers(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check who signs in through this provider"})
+		return false
+	}
+	for _, user := range users {
+		if user.SSOProviderID == providerID && user.IsSuperAdmin() {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "a super admin signs in through this identity provider; only a super admin may change or remove it",
+			})
+			return false
+		}
+	}
+	return true
+}
+
 // updateSSOProvider replaces a provider's configuration.
 func (s *server) updateSSOProvider(c *gin.Context) {
 	stored, ok := s.provider(c)
 	if !ok {
+		return
+	}
+	if !s.guardSuperAdminProvider(c, stored.ID) {
 		return
 	}
 
@@ -338,6 +373,9 @@ func (s *server) deleteSSOProvider(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid provider id"})
+		return
+	}
+	if !s.guardSuperAdminProvider(c, uint(id)) {
 		return
 	}
 
@@ -547,10 +585,8 @@ func (s *server) applyMappingRequest(
 			return errors.New("could not verify the local group")
 		}
 	}
-	for _, namespace := range req.Namespaces {
-		if strings.ContainsAny(namespace, " ,") {
-			return fmt.Errorf("%q is not a valid namespace name", namespace)
-		}
+	if err := db.CheckNamespaces(req.Namespaces); err != nil {
+		return err
 	}
 	if req.TargetK8sRole != "" &&
 		!slices.Contains([]string{db.K8sRoleView, db.K8sRoleEdit, db.K8sRoleClusterAdmin}, req.TargetK8sRole) {

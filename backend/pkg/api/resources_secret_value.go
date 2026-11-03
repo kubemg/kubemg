@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -142,7 +143,7 @@ func (s *server) revealSecretValue(c *gin.Context) {
 	}
 
 	var object secretObject
-	path := fmt.Sprintf("/api/v1/namespaces/%s/secrets/%s", namespace, name)
+	path := fmt.Sprintf("/api/v1/namespaces/%s/secrets/%s", url.PathEscape(namespace), url.PathEscape(name))
 	resp, ok := s.callResource(c, user, cluster, grant, path)
 	if !ok {
 		// callResource has already written the transport failure or the

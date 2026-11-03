@@ -125,6 +125,11 @@ func TestRevealRefusesAnAddressItCannotTrust(t *testing.T) {
 		"traversal in key":   "?namespace=shop&name=db&key=../x",
 		"slash in the name":  "?namespace=shop&name=db/x&key=password",
 		"whitespace as name": "?namespace=shop&name=%20&key=password",
+		// The namespace is part of the path too. Unescaped, this one read the
+		// agent's own Secret past the guard that names it.
+		"path in the namespace":  "?namespace=kubemg-system%2Fsecrets%2Fkubemg-agent%3Fx%3D&name=foo&key=cluster-token",
+		"slash in the namespace": "?namespace=shop/x&name=db&key=password",
+		"encoded namespace":      "?namespace=kubemg%252Dsystem&name=kubemg-agent&key=cluster-token",
 	}
 	for label, query := range cases {
 		t.Run(label, func(t *testing.T) {
