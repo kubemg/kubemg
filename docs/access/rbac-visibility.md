@@ -26,7 +26,7 @@ Every route above is a `GET`. Creating a `roles`, `rolebindings`, `clusterroles`
 
 > kubemg does not author a cluster's RBAC. Create Roles and bindings with kubectl or whatever manages them, and read them back here.
 
-This covers creation only; editing an existing Role you have edit access to is not specially blocked. `serviceaccounts` and `nodes` are also on the no-create list (a Node joins when its kubelet registers).
+The refusal follows the kind, not how the request names it: addressing the same API as a custom resource (`crd:rbac.authorization.k8s.io/v1/clusterrolebindings`, any version) is refused the same way. This covers creation only; editing an existing Role you have edit access to is not specially blocked. `serviceaccounts` and `nodes` are also on the no-create list (a Node joins when its kubelet registers).
 
 ## Access review: what the authorizer will actually do
 

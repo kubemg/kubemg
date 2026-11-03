@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -37,7 +38,13 @@ type updateUserRequest struct {
 	SystemRole        *string `json:"system_role" binding:"omitempty,oneof=superadmin admin user"`
 	CanViewRecordings *bool   `json:"can_view_recordings"`
 	CanRevealSecrets  *bool   `json:"can_reveal_secrets"`
+	// SlackUserID links the account's Slack member ID; "" unlinks it.
+	SlackUserID *string `json:"slack_user_id"`
 }
+
+// slackUserIDPattern is a Slack member ID: U… in a workspace, W… on
+// Enterprise Grid.
+var slackUserIDPattern = regexp.MustCompile(`^[UW][A-Z0-9]{2,31}$`)
 
 // recordingCapabilityDenied refuses a caller who is not a super admin. Watching
 // other people's shells is the most invasive read in the product, so the account
@@ -234,6 +241,37 @@ func (s *server) updateUser(c *gin.Context) {
 			return
 		}
 		update.CanRevealSecrets = req.CanRevealSecrets
+	}
+
+	if req.SlackUserID != nil {
+		slackID := strings.ToUpper(strings.TrimSpace(*req.SlackUserID))
+		if slackID != "" {
+			if !slackUserIDPattern.MatchString(slackID) {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": "a Slack member ID looks like U0123ABCD — copy it from the person's Slack profile, not their handle",
+				})
+				return
+			}
+			// One Slack member decides as one account: a second link would make
+			// every click of theirs ambiguous, and an ambiguous click decides
+			// nothing.
+			holder, err := s.store.UserBySlackID(c.Request.Context(), slackID)
+			if errors.Is(err, db.ErrConflict) {
+				c.JSON(http.StatusConflict, gin.H{"error": "that Slack member is already linked to another account"})
+				return
+			}
+			if err != nil && !errors.Is(err, db.ErrNotFound) {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check the Slack link"})
+				return
+			}
+			if err == nil && holder.ID != target.ID {
+				c.JSON(http.StatusConflict, gin.H{"error": "that Slack member is already linked to " + holder.Username})
+				return
+			}
+		}
+		if slackID != target.SlackUserID {
+			update.SlackUserID = &slackID
+		}
 	}
 
 	user, err := s.store.UpdateUser(c.Request.Context(), target.ID, update)

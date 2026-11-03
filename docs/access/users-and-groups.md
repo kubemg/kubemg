@@ -23,6 +23,7 @@ Routes: `GET|POST /api/v1/users`, `PUT|DELETE /api/v1/users/:id`, `PATCH /api/v1
 | `role` | no | Derived from `system_role`, see [System roles](model.md#system-roles). |
 | `is_active` | via `PATCH .../status` only | Not settable through `PUT`. |
 | `can_view_recordings` | yes, conditionally | Super admin only, see [The recording-viewing capability](#the-recording-viewing-capability). |
+| `slack_user_id` | yes | The Slack member ID (`U…`, or `W…` on Enterprise Grid) whose clicks on an access-request message count as this account. One account per member ID (`409` otherwise); `""` unlinks. See [Just-in-time access](jit.md). |
 | `account_type` | no | `user` or `machine`. The `/users` routes never produce or accept a machine row. |
 | `auth_source` | no | `local` or a federation provider, see [Federated vs. local accounts](#federated-vs-local-accounts). |
 | `last_login_at`, `last_login_addr` | no | Most recent sign-in and where it came from. Only the latest is kept (history is in the [audit trail](../audit/trail.md)); empty for an account that has never signed in. |

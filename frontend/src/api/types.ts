@@ -43,6 +43,11 @@ export interface User {
    */
   can_reveal_secrets: boolean
   /**
+   * The Slack member ID whose clicks on an access-request message count as
+   * this account's. Linked by an administrator; absent when none is.
+   */
+  slack_user_id?: string
+  /**
    * Whether this row is a person or a machine. A machine account — a CI
    * pipeline's release stage, a release bot — is a User because every grant,
    * every namespace scope and the audit trail are keyed on a user id; what
@@ -88,6 +93,8 @@ export interface UserPatch {
   system_role?: SystemRole
   can_view_recordings?: boolean
   can_reveal_secrets?: boolean
+  /** A Slack member ID (U…/W…) to link; `''` unlinks. */
+  slack_user_id?: string
 }
 
 /** A machine account as the console lists it: the account, what it can reach,
