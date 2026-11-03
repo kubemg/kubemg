@@ -36,6 +36,13 @@ other route or method do not make a ticket a credential there. It carries a one-
 ordinary request it is ignored — a credential in the URL would otherwise end up
 in proxy logs and browser history for no reason, since a header works there.
 
+A `401` that is about the credential itself (no token, an expired or revoked
+one, an account that no longer exists) carries `"code": "session_invalid"`, and
+the console signs out only on that code. Every other `401` (a wrong current
+password, a wrong code for a factor change, a cluster's own refusal passed
+through the tunnel) is an answer about that one request and leaves the session
+alone.
+
 Routes that answer a caller with no session yet (sign-in, the second-factor and
 CLI device steps, SSO, setup state, the chat callback) read at most **1 MiB** of
 body, and must be sent within **30 seconds**. A body past the limit is refused

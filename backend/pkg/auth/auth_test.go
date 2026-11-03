@@ -458,3 +458,23 @@ func TestSessionGateSeesOnlySessions(t *testing.T) {
 		t.Fatalf("a proxy token was gated: %d (asked %d)", code, asked)
 	}
 }
+
+// A 401 from the session gate says so in a code, the console's one cue to sign
+// out; a 401 a handler writes about one request carries none.
+func TestASessionRefusalCarriesItsCode(t *testing.T) {
+	m := NewManager("secret", time.Hour)
+	router := gin.New()
+	router.GET("/protected", RequireAuth(m), func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	for name, header := range map[string]string{"no token": "", "a bad token": "Bearer not-a-jwt"} {
+		req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+		if header != "" {
+			req.Header.Set("Authorization", header)
+		}
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), `"code":"`+SessionInvalidCode+`"`) {
+			t.Errorf("%s: want 401 with the session code, got %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+}

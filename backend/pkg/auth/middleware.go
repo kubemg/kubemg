@@ -81,21 +81,21 @@ func RequireAuthGated(m *Manager, verifier MachineTokenVerifier, gate SessionGat
 			// leave sitting in proxy access logs and browser history.
 			ticket := strings.TrimSpace(c.Query(QueryTokenParam))
 			if ticket == "" {
-				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+				RefuseSession(c, "missing bearer token")
 				return
 			}
 			var redeemed bool
 			claims, redeemed = m.redeemWSTicket(c.Request.Context(), ticket)
 			if !redeemed {
-				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired ticket"})
+				RefuseSession(c, "invalid or expired ticket")
 				return
 			}
 		} else {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+			RefuseSession(c, "missing bearer token")
 			return
 		}
 		if err != nil || claims == nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+			RefuseSession(c, "invalid or expired token")
 			return
 		}
 		// A kubeconfig token is a file on someone's laptop. It authenticates
@@ -152,6 +152,19 @@ func (m *Manager) acceptsWSTicket(c *gin.Context) bool {
 		return false
 	}
 	return len(m.ticketRoutes) == 0 || slices.Contains(m.ticketRoutes, c.FullPath())
+}
+
+// SessionInvalidCode marks a 401 that is about the caller's credential itself:
+// none, expired, revoked, or an account that no longer exists. It is the
+// console's cue to sign out. Every other 401 (a wrong current password, a
+// wrong second-factor code, a cluster refusing what the tunnel carried) is an
+// answer about one request, and signing out on it threw away a session that
+// was fine.
+const SessionInvalidCode = "session_invalid"
+
+// RefuseSession answers 401 for a credential that does not authenticate.
+func RefuseSession(c *gin.Context, message string) {
+	c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": message, "code": SessionInvalidCode})
 }
 
 func isWebSocketUpgrade(r *http.Request) bool {
