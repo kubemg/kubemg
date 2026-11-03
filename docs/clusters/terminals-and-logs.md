@@ -29,6 +29,11 @@ The pod terminal runs `exec` (a new process) or `attach` (the running one). A **
 
 A browser cannot set headers on a WebSocket, so the console exchanges your session for a **one-time ticket** (single use, twenty seconds) and puts that in the URL. It is accepted only on an upgrade request and is stripped before the cluster or audit trail sees it. It works behind a load balancer without session affinity.
 
+**The handshake is checked before anything runs.** A session (`exec`, `attach`, port-forward, the terminal) is opened on the cluster only once the client's own WebSocket handshake would be accepted, so a command never starts in the container behind a refusal. kubemg refuses the call, recorded as its own refusal, when:
+
+- the call is not a WebSocket upgrade (`400`);
+- the browser's `Origin` is not one the console is served from (`403`). kubectl sends no `Origin`, so this check never applies to it.
+
 **A shell is recorded.** Every `exec`/`attach` is saved as a gzipped [asciinema](https://asciinema.org) cast, encrypted at rest when a recording key is configured, with keystrokes optionally excluded. A line above the terminal always says what is captured and whether it is encrypted. See [Session recording](../audit/session-recording.md).
 
 ### How much one message may carry
