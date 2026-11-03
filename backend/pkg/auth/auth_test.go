@@ -310,6 +310,45 @@ func TestWSTicketUnreadableStoreRefuses(t *testing.T) {
 	}
 }
 
+// A ticket is for opening a terminal. Upgrade headers on a POST, or a GET
+// upgrade on a route the server did not name, are not that, and a leaked
+// ticket must not run them as its owner.
+func TestAWSTicketOpensOnlyTheNamedRoutesByGET(t *testing.T) {
+	m := NewManager("secret", time.Hour)
+	m.AcceptWSTicketsOn("/terminal")
+	issue := func() string {
+		ticket, err := m.IssueWSTicket(context.Background(), &Claims{UserID: 3, Username: "devops", Role: "user"})
+		if err != nil {
+			t.Fatalf("issue ticket: %v", err)
+		}
+		return ticket
+	}
+	router := gin.New()
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	router.GET("/terminal", RequireAuth(m), ok)
+	router.GET("/users", RequireAuth(m), ok)
+	router.POST("/terminal", RequireAuth(m), ok)
+
+	send := func(method, path, ticket string) int {
+		req := httptest.NewRequest(method, path+"?"+QueryTokenParam+"="+ticket, nil)
+		req.Header.Set("Upgrade", "websocket")
+		req.Header.Set("Connection", "Upgrade")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if code := send(http.MethodPost, "/terminal", issue()); code != http.StatusUnauthorized {
+		t.Fatalf("a ticket on a POST: want 401, got %d", code)
+	}
+	if code := send(http.MethodGet, "/users", issue()); code != http.StatusUnauthorized {
+		t.Fatalf("a ticket on a route not named: want 401, got %d", code)
+	}
+	if code := send(http.MethodGet, "/terminal", issue()); code != http.StatusOK {
+		t.Fatalf("a ticket on the terminal route: want 200, got %d", code)
+	}
+}
+
 // TestRequireAuthWebSocketUpgrade covers the query-string fallback that only
 // a WebSocket handshake may use: a browser cannot set a header when opening
 // one, so it authenticates with a ticket instead. See QueryTokenParam.

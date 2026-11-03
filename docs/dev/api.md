@@ -27,12 +27,20 @@ to exactly one route — `/api/v1/clusters/:id/proxy/*path` for the cluster ID
 in its claims — and is refused with `403` anywhere else. See
 [How a request flows](request-flow.md).
 
-`?access_token=<ticket>` is accepted **only** on a WebSocket upgrade request
-(the in-browser terminal and the browser shell), because a browser cannot set
-headers when opening a WebSocket. It carries a one-time ticket from
+`?access_token=<ticket>` is accepted **only** on a `GET` WebSocket upgrade to
+the two terminal routes (`/clusters/:id/proxy/*path` for the in-browser
+terminal, `/clusters/:id/shell/attach` for the browser shell), because a
+browser cannot set headers when opening a WebSocket. Upgrade headers on any
+other route or method do not make a ticket a credential there. It carries a one-time ticket from
 `POST /auth/ws-ticket`, never a session JWT — a raw JWT there is `401`. On an
 ordinary request it is ignored — a credential in the URL would otherwise end up
 in proxy logs and browser history for no reason, since a header works there.
+
+Routes that answer a caller with no session yet (sign-in, the second-factor and
+CLI device steps, SSO, setup state, the chat callback) read at most **1 MiB** of
+body, and must be sent within **30 seconds**. A body past the limit is refused
+before the handler acts on it. The bound is attached per route, so an
+`Authorization` header does not lift it.
 
 ## Error shape
 
@@ -90,7 +98,7 @@ governs.
 | `POST /auth/mfa/recovery-codes` | Session | Body `{code}` or `{webauthn}` → `{recovery_codes}`; the old set stops working in the same transaction. `409` with no factor. Audited `mfa-recovery-regenerate`. |
 | `PATCH /auth/me` | Session | Body `{email?}`. Edits the **caller's own** account — only the email (trimmed; `""` clears it). The username is deliberately not self-served: it is the impersonated identity and every audit record's name. `400` for an invalid address (the same rule `PUT /users/:id` applies), `409` for a federated account (its details are the directory's and are written back at sign-in) or a machine account. An unchanged value is answered with the account and not written. Audited as `profile-update`. |
 | `POST /auth/password` | Session | Body `{current_password, new_password, revoke_kubeconfigs?}`. Rotates the **caller's own** password; the current one is required, so a stolen session cannot lock the owner out. `400` if the new password is under 8 characters or is the current one, `401` if the current password is wrong (throttled like a sign-in: `429` once locked), `409` for a federated account (its password lives with the provider) or a machine account (it has none). `revoke_kubeconfigs: true` also runs the register's blanket revoke for the account and returns its summary under `credentials`. Audited as `password-change`. |
-| `POST /auth/ws-ticket` | Session | Returns `{ticket}`: a single-use credential for the next WebSocket upgrade's `?access_token=`, valid 20 seconds, redeemable on any replica. |
+| `POST /auth/ws-ticket` | Session | Returns `{ticket}`: a single-use credential for the next terminal WebSocket upgrade's `?access_token=`, valid 20 seconds, redeemable on any replica. |
 | `GET /auth/me` | Session | Current `user` object. `401` invalid/expired/deleted account, `403` disabled. |
 | `GET /version` | Session | `{version, docs_url}` — the release this process was built as, and the manual for it. Behind a session on purpose: an exact version is what an unauthenticated scanner needs to match a published advisory against the install. A build with no version stamped answers `"unknown"`. |
 
@@ -333,7 +341,7 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | --- | --- | --- |
 | `GET /users` | Admin | Excludes machine accounts. |
 | `POST /users` | Admin | Body `{username, email?, password(min 8), system_role, can_view_recordings?}`. `403` a non-super-admin creating a super admin or granting recording access. `409` username taken. |
-| `PUT /users/:id` | Admin | `403` changing your own system role, or a non-super-admin granting super admin/recording access. |
+| `PUT /users/:id` | Admin | `403` changing your own system role or your own password (that is `POST /auth/password`, with the current one), or a non-super-admin granting super admin/recording access. |
 | `PATCH /users/:id/status` | Admin | `403` disabling your own account. |
 | `DELETE /users/:id` | Admin | `403` deleting your own account. |
 | `GET /users/:id/mfa` | Admin | The account's second factor, the `GET /auth/mfa` shape; never a secret. |

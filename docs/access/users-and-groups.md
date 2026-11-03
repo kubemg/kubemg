@@ -18,7 +18,7 @@ Routes: `GET|POST /api/v1/users`, `PUT|DELETE /api/v1/users/:id`, `PATCH /api/v1
 | `id` | no | Assigned on creation. |
 | `username` | yes | Unique; a conflict answers `409 username already taken`. No `:` or control characters. |
 | `email` | yes | Optional; local accounts are keyed by username. |
-| `password` | write-only | Never read back. Minimum 8 characters. |
+| `password` | write-only | Never read back. Minimum 8 characters. Not for your own account: that changes from **My profile**, with the current password, so a stolen administrator session cannot lock the owner out (`403`). |
 | `system_role` | yes, conditionally | `superadmin`, `admin` or `user`. Setting `superadmin` needs a super admin caller; nobody can change their own. |
 | `role` | no | Derived from `system_role`, see [System roles](model.md#system-roles). |
 | `is_active` | via `PATCH .../status` only | Not settable through `PUT`. |

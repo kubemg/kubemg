@@ -201,6 +201,15 @@ func (s *server) updateUser(c *gin.Context) {
 		update.Username = &username
 	}
 	if req.Password != nil {
+		// Your own password changes only with your current one, on your own
+		// route: a stolen administrator session must not be able to set a new
+		// password here and lock the owner out of their account.
+		if target.ID == caller.ID {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "change your own password from your profile, with your current password",
+			})
+			return
+		}
 		if len(*req.Password) < minPasswordLength {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "password must be at least 8 characters"})
 			return
