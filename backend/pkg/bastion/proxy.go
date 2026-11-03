@@ -740,7 +740,7 @@ func (p *Proxy) resolve(c *gin.Context) (*db.User, *db.Cluster, db.UserClusterAc
 
 	claims, ok := auth.ClaimsFrom(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+		auth.RefuseSession(c, "missing bearer token")
 		return nil, nil, noGrant, false
 	}
 
@@ -762,7 +762,7 @@ func (p *Proxy) resolve(c *gin.Context) (*db.User, *db.Cluster, db.UserClusterAc
 	ctx := c.Request.Context()
 	user, err := p.store.UserByID(ctx, claims.UserID)
 	if errors.Is(err, db.ErrNotFound) {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "user no longer exists"})
+		auth.RefuseSession(c, "user no longer exists")
 		return nil, nil, noGrant, false
 	}
 	if err != nil {

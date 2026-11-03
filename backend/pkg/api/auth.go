@@ -283,7 +283,7 @@ type wsTicketResponse struct {
 func (s *server) mintWSTicket(c *gin.Context) {
 	claims, ok := auth.ClaimsFrom(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+		auth.RefuseSession(c, "missing bearer token")
 		return
 	}
 
@@ -319,13 +319,13 @@ func (s *server) requireAdmin(c *gin.Context) {
 func (s *server) currentUser(c *gin.Context) (*db.User, bool) {
 	claims, ok := auth.ClaimsFrom(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+		auth.RefuseSession(c, "missing bearer token")
 		return nil, false
 	}
 
 	user, err := s.store.UserByID(c.Request.Context(), claims.UserID)
 	if errors.Is(err, db.ErrNotFound) {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "user no longer exists"})
+		auth.RefuseSession(c, "user no longer exists")
 		return nil, false
 	}
 	if err != nil {

@@ -704,7 +704,7 @@ func (s *server) mfaSubject(c *gin.Context, challenge string) (*db.User, string,
 		return s.challengeUser(c, challenge, db.MFAChallengeEnroll)
 	}
 	if _, ok := auth.ClaimsFrom(c); !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+		auth.RefuseSession(c, "missing bearer token")
 		return nil, "", false
 	}
 	user, ok := s.currentUser(c)

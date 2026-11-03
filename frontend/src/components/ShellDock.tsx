@@ -97,6 +97,13 @@ export function ShellDock() {
 
   const view = shellView(state ?? undefined)
 
+  // A shell that ended, or is gone, is not a session to come back to: hiding
+  // the dock forgets it, so opening it again starts a new one, as the message
+  // in the dock says it will.
+  useEffect(() => {
+    if (!dock.open && (view?.kind === 'ended' || view?.kind === 'absent')) shownFor.current = null
+  }, [dock.open, view?.kind])
+
   // A pod that is coming up is the one state worth polling: it changes on its
   // own and somebody is waiting on it. A running session is watched by its
   // socket, and a closed dock is watched by nobody.
@@ -208,6 +215,12 @@ export function ShellDock() {
           <DockMessage>
             The shell is starting{view.message ? ` — the cluster reports ${view.message}` : ''}. A node
             that has never pulled this image takes a moment.
+          </DockMessage>
+        ) : null}
+
+        {view?.kind === 'absent' && !busy ? (
+          <DockMessage>
+            There is no shell running on this cluster now. Close and open the dock to start one.
           </DockMessage>
         ) : null}
 

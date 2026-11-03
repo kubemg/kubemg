@@ -237,6 +237,22 @@ export function setPasswordChangeRequiredHandler(handler: (() => void) | null) {
 }
 
 /** Whether an API failure is the password gate's refusal. */
+/**
+ * The 401 that means the session itself is gone: no token, an expired or
+ * revoked one, an account that no longer exists. Only this one signs out. A
+ * wrong current password, a wrong code for a factor change, or a cluster
+ * refusing what the tunnel carried is a 401 about that one request, and signing
+ * out on it threw a good session away (a direct-mode cluster with a stale token
+ * did it again on every live tick).
+ */
+export const SESSION_INVALID = 'session_invalid'
+
+export function isSessionInvalid(error: unknown): boolean {
+  if (!axios.isAxiosError(error) || error.response?.status !== 401) return false
+  const code = (error.response.data as { code?: string } | undefined)?.code
+  return code === SESSION_INVALID
+}
+
 export function isPasswordChangeRequired(error: unknown): boolean {
   if (!axios.isAxiosError(error) || error.response?.status !== 403) return false
   const code = (error.response.data as { code?: string } | undefined)?.code
@@ -335,7 +351,7 @@ http.interceptors.response.use(
     return response
   },
   (error: unknown) => {
-    if (axios.isAxiosError(error) && error.response?.status === 401) {
+    if (isSessionInvalid(error)) {
       onUnauthorized?.()
     } else if (isPasswordChangeRequired(error)) {
       onPasswordChangeRequired?.()

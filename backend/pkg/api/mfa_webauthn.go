@@ -292,7 +292,7 @@ func (s *server) beginWebAuthnAssertion(c *gin.Context) {
 	} else if _, signedIn := auth.ClaimsFrom(c); signedIn {
 		user, ok = s.currentUser(c)
 	} else {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+		auth.RefuseSession(c, "missing bearer token")
 	}
 	if !ok || refuseMFAFor(c, user) {
 		return
