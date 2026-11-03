@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -280,9 +279,7 @@ func TestCallbackWithUnknownStateRedirectsToConsole(t *testing.T) {
 
 func TestFlowStateIsSingleUse(t *testing.T) {
 	flows := newFlowStore()
-	if err := flows.put("state", ssoFlow{providerID: 7, expiresAt: time.Now().Add(time.Minute)}); err != nil {
-		t.Fatal(err)
-	}
+	flows.put("state", ssoFlow{providerID: 7, expiresAt: time.Now().Add(time.Minute)})
 
 	if _, ok := flows.take("state"); !ok {
 		t.Fatal("the first callback should find its flow")
@@ -294,9 +291,7 @@ func TestFlowStateIsSingleUse(t *testing.T) {
 
 func TestFlowStateExpires(t *testing.T) {
 	flows := newFlowStore()
-	if err := flows.put("state", ssoFlow{providerID: 7, expiresAt: time.Now().Add(-time.Second)}); err != nil {
-		t.Fatal(err)
-	}
+	flows.put("state", ssoFlow{providerID: 7, expiresAt: time.Now().Add(-time.Second)})
 
 	if _, ok := flows.take("state"); ok {
 		t.Fatal("an expired flow must not be usable")
@@ -588,40 +583,47 @@ func TestOnlyASuperAdminChangesAProviderASuperAdminSignsInThrough(t *testing.T) 
 }
 
 // Starting a sign-in needs no session, so the flows waiting on an IdP are
-// bounded: per address first, so one address cannot lock everyone else out,
-// and in total. A flow that finishes or expires gives its place back.
-func TestSSOFlowsAreBoundedPerAddress(t *testing.T) {
+// bounded. Past a bound the oldest waiting flow goes, never the new one: a
+// refusal would let anyone sharing an address lock everyone else out.
+func TestSSOFlowsAreBoundedByDroppingTheOldest(t *testing.T) {
 	flows := newFlowStore()
 	live := time.Now().Add(time.Minute)
 	for i := range maxSSOFlowsPerSource {
-		if err := flows.put(fmt.Sprintf("s%d", i), ssoFlow{source: "203.0.113.7", expiresAt: live}); err != nil {
-			t.Fatalf("flow %d: %v", i, err)
-		}
+		flows.put(fmt.Sprintf("s%d", i), ssoFlow{source: "203.0.113.7", expiresAt: live})
 	}
-	if err := flows.put("one-too-many", ssoFlow{source: "203.0.113.7", expiresAt: live}); !errors.Is(err, errTooManySSOFlows) {
-		t.Fatalf("past the per-address bound: want errTooManySSOFlows, got %v", err)
+	flows.put("elsewhere", ssoFlow{source: "198.51.100.1", expiresAt: live})
+	flows.put("newest", ssoFlow{source: "203.0.113.7", expiresAt: live})
+
+	if _, ok := flows.take("newest"); !ok {
+		t.Fatal("a new flow past the per-address bound must be kept")
 	}
-	if err := flows.put("elsewhere", ssoFlow{source: "198.51.100.1", expiresAt: live}); err != nil {
-		t.Fatalf("another address is not held to the first one's bound: %v", err)
+	if _, ok := flows.take("s0"); ok {
+		t.Fatal("the address's oldest flow should have made room")
 	}
-	if _, ok := flows.take("s0"); !ok {
-		t.Fatal("a stored flow should be found")
+	if _, ok := flows.take("s1"); !ok {
+		t.Fatal("only the oldest flow goes")
 	}
-	if err := flows.put("after-finish", ssoFlow{source: "203.0.113.7", expiresAt: live}); err != nil {
-		t.Fatalf("a finished flow should give its place back: %v", err)
+	if _, ok := flows.take("elsewhere"); !ok {
+		t.Fatal("another address's flow is not touched by the first one's bound")
 	}
 
-	// An expired flow is swept at the next insert past the interval.
+	// An IPv6 caller is counted by its /64.
+	v6 := newFlowStore()
+	for i := range maxSSOFlowsPerSource + 5 {
+		v6.put(fmt.Sprintf("v%d", i), ssoFlow{source: fmt.Sprintf("2001:db8:1:2::%x", i+1), expiresAt: live})
+	}
+	if len(v6.flows) != maxSSOFlowsPerSource || len(v6.bySource) != 1 {
+		t.Fatalf("one /64: %d flows across %d sources, want %d across 1", len(v6.flows), len(v6.bySource), maxSSOFlowsPerSource)
+	}
+
+	// Expired flows are swept from the front at the next insert.
 	expired := newFlowStore()
-	for i := range maxSSOFlowsPerSource {
-		_ = expired.put(fmt.Sprintf("e%d", i), ssoFlow{source: "203.0.113.9", expiresAt: time.Now().Add(-time.Second)})
+	for i := range 5 {
+		expired.put(fmt.Sprintf("e%d", i), ssoFlow{source: "203.0.113.9", expiresAt: time.Now().Add(-time.Second)})
 	}
-	expired.swept = time.Now().Add(-2 * ssoFlowSweepInterval)
-	if err := expired.put("fresh", ssoFlow{source: "203.0.113.9", expiresAt: live}); err != nil {
-		t.Fatalf("expired flows should have been swept: %v", err)
-	}
-	if len(expired.flows) != 1 || expired.perSource["203.0.113.9"] != 1 {
-		t.Fatalf("after the sweep: %d flows, %d for the address", len(expired.flows), expired.perSource["203.0.113.9"])
+	expired.put("fresh", ssoFlow{source: "203.0.113.9", expiresAt: live})
+	if len(expired.flows) != 1 || expired.order.Len() != 1 || expired.bySource["203.0.113.9"].Len() != 1 {
+		t.Fatalf("after the sweep: %d flows, %d in order", len(expired.flows), expired.order.Len())
 	}
 }
 

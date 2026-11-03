@@ -188,7 +188,9 @@ The sign-in page keeps that promise: all four read *That username and password d
 Signing in through an IdP goes out from the console and comes back to it. Two checks hold the round trip to the browser that started it:
 
 - **The session is taken only by the tab that started the sign-in.** The console sends a per-tab value with the sign-in, and the session comes back with it. A callback link someone else started and sent on, or a link carrying a session token, is refused with *This sign-in was not started in this browser tab*. Without this check, opening such a link would sign you into the sender's account. Start the sign-in again from the sign-in page; a browser that blocks site storage cannot complete one.
-- **At most 20 sign-ins may wait on an IdP from one address**, and 10,000 in all. Each one waits at most ten minutes. Past either limit, the console says *too many sign-ins are waiting to finish from this address*. Behind an ingress or a load balancer, set [`KUBEMG_TRUSTED_PROXIES`](../install/environment.md#client-addresses-behind-a-proxy) so the limit counts callers, not the proxy.
+- **At most 100 sign-ins wait on an IdP from one address** (an IPv6 caller counts by its /64), and 10,000 in all. Each one waits at most ten minutes.
+    - Past a limit, the oldest waiting sign-in is dropped, never the new one refused. Whoever started that one sees *This sign-in request has expired* and starts again; nobody is locked out.
+    - Behind an ingress or a load balancer, set [`KUBEMG_TRUSTED_PROXIES`](../install/environment.md#client-addresses-behind-a-proxy) so the limit counts callers, not the proxy.
 
 ## Troubleshooting
 

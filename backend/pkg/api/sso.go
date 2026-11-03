@@ -1,9 +1,11 @@
 package api
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -45,19 +47,17 @@ const (
 
 	// maxSSOFlows and maxSSOFlowsPerSource bound the sign-ins waiting on an
 	// IdP. Starting one needs no session, so without a bound a loop on the
-	// login route grew the map for ten minutes per request. Per source first,
-	// so one address cannot fill the whole store and lock everyone else out;
-	// twenty is far past what a person clicking sign-in ever leaves behind.
+	// login route grew the map for ten minutes per request.
+	//
+	// Past a bound the oldest waiting flow is dropped, never the new one
+	// refused: a refusal would let anyone sharing an address (a NAT, or every
+	// caller at once when KubeMG sits behind a proxy it was not told to
+	// trust) lock everyone else out of signing in. A dropped flow costs its
+	// owner one more click. The per-source bound comes first, so one address
+	// cannot push everyone else's flows out of the shared store.
 	maxSSOFlows          = 10000
-	maxSSOFlowsPerSource = 20
-	// ssoFlowSweepInterval is how often an insert walks the map for expired
-	// flows, rather than on every insert.
-	ssoFlowSweepInterval = time.Minute
+	maxSSOFlowsPerSource = 100
 )
-
-// errTooManySSOFlows is the refusal past either bound.
-var errTooManySSOFlows = errors.New(
-	"too many sign-ins are waiting to finish from this address; try again in a few minutes")
 
 // ssoBindingPattern is the console's per-tab value that ties a sign-in to the
 // browser that started it. It is opaque to the server, which only checks that
@@ -75,7 +75,8 @@ type ssoFlow struct {
 	// against the allowed origins when the flow started.
 	redirect  string
 	expiresAt time.Time
-	// source is the address that started the flow, for the per-source bound.
+	// source is the address that started the flow (its /64 for IPv6), for
+	// the per-source bound.
 	source string
 	// binding is the console's value for the tab that started the sign-in,
 	// handed back beside the session so that tab can tell a sign-in it
@@ -97,49 +98,74 @@ type ssoFlow struct {
 // balancer need session affinity for the callback, or half of federated
 // sign-ins land on the replica that never saw the request start.
 type flowStore struct {
-	mu        sync.Mutex
-	flows     map[string]ssoFlow
-	perSource map[string]int
-	swept     time.Time
+	mu    sync.Mutex
+	flows map[string]*flowEntry
+	// order holds every waiting flow's state oldest first, and bySource the
+	// same per source. Every flow lives for the same TTL, so oldest is also
+	// soonest to expire, and both the sweep and the bounds work from the front.
+	order    *list.List
+	bySource map[string]*list.List
+}
+
+type flowEntry struct {
+	flow   ssoFlow
+	global *list.Element
+	local  *list.Element
 }
 
 func newFlowStore() *flowStore {
-	return &flowStore{flows: map[string]ssoFlow{}, perSource: map[string]int{}}
+	return &flowStore{flows: map[string]*flowEntry{}, order: list.New(), bySource: map[string]*list.List{}}
 }
 
-// put stores a flow, or refuses it past either bound.
-func (f *flowStore) put(state string, flow ssoFlow) error {
+// put stores a flow, first dropping expired ones and then, past either bound,
+// the oldest waiting flow from the same source or from everyone.
+func (f *flowStore) put(state string, flow ssoFlow) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	// Expired flows are swept on write, at most once a minute: the map only
-	// grows when someone is signing in, so that is when it is worth walking,
-	// and walking it on every insert made a loop of inserts quadratic.
 	now := time.Now()
-	if now.Sub(f.swept) >= ssoFlowSweepInterval {
-		f.swept = now
-		for key, existing := range f.flows {
-			if now.After(existing.expiresAt) {
-				f.forget(key, existing)
-			}
+	for front := f.order.Front(); front != nil; front = f.order.Front() {
+		key := front.Value.(string)
+		if !now.After(f.flows[key].flow.expiresAt) {
+			break
 		}
+		f.forget(key)
 	}
-	if len(f.flows) >= maxSSOFlows || f.perSource[flow.source] >= maxSSOFlowsPerSource {
-		return errTooManySSOFlows
+	f.forget(state)
+
+	flow.source = flowSourceKey(flow.source)
+	for local := f.bySource[flow.source]; local != nil && local.Len() >= maxSSOFlowsPerSource; local = f.bySource[flow.source] {
+		f.forget(local.Front().Value.(string))
 	}
-	f.flows[state] = flow
-	f.perSource[flow.source]++
-	return nil
+	for f.order.Len() >= maxSSOFlows {
+		f.forget(f.order.Front().Value.(string))
+	}
+
+	local := f.bySource[flow.source]
+	if local == nil {
+		local = list.New()
+		f.bySource[flow.source] = local
+	}
+	f.flows[state] = &flowEntry{
+		flow:   flow,
+		global: f.order.PushBack(state),
+		local:  local.PushBack(state),
+	}
 }
 
-// forget removes a flow and its share of its source's bound. The caller holds
-// the lock.
-func (f *flowStore) forget(state string, flow ssoFlow) {
+// forget removes a flow from the map and both orders. The caller holds the lock.
+func (f *flowStore) forget(state string) {
+	entry, ok := f.flows[state]
+	if !ok {
+		return
+	}
 	delete(f.flows, state)
-	if f.perSource[flow.source] <= 1 {
-		delete(f.perSource, flow.source)
-	} else {
-		f.perSource[flow.source]--
+	f.order.Remove(entry.global)
+	if local := f.bySource[entry.flow.source]; local != nil {
+		local.Remove(entry.local)
+		if local.Len() == 0 {
+			delete(f.bySource, entry.flow.source)
+		}
 	}
 }
 
@@ -149,15 +175,30 @@ func (f *flowStore) take(state string) (ssoFlow, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	flow, ok := f.flows[state]
+	entry, ok := f.flows[state]
 	if !ok {
 		return ssoFlow{}, false
 	}
-	f.forget(state, flow)
-	if time.Now().After(flow.expiresAt) {
+	f.forget(state)
+	if time.Now().After(entry.flow.expiresAt) {
 		return ssoFlow{}, false
 	}
-	return flow, true
+	return entry.flow, true
+}
+
+// flowSourceKey is the address a flow is counted against. An IPv6 caller
+// usually holds a whole /64, so it is counted as one, or rotating through it
+// would sidestep the per-source bound.
+func flowSourceKey(address string) string {
+	ip := net.ParseIP(address)
+	if ip == nil {
+		return address
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return v4.String()
+	}
+	prefix := net.CIDRMask(64, 128)
+	return (&net.IPNet{IP: ip.Mask(prefix), Mask: prefix}).String()
 }
 
 // ssoProviderPublic is one provider as the login page sees it: enough to draw a
@@ -326,10 +367,7 @@ func (s *server) startSSOLogin(c *gin.Context) {
 		return
 	}
 
-	if err := s.ssoFlows.put(state, flow); err != nil {
-		s.failSSO(c, redirect, err.Error())
-		return
-	}
+	s.ssoFlows.put(state, flow)
 	c.Redirect(http.StatusFound, target)
 }
 
