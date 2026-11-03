@@ -123,9 +123,9 @@ All unauthenticated by necessity — nobody has a session yet.
 | Method & path | Notes |
 | --- | --- |
 | `GET /auth/sso/providers` | `{providers:[{id,name,protocol,interactive}]}`. Disabled providers are omitted entirely. |
-| `GET /auth/sso/providers/:id/login` | Redirects (`302`) to the IdP. `400` for a non-interactive protocol (LDAP) or a bad `redirect_uri`. |
+| `GET /auth/sso/providers/:id/login` | Redirects (`302`) to the IdP. `400` for a non-interactive protocol (LDAP), a bad `redirect_uri` or a `binding` that is not a 16–128 character URL-safe token. `binding` is the console's per-tab value, handed back on the callback. At most 100 waiting sign-ins per address (IPv6 by /64) and 10,000 in all; past either, the oldest waiting flow is dropped, not the new one refused. |
 | `POST /auth/sso/providers/:id/login` | LDAP only — posts `{username,password}` straight to the directory. `401` bad credentials, `502` directory unreachable, `429` once throttled (counted per provider, apart from the local form). |
-| `GET`/`POST /auth/sso/providers/:id/callback` | OIDC returns as a `GET` with a code; SAML posts an assertion. On success, `302`-redirects to the console with the token in the URL **fragment** (`#token=...&expires_at=...`), never the query string. |
+| `GET`/`POST /auth/sso/providers/:id/callback` | OIDC returns as a `GET` with a code; SAML posts an assertion. On success, `302`-redirects to the console with the token in the URL **fragment** (`#token=...&expires_at=...&binding=...`), never the query string. The console takes the token only when `binding` is the value its tab sent. A SAML assertion must answer the AuthnRequest the flow sent (`InResponseTo`). |
 | `GET /auth/sso/providers/:id/metadata` | SAML only — the SP metadata document, `application/samlmetadata+xml`. |
 
 ### SSO administration
