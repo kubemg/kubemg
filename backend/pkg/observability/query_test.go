@@ -322,3 +322,17 @@ func TestWindowIsBoundedAndResolutionDerived(t *testing.T) {
 		t.Fatalf("points = %d, want at most %d", points, maxPoints)
 	}
 }
+
+// A grant stored before writes were validated may still name something that is
+// not a namespace. It is refused, never pasted into a query as written.
+func TestAStoredGrantNamespaceIsHeldToTheNameGrammar(t *testing.T) {
+	for _, bad := range []string{"[a-z0-9-]+", `team"} or vector(1)`, ".*"} {
+		scope := Scope{Namespaces: []string{"team-a", bad}}
+		if got, err := scope.resolveNamespace(""); err == nil {
+			t.Fatalf("%q: resolved to %v, want a refusal", bad, got)
+		}
+	}
+	if got, err := (Scope{Namespaces: []string{"team-a", "team-b"}}).resolveNamespace(""); err != nil || len(got) != 2 {
+		t.Fatalf("valid namespaces: got %v, %v", got, err)
+	}
+}

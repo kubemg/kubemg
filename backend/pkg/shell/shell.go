@@ -35,7 +35,7 @@ import (
 // package manager in it — an operator's shell that can install software is a
 // supply chain rather than a terminal. helm was in it and was removed; see the
 // docblock in shell/Dockerfile for why.
-const DefaultImage = "ghcr.io/kubemg/kubemg-shell:0.17.0"
+const DefaultImage = "ghcr.io/kubemg/kubemg-shell:0.17.1"
 
 // RunnerUser is the identity KubeMG impersonates to manage shell pods.
 //
@@ -238,7 +238,7 @@ func PodManifest(spec PodSpec) ([]byte, error) {
 					// on the audited path rather than in a process nobody attached
 					// to. `sleep infinity` is deliberately not used: it is a GNU
 					// coreutils spelling and busybox's sleep does not take it.
-					"command": []any{"/bin/sh", "-c", "while :; do sleep 3600; done"},
+					"command": []any{shellCommand[0], shellCommand[1], shellCommand[2]},
 					"env": []any{
 						map[string]any{"name": "HOME", "value": HomeDir},
 						map[string]any{"name": "KUBECONFIG", "value": KubeconfigPath},
@@ -336,6 +336,11 @@ type Status struct {
 	// that will not pull, a deadline that ran out — so the console can say why
 	// rather than spinning.
 	Message string `json:"message,omitempty"`
+	// Foreign names what makes the pod one KubeMG did not render, or is empty
+	// for one it did. The name is derived from the user id and so is
+	// predictable; a pod somebody else put there must never be handed its
+	// owner's kubeconfig. Not serialised: it is a decision, not a display.
+	Foreign string `json:"-"`
 }
 
 // ReadStatus reads a pod object into the shape above. Anything it cannot find is
@@ -366,11 +371,16 @@ func ReadStatus(pod map[string]any) Status {
 	}
 
 	spec, _ := pod["spec"].(map[string]any)
-	if containers, ok := spec["containers"].([]any); ok && len(containers) > 0 {
-		if first, ok := containers[0].(map[string]any); ok {
-			status.Image, _ = first["image"].(string)
+	if containers, ok := spec["containers"].([]any); ok {
+		for _, raw := range containers {
+			if container, ok := raw.(map[string]any); ok && container["name"] == "shell" {
+				status.Image, _ = container["image"].(string)
+				break
+			}
 		}
 	}
+
+	status.Foreign = foreignSpec(spec)
 
 	podStatus, _ := pod["status"].(map[string]any)
 	status.Phase, _ = podStatus["phase"].(string)
@@ -495,4 +505,187 @@ func ClampMaxLifetime(d time.Duration) time.Duration {
 		return DefaultMaxLifetime
 	}
 	return d
+}
+
+// shellCommand is the container's command as PodManifest writes it.
+var shellCommand = []string{"/bin/sh", "-c", "while :; do sleep 3600; done"}
+
+// foreignSpec compares a pod with the one PodManifest renders, on every field
+// that decides who can read or change what is written into it. It is an
+// allowlist on purpose: a pod is KubeMG's when nothing in it departs from the
+// rendered shape, not when it avoids a list of known tricks. One container,
+// named shell, running KubeMG's command with exactly KubeMG's environment and
+// two scratch mounts; only emptyDir volumes; no init or ephemeral container;
+// KubeMG's ServiceAccount with no token; no shared process or host namespace;
+// nothing privileged and no capability added. Fields the API server defaults
+// (terminationMessagePath, imagePullPolicy, …) are not compared. A cluster
+// that injects a sidecar into the agent's namespace makes every shell foreign,
+// and the shell says so rather than seeding a pod it cannot vouch for. The
+// image is compared by ForeignFor, which knows which one is configured.
+func foreignSpec(spec map[string]any) string {
+	if account, _ := spec["serviceAccountName"].(string); account != ServiceAccount {
+		return "it runs under another service account"
+	}
+	if automount, ok := spec["automountServiceAccountToken"].(bool); !ok || automount {
+		return "it mounts a service account token"
+	}
+	for _, field := range []string{"hostPID", "hostIPC", "hostNetwork", "shareProcessNamespace"} {
+		if on, _ := spec[field].(bool); on {
+			return "it shares " + field + " with something else"
+		}
+	}
+	for _, field := range []string{"initContainers", "ephemeralContainers"} {
+		if extra, _ := spec[field].([]any); len(extra) > 0 {
+			return "it has containers KubeMG did not put there"
+		}
+	}
+	containers, _ := spec["containers"].([]any)
+	if len(containers) != 1 {
+		return "it has containers KubeMG did not put there"
+	}
+	container, _ := containers[0].(map[string]any)
+	if name, _ := container["name"].(string); name != "shell" {
+		return "it has no shell container"
+	}
+
+	volumes, _ := spec["volumes"].([]any)
+	seen := map[string]bool{}
+	for _, raw := range volumes {
+		volume, _ := raw.(map[string]any)
+		name, _ := volume["name"].(string)
+		if _, ok := volume["emptyDir"].(map[string]any); !ok || len(volume) != 2 {
+			return "its " + name + " volume is not a scratch directory"
+		}
+		seen[name] = true
+	}
+	if len(seen) != 2 || !seen["home"] || !seen["tmp"] {
+		return "its volumes are not the two KubeMG gives it"
+	}
+	return foreignShellContainer(container)
+}
+
+// foreignShellContainer checks the container itself against PodManifest's.
+func foreignShellContainer(container map[string]any) string {
+	if !sameArgv(container["command"], shellCommand) {
+		return "its shell container runs another command"
+	}
+	for _, field := range []string{"args", "envFrom", "lifecycle", "workingDir", "volumeDevices"} {
+		if value, ok := container[field]; ok && !empty(value) {
+			return "its shell container is configured differently (" + field + ")"
+		}
+	}
+	if !sameEnv(container["env"], shellEnvNames) {
+		return "its shell container has another environment"
+	}
+
+	want := map[string]string{"home": HomeDir, "tmp": "/tmp"}
+	mounts, _ := container["volumeMounts"].([]any)
+	if len(mounts) != len(want) {
+		return "its shell container mounts something else"
+	}
+	for _, raw := range mounts {
+		mount, _ := raw.(map[string]any)
+		name, _ := mount["name"].(string)
+		path, _ := mount["mountPath"].(string)
+		if expected, ok := want[name]; !ok || path != expected {
+			return "its shell container mounts something else"
+		}
+		if sub, _ := mount["subPath"].(string); sub != "" {
+			return "its shell container mounts something else"
+		}
+		delete(want, name)
+	}
+
+	security, _ := container["securityContext"].(map[string]any)
+	if privileged, _ := security["privileged"].(bool); privileged {
+		return "its shell container is privileged"
+	}
+	if escalation, ok := security["allowPrivilegeEscalation"].(bool); !ok || escalation {
+		return "its shell container may escalate privilege"
+	}
+	if readOnly, ok := security["readOnlyRootFilesystem"].(bool); !ok || !readOnly {
+		return "its shell container has a writable root filesystem"
+	}
+	if capabilities, _ := security["capabilities"].(map[string]any); capabilities != nil {
+		if add, _ := capabilities["add"].([]any); len(add) > 0 {
+			return "its shell container adds capabilities"
+		}
+	}
+	return ""
+}
+
+// shellEnvNames are the variables PodManifest sets, each to a literal value.
+// KUBEMG_USER's value is the username and is not compared; every one must be
+// a plain value, never read from somewhere else.
+var shellEnvNames = map[string]string{
+	"HOME":        HomeDir,
+	"KUBECONFIG":  KubeconfigPath,
+	"TERM":        "xterm-256color",
+	"KUBEMG_USER": "",
+}
+
+func sameEnv(raw any, want map[string]string) bool {
+	list, _ := raw.([]any)
+	if len(list) != len(want) {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, item := range list {
+		variable, _ := item.(map[string]any)
+		name, _ := variable["name"].(string)
+		expected, ok := want[name]
+		if !ok || seen[name] {
+			return false
+		}
+		if _, ok := variable["valueFrom"]; ok {
+			return false
+		}
+		if value, _ := variable["value"].(string); expected != "" && value != expected {
+			return false
+		}
+		seen[name] = true
+	}
+	return true
+}
+
+func empty(value any) bool {
+	switch v := value.(type) {
+	case nil:
+		return true
+	case string:
+		return v == ""
+	case []any:
+		return len(v) == 0
+	case map[string]any:
+		return len(v) == 0
+	}
+	return false
+}
+
+// ForeignFor is Foreign with the configured image compared too: a pod running
+// another image runs another `head`, and that is what reads the credential.
+func (s Status) ForeignFor(image string) string {
+	if !s.Exists {
+		return ""
+	}
+	if s.Foreign != "" {
+		return s.Foreign
+	}
+	if s.Image != image {
+		return "it runs another image"
+	}
+	return ""
+}
+
+func sameArgv(raw any, want []string) bool {
+	list, ok := raw.([]any)
+	if !ok || len(list) != len(want) {
+		return false
+	}
+	for i, value := range list {
+		if text, _ := value.(string); text != want[i] {
+			return false
+		}
+	}
+	return true
 }

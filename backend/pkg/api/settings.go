@@ -442,6 +442,27 @@ func (s *server) publishRateLimit(ctx context.Context) {
 	})
 }
 
+// publishAgentNamespaces tells the gateway where the agent runs, so a call
+// into that namespace is refused below cluster-admin (bastion/agentns.go). The
+// boot default and the package's own default ride along with the setting: an
+// agent installed before the setting changed is still in the old namespace,
+// holding its credential. (Where each agent actually runs is not reported by
+// the agent today; a namespace an operator used once and moved off twice is
+// not remembered.)
+//
+// A failed settings read keeps what was published, as publishRateLimit does:
+// s.settings would answer the boot default alone, and an outage must not
+// quietly unguard the namespace an operator moved the agent to.
+func (s *server) publishAgentNamespaces(ctx context.Context) {
+	if s.proxy == nil {
+		return
+	}
+	if _, err := s.store.Settings(ctx); err != nil {
+		return
+	}
+	s.proxy.SetAgentNamespaces(s.settings(ctx).AgentNamespace, s.agentNamespace, agentpkg.DefaultNamespace)
+}
+
 // storedRetentionDays reads the audit retention override. A value that is not a
 // usable number reads as unset, so a hand-edited row cannot turn the pruner
 // into something that deletes everything.
@@ -775,6 +796,7 @@ func (s *server) updateSettings(c *gin.Context) {
 	// of now — which reads as a settings page that does not work.
 	s.publishAuditPolicy(c.Request.Context())
 	s.publishRateLimit(c.Request.Context())
+	s.publishAgentNamespaces(c.Request.Context())
 	// The password gate likewise: a policy change moves every due date.
 	if req.PasswordMaxAgeDays != nil {
 		s.publishPasswordGate(c.Request.Context())

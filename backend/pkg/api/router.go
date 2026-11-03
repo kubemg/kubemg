@@ -687,8 +687,9 @@ func NewRouter(opts Options) *gin.Engine {
 		go s.startAuditPruner(opts.Background)
 		// What reaches that table is a setting, and the gateway reads it from
 		// memory on every call — so it has to be resolved here and republished.
-		// The rate limit rides the same timer: it is read on every call too.
-		if s.auditPolicy != nil || s.rateLimit != nil {
+		// The rate limit and the agent's namespace ride the same timer: both
+		// are read on every call too.
+		if s.auditPolicy != nil || s.rateLimit != nil || s.proxy != nil {
 			go s.startAuditPolicyRefresher(opts.Background)
 		}
 		// The same handoff for the safety policies. It publishes once before
@@ -748,7 +749,11 @@ func NewRouter(opts Options) *gin.Engine {
 	// A console session whose password is due reaches only the routes that
 	// change it; see password_policy.go.
 	requireAuth := auth.RequireAuthGated(s.jwt, newMachineTokenVerifier(s.store), s.gatePasswordAge)
-	requireAdmin := auth.RequireRole(db.RoleAdmin)
+	// The role is read from the account, not from the token: a token carries
+	// the role it was minted with for its whole lifetime, and an administrator
+	// who was demoted or disabled must lose the console's admin routes now,
+	// not when that token runs out.
+	requireAdmin := s.requireAdmin
 
 	if opts.Bastion != nil {
 		// Agents authenticate on their own registration token, so this route

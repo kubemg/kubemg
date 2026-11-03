@@ -530,3 +530,53 @@ func TestUnsafeFederatedUsernameIsARefusal(t *testing.T) {
 		t.Fatalf("ssoStatusFor(ErrSSOUnsafeUsername) = %d, want %d", got, http.StatusForbidden)
 	}
 }
+
+// Whoever controls a provider decides who it says is signing in. An admin who
+// is not a super admin must not be able to repoint, or remove, a provider a
+// super admin signs in through — that is managing a super admin.
+func TestOnlyASuperAdminChangesAProviderASuperAdminSignsInThrough(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	root := env.store.addSuperAdmin("root", "pw")
+	adminToken := env.tokenFor(t, admin)
+
+	provider := map[string]any{
+		"name":          "Corp",
+		"protocol":      "oidc",
+		"issuer_url":    "https://idp.example.com",
+		"client_id":     "kubemg",
+		"client_secret": "s",
+	}
+	create := env.do(t, http.MethodPost, "/api/v1/admin/sso/providers", adminToken, provider)
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", create.Code, create.Body.String())
+	}
+	created := decode[ssoProviderResponse](t, create)
+	path := "/api/v1/admin/sso/providers/" + itoa(created.ID)
+
+	// Nobody privileged signs in through it yet: an admin manages it.
+	provider["issuer_url"] = "https://idp2.example.com"
+	if rec := env.do(t, http.MethodPut, path, adminToken, provider); rec.Code != http.StatusOK {
+		t.Fatalf("unbound provider: want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+
+	// Once a super admin is federated through it, only a super admin may.
+	root.SSOProviderID = created.ID
+	root.AuthSource = db.ProtocolOIDC
+	provider["issuer_url"] = "https://attacker.example.com"
+	if rec := env.do(t, http.MethodPut, path, adminToken, provider); rec.Code != http.StatusForbidden {
+		t.Fatalf("admin repointing a super admin's provider: want 403, got %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := env.do(t, http.MethodDelete, path, adminToken, nil); rec.Code != http.StatusForbidden {
+		t.Fatalf("admin removing a super admin's provider: want 403, got %d %s", rec.Code, rec.Body.String())
+	}
+	if got := env.store.providers[created.ID].IssuerURL; got != "https://idp2.example.com" {
+		t.Fatalf("issuer = %q, want it unchanged", got)
+	}
+
+	rootToken := env.tokenFor(t, root)
+	provider["issuer_url"] = "https://idp3.example.com"
+	if rec := env.do(t, http.MethodPut, path, rootToken, provider); rec.Code != http.StatusOK {
+		t.Fatalf("super admin: want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+}

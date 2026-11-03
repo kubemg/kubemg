@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -157,6 +158,10 @@ func QueryLogs(ctx context.Context, target Target, tunnel TunnelCall,
 	if err != nil {
 		return LogResult{}, err
 	}
+	// The scope is the query's to enforce, and is enforced again here on what
+	// came back: a backend that reads a filter more loosely than it was meant
+	// must not be what decides which namespaces a scoped caller sees.
+	entries = withinNamespaces(entries, sel.namespaces)
 
 	// Newest first. The pod log view tails, because a stream is read forwards;
 	// a search is asked what happened, and the answer starts with the most
@@ -170,6 +175,23 @@ func QueryLogs(ctx context.Context, target Target, tunnel TunnelCall,
 		Limited: len(entries) >= limit,
 		Query:   query,
 	}, nil
+}
+
+// withinNamespaces drops every entry outside the given namespaces. No
+// namespaces means the read was unscoped, and nothing is dropped. An entry
+// whose namespace could not be read is dropped too: it cannot be shown to be
+// inside the scope.
+func withinNamespaces(entries []LogEntry, namespaces []string) []LogEntry {
+	if len(namespaces) == 0 {
+		return entries
+	}
+	kept := entries[:0]
+	for _, entry := range entries {
+		if slices.Contains(namespaces, entry.Namespace) {
+			kept = append(kept, entry)
+		}
+	}
+	return kept
 }
 
 // logSelector is the validated set of Kubernetes names a log query narrows to.
@@ -214,22 +236,26 @@ func buildLogSelector(scope Scope, req LogRequest) (logSelector, error) {
 func victoriaLogsQuery(sel logSelector, filter string) string {
 	terms := make([]string, 0, 4)
 
+	// Every Kubernetes name is matched exactly (`:=` and `:in(…)`). A bare
+	// `field:"value"` is LogsQL's phrase filter: it matches the value as a run
+	// of whole words anywhere in the field, so a grant on `team` read the logs
+	// of `team-payments` and `prod-team` too.
 	switch {
 	case len(sel.namespaces) == 1:
-		terms = append(terms, fmt.Sprintf("kubernetes.pod_namespace:%s", quotePhrase(sel.namespaces[0])))
+		terms = append(terms, fmt.Sprintf("kubernetes.pod_namespace:=%s", quotePhrase(sel.namespaces[0])))
 	case len(sel.namespaces) > 1:
 		alternatives := make([]string, 0, len(sel.namespaces))
 		for _, namespace := range sel.namespaces {
 			alternatives = append(alternatives, quotePhrase(namespace))
 		}
 		terms = append(terms,
-			fmt.Sprintf("kubernetes.pod_namespace:(%s)", strings.Join(alternatives, " OR ")))
+			fmt.Sprintf("kubernetes.pod_namespace:in(%s)", strings.Join(alternatives, ",")))
 	}
 	if sel.pod != "" {
-		terms = append(terms, fmt.Sprintf("kubernetes.pod_name:%s", quotePhrase(sel.pod)))
+		terms = append(terms, fmt.Sprintf("kubernetes.pod_name:=%s", quotePhrase(sel.pod)))
 	}
 	if sel.container != "" {
-		terms = append(terms, fmt.Sprintf("kubernetes.container_name:%s", quotePhrase(sel.container)))
+		terms = append(terms, fmt.Sprintf("kubernetes.container_name:=%s", quotePhrase(sel.container)))
 	}
 	if phrase := strings.TrimSpace(filter); phrase != "" {
 		terms = append(terms, quotePhrase(phrase))

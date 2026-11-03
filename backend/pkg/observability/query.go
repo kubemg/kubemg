@@ -162,6 +162,14 @@ func (s Scope) resolveNamespace(requested string) ([]string, error) {
 	if s.Unscoped() {
 		return nil, nil
 	}
+	// The grant's own namespaces go into the query as written, so they are held
+	// to the same grammar as a requested one. Writes refuse anything else; a row
+	// stored before they did is refused here rather than pasted into PromQL.
+	for _, namespace := range s.Namespaces {
+		if namespace == "" || validateName("namespace", namespace) != nil {
+			return nil, fmt.Errorf("your grant names %q, which is not a namespace; ask an administrator to correct it", namespace)
+		}
+	}
 	return s.Namespaces, nil
 }
 

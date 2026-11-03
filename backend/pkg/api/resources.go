@@ -537,6 +537,14 @@ func (s *server) scopedNamespace(c *gin.Context, grant db.UserClusterAccess, nam
 		c.JSON(http.StatusBadRequest, gin.H{"error": "a namespace is required"})
 		return "", false
 	}
+	// Every resource route builds a path out of this value. One that is not a
+	// namespace name — a slash, a '?', an encoded anything — would address
+	// something other than the namespace the checks below and the trail name,
+	// so it is refused here, once, for all of them.
+	if !validNamespaceName(requested) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "that is not a valid namespace name"})
+		return "", false
+	}
 	if len(allowed) > 0 && !slices.Contains(allowed, requested) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "namespace " + requested + " is outside your granted scope"})
 		return "", false

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -536,6 +537,44 @@ func splitNamespaces(stored string) []string {
 		}
 	}
 	return out
+}
+
+// CheckNamespaces refuses any name that is not a Kubernetes namespace — the
+// RFC 1123 label rule the API server applies: at most 63 characters of
+// lowercase letters, digits and '-', starting and ending with a letter or
+// digit. Every write of a grant's, a JIT request's or an SSO mapping's
+// namespaces goes through it. A grant's namespaces end up inside the
+// metrics and log queries KubeMG writes on a scoped caller's behalf, and a
+// value like `[a-z0-9-]+` or one carrying a quote must never be stored for
+// them to be read back from.
+func CheckNamespaces(namespaces []string) error {
+	for _, namespace := range namespaces {
+		namespace = strings.TrimSpace(namespace)
+		if namespace == "" {
+			continue
+		}
+		if !IsNamespaceName(namespace) {
+			return fmt.Errorf("%q is not a valid namespace name", namespace)
+		}
+	}
+	return nil
+}
+
+// IsNamespaceName reports whether a value is a Kubernetes namespace name.
+func IsNamespaceName(name string) bool {
+	if name == "" || len(name) > 63 {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+		case c == '-' && i != 0 && i != len(name)-1:
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // JoinNamespaces renders a namespace slice for storage.

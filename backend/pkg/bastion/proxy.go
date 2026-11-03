@@ -18,6 +18,7 @@ import (
 	"github.com/kubemg/kubemg/backend/pkg/credentials"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/guardrails"
+	"github.com/kubemg/kubemg/backend/pkg/kubeparams"
 )
 
 // GroupPrefix namespaces the Kubernetes groups KubeMG impersonates, so a
@@ -140,6 +141,8 @@ type Proxy struct {
 	// clientUpgrader accepts the browser terminal's / kubectl's WebSocket, built
 	// once with this server's origin allowlist. See newClientUpgrader.
 	clientUpgrader websocket.Upgrader
+	// agentNS is where the agent runs; see agentns.go.
+	agentNS agentNamespaces
 }
 
 // ProxyOptions wires the proxy handler.
@@ -174,6 +177,10 @@ type ProxyOptions struct {
 	// got.
 	AllowedOrigins []string
 	PublicURL      string
+	// AgentNamespaces is where the agent is installed, refused to every grant
+	// below cluster-admin (see agentns.go). The API layer republishes it from
+	// the settings with SetAgentNamespaces.
+	AgentNamespaces []string
 }
 
 // NewProxy builds the kubectl proxy handler.
@@ -190,7 +197,7 @@ func NewProxy(opts ProxyOptions) *Proxy {
 	if registry == nil {
 		registry = NewRegistry()
 	}
-	return &Proxy{
+	proxy := &Proxy{
 		store:          opts.Store,
 		registry:       registry,
 		auditor:        auditor,
@@ -201,6 +208,8 @@ func NewProxy(opts ProxyOptions) *Proxy {
 		limiter:        opts.RateLimit,
 		clientUpgrader: newClientUpgrader(buildOriginAllowlist(opts.AllowedOrigins, opts.PublicURL)),
 	}
+	proxy.agentNS.store(opts.AgentNamespaces)
+	return proxy
 }
 
 // buildOriginAllowlist mirrors api.server.consoleOrigins: a wildcard CORS entry
@@ -248,6 +257,7 @@ func (p *Proxy) Handle(c *gin.Context) {
 	if path == "" {
 		path = "/"
 	}
+	delimiter := decodedDelimiter(path)
 	// The in-page terminal authenticates with a query parameter because a
 	// browser cannot set headers on a WebSocket. Strip it here so the session
 	// token reaches neither the target cluster nor the audit trail.
@@ -272,7 +282,33 @@ func (p *Proxy) Handle(c *gin.Context) {
 	event.Resource = parsed.Resource
 	event.Name = parsed.Name
 
-	if allowed, reason := allowedNamespace(grant, parsed, path); !allowed {
+	// Past net/url's parameter limit the query reads as empty here, so a watch
+	// in it would be routed and recorded as a plain list, while an API server
+	// built before that limit still opens the watch. Which one the cluster runs
+	// is unknown, so the call is refused rather than predicted.
+	if kubeparams.TooManyParams(path) {
+		event.RefusedBy = RefusedByKubeMG
+		p.fail(c, &event, http.StatusBadRequest, "the query has more than "+
+			strconv.Itoa(kubeparams.MaxParams)+" parameters, more than kubemg reads; split the call")
+		return
+	}
+
+	if delimiter != "" {
+		event.RefusedBy = RefusedByKubeMG
+		p.fail(c, &event, http.StatusForbidden, delimiter)
+		return
+	}
+	if allowed, reason := allowedPath(grant, c.Request.Method, parsed, path); !allowed {
+		event.RefusedBy = RefusedByKubeMG
+		p.fail(c, &event, http.StatusForbidden, reason)
+		return
+	}
+	if reason := p.agentNamespaceRefusal(user, grant, parsed); reason != "" {
+		event.RefusedBy = RefusedByKubeMG
+		p.fail(c, &event, http.StatusForbidden, reason)
+		return
+	}
+	if reason := clusterWideSecretRefusal(user, grant, parsed); reason != "" {
 		event.RefusedBy = RefusedByKubeMG
 		p.fail(c, &event, http.StatusForbidden, reason)
 		return
@@ -454,10 +490,15 @@ func (p *Proxy) CallWithHeader(
 		p.auditor.Record(ctx, event)
 	}
 
-	if allowed, reason := allowedNamespace(grant, parsed, path); !allowed {
+	if allowed, reason := allowedPath(grant, method, parsed, path); !allowed {
 		err := errors.New(reason)
 		event.RefusedBy = RefusedByKubeMG
 		record(http.StatusForbidden, err)
+		return nil, &CallError{Status: http.StatusForbidden, Message: reason}
+	}
+	if reason := p.agentNamespaceRefusal(user, grant, parsed); reason != "" {
+		event.RefusedBy = RefusedByKubeMG
+		record(http.StatusForbidden, errors.New(reason))
 		return nil, &CallError{Status: http.StatusForbidden, Message: reason}
 	}
 
@@ -593,10 +634,15 @@ func (p *Proxy) Watch(
 		p.auditor.Record(ctx, event)
 	}
 
-	if allowed, reason := allowedNamespace(grant, parsed, path); !allowed {
+	if allowed, reason := allowedPath(grant, http.MethodGet, parsed, path); !allowed {
 		err := errors.New(reason)
 		event.RefusedBy = RefusedByKubeMG
 		record(http.StatusForbidden, err)
+		return nil, &CallError{Status: http.StatusForbidden, Message: reason}
+	}
+	if reason := p.agentNamespaceRefusal(user, grant, parsed); reason != "" {
+		event.RefusedBy = RefusedByKubeMG
+		record(http.StatusForbidden, errors.New(reason))
 		return nil, &CallError{Status: http.StatusForbidden, Message: reason}
 	}
 
@@ -892,17 +938,26 @@ func forwardHeaders(src http.Header, user *db.User, grant db.UserClusterAccess) 
 	return out
 }
 
-// allowedNamespace enforces the namespace scope attached to a grant. An
-// unscoped grant allows everything the impersonated role allows; a scoped grant
-// refuses anything that does not name one of its namespaces, including
-// cluster-wide reads, because a cluster-wide list would return objects from
-// namespaces the grant does not cover.
-func allowedNamespace(grant db.UserClusterAccess, parsed APIPath, path string) (bool, string) {
+// allowedPath decides whether a call may go down the tunnel at all, before
+// any policy reads it.
+//
+// First the path has to mean the same thing here as it will to the API server
+// (ambiguousPath) — for every grant, scoped or not, because everything after
+// this reads ParsePath's answer. Then the namespace scope attached to the
+// grant: an unscoped grant allows everything the impersonated role allows; a
+// scoped grant refuses anything that does not name one of its namespaces,
+// including cluster-wide reads, because a cluster-wide list would return
+// objects from namespaces the grant does not cover. Discovery is the one
+// exception, and only for reading.
+func allowedPath(grant db.UserClusterAccess, method string, parsed APIPath, path string) (bool, string) {
+	if reason := ambiguousPath(path); reason != "" {
+		return false, reason
+	}
 	allowed := grant.NamespaceList()
 	if len(allowed) == 0 {
 		return true, ""
 	}
-	if isDiscovery(path) {
+	if readOnlyMethod(method) && isDiscovery(path) {
 		return true, ""
 	}
 	if parsed.Namespace == "" {
@@ -1004,17 +1059,12 @@ func unsupportedStream(r *http.Request, parsed APIPath) (string, bool) {
 		"The SPDY transport is not proxied.", true
 }
 
+// followRequested reports whether the API server will keep a log read open.
+// One it streams that the gateway took for a bounded read would go down the
+// request/response path: buffered whole, nothing reaching the client, and cut
+// off at proxyTimeout.
 func followRequested(path string) bool {
-	i := strings.IndexByte(path, '?')
-	if i < 0 {
-		return false
-	}
-	for _, param := range strings.Split(path[i+1:], "&") {
-		if param == "follow" || param == "follow=true" || param == "follow=1" {
-			return true
-		}
-	}
-	return false
+	return kubeparams.Bool(kubeparams.Query(path), "follow")
 }
 
 // tunnelFailure maps a tunnel error onto an HTTP status the client can act on.

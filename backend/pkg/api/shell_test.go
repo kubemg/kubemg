@@ -317,6 +317,23 @@ func TestEndingAShellWithdrawsItsCredential(t *testing.T) {
 	s.withdrawShellCredential(t.Context(), holder, shell.Status{})
 }
 
+// Replacing a pod does not wait out its own grace period: a pod planted under
+// the shell's name keeps Kubernetes' default 30 seconds, past the start's wait,
+// and the start answered "still shutting down" until a second click. Ending a
+// shell still leaves the pod its rendered grace period.
+func TestReplacingAShellPodDoesNotWaitOutItsGracePeriod(t *testing.T) {
+	replace := shellDeletePath("kubemg-system", 7, true)
+	if !strings.Contains(replace, "gracePeriodSeconds=1") || !strings.Contains(replace, "propagationPolicy=Background") {
+		t.Fatalf("replacement delete: %s", replace)
+	}
+	if replaceGracePeriod*time.Second >= shellTerminatingTimeout {
+		t.Fatalf("the replacement grace period %ds outlasts the start's wait %s", replaceGracePeriod, shellTerminatingTimeout)
+	}
+	if end := shellDeletePath("kubemg-system", 7, false); strings.Contains(end, "gracePeriodSeconds") {
+		t.Fatalf("ending a shell overrode its grace period: %s", end)
+	}
+}
+
 /* -------------------------------------------------------------- settings --- */
 
 // The lifetime settings are bounded at the edge rather than clamped three layers
