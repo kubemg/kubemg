@@ -456,6 +456,13 @@ func (s *server) bootstrapAdminPending(ctx context.Context) uint {
 	return uint(id)
 }
 
+// replacingSeededPassword reports whether userID is the seeded administrator
+// still on its original password, during setup. It is the only case in which
+// an administrator sets their own password on the user route.
+func (s *server) replacingSeededPassword(ctx context.Context, userID uint) bool {
+	return s.setupRequired(ctx) && s.bootstrapAdminPending(ctx) == userID
+}
+
 // clearBootstrapAdmin forgets the seeded administrator, which is how "the
 // original password is still in force" stops being true. It is called from the
 // one place that can make it stop being true deliberately: a password write.

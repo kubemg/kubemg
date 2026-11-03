@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -72,7 +73,7 @@ func RequireAuthGated(m *Manager, verifier MachineTokenVerifier, gate SessionGat
 			} else {
 				claims, err = m.Parse(token)
 			}
-		} else if isWebSocketUpgrade(c.Request) {
+		} else if m.acceptsWSTicket(c) {
 			// A browser cannot set a header when opening a WebSocket, so the
 			// upgrade carries a ticket on the query string instead — see
 			// QueryTokenParam. The ticket is redeemed once and discarded; it is
@@ -141,6 +142,18 @@ func isProxyRequest(c *gin.Context, clusterID uint) bool {
 }
 
 // isWebSocketUpgrade reports whether this request is opening a WebSocket.
+// acceptsWSTicket reports whether this request may authenticate with a ticket
+// on its query string: a GET WebSocket handshake, on a route the server named.
+// The headers alone were not enough — anyone holding a leaked ticket could add
+// Upgrade and Connection to a POST on any route and run it as the ticket's
+// owner.
+func (m *Manager) acceptsWSTicket(c *gin.Context) bool {
+	if c.Request.Method != http.MethodGet || !isWebSocketUpgrade(c.Request) {
+		return false
+	}
+	return len(m.ticketRoutes) == 0 || slices.Contains(m.ticketRoutes, c.FullPath())
+}
+
 func isWebSocketUpgrade(r *http.Request) bool {
 	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		return false
