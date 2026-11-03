@@ -115,23 +115,6 @@ func RequireAuthGated(m *Manager, verifier MachineTokenVerifier, gate SessionGat
 	}
 }
 
-// RequireRole rejects authenticated requests whose role does not match.
-// It must be chained after RequireAuth.
-func RequireRole(role string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		claims, ok := ClaimsFrom(c)
-		if !ok {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
-			return
-		}
-		if claims.Role != role {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient privileges"})
-			return
-		}
-		c.Next()
-	}
-}
-
 // ClaimsFrom retrieves the verified claims from a Gin context.
 func ClaimsFrom(c *gin.Context) (*Claims, bool) {
 	value, exists := c.Get(contextKey)

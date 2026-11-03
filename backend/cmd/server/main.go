@@ -265,6 +265,9 @@ func main() {
 		RateLimit:      rateLimit,
 		AllowedOrigins: cfg.AllowedOrigins,
 		PublicURL:      cfg.PublicURL,
+		// Republished from the settings by the router; the boot value guards
+		// the namespace from the first call.
+		AgentNamespaces: []string{cfg.AgentNamespace},
 	})
 
 	// TLS is resolved before the router is built: an agent's install package

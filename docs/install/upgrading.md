@@ -8,9 +8,9 @@ Pin an explicit tag rather than tracking `latest`, in three places:
 
 | Image | Set with | Read when |
 |---|---|---|
-| Management plane (`ghcr.io/kubemg/kubemg:0.17.0`) | `KUBEMG_IMAGE`/`KUBEMG_VERSION` in Compose, or the Deployment's `image:` in Kubernetes | The server starts |
-| Agent (`ghcr.io/kubemg/kubemg-agent:0.17.0`) | `KUBEMG_AGENT_IMAGE` | A package is rendered. Changing it affects *future* installs, not agents already running. |
-| Browser shell (`ghcr.io/kubemg/kubemg-shell:0.17.0`) | `KUBEMG_SHELL_IMAGE` | A shell is *started*. Changing it affects the next shell, not one already open. |
+| Management plane (`ghcr.io/kubemg/kubemg:0.17.1`) | `KUBEMG_IMAGE`/`KUBEMG_VERSION` in Compose, or the Deployment's `image:` in Kubernetes | The server starts |
+| Agent (`ghcr.io/kubemg/kubemg-agent:0.17.1`) | `KUBEMG_AGENT_IMAGE` | A package is rendered. Changing it affects *future* installs, not agents already running. |
+| Browser shell (`ghcr.io/kubemg/kubemg-shell:0.17.1`) | `KUBEMG_SHELL_IMAGE` | A shell is *started*. Changing it affects the next shell, not one already open. |
 
 All three are published as multi-arch (amd64 and arm64) images on a `v*` tag, after a vulnerability scan gate.
 
@@ -110,6 +110,15 @@ A release that asks something beyond pulling the image is listed here.
     - **A `KUBEMG_METRICS_ADDR` on the API's own port now refuses to boot**, naming both variables, instead of the API failing with "address already in use". A metrics address that is not loopback logs one warning; see [In a container](metrics.md#in-a-container).
     - **[GitOps sync state](../clusters/gitops.md)** is a new cluster page, read from Argo CD and Flux with no agent re-apply. Its live/desired diff needs a new *gitops* datasource with an Argo CD account token, its link into Argo CD needs the cluster's `argocd` console row, and drift can raise an alarm. None is needed for the page itself.
     - **A git checkout rebuilds its backend image with `--pull`** ([below](#the-backend-will-not-start-after-a-pull)), because the server now needs Go 1.26.10.
+- **0.17.1**, from 0.17.0: a security release, with no schema step, no new setting, and the tunnel protocol, the agent binary and the agent's roles unchanged. No agent re-apply. Upgrade every 0.17.0 install; the points below are what an existing setup may notice.
+    - **A grant below cluster-admin no longer reaches the agent's own namespace** (`kubemg-system` by default), and kubectl's cluster-wide Secret list (`kubectl get secrets -A`) is refused below cluster-admin; read Secrets one namespace at a time. The console's Secret list is unaffected, since it shows key names only. See [The agent's namespace is kubemg's, not a tenant's](../introduction/security-model.md#the-agents-namespace-is-kubemgs-not-a-tenants).
+    - **Check the agent namespace setting** if an agent was moved by hand: the namespaces guarded are the one in **Settings → Agent**, `KUBEMG_AGENT_NAMESPACE` and `kubemg-system`, and the agent does not report its own.
+    - **The browser shell starts only in a pod exactly as kubemg renders it.** A service mesh that injects sidecars into the agent's namespace now makes the shell refuse, naming why. Exclude that namespace from injection.
+    - **A proxied path kubemg and the API server could read differently is refused** (`403`, `refused_by: kubemg`): a percent-escaped character, a `.` or `..` or empty segment, a `#`, or an encoded `?`. kubectl never sends one; a script building API paths with `%2F` must stop. Discovery stays open to a namespace-scoped grant for reading only. See [Where namespace scope is enforced](../access/model.md#where-namespace-scope-is-enforced).
+    - **Every namespace a grant, a JIT request or an SSO mapping names must be a Kubernetes namespace name.** A new one is refused with `400`. An existing grant that names anything else stops that account's metrics and log reads with a message asking an administrator to correct it, so review grants after the upgrade if any were written by hand or by script.
+    - **Administrator routes read the role from the account on every call**, not from the session. An administrator demoted or disabled loses the admin pages at once rather than when their session expires.
+    - **An identity provider a super admin signs in through** can be changed or removed only by a super admin ([Single sign-on](../access/sso.md#setting-one-up)).
+    - **Log search for a namespace-scoped grant matches namespace, pod and container names exactly** (VictoriaLogs), so a search that used to return lines from a namespace whose name merely contained the granted one no longer does.
 
 An install that runs from a clone of the repository has one more thing to get right: see [Upgrading a git checkout](#upgrading-a-git-checkout).
 
@@ -124,7 +133,7 @@ A rollback does **not** undo:
 
 ## Documentation versioning
 
-This manual is versioned against release tags. An install running `0.17.0` matches the `0.17.0` docs; check the version selector.
+This manual is versioned against release tags. An install running `0.17.1` matches the `0.17.1` docs; check the version selector.
 
 ## Upgrading to 0.11.0
 

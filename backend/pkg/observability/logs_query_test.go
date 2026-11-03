@@ -22,9 +22,9 @@ func TestVictoriaLogsQueryNarrowsToTheSelector(t *testing.T) {
 	}, "")
 
 	for _, want := range []string{
-		`kubernetes.pod_namespace:"shop"`,
-		`kubernetes.pod_name:"checkout-7d9f"`,
-		`kubernetes.container_name:"server"`,
+		`kubernetes.pod_namespace:="shop"`,
+		`kubernetes.pod_name:="checkout-7d9f"`,
+		`kubernetes.container_name:="server"`,
 	} {
 		if !strings.Contains(query, want) {
 			t.Fatalf("query = %q, want it to contain %q", query, want)
@@ -37,11 +37,46 @@ func TestVictoriaLogsQueryNarrowsToTheSelector(t *testing.T) {
 func TestVictoriaLogsQueryScopesToGrantedNamespaces(t *testing.T) {
 	query := victoriaLogsQuery(logSelector{namespaces: []string{"team-a", "team-b"}}, "")
 
-	if !strings.Contains(query, `kubernetes.pod_namespace:("team-a" OR "team-b")`) {
+	if !strings.Contains(query, `kubernetes.pod_namespace:in("team-a","team-b")`) {
 		t.Fatalf("query = %q, want both granted namespaces alternated", query)
 	}
 	if query == "*" {
 		t.Fatal("a scoped search must never become a match-everything query")
+	}
+}
+
+// A phrase filter (`field:"team"`) matches `team` as a whole word anywhere in
+// the field, so it read `team-payments` too. Every name is matched exactly.
+func TestVictoriaLogsQueryNeverMatchesANamespaceAsAPhrase(t *testing.T) {
+	for _, sel := range []logSelector{
+		{namespaces: []string{"team"}},
+		{namespaces: []string{"team", "ops"}, pod: "web", container: "app"},
+	} {
+		query := victoriaLogsQuery(sel, "")
+		for _, field := range []string{"pod_namespace", "pod_name", "container_name"} {
+			if strings.Contains(query, "kubernetes."+field+`:"`) || strings.Contains(query, "kubernetes."+field+":(") {
+				t.Fatalf("query = %q matches %s as a phrase", query, field)
+			}
+		}
+	}
+}
+
+// Whatever the backend answered, a scoped search hands back only lines from
+// the scope's namespaces — and a line whose namespace could not be read is
+// not shown to be inside it.
+func TestWithinNamespacesDropsWhatTheScopeDoesNotCover(t *testing.T) {
+	entries := []LogEntry{
+		{Namespace: "team", Message: "mine"},
+		{Namespace: "team-payments", Message: "theirs"},
+		{Namespace: "", Message: "unknown"},
+		{Namespace: "ops", Message: "also mine"},
+	}
+	kept := withinNamespaces(append([]LogEntry(nil), entries...), []string{"team", "ops"})
+	if len(kept) != 2 || kept[0].Message != "mine" || kept[1].Message != "also mine" {
+		t.Fatalf("kept = %+v", kept)
+	}
+	if all := withinNamespaces(append([]LogEntry(nil), entries...), nil); len(all) != len(entries) {
+		t.Fatalf("an unscoped read dropped lines: %+v", all)
 	}
 }
 

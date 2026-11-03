@@ -106,7 +106,39 @@ any other cluster. See [a stolen kubeconfig](threat-model.md#a-leaked-kubeconfig
 | Part of a grant | Enforced by |
 | --- | --- |
 | Role (`view`/`edit`/`cluster-admin`) | The cluster's own RBAC, not re-checked locally |
-| Namespace scope | The proxy. A scoped grant is refused on a request that names no namespace or one outside its list, discovery paths excepted |
+| Namespace scope | The proxy. A scoped grant is refused on a request that names no namespace or one outside its list, discovery reads excepted. A path the API server would decode differently (percent escapes, dot or empty segments) is refused for every grant |
+| The agent's own namespace | The proxy. Below `cluster-admin`, every call into the namespace the agent runs in is refused, and so is a kubectl read of every Secret in the cluster at once. See below |
+
+## The agent's namespace is kubemg's, not a tenant's
+
+The namespace the agent is installed in holds three things no grant below
+`cluster-admin` may reach: the agent's ServiceAccount (it may impersonate any
+user and the `kubemg:cluster-admin` group), the agent's registration Secret
+(enough to stand in for the agent and receive every caller's traffic), and
+every person's browser-shell pod, each holding that person's kubeconfig.
+
+The built-in `edit` role that `kubemg:edit` is bound to can read Secrets, run a
+pod under any ServiceAccount and exec into pods, in every namespace. RBAC has
+no way to carve one namespace out of a ClusterRoleBinding, so the proxy does
+it:
+
+- Any call naming the agent's namespace is refused for a `view` or `edit`
+  grant, kubectl and console alike.
+- A kubectl read of every Secret in the cluster (`kubectl get secrets -A`) is
+  refused below `cluster-admin`, because its answer would carry the agent's
+  Secret. Read Secrets one namespace at a time. The console's own Secret list
+  is not affected: it shows key names only.
+- A browser shell is only seeded into, and attached to, a pod that matches
+  the one kubemg renders: one container running kubemg's image, command and
+  environment, two scratch volumes, kubemg's ServiceAccount with no token, no
+  init or ephemeral container, nothing privileged. Any other pod under the
+  shell's name is replaced; if the replacement still does not match (a mesh
+  that injects sidecars into the agent's namespace is the usual reason), the
+  shell refuses rather than writing the credential into it. Exclude the
+  agent's namespace from sidecar injection.
+- The guarded namespaces are the setting, the boot value and the default
+  `kubemg-system`. An agent moved by hand to a namespace none of those name is
+  not covered; keep the **Agent namespace** setting pointing where agents run.
 
 ## The direct-mode gap, stated plainly
 
