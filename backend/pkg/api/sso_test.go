@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -278,7 +280,9 @@ func TestCallbackWithUnknownStateRedirectsToConsole(t *testing.T) {
 
 func TestFlowStateIsSingleUse(t *testing.T) {
 	flows := newFlowStore()
-	flows.put("state", ssoFlow{providerID: 7, expiresAt: time.Now().Add(time.Minute)})
+	if err := flows.put("state", ssoFlow{providerID: 7, expiresAt: time.Now().Add(time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, ok := flows.take("state"); !ok {
 		t.Fatal("the first callback should find its flow")
@@ -290,7 +294,9 @@ func TestFlowStateIsSingleUse(t *testing.T) {
 
 func TestFlowStateExpires(t *testing.T) {
 	flows := newFlowStore()
-	flows.put("state", ssoFlow{providerID: 7, expiresAt: time.Now().Add(-time.Second)})
+	if err := flows.put("state", ssoFlow{providerID: 7, expiresAt: time.Now().Add(-time.Second)}); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, ok := flows.take("state"); ok {
 		t.Fatal("an expired flow must not be usable")
@@ -578,5 +584,63 @@ func TestOnlyASuperAdminChangesAProviderASuperAdminSignsInThrough(t *testing.T) 
 	provider["issuer_url"] = "https://idp3.example.com"
 	if rec := env.do(t, http.MethodPut, path, rootToken, provider); rec.Code != http.StatusOK {
 		t.Fatalf("super admin: want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Starting a sign-in needs no session, so the flows waiting on an IdP are
+// bounded: per address first, so one address cannot lock everyone else out,
+// and in total. A flow that finishes or expires gives its place back.
+func TestSSOFlowsAreBoundedPerAddress(t *testing.T) {
+	flows := newFlowStore()
+	live := time.Now().Add(time.Minute)
+	for i := range maxSSOFlowsPerSource {
+		if err := flows.put(fmt.Sprintf("s%d", i), ssoFlow{source: "203.0.113.7", expiresAt: live}); err != nil {
+			t.Fatalf("flow %d: %v", i, err)
+		}
+	}
+	if err := flows.put("one-too-many", ssoFlow{source: "203.0.113.7", expiresAt: live}); !errors.Is(err, errTooManySSOFlows) {
+		t.Fatalf("past the per-address bound: want errTooManySSOFlows, got %v", err)
+	}
+	if err := flows.put("elsewhere", ssoFlow{source: "198.51.100.1", expiresAt: live}); err != nil {
+		t.Fatalf("another address is not held to the first one's bound: %v", err)
+	}
+	if _, ok := flows.take("s0"); !ok {
+		t.Fatal("a stored flow should be found")
+	}
+	if err := flows.put("after-finish", ssoFlow{source: "203.0.113.7", expiresAt: live}); err != nil {
+		t.Fatalf("a finished flow should give its place back: %v", err)
+	}
+
+	// An expired flow is swept at the next insert past the interval.
+	expired := newFlowStore()
+	for i := range maxSSOFlowsPerSource {
+		_ = expired.put(fmt.Sprintf("e%d", i), ssoFlow{source: "203.0.113.9", expiresAt: time.Now().Add(-time.Second)})
+	}
+	expired.swept = time.Now().Add(-2 * ssoFlowSweepInterval)
+	if err := expired.put("fresh", ssoFlow{source: "203.0.113.9", expiresAt: live}); err != nil {
+		t.Fatalf("expired flows should have been swept: %v", err)
+	}
+	if len(expired.flows) != 1 || expired.perSource["203.0.113.9"] != 1 {
+		t.Fatalf("after the sweep: %d flows, %d for the address", len(expired.flows), expired.perSource["203.0.113.9"])
+	}
+}
+
+// The binding the console sends is handed back beside the session, so the tab
+// that started the sign-in can tell it from one somebody else started; a value
+// that is not a token is refused rather than echoed.
+func TestSSOLoginCarriesTheConsolesBinding(t *testing.T) {
+	env := newTestEnv(t)
+	provider := env.store.addProvider("Okta", db.ProtocolOIDC, true)
+
+	bad := env.do(t, http.MethodGet, providerPath(provider.ID, "/login?binding=%3Cscript%3E"), "", nil)
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("a malformed binding: want 400, got %d", bad.Code)
+	}
+
+	// A binding the console writes is not refused; the provider here has no
+	// reachable issuer, so the request stops later, at discovery.
+	good := env.do(t, http.MethodGet, providerPath(provider.ID, "/login?binding=tab-binding-0123456789abcdef"), "", nil)
+	if good.Code == http.StatusBadRequest {
+		t.Fatalf("a well-formed binding was refused: %s", good.Body.String())
 	}
 }

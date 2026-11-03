@@ -185,6 +185,7 @@ import {
   type GitopsObject,
   type GitopsState,
 } from './gitops'
+import { ssoBinding } from '../lib/ssoBinding'
 
 const TOKEN_KEY = 'kubemg.token'
 
@@ -540,11 +541,15 @@ export async function fetchSSOProviders(): Promise<SSOProviderSummary[]> {
 /**
  * Where the browser goes to start an interactive sign-in. The console's own
  * origin travels with it so the server knows where to hand the session back —
- * and refuses any origin it was not configured to trust.
+ * and refuses any origin it was not configured to trust. So does this tab's
+ * binding, which the server hands back beside the session so the callback can
+ * tell a sign-in this tab started from one it was sent (see lib/ssoBinding).
  */
 export function ssoLoginURL(providerId: number): string {
   const redirect = encodeURIComponent(window.location.origin)
-  return `${baseURL}/auth/sso/providers/${providerId}/login?redirect_uri=${redirect}`
+  const binding = ssoBinding()
+  const bound = binding ? `&binding=${encodeURIComponent(binding)}` : ''
+  return `${baseURL}/auth/sso/providers/${providerId}/login?redirect_uri=${redirect}${bound}`
 }
 
 /** LDAP has no redirect: the credentials are checked against the directory here. */

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,7 +42,27 @@ const (
 	ssoFlowTTL = 10 * time.Minute
 	// consoleCallbackPath is where the browser app finishes a federated sign-in.
 	consoleCallbackPath = "/auth/callback"
+
+	// maxSSOFlows and maxSSOFlowsPerSource bound the sign-ins waiting on an
+	// IdP. Starting one needs no session, so without a bound a loop on the
+	// login route grew the map for ten minutes per request. Per source first,
+	// so one address cannot fill the whole store and lock everyone else out;
+	// twenty is far past what a person clicking sign-in ever leaves behind.
+	maxSSOFlows          = 10000
+	maxSSOFlowsPerSource = 20
+	// ssoFlowSweepInterval is how often an insert walks the map for expired
+	// flows, rather than on every insert.
+	ssoFlowSweepInterval = time.Minute
 )
+
+// errTooManySSOFlows is the refusal past either bound.
+var errTooManySSOFlows = errors.New(
+	"too many sign-ins are waiting to finish from this address; try again in a few minutes")
+
+// ssoBindingPattern is the console's per-tab value that ties a sign-in to the
+// browser that started it. It is opaque to the server, which only checks that
+// it is a token and hands it back.
+var ssoBindingPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,128}$`)
 
 // ssoFlow is the half of a sign-in that must not travel with the browser: the
 // PKCE verifier, the nonce, and which provider and console the flow belongs to.
@@ -54,6 +75,16 @@ type ssoFlow struct {
 	// against the allowed origins when the flow started.
 	redirect  string
 	expiresAt time.Time
+	// source is the address that started the flow, for the per-source bound.
+	source string
+	// binding is the console's value for the tab that started the sign-in,
+	// handed back beside the session so that tab can tell a sign-in it
+	// started from one somebody else started and sent it the end of.
+	binding string
+	// samlRequestID is the ID of the AuthnRequest sent to a SAML IdP. The
+	// assertion has to answer it, so a response captured from another
+	// sign-in cannot be posted against this one.
+	samlRequestID string
 }
 
 // flowStore holds in-flight sign-ins.
@@ -66,25 +97,50 @@ type ssoFlow struct {
 // balancer need session affinity for the callback, or half of federated
 // sign-ins land on the replica that never saw the request start.
 type flowStore struct {
-	mu    sync.Mutex
-	flows map[string]ssoFlow
+	mu        sync.Mutex
+	flows     map[string]ssoFlow
+	perSource map[string]int
+	swept     time.Time
 }
 
-func newFlowStore() *flowStore { return &flowStore{flows: map[string]ssoFlow{}} }
+func newFlowStore() *flowStore {
+	return &flowStore{flows: map[string]ssoFlow{}, perSource: map[string]int{}}
+}
 
-func (f *flowStore) put(state string, flow ssoFlow) {
+// put stores a flow, or refuses it past either bound.
+func (f *flowStore) put(state string, flow ssoFlow) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	// Sweep on write rather than on a timer: the map only grows when someone is
-	// signing in, so that is exactly when it is worth walking.
+	// Expired flows are swept on write, at most once a minute: the map only
+	// grows when someone is signing in, so that is when it is worth walking,
+	// and walking it on every insert made a loop of inserts quadratic.
 	now := time.Now()
-	for key, existing := range f.flows {
-		if now.After(existing.expiresAt) {
-			delete(f.flows, key)
+	if now.Sub(f.swept) >= ssoFlowSweepInterval {
+		f.swept = now
+		for key, existing := range f.flows {
+			if now.After(existing.expiresAt) {
+				f.forget(key, existing)
+			}
 		}
 	}
+	if len(f.flows) >= maxSSOFlows || f.perSource[flow.source] >= maxSSOFlowsPerSource {
+		return errTooManySSOFlows
+	}
 	f.flows[state] = flow
+	f.perSource[flow.source]++
+	return nil
+}
+
+// forget removes a flow and its share of its source's bound. The caller holds
+// the lock.
+func (f *flowStore) forget(state string, flow ssoFlow) {
+	delete(f.flows, state)
+	if f.perSource[flow.source] <= 1 {
+		delete(f.perSource, flow.source)
+	} else {
+		f.perSource[flow.source]--
+	}
 }
 
 // take returns a flow and removes it, so a state is good for exactly one
@@ -97,7 +153,7 @@ func (f *flowStore) take(state string) (ssoFlow, bool) {
 	if !ok {
 		return ssoFlow{}, false
 	}
-	delete(f.flows, state)
+	f.forget(state, flow)
 	if time.Now().After(flow.expiresAt) {
 		return ssoFlow{}, false
 	}
@@ -214,6 +270,12 @@ func (s *server) startSSOLogin(c *gin.Context) {
 		return
 	}
 
+	binding := strings.TrimSpace(c.Query("binding"))
+	if binding != "" && !ssoBindingPattern.MatchString(binding) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "the sign-in's browser binding is not one the console writes"})
+		return
+	}
+
 	state, err := auth.NewStateToken()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not start the sign-in"})
@@ -223,6 +285,8 @@ func (s *server) startSSOLogin(c *gin.Context) {
 		providerID: provider.ID,
 		redirect:   redirect,
 		expiresAt:  time.Now().Add(ssoFlowTTL),
+		source:     c.ClientIP(),
+		binding:    binding,
 	}
 
 	var target string
@@ -252,7 +316,7 @@ func (s *server) startSSOLogin(c *gin.Context) {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 			return
 		}
-		if target, err = client.AuthURL(state); err != nil {
+		if target, flow.samlRequestID, err = client.AuthURL(state); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -262,7 +326,10 @@ func (s *server) startSSOLogin(c *gin.Context) {
 		return
 	}
 
-	s.ssoFlows.put(state, flow)
+	if err := s.ssoFlows.put(state, flow); err != nil {
+		s.failSSO(c, redirect, err.Error())
+		return
+	}
 	c.Redirect(http.StatusFound, target)
 }
 
@@ -331,7 +398,7 @@ func (s *server) ssoCallback(c *gin.Context) {
 			samlEntityID(*provider, settings.PublicURL),
 		)
 		if err == nil {
-			identity, err = client.Assertion(response)
+			identity, err = client.Assertion(response, flow.samlRequestID)
 		}
 
 	default:
@@ -352,11 +419,16 @@ func (s *server) ssoCallback(c *gin.Context) {
 	// The session goes back in the URL *fragment*, which a browser never sends
 	// to a server: a token in the query string would land in the access log of
 	// every proxy in front of the console and in the browser's own history.
+	//
+	// The binding rides beside it: the console accepts the session only in the
+	// tab that started this sign-in, so a callback URL somebody else started
+	// and sent on cannot sign the person who opens it into their account.
 	c.Redirect(http.StatusFound, fmt.Sprintf(
-		"%s%s#token=%s&expires_at=%s",
+		"%s%s#token=%s&expires_at=%s&binding=%s",
 		flow.redirect, consoleCallbackPath,
 		url.QueryEscape(session.Token),
 		url.QueryEscape(session.ExpiresAt.Format(time.RFC3339)),
+		url.QueryEscape(flow.binding),
 	))
 }
 
