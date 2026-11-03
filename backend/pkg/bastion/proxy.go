@@ -280,7 +280,7 @@ func (p *Proxy) Handle(c *gin.Context) {
 	parsed := ParsePath(path)
 	event.Namespace = parsed.Namespace
 	event.Resource = parsed.Resource
-	event.Name = parsed.Name
+	event.Name = ObjectName(parsed, event.Verb, path, nil)
 
 	// Past net/url's parameter limit the query reads as empty here, so a watch
 	// in it would be routed and recorded as a plain list, while an API server
@@ -412,7 +412,7 @@ func (p *Proxy) Handle(c *gin.Context) {
 
 	// The body is already whole here; ObjectName reads a create's name off it
 	// only when it is plain JSON, and leaves a compressed or protobuf answer be.
-	event.Name = ObjectName(parsed, event.Verb, resp)
+	event.Name = ObjectName(parsed, event.Verb, path, resp)
 	event.Status = resp.Status
 	event.Duration = time.Since(started)
 	p.auditor.Record(c.Request.Context(), event)
@@ -464,6 +464,7 @@ func (p *Proxy) CallWithHeader(
 ) (*Response, error) {
 	started := time.Now()
 	parsed := ParsePath(path)
+	verb := VerbFor(method, path)
 
 	event := Event{
 		At:                 started.UTC(),
@@ -471,12 +472,12 @@ func (p *Proxy) CallWithHeader(
 		Username:           user.Username,
 		ClusterID:          cluster.ID,
 		Cluster:            cluster.Name,
-		Verb:               VerbFor(method, path),
+		Verb:               verb,
 		Method:             method,
 		Path:               path,
 		Namespace:          parsed.Namespace,
 		Resource:           parsed.Resource,
-		Name:               parsed.Name,
+		Name:               ObjectName(parsed, verb, path, nil),
 		ImpersonatedUser:   ImpersonationUser(user),
 		ImpersonatedGroups: ImpersonationGroups(grant.K8sRole),
 	}
@@ -572,7 +573,7 @@ func (p *Proxy) CallWithHeader(
 	event.Diff = diffForAuditRow(auditDiff, resp.Status)
 	// Read off the body decodeBody already undid, so a create's name costs no
 	// second decode.
-	event.Name = ObjectName(parsed, event.Verb, resp)
+	event.Name = ObjectName(parsed, event.Verb, path, resp)
 	record(resp.Status, nil)
 	return resp, nil
 }
@@ -606,21 +607,22 @@ func (p *Proxy) Watch(
 ) (*Stream, error) {
 	started := time.Now()
 	parsed := ParsePath(path)
+	// A watch is its own verb in Kubernetes' vocabulary and in the audit
+	// policy's, so it is recorded as one rather than folded into a list.
+	verb := VerbFor(http.MethodGet, path)
 
 	event := Event{
-		At:        started.UTC(),
-		UserID:    user.ID,
-		Username:  user.Username,
-		ClusterID: cluster.ID,
-		Cluster:   cluster.Name,
-		// A watch is its own verb in Kubernetes' vocabulary and in the audit
-		// policy's, so it is recorded as one rather than folded into a list.
-		Verb:               VerbFor(http.MethodGet, path),
+		At:                 started.UTC(),
+		UserID:             user.ID,
+		Username:           user.Username,
+		ClusterID:          cluster.ID,
+		Cluster:            cluster.Name,
+		Verb:               verb,
 		Method:             http.MethodGet,
 		Path:               path,
 		Namespace:          parsed.Namespace,
 		Resource:           parsed.Resource,
-		Name:               parsed.Name,
+		Name:               ObjectName(parsed, verb, path, nil),
 		ImpersonatedUser:   ImpersonationUser(user),
 		ImpersonatedGroups: ImpersonationGroups(grant.K8sRole),
 	}
@@ -1032,12 +1034,14 @@ func offeredSubprotocols(parsed APIPath) []string {
 }
 
 // wantsBodyStream reports whether a call returns a body that keeps arriving —
-// a watch, or a followed log.
+// a watch, or a followed log. Only a collection watches: the API server serves
+// a GET on a named object with its get handler, one answer whatever the query
+// says, so it takes the request/response path.
 func wantsBodyStream(parsed APIPath, path string) bool {
-	if parsed.Subresource == "log" && followRequested(path) {
-		return true
+	if parsed.Subresource == "log" {
+		return followRequested(path)
 	}
-	return watchRequested(path)
+	return parsed.Name == "" && watchRequested(path)
 }
 
 // unsupportedStream flags what the tunnel still cannot carry.

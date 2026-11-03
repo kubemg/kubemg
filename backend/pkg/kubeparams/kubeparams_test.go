@@ -97,3 +97,47 @@ func TestQuery(t *testing.T) {
 		t.Fatalf("well-formed pairs must survive a malformed one, got %v", got)
 	}
 }
+
+// SelectedName follows the request-info resolver: the query decoded as
+// ListOptions, an exact metadata.name term, and a name that could be a path
+// segment. What it names is what RBAC sees as the request's name.
+func TestSelectedName(t *testing.T) {
+	cases := []struct {
+		query string
+		want  string
+	}{
+		// kubectl get pod web-0 -w, and the same read without the watch.
+		{"fieldSelector=metadata.name%3Dweb-0&watch=true", "web-0"},
+		{"fieldSelector=metadata.name%3Dweb-0", "web-0"},
+		{"fieldSelector=metadata.name%3D%3Dweb-0", "web-0"},
+		// An exact name term among others still names the object.
+		{"fieldSelector=status.phase%3DRunning%2Cmetadata.name%3Dweb-0", "web-0"},
+		{"fieldSelector=metadata.name%3Dweb-0&labelSelector=app%3Dweb&limit=5", "web-0"},
+		// Anything short of an exact match names nothing.
+		{"fieldSelector=metadata.name%21%3Dweb-0", ""},
+		{"fieldSelector=status.phase%3DRunning", ""},
+		{"fieldSelector=metadata.namespace%3Dteam-a", ""},
+		{"labelSelector=metadata.name%3Dweb-0", ""},
+		{"watch=true", ""},
+		{"", ""},
+		// A name that could not be a path segment is not taken.
+		{"fieldSelector=metadata.name%3D..", ""},
+		{"fieldSelector=metadata.name%3Da%2Fb", ""},
+		{"fieldSelector=metadata.name%3Da%25b", ""},
+		// The selector has to parse, and so does every other list option: the
+		// resolver names nothing when any of them fails to decode.
+		{"fieldSelector=metadata.name", ""},
+		{"fieldSelector=metadata.name%3Dweb-0&limit=many", ""},
+		{"fieldSelector=metadata.name%3Dweb-0&timeoutSeconds=soon", ""},
+		// A malformed pair is dropped before decoding, as the API server's
+		// URL.Query() drops it.
+		{"bad=%zz&fieldSelector=metadata.name%3Dweb-0", "web-0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			if got := SelectedName(Query("/api/v1/namespaces/team-a/pods?" + tc.query)); got != tc.want {
+				t.Fatalf("SelectedName(%q) = %q, want %q", tc.query, got, tc.want)
+			}
+		})
+	}
+}

@@ -8,6 +8,11 @@ package kubeparams
 import (
 	"net/url"
 	"strings"
+
+	"k8s.io/apimachinery/pkg/api/validate/content"
+	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
+	metainternalversionscheme "k8s.io/apimachinery/pkg/apis/meta/internalversion/scheme"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // MaxParams is net/url's default limit on the parameters of one query. Past
@@ -47,4 +52,27 @@ func Bool(query url.Values, name string) bool {
 		return false
 	}
 	return values[0] != "0" && !strings.EqualFold(values[0], "false")
+}
+
+// SelectedName is the object a list or watch addresses through its field
+// selector, read as the API server's request-info resolver reads it: the
+// query decoded as ListOptions, then an exact metadata.name term, kept only if
+// it could be a path segment. RBAC sees that name, so a resourceNames rule
+// applies to the call, and it is how kubectl watches one object
+// (`kubectl get pod web-0 -w` sends fieldSelector=metadata.name=web-0). A query
+// any of whose list options fails to decode names nothing, as it names nothing
+// to the resolver.
+func SelectedName(query url.Values) string {
+	var opts metainternalversion.ListOptions
+	if err := metainternalversionscheme.ParameterCodec.DecodeParameters(query, metav1.SchemeGroupVersion, &opts); err != nil {
+		return ""
+	}
+	if opts.FieldSelector == nil {
+		return ""
+	}
+	name, ok := opts.FieldSelector.RequiresExactMatch("metadata.name")
+	if !ok || len(content.IsPathSegmentName(name)) > 0 {
+		return ""
+	}
+	return name
 }
