@@ -4,7 +4,7 @@
 make verify
 ```
 
-That is the gate. It runs, in order: `manifest-check`, `chart-test`, `backend-vet`,
+That is the gate. It runs, in order: `manifest-check`, `chart-test`, `images-check`, `backend-vet`,
 `backend-test`, `backend-build`, `agent-vet`, `agent-test`, `agent-build`,
 `cli-vet`, `cli-test`, `cli-build`, `frontend-lint`, `frontend-test`, `frontend-contrast`, `frontend-build` and
 `docs-build`. Nothing is proposed for merge without it, and on Apple Silicon it
@@ -20,16 +20,16 @@ docker compose -f docker-compose.ci.yml run --rm frontend-build
 ```
 
 **This is not a local-only convenience.** `.github/workflows/pr-checks.yml`
-runs every one of those twelve services as its own check, `make verify (<service>)`,
+runs every one of those sixteen services as its own check, `make verify (<service>)`,
 on every pull request into `dev` or `master` and again on push — the exact command a
 contributor runs locally, nothing duplicated into the workflow itself. A PR
 that fails to compile, fails `go vet`, breaks a test, or fails lint shows a red
-check with that service's name; a clean PR shows all twelve green. This runs
+check with that service's name; a clean PR shows all sixteen green. This runs
 alongside, and independently of, the security-focused jobs in the same
 workflow (gitleaks, the two Trivy scans, govulncheck, the documentation build)
 — those answer "is this safe to merge", this answers "does it work".
 
-## The five gates that are not ordinary tests
+## The six gates that are not ordinary tests
 
 **`make manifest-check`** diffs `deploy/kustomize/base/` against the copy
 embedded in `backend/pkg/agentpkg/base/`. The manifests exist twice on purpose —
@@ -60,6 +60,18 @@ rather than text.
 heading that has since been renamed is the failure mode a manual actually has,
 so `mkdocs.yml` promotes it from informational to a warning and the strict build
 turns it into a failure. See [Writing documentation](docs.md).
+
+**`make images-check`** holds `make save-images` to what an install actually
+pulls, by running `hack/images-check.sh` in the pinned `helm-unittest` image.
+An air-gapped site installs from that bundle and nothing else, and the image
+names live in several places: `SAVE_IMAGES` in the `Makefile`, the server's
+built-in defaults (`agentpkg.DefaultImage`, `shell.DefaultImage`,
+`defaultDebugImage`), the chart and `deploy/compose/docker-compose.yml`. The
+script reads every one of them, renders the chart with and without
+`global.imageRegistry`, and fails on an image an install pulls that the bundle
+lacks, an image the bundle carries that no install pulls, or a mirrored path
+that is not the bundle's. A release cut that bumps the version in one place and
+not another fails here too.
 
 **`make agent-image-check` / `make image-check`** build the published image
 matrix (amd64 + arm64) without producing output. They are not in `verify`

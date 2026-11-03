@@ -125,6 +125,7 @@ jobs:
         service:
           - manifest-check
           - chart-test
+          - images-check
           - backend-vet
           - backend-test
           - backend-build
