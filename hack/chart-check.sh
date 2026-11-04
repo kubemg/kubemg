@@ -20,9 +20,12 @@ fi
 # with its default in docs/install/environment.md, where an operator finds it
 # and sets it through extraEnv. One with neither is a setting nobody installing
 # from the chart can know exists. A row names its variables in its first cell.
+# The file is read as one line, because gofmt puts a call's arguments on the
+# next line once they grow long, and a variable named there is read all the
+# same.
 config=backend/pkg/config/config.go
 reference=docs/install/environment.md
-names=$(grep -o 'env[A-Za-z]*("[A-Z][A-Z0-9_]*"' "$config" | cut -d '"' -f 2 | sort -u)
+names=$(tr '\n' ' ' <"$config" | grep -o 'env[A-Za-z]*([[:space:]]*"[A-Z][A-Z0-9_]*"' | cut -d '"' -f 2 | sort -u)
 if [ -z "$names" ]; then
 	echo "could not read the variables $config reads" >&2
 	exit 1
