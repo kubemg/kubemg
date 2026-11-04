@@ -6,6 +6,7 @@ import type { BannerTone, Branding } from '../../api/types'
 import { BANNER_TONE_CLASS, bannerTone, hasBanner } from '../../lib/branding'
 import { Button, Field, Notice, Panel, Select, TextInput } from '../../components/primitives'
 import { Lockup } from '../../components/Mark'
+import { OrganisationIdentityView } from '../../components/OrganisationIdentity'
 import { SettingsAside, SettingsLayout } from '../../components/settings/SettingsLayout'
 import { useBranding } from '../../state/branding-context'
 import { useUnsavedGuard } from '../../lib/unsavedGuard'
@@ -161,7 +162,7 @@ export function BrandingSettings() {
           <Field
             label="Organisation name"
             htmlFor="organisation_name"
-            hint="Shown beside the lockup on the sign-in page and in the footer. Leave it empty for none."
+            hint="Shown beside the lockup on the sign-in page and in the sidebar. Leave it empty for none."
           >
             <TextInput
               id="organisation_name"
@@ -305,13 +306,7 @@ function Preview({ name, mark }: { name: string; mark: string }) {
       <p className="label">On the sign-in page</p>
       <div className="flex items-center gap-3 rounded-control bg-raised px-4 py-3">
         <Lockup className="text-[17px] text-fg" />
-        {name || mark ? (
-          <>
-            <span aria-hidden="true" className="h-5 w-px shrink-0 bg-line" />
-            {mark ? <img src={mark} alt="" className="size-6 shrink-0 object-contain" /> : null}
-            {name ? <span className="min-w-0 truncate text-[13px] text-muted">{name}</span> : null}
-          </>
-        ) : null}
+        <OrganisationIdentityView tone="page" name={name} mark={mark} />
       </div>
     </div>
   )

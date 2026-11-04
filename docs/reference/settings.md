@@ -247,7 +247,7 @@ Branding differs from a setting in three ways:
 
 | Field | Bound | Notes |
 |---|---|---|
-| `organisation_name` | 60 characters | Drawn beside the `kubemg` lockup, never instead of it. |
+| `organisation_name` | 60 characters | Drawn beside the `kubemg` lockup — on the sign-in page and at the top of the sidebar — never instead of it. |
 | `organisation_mark` | 64 KB decoded | A base64 `data:` URI. **A URL is refused** (an air-gapped console cannot fetch it, and a remote image would beacon from the sign-in page). PNG, JPEG, GIF and WebP only; **SVG is refused** because it can carry script. |
 | `banner_text` | 120 characters | Empty means no banner, which is the default. Whitespace runs are folded to one space — a pasted newline would push every page's content down. |
 | `banner_tone` | `neutral`, `caution`, `critical` | A tone stored without text is not reported as a banner. |
