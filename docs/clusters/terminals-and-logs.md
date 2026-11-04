@@ -148,8 +148,8 @@ Under **Admin → Agent settings**:
 | --- | --- | --- |
 | Offer a browser shell | `KUBEMG_SHELL_ENABLED` | on |
 | Shell image | `KUBEMG_SHELL_IMAGE` | `ghcr.io/kubemg/kubemg-shell:<version>` |
-| Idle timeout | — | 60 minutes |
-| Maximum lifetime | — | 8 hours |
+| Idle timeout | - | 60 minutes |
+| Maximum lifetime | - | 8 hours |
 
 Turning the shell off refuses **new** shells and leaves running ones alone. A server started without a shell image cannot be made to offer one from the database.
 

@@ -263,7 +263,7 @@ export function PodTerminal({
         socket.onclose = (event) => {
           setStatus((current) => (current === 'error' ? current : 'closed'))
           if (event.reason) setDetail(event.reason)
-          term.write('\r\n\x1b[90m— session ended —\x1b[0m\r\n')
+          term.write('\r\n\x1b[90m- session ended -\x1b[0m\r\n')
         }
 
         typed = term.onData((data) => send(CHANNEL_STDIN, encoder.encode(data)))

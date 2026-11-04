@@ -117,7 +117,7 @@ func (t Target) Validate() error {
 			return fmt.Errorf("Argo CD is read with an account token: choose bearer authentication")
 		}
 		if strings.TrimSpace(t.Credential) == "" {
-			return fmt.Errorf("Argo CD needs the account token — an account with the apiKey capability, " +
+			return fmt.Errorf("Argo CD needs the account token - an account with the apiKey capability, " +
 				"bound to role:readonly")
 		}
 	}
@@ -189,7 +189,7 @@ func (t Target) Endpoint() string {
 func RefuseUserinfo(raw, fields string) error {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err == nil && parsed.User != nil {
-		return fmt.Errorf("leave the username and password out of the address — put them in %s", fields)
+		return fmt.Errorf("leave the username and password out of the address - put them in %s", fields)
 	}
 	return nil
 }

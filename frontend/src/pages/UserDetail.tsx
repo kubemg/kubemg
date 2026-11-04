@@ -180,7 +180,7 @@ function Identity({
   async function expire() {
     const ok = await confirm({
       title: 'Expire password',
-      body: `${user.username} has to choose a new password before doing anything else — at their next sign-in, or at their next click if they are signed in now. The current password still signs them in once, to get to that screen. Kubeconfigs and command-line sessions they hold are not affected; revoke those separately if the password may have leaked.${user.email ? ` They are told by email at ${user.email} when a mail relay is configured.` : ''}`,
+      body: `${user.username} has to choose a new password before doing anything else - at their next sign-in, or at their next click if they are signed in now. The current password still signs them in once, to get to that screen. Kubeconfigs and command-line sessions they hold are not affected; revoke those separately if the password may have leaked.${user.email ? ` They are told by email at ${user.email} when a mail relay is configured.` : ''}`,
       confirmLabel: 'Expire',
       tone: 'danger',
     })
@@ -204,7 +204,7 @@ function Identity({
   async function reset() {
     const ok = await confirm({
       title: 'Reset second factor',
-      body: `${user.username} loses every factor and recovery code they hold. Their next sign-in is password-only — or, if your policy requires a factor, goes straight to setting up a new one. Do this for somebody who lost their phone, after confirming it is them.`,
+      body: `${user.username} loses every factor and recovery code they hold. Their next sign-in is password-only - or, if your policy requires a factor, goes straight to setting up a new one. Do this for somebody who lost their phone, after confirming it is them.`,
       confirmLabel: 'Reset',
       tone: 'danger',
     })
@@ -265,7 +265,7 @@ function Identity({
             ? // Recorded from this release onwards; a sign-in that already
               // happened has no address left to go and find.
               'Not recorded for that sign-in'
-            : '—')
+            : '-')
         }
         data={Boolean(user.last_login_addr)}
       />
@@ -328,7 +328,7 @@ function Identity({
                   <span className="font-data">{user.slack_user_id}</span>
                 </>
               ) : (
-                <span className="text-muted">Not linked — a Slack click by this person decides nothing</span>
+                <span className="text-muted">Not linked - a Slack click by this person decides nothing</span>
               )}
             </p>
           </div>
@@ -487,7 +487,7 @@ function Credentials({ rows, live }: { rows: IssuedKubeconfig[]; live: number })
   return (
     <Panel
       title={live === 0 ? 'No live kubeconfig' : `${live} live kubeconfig${live === 1 ? '' : 's'}`}
-      description="A kubeconfig is a file somebody already has. Removing a grant does not take one back — revoking it does."
+      description="A kubeconfig is a file somebody already has. Removing a grant does not take one back - revoking it does."
       actions={
         <Link
           to="/admin/credentials"
@@ -517,7 +517,7 @@ function Credentials({ rows, live }: { rows: IssuedKubeconfig[]; live: number })
               <Row key={row.id}>
                 <Td className="truncate font-data text-fg">{row.cluster_name}</Td>
                 <Td className="text-[12.5px] text-muted">
-                  {row.k8s_role ?? '—'}
+                  {row.k8s_role ?? '-'}
                   {row.namespace ? ` · ${row.namespace}` : ''}
                 </Td>
                 <Td>
@@ -576,7 +576,7 @@ function Sessions({ rows }: { rows: TerminalSession[] }) {
                 <Td className="truncate font-data text-fg">{row.cluster}</Td>
                 <Td className="truncate font-data text-[12.5px] text-muted">
                   {row.namespace ? `${row.namespace}/` : ''}
-                  {row.pod_name ?? '—'}
+                  {row.pod_name ?? '-'}
                   {row.container_name ? ` · ${row.container_name}` : ''}
                 </Td>
                 <Td className="text-[12.5px] text-muted" title={formatInstant(row.started_at)}>

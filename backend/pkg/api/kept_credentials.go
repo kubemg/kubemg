@@ -15,7 +15,7 @@ import (
 
 // errRetypeCredential is the refusal when a kept credential would follow a
 // changed destination.
-const errRetypeCredential = "enter the credential again — a stored credential is kept only for the host it was given for"
+const errRetypeCredential = "enter the credential again - a stored credential is kept only for the host it was given for"
 
 // sameOrigin reports whether two URLs name the same scheme, host and port, the
 // port defaulted from the scheme. Either one unparseable is not the same.

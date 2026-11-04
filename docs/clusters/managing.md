@@ -53,7 +53,7 @@ The cluster as an installation:
 
 An identity card (Kubernetes version, your role, your namespaces, whether calls are proxied), four summary cards (Deployments, StatefulSets, DaemonSets, Pods), a **needs attention** list, and CPU and memory history. The numbers come from the same logic as Explore's pilot header ([Browsing resources](explore.md#the-pilot-header)), so a count here matches the one a click away, and each card links to the list it summarises.
 
-!!! info "Screenshot pending — `cluster-dashboard.png`"
+!!! info "Screenshot pending - `cluster-dashboard.png`"
     A cluster dashboard: the connection chain as the page's masthead, with capacity below it read live from the cluster's Metrics API.
 
 ## Node capacity

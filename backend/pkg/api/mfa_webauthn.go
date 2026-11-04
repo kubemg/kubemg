@@ -98,7 +98,7 @@ func refuseForeignOrigin(c *gin.Context, status webauthnStatus) bool {
 		return false
 	}
 	c.JSON(http.StatusConflict, gin.H{
-		"error": fmt.Sprintf("security keys answer to %s, and this page was opened at %s — sign in there to use one",
+		"error": fmt.Sprintf("security keys answer to %s, and this page was opened at %s - sign in there to use one",
 			status.origin, origin),
 	})
 	return true

@@ -1490,7 +1490,7 @@ export function Explore() {
         </div>
 
         <p className="text-[12px] text-muted">
-          Read live through the agent tunnel under your own identity — the cluster&rsquo;s RBAC
+          Read live through the agent tunnel under your own identity - the cluster&rsquo;s RBAC
           decides what comes back, and every read is in the audit trail. Secrets are listed as
           metadata only: a value leaves the cluster one key at a time, only when asked for, and
           only for an account a super admin has granted that.

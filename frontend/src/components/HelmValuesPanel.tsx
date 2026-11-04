@@ -299,7 +299,7 @@ export function HelmValuesPanel({
               onChange={(event) => setReuseValues(event.target.checked)}
             />
             <span className="text-[13px] text-fg">
-              Keep this release's current values — otherwise the values below are sent with the new
+              Keep this release's current values - otherwise the values below are sent with the new
               chart.
             </span>
           </label>
@@ -319,7 +319,7 @@ export function HelmValuesPanel({
       <p className="text-[12px] text-muted">
         {editing || upgrading
           ? 'Rendered and written through the agent tunnel under your own identity, exactly as helm upgrade would. The cluster’s RBAC decides whether you may, and every object it writes is its own row in the audit trail.'
-          : 'These are the values supplied at install or upgrade — what helm get values shows — not the chart’s defaults merged into them.'}
+          : 'These are the values supplied at install or upgrade - what helm get values shows - not the chart’s defaults merged into them.'}
       </p>
     </>
   )

@@ -177,7 +177,7 @@ func TestEventGroupingReadsTheNewEventShape(t *testing.T) {
 	// The series count is the firing count, and without reading it this row
 	// would say 1 for something that happened seven times.
 	if groups[0].Object.Name != "queue-0" {
-		t.Fatalf("first group = %q, want the newest — the series event", groups[0].Object.Name)
+		t.Fatalf("first group = %q, want the newest - the series event", groups[0].Object.Name)
 	}
 	if groups[0].Count != 7 {
 		t.Fatalf("count = %d, want the series count", groups[0].Count)
@@ -272,7 +272,7 @@ func TestWalkEventPagesStopsOnEmptyContinue(t *testing.T) {
 		t.Fatal("expected a clean read")
 	}
 	if len(*asked) != 1 {
-		t.Fatalf("requests = %d, want one — an empty continue ends the collection", len(*asked))
+		t.Fatalf("requests = %d, want one - an empty continue ends the collection", len(*asked))
 	}
 	if budget.exhausted {
 		t.Fatal("a completed collection is not an exhausted budget")

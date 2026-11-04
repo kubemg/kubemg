@@ -556,7 +556,7 @@ export function AppShell({
             {/* The organisation sits beside the wordmark, outside the link:
                 the link goes to the fleet, and its name is the console's. */}
             <div className="flex h-16 min-w-0 shrink-0 items-center gap-3 px-5">
-              <Link to="/" className="shrink-0 text-rail-fg" title="All clusters" aria-label="kubemg — all clusters">
+              <Link to="/" className="shrink-0 text-rail-fg" title="All clusters" aria-label="kubemg - all clusters">
                 <Wordmark className="text-[22px]" />
               </Link>
               <OrganisationIdentity tone="rail" />

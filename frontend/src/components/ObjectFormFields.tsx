@@ -463,7 +463,7 @@ function WorkloadFields({
 
       <Group
         title="Security"
-        hint="On, the manifest declares non-root and forbids privilege escalation — what the workload posture scan reads. An image whose own USER is root will refuse to start under it, which is the point: change the image rather than the manifest."
+        hint="On, the manifest declares non-root and forbids privilege escalation - what the workload posture scan reads. An image whose own USER is root will refuse to start under it, which is the point: change the image rather than the manifest."
       >
         <label className="flex items-center gap-2 text-[13px] text-fg">
           <input
@@ -631,7 +631,7 @@ function IngressFields({
           <Field
             label="Ingress class"
             htmlFor={`${id}-class`}
-            hint="Has to name a controller this cluster runs — the IngressClass list says which."
+            hint="Has to name a controller this cluster runs - the IngressClass list says which."
           >
             <TextInput
               id={`${id}-class`}

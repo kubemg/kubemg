@@ -240,7 +240,7 @@ export function MfaCodeStep({
       <div className="flex flex-col gap-4">
         <h2 className="text-[22px] font-bold tracking-[-0.02em] text-fg">Signed in with a recovery code</h2>
         <Notice tone={left <= 3 ? 'warn' : 'info'}>
-          That code is spent. {left === 0 ? 'You have none left' : `You have ${left} left`} — make new
+          That code is spent. {left === 0 ? 'You have none left' : `You have ${left} left`} - make new
           ones from your profile, and set up your factor again if the phone or key is gone.
         </Notice>
         <Button type="button" variant="primary" className="h-10 w-full" onClick={() => void onSession(finished)}>
@@ -277,7 +277,7 @@ export function MfaCodeStep({
         <div>
           <h2 className="text-[22px] font-bold tracking-[-0.02em] text-fg">Two-factor check</h2>
           <p className="mt-1.5 text-[13px] text-muted">
-            Use the security key or passkey you registered for kubemg — touch the key, or confirm on
+            Use the security key or passkey you registered for kubemg - touch the key, or confirm on
             this device when the browser asks.
           </p>
         </div>
@@ -517,7 +517,7 @@ export function RecoveryCodes({
   return (
     <div className="flex flex-col gap-4">
       <Notice tone="warn">
-        Save these recovery codes now — they are not shown again. Each signs in once if you lose your
+        Save these recovery codes now - they are not shown again. Each signs in once if you lose your
         phone or key. Keep them somewhere other than the phone or key itself.
       </Notice>
       <CodeBlock value={codes.join('\n')} label="Recovery codes" />

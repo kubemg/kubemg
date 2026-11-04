@@ -49,7 +49,7 @@ describe('CapacityRing', () => {
       />,
     )
     expect(screen.getByRole('meter').getAttribute('aria-valuenow')).toBeNull()
-    expect(screen.getByText('—')).toBeTruthy()
+    expect(screen.getByText('-')).toBeTruthy()
   })
 })
 

@@ -15,7 +15,7 @@ A datasource is stored per cluster **and per kind**: `metrics`, `logs`, `alerts`
     kubemg asks the cluster's API server to proxy to a Service, down the agent tunnel. Nothing has to be exposed outside the cluster, and the call is impersonated and audited like every other tunnel read. This is the usual shape for kube-prometheus-stack or a VictoriaMetrics cluster install.
 
     - A credential is pointless here and is flagged: the cluster's API server makes the onward call, so kubemg cannot attach an `Authorization` header. If the backend needs auth, use `direct`. Argo CD is the exception: its token travels as Argo CD's session cookie, which the Service proxy passes on.
-    - It needs a connected agent. Registering one on a **direct-mode** cluster is refused with `409 Conflict`: *"an in-cluster datasource is reached through the agent tunnel, which a direct-mode cluster does not have — give its external address instead"*.
+    - It needs a connected agent. Registering one on a **direct-mode** cluster is refused with `409 Conflict`: *"an in-cluster datasource is reached through the agent tunnel, which a direct-mode cluster does not have - give its external address instead"*.
 
 === "direct"
 

@@ -203,7 +203,7 @@ func validateOkta(provider *db.SSOProviderConfig) error {
 			// A custom authorization server.
 		default:
 			return fmt.Errorf(
-				"%s is not an Okta issuer — use https://%s for the org authorization server, "+
+				"%s is not an Okta issuer - use https://%s for the org authorization server, "+
 					"or https://%s/oauth2/{server id} (for example /oauth2/default) for a custom one",
 				provider.IssuerURL, u.Host, u.Host,
 			)
@@ -238,7 +238,7 @@ func oktaHost(u *url.URL) error {
 	for _, suffix := range oktaAdminSuffixes {
 		if org, ok := strings.CutSuffix(host, suffix); ok && org != "" {
 			return fmt.Errorf(
-				"%s is the Okta admin console — use your org's own domain, https://%s",
+				"%s is the Okta admin console - use your org's own domain, https://%s",
 				host, org+strings.TrimPrefix(suffix, "-admin"),
 			)
 		}

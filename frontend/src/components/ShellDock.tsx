@@ -213,7 +213,7 @@ export function ShellDock() {
 
         {view?.kind === 'starting' ? (
           <DockMessage>
-            The shell is starting{view.message ? ` — the cluster reports ${view.message}` : ''}. A node
+            The shell is starting{view.message ? ` - the cluster reports ${view.message}` : ''}. A node
             that has never pulled this image takes a moment.
           </DockMessage>
         ) : null}

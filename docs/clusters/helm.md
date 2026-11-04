@@ -6,7 +6,7 @@ A Helm 3 release is a `Secret` labelled `owner=helm`. kubemg reads those Secrets
 
 ## Reading releases
 
-The list shows each release once, at its **highest revision** — the one describing what is installed.
+The list shows each release once, at its **highest revision** - the one describing what is installed.
 
 Reading a release means reading a Secret, and the built-in `view` role excludes Secrets. A `view` grant is therefore refused here in the cluster's own words. That is the correct answer, not a gap. In agent mode you need `edit` or `cluster-admin` to see releases.
 
@@ -57,7 +57,7 @@ Install from a [registered repository](#chart-repositories). The version is reso
 
 | Request | Answer |
 |---|---|
-| A revision Helm has pruned | `404` ("has no revision `<n>` — Helm may have pruned it") |
+| A revision Helm has pruned | `404` ("has no revision `<n>` - Helm may have pruned it") |
 | The current revision | `409` ("already the current one") |
 | A revision with no stored manifest (old, or written by the values-only fallback) | `409` naming the reason |
 

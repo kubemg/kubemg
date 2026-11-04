@@ -2891,7 +2891,7 @@ export function queryError(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err) && !(err.response?.data as { error?: string } | undefined)?.error) {
     if (err.response?.status === 404) {
       return (
-        'This kubemg server has no history endpoint — it is running a build older ' +
+        'This kubemg server has no history endpoint - it is running a build older ' +
         'than this page. Restart the backend so it picks up the current code.'
       )
     }

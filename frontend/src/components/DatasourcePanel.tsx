@@ -262,7 +262,7 @@ export function DatasourcePanel({
 }
 
 const DESCRIPTION =
-  "Where this cluster's history, alerts and GitOps desired state live. kubemg's live meters read the cluster's own Metrics API, which keeps about two minutes — anything over time comes from here."
+  "Where this cluster's history, alerts and GitOps desired state live. kubemg's live meters read the cluster's own Metrics API, which keeps about two minutes - anything over time comes from here."
 
 const KIND_ICON = {
   metrics: Activity,
@@ -411,7 +411,7 @@ function Discovered({
       {candidates.length === 0 ? (
         <p className="px-4 pb-3 text-[12.5px] leading-relaxed text-muted">
           Nothing recognisable is running here. kubemg looks for VictoriaMetrics, Prometheus,
-          Thanos, Mimir, VictoriaLogs and Loki by Service name and port — a backend behind an
+          Thanos, Mimir, VictoriaLogs and Loki by Service name and port - a backend behind an
           unusual name still works, entered by hand.
         </p>
       ) : (
@@ -749,7 +749,7 @@ export function DatasourceSheet({
         <Notice tone="warn">
           {cluster.connection_mode === 'agent'
             ? 'No agent is attached right now, so this cannot be checked until one connects. It can still be saved.'
-            : 'This cluster is registered in direct mode, so it has no tunnel — an in-cluster source cannot be reached and will be refused. Give the external address instead.'}
+            : 'This cluster is registered in direct mode, so it has no tunnel - an in-cluster source cannot be reached and will be refused. Give the external address instead.'}
         </Notice>
       ) : null}
 
@@ -825,7 +825,7 @@ export function DatasourceSheet({
             />
             <span>
               Skip TLS verification. An internal certificate is a reason to trust its CA, not a
-              reason to stop checking — leave this off unless nothing else works.
+              reason to stop checking - leave this off unless nothing else works.
             </span>
           </label>
         </>
@@ -1003,7 +1003,7 @@ function RuleLabelsField({
     <Field
       label="Rule labels"
       htmlFor="rule_labels"
-      hint="Labels every alarm's PrometheusRule carries, so the cluster's Prometheus loads it — its spec.ruleSelector. kube-prometheus-stack selects release=<its release name>."
+      hint="Labels every alarm's PrometheusRule carries, so the cluster's Prometheus loads it - its spec.ruleSelector. kube-prometheus-stack selects release=<its release name>."
     >
       <div className="flex flex-col gap-2">
         <div className="flex gap-2">

@@ -245,19 +245,19 @@ var postureRules = map[postureRuleID]postureRuleInfo{
 // compliant", it is "clean on the four controls this happens to check", and
 // this is the list of what else those two profiles actually require.
 var postureUncheckedPSSControls = []string{
-	"Baseline — HostProcess Containers",
-	"Baseline — Capabilities (must not add beyond the default set)",
-	"Baseline — Host Ports",
-	"Baseline — Host Probes / Lifecycle Hooks (Kubernetes 1.34+)",
-	"Baseline — AppArmor",
-	"Baseline — SELinux",
-	"Baseline — /proc Mount Type",
-	"Baseline — Seccomp (must not be explicitly Unconfined)",
-	"Baseline — Sysctls",
-	"Restricted — Volume Types",
-	"Restricted — Privilege Escalation",
-	"Restricted — Seccomp (must be explicitly RuntimeDefault or Localhost)",
-	"Restricted — Capabilities (must drop ALL)",
+	"Baseline - HostProcess Containers",
+	"Baseline - Capabilities (must not add beyond the default set)",
+	"Baseline - Host Ports",
+	"Baseline - Host Probes / Lifecycle Hooks (Kubernetes 1.34+)",
+	"Baseline - AppArmor",
+	"Baseline - SELinux",
+	"Baseline - /proc Mount Type",
+	"Baseline - Seccomp (must not be explicitly Unconfined)",
+	"Baseline - Sysctls",
+	"Restricted - Volume Types",
+	"Restricted - Privilege Escalation",
+	"Restricted - Seccomp (must be explicitly RuntimeDefault or Localhost)",
+	"Restricted - Capabilities (must drop ALL)",
 }
 
 // postureFinding is one rule firing on one object (or, for the namespace rule,
@@ -542,8 +542,8 @@ func podSpecPostureFindings(kind, name, namespace string, spec podSpecFields, sa
 		out = append(out, newPostureFinding(ruleAutomountDefaultSA, kind, name, namespace, "",
 			"spec.automountServiceAccountToken",
 			"Runs as the namespace's default ServiceAccount and mounts its token. Any process in any "+
-				"container here can present that identity to the API server — whatever it turns out to be "+
-				"bound to — without the workload having asked for it by name."))
+				"container here can present that identity to the API server - whatever it turns out to be "+
+				"bound to - without the workload having asked for it by name."))
 	}
 
 	containers := taggedContainers("", spec.Containers)
@@ -565,8 +565,8 @@ func podSpecPostureFindings(kind, name, namespace string, spec podSpecFields, sa
 			out = append(out, newPostureFinding(ruleRunAsRootUndeclared, kind, name, namespace, tc.label,
 				field+".securityContext",
 				fmt.Sprintf("Nothing in the pod's or the %q container's securityContext declares "+
-					"runAsNonRoot or a non-zero runAsUser. This does not mean the container runs as root — "+
-					"the image's own USER decides that, and KubeMG cannot see the image — only that nothing "+
+					"runAsNonRoot or a non-zero runAsUser. This does not mean the container runs as root - "+
+					"the image's own USER decides that, and KubeMG cannot see the image - only that nothing "+
 					"here rules it out.", tc.label)))
 		}
 
@@ -654,11 +654,11 @@ type postureView struct {
 }
 
 const postureDisclaimer = "Every finding here names the manifest field that produced it and is derived only from " +
-	"objects Explore already lists — no new cluster permission and no new read path."
+	"objects Explore already lists - no new cluster permission and no new read path."
 
 const postureNonGoalNotice = "This is not a vulnerability scanner: KubeMG holds no image registry credential and " +
 	"no CVE feed, and nothing here inspects an image's contents, only manifest fields the API server already " +
-	"served. An image's known vulnerabilities belong to whatever already scans your registry — see this " +
+	"served. An image's known vulnerabilities belong to whatever already scans your registry - see this " +
 	"cluster's registry console link, if one is registered, rather than a guess KubeMG would have to make."
 
 // postureNotice states, in the same register as postureNonGoalNotice, what
@@ -670,7 +670,7 @@ const postureNonGoalNotice = "This is not a vulnerability scanner: KubeMG holds 
 // missing.
 const postureNotice = "Four of the seven rules below are Kubernetes Pod Security Standards controls (see " +
 	pssDocURL + "); the other three are marked as not covered by any PSS profile, with why. Where a finding " +
-	"cites a PSS control, this checks only that one control — a clean scan is not a claim that this workload " +
+	"cites a PSS control, this checks only that one control - a clean scan is not a claim that this workload " +
 	"is baseline- or restricted-compliant. See pss_unchecked for the baseline and restricted controls this " +
 	"scan does not evaluate at all."
 
