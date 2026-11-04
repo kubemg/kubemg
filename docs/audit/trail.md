@@ -44,7 +44,7 @@ Not recorded:
 | `verb` / `method` | The Kubernetes verb (`list`, `get`, `create`, `exec`, ...) and the raw HTTP method. See [Verb naming](#verb-naming) |
 | `path` | The full API path with its query string |
 | `namespace` / `resource` | Parsed out of the path when it looks like a Kubernetes API URL |
-| `name` | The object the call addressed. Taken from the path for every verb that names its object there. A `create` names only the collection in its path, so its name is the one the cluster answered with — including a name the cluster generated. Empty on a create the cluster refused (nothing was made), on a list or watch, and on rows written before kubemg recorded it |
+| `name` | The object the call addressed. Taken from the path for every verb that names its object there. A `create` names only the collection in its path, so its name is the one the cluster answered with — including a name the cluster generated. A list or watch names one object only through its field selector: an exact `metadata.name` term is read as the API server reads it, and that name is the one RBAC checks (`kubectl get pod web-0 -w` sends `fieldSelector=metadata.name=web-0`). Empty on a create the cluster refused (nothing was made), on any other list or watch, and on rows written before kubemg recorded it |
 | `impersonated_user` / `impersonated_groups` | The identity kubemg asserted to the cluster. It ties a kubemg account to the Kubernetes subject that acted |
 | `status` | The HTTP status the call ended with |
 | `duration_ms` | How long the call took |
@@ -82,7 +82,7 @@ Both read "not recorded" in the console for calls with no caller (for example th
 
 A call is named by the Kubernetes verb it performs, not its HTTP method.
 
-- `GET` is `list` for a collection, `get` for one object, and `watch` whenever the API server will watch: `?watch=true`, or any other value but `0` and `false` (`watch=1`, `watch=t`, a bare `?watch`). A `watch` is a streaming call, so no verb selection drops it.
+- `GET` is `list` for a collection, `get` for one object, and `watch` whenever the API server will watch a collection: `?watch=true`, or any other value but `0` and `false` (`watch=1`, `watch=t`, a bare `?watch`). A `watch` is a streaming call, so no verb selection drops it. On a named object the API server reads no `watch` and answers once, so that call is a `get`, as RBAC sees it.
 - `POST`/`PUT`/`PATCH`/`DELETE` are `create`/`update`/`patch`/`delete`.
 - A subresource names the call instead: `exec`, `attach`, `portforward`, and `GET` on `pods/log` is `log`. A shell in a production pod is never filed as a plain `get`.
 
