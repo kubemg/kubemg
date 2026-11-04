@@ -119,7 +119,7 @@ export function BrandingSettings() {
           <SettingsAside
             label="Sign-in page"
             value={hasBanner(draft) ? 'Carries the banner' : 'No banner'}
-            reach="The banner and the organisation's mark are both drawn before anybody signs in — which is the point of a banner, and why this is the one part of the console a stranger can see."
+            reach="The banner and the organisation's mark are both drawn before anybody signs in - which is the point of a banner, and why this is the one part of the console a stranger can see."
           />
           <SettingsAside
             label="Every page"
@@ -156,7 +156,7 @@ export function BrandingSettings() {
         <Panel
           eyebrow="Identity"
           title="Whose installation this is"
-          description="Your organisation's name and mark, beside the kubemg lockup rather than in place of it — a console that presents itself as somebody else's product is one nobody can get support for."
+          description="Your organisation's name and mark, beside the kubemg lockup rather than in place of it - a console that presents itself as somebody else's product is one nobody can get support for."
           bodyClassName="flex flex-col gap-4 p-4"
         >
           <Field
@@ -207,7 +207,7 @@ export function BrandingSettings() {
             </div>
             <p className="text-[12px] text-muted">
               A PNG, JPEG, GIF or WebP up to 64 KB, stored in the database rather than fetched from
-              anywhere — so it renders in an air-gapped install, and the sign-in page never tells a
+              anywhere - so it renders in an air-gapped install, and the sign-in page never tells a
               third party who is looking at it. SVG is refused: it can carry script, and this is
               drawn for people who have not signed in yet.
             </p>
@@ -225,12 +225,12 @@ export function BrandingSettings() {
           <Field
             label="Banner"
             htmlFor="banner_text"
-            hint="Leave it empty for no banner — which is the default, and the right answer for most installs. A console that always carries a banner is one where the banner stops being read."
+            hint="Leave it empty for no banner - which is the default, and the right answer for most installs. A console that always carries a banner is one where the banner stops being read."
           >
             <TextInput
               id="banner_text"
               maxLength={120}
-              placeholder="PRODUCTION — changes here affect customers"
+              placeholder="PRODUCTION - changes here affect customers"
               value={draft.banner_text ?? ''}
               onChange={(event) => set('banner_text', event.target.value)}
             />
@@ -247,9 +247,9 @@ export function BrandingSettings() {
               value={draft.banner_tone ?? 'neutral'}
               onChange={(event) => set('banner_tone', event.target.value as BannerTone)}
             >
-              <option value="neutral">Neutral — a statement of fact</option>
-              <option value="caution">Caution — handle with care</option>
-              <option value="critical">Critical — a mistake here is expensive</option>
+              <option value="neutral">Neutral - a statement of fact</option>
+              <option value="caution">Caution - handle with care</option>
+              <option value="critical">Critical - a mistake here is expensive</option>
             </Select>
           </Field>
 
@@ -281,7 +281,7 @@ export function BrandingSettings() {
             <TextInput
               id="footer_notice"
               maxLength={160}
-              placeholder="Internal — Restricted"
+              placeholder="Internal - Restricted"
               value={draft.footer_notice ?? ''}
               onChange={(event) => set('footer_notice', event.target.value)}
             />

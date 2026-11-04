@@ -147,7 +147,7 @@ func (s *server) downloadCLI(c *gin.Context) {
 	file, err := os.Open(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		c.JSON(http.StatusNotFound, gin.H{
-			"error": "this server was built without the kubemg CLI binaries — download it from " + cliReleasesURL,
+			"error": "this server was built without the kubemg CLI binaries - download it from " + cliReleasesURL,
 		})
 		return
 	}

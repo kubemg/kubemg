@@ -47,7 +47,7 @@ func TestAPrereleaseIsListedButIsNotWhatAnInstallFormOffers(t *testing.T) {
 func TestAChartThatOnlyEverPublishedPrereleasesStillOffersOne(t *testing.T) {
 	chart := Chart{Versions: []ChartVersion{{Version: "0.1.0-alpha.2"}, {Version: "0.1.0-alpha.1"}}}
 	if got := chart.LatestVersion(); got != "0.1.0-alpha.2" {
-		t.Fatalf("latest = %q, want 0.1.0-alpha.2 — refusing to offer anything would make "+
+		t.Fatalf("latest = %q, want 0.1.0-alpha.2 - refusing to offer anything would make "+
 			"a pre-1.0 chart uninstallable", got)
 	}
 }
@@ -63,7 +63,7 @@ func TestOnlyTheNewestFewVersionsSurviveASync(t *testing.T) {
 
 	charts := catalogueOf(rawIndex{Entries: map[string][]rawEntry{"web": entries}})
 	if got := len(charts[0].Versions); got != MaxVersionsPerChart {
-		t.Fatalf("kept %d versions, want %d — a repository's whole history is not a dropdown",
+		t.Fatalf("kept %d versions, want %d - a repository's whole history is not a dropdown",
 			got, MaxVersionsPerChart)
 	}
 	if got := charts[0].Versions[0].Version; got != "1.39.0" {

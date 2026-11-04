@@ -158,7 +158,7 @@ export function ClusterSummary() {
       body: (
         <>
           A new registration token replaces the current one. The agent attached to {cluster.name}{' '}
-          is disconnected now and the old token is refused from then on — every console session,
+          is disconnected now and the old token is refused from then on - every console session,
           kubectl call and shell on this cluster stops until the new install package is applied.
           Any install URL already handed out stops working too.
         </>
@@ -275,7 +275,7 @@ export function ClusterSummary() {
             the form closes and nothing visibly happened. */}
         {requested ? (
           <Notice tone="ok">
-            Request submitted. It is waiting for an approver — follow it on{' '}
+            Request submitted. It is waiting for an approver - follow it on{' '}
             <Link to="/me/access" className="text-accent hover:underline">
               access requests
             </Link>
@@ -534,7 +534,7 @@ function AdminDashboard({ cluster, username }: { cluster: Cluster; username: str
             <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
               An agent inside this cluster holds an outbound tunnel to kubemg, and every proxied
               call is replayed under your own identity using Kubernetes impersonation. The
-              cluster&rsquo;s own RBAC decides what that identity may do — the grant above decides
+              cluster&rsquo;s own RBAC decides what that identity may do - the grant above decides
               which cluster and namespaces kubemg will carry you to. Every call is written to the
               audit trail.
             </p>
@@ -558,7 +558,7 @@ function AdminDashboard({ cluster, username }: { cluster: Cluster; username: str
               <Link to={`/clusters/${cluster.id}/security`} className="text-accent hover:underline">
                 Check this cluster&rsquo;s workload security posture
               </Link>{' '}
-              for privileged containers, hostPath mounts, missing NetworkPolicies and the rest —
+              for privileged containers, hostPath mounts, missing NetworkPolicies and the rest -
               read from these same manifests, not a scan of your images.
             </p>
           </div>
@@ -572,7 +572,7 @@ function AdminDashboard({ cluster, username }: { cluster: Cluster; username: str
           <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
             kubemg issues a short-lived token for this cluster&rsquo;s kubemg service account
             through the Kubernetes TokenRequest API. It creates no RoleBinding, so the grant
-            above decides what you see in kubemg — not what the cluster lets you do. Register
+            above decides what you see in kubemg - not what the cluster lets you do. Register
             the cluster in agent mode to have kubemg bind these roles for real.
           </p>
         </Disclosure>
@@ -653,7 +653,7 @@ function WorkloadDashboard({ cluster, username }: { cluster: Cluster; username: 
         >
           <p className="max-w-3xl text-[13px] leading-relaxed text-muted">
             kubemg issues a short-lived token for this cluster&rsquo;s kubemg service account. It
-            creates no RoleBinding, so the grant above decides what you see in kubemg — not what
+            creates no RoleBinding, so the grant above decides what you see in kubemg - not what
             the cluster lets you do, and calls made with that file are not proxied or audited here.
           </p>
         </Disclosure>
@@ -747,7 +747,7 @@ function Capacity({ cluster }: { cluster: Cluster }) {
     <Panel
       title="Usage"
       eyebrow="Live"
-      description="What the cluster is consuming right now against allocatable, read from its Metrics API. What has been reserved — which decides whether anything more will schedule — is on Capacity."
+      description="What the cluster is consuming right now against allocatable, read from its Metrics API. What has been reserved - which decides whether anything more will schedule - is on Capacity."
       actions={
         <LinkButton to={`/clusters/${cluster.id}/capacity`} size="sm">
           Capacity

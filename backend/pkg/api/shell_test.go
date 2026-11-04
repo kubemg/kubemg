@@ -211,7 +211,7 @@ func TestShellRunnerIsKubeMGsOwnIdentity(t *testing.T) {
 		t.Fatalf("runner = %q, want KubeMG's own name", user.Username)
 	}
 	if grant.K8sRole != db.K8sRoleView {
-		t.Fatalf("runner role = %q, want a read-only baseline — its pod verbs come from a Role bound in one namespace",
+		t.Fatalf("runner role = %q, want a read-only baseline - its pod verbs come from a Role bound in one namespace",
 			grant.K8sRole)
 	}
 	if grant.ClusterID != 9 {

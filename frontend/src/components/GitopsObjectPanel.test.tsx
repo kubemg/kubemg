@@ -100,7 +100,7 @@ describe('GitopsObjectPanel', () => {
   it('explains a record that is not in this cluster', async () => {
     answer = completeGitopsObject({
       tracked: true,
-      reason: 'no Application named shop in this cluster — Argo CD may run in another cluster and deploy here',
+      reason: 'no Application named shop in this cluster - Argo CD may run in another cluster and deploy here',
     })
     draw()
 

@@ -194,13 +194,13 @@ export function HelmHistoryPanel({
                     <Pill tone={revisionTone(entry.status)}>{entry.status || 'unknown'}</Pill>
                   </Td>
                   <Td className="hidden truncate font-data md:table-cell" title={entry.chart_version}>
-                    {entry.chart_version || '—'}
+                    {entry.chart_version || '-'}
                   </Td>
                   <Td className="font-data text-muted" title={entry.updated_at}>
-                    {entry.updated_at ? <Age iso={entry.updated_at} /> : '—'}
+                    {entry.updated_at ? <Age iso={entry.updated_at} /> : '-'}
                   </Td>
                   <Td className="truncate text-muted" title={entry.description}>
-                    {entry.description || '—'}
+                    {entry.description || '-'}
                   </Td>
                   <Td className="text-right">
                     {isCurrent ? null : (

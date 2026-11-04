@@ -262,7 +262,7 @@ func (s *server) updateUser(c *gin.Context) {
 		if slackID != "" {
 			if !slackUserIDPattern.MatchString(slackID) {
 				c.JSON(http.StatusBadRequest, gin.H{
-					"error": "a Slack member ID looks like U0123ABCD — copy it from the person's Slack profile, not their handle",
+					"error": "a Slack member ID looks like U0123ABCD - copy it from the person's Slack profile, not their handle",
 				})
 				return
 			}

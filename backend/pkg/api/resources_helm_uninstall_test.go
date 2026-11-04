@@ -64,7 +64,7 @@ func TestUninstallDeletesInReverseOfInstallOrder(t *testing.T) {
 	// depends on — the same rule `removalsOf` applies on an upgrade.
 	reverse(objects)
 	if objects[0].Kind != "Deployment" || objects[2].Kind != "ServiceAccount" {
-		t.Fatalf("order = %s, %s, %s — want the reverse of install order",
+		t.Fatalf("order = %s, %s, %s - want the reverse of install order",
 			objects[0].Kind, objects[1].Kind, objects[2].Kind)
 	}
 }
@@ -129,7 +129,7 @@ func TestPlanUninstallLetsAnUnscopedGrantThrough(t *testing.T) {
 		{APIVersion: "rbac.authorization.k8s.io/v1", Kind: "ClusterRole", Name: "api-reader"},
 	}
 	if allowed, _ := uninstallPlanFor(t, db.UserClusterAccess{}, objects); !allowed {
-		t.Fatal("an unscoped grant has nothing to refuse here — the cluster's own RBAC decides")
+		t.Fatal("an unscoped grant has nothing to refuse here - the cluster's own RBAC decides")
 	}
 }
 

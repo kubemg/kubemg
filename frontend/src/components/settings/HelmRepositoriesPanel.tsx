@@ -285,7 +285,7 @@ function RepositorySheet({
         <Field
           label="Name"
           htmlFor="helm_repo_name"
-          hint={repository ? 'The address — renaming means adding a new repository.' : 'What an install names as its source.'}
+          hint={repository ? 'The address - renaming means adding a new repository.' : 'What an install names as its source.'}
         >
           <TextInput
             id="helm_repo_name"
@@ -331,7 +331,7 @@ function RepositorySheet({
           htmlFor="helm_repo_credential"
           hint={
             repository?.has_credential
-              ? 'A credential is stored. Leave this empty to keep it — it is never read back out.'
+              ? 'A credential is stored. Leave this empty to keep it - it is never read back out.'
               : 'Stored and never returned by the API.'
           }
         >

@@ -12,7 +12,7 @@ Every setting below follows the same rule:
 1. The **environment variable** supplies the boot-time default.
 2. A **stored override**, written through `PUT /api/v1/settings`, takes
    effect at the next read and wins over the default.
-3. **An empty override means "use the default"** — that is how a setting is
+3. **An empty override means "use the default"** - that is how a setting is
    cleared. Sending `""` (or, for a numeric setting, `0`) removes the
    override rather than storing an empty value.
 4. If the database cannot be reached, the **boot-time environment value** is used
@@ -38,7 +38,7 @@ Every setting below follows the same rule:
 | Meaning | The address a **target cluster** must be able to reach this bastion at. Baked into every generated agent install command and manifest, and into every generated agent kubeconfig's server address. |
 | Environment default | `KUBEMG_PUBLIC_URL` (falls back to `http://localhost:8080` if unset) |
 | Validation | Must be an absolute `http://` or `https://` address with a host |
-| Unset behaviour | n/a — always resolves to the environment default when cleared |
+| Unset behaviour | n/a - always resolves to the environment default when cleared |
 
 This is the outside view of the bastion, not its listen address. A loopback or
 private value means an agent inside a target cluster can never dial back in.
@@ -68,9 +68,9 @@ registered under the old one.
 
 | | |
 |---|---|
-| Meaning | The name of a `docker-registry` Secret, in the agent namespace on each target cluster, that the agent and browser shell images are pulled with — for a mirror that requires authentication. |
+| Meaning | The name of a `docker-registry` Secret, in the agent namespace on each target cluster, that the agent and browser shell images are pulled with - for a mirror that requires authentication. |
 | Environment default | `KUBEMG_AGENT_IMAGE_PULL_SECRET` (falls back to none) |
-| Validation | Must be a valid Secret name (lowercase letters, digits, dashes and dots) if non-empty — the name, never the credential |
+| Validation | Must be a valid Secret name (lowercase letters, digits, dashes and dots) if non-empty - the name, never the credential |
 | Unset behaviour | no pull secret is named, and the install sheet offers no step to create one |
 
 kubemg stores only the name. With one set, the install sheet's first step
@@ -82,10 +82,10 @@ See [Air-gapped installs](../install/air-gapped.md#a-mirror-that-requires-authen
 
 | | |
 |---|---|
-| Meaning | The image an [ephemeral debug container](../clusters/terminals-and-logs.md#debugging-a-pod-with-no-shell) runs — `kubectl debug`'s trick for a pod whose own containers have no shell to exec into. |
+| Meaning | The image an [ephemeral debug container](../clusters/terminals-and-logs.md#debugging-a-pod-with-no-shell) runs - `kubectl debug`'s trick for a pod whose own containers have no shell to exec into. |
 | Environment default | `KUBEMG_DEBUG_IMAGE` (falls back to `busybox:1.36`) |
 | Validation | none beyond trimming |
-| Unlike `shell_image` | there is no matching enable switch — any grant that can already exec into a pod can already ask for a debug container, and the cluster's own RBAC decides whether the write lands |
+| Unlike `shell_image` | there is no matching enable switch - any grant that can already exec into a pod can already ask for a debug container, and the cluster's own RBAC decides whether the write lands |
 
 ### `audit_retention_days`
 
@@ -105,7 +105,7 @@ takes effect without a restart.
 | | |
 |---|---|
 | Meaning | How long a terminal session recording (the `.cast.gz` file plus its index row) is kept. |
-| Default | The **audit retention window** — not an independent environment variable |
+| Default | The **audit retention window** - not an independent environment variable |
 | Range | 1–3650 when set explicitly |
 | Ceiling | **Clamped down to `audit_retention_days` on read**, not refused on write, so a value that was legal when saved never becomes an error because the audit window later shortened. |
 | Clear with | `0` (falls back to following the audit window) |
@@ -117,9 +117,9 @@ A recording must not outlive the audit record that says the shell was opened.
 | | |
 |---|---|
 | Meaning | The comma-separated set of verbs that reach the audit **table**. Narrows a busy fleet's trail, which is overwhelmingly `list`/`get` calls nobody reads back. |
-| Environment default | none — unset means every verb is recorded |
+| Environment default | none - unset means every verb is recorded |
 | Validation | Each entry must be one of the suppressible verbs listed in [Audit trail](../audit/trail.md#selective-audit-audit_verbs); an unrecognised verb in a submitted list is refused |
-| Empty submission | Means **"back to every verb"**, never "record nothing" — the floor below still records regardless of this setting |
+| Empty submission | Means **"back to every verb"**, never "record nothing" - the floor below still records regardless of this setting |
 | Applies to | The audit table only. The structured log and any [forwarder](../audit/trail.md) still carry every verb |
 
 Three things this selection can never suppress, whatever verbs are chosen: a
@@ -133,7 +133,7 @@ refusal or error, any streaming call (`exec`/`attach`/`portforward`/`log
 | Meaning | Runtime switch for interactive session recording (asciinema casts of `exec`/`attach`). |
 | Environment gate | Can only be **on** if the server was started with a recording directory (`KUBEMG_SESSION_RECORDING_DIR`); `recording_available` in the response reports whether that is true |
 | Effect of turning off | Stops the *next* shell from being recorded; a shell already running keeps recording |
-| Effect of turning on with no directory configured | No effect — a process with nowhere to write cannot be talked into recording by a database row |
+| Effect of turning on with no directory configured | No effect - a process with nowhere to write cannot be talked into recording by a database row |
 
 ### `record_manifest_diffs`
 
@@ -161,7 +161,7 @@ refusal or error, any streaming call (`exec`/`attach`/`portforward`/`log
 |---|---|
 | Meaning | Whose password sign-in also needs a [second factor](../access/mfa.md): `off`, `admins` or `all`. Covers local and LDAP accounts only. |
 | Default | `off`; no environment variable |
-| Unusable stored value | Read as `off` — a mistyped row never locks anyone out |
+| Unusable stored value | Read as `off` - a mistyped row never locks anyone out |
 | Clear with | `""` |
 | Takes effect | At the next sign-in. Sessions already open run to their own expiry |
 
@@ -169,10 +169,10 @@ refusal or error, any streaming call (`exec`/`attach`/`portforward`/`log
 
 | | |
 |---|---|
-| Meaning | How long a `kubemg login` lasts before it has to be done again — and with it the second factor. See [The kubemg command line](../access/cli.md#how-long-it-lasts). |
+| Meaning | How long a `kubemg login` lasts before it has to be done again - and with it the second factor. See [The kubemg command line](../access/cli.md#how-long-it-lasts). |
 | Default | 12 hours; no environment variable |
 | Range | 1 to 720 hours |
-| Clamped to | `kubeconfig_max_ttl_hours` at the point of use — a CLI session never outlives what a downloaded file could |
+| Clamped to | `kubeconfig_max_ttl_hours` at the point of use - a CLI session never outlives what a downloaded file could |
 | Clear with | `0` |
 
 ### `kubeconfig_issuance`
@@ -200,8 +200,8 @@ refusal or error, any streaming call (`exec`/`attach`/`portforward`/`log
 
 | | |
 |---|---|
-| Meaning | How many calls one account may make into one cluster through kubemg: a steady rate per second, and a burst that may go at once before the rate applies. Every call counts — a `kubectl` command, each read behind a console page (one page across every namespace is up to fifty), a CLI session, a machine token, a shell being opened |
-| Default | 50 per second, bursts of 300 — the same as kubectl's own client-side limit, so one kubectl never notices it. No environment variable |
+| Meaning | How many calls one account may make into one cluster through kubemg: a steady rate per second, and a burst that may go at once before the rate applies. Every call counts - a `kubectl` command, each read behind a console page (one page across every namespace is up to fifty), a CLI session, a machine token, a shell being opened |
+| Default | 50 per second, bursts of 300 - the same as kubectl's own client-side limit, so one kubectl never notices it. No environment variable |
 | Range | 1 to 10000 per second; 1 to 100000 for the burst |
 | Unusable stored value | Read as the default |
 | Clear with | `0` |
@@ -228,8 +228,8 @@ counts calls that were held back or refused.
 
 ## Branding (a separate surface, on purpose)
 
-The console's own identity — your organisation's name and mark, an environment
-banner, and a footer notice — is stored alongside the settings above but is
+The console's own identity - your organisation's name and mark, an environment
+banner, and a footer notice - is stored alongside the settings above but is
 **not** part of `GET|PUT /api/v1/settings`. It has its own pair of routes:
 
 | Route | Auth | Purpose |
@@ -247,13 +247,13 @@ Branding differs from a setting in three ways:
 
 | Field | Bound | Notes |
 |---|---|---|
-| `organisation_name` | 60 characters | Drawn beside the `kubemg` lockup — on the sign-in page and at the top of the sidebar — never instead of it. |
+| `organisation_name` | 60 characters | Drawn beside the `kubemg` lockup - on the sign-in page and at the top of the sidebar - never instead of it. |
 | `organisation_mark` | 64 KB decoded | A base64 `data:` URI. **A URL is refused** (an air-gapped console cannot fetch it, and a remote image would beacon from the sign-in page). PNG, JPEG, GIF and WebP only; **SVG is refused** because it can carry script. |
-| `banner_text` | 120 characters | Empty means no banner, which is the default. Whitespace runs are folded to one space — a pasted newline would push every page's content down. |
+| `banner_text` | 120 characters | Empty means no banner, which is the default. Whitespace runs are folded to one space - a pasted newline would push every page's content down. |
 | `banner_tone` | `neutral`, `caution`, `critical` | A tone stored without text is not reported as a banner. |
 | `footer_notice` | 160 characters | The classification or handling line, beside the release number in the footer. |
 
-An omitted field is left alone and a field sent empty is cleared — the same
+An omitted field is left alone and a field sent empty is cleared - the same
 convention the settings routes use.
 
 ## Deployment posture (read-only, not a setting)
@@ -285,7 +285,7 @@ preflight step shows, so you can find these facts again after onboarding.
 ## The kubeconfig policy endpoint
 
 `GET /api/v1/kubeconfig/policy` (any authenticated user) reports
-`min_ttl_seconds`, `default_ttl_seconds` and `max_ttl_seconds` — the
+`min_ttl_seconds`, `default_ttl_seconds` and `max_ttl_seconds` - the
 resolved ceiling from `kubeconfig_max_ttl_hours` above. Anyone who can generate
 a kubeconfig can read it, so the form never learns the ceiling by being refused.
 The kubeconfig drawer offers a fixed ladder (1h through 90d) filtered by it.
@@ -299,7 +299,7 @@ General Settings page and in the setup wizard's preflight step.
   `kubeconfig_max_ttl_hours` exceeds the 24-hour default, the console shows:
 
     > "Kubeconfigs may be issued for up to `{duration}`. Through an agent
-    > tunnel that is safe to revoke — every call re-reads the caller's grant —
+    > tunnel that is safe to revoke - every call re-reads the caller's grant -
     > but a direct-mode kubeconfig carries a token minted on the cluster,
     > which keeps working until it expires however the grant changes."
 
@@ -309,7 +309,7 @@ General Settings page and in the setup wizard's preflight step.
 - **A loopback public URL:**
 
     > "The server URL is a loopback address. An agent running inside a
-    > cluster resolves it to its own pod, so it will never reach kubemg —
+    > cluster resolves it to its own pod, so it will never reach kubemg -
     > set the address the cluster can reach."
 
 - **A plain-HTTP public URL** (when the host is not loopback):

@@ -241,7 +241,7 @@ function AdministratorStep({
         title="Choose an administrator password"
         description={
           pristine
-            ? 'This account still has the password it was created with — generated at first boot and printed to the server log, or taken from KUBEMG_ADMIN_PASSWORD. Setup will not finish until it is changed.'
+            ? 'This account still has the password it was created with - generated at first boot and printed to the server log, or taken from KUBEMG_ADMIN_PASSWORD. Setup will not finish until it is changed.'
             : 'This password has already been changed. Set a new one here or carry on.'
         }
       >
@@ -260,7 +260,7 @@ function AdministratorStep({
             label="New password"
             htmlFor="password"
             hint={`At least ${MIN_PASSWORD_LENGTH} characters.`}
-            error={tooShort ? `Too short — ${MIN_PASSWORD_LENGTH} characters minimum.` : undefined}
+            error={tooShort ? `Too short - ${MIN_PASSWORD_LENGTH} characters minimum.` : undefined}
           >
             <TextInput
               id="password"
@@ -348,7 +348,7 @@ function AddressStep({
       <Panel
         eyebrow="Step 2"
         title="Where do clusters reach this bastion?"
-        description="Not the address your browser is using — the one a pod inside a target cluster can dial. It is written into every agent install command and every generated kubeconfig."
+        description="Not the address your browser is using - the one a pod inside a target cluster can dial. It is written into every agent install command and every generated kubeconfig."
       >
         <div className="flex flex-col gap-4 p-4">
           {error ? <Notice tone="error">{error}</Notice> : null}
@@ -377,7 +377,7 @@ function AddressStep({
 
           <p className="text-[12.5px] leading-relaxed text-muted">
             Every other name the certificate has to be valid for goes in{' '}
-            <span className="font-mono text-faint">KUBEMG_TLS_HOSTS</span>, which is read at boot —
+            <span className="font-mono text-faint">KUBEMG_TLS_HOSTS</span>, which is read at boot -
             a cluster dialling a name the certificate does not cover fails its handshake rather than
             reaching a wrong address.
           </p>
@@ -631,7 +631,7 @@ function SignInStep({ onBack, onNext }: { onBack: () => void; onNext: () => void
 
       <div className="card overflow-hidden">
         <p className="px-4 py-3 text-[13px] leading-relaxed text-muted">
-          Optional. Skip it and everyone signs in with a local account you create under Users —
+          Optional. Skip it and everyone signs in with a local account you create under Users -
           a provider can be added from Settings at any point, and adding one does not disable the
           local accounts already in use.
         </p>
@@ -698,14 +698,14 @@ function PreflightStep({
       <Panel
         eyebrow="Step 6"
         title="What setup could not decide for you"
-        description="These were read once when the server started, from an environment it cannot rewrite. Nothing on this page can change them — this is where they are said out loud instead."
+        description="These were read once when the server started, from an environment it cannot rewrite. Nothing on this page can change them - this is where they are said out loud instead."
         bodyClassName="flex flex-col gap-3 p-4"
       >
         {error ? <Notice tone="error">{error}</Notice> : null}
         {pristine ? (
           <Notice tone="warn">
             The bootstrap administrator still has its original password. Setup cannot be finished
-            until it is changed — go back to step one.
+            until it is changed - go back to step one.
           </Notice>
         ) : null}
 
@@ -720,7 +720,7 @@ function PreflightStep({
 
       <div className="card overflow-hidden">
         <p className="px-4 py-3 text-[13px] leading-relaxed text-muted">
-          Finishing stamps this install as configured. This wizard does not come back — every field
+          Finishing stamps this install as configured. This wizard does not come back - every field
           in it lives on its own page under Settings from here on.
         </p>
         <StepActions>

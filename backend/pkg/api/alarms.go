@@ -281,7 +281,7 @@ func (s *server) channelFrom(
 	// compared with the stored one.
 	if existing != nil && keptChannelSecretMoves(req, rawURL, existing) {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "enter the secret and headers again — they are kept only for the host they were given for",
+			"error": "enter the secret and headers again - they are kept only for the host they were given for",
 		})
 		return nil, false
 	}

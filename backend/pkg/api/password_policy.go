@@ -161,7 +161,7 @@ func (s *server) gatePasswordAge(c *gin.Context, claims *auth.Claims) bool {
 		return true
 	}
 	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-		"error": "your password has expired — change it to continue",
+		"error": "your password has expired - change it to continue",
 		"code":  passwordChangeRequiredCode,
 	})
 	return false
@@ -190,7 +190,7 @@ func (s *server) expireUserPassword(c *gin.Context) {
 	}
 	if target.ID == caller.ID {
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "you cannot expire your own password — change it from your profile instead",
+			"error": "you cannot expire your own password - change it from your profile instead",
 		})
 		return
 	}

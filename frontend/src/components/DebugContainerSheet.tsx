@@ -32,13 +32,13 @@ import { Button, Notice, Select, Sheet } from './primitives'
 const DEBUG_BLURB =
   'This adds a second, throwaway container to the pod, sharing the chosen container’s process ' +
   'namespace so a shell can attach where the application image has none of its own. It goes down ' +
-  'the same impersonated tunnel as every other write here — the cluster’s own RBAC decides ' +
+  'the same impersonated tunnel as every other write here - the cluster’s own RBAC decides ' +
   'whether it lands.'
 
 /** The two things this cannot undo. Said before the click, not in the result. */
 const DEBUG_LIMITS =
-  'The container cannot be removed once it is added — the API server has no delete for an ' +
-  'ephemeral container — and it shares the target container’s process namespace, and from there ' +
+  'The container cannot be removed once it is added - the API server has no delete for an ' +
+  'ephemeral container - and it shares the target container’s process namespace, and from there ' +
   'its network, for as long as the pod lives.'
 
 /** How often the pod is re-read while waiting for the debug container to
@@ -155,9 +155,9 @@ export function DebugContainerSheet({
           // an animation saying "something is happening".
           <Notice tone={waiting?.reason ? 'warn' : 'info'}>
             {waiting?.reason
-              ? `${starting.container} is not running yet — ${waiting.reason}` +
+              ? `${starting.container} is not running yet - ${waiting.reason}` +
                 (waiting.message ? `: ${waiting.message}` : '')
-              : `${starting.container} is starting on ${pod.name} — waiting for it to report running.`}
+              : `${starting.container} is starting on ${pod.name} - waiting for it to report running.`}
           </Notice>
         ) : (
           <>

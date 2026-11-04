@@ -58,7 +58,7 @@ func NormalizeConsoleURL(raw string) (string, error) {
 	}
 	if parsed.User != nil {
 		return "", fmt.Errorf(
-			"leave the username and password out of the address — KubeMG stores no " +
+			"leave the username and password out of the address - KubeMG stores no " +
 				"credential for another console, and you sign in to it as yourself")
 	}
 	if parsed.RawQuery != "" || parsed.Fragment != "" {

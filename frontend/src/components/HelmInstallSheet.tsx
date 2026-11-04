@@ -156,7 +156,7 @@ export function HelmInstallSheet({
             <span className="label">Values</span>
             <YamlView value={yaml} onChange={setYaml} className="min-h-[280px] flex-1" numbered />
             <p className="text-[12px] text-muted">
-              Merged into the chart's own defaults — leave this as <span className="font-mono">{'{}'}</span>{' '}
+              Merged into the chart's own defaults - leave this as <span className="font-mono">{'{}'}</span>{' '}
               to install with nothing overridden. Rendered and written through the agent tunnel under
               your own identity, one object at a time; the cluster’s RBAC decides what may actually be
               created, and every object is its own row in the audit trail.

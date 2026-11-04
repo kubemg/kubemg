@@ -161,7 +161,7 @@ export function HelmChartPicker({
               <option key={version.version} value={version.version}>
                 {version.version}
                 {version.app_version ? ` (app ${version.app_version})` : ''}
-                {version.deprecated ? ' — deprecated' : ''}
+                {version.deprecated ? ' - deprecated' : ''}
               </option>
             ))}
           </Select>

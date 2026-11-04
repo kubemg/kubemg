@@ -16,12 +16,12 @@ on top of that proxy.
 
 It is **not**:
 
-- A CI/CD system. It does not build, test or deploy anything — it is the
+- A CI/CD system. It does not build, test or deploy anything - it is the
   access layer a pipeline or a person goes through to reach a cluster. See
   [Machine accounts](../access/machine-accounts.md) for the pipeline case.
 - A monitoring stack. It reads live utilisation from a cluster's own Metrics
   API and history from a datasource the cluster already has (Prometheus,
-  VictoriaMetrics, Loki, and friends) — it does not collect, store or scrape
+  VictoriaMetrics, Loki, and friends) - it does not collect, store or scrape
   metrics itself. See [Datasources](../observability/datasources.md).
 - An in-cluster controller platform. The agent installs no CRDs, runs no
   controllers, and caches no cluster state. Its own ClusterRole grants exactly

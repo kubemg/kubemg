@@ -119,7 +119,7 @@ func (d *clusterDiscovery) resolve(apiVersion, kind string) (apiResource, error)
 	}
 	resource, ok := kinds[kind]
 	if !ok {
-		return apiResource{}, fmt.Errorf("this cluster does not serve %s in %s — "+
+		return apiResource{}, fmt.Errorf("this cluster does not serve %s in %s - "+
 			"if the chart installs a CRD and an instance of it, the definition has to be "+
 			"established before the instance can be written", kind, apiVersion)
 	}
@@ -444,7 +444,7 @@ func (s *server) apply(c *gin.Context, user *db.User, cluster *db.Cluster,
 				result.Reports = append(result.Reports, objectReport{
 					Kind: remaining.Kind, Name: remaining.Name, Namespace: remaining.Namespace,
 					Source: remaining.Source, Hook: remaining.Hook, Action: actionSkipped,
-					Message: "not written — the run stopped at " + report.Kind + "/" + report.Name,
+					Message: "not written - the run stopped at " + report.Kind + "/" + report.Name,
 				})
 			}
 			return result

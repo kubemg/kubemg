@@ -129,7 +129,7 @@ func (s *server) listAlarms(c *gin.Context) {
 	})
 }
 
-const noPrometheusOperator = "this cluster does not serve PrometheusRule — alarms need the Prometheus operator " +
+const noPrometheusOperator = "this cluster does not serve PrometheusRule - alarms need the Prometheus operator " +
 	"(kube-prometheus-stack installs it)"
 
 type alarmCreateRequest struct {
@@ -150,7 +150,7 @@ func (s *server) alertingSource(c *gin.Context, cluster *db.Cluster) (*db.Observ
 	source, err := s.store.ObservabilitySource(c.Request.Context(), cluster.ID, db.SourceAlerts)
 	if errors.Is(err, db.ErrNotFound) || (err == nil && !source.Enabled) {
 		c.JSON(http.StatusConflict, gin.H{
-			"error": "an administrator has to register this cluster's Alertmanager before alarms can be created — " +
+			"error": "an administrator has to register this cluster's Alertmanager before alarms can be created - " +
 				"it is also where KubeMG learns which labels the cluster's Prometheus loads rules by",
 			"unconfigured": true,
 		})
@@ -219,7 +219,7 @@ func (s *server) createAlarm(c *gin.Context) {
 		return
 	case http.StatusConflict:
 		c.JSON(http.StatusConflict, gin.H{
-			"error":    "this object already has an alarm for that condition — change it instead",
+			"error":    "this object already has an alarm for that condition - change it instead",
 			"existing": spec.Name,
 		})
 		return
@@ -354,7 +354,7 @@ func (s *server) updateAlarm(c *gin.Context) {
 		return
 	}
 	if resp.Status == http.StatusConflict {
-		c.JSON(http.StatusConflict, gin.H{"error": "the alarm changed since it was read — reload it and try again"})
+		c.JSON(http.StatusConflict, gin.H{"error": "the alarm changed since it was read - reload it and try again"})
 		return
 	}
 	s.answerAlarm(c, resp, http.StatusOK)
@@ -519,7 +519,7 @@ func (s *server) createSilence(c *gin.Context) {
 	}
 	comment := strings.TrimSpace(req.Comment)
 	if comment == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "say why — a silence nobody can explain is one nobody dares to end"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "say why - a silence nobody can explain is one nobody dares to end"})
 		return
 	}
 	if len(comment) > maxSilenceComment {

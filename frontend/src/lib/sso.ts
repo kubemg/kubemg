@@ -46,8 +46,8 @@ export function usernameClaimIsEditable(protocol: SSOProtocol, claim: string): b
 export type ProviderKind = 'okta-oidc' | 'okta-saml' | SSOProtocol
 
 export const PROVIDER_KINDS: { kind: ProviderKind; label: string; group: 'Okta' | 'Any provider' }[] = [
-  { kind: 'okta-oidc', label: 'Okta — OpenID Connect', group: 'Okta' },
-  { kind: 'okta-saml', label: 'Okta — SAML 2.0', group: 'Okta' },
+  { kind: 'okta-oidc', label: 'Okta - OpenID Connect', group: 'Okta' },
+  { kind: 'okta-saml', label: 'Okta - SAML 2.0', group: 'Okta' },
   { kind: 'oidc', label: 'OpenID Connect', group: 'Any provider' },
   { kind: 'saml', label: 'SAML 2.0', group: 'Any provider' },
   { kind: 'ldap', label: 'LDAP', group: 'Any provider' },

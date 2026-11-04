@@ -103,7 +103,7 @@ func TestQOSCountsPerNodeAndCluster(t *testing.T) {
 		t.Errorf("n1 qos = %+v", rows[0].QOS)
 	}
 	if rows[1].QOS != (qosCounts{Burstable: 1}) {
-		t.Errorf("n2 qos = %+v — a pod without a class must not be counted", rows[1].QOS)
+		t.Errorf("n2 qos = %+v - a pod without a class must not be counted", rows[1].QOS)
 	}
 	if summary.QOS != (qosCounts{Guaranteed: 1, Burstable: 1, BestEffort: 1}) {
 		t.Errorf("summary qos = %+v", summary.QOS)
@@ -178,7 +178,7 @@ func TestBorrowersAreThePodsUsingMoreThanTheyReserved(t *testing.T) {
 	row := rows[0]
 
 	if row.Borrowing != 2 {
-		t.Fatalf("borrowing = %d, want 2 — a pod inside its request lends, it does not borrow", row.Borrowing)
+		t.Fatalf("borrowing = %d, want 2 - a pod inside its request lends, it does not borrow", row.Borrowing)
 	}
 	top := row.TopBorrowers
 	// 2 GiB over on an 8 GiB node is 25%; 400m of nothing-requested on four

@@ -51,8 +51,8 @@ type gitopsAttribution struct {
 }
 
 const (
-	attributionOutside = "A change made outside KubeMG — kubectl with another credential, a " +
-		"controller, Argo CD itself — leaves no record here."
+	attributionOutside = "A change made outside KubeMG - kubectl with another credential, a " +
+		"controller, Argo CD itself - leaves no record here."
 	attributionUnreadable = "The audit trail could not be read, so the last change through KubeMG is not known."
 )
 

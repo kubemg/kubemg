@@ -149,8 +149,8 @@ export function AddFactorSheet({
         <>
           <p className="text-[13px] leading-relaxed text-muted">
             {kind === 'webauthn'
-              ? 'A security key or a passkey — a YubiKey, Touch ID, Windows Hello, a phone — then asks for a touch after your password.'
-              : 'An authenticator app — 1Password, Google Authenticator, Microsoft Authenticator, any that speaks TOTP — then asks for its six digits after your password.'}
+              ? 'A security key or a passkey - a YubiKey, Touch ID, Windows Hello, a phone - then asks for a touch after your password.'
+              : 'An authenticator app - 1Password, Google Authenticator, Microsoft Authenticator, any that speaks TOTP - then asks for its six digits after your password.'}
           </p>
           {kind === 'totp' && status.webauthn && !status.webauthn.available && status.webauthn.reason ? (
             <Notice tone="info">{status.webauthn.reason}</Notice>
@@ -311,7 +311,7 @@ export function RecoveryCodesSheet({
       ) : (
         <>
           <p className="text-[13px] leading-relaxed text-muted">
-            Ten new codes replace the ones you have — every old code stops working, used or not.
+            Ten new codes replace the ones you have - every old code stops working, used or not.
           </p>
           {error ? <Notice tone="error">{error}</Notice> : null}
           <CurrentProofField

@@ -163,7 +163,7 @@ export function CostRatesSheet({
           Every figure on this cluster’s cost page is what its pods request, times these rates.
           They are yours, not a provider’s list price: take them from your bill or your contract.
           To split a node’s hourly price: where providers price the two separately, a core costs
-          about as much as 8 to 9 GiB of memory — so, taking 8, a $0.192 node with 4 cores and 16
+          about as much as 8 to 9 GiB of memory - so, taking 8, a $0.192 node with 4 cores and 16
           GiB is $0.032 per core-hour and $0.004 per GiB-hour.
         </p>
         <Field

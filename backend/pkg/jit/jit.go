@@ -236,7 +236,7 @@ func (e *Engine) CreateRequest(ctx context.Context, input Input) (*db.JitRequest
 	reason := strings.TrimSpace(input.Reason)
 	if len(reason) < minReasonLength {
 		return nil, fmt.Errorf(
-			"%w: say why this access is needed — at least %d characters, and it is kept with the record",
+			"%w: say why this access is needed - at least %d characters, and it is kept with the record",
 			ErrInvalid, minReasonLength)
 	}
 	if len(reason) > maxReasonLength {

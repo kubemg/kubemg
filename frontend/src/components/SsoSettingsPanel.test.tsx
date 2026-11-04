@@ -39,7 +39,7 @@ describe('SsoSettingsPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Add provider/ }))
 
     fireEvent.change(screen.getByLabelText('Type'), { target: { value: 'okta-oidc' } })
-    expect(screen.getByText(/OIDC — Web Application/)).toBeTruthy()
+    expect(screen.getByText(/OIDC - Web Application/)).toBeTruthy()
 
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Okta' } })
     const issuer = screen.getByLabelText('Issuer URL')
@@ -72,7 +72,7 @@ describe('SsoSettingsPanel', () => {
       { ...base, id: 2, name: 'Keycloak', protocol: 'oidc' },
     ]
     render(<SsoSettingsPanel />)
-    expect(await screen.findByText('Okta — SAML 2.0')).toBeTruthy()
+    expect(await screen.findByText('Okta - SAML 2.0')).toBeTruthy()
     expect(screen.getByText('OpenID Connect')).toBeTruthy()
   })
 })

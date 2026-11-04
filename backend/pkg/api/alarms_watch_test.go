@@ -166,7 +166,7 @@ func TestSelectAlarmEventsDeliversOutOfOrderArrivals(t *testing.T) {
 
 	got := candidateNames(selectAlarmEvents(1, items, watermarks, now))
 	if len(got) != 2 {
-		t.Fatalf("delivered %v, want both events — the older one must not be eaten by the newer", got)
+		t.Fatalf("delivered %v, want both events - the older one must not be eaten by the newer", got)
 	}
 	// And oldest first, so the sequence a pager shows matches the sequence that
 	// happened.
@@ -237,6 +237,6 @@ func TestSelectAlarmEventsIsIdempotentAcrossPasses(t *testing.T) {
 		t.Fatalf("first pass delivered %v, want both", candidateNames(got))
 	}
 	if got := selectAlarmEvents(1, items, watermarks, now); len(got) != 0 {
-		t.Fatalf("second pass delivered %v, want nothing — the mark has moved", candidateNames(got))
+		t.Fatalf("second pass delivered %v, want nothing - the mark has moved", candidateNames(got))
 	}
 }

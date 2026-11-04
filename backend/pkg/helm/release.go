@@ -316,7 +316,7 @@ func ParseRelease(document []byte) (*Release, error) {
 // release with half the objects missing.
 func (r *Release) LoadedChart() (*chart.Chart, error) {
 	if r.Chart == nil || r.Chart.Metadata == nil {
-		return nil, fmt.Errorf("this release does not carry its chart, so it cannot be re-rendered — " +
+		return nil, fmt.Errorf("this release does not carry its chart, so it cannot be re-rendered - " +
 			"it was written by something that stripped the chart from the release")
 	}
 	return r.Chart.chart(), nil
