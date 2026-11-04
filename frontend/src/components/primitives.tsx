@@ -502,6 +502,111 @@ export function Segmented<T extends string>({
   )
 }
 
+/**
+ * Tabs move between views of one thing — an object's overview, its events, its
+ * YAML. That is navigation, not a setting, so it is not drawn as Segmented's
+ * toggle: a raised cell on a raised track all but vanished on the dark deck.
+ * The open view carries the lime underline (the accent as line, the rail arc's
+ * language) and a full-strength label; the rest are muted until hovered.
+ *
+ * It is a real tablist: one tab in the tab order, the arrow keys and Home/End
+ * move between them, and selection follows focus, as the WAI-ARIA pattern has
+ * it for views that are cheap to switch.
+ */
+export function Tabs<T extends string>({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+}: {
+  value: T
+  onChange: (next: T) => void
+  options: Array<{ value: T; label: string; icon?: ReactNode; count?: number }>
+  ariaLabel: string
+}) {
+  const refs = useRef<Array<HTMLButtonElement | null>>([])
+
+  const select = (index: number) => {
+    const option = options[index]
+    if (!option) return
+    onChange(option.value)
+    refs.current[index]?.focus()
+  }
+
+  // Where a key moves focus from `index`, or undefined for a key that is not
+  // the tablist's. The arrows wrap at either end.
+  const target = (index: number, key: string): number | undefined => {
+    const count = options.length
+    switch (key) {
+      case 'ArrowRight':
+        return (index + 1) % count
+      case 'ArrowLeft':
+        return (index - 1 + count) % count
+      case 'Home':
+        return 0
+      case 'End':
+        return count - 1
+      default:
+        return undefined
+    }
+  }
+
+  const onKeyDown = (index: number, key: string) => {
+    const next = target(index, key)
+    if (next === undefined) return false
+    select(next)
+    return true
+  }
+
+  return (
+    <div role="tablist" aria-label={ariaLabel} className="flex min-w-0 flex-wrap items-stretch gap-1">
+      {options.map((option, index) => {
+        const active = option.value === value
+        return (
+          <button
+            key={option.value}
+            ref={(node) => {
+              refs.current[index] = node
+            }}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            tabIndex={active ? 0 : -1}
+            onClick={() => onChange(option.value)}
+            onKeyDown={(event) => {
+              if (onKeyDown(index, event.key)) event.preventDefault()
+            }}
+            className={`relative inline-flex h-10 shrink-0 items-center gap-1.5 rounded-t-control px-3 text-[13.5px] transition-colors duration-300 focus-visible:outline-offset-[-2px] motion-reduce:transition-none ${
+              active ? 'font-semibold text-fg' : 'font-medium text-muted hover:bg-raised hover:text-fg'
+            }`}
+          >
+            {option.icon}
+            {option.label}
+            {/* The space is for the tab's accessible name ("Events 4", not
+                "Events4"); a flex row draws no whitespace-only item. */}
+            {option.count === undefined ? null : ' '}
+            {option.count === undefined ? null : (
+              <span
+                className={`rounded-chip px-1.5 py-px font-data text-[11.5px] tabular-nums transition-colors duration-300 motion-reduce:transition-none ${
+                  active ? 'bg-accent-soft text-accent' : 'bg-raised text-muted'
+                }`}
+              >
+                {option.count}
+              </span>
+            )}
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent transition-opacity duration-300 motion-reduce:transition-none ${
+                active ? 'opacity-100' : 'opacity-0'
+              }`}
+            />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export function KeyHint({ children }: { children: ReactNode }) {
   return (
     <kbd className="rounded-chip border border-line bg-raised px-1.5 py-px font-data text-[11px] text-faint">
