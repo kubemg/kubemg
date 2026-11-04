@@ -132,3 +132,6 @@ brand/
 
 # Built documentation (mkdocs build --site-dir)
 site/
+
+# Python bytecode the docs build leaves beside its hook.
+__pycache__/
