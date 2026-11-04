@@ -53,7 +53,10 @@ and `equal` — not checked by installing the chart.
 server's config reads has to be set by a chart template or have a row in the
 [Environment reference](../install/environment.md), whose first cell names it.
 A new variable with neither fails here, so an operator installing from the
-chart can always find it and set it through `extraEnv`.
+chart can always find it and set it through `extraEnv`. The check reads
+`pkg/config` only: a variable read anywhere else, like
+`KUBEMG_MEMORY_LIMIT_BYTES` in `cmd/server/memlimit.go`, which the chart sets,
+is outside its reach.
 
 **`make frontend-contrast`** reads the design tokens out of `frontend/src/index.css`
 and measures every colour pairing the components actually build against WCAG. It
