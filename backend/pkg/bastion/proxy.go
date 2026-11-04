@@ -282,14 +282,15 @@ func (p *Proxy) Handle(c *gin.Context) {
 	event.Resource = parsed.Resource
 	event.Name = ObjectName(parsed, event.Verb, path, nil)
 
-	// Past net/url's parameter limit the query reads as empty here, so a watch
-	// in it would be routed and recorded as a plain list, while an API server
-	// built before that limit still opens the watch. Which one the cluster runs
-	// is unknown, so the call is refused rather than predicted.
+	// Past net/url's parameter limit, what the API server makes of the query
+	// depends on the Go it was built with: one with the same limit reads it as
+	// empty and lists, one built before the limit opens the watch. Which one
+	// the cluster runs is unknown, so the call is refused rather than
+	// predicted. Its record names the verb the caller asked for.
 	if kubeparams.TooManyParams(path) {
 		event.RefusedBy = RefusedByKubeMG
-		p.fail(c, &event, http.StatusBadRequest, "the query has more than "+
-			strconv.Itoa(kubeparams.MaxParams)+" parameters, more than kubemg reads; split the call")
+		p.fail(c, &event, http.StatusBadRequest, "the query has more parameters than kubemg reads ("+
+			strconv.Itoa(kubeparams.MaxParams)+" by default); split the call")
 		return
 	}
 

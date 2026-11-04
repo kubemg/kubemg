@@ -228,9 +228,11 @@ func VerbFor(method, path string) string {
 // watchRequested reports whether the API server will treat the call as a
 // watch. Any spelling it streams on must be recorded as one: a watch filed
 // under "list" names the wrong verb and loses the floor selective audit keeps
-// for streaming calls.
+// for streaming calls. Past net/url's parameter limit the gateway refuses the
+// call before anything routes on this, and its record still names the watch
+// the caller asked for, so the query is read past the limit.
 func watchRequested(path string) bool {
-	return kubeparams.Bool(kubeparams.Query(path), "watch")
+	return kubeparams.Bool(kubeparams.QueryPastLimit(path), "watch")
 }
 
 // APIPath is the Kubernetes-shaped decomposition of a request path. Fields are
