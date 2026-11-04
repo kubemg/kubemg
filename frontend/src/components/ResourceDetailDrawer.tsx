@@ -74,6 +74,7 @@ import {
   Segmented,
   Select,
   Sheet,
+  Tabs,
 } from './primitives'
 import { useConfirm } from '../state/confirm-context'
 
@@ -517,13 +518,15 @@ export function ResourceDetailDrawer({
           means scrolling back up to find the control. It sits on the sheet's
           surface, across the full width, the way the page's own header sits
           over the canvas. What kind the object is lives in the summary card
-          below and the line under the title — not a third time here. */}
-      <div className="sticky -top-4 z-10 -mx-5 -mt-4 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line-soft bg-surface px-5 py-2.5">
+          below and the line under the title — not a third time here. There
+          is no bottom padding: the open tab's underline sits on the bar's own
+          rule, so the strip reads as the edge of the view it opens. */}
+      <div className="sticky -top-4 z-10 -mx-5 -mt-4 flex shrink-0 flex-wrap items-end gap-x-3 border-b border-line-soft bg-surface px-5 pt-1">
         {tabs.length > 1 ? (
-          <Segmented<DetailTab> ariaLabel="Resource view" value={tab} onChange={setTab} options={tabs} />
+          <Tabs<DetailTab> ariaLabel="Resource view" value={tab} onChange={setTab} options={tabs} />
         ) : null}
 
-        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+        <div className="ml-auto flex min-h-10 min-w-0 flex-wrap items-center justify-end gap-2 py-1.5">
           {alarmTarget ? (
             <Button type="button" size="sm" variant="primary" onClick={() => openAlarm(null)}>
               <BellPlus aria-hidden="true" className="size-4" />
