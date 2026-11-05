@@ -273,14 +273,36 @@ func directClient(target Target) *http.Client {
 }
 
 func directClientWithTimeout(target Target, timeout time.Duration) *http.Client {
+	return &http.Client{Transport: directTransport(target), Timeout: timeout}
+}
+
+// The connection pools direct-mode datasources are dialled through, one per TLS
+// shape. A transport cloned per query is a pool per query: every chart query
+// paid a fresh TCP and TLS handshake, and left behind an idle connection that
+// nothing reused until it timed out. They are kept apart by TLS shape rather
+// than shared outright, so a verified call never rides a connection that was
+// set up without verification, and a source switched to verifying is checked
+// on its very next call.
+var (
+	verifiedTransport   = http.DefaultTransport.(*http.Transport).Clone()
+	unverifiedTransport = newUnverifiedTransport()
+)
+
+func newUnverifiedTransport() *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if target.InsecureSkipVerify {
-		transport.TLSClientConfig = &tls.Config{
-			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: true, //nolint:gosec // operator opt-in
-		}
+	transport.TLSClientConfig = &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: true, //nolint:gosec // operator opt-in
 	}
-	return &http.Client{Transport: transport, Timeout: timeout}
+	return transport
+}
+
+// directTransport is the pool a target's calls share.
+func directTransport(target Target) *http.Transport {
+	if target.InsecureSkipVerify {
+		return unverifiedTransport
+	}
+	return verifiedTransport
 }
 
 // explain turns a non-2xx answer into the next thing to try. A bare status code
