@@ -357,6 +357,46 @@ tests:
                 name: kubemg-db
                 key: password
 
+  - it: sizes the database connection pool
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_MAX_OPEN_CONNS
+            value: "25"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_MAX_IDLE_CONNS
+            value: "10"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_CONN_MAX_LIFETIME
+            value: 30m
+
+  - it: takes the connection pool from the values
+    set:
+      database.pool.maxOpenConns: 40
+      database.pool.maxIdleConns: 20
+      database.pool.connMaxLifetime: 5m
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_MAX_OPEN_CONNS
+            value: "40"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_MAX_IDLE_CONNS
+            value: "20"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DB_CONN_MAX_LIFETIME
+            value: 5m
+
   - it: points at the in-chart PostgreSQL without TLS when it runs one
     set:
       database.host: ""

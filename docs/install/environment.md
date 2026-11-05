@@ -41,6 +41,9 @@ to the default.
 | `DB_PASSWORD` | `kubemg_secret` | PostgreSQL password. **Change this in production** - the default is a development placeholder. |
 | `DB_NAME` | `kubemg` | Database name. |
 | `DB_SSLMODE` | `disable` | libpq `sslmode`. Use `require` (or stricter) against anything but a loopback/private-network Postgres. |
+| `DB_MAX_OPEN_CONNS` | `25` | Most connections one replica holds open. Keep replicas × this under Postgres's `max_connections`. |
+| `DB_MAX_IDLE_CONNS` | `10` | Connections kept open between requests rather than closed. Capped at `DB_MAX_OPEN_CONNS`. |
+| `DB_CONN_MAX_LIFETIME` | `30m` | A connection is closed and redialled after this long (a Go duration or seconds). `0` keeps it. |
 
 See [Database](database.md) for how the schema is applied.
 
