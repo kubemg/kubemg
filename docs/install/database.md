@@ -22,6 +22,21 @@ Set `DB_SSLMODE=require` (or `verify-full` on a managed Postgres that supports
 it) against anything but a loopback or trusted private network. `disable` is a
 development convenience.
 
+### Connection pool
+
+| Variable | Default | What it is |
+|---|---|---|
+| `DB_MAX_OPEN_CONNS` | `25` | Most connections one replica holds open. |
+| `DB_MAX_IDLE_CONNS` | `10` | Connections kept for the next request rather than closed. |
+| `DB_CONN_MAX_LIFETIME` | `30m` | How long a connection is used before it is closed and redialled. `0` keeps it. |
+
+Each replica holds up to `DB_MAX_OPEN_CONNS`, so the replicas together, plus
+anything else that connects, have to stay under the server's `max_connections`
+(100 on a stock PostgreSQL). Behind PgBouncer or a managed proxy, size it
+against the proxy's pool instead. The lifetime is what moves connections over
+to a new primary after a failover, so keep it on where the database can fail
+over. The Helm chart sets these from `database.pool.*`.
+
 ## Schema changes at boot
 
 The schema is applied automatically on every boot, before the server accepts a
