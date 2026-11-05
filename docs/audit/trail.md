@@ -141,7 +141,7 @@ Suppressible verbs: `get`, `list`, `watch`, `create`, `update`, `patch`, `delete
 Shortening retention takes effect without a restart.
 
 ??? info "How pruning runs"
-    The pruner runs every 12 hours and once at boot, re-reading the window each pass. A database error on one pass is logged and retried on the next. A 30-second tick republishes the audit-verb and recording selection so replicas pick up a change saved through a sibling.
+    The pruner runs every 12 hours and once at boot, re-reading the window each pass. It deletes the oldest rows 5,000 at a time with a short pause between batches, so shortening retention on a large trail does not hold one long transaction against the table every proxied call writes to. A database error on one pass is logged and retried on the next; the batches before it stay deleted. A 30-second tick republishes the audit-verb and recording selection so replicas pick up a change saved through a sibling.
 
 ## Forwarding the trail
 

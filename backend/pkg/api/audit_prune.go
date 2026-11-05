@@ -183,14 +183,12 @@ func (s *server) pruneJitRequests(ctx context.Context, before time.Time) {
 // gone or unreachable is left behind — the alternative is a directory of
 // recordings nothing references, which no later pass can find.
 func (s *server) pruneRecordings(ctx context.Context, before time.Time) {
+	// The store deletes in batches, so a failure part way still hands back the
+	// rows the earlier batches removed, and their files go below all the same.
 	stale, err := s.store.PruneTerminalSessions(ctx, before)
-	if err != nil {
-		if ctx.Err() != nil {
-			return
-		}
+	if err != nil && ctx.Err() == nil {
 		s.log().Warn("session recording retention pass failed",
 			slog.String("error", err.Error()))
-		return
 	}
 	if len(stale) == 0 {
 		return

@@ -208,11 +208,12 @@ func (s *Store) AuditSummary(ctx context.Context, since time.Time) (AuditStats, 
 }
 
 // PruneAuditEvents drops records older than the cutoff, so an audit table on a
-// busy fleet does not grow without bound.
+// busy fleet does not grow without bound. It deletes in batches (see
+// pruneBatchSize), and on an error returns how many went before it.
 func (s *Store) PruneAuditEvents(ctx context.Context, before time.Time) (int64, error) {
-	res := s.gdb.WithContext(ctx).Where("at < ?", before).Delete(&AuditEvent{})
-	if res.Error != nil {
-		return 0, fmt.Errorf("prune audit events: %w", res.Error)
+	removed, err := s.pruneByAge(ctx, &AuditEvent{}, "at", "at < ?", before)
+	if err != nil {
+		return removed, fmt.Errorf("prune audit events: %w", err)
 	}
-	return res.RowsAffected, nil
+	return removed, nil
 }
