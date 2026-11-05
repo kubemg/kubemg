@@ -179,25 +179,36 @@ func (s *Store) DeleteTerminalSession(ctx context.Context, id uint) error {
 // returns the rows it removed, so their files can be deleted too. Returning
 // them is the point: a row deleted without its file leaves a recording on disk
 // that nothing references and no retention policy will ever reach again.
+//
+// It deletes in batches (see pruneBatchSize), so on an error it still returns
+// the rows that earlier batches removed: those are gone and their files have
+// to go with them.
 func (s *Store) PruneTerminalSessions(
 	ctx context.Context, before time.Time,
 ) ([]TerminalSession, error) {
 	var stale []TerminalSession
-	err := s.gdb.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("started_at < ?", before).Find(&stale).Error; err != nil {
-			return err
+	_, err := pruneInBatches(ctx, pruneBatchSize, prunePause, func(ctx context.Context) (int64, error) {
+		var batch []TerminalSession
+		err := s.gdb.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			err := tx.Where("started_at < ?", before).
+				Order("started_at").Limit(pruneBatchSize).Find(&batch).Error
+			if err != nil || len(batch) == 0 {
+				return err
+			}
+			ids := make([]uint, 0, len(batch))
+			for _, session := range batch {
+				ids = append(ids, session.ID)
+			}
+			return tx.Where("id IN ?", ids).Delete(&TerminalSession{}).Error
+		})
+		if err != nil {
+			return 0, err
 		}
-		if len(stale) == 0 {
-			return nil
-		}
-		ids := make([]uint, 0, len(stale))
-		for _, session := range stale {
-			ids = append(ids, session.ID)
-		}
-		return tx.Where("id IN ?", ids).Delete(&TerminalSession{}).Error
+		stale = append(stale, batch...)
+		return int64(len(batch)), nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("prune terminal sessions: %w", err)
+		return stale, fmt.Errorf("prune terminal sessions: %w", err)
 	}
 	return stale, nil
 }

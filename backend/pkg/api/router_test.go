@@ -98,6 +98,9 @@ type fakeStore struct {
 	// on the window the pruner chose rather than only on what survived.
 	pruned   []time.Time
 	pruneErr error
+	// recordingPruneErr fails a recording prune after it has removed rows, the
+	// way a batch failing after earlier ones committed does.
+	recordingPruneErr error
 	// alarms holds the channel and rule tables; see alarms_fake_test.go.
 	alarms *alarmTables
 
@@ -893,7 +896,7 @@ func (f *fakeStore) PruneTerminalSessions(
 		kept = append(kept, session)
 	}
 	f.recordings = kept
-	return stale, nil
+	return stale, f.recordingPruneErr
 }
 
 func (f *fakeStore) Settings(_ context.Context) (map[string]string, error) {

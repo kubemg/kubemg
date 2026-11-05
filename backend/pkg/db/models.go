@@ -476,7 +476,7 @@ type AuditEvent struct {
 	// stored for a refused write, never stored for a redacted kind, only
 	// stored when the setting is on — lives in exactly one place. Because it
 	// rides on this row rather than a table of its own, PruneAuditEvents'
-	// existing `DELETE ... WHERE at < ?` prunes it for free; a diff outliving
+	// existing delete by age prunes it for free; a diff outliving
 	// the write it describes would be the retention window lying about what it
 	// retains.
 	Diff string `gorm:"type:text" json:"-"`
