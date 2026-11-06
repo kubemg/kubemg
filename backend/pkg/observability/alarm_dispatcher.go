@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/kubemg/kubemg/backend/pkg/db"
@@ -68,6 +69,13 @@ const (
 	// an unbounded map keyed by cluster/namespace/object is a memory leak with a
 	// fleet-sized denominator.
 	cooloffCapacity = 4096
+	// alarmWorkers is how many deliveries may run in parallel across all channels.
+	// A dead webhook blocks its own slot only; other channels can still deliver.
+	alarmWorkers = 32
+	// alarmMaxChannelInflight is how many in-flight deliveries one channel may have
+	// at once. Keeping this small means a slow endpoint does not exhaust the pool
+	// for the whole fleet.
+	alarmMaxChannelInflight = 2
 )
 
 // SignalSource says which stream a signal came from, and therefore which half of
@@ -156,7 +164,17 @@ type Dispatcher struct {
 	origin string
 
 	queue   chan Signal
-	dropped int64
+	dropped atomic.Int64
+
+	// workers is a counting semaphore that bounds total concurrent deliveries.
+	workers chan struct{}
+
+	// inflightMu guards inflight.
+	inflightMu sync.Mutex
+	// inflight tracks how many deliveries are running per channel ID.
+	inflight map[uint]int
+	// wg tracks outstanding delivery goroutines.
+	wg sync.WaitGroup
 
 	mu       sync.RWMutex
 	rules    []db.AlarmRule
@@ -198,6 +216,8 @@ func NewDispatcher(opts DispatcherOptions) *Dispatcher {
 		logger:   logger,
 		origin:   strings.TrimRight(opts.Origin, "/"),
 		queue:    make(chan Signal, alarmQueueSize),
+		workers:  make(chan struct{}, alarmWorkers),
+		inflight: map[uint]int{},
 		channels: map[uint]db.AlarmChannel{},
 		cooloff:  map[string]time.Time{},
 		done:     make(chan struct{}),
@@ -222,10 +242,10 @@ func (d *Dispatcher) Observe(signal Signal) {
 	select {
 	case d.queue <- signal:
 	default:
-		d.dropped++
-		if d.dropped == 1 || d.dropped%100 == 0 {
+		n := d.dropped.Add(1)
+		if n == 1 || n%100 == 0 {
 			d.logger.Error("alarm queue is full, dropping signals",
-				slog.Int64("dropped_total", d.dropped))
+				slog.Int64("dropped_total", n))
 		}
 	}
 }
@@ -281,8 +301,15 @@ func (d *Dispatcher) Run(ctx context.Context) {
 	}
 }
 
-// Wait blocks until Run has returned.
-func (d *Dispatcher) Wait() { <-d.done }
+// Wait blocks until Run has returned and all in-flight deliveries have finished.
+func (d *Dispatcher) Wait() {
+	<-d.done
+	d.wg.Wait()
+}
+
+// waitDeliveries blocks until all goroutines spawned by the most recent
+// deliver call have completed. Used in tests to avoid data races.
+func (d *Dispatcher) waitDeliveries() { d.wg.Wait() }
 
 // Refresh re-reads the rules and channels. A read failure keeps the previous set
 // rather than disarming: alarms going quiet because a database blipped is the
@@ -314,7 +341,8 @@ func (d *Dispatcher) Refresh(ctx context.Context) {
 	d.mu.Unlock()
 }
 
-// deliver matches one signal and sends it wherever it goes.
+// deliver matches one signal and hands each matching delivery to its own
+// goroutine, so a slow or dead channel does not block other channels.
 func (d *Dispatcher) deliver(ctx context.Context, signal Signal) {
 	d.mu.RLock()
 	rules := make([]db.AlarmRule, len(d.rules))
@@ -336,7 +364,34 @@ func (d *Dispatcher) deliver(ctx context.Context, signal Signal) {
 		if !d.claim(rule, signal) {
 			continue
 		}
-		d.send(ctx, rule, channel, signal)
+		// Enforce per-channel in-flight limit before spawning.
+		d.inflightMu.Lock()
+		if d.inflight[channel.ID] >= alarmMaxChannelInflight {
+			d.inflightMu.Unlock()
+			d.logger.Warn("alarm delivery skipped: channel in-flight limit reached",
+				slog.String("channel", channel.Name))
+			continue
+		}
+		d.inflight[channel.ID]++
+		d.inflightMu.Unlock()
+
+		d.wg.Add(1)
+		go func(rule db.AlarmRule, channel db.AlarmChannel) {
+			defer d.wg.Done()
+			defer func() {
+				d.inflightMu.Lock()
+				d.inflight[channel.ID]--
+				d.inflightMu.Unlock()
+			}()
+			// Acquire a global worker slot before doing network I/O.
+			select {
+			case d.workers <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-d.workers }()
+			d.send(ctx, rule, channel, signal)
+		}(rule, channel)
 	}
 }
 
