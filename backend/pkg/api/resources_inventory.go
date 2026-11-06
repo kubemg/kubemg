@@ -853,14 +853,25 @@ func (s *server) listStorageClasses(c *gin.Context) {
 			Provisioner:   item.Provisioner,
 			ReclaimPolicy: item.ReclaimPolicy,
 			BindingMode:   item.VolumeBindingMode,
-			// The default class is marked by an annotation, and which class is
-			// default decides what an unqualified claim gets.
-			Default: item.Metadata.Annotations["storageclass.kubernetes.io/is-default-class"] == "true",
+			// The default class is marked by either the GA or the beta annotation.
+			// Kubernetes's DefaultStorageClass admission plugin checks both
+			// (k8s.io/kubernetes/pkg/volume/util/storageclass.go IsDefaultAnnotation),
+			// so the console must too — a cluster whose default class only carries
+			// the beta annotation otherwise reports "no default" while still binding.
+			Default: isDefaultStorageClass(item.Metadata.Annotations),
 		})
 	}
 
 	sortResources(out)
 	listResponse(c, gin.H{"storageclasses": out})
+}
+
+// isDefaultStorageClass mirrors Kubernetes's IsDefaultAnnotation rule: a class
+// is default when either the GA or the beta annotation is exactly "true".
+func isDefaultStorageClass(annotations map[string]string) bool {
+	const ga = "storageclass.kubernetes.io/is-default-class"
+	const beta = "storageclass.beta.kubernetes.io/is-default-class"
+	return annotations[ga] == "true" || annotations[beta] == "true"
 }
 
 func (s *server) listConfigMaps(c *gin.Context) {
