@@ -9,19 +9,20 @@ import { GuardrailSettingsPanel } from './GuardrailSettingsPanel'
 import { HelmRepositoriesPanel } from './HelmRepositoriesPanel'
 
 /*
- * Each admin panel's first-run empty state must carry an EmptyState title and
- * the action that fixes it, so the operator does not have to find the header
- * button after reading the message. The alarm-rules branch with no channel is
- * the exception: a rule with nowhere to deliver looks like coverage and is not,
- * so there is no "Add rule" button when no channel exists.
+ * Each admin panel's first-run empty state must carry an EmptyState title so the
+ * operator can read what is missing, and an action button that fixes it — without
+ * having to find the header button separately. The alarm-rules branch with no
+ * channel is the exception: a rule with nowhere to deliver looks like coverage and
+ * is not, so the EmptyState carries no action and the header button is disabled.
+ *
+ * "Multiple elements" errors arise because the panel header also carries an action
+ * button with the same label; getAllByRole checks that at least one copy exists.
  */
 
 vi.mock('../../state/confirm-context', () => ({ useConfirm: () => async () => true }))
 vi.mock('../../state/result-context', () => ({ useResult: () => () => {} }))
 
 afterEach(cleanup)
-
-/* ----------------------------------------------------------------- alarms --- */
 
 vi.mock('../../api/client', () => ({
   fetchAlarmChannels: () => Promise.resolve({ channels: [], kinds: [] }),
@@ -47,39 +48,43 @@ vi.mock('../../api/client', () => ({
 }))
 
 describe('AlarmSettingsPanel empty states', () => {
-  it('renders the channel EmptyState title and Add channel button', async () => {
+  it('renders the channel EmptyState title and an Add channel button', async () => {
     render(<AlarmSettingsPanel clusters={[]} />)
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /no channels yet/i })).toBeTruthy()
-      expect(screen.getByRole('button', { name: /add channel/i })).toBeTruthy()
+      // Both the header and the EmptyState carry the button; at least one must exist.
+      expect(screen.getAllByRole('button', { name: /add channel/i }).length).toBeGreaterThan(0)
     })
   })
 
-  it('renders "Add a channel first" with no rule-creation button when channels are absent', async () => {
+  it('renders "Add a channel first" and keeps the Add rule button disabled when channels are absent', async () => {
     render(<AlarmSettingsPanel clusters={[]} />)
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /add a channel first/i })).toBeTruthy()
-      expect(screen.queryByRole('button', { name: /add rule/i })).toBeNull()
+      // The header button exists but must be disabled — no enabled path to add a rule.
+      const addRuleBtn = screen.queryByRole('button', { name: /add rule/i })
+      expect(addRuleBtn).not.toBeNull()
+      expect((addRuleBtn as HTMLButtonElement).disabled).toBe(true)
     })
   })
 })
 
 describe('GuardrailSettingsPanel empty state', () => {
-  it('renders the EmptyState title and Presets button', async () => {
+  it('renders the EmptyState title and a Presets button', async () => {
     render(<GuardrailSettingsPanel clusters={[]} />)
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /no guardrails yet/i })).toBeTruthy()
-      expect(screen.getByRole('button', { name: /presets/i })).toBeTruthy()
+      expect(screen.getAllByRole('button', { name: /presets/i }).length).toBeGreaterThan(0)
     })
   })
 })
 
 describe('HelmRepositoriesPanel empty state', () => {
-  it('renders the EmptyState title and Add repository button', async () => {
+  it('renders the EmptyState title and an Add repository button', async () => {
     render(<HelmRepositoriesPanel />)
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /no repositories/i })).toBeTruthy()
-      expect(screen.getByRole('button', { name: /add repository/i })).toBeTruthy()
+      expect(screen.getAllByRole('button', { name: /add repository/i }).length).toBeGreaterThan(0)
     })
   })
 })
