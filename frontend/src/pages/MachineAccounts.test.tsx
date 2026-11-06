@@ -5,7 +5,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import type { MachineAccount, MachineAccountAccess } from '../api/types'
-import { SetupPath } from './MachineAccounts'
+import { FilteredEmpty, SetupPath } from './MachineAccounts'
 
 /*
  * The three surfaces this page offers have to be used in one order — account,
@@ -37,6 +37,15 @@ function account(over: Partial<MachineAccount>): MachineAccount {
 }
 
 afterEach(cleanup)
+
+describe('MachineAccounts filtered-to-nothing state', () => {
+  it('renders a plain line, not an EmptyState, when accounts exist but none match the filter', () => {
+    render(<FilteredEmpty />)
+    expect(screen.getByText(/nothing matches that filter/i)).toBeTruthy()
+    // Must be a plain text node, not an EmptyState heading
+    expect(screen.queryByRole('heading')).toBeNull()
+  })
+})
 
 describe('the order a machine account is set up in', () => {
   it('names all three steps, in order', () => {

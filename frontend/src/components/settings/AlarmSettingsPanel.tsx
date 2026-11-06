@@ -31,6 +31,7 @@ import {
   Age,
   Button,
   Chip,
+  EmptyState,
   Field,
   IconButton,
   Notice,
@@ -242,9 +243,18 @@ export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
         {loading ? <p className="px-4 py-6 text-[13px] text-muted">Loading…</p> : null}
 
         {!loading && channels.length === 0 ? (
-          <p className="px-4 py-6 text-[13px] text-muted">
-            No channels yet. Add one and a rule can start delivering to it.
-          </p>
+          <EmptyState
+            icon={<BellRing aria-hidden="true" className="size-4" />}
+            title="No channels yet"
+            action={
+              <Button size="sm" onClick={() => setEditingChannel('new')}>
+                <Plus aria-hidden="true" className="size-3.5" />
+                Add channel
+              </Button>
+            }
+          >
+            Add one and a rule can start delivering to it.
+          </EmptyState>
         ) : null}
 
         <ul className="divide-y divide-line-soft">
@@ -336,11 +346,27 @@ export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
         }
       >
         {rules && rules.rules.length === 0 ? (
-          <p className="px-4 py-6 text-[13px] text-muted">
-            {channels.length === 0
-              ? 'Add a channel first — a rule with nowhere to deliver looks like coverage and is not.'
-              : 'No rules yet. Nothing is polled and nothing is delivered until one exists.'}
-          </p>
+          channels.length === 0 ? (
+            <EmptyState
+              icon={<BellRing aria-hidden="true" className="size-4" />}
+              title="Add a channel first"
+            >
+              A rule with nowhere to deliver looks like coverage and is not.
+            </EmptyState>
+          ) : (
+            <EmptyState
+              icon={<BellRing aria-hidden="true" className="size-4" />}
+              title="No rules yet"
+              action={
+                <Button size="sm" onClick={() => setEditingRule('new')}>
+                  <Plus aria-hidden="true" className="size-3.5" />
+                  Add rule
+                </Button>
+              }
+            >
+              Nothing is polled and nothing is delivered until one exists.
+            </EmptyState>
+          )
         ) : null}
 
         <ul className="divide-y divide-line-soft">

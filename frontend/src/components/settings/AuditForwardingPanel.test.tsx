@@ -58,11 +58,13 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('AuditForwardingPanel', () => {
-  it('says the trail is still complete when nothing is being pushed', async () => {
+  it('renders the EmptyState title and action when nothing is being pushed', async () => {
     render(<AuditForwardingPanel />)
-    // "No destinations" must not read as "no audit trail" — the table and the
-    // server's own log are unaffected, and the empty state has to say so.
     await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /nothing is being forwarded/i })).toBeTruthy()
+      // Both the header and the EmptyState carry the button; at least one must exist.
+      expect(screen.getAllByRole('button', { name: /add destination/i }).length).toBeGreaterThan(0)
+      // "No destinations" must not read as "no audit trail"
       expect(screen.getByText(/trail is still complete/i)).toBeTruthy()
     })
   })
