@@ -16,6 +16,7 @@ import type {
 import {
   Age,
   Button,
+  EmptyState,
   Field,
   IconButton,
   Notice,
@@ -162,10 +163,19 @@ export function AuditForwardingPanel() {
         {loading ? <p className="px-4 py-6 text-[13px] text-muted">Loading…</p> : null}
 
         {!loading && forwarders.length === 0 ? (
-          <p className="px-4 py-6 text-[13px] leading-relaxed text-muted">
-            Nothing is being pushed. The trail is still complete in the table above and in this
-            server’s own log stream — add a destination when a SIEM cannot come and collect it.
-          </p>
+          <EmptyState
+            icon={<Send aria-hidden="true" className="size-4" />}
+            title="Nothing is being forwarded"
+            action={
+              <Button size="sm" onClick={() => setEditing('new')}>
+                <Plus aria-hidden="true" className="size-3.5" />
+                Add destination
+              </Button>
+            }
+          >
+            The trail is still complete in the table above and in this server’s own log stream —
+            add a destination when a SIEM cannot come and collect it.
+          </EmptyState>
         ) : null}
 
         <ul className="divide-y divide-line-soft">

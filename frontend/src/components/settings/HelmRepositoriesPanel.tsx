@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { CheckCircle2, Pencil, Plus, RefreshCw, Trash2, XCircle } from 'lucide-react'
+import { CheckCircle2, Package, Pencil, Plus, RefreshCw, Trash2, XCircle } from 'lucide-react'
 import {
   deleteHelmRepository,
   errorMessage,
@@ -9,7 +9,7 @@ import {
 } from '../../api/client'
 import type { HelmRepository, HelmRepositoryInput } from '../../api/types'
 import { relativeAge } from '../../lib/time'
-import { Button, Field, IconButton, Notice, Panel, Pill, Sheet, TextInput } from '../primitives'
+import { Button, EmptyState, Field, IconButton, Notice, Panel, Pill, Sheet, TextInput } from '../primitives'
 import { useConfirm } from '../../state/confirm-context'
 import { useResult } from '../../state/result-context'
 
@@ -109,9 +109,18 @@ export function HelmRepositoriesPanel() {
         {loading ? <p className="px-4 py-6 text-[13px] text-muted">Loading…</p> : null}
 
         {!loading && repositories.length === 0 ? (
-          <p className="px-4 py-6 text-[13px] text-muted">
-            No repositories configured. Add one and its charts become installable from Explore.
-          </p>
+          <EmptyState
+            icon={<Package aria-hidden="true" className="size-4" />}
+            title="No repositories"
+            action={
+              <Button size="sm" onClick={() => setEditing('new')}>
+                <Plus aria-hidden="true" className="size-3.5" />
+                Add repository
+              </Button>
+            }
+          >
+            Add one and its charts become installable from Explore.
+          </EmptyState>
         ) : null}
 
         <ul className="divide-y divide-line-soft">

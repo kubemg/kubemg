@@ -20,6 +20,7 @@ import {
   Age,
   ActivityTag,
   Button,
+  EmptyState,
   Pill,
   Field,
   IconButton,
@@ -321,13 +322,23 @@ export function MachineAccounts() {
             </tbody>
           </Table>
 
-          {!loading && visible.length === 0 ? (
-            <p className="flex flex-col items-center gap-2 border-t border-line-soft px-4 py-10 text-center text-[13px] text-muted">
-              <Bot aria-hidden="true" className="size-5 text-faint" />
-              {accounts.length === 0
-                ? 'No machine accounts yet. Add one for the pipeline that needs a kubeconfig — you grant it a cluster next, and issue its credential after that.'
-                : 'Nothing matches that filter.'}
-            </p>
+          {!loading && accounts.length === 0 ? (
+            <EmptyState
+              icon={<Bot aria-hidden="true" className="size-4" />}
+              title="No machine accounts yet"
+              action={
+                <Button onClick={() => setCreateOpen(true)}>
+                  <Plus aria-hidden="true" className="size-4" />
+                  Add machine account
+                </Button>
+              }
+            >
+              Add one for the pipeline that needs a kubeconfig — you grant it a cluster next, and
+              issue its credential after that.
+            </EmptyState>
+          ) : null}
+          {!loading && accounts.length > 0 && visible.length === 0 ? (
+            <FilteredEmpty />
           ) : null}
         </div>
       </div>
@@ -384,6 +395,15 @@ export function MachineAccounts() {
  * rather than from a counter, so the strip reads as where this installation
  * actually is rather than as a tutorial that never finishes.
  */
+/** FilteredEmpty is the plain-text state shown when accounts exist but none match the search. */
+export function FilteredEmpty() {
+  return (
+    <p className="border-t border-line-soft px-4 py-6 text-center text-[13px] text-muted">
+      Nothing matches that filter.
+    </p>
+  )
+}
+
 export function SetupPath({ accounts }: { accounts: MachineAccount[] }) {
   const steps = [
     {

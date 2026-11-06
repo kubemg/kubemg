@@ -18,6 +18,7 @@ import type {
 } from '../../api/types'
 import {
   Button,
+  EmptyState,
   Field,
   IconButton,
   Notice,
@@ -215,10 +216,18 @@ export function GuardrailSettingsPanel({ clusters }: { clusters: Cluster[] }) {
         {loading ? <p className="px-4 py-6 text-[13px] text-muted">Loading…</p> : null}
 
         {!loading && policies.length === 0 ? (
-          <p className="px-4 py-6 text-[13px] text-muted">
-            No guardrails yet. Start from a preset — the rules worth having on day one are written
-            there already.
-          </p>
+          <EmptyState
+            icon={<ShieldAlert aria-hidden="true" className="size-4" />}
+            title="No guardrails yet"
+            action={
+              <Button size="sm" onClick={() => setBrowsing(true)}>
+                <Sparkles aria-hidden="true" className="size-3.5" />
+                Presets
+              </Button>
+            }
+          >
+            Start from a preset — the rules worth having on day one are written there already.
+          </EmptyState>
         ) : null}
 
         <ul className="divide-y divide-line-soft">
