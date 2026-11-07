@@ -48,8 +48,10 @@ jobs:
           # each acceptance, and master only takes changes through review.
           branch: 'cla-signatures'
           # The copyright holder does not license their own work to themselves,
-          # and a bot is not an author.
-          allowlist: 'ozkanpoyrazoglu,*[bot]'
+          # a bot is not an author, and MTirnova is an authorised contributor
+          # whose commits carry a local machine email not linked to a GitHub
+          # account — the allowlist entry exempts them from the CLA gate.
+          allowlist: 'ozkanpoyrazoglu,MTirnova,*[bot]'
           signed-commit-message: '$contributorName accepted the CLA in $owner/$repo#$pullRequestNo'
           create-file-commit-message: 'Start the record of CLA acceptances'
           custom-notsigned-prcomment: >-
