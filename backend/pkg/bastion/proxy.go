@@ -1037,6 +1037,12 @@ func wantsBodyStream(parsed APIPath, path string) bool {
 	if parsed.Subresource == "log" && followRequested(path) {
 		return true
 	}
+	// A GET on a named object with watch=true is served by the API server's
+	// get handler (one object, one response), not a streaming watch. The
+	// resolver only watches collections; a name in the path means get.
+	if parsed.Name != "" {
+		return false
+	}
 	return watchRequested(path)
 }
 

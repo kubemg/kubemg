@@ -66,6 +66,8 @@ func TestVerbFor(t *testing.T) {
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=FALSE", "list"},
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=0&watch=1", "list"},
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods/web-0?watch=false", "get"},
+		// A named GET with watch=true is still "get" — resolver only watches collections.
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods/web-0?watch=true", "get"},
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods?resourceVersion=0", "list"},
 		// The sensitive ones are named for what they are, not for their method.
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods/web-0/exec?command=sh", "exec"},
@@ -83,6 +85,79 @@ func TestVerbFor(t *testing.T) {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
 			if got := VerbFor(tc.method, tc.path); got != tc.want {
 				t.Fatalf("VerbFor(%q, %q) = %q, want %q", tc.method, tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFieldSelectorName(t *testing.T) {
+	cases := []struct {
+		path string
+		want string
+	}{
+		// Exact match — name promoted to record name, mirroring the resolver.
+		{"/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name%3Dweb-0&watch=true", "web-0"},
+		{"/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name%3Dweb-0", "web-0"},
+		// Other fields alongside — name still extracted.
+		{"/api/v1/namespaces/team-a/pods?fieldSelector=status.phase%3DRunning%2Cmetadata.name%3Dweb-0", "web-0"},
+		// Inequality — not a name term.
+		{"/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name!%3Dweb-0&watch=true", ""},
+		// No exact metadata.name term.
+		{"/api/v1/namespaces/team-a/pods?fieldSelector=status.phase%3DRunning", ""},
+		// No fieldSelector at all.
+		{"/api/v1/namespaces/team-a/pods?watch=true", ""},
+		// Invalid values rejected by IsPathSegmentName rule.
+		{"/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name%3D.", ""},
+		{"/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name%3D..", ""},
+		{"/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name%3Da%2Fb", ""},
+		// Named path — FieldSelectorName stays empty (ParsePath only fills it for collections).
+		{"/api/v1/namespaces/team-a/pods/web-0?fieldSelector=metadata.name%3Dweb-0", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			p := ParsePath(tc.path)
+			if p.FieldSelectorName != tc.want {
+				t.Fatalf("ParsePath(%q).FieldSelectorName = %q, want %q", tc.path, p.FieldSelectorName, tc.want)
+			}
+		})
+	}
+}
+
+func TestObjectNameFieldSelector(t *testing.T) {
+	cases := []struct {
+		desc string
+		path string
+		verb string
+		want string
+	}{
+		{
+			"watch on collection with exact name selector",
+			"/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name%3Dweb-0&watch=true",
+			"watch", "web-0",
+		},
+		{
+			"list on collection with exact name selector",
+			"/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name%3Dweb-0",
+			"list", "web-0",
+		},
+		{
+			"inequality selector gives empty name",
+			"/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name!%3Dweb-0&watch=true",
+			"watch", "",
+		},
+		{
+			"status selector gives empty name",
+			"/api/v1/namespaces/team-a/pods?fieldSelector=status.phase%3DRunning&watch=true",
+			"watch", "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			parsed := ParsePath(tc.path)
+			if got := ObjectName(parsed, tc.verb, nil); got != tc.want {
+				t.Fatalf("ObjectName(%q, %q) = %q, want %q", tc.path, tc.verb, got, tc.want)
 			}
 		})
 	}
