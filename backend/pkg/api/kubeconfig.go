@@ -382,18 +382,30 @@ func insecureProxyWarning(server string) string {
 		"plain HTTP, so put TLS in front of KubeMG before using this kubeconfig."
 }
 
+// grantsCtxKey is the gin context key for the cached per-user grant map.
+const grantsCtxKey = "kubemg_grants"
+
 // authorizeCluster checks that the user may act on the cluster, returning their
 // grant (zero-valued for admins) and effective Kubernetes role. It writes the
-// error response itself when access is denied.
+// error response itself when access is denied. The grant map is cached in the
+// gin context so that multiple authorizeCluster calls within one request (e.g.
+// listing clusters then checking one) pay the database round-trip only once.
 func (s *server) authorizeCluster(c *gin.Context, user *db.User, clusterID uint) (db.UserClusterAccess, string, bool) {
 	if user.IsAdmin() {
 		return db.UserClusterAccess{}, db.K8sRoleClusterAdmin, true
 	}
 
-	grants, err := s.store.AccessForUser(c.Request.Context(), user.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load cluster access"})
-		return db.UserClusterAccess{}, "", false
+	var grants map[uint]db.UserClusterAccess
+	if cached, ok := c.Get(grantsCtxKey); ok {
+		grants = cached.(map[uint]db.UserClusterAccess)
+	} else {
+		var err error
+		grants, err = s.store.AccessForUser(c.Request.Context(), user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load cluster access"})
+			return db.UserClusterAccess{}, "", false
+		}
+		c.Set(grantsCtxKey, grants)
 	}
 
 	grant, ok := grants[clusterID]
