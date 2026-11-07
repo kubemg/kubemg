@@ -31,6 +31,19 @@ func Open(cfg config.DB) (*gorm.DB, error) {
 	if err := registerSecretCallbacks(gdb); err != nil {
 		return nil, fmt.Errorf("register secret callbacks: %w", err)
 	}
+	sqlDB, err := gdb.DB()
+	if err != nil {
+		return nil, fmt.Errorf("get sql.DB: %w", err)
+	}
+	if cfg.MaxOpenConns > 0 {
+		sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
+	}
+	if cfg.MaxIdleConns > 0 {
+		sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
+	}
+	if cfg.ConnMaxLifetime > 0 {
+		sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+	}
 	return gdb, nil
 }
 
