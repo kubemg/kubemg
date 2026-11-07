@@ -353,6 +353,13 @@ func (c *Client) pump(ctx context.Context, conn *websocket.Conn, parts bool) err
 	}
 }
 
+// responsePartPool holds the read buffers used in forwardInParts. Each buffer
+// is protocol.ResponsePartSize bytes — one slot per concurrent request is the
+// steady state, so the pool stays small and allocations stay rare.
+var responsePartPool = sync.Pool{
+	New: func() any { return make([]byte, protocol.ResponsePartSize) },
+}
+
 // serveRequest answers one proxied request: it waits for a slot, replays the
 // call, and relays the answer — in parts when the bastion takes them.
 func (c *Client) serveRequest(ctx context.Context, id string, req protocol.Request, out *writer, parts bool) {
@@ -360,10 +367,12 @@ func (c *Client) serveRequest(ctx context.Context, id string, req protocol.Reque
 	defer cancel()
 
 	var resp protocol.Response
+	var poolBuf []byte
 	if c.acquire(callCtx) {
 		defer c.release()
 		if parts {
-			resp = c.forwardInParts(callCtx, id, req, out)
+			poolBuf = responsePartPool.Get().([]byte)
+			resp = c.forwardInParts(callCtx, id, req, out, poolBuf)
 		} else {
 			resp = c.forward(callCtx, req)
 		}
@@ -379,6 +388,11 @@ func (c *Client) serveRequest(ctx context.Context, id string, req protocol.Reque
 		Type: protocol.MessageResponse, ID: id, Response: &resp,
 	}); err != nil {
 		c.logger.Warn("could not answer a proxied request", slog.String("error", err.Error()))
+	}
+	// sendBulk encoded resp.Body before returning, so the buffer is safe to
+	// return to the pool now.
+	if poolBuf != nil {
+		responsePartPool.Put(poolBuf)
 	}
 }
 
@@ -425,14 +439,13 @@ func (c *Client) forward(ctx context.Context, req protocol.Request) protocol.Res
 // The size cap is the same one a whole response has. A body past it ends in a
 // final Response carrying the error, which tells the bastion to drop the parts
 // it has: half a list must never be presented as all of one.
-func (c *Client) forwardInParts(ctx context.Context, id string, req protocol.Request, out *writer) protocol.Response {
+func (c *Client) forwardInParts(ctx context.Context, id string, req protocol.Request, out *writer, buf []byte) protocol.Response {
 	resp, failed := c.call(ctx, req)
 	if failed != nil {
 		return *failed
 	}
 	defer resp.Body.Close()
 
-	buf := make([]byte, protocol.ResponsePartSize)
 	relayed := 0
 	for {
 		n, err := io.ReadFull(resp.Body, buf)
