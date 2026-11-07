@@ -207,12 +207,29 @@ func (s *Store) AuditSummary(ctx context.Context, since time.Time) (AuditStats, 
 	return stats, nil
 }
 
-// PruneAuditEvents drops records older than the cutoff, so an audit table on a
-// busy fleet does not grow without bound.
+// auditPruneBatch is the maximum rows removed per DELETE. Keeping deletes
+// bounded releases row locks incrementally rather than holding them across a
+// single unbounded statement on a table that may hold millions of rows.
+const auditPruneBatch = 1000
+
+// PruneAuditEvents drops records older than the cutoff in batches of
+// auditPruneBatch, so an audit table on a busy fleet does not grow without
+// bound and lock pressure during pruning is spread over many small statements.
 func (s *Store) PruneAuditEvents(ctx context.Context, before time.Time) (int64, error) {
-	res := s.gdb.WithContext(ctx).Where("at < ?", before).Delete(&AuditEvent{})
-	if res.Error != nil {
-		return 0, fmt.Errorf("prune audit events: %w", res.Error)
+	var total int64
+	for {
+		if ctx.Err() != nil {
+			return total, ctx.Err()
+		}
+		res := s.gdb.WithContext(ctx).
+			Where("id IN (SELECT id FROM audit_events WHERE at < ? LIMIT ?)", before, auditPruneBatch).
+			Delete(&AuditEvent{})
+		if res.Error != nil {
+			return total, fmt.Errorf("prune audit events: %w", res.Error)
+		}
+		total += res.RowsAffected
+		if res.RowsAffected < auditPruneBatch {
+			return total, nil
+		}
 	}
-	return res.RowsAffected, nil
 }
