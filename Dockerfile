@@ -36,7 +36,7 @@ RUN npm run build
 # (GET /downloads/cli). Pinned to the builder and cross-compiled, like the
 # server below: pure Go with CGO off, so emulating each target would only be
 # slower. Same platforms as hack/cli-dist.sh — keep the two lists in step.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS cli
+FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine AS cli
 
 ARG VERSION=dev
 
@@ -59,7 +59,7 @@ RUN for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd6
 # Same approach as agent/Dockerfile: pinned to the builder, cross-compiled to the
 # target. Pure Go with CGO off produces the same binary either way, and QEMU
 # would only make it slower.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine AS build
 
 ARG VERSION=dev
 ARG TARGETOS=linux
