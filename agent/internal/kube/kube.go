@@ -62,9 +62,12 @@ type Client struct {
 	dialer *websocket.Dialer
 	// tls is retained so the dialer and both clients share one configuration.
 	tls *tls.Config
-	// tokenPath is re-read per request: projected service account tokens are
-	// rotated in place, and a cached one stops working after an hour.
+	// tokenPath is the path to the projected service account token file.
 	tokenPath string
+
+	tokenMu    sync.Mutex
+	tokenValue string
+	tokenMtime time.Time
 }
 
 // Options configure the client.
@@ -251,14 +254,31 @@ func (c *Client) wsURL(path string) (string, error) {
 	return parsed.String(), nil
 }
 
-// token reads the service account token fresh, because projected tokens are
-// rotated in place.
+// token returns the service account token, re-reading the file only when its
+// mtime changes. Projected service account tokens are rotated by replacing the
+// file in place roughly every hour; a stat is far cheaper than a full read on
+// every proxied request.
 func (c *Client) token() (string, error) {
+	info, err := os.Stat(c.tokenPath)
+	if err != nil {
+		return "", fmt.Errorf("stat service account token: %w", err)
+	}
+	mtime := info.ModTime()
+
+	c.tokenMu.Lock()
+	defer c.tokenMu.Unlock()
+
+	if c.tokenValue != "" && c.tokenMtime.Equal(mtime) {
+		return c.tokenValue, nil
+	}
+
 	raw, err := os.ReadFile(c.tokenPath)
 	if err != nil {
 		return "", fmt.Errorf("read service account token: %w", err)
 	}
-	return strings.TrimSpace(string(raw)), nil
+	c.tokenValue = strings.TrimSpace(string(raw))
+	c.tokenMtime = mtime
+	return c.tokenValue, nil
 }
 
 // URL builds an absolute API server URL from a proxied path.
