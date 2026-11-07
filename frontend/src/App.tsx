@@ -1,44 +1,48 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router'
-import { AccessRequests } from './pages/AccessRequests'
-import { AppTemplates } from './pages/AppTemplates'
-import { AuditTrail } from './pages/AuditTrail'
-import { AuthCallback } from './pages/AuthCallback'
-import { ClusterManagement } from './pages/ClusterManagement'
-import { ClusterSummary } from './pages/ClusterSummary'
-import { ClusterWizard } from './pages/ClusterWizard'
-import { EventsTimeline } from './pages/EventsTimeline'
-import { ClusterAlerts } from './pages/ClusterAlerts'
-import { Explore } from './pages/Explore'
-import { GroupManagement } from './pages/GroupManagement'
+// Login and Overview are eager: they are on the critical path for every visit.
 import { Login } from './pages/Login'
-import { CliActivate } from './pages/CliActivate'
-import { NamespaceDetail } from './pages/NamespaceDetail'
-import { NodeCapacity } from './pages/NodeCapacity'
-import { Waste } from './pages/Waste'
-import { GitOps } from './pages/GitOps'
 import { Overview } from './pages/Overview'
-import { PasswordExpired } from './pages/PasswordExpired'
-import { IssuedCredentials } from './pages/IssuedCredentials'
-import { MachineAccounts } from './pages/MachineAccounts'
-import { PermissionsMatrix } from './pages/PermissionsMatrix'
-import { Profile } from './pages/Profile'
-import { SecurityPosture } from './pages/SecurityPosture'
-import { SessionRecordings } from './pages/SessionRecordings'
-import { Setup } from './pages/Setup'
-import { AgentSettings } from './pages/settings/AgentSettings'
-import { AlertingSettings } from './pages/settings/AlertingSettings'
-import { AuditSettings } from './pages/settings/AuditSettings'
-import { BrandingSettings } from './pages/settings/BrandingSettings'
-import { DeploymentSettings } from './pages/settings/DeploymentSettings'
-import { EmailSettings } from './pages/settings/EmailSettings'
-import { GeneralSettings } from './pages/settings/GeneralSettings'
-import { GuardrailsSettings } from './pages/settings/GuardrailsSettings'
-import { HelmSettings } from './pages/settings/HelmSettings'
-import { SsoSettings } from './pages/settings/SsoSettings'
-import { UserDetail } from './pages/UserDetail'
-import { UserManagement } from './pages/UserManagement'
+// Everything else is lazy so the entry chunk only carries what the sign-in
+// page needs. Each lazy import becomes its own chunk and is fetched on first
+// navigation to that route.
+const AccessRequests = lazy(() => import('./pages/AccessRequests').then((m) => ({ default: m.AccessRequests })))
+const AppTemplates = lazy(() => import('./pages/AppTemplates').then((m) => ({ default: m.AppTemplates })))
+const AuditTrail = lazy(() => import('./pages/AuditTrail').then((m) => ({ default: m.AuditTrail })))
+const AuthCallback = lazy(() => import('./pages/AuthCallback').then((m) => ({ default: m.AuthCallback })))
+const ClusterManagement = lazy(() => import('./pages/ClusterManagement').then((m) => ({ default: m.ClusterManagement })))
+const ClusterSummary = lazy(() => import('./pages/ClusterSummary').then((m) => ({ default: m.ClusterSummary })))
+const ClusterWizard = lazy(() => import('./pages/ClusterWizard').then((m) => ({ default: m.ClusterWizard })))
+const EventsTimeline = lazy(() => import('./pages/EventsTimeline').then((m) => ({ default: m.EventsTimeline })))
+const ClusterAlerts = lazy(() => import('./pages/ClusterAlerts').then((m) => ({ default: m.ClusterAlerts })))
+const Explore = lazy(() => import('./pages/Explore').then((m) => ({ default: m.Explore })))
+const GroupManagement = lazy(() => import('./pages/GroupManagement').then((m) => ({ default: m.GroupManagement })))
+const CliActivate = lazy(() => import('./pages/CliActivate').then((m) => ({ default: m.CliActivate })))
+const NamespaceDetail = lazy(() => import('./pages/NamespaceDetail').then((m) => ({ default: m.NamespaceDetail })))
+const NodeCapacity = lazy(() => import('./pages/NodeCapacity').then((m) => ({ default: m.NodeCapacity })))
+const Waste = lazy(() => import('./pages/Waste').then((m) => ({ default: m.Waste })))
+const GitOps = lazy(() => import('./pages/GitOps').then((m) => ({ default: m.GitOps })))
+const PasswordExpired = lazy(() => import('./pages/PasswordExpired').then((m) => ({ default: m.PasswordExpired })))
+const IssuedCredentials = lazy(() => import('./pages/IssuedCredentials').then((m) => ({ default: m.IssuedCredentials })))
+const MachineAccounts = lazy(() => import('./pages/MachineAccounts').then((m) => ({ default: m.MachineAccounts })))
+const PermissionsMatrix = lazy(() => import('./pages/PermissionsMatrix').then((m) => ({ default: m.PermissionsMatrix })))
+const Profile = lazy(() => import('./pages/Profile').then((m) => ({ default: m.Profile })))
+const SecurityPosture = lazy(() => import('./pages/SecurityPosture').then((m) => ({ default: m.SecurityPosture })))
+const SessionRecordings = lazy(() => import('./pages/SessionRecordings').then((m) => ({ default: m.SessionRecordings })))
+const Setup = lazy(() => import('./pages/Setup').then((m) => ({ default: m.Setup })))
+const AgentSettings = lazy(() => import('./pages/settings/AgentSettings').then((m) => ({ default: m.AgentSettings })))
+const AlertingSettings = lazy(() => import('./pages/settings/AlertingSettings').then((m) => ({ default: m.AlertingSettings })))
+const AuditSettings = lazy(() => import('./pages/settings/AuditSettings').then((m) => ({ default: m.AuditSettings })))
+const BrandingSettings = lazy(() => import('./pages/settings/BrandingSettings').then((m) => ({ default: m.BrandingSettings })))
+const DeploymentSettings = lazy(() => import('./pages/settings/DeploymentSettings').then((m) => ({ default: m.DeploymentSettings })))
+const EmailSettings = lazy(() => import('./pages/settings/EmailSettings').then((m) => ({ default: m.EmailSettings })))
+const GeneralSettings = lazy(() => import('./pages/settings/GeneralSettings').then((m) => ({ default: m.GeneralSettings })))
+const GuardrailsSettings = lazy(() => import('./pages/settings/GuardrailsSettings').then((m) => ({ default: m.GuardrailsSettings })))
+const HelmSettings = lazy(() => import('./pages/settings/HelmSettings').then((m) => ({ default: m.HelmSettings })))
+const SsoSettings = lazy(() => import('./pages/settings/SsoSettings').then((m) => ({ default: m.SsoSettings })))
+const UserDetail = lazy(() => import('./pages/UserDetail').then((m) => ({ default: m.UserDetail })))
+const UserManagement = lazy(() => import('./pages/UserManagement').then((m) => ({ default: m.UserManagement })))
 import type { ClusterPage } from './lib/navigation'
 import { DEFAULT_RESOURCE } from './lib/navigation'
 import { forgetReturnTo, rememberReturnTo, returnTo } from './lib/returnTo'
@@ -237,6 +241,11 @@ export default function App() {
         <ResultProvider>
         <ShellDockProvider>
         <TimeRangeProvider>
+          {/* Lazy route components are loaded on first navigation. fallback={null}
+              means no spinner or skeleton flash — the previous page stays on
+              screen for the fraction of a second a cached chunk takes to execute,
+              which is imperceptible. */}
+          <Suspense fallback={null}>
           <Routes>
             <Route path="/login" element={<LoginRoute />} />
             {/* Where an interactive SSO sign-in comes back to. It is outside
@@ -765,6 +774,7 @@ export default function App() {
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </TimeRangeProvider>
         <SessionShellDock />
         </ShellDockProvider>
