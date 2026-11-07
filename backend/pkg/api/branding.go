@@ -88,14 +88,16 @@ var markMediaTypes = []string{"image/png", "image/jpeg", "image/gif", "image/web
 // page, and a console that will not render because it could not read an
 // optional banner is a worse failure than a console with no banner.
 func (s *server) branding(c *gin.Context) brandingResponse {
-	stored, err := s.store.Settings(c.Request.Context())
+	ctx := c.Request.Context()
+	stored, err := s.store.Settings(ctx)
 	if err != nil {
 		return brandingResponse{}
 	}
+	mark, _ := s.store.OrgMark(ctx)
 
 	out := brandingResponse{
 		OrganisationName: strings.TrimSpace(stored[db.SettingOrganisationName]),
-		OrganisationMark: strings.TrimSpace(stored[db.SettingOrganisationMark]),
+		OrganisationMark: strings.TrimSpace(mark),
 		BannerText:       strings.TrimSpace(stored[db.SettingEnvironmentBannerText]),
 		BannerTone:       strings.TrimSpace(stored[db.SettingEnvironmentBannerTone]),
 		FooterNotice:     strings.TrimSpace(stored[db.SettingFooterNotice]),

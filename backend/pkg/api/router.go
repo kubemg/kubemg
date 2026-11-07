@@ -211,6 +211,7 @@ type Store interface {
 	PruneTerminalSessions(ctx context.Context, before time.Time) ([]db.TerminalSession, error)
 
 	Settings(ctx context.Context) (map[string]string, error)
+	OrgMark(ctx context.Context) (string, error)
 	PutSettings(ctx context.Context, values map[string]string, updatedBy uint) error
 
 	// Where charts may be installed from, and what those repositories hold.
