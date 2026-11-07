@@ -317,9 +317,18 @@ func (s *server) requireAdmin(c *gin.Context) {
 	c.Next()
 }
 
+// userCtxKey is the gin context key for the resolved and cached user row.
+const userCtxKey = "kubemg_user"
+
 // currentUser resolves the JWT subject against the database, writing the error
-// response itself when resolution fails.
+// response itself when resolution fails. The result is cached in the gin
+// context so that handlers which call it more than once per request pay the
+// database round-trip only on the first call.
 func (s *server) currentUser(c *gin.Context) (*db.User, bool) {
+	if cached, ok := c.Get(userCtxKey); ok {
+		return cached.(*db.User), true
+	}
+
 	claims, ok := auth.ClaimsFrom(c)
 	if !ok {
 		auth.RefuseSession(c, "missing bearer token")
@@ -344,5 +353,6 @@ func (s *server) currentUser(c *gin.Context) (*db.User, bool) {
 	}
 
 	user.Normalize()
+	c.Set(userCtxKey, user)
 	return user, true
 }
