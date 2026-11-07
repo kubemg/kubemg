@@ -34,7 +34,7 @@ RUN npm run build
 # Same approach as agent/Dockerfile: pinned to the builder, cross-compiled to the
 # target. Pure Go with CGO off produces the same binary either way, and QEMU
 # would only make it slower.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine AS build
 
 ARG VERSION=dev
 ARG TARGETOS=linux

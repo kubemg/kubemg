@@ -14,3 +14,9 @@
 
 # kubemg-agent/secret.yaml: a registration token for a throwaway dev cluster.
 f60dc38da6acd1ba7cbcc76c43e05dafe3479eae:kubemg-agent/secret.yaml:generic-api-key:12
+
+# deploy/helm/kubemg/ci/edge-values.yaml: placeholder keys for the CI edge
+# values file (commit c21ecc9b). The values decode to the literal string
+# "thirty-two-bytes-of-key-material!!" — a synthetic test key, not a real one.
+c21ecc9b093dea6ec570ead67804124f560e80df:deploy/helm/kubemg/ci/edge-values.yaml:generic-api-key:12
+c21ecc9b093dea6ec570ead67804124f560e80df:deploy/helm/kubemg/ci/edge-values.yaml:generic-api-key:13
