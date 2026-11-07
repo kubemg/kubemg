@@ -21,6 +21,10 @@ type DB struct {
 	Password string
 	Name     string
 	SSLMode  string
+	// Connection pool settings. Zero means the driver's own default.
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
 }
 
 // DSN renders the settings as a lib/pq connection string.
@@ -242,7 +246,10 @@ func Load() Config {
 			User:     env("DB_USER", "kubemg"),
 			Password: env("DB_PASSWORD", "kubemg_secret"),
 			Name:     env("DB_NAME", "kubemg"),
-			SSLMode:  env("DB_SSLMODE", "disable"),
+			SSLMode:         env("DB_SSLMODE", "disable"),
+			MaxOpenConns:    envInt("DB_MAX_OPEN_CONNS", 25),
+			MaxIdleConns:    envInt("DB_MAX_IDLE_CONNS", 10),
+			ConnMaxLifetime: envDuration("DB_CONN_MAX_LIFETIME", 30*time.Minute),
 		},
 		AdminUsername: env("KUBEMG_ADMIN_USERNAME", "admin"),
 		AdminPassword: env("KUBEMG_ADMIN_PASSWORD", ""),
