@@ -7,7 +7,7 @@
 # while building it under QEMU costs minutes per architecture for nothing.
 # BUILDPLATFORM/TARGETOS/TARGETARCH are supplied by buildx; the defaults keep a
 # plain `docker build` (which sets neither) working and native.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine AS build
 
 ARG VERSION=dev
 ARG TARGETOS=linux
