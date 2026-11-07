@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 )
 
 /*
@@ -29,6 +30,11 @@ const maxDecodedBody = 8 << 20
 var errDecodedTooLarge = fmt.Errorf(
 	"the cluster's answer is larger than %d MiB once decompressed", maxDecodedBody>>20)
 
+// gzipReaderPool holds *gzip.Reader values between calls so each console read
+// does not pay a fresh allocation. Reset is cheaper than NewReader because it
+// does not allocate a new header buffer.
+var gzipReaderPool sync.Pool // *gzip.Reader
+
 // decodeBody undoes the gzip the API server applied, in place, reading at most
 // limit bytes of output. An encoding other than gzip is left as it arrived:
 // gzip is the only one Call asks for, and the API server offers no other.
@@ -37,21 +43,39 @@ func decodeBody(resp *Response, limit int) error {
 		return nil
 	}
 
-	reader, err := gzip.NewReader(bytes.NewReader(resp.Body))
-	if err != nil {
-		return fmt.Errorf("the cluster's gzip answer could not be read: %w", err)
+	src := bytes.NewReader(resp.Body)
+	var reader *gzip.Reader
+	if v := gzipReaderPool.Get(); v != nil {
+		reader = v.(*gzip.Reader)
+		if err := reader.Reset(src); err != nil {
+			gzipReaderPool.Put(reader)
+			return fmt.Errorf("the cluster's gzip answer could not be read: %w", err)
+		}
+	} else {
+		var err error
+		reader, err = gzip.NewReader(src)
+		if err != nil {
+			return fmt.Errorf("the cluster's gzip answer could not be read: %w", err)
+		}
 	}
-	defer func() { _ = reader.Close() }()
+	defer func() {
+		_ = reader.Close()
+		gzipReaderPool.Put(reader)
+	}()
 
-	decoded, err := io.ReadAll(io.LimitReader(reader, int64(limit)+1))
-	if err != nil {
+	// Pre-grow the buffer: gzip ratio is roughly 5–10x for JSON, so 4× the
+	// compressed size is a cheap upper-bound seed that avoids most of the
+	// doubling io.ReadAll would do from its 512-byte start.
+	capacity := min(len(resp.Body)*4, limit)
+	buf := bytes.NewBuffer(make([]byte, 0, capacity))
+	if _, err := io.Copy(buf, io.LimitReader(reader, int64(limit)+1)); err != nil {
 		return fmt.Errorf("the cluster's gzip answer could not be read: %w", err)
 	}
-	if len(decoded) > limit {
+	if buf.Len() > limit {
 		return errDecodedTooLarge
 	}
 
-	resp.Body = decoded
+	resp.Body = buf.Bytes()
 	deleteHeader(resp.Header, "Content-Encoding")
 	deleteHeader(resp.Header, "Content-Length")
 	return nil
