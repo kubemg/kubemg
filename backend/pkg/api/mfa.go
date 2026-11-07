@@ -997,9 +997,8 @@ func (s *server) mfaChecks(ctx context.Context) []setupCheck {
 			Key:      "mfa-reset-armed",
 			Title:    "A second-factor reset runs at every restart",
 			Severity: checkWarn,
-			Detail: "KUBEMG_MFA_RESET_USERNAME is set, so the account it names loses its second factor " +
-				"each time this server starts. It is a break-glass, not a setting.",
-			Fix: "unset KUBEMG_MFA_RESET_USERNAME once the account has enrolled again",
+			Detail:   "The account it names loses its second factor every time this server starts.",
+			Fix:      "unset KUBEMG_MFA_RESET_USERNAME once the account has enrolled again",
 		})
 	}
 
@@ -1007,19 +1006,18 @@ func (s *server) mfaChecks(ctx context.Context) []setupCheck {
 	case mfaEnforcementAll:
 		checks = append(checks, setupCheck{
 			Key: "mfa", Title: "Every password sign-in needs a second factor", Severity: checkOK,
-			Detail: "Local and LDAP accounts enrol at their next sign-in. OIDC and SAML accounts use their provider's.",
+			Detail: "OIDC and SAML accounts use their provider's factor.",
 		})
 	case mfaEnforcementAdmins:
 		checks = append(checks, setupCheck{
 			Key: "mfa", Title: "Administrators need a second factor", Severity: checkOK,
-			Detail: "Other local and LDAP accounts may enrol and are not made to. OIDC and SAML accounts use their provider's.",
+			Detail: "Other accounts may enrol. OIDC and SAML accounts use their provider's factor.",
 		})
 	default:
 		checks = append(checks, setupCheck{
 			Key: "mfa", Title: "A second factor is optional for everyone", Severity: checkWarn,
-			Detail: "A stolen administrator password is the whole console and, through it, every tunnel. " +
-				"Requiring a factor for administrators closes that; sessions already open run to their own expiry.",
-			Fix: "Settings → General → Second factor: Administrators",
+			Detail: "A stolen administrator password opens the console and every tunnel.",
+			Fix:    "Settings → General → Second factor: Administrators",
 		})
 	}
 
@@ -1052,8 +1050,7 @@ func (s *server) mfaChecks(ctx context.Context) []setupCheck {
 			Key:      "mfa-super-admins",
 			Title:    fmt.Sprintf("%d %s in with a password alone", bare, noun),
 			Severity: checkWarn,
-			Detail: "A super admin can grant anything, including to itself. Its account page says who; " +
-				"the account enrols from its own profile.",
+			Detail:   "A super admin can grant anything, including to itself.",
 		})
 	}
 	return checks

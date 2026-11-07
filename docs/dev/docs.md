@@ -58,6 +58,17 @@ anchor.
 Links are relative to the page's own file, so a link from `docs/access/sso.md`
 into the developer guide is `../dev/api.md`.
 
+### Links from the console
+
+The settings pages say what a field does in a line and link here for the
+rest. Every such link is listed in `frontend/src/lib/docs.ts` as a source path
+and heading anchor (`install/tls.md#renewal`), and the console draws it with
+`DocsLink` against the manual address the server reports. Every build of the
+manual, including Read the Docs, runs `hack/mkdocs_console_links.py`. That hook
+fails the build on a target whose page or heading this build did not produce.
+So renaming a heading the console links to means updating its entry in
+`docs.ts` in the same change.
+
 ## Screenshots
 
 Screenshots live in `docs/assets/screenshots/` and are referenced with a caption:
