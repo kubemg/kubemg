@@ -436,3 +436,43 @@ func TestProxyRefusesTheAgentNamespaceToAnEditGrant(t *testing.T) {
 		t.Fatalf("an ordinary namespace: want 200, got %d", resp.StatusCode)
 	}
 }
+
+// A cluster RBAC refusal on an exec/attach upgrade must reach the client as
+// the cluster's own status code, not as 502 Bad Gateway.
+func TestTunnelFailureRelaysClusterRefusal(t *testing.T) {
+	cases := []struct {
+		name       string
+		clusterErr error
+		wantStatus int
+		wantMsg    string
+	}{
+		{
+			name:       "403 Forbidden relayed verbatim",
+			clusterErr: &ErrRemoteStatus{Status: http.StatusForbidden, Message: `User "dev" cannot exec in pods`},
+			wantStatus: http.StatusForbidden,
+			wantMsg:    `User "dev" cannot exec in pods`,
+		},
+		{
+			name:       "401 Unauthorized relayed verbatim",
+			clusterErr: &ErrRemoteStatus{Status: http.StatusUnauthorized, Message: "Unauthorized"},
+			wantStatus: http.StatusUnauthorized,
+			wantMsg:    "Unauthorized",
+		},
+		{
+			name:       "real tunnel failure stays 502",
+			clusterErr: ErrTunnelClosed,
+			wantStatus: http.StatusServiceUnavailable,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			status, msg := tunnelFailure(tc.clusterErr)
+			if status != tc.wantStatus {
+				t.Errorf("status = %d; want %d", status, tc.wantStatus)
+			}
+			if tc.wantMsg != "" && msg != tc.wantMsg {
+				t.Errorf("message = %q; want %q", msg, tc.wantMsg)
+			}
+		})
+	}
+}

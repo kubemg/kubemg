@@ -3,6 +3,7 @@ package kube
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -46,6 +47,43 @@ func readFrameHead(r io.Reader) (frameHead, error) {
 		head.length = binary.BigEndian.Uint64(ext[:])
 	}
 	return head, nil
+}
+
+// When the API server refuses the upgrade (e.g. 403 Forbidden), DialUpgrade
+// must return a RefusedError carrying the original status code and the message
+// from the Kubernetes Status body — not a plain string that loses the code.
+func TestDialUpgradeRefusalCarriesStatusCode(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"kind":"Status","apiVersion":"v1","message":"User \"dev\" cannot exec in pods"}`))
+	}))
+	defer server.Close()
+
+	token := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(token, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client, err := New(Options{APIURL: server.URL, TokenPath: token, InsecureSkipVerify: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, dialErr := client.DialUpgrade(context.Background(),
+		"/api/v1/namespaces/a/pods/b/exec", nil, []string{"v5.channel.k8s.io"})
+	if dialErr == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var refused *RefusedError
+	if !errors.As(dialErr, &refused) {
+		t.Fatalf("expected *RefusedError, got %T: %v", dialErr, dialErr)
+	}
+	if refused.StatusCode != http.StatusForbidden {
+		t.Errorf("StatusCode = %d; want %d", refused.StatusCode, http.StatusForbidden)
+	}
+	if refused.Message == "" {
+		t.Error("Message is empty; want the Kubernetes Status message")
+	}
 }
 
 // The API server's exec endpoint reads each frame as a message, so a stdin

@@ -41,6 +41,18 @@ const streamOpenTimeout = 30 * time.Second
 // ErrStreamBacklog is returned when a consumer falls too far behind.
 var ErrStreamBacklog = errors.New("stream consumer fell too far behind")
 
+// ErrRemoteStatus is returned by OpenStream when the agent relays an HTTP
+// refusal from the cluster's API server (e.g. 401, 403, 404). The bastion
+// relays the original status code rather than mapping it to 502.
+type ErrRemoteStatus struct {
+	Status  int
+	Message string
+}
+
+func (e *ErrRemoteStatus) Error() string {
+	return fmt.Sprintf("cluster refused the stream: %d %s", e.Status, e.Message)
+}
+
 // ErrStreamClosed is returned when a stream has already ended.
 var ErrStreamClosed = errors.New("stream is closed")
 
@@ -215,6 +227,12 @@ func (t *Tunnel) OpenStream(ctx context.Context, open *StreamOpen) (*Stream, *St
 	case head := <-stream.start:
 		if head.Error != "" {
 			stream.Close(nil)
+			// When the agent carries a non-101 status the cluster replied with
+			// an HTTP refusal (401/403/404 …). Return a typed sentinel so the
+			// caller can relay the original code instead of wrapping it in 502.
+			if head.Status != 0 {
+				return nil, nil, &ErrRemoteStatus{Status: head.Status, Message: head.Error}
+			}
 			return nil, nil, fmt.Errorf("agent refused the stream: %s", head.Error)
 		}
 		return stream, head, nil
