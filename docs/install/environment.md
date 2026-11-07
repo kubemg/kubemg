@@ -41,6 +41,9 @@ to the default.
 | `DB_PASSWORD` | `kubemg_secret` | PostgreSQL password. **Change this in production** — the default is a development placeholder. |
 | `DB_NAME` | `kubemg` | Database name. |
 | `DB_SSLMODE` | `disable` | libpq `sslmode`. Use `require` (or stricter) against anything but a loopback/private-network Postgres. |
+| `DB_MAX_OPEN_CONNS` | `25` | Maximum number of open database connections. `0` leaves the driver's own default (unlimited). |
+| `DB_MAX_IDLE_CONNS` | `10` | Maximum number of idle connections kept in the pool. `0` leaves the driver's own default (2). |
+| `DB_CONN_MAX_LIFETIME` | `30m` | Maximum lifetime of a database connection; rebalances after long-lived Postgres restarts or HA failovers. `0` disables the limit. |
 
 See [Database](database.md) for how the schema is applied.
 
