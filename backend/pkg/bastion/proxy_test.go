@@ -141,6 +141,9 @@ func TestStreamRouting(t *testing.T) {
 		{path: "/api/v1/namespaces/team-a/pods"},
 		// follow means something only on a log.
 		{path: "/api/v1/namespaces/team-a/pods?follow=true"},
+		// A named GET with watch=true is served by the get handler, not a stream.
+		{path: "/api/v1/namespaces/team-a/pods/web-0?watch=true"},
+		{path: "/api/v1/namespaces/team-a/pods/web-0?watch=yes"},
 	}
 
 	for _, tc := range cases {

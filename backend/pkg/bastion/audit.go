@@ -208,7 +208,10 @@ func VerbFor(method, path string) string {
 	case http.MethodDelete:
 		return "delete"
 	case http.MethodGet:
-		if watchRequested(path) {
+		// A GET on a named object is always "get" — the resolver only watches
+		// collections (no name in the path), so watch=true on a named path is
+		// served by the get handler, not a stream.
+		if parsed.Name == "" && watchRequested(path) {
 			return "watch"
 		}
 		if parsed.Subresource == "log" {
@@ -241,12 +244,19 @@ type APIPath struct {
 	// Subresource is the trailing segment for calls like pods/log or pods/exec,
 	// the ones an auditor cares about most.
 	Subresource string
+	// FieldSelectorName is the value of an exact metadata.name= term in the
+	// request's fieldSelector, when the path itself carries no name. The API
+	// server's resolver promotes this term to the request name so that
+	// resourceNames RBAC rules apply to it; we mirror that so the audit trail
+	// matches what the cluster recorded.
+	FieldSelectorName string
 }
 
 // ParsePath decomposes a Kubernetes API path. It handles both the legacy core
 // group (/api/v1/…) and the grouped APIs (/apis/<group>/<version>/…), with or
 // without a namespace scope.
 func ParsePath(path string) APIPath {
+	rawPath := path
 	if i := strings.IndexByte(path, '?'); i >= 0 {
 		path = path[:i]
 	}
@@ -286,7 +296,50 @@ func ParsePath(path string) APIPath {
 	if len(parts) > 2 {
 		out.Subresource = parts[2]
 	}
+	// When the path addresses a collection (no name), check for an exact
+	// metadata.name selector. The API server resolver applies IsPathSegmentName
+	// to the value before treating it as the request's name; we apply the same
+	// rule so a crafted selector cannot inject a name we would not accept.
+	if out.Name == "" {
+		out.FieldSelectorName = fieldSelectorName(rawPath)
+	}
 	return out
+}
+
+// fieldSelectorName extracts the value of an exact metadata.name= term from a
+// request path's fieldSelector query parameter, applying the same validity
+// check the API server's resolver (requestinfo.go IsPathSegmentName) uses: the
+// value must be non-empty, not "." or "..", and must not contain "/". An
+// inequality term (metadata.name!=x) or any other field is ignored.
+func fieldSelectorName(path string) string {
+	q := kubeparams.Query(path)
+	raw := q.Get("fieldSelector")
+	if raw == "" {
+		return ""
+	}
+	for _, term := range strings.Split(raw, ",") {
+		k, v, ok := strings.Cut(term, "=")
+		if !ok {
+			continue
+		}
+		// Reject inequality terms (key!=value already split at '=' leaving key
+		// ending with '!'); Cut splits on the first '=', so "a!=b" gives k="a!" v="b".
+		if strings.HasSuffix(k, "!") {
+			continue
+		}
+		if k != "metadata.name" {
+			continue
+		}
+		// IsPathSegmentName check: non-empty, not "." or "..", no "/".
+		if v == "" || v == "." || v == ".." || strings.ContainsRune(v, '/') {
+			return ""
+		}
+		if len(v) > maxObjectName {
+			return ""
+		}
+		return v
+	}
+	return ""
 }
 
 // maxObjectName is the longest name the API server accepts for any object (a
@@ -307,6 +360,13 @@ const maxObjectName = 253
 func ObjectName(parsed APIPath, verb string, resp *Response) string {
 	if parsed.Name != "" {
 		return parsed.Name
+	}
+	// A list or watch on a collection may carry an exact metadata.name selector.
+	// The resolver (k8s.io/apiserver requestinfo.go) promotes that term to the
+	// request's name, so RBAC resourceNames rules apply to it. Mirror the same
+	// promotion so the audit trail matches what the cluster recorded.
+	if (verb == "list" || verb == "watch") && parsed.FieldSelectorName != "" {
+		return parsed.FieldSelectorName
 	}
 	if verb != "create" || resp == nil || resp.Status < 200 || resp.Status > 299 || len(resp.Body) == 0 {
 		return ""
