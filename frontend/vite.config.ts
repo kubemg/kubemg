@@ -43,6 +43,24 @@ const allowedHosts = process.env.VITE_ALLOWED_HOSTS
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      output: {
+        // Split out the runtime libraries that change rarely so that an
+        // app-only deploy does not bust the vendor cache. Rolldown requires
+        // the function form; the object shorthand is Rollup-only.
+        manualChunks: (id) => {
+          if (
+            id.includes('/node_modules/react/') ||
+            id.includes('/node_modules/react-dom/') ||
+            id.includes('/node_modules/react-router/')
+          ) {
+            return 'vendor'
+          }
+        },
+      },
+    },
+  },
   test: {
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}'],
