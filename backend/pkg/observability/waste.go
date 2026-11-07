@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
@@ -145,16 +147,29 @@ func QueryUsageProfile(ctx context.Context, target Target, tunnel TunnelCall,
 	ctx, cancel := context.WithTimeout(ctx, usageProfileTimeout)
 	defer cancel()
 
-	cpu, cpuTruncated, err := profileVector(ctx, target, tunnel, result.CPUQuery, result.End)
-	if err != nil {
-		return UsageResult{}, err
-	}
-	memory, memoryTruncated, err := profileVector(ctx, target, tunnel, result.MemoryQuery, result.End)
-	if err != nil {
-		return UsageResult{}, err
-	}
-	history, historyTruncated, err := profileVector(ctx, target, tunnel, result.HistoryQuery, result.End)
-	if err != nil {
+	// CPU p95, memory peak and history are independent instant queries; run
+	// them concurrently so only the slowest one pays for latency.
+	var (
+		cpu, memory, history             map[UsageKey]float64
+		cpuTruncated, memoryTruncated, historyTruncated bool
+	)
+	eg, qctx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		var err error
+		cpu, cpuTruncated, err = profileVector(qctx, target, tunnel, result.CPUQuery, result.End)
+		return err
+	})
+	eg.Go(func() error {
+		var err error
+		memory, memoryTruncated, err = profileVector(qctx, target, tunnel, result.MemoryQuery, result.End)
+		return err
+	})
+	eg.Go(func() error {
+		var err error
+		history, historyTruncated, err = profileVector(qctx, target, tunnel, result.HistoryQuery, result.End)
+		return err
+	})
+	if err := eg.Wait(); err != nil {
 		return UsageResult{}, err
 	}
 	result.Truncated = cpuTruncated || memoryTruncated || historyTruncated

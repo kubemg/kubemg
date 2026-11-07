@@ -8,8 +8,10 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/db"
@@ -90,17 +92,38 @@ type gitopsRead struct {
 
 // readGitopsRecords lists every tool's records. A tool that is not installed,
 // or whose list the cluster refuses, is reported on its own and the others are
-// still answered; only a transport failure fails the read.
+// still answered; only a transport failure fails the read. Tools are queried
+// concurrently since their lists are independent.
 func readGitopsRecords(read trafficReader) (gitopsRead, error) {
+	type result struct {
+		records   []gitopsRecord
+		status    gitopsToolStatus
+		truncated bool
+	}
+	results := make([]result, len(gitopsTools))
+	var mu sync.Mutex
+	eg := new(errgroup.Group)
+	for i, tool := range gitopsTools {
+		i, tool := i, tool
+		eg.Go(func() error {
+			records, status, truncated, err := readGitopsTool(read, tool)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			results[i] = result{records: records, status: status, truncated: truncated}
+			mu.Unlock()
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return gitopsRead{}, err
+	}
 	out := gitopsRead{records: []gitopsRecord{}, tools: []gitopsToolStatus{}}
-	for _, tool := range gitopsTools {
-		records, status, truncated, err := readGitopsTool(read, tool)
-		if err != nil {
-			return gitopsRead{}, err
-		}
-		out.records = append(out.records, records...)
-		out.tools = append(out.tools, status)
-		out.truncated = out.truncated || truncated
+	for _, r := range results {
+		out.records = append(out.records, r.records...)
+		out.tools = append(out.tools, r.status)
+		out.truncated = out.truncated || r.truncated
 	}
 	return out, nil
 }
