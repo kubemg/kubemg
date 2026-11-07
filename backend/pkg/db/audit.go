@@ -182,27 +182,21 @@ type AuditStats struct {
 }
 
 // AuditSummary counts what happened in a window, so the page can lead with the
-// shape of the traffic rather than with row one of a long table.
+// shape of the traffic rather than with row one of a long table. The three
+// counts are computed in a single pass rather than three round-trips: on a
+// table with millions of rows and no matching index, three sequential scans
+// are three times slower than one.
 func (s *Store) AuditSummary(ctx context.Context, since time.Time) (AuditStats, error) {
 	var stats AuditStats
-
-	base := func() *gorm.DB {
-		return s.gdb.WithContext(ctx).Model(&AuditEvent{}).Where("at >= ?", since)
-	}
-
-	if err := base().Count(&stats.Total).Error; err != nil {
-		return stats, fmt.Errorf("count audit events: %w", err)
-	}
-	err := base().Where("(error <> '' AND error IS NOT NULL) OR status >= ?", 400).
-		Count(&stats.Failed).Error
+	err := s.gdb.WithContext(ctx).Raw(`
+		SELECT
+			COUNT(*) AS total,
+			COUNT(*) FILTER (WHERE (error <> '' AND error IS NOT NULL) OR status >= 400) AS failed,
+			COUNT(*) FILTER (WHERE streaming = true AND phase = 'open') AS streams
+		FROM audit_events
+		WHERE at >= ?`, since).Scan(&stats).Error
 	if err != nil {
-		return stats, fmt.Errorf("count failed audit events: %w", err)
-	}
-	// Count sessions, not records: a stream writes an open and a close.
-	err = base().Where("streaming = ? AND phase = ?", true, "open").
-		Count(&stats.Streams).Error
-	if err != nil {
-		return stats, fmt.Errorf("count audit streams: %w", err)
+		return AuditStats{}, fmt.Errorf("audit summary: %w", err)
 	}
 	return stats, nil
 }
