@@ -215,11 +215,42 @@ func (c *Client) DialUpgrade(
 	conn, resp, err := dialer.DialContext(ctx, endpoint, out)
 	if err != nil {
 		if resp != nil {
-			return nil, "", fmt.Errorf("api server refused the session: %s", resp.Status)
+			msg := apiServerMessage(resp.Body)
+			resp.Body.Close()
+			return nil, "", &RefusedError{Status: resp.StatusCode, Message: msg}
 		}
 		return nil, "", fmt.Errorf("open session: %w", err)
 	}
 	return conn, conn.Subprotocol(), nil
+}
+
+// RefusedError is returned by DialUpgrade when the API server declines the
+// session upgrade. Status is the HTTP response code; Message is extracted from
+// the API server's Status body when present.
+type RefusedError struct {
+	Status  int
+	Message string
+}
+
+func (e *RefusedError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
+	return fmt.Sprintf("the cluster refused the session: %d", e.Status)
+}
+
+func apiServerMessage(body io.ReadCloser) string {
+	if body == nil {
+		return ""
+	}
+	data, _ := io.ReadAll(io.LimitReader(body, 4096))
+	var status struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(data, &status) == nil && status.Message != "" {
+		return status.Message
+	}
+	return strings.TrimSpace(string(data))
 }
 
 // handshakeHeaders are owned by the WebSocket dialer.

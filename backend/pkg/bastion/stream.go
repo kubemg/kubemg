@@ -51,6 +51,19 @@ var ErrStreamIdle = errors.New("stream was idle for too long")
 // ErrStreamHandshake is returned when the agent never answers a stream open.
 var ErrStreamHandshake = errors.New("the agent did not answer the stream open")
 
+// RefusedStreamError is returned by OpenStream when the cluster refused the
+// upgrade (exec/attach) with a non-101 HTTP status. It carries the status and
+// the cluster's own message so the caller can relay them to the client,
+// distinguishing a cluster refusal from a tunnel failure.
+type RefusedStreamError struct {
+	Status  int
+	Message string
+}
+
+func (e *RefusedStreamError) Error() string {
+	return fmt.Sprintf("cluster refused the upgrade: %d", e.Status)
+}
+
 // Stream is one long-lived call over a tunnel: a watch, a followed log, or an
 // exec session. Chunks arrive on Chunks() until the stream ends; Err() then
 // says whether it ended cleanly.
@@ -215,6 +228,9 @@ func (t *Tunnel) OpenStream(ctx context.Context, open *StreamOpen) (*Stream, *St
 	case head := <-stream.start:
 		if head.Error != "" {
 			stream.Close(nil)
+			if head.Status != 0 {
+				return nil, nil, &RefusedStreamError{Status: head.Status, Message: head.Error}
+			}
 			return nil, nil, fmt.Errorf("agent refused the stream: %s", head.Error)
 		}
 		return stream, head, nil
