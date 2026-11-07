@@ -1,7 +1,6 @@
 package auditforward
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -41,10 +40,21 @@ type record struct {
 	at       time.Time
 }
 
+// pending is one event waiting to be encoded in the sender goroutine. The
+// source info is extracted on the caller's goroutine while ctx is live; the
+// map allocation and json.Marshal happen in the drain where they do not add
+// to the proxied request's latency.
+type pending struct {
+	event      bastion.Event
+	sourceAddr string
+	userAgent  string
+}
+
 // encode flattens an event into its JSON body and picks its severity. A failed
 // encode yields ok=false rather than a partial record: half an audit line is
 // worse on a SIEM than a gap, because it parses.
-func encode(ctx context.Context, event bastion.Event) (record, bool) {
+func encode(p pending) (record, bool) {
+	event := p.event
 	fields := map[string]any{
 		"audit":              "kubemg.proxy",
 		"timestamp":          event.At.UTC().Format(time.RFC3339Nano),
@@ -60,9 +70,9 @@ func encode(ctx context.Context, event bastion.Event) (record, bool) {
 		"status_code":        event.Status,
 		"duration_ms":        event.Duration.Milliseconds(),
 	}
-	if source := bastion.SourceFrom(ctx).Truncate(); source.Addr != "" || source.UserAgent != "" {
-		fields["source_addr"] = source.Addr
-		fields["user_agent"] = source.UserAgent
+	if p.sourceAddr != "" || p.userAgent != "" {
+		fields["source_addr"] = p.sourceAddr
+		fields["user_agent"] = p.userAgent
 	}
 	if event.Namespace != "" {
 		fields["namespace"] = event.Namespace

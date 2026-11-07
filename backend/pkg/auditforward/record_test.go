@@ -1,7 +1,6 @@
 package auditforward
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 )
@@ -15,7 +14,7 @@ func TestEncodeCarriesTheObjectNameAndNeverTheDiff(t *testing.T) {
 	created.Name = "cert-manager"
 	created.Diff = []byte(`{"changes":[{"path":"spec.replicas"}]}`)
 
-	rec, ok := encode(context.Background(), created)
+	rec, ok := encode(pending{event: created})
 	if !ok {
 		t.Fatal("encode failed")
 	}
@@ -30,7 +29,7 @@ func TestEncodeCarriesTheObjectNameAndNeverTheDiff(t *testing.T) {
 		t.Error("the manifest diff must never be forwarded")
 	}
 
-	unnamed, _ := encode(context.Background(), event("list", 200))
+	unnamed, _ := encode(pending{event: event("list", 200)})
 	var listBody map[string]any
 	if err := json.Unmarshal(unnamed.body, &listBody); err != nil {
 		t.Fatalf("body is not JSON: %v", err)

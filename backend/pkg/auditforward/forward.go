@@ -78,7 +78,7 @@ type Forwarder struct {
 	store  Store
 	logger *slog.Logger
 
-	queue chan record
+	queue chan pending
 	done  chan struct{}
 
 	// active is read on the hot path so that a server with no destination
@@ -117,7 +117,7 @@ func New(opts Options) *Forwarder {
 		store:   opts.Store,
 		logger:  logger,
 		onDrop:  opts.OnDrop,
-		queue:   make(chan record, queueSize),
+		queue:   make(chan pending, queueSize),
 		done:    make(chan struct{}),
 		reload:  make(chan struct{}, 1),
 		senders: map[uint]*sender{},
@@ -130,12 +130,13 @@ func (f *Forwarder) Record(ctx context.Context, event bastion.Event) {
 	if f == nil || !f.active.Load() {
 		return
 	}
-	rec, ok := encode(ctx, event)
-	if !ok {
-		return
-	}
+	// Extract the caller's network identity while ctx is live. The map
+	// allocation and json.Marshal that the rest of encoding needs happen in
+	// the drain goroutine, off the proxied request's critical path.
+	source := bastion.SourceFrom(ctx).Truncate()
+	p := pending{event: event, sourceAddr: source.Addr, userAgent: source.UserAgent}
 	select {
-	case f.queue <- rec:
+	case f.queue <- p:
 	default:
 		if f.onDrop != nil {
 			f.onDrop()
@@ -203,8 +204,10 @@ func (f *Forwarder) Run(ctx context.Context) {
 			// trail on shutdown.
 			for {
 				select {
-				case rec := <-f.queue:
-					batch = append(batch, rec)
+				case p := <-f.queue:
+					if rec, ok := encode(p); ok {
+						batch = append(batch, rec)
+					}
 					if len(batch) >= batchSize {
 						batch = f.flush(batch)
 					}
@@ -216,8 +219,10 @@ func (f *Forwarder) Run(ctx context.Context) {
 			f.flush(batch)
 			return
 
-		case rec := <-f.queue:
-			batch = append(batch, rec)
+		case p := <-f.queue:
+			if rec, ok := encode(p); ok {
+				batch = append(batch, rec)
+			}
 			if len(batch) >= batchSize {
 				batch = f.flush(batch)
 			}
@@ -359,14 +364,14 @@ func (f *Forwarder) closeSenders() {
 // wants to know whether *this configuration* connects, not whether a connection
 // opened before their edit is still up.
 func Probe(ctx context.Context, dest db.AuditForwarder) error {
-	rec, _ := encode(ctx, bastion.Event{
+	rec, _ := encode(pending{event: bastion.Event{
 		At:       time.Now().UTC(),
 		Username: "kubemg",
 		Verb:     "test",
 		Method:   "POST",
 		Path:     "/api/v1/audit/forwarders/test",
 		Status:   200,
-	})
+	}})
 	probe := newSender(dest)
 	defer probe.close()
 	return probe.send([]record{rec})

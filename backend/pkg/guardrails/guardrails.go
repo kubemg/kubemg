@@ -117,6 +117,10 @@ type Snapshot struct {
 	// this and the split never changes between publishes.
 	global    []rule
 	byCluster map[uint][]rule
+	// hasAPIRules is true when at least one compiled rule covers API requests.
+	// EvaluateAPIRequest skips all subject-string work when it is false, which
+	// is the common case for deployments that have not configured guardrails.
+	hasAPIRules bool
 }
 
 // Compile resolves a rule set from stored policies.
@@ -150,6 +154,9 @@ func Compile(policies []db.GuardrailPolicy) (Snapshot, []error) {
 			re:       re,
 			api:      policy.CoversAPIRequests(),
 			terminal: policy.CoversTerminalInput(),
+		}
+		if compiled.api {
+			snapshot.hasAPIRules = true
 		}
 		if policy.Global() {
 			compiled.scope = ScopeGlobal
@@ -247,11 +254,15 @@ func (e *Engine) EvaluateAPIRequest(clusterID uint, method, path string) *Decisi
 	if e == nil {
 		return nil
 	}
+	snapshot := e.Snapshot()
+	if !snapshot.hasAPIRules {
+		return nil
+	}
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
 	subject := strings.ToUpper(strings.TrimSpace(method)) + " " + path
-	return e.evaluate(clusterID, subject, func(r rule) bool { return r.api })
+	return e.evaluateSnapshot(snapshot, clusterID, subject, func(r rule) bool { return r.api })
 }
 
 // EvaluateTerminalInput matches a command run inside a container — one line an
@@ -277,10 +288,16 @@ type covers func(rule) bool
 // remembered but kept looking, so a cluster rule that blocks is not masked by a
 // global rule that only observes.
 func (e *Engine) evaluate(clusterID uint, subject string, applies covers) *Decision {
+	return e.evaluateSnapshot(e.Snapshot(), clusterID, subject, applies)
+}
+
+// evaluateSnapshot is the same as evaluate but operates on an already-fetched
+// snapshot, so callers that read the snapshot for an early-exit check do not
+// pay a second atomic load.
+func (e *Engine) evaluateSnapshot(snapshot Snapshot, clusterID uint, subject string, applies covers) *Decision {
 	if len(subject) > maxSubjectLength {
 		subject = subject[:maxSubjectLength]
 	}
-	snapshot := e.Snapshot()
 
 	var warned *Decision
 	for _, set := range [][]rule{snapshot.global, snapshot.byCluster[clusterID]} {

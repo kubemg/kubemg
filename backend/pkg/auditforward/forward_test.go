@@ -483,7 +483,7 @@ func TestOversizedDatagramIsMarkedTruncated(t *testing.T) {
 	}
 	big := event("get", 200)
 	big.Path = "/api/v1/" + strings.Repeat("a", 2*maxDatagram)
-	rec, ok := encode(context.Background(), big)
+	rec, ok := encode(pending{event: big})
 	if !ok {
 		t.Fatal("encode failed")
 	}
