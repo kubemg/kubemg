@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -252,6 +254,33 @@ func fetchList[T any](s *server, c *gin.Context, user *db.User, cluster *db.Clus
 		return false
 	}
 	return walk.render(c)
+}
+
+// fetchListPages is a concurrent-safe variant of fetchList that does not write
+// to the gin context. Use it from goroutines; check the returned pageWalk and
+// call pageWalk.render from the main goroutine after all workers finish.
+// A transport failure (err != nil) means the request itself failed.
+func fetchListPages[T any](ctx context.Context, s *server, user *db.User, cluster *db.Cluster,
+	grant db.UserClusterAccess, path string, out *[]T,
+) (pageWalk, error) {
+	var fetchErr error
+	fetcher := func(limit int, cont string) (int, []byte, bool) {
+		resp, err := s.proxy.Call(ctx, user, cluster, grant,
+			http.MethodGet, pagedPath(path, limit, cont), nil, nil)
+		if err != nil {
+			fetchErr = fmt.Errorf("could not read from the cluster: %w", err)
+			return 0, nil, false
+		}
+		return resp.Status, resp.Body, true
+	}
+	walk, ok := walkListPages(fetcher, "", out)
+	if !ok {
+		if fetchErr == nil {
+			fetchErr = fmt.Errorf("could not read from the cluster")
+		}
+		return pageWalk{}, fetchErr
+	}
+	return walk, nil
 }
 
 /*
