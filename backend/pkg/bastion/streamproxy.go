@@ -83,8 +83,13 @@ func (p *Proxy) serveBodyStream(c *gin.Context, tunnel *Tunnel, event *Event, he
 		Header: header,
 	})
 	if err != nil {
-		status, message := tunnelFailure(err)
-		p.fail(c, event, status, message)
+		var refused *RefusedStreamError
+		if errors.As(err, &refused) {
+			p.fail(c, event, refused.Status, refused.Message)
+		} else {
+			status, message := tunnelFailure(err)
+			p.fail(c, event, status, message)
+		}
 		return
 	}
 	defer stream.Close(nil)
@@ -186,8 +191,13 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 		Subprotocols: requested,
 	})
 	if err != nil {
-		status, message := tunnelFailure(err)
-		p.fail(c, event, status, message)
+		var refused *RefusedStreamError
+		if errors.As(err, &refused) {
+			p.fail(c, event, refused.Status, refused.Message)
+		} else {
+			status, message := tunnelFailure(err)
+			p.fail(c, event, status, message)
+		}
 		return
 	}
 
