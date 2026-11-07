@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kubemg/kubemg/backend/pkg/db"
@@ -265,6 +266,20 @@ func applyAuth(header http.Header, target Target) {
 	header.Set("Accept", "application/json")
 }
 
+// directTransports caches one http.Transport per (URL, InsecureSkipVerify)
+// pair. The transport holds the connection pool; creating one per query spawns
+// a new pool each time and prevents TCP keep-alive reuse across calls to the
+// same datasource.
+var directTransports sync.Map // key: string → *http.Transport
+
+// directTransportKey returns the cache key for a target's transport.
+func directTransportKey(target Target) string {
+	if target.InsecureSkipVerify {
+		return target.URL + "\x00insecure"
+	}
+	return target.URL
+}
+
 // directClient dials a datasource KubeMG can route to itself. Skipping
 // verification is an explicit per-source choice, never a default: an internal
 // certificate is a reason to paste a CA, not a reason to stop checking.
@@ -273,6 +288,10 @@ func directClient(target Target) *http.Client {
 }
 
 func directClientWithTimeout(target Target, timeout time.Duration) *http.Client {
+	key := directTransportKey(target)
+	if v, ok := directTransports.Load(key); ok {
+		return &http.Client{Transport: v.(*http.Transport), Timeout: timeout}
+	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if target.InsecureSkipVerify {
 		transport.TLSClientConfig = &tls.Config{
@@ -280,7 +299,8 @@ func directClientWithTimeout(target Target, timeout time.Duration) *http.Client 
 			InsecureSkipVerify: true, //nolint:gosec // operator opt-in
 		}
 	}
-	return &http.Client{Transport: transport, Timeout: timeout}
+	actual, _ := directTransports.LoadOrStore(key, transport)
+	return &http.Client{Transport: actual.(*http.Transport), Timeout: timeout}
 }
 
 // explain turns a non-2xx answer into the next thing to try. A bare status code
