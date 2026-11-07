@@ -2,7 +2,7 @@ name: kubemg-ci
 
 services:
   backend-build:
-    image: golang:1.26-alpine
+    image: golang:1.26.10-alpine
     working_dir: /app
     volumes:
       - ./backend:/app
@@ -11,7 +11,7 @@ services:
     command: go build -o server ./cmd/server
 
   backend-test:
-    image: golang:1.26-alpine
+    image: golang:1.26.10-alpine
     working_dir: /app
     volumes:
       - ./backend:/app
@@ -20,7 +20,7 @@ services:
     command: go test ./...
 
   backend-vet:
-    image: golang:1.26-alpine
+    image: golang:1.26.10-alpine
     working_dir: /app
     volumes:
       - ./backend:/app
@@ -29,7 +29,7 @@ services:
     command: go vet ./...
 
   agent-build:
-    image: golang:1.26-alpine
+    image: golang:1.26.10-alpine
     working_dir: /app
     volumes:
       - ./agent:/app
@@ -40,7 +40,7 @@ services:
     command: go build -ldflags "-s -w" -o kubemg-agent ./cmd/agent
 
   agent-test:
-    image: golang:1.26-alpine
+    image: golang:1.26.10-alpine
     working_dir: /app
     volumes:
       - ./agent:/app
@@ -49,7 +49,7 @@ services:
     command: go test ./...
 
   agent-vet:
-    image: golang:1.26-alpine
+    image: golang:1.26.10-alpine
     working_dir: /app
     volumes:
       - ./agent:/app
@@ -60,7 +60,7 @@ services:
   # The bastion embeds a copy of the agent manifests; drift between the two is
   # a build failure rather than a surprise at install time.
   manifest-check:
-    image: golang:1.26-alpine
+    image: golang:1.26.10-alpine
     working_dir: /repo
     volumes:
       - .:/repo
