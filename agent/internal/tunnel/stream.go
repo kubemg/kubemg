@@ -177,11 +177,9 @@ func (c *Client) runBodyStream(ctx context.Context, s *stream, open protocol.Str
 	for {
 		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
-			// The buffer is reused, so the chunk has to be copied before it
-			// goes into a frame that is marshalled on another goroutine.
-			chunk := make([]byte, n)
-			copy(chunk, buf[:n])
-			if err := out.data(s.id, protocol.StreamData{Data: chunk}); err != nil {
+			// send marshals the frame synchronously before returning, so the
+			// buffer is safe to reuse on the next iteration without a copy.
+			if err := out.data(s.id, protocol.StreamData{Data: buf[:n]}); err != nil {
 				return
 			}
 		}
