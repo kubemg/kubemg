@@ -880,9 +880,16 @@ func (f *fakeStore) PruneTerminalSessions(
 func (f *fakeStore) Settings(_ context.Context) (map[string]string, error) {
 	out := make(map[string]string, len(f.settings))
 	for key, value := range f.settings {
+		if key == db.SettingOrganisationMark {
+			continue
+		}
 		out[key] = value
 	}
 	return out, nil
+}
+
+func (f *fakeStore) OrgMark(_ context.Context) (string, error) {
+	return f.settings[db.SettingOrganisationMark], nil
 }
 
 func (f *fakeStore) PutSettings(_ context.Context, values map[string]string, _ uint) error {
