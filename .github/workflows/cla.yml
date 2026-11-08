@@ -62,3 +62,63 @@ jobs:
             before.
           custom-allsigned-prcomment: 'Every contributor on this pull request has accepted the CLA.'
           lock-pullrequest-aftermerge: false
+
+  # The CLA action matches a commit to a person by its GitHub login. When the
+  # commit's author email is linked to no account there is no login, and the
+  # action falls back to the author *name* written in git, which anyone can set
+  # to anything. So `git commit --author 'x[bot] <x@example>'`, or any name on
+  # the allowlist, passes the CLA gate without an agreement. This job closes
+  # that fallback: a pull request with a commit whose author does not resolve
+  # to a GitHub account fails here, and only a real account reaches the CLA
+  # check.
+  #
+  # Same rule as the job above: it runs with the base repository's workflow and
+  # token, so it reads the commit list through the API and never checks out or
+  # runs anything from the pull request. Its token can only read.
+  CommitAuthors:
+    name: Commit authors
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request_target' && github.event.action != 'closed'
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Every commit is authored by a GitHub account
+        # Values reach the script through env, never written into it.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          COMMITS: ${{ github.event.pull_request.commits }}
+        run: |
+          set -euo pipefail
+
+          # The pull request commits endpoint lists at most 250. Past that the
+          # rest cannot be read, so the check refuses rather than passing on
+          # the part it saw.
+          if [ "$COMMITS" -gt 250 ]; then
+            echo "::error title=Commit authors::This pull request has $COMMITS commits and the API lists at most 250, so the rest cannot be checked. Squash or split it."
+            exit 1
+          fi
+
+          # `author` is the GitHub account the author email resolves to, or
+          # null when it resolves to none.
+          unlinked=$(gh api --paginate "repos/$REPO/pulls/$PR/commits?per_page=100" \
+            --jq '.[] | select(.author == null) | "\(.sha[0:7]) \(.commit.author.name) <\(.commit.author.email)>"')
+
+          if [ -z "$unlinked" ]; then
+            echo "Every commit's author email is linked to a GitHub account."
+            exit 0
+          fi
+
+          # The names and emails are the contributor's own text. Printed with
+          # workflow commands suspended, a name shaped like `::add-mask::` or
+          # `::stop-commands::` is shown, not obeyed.
+          resume=$(openssl rand -hex 16)
+          echo "::stop-commands::$resume"
+          echo "Commits whose author email is linked to no GitHub account:"
+          echo "$unlinked"
+          echo "::$resume::"
+
+          count=$(printf '%s\n' "$unlinked" | wc -l | tr -d ' ')
+          echo "::error title=Commit authors::$count commit(s) have an author email linked to no GitHub account, so the CLA check cannot tell who wrote them. Add the email to your GitHub account (Settings > Emails), or set git's user.email to an address already there, such as your GitHub noreply address, then rewrite those commits (git rebase --exec 'git commit --amend --no-edit --reset-author' origin/dev) and force-push the branch."
+          exit 1
