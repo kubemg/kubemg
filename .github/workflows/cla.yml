@@ -16,7 +16,15 @@ on:
   issue_comment:
     types: [created]
   pull_request_target:
-    types: [opened, closed, synchronize]
+    types: [opened, reopened, closed, synchronize]
+
+# One list, read by both jobs: the CLA action exempts these committers, and the
+# Commit authors job refuses a commit that borrows one of them. Kept here so the
+# two cannot drift.
+env:
+  # The copyright holder does not license their own work to themselves, and a
+  # bot is not an author.
+  CLA_ALLOWLIST: 'ozkanpoyrazoglu,*[bot]'
 
 permissions:
   actions: write
@@ -47,9 +55,7 @@ jobs:
           # Signatures live on their own unprotected branch: the bot commits
           # each acceptance, and master only takes changes through review.
           branch: 'cla-signatures'
-          # The copyright holder does not license their own work to themselves,
-          # and a bot is not an author.
-          allowlist: 'ozkanpoyrazoglu,*[bot]'
+          allowlist: ${{ env.CLA_ALLOWLIST }}
           signed-commit-message: '$contributorName accepted the CLA in $owner/$repo#$pullRequestNo'
           create-file-commit-message: 'Start the record of CLA acceptances'
           custom-notsigned-prcomment: >-
@@ -63,50 +69,85 @@ jobs:
           custom-allsigned-prcomment: 'Every contributor on this pull request has accepted the CLA.'
           lock-pullrequest-aftermerge: false
 
-  # The CLA action matches a commit to a person by its GitHub login. When the
-  # commit's author email is linked to no account there is no login, and the
-  # action falls back to the author *name* written in git, which anyone can set
-  # to anything. So `git commit --author 'x[bot] <x@example>'`, or any name on
-  # the allowlist, passes the CLA gate without an agreement. This job closes
-  # that fallback: a pull request with a commit whose author does not resolve
-  # to a GitHub account fails here, and only a real account reaches the CLA
-  # check.
+  # The CLA action decides who wrote a commit from the commit's own metadata,
+  # which the contributor writes. Two ways through it are closed here:
+  #
+  # - An author email linked to no account has no login, and the action falls
+  #   back to the author *name* in git, which anyone can set. A commit authored
+  #   as `x[bot]`, or under any name on the allowlist, would pass without an
+  #   agreement. Such a commit fails here.
+  # - An author email linked to an allowlisted account resolves to that account
+  #   whoever wrote the commit. The owner's address is in every commit they
+  #   made public. So an allowlisted author counts only on a pull request that
+  #   account opened itself. The one exception is a merge commit GitHub signed
+  #   (`web-flow`, two parents): that is the owner pressing "Update branch" on
+  #   someone else's pull request.
+  #
+  # What it does not close: a commit authored under the linked email of
+  # somebody who *signed* the CLA still reads as theirs. That is the CLA
+  # action's model, and a signature commits the signer, not this check.
   #
   # Same rule as the job above: it runs with the base repository's workflow and
-  # token, so it reads the commit list through the API and never checks out or
-  # runs anything from the pull request. Its token can only read.
+  # token, reads the commits through the API, and never checks out or runs
+  # anything from the pull request. Its token can only read.
   CommitAuthors:
     name: Commit authors
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request_target' && github.event.action != 'closed'
     permissions:
+      contents: read
       pull-requests: read
     steps:
-      - name: Every commit is authored by a GitHub account
+      - name: Every commit is authored by its own GitHub account
         # Values reach the script through env, never written into it.
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-          COMMITS: ${{ github.event.pull_request.commits }}
+          OPENER: ${{ github.event.pull_request.user.login }}
+          # The event's own SHAs, not the pull request's live head: the result
+          # is attached to this head, so it must describe exactly these
+          # commits, not ones pushed after the event.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
 
-          # The pull request commits endpoint lists at most 250. Past that the
-          # rest cannot be read, so the check refuses rather than passing on
-          # the part it saw.
-          if [ "$COMMITS" -gt 250 ]; then
-            echo "::error title=Commit authors::This pull request has $COMMITS commits and the API lists at most 250, so the rest cannot be checked. Squash or split it."
+          range="repos/$REPO/compare/$BASE_SHA...$HEAD_SHA"
+          total=$(gh api "$range?per_page=1" --jq '.total_commits')
+          commits=$(gh api --paginate "$range?per_page=100" --jq '.commits[]' | jq -s '.')
+          listed=$(jq 'length' <<<"$commits")
+          if [ "$listed" -ne "$total" ]; then
+            echo "::error title=Commit authors::The API listed $listed of this pull request's $total commits, so the rest cannot be checked. Squash or split it."
             exit 1
           fi
 
-          # `author` is the GitHub account the author email resolves to, or
-          # null when it resolves to none.
-          unlinked=$(gh api --paginate "repos/$REPO/pulls/$PR/commits?per_page=100" \
-            --jq '.[] | select(.author == null) | "\(.sha[0:7]) \(.commit.author.name) <\(.commit.author.email)>"')
+          # A commit is refused when its author resolves to no account, or to
+          # an allowlisted account other than the one that opened the pull
+          # request (a GitHub-signed merge excepted). Allowlist patterns match
+          # as the CLA action matches them: exact, or a `*` glob tested
+          # unanchored, so nothing it would exempt is missed here.
+          refused=$(jq -r --arg opener "$OPENER" --arg allow "$CLA_ALLOWLIST" '
+            def esc: gsub("(?<c>[.\\[\\]()+?^$|{}\\\\])"; "\\\(.c)");
+            def allowlisted($login):
+              [ $allow | split(",")[] | gsub("^\\s+|\\s+$"; "") | select(. != "")
+                | . as $p | if contains("*") then ($login | test($p | esc | gsub("\\*"; ".*")))
+                  else $p == $login end ]
+              | any;
+            def signed_merge:
+              (.parents | length) >= 2
+              and .commit.verification.verified == true
+              and (.committer.login // "") == "web-flow";
+            .[]
+            | (.author.login // "") as $login
+            | if $login == "" then
+                "\(.sha[0:7]) author linked to no GitHub account: \(.commit.author.name) <\(.commit.author.email)>"
+              elif allowlisted($login) and $login != $opener and (signed_merge | not) then
+                "\(.sha[0:7]) authored as \($login), which is exempt from the CLA, in a pull request opened by \($opener)"
+              else empty end
+          ' <<<"$commits")
 
-          if [ -z "$unlinked" ]; then
-            echo "Every commit's author email is linked to a GitHub account."
+          if [ -z "$refused" ]; then
+            echo "Every one of the $total commits is authored by its own GitHub account."
             exit 0
           fi
 
@@ -115,10 +156,10 @@ jobs:
           # `::stop-commands::` is shown, not obeyed.
           resume=$(openssl rand -hex 16)
           echo "::stop-commands::$resume"
-          echo "Commits whose author email is linked to no GitHub account:"
-          echo "$unlinked"
+          echo "Refused commits:"
+          echo "$refused"
           echo "::$resume::"
 
-          count=$(printf '%s\n' "$unlinked" | wc -l | tr -d ' ')
-          echo "::error title=Commit authors::$count commit(s) have an author email linked to no GitHub account, so the CLA check cannot tell who wrote them. Add the email to your GitHub account (Settings > Emails), or set git's user.email to an address already there, such as your GitHub noreply address, then rewrite those commits (git rebase --exec 'git commit --amend --no-edit --reset-author' origin/dev) and force-push the branch."
+          count=$(printf '%s\n' "$refused" | wc -l | tr -d ' ')
+          echo "::error title=Commit authors::$count commit(s) refused; the log lists them. A commit must be authored with an email linked to your own GitHub account. Add the email under Settings > Emails, or set git's user.email to an address already there (your GitHub noreply address works), then rewrite the commits (git rebase --exec 'git commit --amend --no-edit --reset-author' origin/dev) and force-push the branch."
           exit 1
