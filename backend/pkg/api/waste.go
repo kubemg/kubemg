@@ -10,9 +10,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/observability"
@@ -368,25 +370,11 @@ func (s *server) clusterWaste(c *gin.Context) {
 
 	podFilter := url.Values{}
 	podFilter.Set("fieldSelector", "status.phase!=Succeeded,status.phase!=Failed")
-	for _, path := range scope.paths(resourceListPath{"/api/v1", "pods"}) {
-		if !fetchList(s, c, user, cluster, grant, path+"?"+podFilter.Encode(), &in.pods) {
-			return
-		}
-	}
-	for _, path := range scope.paths(resourceListPath{"/apis/apps/v1", "statefulsets"}) {
-		if !fetchList(s, c, user, cluster, grant, path, &in.statefulSets) {
-			return
-		}
-	}
-	for _, path := range scope.paths(resourceListPath{"/api/v1", "persistentvolumeclaims"}) {
-		if !fetchList(s, c, user, cluster, grant, path, &in.claims) {
-			return
-		}
-	}
-	for _, path := range scope.paths(resourceListPath{"/api/v1", "services"}) {
-		if !fetchList(s, c, user, cluster, grant, path, &in.services) {
-			return
-		}
+
+	// Run the four independent resource reads concurrently — their latency is
+	// otherwise the sum of round trips and they share nothing.
+	if err := s.wasteParallelReads(c, user, cluster, grant, scope, podFilter, &in); err != nil {
+		return
 	}
 
 	// PersistentVolumes are cluster-scoped. A scoped grant is not shown them,
@@ -465,6 +453,98 @@ func (s *server) clusterWaste(c *gin.Context) {
 		payload["load_balancers_reason"] = balancersReason
 	}
 	listResponse(c, payload)
+}
+
+// wasteParallelReads fetches pods, statefulsets, PVCs and services concurrently.
+// Each resource type is independent, so their round trips can overlap. The four
+// inner loops are namespace-fan-out when the grant is scoped; for an unscoped
+// grant each loop fires exactly once. Appends to in under a mutex; called from
+// the main goroutine only after all workers join.
+func (s *server) wasteParallelReads(
+	c *gin.Context,
+	user *db.User,
+	cluster *db.Cluster,
+	grant db.UserClusterAccess,
+	scope readScope,
+	podFilter url.Values,
+	in *wasteInputs,
+) error {
+	var mu sync.Mutex
+	var truncated bool
+	eg, ctx := errgroup.WithContext(c.Request.Context())
+
+	for _, path := range scope.paths(resourceListPath{"/api/v1", "pods"}) {
+		p := path + "?" + podFilter.Encode()
+		eg.Go(func() error {
+			var rows []wastePod
+			walk, err := fetchListPages(ctx, s, user, cluster, grant, p, &rows)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			in.pods = append(in.pods, rows...)
+			truncated = truncated || walk.truncated
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	for _, path := range scope.paths(resourceListPath{"/apis/apps/v1", "statefulsets"}) {
+		p := path
+		eg.Go(func() error {
+			var rows []wasteStatefulSet
+			walk, err := fetchListPages(ctx, s, user, cluster, grant, p, &rows)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			in.statefulSets = append(in.statefulSets, rows...)
+			truncated = truncated || walk.truncated
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	for _, path := range scope.paths(resourceListPath{"/api/v1", "persistentvolumeclaims"}) {
+		p := path
+		eg.Go(func() error {
+			var rows []wasteClaim
+			walk, err := fetchListPages(ctx, s, user, cluster, grant, p, &rows)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			in.claims = append(in.claims, rows...)
+			truncated = truncated || walk.truncated
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	for _, path := range scope.paths(resourceListPath{"/api/v1", "services"}) {
+		p := path
+		eg.Go(func() error {
+			var rows []wasteService
+			walk, err := fetchListPages(ctx, s, user, cluster, grant, p, &rows)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			in.services = append(in.services, rows...)
+			truncated = truncated || walk.truncated
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return err
+	}
+	if truncated {
+		noteTruncated(c)
+	}
+	return nil
 }
 
 const wasteScopedVolumesReason = "PersistentVolumes are cluster-scoped, and your access to this " +
