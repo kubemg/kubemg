@@ -83,7 +83,7 @@ func (r auditForwarderRequest) normalize(into *db.AuditForwarder) string {
 	// rather than dialled: "logsign.example.com:515" resolves to nothing and
 	// would sit there reporting a connection error nobody can explain.
 	if strings.Contains(host, "/") || strings.Contains(host, ":") || strings.Contains(host, " ") {
-		return "host is a hostname or IP address on its own — the port is a separate field, and no scheme is used"
+		return "host is a hostname or IP address on its own - the port is a separate field, and no scheme is used"
 	}
 
 	port := r.Port
@@ -117,7 +117,7 @@ func (r auditForwarderRequest) normalize(into *db.AuditForwarder) string {
 	// structured data and the record as garbage — refused rather than silently
 	// stripped, so the operator sees the name they will actually filter on.
 	if strings.ContainsFunc(appName, func(r rune) bool { return r < 33 || r > 126 }) {
-		return "app_name must be printable ASCII with no spaces — it is a syslog header field"
+		return "app_name must be printable ASCII with no spaces - it is a syslog header field"
 	}
 
 	bundle := strings.TrimSpace(r.TLSCABundle)

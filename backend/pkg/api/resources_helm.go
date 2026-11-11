@@ -135,7 +135,7 @@ func helmRenderable(release map[string]any) bool {
 // read: a release that cannot be re-rendered also cannot have a revision
 // re-applied, and the reason is the same missing chart.
 const helmUnrollbackableWarning = "This release does not carry its chart, so a rollback here can " +
-	"only restore an earlier revision's values as a new revision — nothing running would change. " +
+	"only restore an earlier revision's values as a new revision - nothing running would change. " +
 	"A release Helm itself wrote carries its chart and rolls back for real."
 
 /* ------------------------------------------------------------- decoding --- */
@@ -668,7 +668,7 @@ func (s *server) rollbackHelmRelease(c *gin.Context) {
 	})
 	if index < 0 {
 		c.JSON(http.StatusNotFound, gin.H{
-			"error": fmt.Sprintf("%s has no revision %d — Helm may have pruned it", name, wanted),
+			"error": fmt.Sprintf("%s has no revision %d - Helm may have pruned it", name, wanted),
 		})
 		return
 	}
@@ -720,7 +720,7 @@ func (s *server) applyRollback(c *gin.Context, user *db.User, cluster *db.Cluste
 	if err != nil || len(wantedObjects) == 0 {
 		c.JSON(http.StatusConflict, gin.H{
 			"error": fmt.Sprintf("revision %d recorded no manifest, so there is nothing to "+
-				"re-apply — it was written by something that stripped it", wanted),
+				"re-apply - it was written by something that stripped it", wanted),
 		})
 		return
 	}
@@ -746,7 +746,7 @@ func (s *server) applyRollback(c *gin.Context, user *db.User, cluster *db.Cluste
 	description := fmt.Sprintf(helmRollbackDescription, wanted)
 	if !result.ok() {
 		status = helm.StatusFailed
-		description = fmt.Sprintf("Rollback to revision %d failed: %s/%s — %s",
+		description = fmt.Sprintf("Rollback to revision %d failed: %s/%s - %s",
 			wanted, result.Failed.Kind, result.Failed.Name, result.Failed.Message)
 	}
 

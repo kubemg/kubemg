@@ -487,7 +487,26 @@ func (f *fakeStore) UpdateUser(_ context.Context, id uint, update db.UserUpdate)
 	if update.CanRevealSecrets != nil {
 		user.CanRevealSecrets = *update.CanRevealSecrets
 	}
+	if update.SlackUserID != nil {
+		user.SlackUserID = *update.SlackUserID
+	}
 	return user, nil
+}
+
+func (f *fakeStore) UserBySlackID(_ context.Context, slackUserID string) (*db.User, error) {
+	var found *db.User
+	for _, user := range f.users {
+		if slackUserID != "" && user.SlackUserID == slackUserID {
+			if found != nil {
+				return nil, db.ErrConflict
+			}
+			found = user
+		}
+	}
+	if found == nil {
+		return nil, db.ErrNotFound
+	}
+	return found, nil
 }
 
 func (f *fakeStore) SetUserActive(_ context.Context, id uint, active bool) (*db.User, error) {

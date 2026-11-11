@@ -278,7 +278,7 @@ func TestDeriveReachabilityEmptyIngressRulesMeanDenyAll(t *testing.T) {
 	view := deriveReachability("payments", map[string]string{"app": "api"}, policies)
 
 	if !view.IngressCovered {
-		t.Fatal("an Ingress-type policy with no rules still covers — it denies everything")
+		t.Fatal("an Ingress-type policy with no rules still covers - it denies everything")
 	}
 	if len(view.IngressPeers) != 0 {
 		t.Fatalf("ingress_peers = %+v, want none: nothing is permitted", view.IngressPeers)

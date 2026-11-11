@@ -60,7 +60,7 @@ The diff also names the **last write to the object that went through KubeMG** si
 
 This follows the audit trail's own rule. An administrator sees anyone's write; anyone else sees only their own, and is told that writes by others are shown to an administrator only.
 
-KubeMG can only name writes it carried. A `kubectl` with another credential, a controller, an admission webhook or Argo CD itself writes without passing through KubeMG. When nothing is found, the sheet says that a change made outside KubeMG leaves no record here — it never says that nobody changed the object.
+KubeMG can only name writes it carried. A `kubectl` with another credential, a controller, an admission webhook or Argo CD itself writes without passing through KubeMG. When nothing is found, the sheet says that a change made outside KubeMG leaves no record here - it never says that nobody changed the object.
 
 ## Opening it in Argo CD
 
@@ -80,7 +80,7 @@ Applications usually live in Argo CD's namespace and Kustomizations in `flux-sys
 
 - With access to the whole cluster, you see every record.
 - With access to some namespaces, you see a record only when it manages something in one of them, or lives in or deploys to one of them. Inside it you see only the objects in your namespaces. The rest are counted ("3 objects are outside your grant") but not named. A record's error message is hidden when anything was cut, because it can name those objects.
-- With view access, Secret entries are never listed — the cluster's view role cannot read Secrets, so their names are not shown here either. They are counted with the hidden objects.
+- With view access, Secret entries are never listed - the cluster's view role cannot read Secrets, so their names are not shown here either. They are counted with the hidden objects.
 - An Application that deploys to another cluster is never shown to a namespace-scoped grant.
 
 KubeMG never shows the parts of a record that can hold secrets: Helm values, Argo CD parameters and plugin environment, Flux `postBuild` substitutions, and HelmRelease values. Credentials written into a repository URL are removed.

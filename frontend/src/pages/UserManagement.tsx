@@ -150,7 +150,7 @@ export function UserManagement() {
           ? next === 'superadmin'
             ? 'A super admin manages every other administrator, including this one, and nothing in this console is withheld from them.'
             : 'An admin registers clusters, grants access to them, reads everybody’s audit trail and changes how this server is configured.'
-          : `They keep their cluster grants, but lose everything ${ROLE_LABEL[target.system_role].toLowerCase()} reaches — administration, other people’s records, and this screen.`,
+          : `They keep their cluster grants, but lose everything ${ROLE_LABEL[target.system_role].toLowerCase()} reaches - administration, other people’s records, and this screen.`,
         confirmLabel: `Make ${ROLE_LABEL[next].toLowerCase()}`,
       })
       if (!confirmed) return
@@ -302,7 +302,7 @@ export function UserManagement() {
                       className="hidden truncate text-[12.5px] text-muted md:table-cell"
                       title={row.email}
                     >
-                      {row.email || '—'}
+                      {row.email || '-'}
                     </Td>
                     <Td className="hidden lg:table-cell">
                       <span className="text-[12.5px] text-muted">
@@ -379,7 +379,7 @@ export function UserManagement() {
                     {isSuperAdmin ? (
                       <Td className="hidden lg:table-cell">
                         {row.system_role === 'user' ? (
-                          <span className="text-[12.5px] text-faint">—</span>
+                          <span className="text-[12.5px] text-faint">-</span>
                         ) : row.system_role === 'superadmin' ? (
                           <span
                             className="text-[12.5px] text-muted"

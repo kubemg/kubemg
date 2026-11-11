@@ -162,7 +162,7 @@ func (s *server) debugPodContainer(c *gin.Context) {
 		Container:       name,
 		TargetContainer: req.Container,
 		Image:           image,
-		Message:         name + " is starting on " + req.Pod + " — connecting once it is running",
+		Message:         name + " is starting on " + req.Pod + " - connecting once it is running",
 	})
 }
 

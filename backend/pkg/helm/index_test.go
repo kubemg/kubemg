@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -46,7 +47,7 @@ func TestAPrereleaseIsListedButIsNotWhatAnInstallFormOffers(t *testing.T) {
 func TestAChartThatOnlyEverPublishedPrereleasesStillOffersOne(t *testing.T) {
 	chart := Chart{Versions: []ChartVersion{{Version: "0.1.0-alpha.2"}, {Version: "0.1.0-alpha.1"}}}
 	if got := chart.LatestVersion(); got != "0.1.0-alpha.2" {
-		t.Fatalf("latest = %q, want 0.1.0-alpha.2 — refusing to offer anything would make "+
+		t.Fatalf("latest = %q, want 0.1.0-alpha.2 - refusing to offer anything would make "+
 			"a pre-1.0 chart uninstallable", got)
 	}
 }
@@ -62,7 +63,7 @@ func TestOnlyTheNewestFewVersionsSurviveASync(t *testing.T) {
 
 	charts := catalogueOf(rawIndex{Entries: map[string][]rawEntry{"web": entries}})
 	if got := len(charts[0].Versions); got != MaxVersionsPerChart {
-		t.Fatalf("kept %d versions, want %d — a repository's whole history is not a dropdown",
+		t.Fatalf("kept %d versions, want %d - a repository's whole history is not a dropdown",
 			got, MaxVersionsPerChart)
 	}
 	if got := charts[0].Versions[0].Version; got != "1.39.0" {
@@ -263,4 +264,33 @@ func itoaSmall(value int) string {
 		return string(rune('0' + value))
 	}
 	return string(rune('0'+value/10)) + string(rune('0'+value%10))
+}
+
+// A repository's login goes to the repository's own host only, never to an
+// archive the index lists elsewhere (CVE-2021-32690's pattern).
+func TestTheRepositoryLoginGoesOnlyToTheRepositorysHost(t *testing.T) {
+	var elsewhereAuth atomic.Value
+	elsewhereAuth.Store("")
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		elsewhereAuth.Store(r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer elsewhere.Close()
+	var homeAuth atomic.Value
+	homeAuth.Store("")
+	home := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		homeAuth.Store(r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer home.Close()
+
+	repo := Repository{Name: "private", URL: home.URL, Username: "reader", Credential: "hunter2"}
+	_, _ = fetch(t.Context(), home.Client(), repo, elsewhere.URL+"/web-1.0.0.tgz", 1024, "chart")
+	if got := elsewhereAuth.Load().(string); got != "" {
+		t.Fatalf("the login went to another host: %q", got)
+	}
+	_, _ = fetch(t.Context(), home.Client(), repo, home.URL+"/web-1.0.0.tgz", 1024, "chart")
+	if got := homeAuth.Load().(string); !strings.HasPrefix(got, "Basic ") {
+		t.Fatalf("the repository's own host did not get the login: %q", got)
+	}
 }

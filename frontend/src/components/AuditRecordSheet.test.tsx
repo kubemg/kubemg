@@ -86,7 +86,7 @@ describe('an audit record, opened', () => {
     unmount()
 
     render(<AuditRecordSheet event={record({ ...create, status: 409 })} onClose={() => {}} />)
-    expect(screen.getByText('none — nothing was created')).toBeTruthy()
+    expect(screen.getByText('none - nothing was created')).toBeTruthy()
   })
 
   it('shows the guardrail decision only where a rule matched', () => {

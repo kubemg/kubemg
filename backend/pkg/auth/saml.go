@@ -138,21 +138,43 @@ func NewSAMLClient(
 	}, nil
 }
 
-// AuthURL builds the redirect that starts a sign-in. relayState is echoed back
-// by the IdP and is how the callback finds the request it belongs to.
-func (c *SAMLClient) AuthURL(relayState string) (string, error) {
-	url, err := c.sp.BuildAuthURL(relayState)
+// AuthURL builds the redirect that starts a sign-in, and returns the
+// AuthnRequest's ID beside it. relayState is echoed back by the IdP and is how
+// the callback finds the request it belongs to; the ID is what the assertion
+// has to answer.
+func (c *SAMLClient) AuthURL(relayState string) (string, string, error) {
+	doc, err := c.sp.BuildAuthRequestDocument()
 	if err != nil {
-		return "", fmt.Errorf("build SAML request: %w", err)
+		return "", "", fmt.Errorf("build SAML request: %w", err)
 	}
-	return url, nil
+	id := ""
+	if root := doc.Root(); root != nil {
+		id = root.SelectAttrValue("ID", "")
+	}
+	if id == "" {
+		return "", "", errors.New("build SAML request: the request has no ID")
+	}
+	url, err := c.sp.BuildAuthURLFromDocument(relayState, doc)
+	if err != nil {
+		return "", "", fmt.Errorf("build SAML request: %w", err)
+	}
+	return url, id, nil
 }
 
 // Assertion verifies a posted SAMLResponse and reads the identity out of it.
-func (c *SAMLClient) Assertion(encodedResponse string) (db.SSOIdentity, error) {
+//
+// requestID is the AuthnRequest this sign-in sent. The assertion must answer
+// it (its bearer confirmation's InResponseTo, inside the signed assertion), so
+// a valid response captured from any other sign-in — a proxy log, a shared
+// machine — is refused here even within its validity window. An empty
+// requestID refuses everything: there is no unsolicited sign-in.
+func (c *SAMLClient) Assertion(encodedResponse, requestID string) (db.SSOIdentity, error) {
 	info, err := c.sp.RetrieveAssertionInfo(encodedResponse)
 	if err != nil {
 		return db.SSOIdentity{}, fmt.Errorf("verify SAML assertion: %w", err)
+	}
+	if err := answersRequest(info, requestID); err != nil {
+		return db.SSOIdentity{}, err
 	}
 	if info.WarningInfo != nil {
 		switch {
@@ -202,6 +224,29 @@ func (c *SAMLClient) Assertion(encodedResponse string) (db.SSOIdentity, error) {
 		Email:      claimString(claims, c.config.EmailClaim, samlEmailCandidates),
 		Groups:     dedupe(claimStrings(claims, c.config.GroupsClaim, samlGroupCandidates)),
 	}, nil
+}
+
+// answersRequest checks a verified assertion was issued for requestID. It reads
+// the assertion RetrieveAssertionInfo read the identity from, the first one.
+func answersRequest(info *saml2.AssertionInfo, requestID string) error {
+	if requestID == "" {
+		return errors.New("this sign-in sent no SAML request, so no assertion can answer it")
+	}
+	if info == nil || len(info.Assertions) == 0 {
+		return errors.New("the SAML response carries no assertion")
+	}
+	subject := info.Assertions[0].Subject
+	if subject == nil || subject.SubjectConfirmation == nil ||
+		subject.SubjectConfirmation.SubjectConfirmationData == nil {
+		return errors.New("the SAML assertion does not say which request it answers")
+	}
+	if got := subject.SubjectConfirmation.SubjectConfirmationData.InResponseTo; got != requestID {
+		if got == "" {
+			return errors.New("the SAML assertion does not say which request it answers")
+		}
+		return errors.New("the SAML assertion answers a different sign-in request")
+	}
+	return nil
 }
 
 // SPMetadata renders KubeMG's own SAML metadata: what an operator uploads into

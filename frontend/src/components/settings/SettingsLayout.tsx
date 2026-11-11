@@ -114,7 +114,7 @@ export function SettingsAside({
  * something from this page at all.
  */
 const SOURCE_COPY: Record<SettingSource, string> = {
-  default: "The build's own default — nothing has been set.",
+  default: "The build's own default - nothing has been set.",
   environment: 'From this server’s environment at boot.',
   override: 'Overridden here, and stored. Clearing the field restores the default.',
 }

@@ -55,14 +55,14 @@ func (s *server) updateProfile(c *gin.Context) {
 
 	if caller.IsMachine() {
 		c.JSON(http.StatusConflict, gin.H{
-			"error": "a machine account is administered, not self-served — ask an administrator",
+			"error": "a machine account is administered, not self-served - ask an administrator",
 		})
 		return
 	}
 	if caller.IsFederated() {
 		c.JSON(http.StatusConflict, gin.H{
 			"error": "this account's details come from its identity provider and are " +
-				"rewritten at every sign-in — change them with your provider",
+				"rewritten at every sign-in - change them with your provider",
 		})
 		return
 	}

@@ -530,7 +530,7 @@ func resolveRollbackTarget(revisions []rolloutRevision, owned []map[string]any,
 	index := slices.IndexFunc(revisions, func(r rolloutRevision) bool { return r.Revision == revision })
 	if index < 0 {
 		return nil, http.StatusNotFound,
-			fmt.Sprintf("has no revision %d — it may have been pruned", revision)
+			fmt.Sprintf("has no revision %d - it may have been pruned", revision)
 	}
 	if revisions[index].Current {
 		// Not an error the cluster would raise, but writing back the revision
@@ -542,7 +542,7 @@ func resolveRollbackTarget(revisions []rolloutRevision, owned []map[string]any,
 	target = findOwnedRevision(style, owned, revision)
 	if target == nil {
 		return nil, http.StatusNotFound,
-			fmt.Sprintf("has no revision %d — it may have been pruned", revision)
+			fmt.Sprintf("has no revision %d - it may have been pruned", revision)
 	}
 	return target, 0, ""
 }

@@ -68,7 +68,7 @@ func TestPodDisruptionBudgetViewCarriesWhatADrainBlocksOn(t *testing.T) {
 		t.Fatalf("minAvailable = %q, want the percentage kept as one", view.MinAvailable)
 	}
 	if view.MaxUnavailable != "" {
-		t.Fatalf("maxUnavailable = %q, want it absent — the budget did not declare it", view.MaxUnavailable)
+		t.Fatalf("maxUnavailable = %q, want it absent - the budget did not declare it", view.MaxUnavailable)
 	}
 	if view.Selector != "app=api" {
 		t.Fatalf("selector = %q, want the rendered selector", view.Selector)

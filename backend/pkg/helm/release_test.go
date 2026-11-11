@@ -68,7 +68,7 @@ func TestAReleaseRoundTripsThroughItsStoredForm(t *testing.T) {
 		t.Fatalf("the chart did not survive: %+v", back.Chart)
 	}
 	if len(back.Chart.Templates) != 1 {
-		t.Fatalf("the templates did not survive — `helm rollback` re-renders from them")
+		t.Fatalf("the templates did not survive - `helm rollback` re-renders from them")
 	}
 }
 
@@ -191,6 +191,6 @@ func TestAReleaseInstalledWithNoValuesRecordsAMappingRatherThanNothing(t *testin
 	// `helm upgrade --reset-values` leaves exactly this, and Helm writes `{}`.
 	release := NewRelease("app", "team-a", 1, nil, nil, &Rendered{}, StatusDeployed, "")
 	if release.Config == nil {
-		t.Fatal("config is nil — Helm writes an empty mapping")
+		t.Fatal("config is nil - Helm writes an empty mapping")
 	}
 }

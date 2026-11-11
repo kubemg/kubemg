@@ -277,14 +277,14 @@ export function RecordsTable({
                     <Pill tone={healthTone(record.health)}>{HEALTH_LABEL[record.health]}</Pill>
                   </Td>
                   <Td className="hidden truncate font-data text-[12.5px] text-muted lg:table-cell">
-                    {sourceLine(record) || '—'}
+                    {sourceLine(record) || '-'}
                   </Td>
                   <Td className="font-data text-[12.5px] tabular-nums">
                     {record.tool === 'argocd' ? (
                       drifted
                     ) : (
                       <span className="text-faint" title={perObjectNote(record.tool) ?? undefined}>
-                        —
+                        -
                       </span>
                     )}
                   </Td>
@@ -457,7 +457,7 @@ export function RecordSheet({
                         {resource.health ? (
                           <Pill tone={healthTone(resource.health)}>{HEALTH_LABEL[resource.health]}</Pill>
                         ) : (
-                          <span className="text-faint">—</span>
+                          <span className="text-faint">-</span>
                         )}
                       </Td>
                     </Row>

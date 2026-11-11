@@ -33,7 +33,7 @@ var (
 	// identity nobody chose, and the fix — pinning the provider to an immutable
 	// claim such as `sub` — belongs to the administrator.
 	ErrSSOUnsafeUsername = errors.New("the identity provider asserted a username containing ':' or " +
-		"control characters, which no KubeMG account may carry — configure the provider's " +
+		"control characters, which no KubeMG account may carry - configure the provider's " +
 		"username claim to one without them")
 )
 

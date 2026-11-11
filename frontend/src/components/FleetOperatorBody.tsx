@@ -323,7 +323,7 @@ function FleetCapacity({
       </ul>
       {capacity.skipped > 0 || clusters.length > shown.length ? (
         <p className="border-t border-line-soft px-5 py-2.5 text-[12px] text-faint">
-          {Math.max(capacity.skipped, clusters.length - shown.length)} more not read — open a
+          {Math.max(capacity.skipped, clusters.length - shown.length)} more not read - open a
           cluster for its own numbers
         </p>
       ) : null}
@@ -507,7 +507,7 @@ function ClusterRow({
       <Td className="py-3.5">
         <span className="flex flex-col gap-0.5">
           <span className="font-data text-[12.5px] leading-tight text-fg">
-            {cluster.kubernetes_version ?? '—'}
+            {cluster.kubernetes_version ?? '-'}
           </span>
           <span className="text-[11px] leading-tight text-faint">
             {usage ? `${usage.nodes} ${usage.nodes === 1 ? 'node' : 'nodes'}` : 'nodes not read'}
@@ -520,7 +520,7 @@ function ClusterRow({
         }`}
         title={drifted ? `behind ${newestAgent} running elsewhere in the fleet` : undefined}
       >
-        {cluster.agent_version ?? '—'}
+        {cluster.agent_version ?? '-'}
       </Td>
       <Td className="py-3.5 font-data text-[12px] text-muted">
         <Age iso={cluster.status === 'pending' ? undefined : cluster.last_checked_at} />

@@ -187,7 +187,9 @@ func (a *SlogAuditor) Record(ctx context.Context, event Event) {
 // VerbFor maps an HTTP method onto the Kubernetes verb it performs. A GET is
 // reported as "list" when the path addresses a collection rather than a named
 // object, because "get secrets" and "list secrets" are very different lines to
-// find in an audit trail.
+// find in an audit trail. Like the API server's request-info resolver, it reads
+// `watch` only on a collection: a GET on a named object is a get whatever its
+// query says, and the cluster answers it once.
 func VerbFor(method, path string) string {
 	// An interactive session is reported by what it is. Recording a shell in a
 	// production pod as a "get" would bury the single most sensitive thing in
@@ -208,16 +210,16 @@ func VerbFor(method, path string) string {
 	case http.MethodDelete:
 		return "delete"
 	case http.MethodGet:
-		if watchRequested(path) {
-			return "watch"
-		}
 		if parsed.Subresource == "log" {
 			return "log"
 		}
-		if parsed.Name == "" {
-			return "list"
+		if parsed.Name != "" {
+			return "get"
 		}
-		return "get"
+		if watchRequested(path) {
+			return "watch"
+		}
+		return "list"
 	default:
 		return strings.ToLower(method)
 	}
@@ -226,9 +228,11 @@ func VerbFor(method, path string) string {
 // watchRequested reports whether the API server will treat the call as a
 // watch. Any spelling it streams on must be recorded as one: a watch filed
 // under "list" names the wrong verb and loses the floor selective audit keeps
-// for streaming calls.
+// for streaming calls. Past net/url's parameter limit the gateway refuses the
+// call before anything routes on this, and its record still names the watch
+// the caller asked for, so the query is read past the limit.
 func watchRequested(path string) bool {
-	return kubeparams.Bool(kubeparams.Query(path), "watch")
+	return kubeparams.Bool(kubeparams.QueryPastLimit(path), "watch")
 }
 
 // APIPath is the Kubernetes-shaped decomposition of a request path. Fields are
@@ -295,7 +299,10 @@ const maxObjectName = 253
 
 // ObjectName is the name an audit record carries for the object a call
 // addressed. The path is the answer for every verb that names its object in the
-// URL. A create posts to the collection, so the only honest source is the API
+// URL. A list or watch names one only through its field selector, and the name
+// is the one the API server's request-info resolver takes from it, which is
+// what RBAC and the cluster's own audit log see (kubeparams.SelectedName). A
+// create posts to the collection, so the only honest source is the API
 // server's own answer: on success it returns the object it wrote, generateName
 // resolved, as metadata.name. The request body is never read for it — what the
 // caller asked for is not what the cluster created.
@@ -303,10 +310,14 @@ const maxObjectName = 253
 // It answers empty rather than guessing for a create that did not succeed, and
 // for an answer it cannot read as it stands: a body still compressed, or
 // encoded as anything but JSON (kubectl may ask for protobuf). The tunnel is a
-// trust boundary, so a name that is not a plausible object name is dropped.
-func ObjectName(parsed APIPath, verb string, resp *Response) string {
+// trust boundary and a query is the caller's, so a name from either that is
+// not a plausible object name is dropped. resp is nil before the call is made.
+func ObjectName(parsed APIPath, verb, path string, resp *Response) string {
 	if parsed.Name != "" {
 		return parsed.Name
+	}
+	if verb == "list" || verb == "watch" {
+		return plausibleName(kubeparams.SelectedName(kubeparams.Query(path)))
 	}
 	if verb != "create" || resp == nil || resp.Status < 200 || resp.Status > 299 || len(resp.Body) == 0 {
 		return ""
@@ -325,7 +336,13 @@ func ObjectName(parsed APIPath, verb string, resp *Response) string {
 	if err := json.Unmarshal(resp.Body, &object); err != nil {
 		return ""
 	}
-	name := object.Metadata.Name
+	return plausibleName(object.Metadata.Name)
+}
+
+// plausibleName drops a name no object could have: one longer than the API
+// server accepts, which is also the width of the audit column, or one with a
+// control character in it.
+func plausibleName(name string) string {
 	if len(name) > maxObjectName || strings.ContainsFunc(name, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
 		return ""
 	}
