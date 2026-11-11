@@ -224,6 +224,7 @@ its explanation. The ones most installs touch:
 | `tls.agentCABundle.existingSecret` / `.key` | - / `ca.crt` | The CA agents are told to trust, for a certificate a private CA issued. |
 | `tls.hosts` | - | Extra names for the minted certificate. |
 | `database.host` / `.port` / `.name` / `.user` / `.sslMode` | - / `5432` / `kubemg` / `kubemg` / `require` | The external PostgreSQL. |
+| `database.pool.maxOpenConns` / `.maxIdleConns` / `.connMaxLifetime` | `25` / `10` / `30m` | The server's connection pool. See [Database](database.md#connection-pool). |
 | `database.existingSecret` / `.existingSecretPasswordKey` | - / `DB_PASSWORD` | Where the database password comes from. `database.password` renders it into the chart's own Secret instead. |
 | `postgresql.enabled` | `false` | Run one PostgreSQL pod in the chart, for evaluation. |
 | `secrets.existingSecret` | - | A Secret holding any of `KUBEMG_SECRET_KEY`, `KUBEMG_SESSION_RECORDING_KEY`, `KUBEMG_ADMIN_PASSWORD`, `JWT_SECRET`. |

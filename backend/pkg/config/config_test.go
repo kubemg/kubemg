@@ -21,6 +21,10 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.DB.SSLMode != "disable" {
 		t.Fatalf("expected default sslmode \"disable\", got %q", cfg.DB.SSLMode)
 	}
+	if cfg.DB.MaxOpenConns != 25 || cfg.DB.MaxIdleConns != 10 || cfg.DB.ConnMaxLifetime != 30*time.Minute {
+		t.Fatalf("unexpected default DB pool: %d open, %d idle, %s lifetime",
+			cfg.DB.MaxOpenConns, cfg.DB.MaxIdleConns, cfg.DB.ConnMaxLifetime)
+	}
 }
 
 func TestLoadReadsEnvironment(t *testing.T) {
@@ -30,6 +34,9 @@ func TestLoadReadsEnvironment(t *testing.T) {
 	t.Setenv("DB_PASSWORD", "pw")
 	t.Setenv("DB_NAME", "kubemg_test")
 	t.Setenv("DB_SSLMODE", "require")
+	t.Setenv("DB_MAX_OPEN_CONNS", "40")
+	t.Setenv("DB_MAX_IDLE_CONNS", "20")
+	t.Setenv("DB_CONN_MAX_LIFETIME", "5m")
 	t.Setenv("JWT_SECRET", "env-secret")
 	t.Setenv("JWT_TTL", "45m")
 	t.Setenv("KUBEMG_LISTEN_ADDR", ":9090")
@@ -44,6 +51,11 @@ func TestLoadReadsEnvironment(t *testing.T) {
 	}
 	if cfg.JWTTTL != 45*time.Minute {
 		t.Fatalf("expected TTL 45m, got %s", cfg.JWTTTL)
+	}
+
+	if cfg.DB.MaxOpenConns != 40 || cfg.DB.MaxIdleConns != 20 || cfg.DB.ConnMaxLifetime != 5*time.Minute {
+		t.Fatalf("expected DB pool 40/20/5m from env, got %d/%d/%s",
+			cfg.DB.MaxOpenConns, cfg.DB.MaxIdleConns, cfg.DB.ConnMaxLifetime)
 	}
 
 	dsn := cfg.DB.DSN()
