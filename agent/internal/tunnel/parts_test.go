@@ -83,7 +83,8 @@ func relay(t *testing.T, size int) ([][]byte, protocol.Response) {
 		}
 	}()
 
-	final := client.forwardInParts(context.Background(), "1-1", protocol.Request{Method: http.MethodGet, Path: "/api/v1/pods"}, out)
+	buf := make([]byte, protocol.ResponsePartSize)
+	final := client.forwardInParts(context.Background(), "1-1", protocol.Request{Method: http.MethodGet, Path: "/api/v1/pods"}, out, buf)
 	// Everything forwardInParts queued is already in the channel; let the
 	// drainer take it before stopping it.
 	for len(out.bulk) > 0 {
