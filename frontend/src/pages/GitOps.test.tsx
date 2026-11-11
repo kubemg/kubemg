@@ -31,7 +31,7 @@ describe('RecordsTable', () => {
     const rows = screen.getAllByRole('row').slice(1)
     expect(rows[0].textContent).toContain('Out of sync')
     expect(rows[0].lastElementChild?.textContent).toBe('1')
-    expect(rows[1].lastElementChild?.textContent).toBe('—')
+    expect(rows[1].lastElementChild?.textContent).toBe('-')
   })
 
   it('links an Argo CD row to its console page and leaves Flux without one', () => {

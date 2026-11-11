@@ -61,7 +61,7 @@ func TestARenderedObjectWithNoNamespaceTakesTheReleases(t *testing.T) {
 		t.Fatalf("namespace = %q, want team-a", got)
 	}
 	if got := rendered.Objects[0].Name; got != "app-config" {
-		t.Fatalf("name = %q — .Release.Name did not reach the template", got)
+		t.Fatalf("name = %q - .Release.Name did not reach the template", got)
 	}
 
 	// And it is in the document, not only in the struct: the write sends the
@@ -322,7 +322,7 @@ func TestRenderingDoesNotDeleteASubchartFromTheCallersChart(t *testing.T) {
 	render(t, parent, map[string]any{"redis": map[string]any{"enabled": false}})
 
 	if len(parent.Dependencies()) != 1 {
-		t.Fatal("the render deleted the disabled subchart from the caller's chart — " +
+		t.Fatal("the render deleted the disabled subchart from the caller's chart - " +
 			"storing that chart would make the subchart unrecoverable")
 	}
 }

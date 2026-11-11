@@ -6,6 +6,7 @@ import type { BannerTone, Branding } from '../../api/types'
 import { BANNER_TONE_CLASS, bannerTone, hasBanner } from '../../lib/branding'
 import { Button, Field, Notice, Panel, Select, TextInput } from '../../components/primitives'
 import { Lockup } from '../../components/Mark'
+import { OrganisationIdentityView } from '../../components/OrganisationIdentity'
 import { SettingsAside, SettingsLayout } from '../../components/settings/SettingsLayout'
 import { useBranding } from '../../state/branding-context'
 import { useUnsavedGuard } from '../../lib/unsavedGuard'
@@ -118,7 +119,7 @@ export function BrandingSettings() {
           <SettingsAside
             label="Sign-in page"
             value={hasBanner(draft) ? 'Carries the banner' : 'No banner'}
-            reach="The banner and the organisation's mark are both drawn before anybody signs in — which is the point of a banner, and why this is the one part of the console a stranger can see."
+            reach="The banner and the organisation's mark are both drawn before anybody signs in - which is the point of a banner, and why this is the one part of the console a stranger can see."
           />
           <SettingsAside
             label="Every page"
@@ -155,13 +156,13 @@ export function BrandingSettings() {
         <Panel
           eyebrow="Identity"
           title="Whose installation this is"
-          description="Your organisation's name and mark, beside the kubemg lockup rather than in place of it — a console that presents itself as somebody else's product is one nobody can get support for."
+          description="Your organisation's name and mark, beside the kubemg lockup rather than in place of it - a console that presents itself as somebody else's product is one nobody can get support for."
           bodyClassName="flex flex-col gap-4 p-4"
         >
           <Field
             label="Organisation name"
             htmlFor="organisation_name"
-            hint="Shown beside the lockup on the sign-in page and in the footer. Leave it empty for none."
+            hint="Shown beside the lockup on the sign-in page and in the sidebar. Leave it empty for none."
           >
             <TextInput
               id="organisation_name"
@@ -206,7 +207,7 @@ export function BrandingSettings() {
             </div>
             <p className="text-[12px] text-muted">
               A PNG, JPEG, GIF or WebP up to 64 KB, stored in the database rather than fetched from
-              anywhere — so it renders in an air-gapped install, and the sign-in page never tells a
+              anywhere - so it renders in an air-gapped install, and the sign-in page never tells a
               third party who is looking at it. SVG is refused: it can carry script, and this is
               drawn for people who have not signed in yet.
             </p>
@@ -224,12 +225,12 @@ export function BrandingSettings() {
           <Field
             label="Banner"
             htmlFor="banner_text"
-            hint="Leave it empty for no banner — which is the default, and the right answer for most installs. A console that always carries a banner is one where the banner stops being read."
+            hint="Leave it empty for no banner - which is the default, and the right answer for most installs. A console that always carries a banner is one where the banner stops being read."
           >
             <TextInput
               id="banner_text"
               maxLength={120}
-              placeholder="PRODUCTION — changes here affect customers"
+              placeholder="PRODUCTION - changes here affect customers"
               value={draft.banner_text ?? ''}
               onChange={(event) => set('banner_text', event.target.value)}
             />
@@ -246,9 +247,9 @@ export function BrandingSettings() {
               value={draft.banner_tone ?? 'neutral'}
               onChange={(event) => set('banner_tone', event.target.value as BannerTone)}
             >
-              <option value="neutral">Neutral — a statement of fact</option>
-              <option value="caution">Caution — handle with care</option>
-              <option value="critical">Critical — a mistake here is expensive</option>
+              <option value="neutral">Neutral - a statement of fact</option>
+              <option value="caution">Caution - handle with care</option>
+              <option value="critical">Critical - a mistake here is expensive</option>
             </Select>
           </Field>
 
@@ -280,7 +281,7 @@ export function BrandingSettings() {
             <TextInput
               id="footer_notice"
               maxLength={160}
-              placeholder="Internal — Restricted"
+              placeholder="Internal - Restricted"
               value={draft.footer_notice ?? ''}
               onChange={(event) => set('footer_notice', event.target.value)}
             />
@@ -305,13 +306,7 @@ function Preview({ name, mark }: { name: string; mark: string }) {
       <p className="label">On the sign-in page</p>
       <div className="flex items-center gap-3 rounded-control bg-raised px-4 py-3">
         <Lockup className="text-[17px] text-fg" />
-        {name || mark ? (
-          <>
-            <span aria-hidden="true" className="h-5 w-px shrink-0 bg-line" />
-            {mark ? <img src={mark} alt="" className="size-6 shrink-0 object-contain" /> : null}
-            {name ? <span className="min-w-0 truncate text-[13px] text-muted">{name}</span> : null}
-          </>
-        ) : null}
+        <OrganisationIdentityView tone="page" name={name} mark={mark} />
       </div>
     </div>
   )

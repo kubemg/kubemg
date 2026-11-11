@@ -75,7 +75,7 @@ func TestBuildCapacityMatchesKubectlDescribeNode(t *testing.T) {
 	}
 
 	if node.CPU.Requested != fixtureCPURequests {
-		t.Errorf("cpu requested = %dm, want %dm — this is what kubectl describe node reports, "+
+		t.Errorf("cpu requested = %dm, want %dm - this is what kubectl describe node reports, "+
 			"and the sidecar in the capture is why summing the containers is not enough",
 			node.CPU.Requested, fixtureCPURequests)
 	}
@@ -101,7 +101,7 @@ func TestBuildCapacityMatchesKubectlDescribeNode(t *testing.T) {
 	// The QoS class is the API server's own, read off the pod rather than
 	// re-derived — and only the scheduled pods count against a node.
 	if node.QOS != (qosCounts{Burstable: 10, BestEffort: 8}) {
-		t.Errorf("qos = %+v, want 10 Burstable and 8 BestEffort — the pending pod holds no node", node.QOS)
+		t.Errorf("qos = %+v, want 10 Burstable and 8 BestEffort - the pending pod holds no node", node.QOS)
 	}
 	if !node.Placeable || len(node.Taints) != 0 {
 		t.Errorf("the captured node carries no taint and takes ordinary pods, got placeable=%v taints=%v",

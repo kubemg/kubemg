@@ -176,7 +176,7 @@ func probeArgo(ctx context.Context, target Target, tunnel TunnelCall, userinfo [
 		who = " as " + session.Username
 	}
 	if len(apps.Items) == 0 {
-		return fmt.Sprintf("Signed in%s, but the account can see no applications — "+
+		return fmt.Sprintf("Signed in%s, but the account can see no applications - "+
 			"if some exist, check its RBAC policy.", who), nil
 	}
 	noun := "applications"

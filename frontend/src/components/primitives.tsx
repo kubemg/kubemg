@@ -1888,7 +1888,7 @@ export function MiniMeter({
         )}
       </span>
       <span className="text-right font-data text-[11.5px] font-semibold text-fg tabular-nums">
-        {bounded ? formatPercent(percent) : '—'}
+        {bounded ? formatPercent(percent) : '-'}
       </span>
     </div>
   )
@@ -2003,7 +2003,7 @@ export function ArcGauge({
               tone === 'ok' || tone === 'idle' ? 'text-fg' : TONE_TEXT[tone]
             }`}
           >
-            {bounded ? formatPercent(percent) : '—'}
+            {bounded ? formatPercent(percent) : '-'}
           </span>
           <span className="mt-1.5 text-[12.5px] text-muted">{label}</span>
         </div>
@@ -2088,7 +2088,7 @@ export function TickMeter({
         )}
       </span>
       <span className="text-right font-data text-[12.5px] font-semibold text-fg tabular-nums">
-        {bounded ? formatPercent(percent) : '—'}
+        {bounded ? formatPercent(percent) : '-'}
       </span>
       {detail ? (
         <span className="hidden truncate text-right font-data text-[12px] text-faint tabular-nums sm:block">

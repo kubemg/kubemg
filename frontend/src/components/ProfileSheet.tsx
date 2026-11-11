@@ -58,7 +58,7 @@ export function ProfileSheet({ user, onClose, onSaved }: {
       <Field
         label="Username"
         htmlFor="profile-username"
-        hint="The name the clusters see you as and every audit record carries — only an administrator can change it."
+        hint="The name the clusters see you as and every audit record carries - only an administrator can change it."
       >
         <TextInput id="profile-username" value={user.username} disabled readOnly className="font-data" />
       </Field>

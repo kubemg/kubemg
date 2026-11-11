@@ -430,7 +430,7 @@ func refuseMFAFor(c *gin.Context, user *db.User) bool {
 	switch {
 	case user.IsMachine():
 		c.JSON(http.StatusConflict, gin.H{
-			"error": "a machine account has no password, so it has no second factor — it signs in with a revocable token",
+			"error": "a machine account has no password, so it has no second factor - it signs in with a revocable token",
 		})
 		return true
 	case !user.MFAApplies():
@@ -651,7 +651,7 @@ func (s *server) confirmMFA(c *gin.Context) {
 			if attempt != nil {
 				s.signInFailed(c, attempt)
 			}
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "that code is not right — check the phone's clock and try the next one"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "that code is not right - check the phone's clock and try the next one"})
 			return
 		}
 	}
@@ -790,7 +790,7 @@ func (s *server) removeMFAFactor(c *gin.Context) {
 	}
 	if len(state.Factors) == 1 && mfaRequiredFor(s.settings(ctx).MFAEnforcement, caller) {
 		c.JSON(http.StatusConflict, gin.H{
-			"error": "this is your only factor and your account must have one — add another before removing it",
+			"error": "this is your only factor and your account must have one - add another before removing it",
 		})
 		return
 	}
@@ -889,7 +889,7 @@ func (s *server) resetUserMFA(c *gin.Context) {
 	}
 	if target.ID == caller.ID {
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "you cannot reset your own second factor — remove a factor from your profile instead",
+			"error": "you cannot reset your own second factor - remove a factor from your profile instead",
 		})
 		return
 	}
@@ -970,7 +970,7 @@ func ResetMFAAtBoot(ctx context.Context, store MFAResetStore, auditor bastion.Au
 			slog.String("username", username), slog.String("error", err.Error()))
 		return
 	}
-	logger.Error("KUBEMG_MFA_RESET_USERNAME reset an account's second factor at boot — sign in, enrol again, and remove the variable now: it repeats at every restart",
+	logger.Error("KUBEMG_MFA_RESET_USERNAME reset an account's second factor at boot - sign in, enrol again, and remove the variable now: it repeats at every restart",
 		slog.String("username", username), slog.Int64("factors_removed", removed))
 	if auditor != nil {
 		auditor.Record(ctx, bastion.Event{

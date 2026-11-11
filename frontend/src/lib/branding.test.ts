@@ -62,7 +62,7 @@ describe('normalizeShortName', () => {
   })
 
   it('leaves nothing rather than inventing something', () => {
-    expect(normalizeShortName('—/—')).toBe('')
+    expect(normalizeShortName('-/-')).toBe('')
     expect(normalizeShortName('')).toBe('')
   })
 })

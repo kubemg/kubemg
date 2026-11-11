@@ -54,7 +54,7 @@ If you opened a feature against `master` by mistake, change its base to `dev`.
 
 The pull request body carries a summary and a test plan: what you changed, and
 how you proved it. If a change needed an end-to-end pass against a real cluster,
-say what you ran and what it reported — see
+say what you ran and what it reported - see
 [Choosing a verification level](verify.md#choosing-a-verification-level).
 
 Commit messages describe the change in full: what changed and why, in the
@@ -206,7 +206,7 @@ from `master` into `dev` instead.
 The repository is split by directory: **AGPL-3.0** for the server and console,
 **Apache-2.0** for `agent/` and `deploy/kustomize/`. A contribution lands under
 the licence of the directory it touches, and moving code across that boundary
-changes its licence — which makes it a question for review rather than a
+changes its licence - which makes it a question for review rather than a
 refactor. `NOTICE` is the authority.
 
 ### The Contributor Licence Agreement
@@ -232,7 +232,7 @@ agreement and a sentence to copy; post that sentence as a comment on the pull
 request and the check turns green. Comment `recheck` to run the check again. A
 pull request is not merged while one of its committers has not accepted the
 agreement, so make sure every commit is authored with an email address linked
-to your GitHub account — the bot cannot match a commit that is not.
+to your GitHub account - the bot cannot match a commit that is not.
 
 ## Documentation is part of the change
 
@@ -246,5 +246,5 @@ a broken link fails the same gate the code does.
 Do not open a public issue for a vulnerability. Report it privately to the
 maintainer instead. The [Security model](../introduction/security-model.md) is
 the honest short version of what kubemg protects and what it does not, including
-the direct-mode limitation — worth reading before reporting, so a known and
+the direct-mode limitation - worth reading before reporting, so a known and
 documented gap is not filed as a new one.

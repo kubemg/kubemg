@@ -182,11 +182,11 @@ function AlertsBody({ cluster }: { cluster: Cluster }) {
           <StatTile
             icon={Siren}
             label="Firing"
-            value={alerts.data ? firingNow.length : '—'}
+            value={alerts.data ? firingNow.length : '-'}
             tone={firingNow.some((alert) => alert.severity === 'critical') ? 'danger' : firingNow.length ? 'warn' : 'neutral'}
           />
-          <StatTile icon={BellOff} label="Silenced" value={silences.data ? live.length : '—'} />
-          <StatTile icon={BellRing} label="Alarms kubemg wrote" value={alarms.data?.available ? own.length : '—'} />
+          <StatTile icon={BellOff} label="Silenced" value={silences.data ? live.length : '-'} />
+          <StatTile icon={BellRing} label="Alarms kubemg wrote" value={alarms.data?.available ? own.length : '-'} />
         </div>
 
         {editing ? (

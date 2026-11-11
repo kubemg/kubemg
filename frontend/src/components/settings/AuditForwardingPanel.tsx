@@ -56,7 +56,7 @@ const PROTOCOL_LABEL: Record<AuditForwarderProtocol, string> = {
 const PROTOCOL_HINT: Record<AuditForwarderProtocol, string> = {
   tcp: 'A stream, so a record either arrives whole or the connection fails and you are told. Logsign listens for syslog on TCP 515.',
   udp: 'Fire-and-forget: nothing comes back, oversized records are truncated, and a collector that stopped listening is indistinguishable from one that is working. Logsign listens on UDP 514. Prefer TCP for a trail.',
-  tls: 'TCP inside TLS. This is what shipping a trail across anything but a datacentre link has to be — the records name people, clusters and the namespaces they touched.',
+  tls: 'TCP inside TLS. This is what shipping a trail across anything but a datacentre link has to be - the records name people, clusters and the namespaces they touched.',
 }
 
 const EMPTY_FORWARDER: AuditForwarderInput = {
@@ -124,7 +124,7 @@ export function AuditForwardingPanel() {
     const confirmed = await confirm({
       eyebrow: 'Audit forwarding',
       title: `Delete “${forwarder.name}”?`,
-      body: 'Records stop being sent there from the moment it goes. Nothing already delivered is affected, and the trail itself — the table and this server’s own log — is untouched.',
+      body: 'Records stop being sent there from the moment it goes. Nothing already delivered is affected, and the trail itself - the table and this server’s own log - is untouched.',
       confirmLabel: 'Delete',
     })
     if (!confirmed) return
@@ -144,7 +144,7 @@ export function AuditForwardingPanel() {
     <>
       <Panel
         title="Where the trail is shipped"
-        description="Every audit record is pushed here as RFC 5424 syslog with a JSON message — the same fields this server writes to its own log, so one parser reads both copies. This is not an alarm: nothing is deduplicated and no verb selection narrows it."
+        description="Every audit record is pushed here as RFC 5424 syslog with a JSON message - the same fields this server writes to its own log, so one parser reads both copies. This is not an alarm: nothing is deduplicated and no verb selection narrows it."
         bodyClassName="flex flex-col"
         actions={
           <Button size="sm" onClick={() => setEditing('new')}>
@@ -164,7 +164,7 @@ export function AuditForwardingPanel() {
         {!loading && forwarders.length === 0 ? (
           <p className="px-4 py-6 text-[13px] leading-relaxed text-muted">
             Nothing is being pushed. The trail is still complete in the table above and in this
-            server’s own log stream — add a destination when a SIEM cannot come and collect it.
+            server’s own log stream - add a destination when a SIEM cannot come and collect it.
           </p>
         ) : null}
 
@@ -344,7 +344,7 @@ function ForwarderSheet({
         {error ? <Notice tone="error">{error}</Notice> : null}
 
         <Notice tone="info">
-          Every audit record is sent here, including reads — the verb selection that narrows the
+          Every audit record is sent here, including reads - the verb selection that narrows the
           audit table does not narrow this. Records name users, clusters and namespaces, so a
           destination is a data-egress decision.
         </Notice>
@@ -391,7 +391,7 @@ function ForwarderSheet({
           <Field
             label="Host"
             htmlFor="forwarder_host"
-            hint="A hostname or IP on its own — no scheme, and the port is the next field. Dialled from kubemg, so it has to be reachable from here."
+            hint="A hostname or IP on its own - no scheme, and the port is the next field. Dialled from kubemg, so it has to be reachable from here."
           >
             <TextInput
               id="forwarder_host"
@@ -466,7 +466,7 @@ function ForwarderSheet({
                 A stream has no message boundary of its own, so records are separated either by a
                 trailing newline (the default, and what most collectors expect) or by a byte count
                 in front of each one. Set this only if your collector is configured for octet
-                counting — a receiver expecting one and given the other concatenates every record
+                counting - a receiver expecting one and given the other concatenates every record
                 into a single unparseable line.
               </span>
             </span>
@@ -500,7 +500,7 @@ function ForwarderSheet({
                 <span className="text-[13px] text-fg">Do not verify the collector’s certificate</span>
                 <span className="mt-0.5 block text-[12px] leading-snug text-muted">
                   The connection is still encrypted, but nothing proves who is on the other end of
-                  it — and what travels down it is the audit trail. Use this only for an appliance
+                  it - and what travels down it is the audit trail. Use this only for an appliance
                   with a self-signed certificate you cannot export; pasting its CA above is the
                   better answer wherever it is possible.
                 </span>
@@ -520,7 +520,7 @@ function ForwarderSheet({
             <span className="text-[13px] text-fg">Send records to this destination</span>
             <span className="mt-0.5 block text-[12px] leading-snug text-muted">
               Turning it off keeps the configuration and stops the delivery. Records are not queued
-              while it is off — they go to the table and this server’s log as always.
+              while it is off - they go to the table and this server’s log as always.
             </span>
           </span>
         </label>

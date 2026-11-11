@@ -227,7 +227,7 @@ func (s *server) deploymentChecks() []setupCheck {
 			Key:      "tls",
 			Title:    "HTTPS is off",
 			Severity: checkBlocked,
-			Detail: "kubectl cannot use this bastion over plain http — client-go refuses to send a " +
+			Detail: "kubectl cannot use this bastion over plain http - client-go refuses to send a " +
 				"bearer token unencrypted, so generated kubeconfigs and exec sessions will not work. " +
 				"The console still does.",
 			Fix: "KUBEMG_TLS_ENABLED=true",
@@ -238,7 +238,7 @@ func (s *server) deploymentChecks() []setupCheck {
 			Title:    "The certificate you supplied is self-signed",
 			Severity: checkWarn,
 			Detail: "It is being served and it is pinned into every agent install package, so agents " +
-				"connect — but browsers warn, and replacing it later means re-issuing the install " +
+				"connect - but browsers warn, and replacing it later means re-issuing the install " +
 				"package for every cluster that pinned it. A certificate issued by a CA the agents " +
 				"already trust avoids both.",
 			Fix: "replace " + s.deployment.TLSCertFile + " with a CA-issued certificate, then restart KubeMG",
@@ -251,8 +251,8 @@ func (s *server) deploymentChecks() []setupCheck {
 			Detail: "Minted on first boot and pinned into every agent install package, so agents " +
 				"connect and browsers warn once. Replacing it later means re-issuing the install " +
 				"package for every cluster, which is why it is worth deciding now. Drop a real " +
-				"certificate into the directory below — in the compose install that is ./ssl next to " +
-				"docker-compose.yml — and it is served instead, with no variable to set. Certbot's " +
+				"certificate into the directory below - in the compose install that is ./ssl next to " +
+				"docker-compose.yml - and it is served instead, with no variable to set. Certbot's " +
 				"fullchain.pem and privkey.pem are recognised there too, so a Let's Encrypt live " +
 				"directory can be mounted as it stands.",
 			Fix: "put tls.crt and tls.key in " + s.suppliedCertDir() + ", then restart KubeMG",
@@ -263,7 +263,7 @@ func (s *server) deploymentChecks() []setupCheck {
 			Title:    "Serving the certificate you supplied",
 			Severity: checkOK,
 			Detail: "Read from " + s.deployment.TLSCertFile + ". Agents verify it against the public " +
-				"CAs, so nothing is pinned and renewing it strands nobody — a renewed file in the same " +
+				"CAs, so nothing is pinned and renewing it strands nobody - a renewed file in the same " +
 				"place is picked up on the next restart.",
 		})
 	default:
@@ -281,7 +281,7 @@ func (s *server) deploymentChecks() []setupCheck {
 			Title:    "Agents are given an explicit CA bundle",
 			Severity: checkOK,
 			Detail: "Every install package carries the chain you supplied. This is the setting an " +
-				"internal PKI or a TLS-terminating ingress needs — nothing here could have inferred it.",
+				"internal PKI or a TLS-terminating ingress needs - nothing here could have inferred it.",
 		})
 	}
 
@@ -291,7 +291,7 @@ func (s *server) deploymentChecks() []setupCheck {
 			Key:      "recording",
 			Title:    "Interactive sessions are not being recorded",
 			Severity: checkWarn,
-			Detail: "Shells opened through KubeMG are still audited — who, where and when — but there " +
+			Detail: "Shells opened through KubeMG are still audited - who, where and when - but there " +
 				"is nothing to replay. Recording needs a directory that outlives the container.",
 			Fix: "KUBEMG_SESSION_RECORDING_ENABLED=true, and mount a volume at " +
 				"/var/lib/kubemg/recordings",
@@ -303,7 +303,7 @@ func (s *server) deploymentChecks() []setupCheck {
 			Severity: checkWarn,
 			Detail: "A recording holds production shell output and keystrokes. Without a key they are " +
 				"plain gzip on disk, so a stolen volume snapshot is every password anyone typed. The " +
-				"key is read from the environment and never stored here — one kept beside the " +
+				"key is read from the environment and never stored here - one kept beside the " +
 				"ciphertext would protect against nothing, and losing it means losing the recordings.",
 			Fix: "KUBEMG_SESSION_RECORDING_KEY=$(openssl rand -base64 32)",
 		})
@@ -331,7 +331,7 @@ func (s *server) deploymentChecks() []setupCheck {
 			Title:    "Stored credentials are in the clear",
 			Severity: checkWarn,
 			Detail: "The database holds the key that signs every session and the tunnel credential of " +
-				"every agent, so a copy of it — a backup, a replica, a support bundle — is super-admin " +
+				"every agent, so a copy of it - a backup, a replica, a support bundle - is super-admin " +
 				"on the console and cluster-admin through every tunnel. With a key set they are " +
 				"encrypted in place on the next boot. Keep the key with your backups, never in them.",
 			Fix: "KUBEMG_SECRET_KEY=$(openssl rand -base64 32)",
@@ -344,7 +344,7 @@ func (s *server) deploymentChecks() []setupCheck {
 			Severity: checkWarn,
 			Detail: "This boot re-sealed every stored credential under the new KUBEMG_SECRET_KEY, so " +
 				"nothing in the database needs KUBEMG_SECRET_KEY_PREVIOUS any more. Left in the " +
-				"environment it is a second key that opens the backups taken before the rotation — " +
+				"environment it is a second key that opens the backups taken before the rotation - " +
 				"keep it with those backups instead.",
 			Fix: "unset KUBEMG_SECRET_KEY_PREVIOUS and restart",
 		})
@@ -363,7 +363,7 @@ func (s *server) deploymentChecks() []setupCheck {
 			Title:    "Signing sessions with a generated key",
 			Severity: checkOK,
 			Detail: "Minted on first boot and kept in the database, so sessions survive a restart. " +
-				"Set JWT_SECRET to supply your own instead — it takes precedence, and it is what " +
+				"Set JWT_SECRET to supply your own instead - it takes precedence, and it is what " +
 				"several replicas behind one address need in order to agree.",
 		})
 	}

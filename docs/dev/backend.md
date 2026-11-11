@@ -1,7 +1,7 @@
 # Backend internals
 
 Go, Gin, GORM, PostgreSQL 16, module `github.com/kubemg/kubemg/backend`. One
-binary: it serves the API, the tunnel, the proxy and — in a production build —
+binary: it serves the API, the tunnel, the proxy and - in a production build -
 the console itself out of `pkg/webui`.
 
 ## The store
@@ -41,7 +41,7 @@ it off the schema, and a test asserts the expected columns carry it and are
   `kubemg:seal_secrets` callback (before `gorm:update`, registered in `db.Open`)
   seals tagged columns in a map update, so a store method that writes a
   credential through a map cannot land it in the clear. A raw `Exec`/`Raw` is
-  still outside both — do not write a credential that way. The dry-run tests in
+  still outside both - do not write a credential that way. The dry-run tests in
   `secrets_test.go` pin all three write paths.
 - **The key is process state** (`db.UseSecretBox`), set in `main` before the
   first query: a GORM serializer has no other way to reach it.
@@ -55,7 +55,7 @@ it off the schema, and a test asserts the expected columns carry it and are
 - **Boot** (`sealStoredSecrets` in `cmd/server`, over `db.MigrateSecrets`):
   malformed key → refuse; every stored value is opened, so ciphertext under
   another key or with no key → refuse (`ErrSecretKeyMismatch`), never
-  passthrough; with a key, plaintext is sealed in place (idempotent — sealed
+  passthrough; with a key, plaintext is sealed in place (idempotent - sealed
   values are only checked); the agent-token hash is backfilled with or without
   a key. No key → plaintext and a warning, plus a `secret-key` posture check.
   `Open` passes unprefixed values through, which is what lets a key be turned on
@@ -67,7 +67,7 @@ it off the schema, and a test asserts the expected columns carry it and are
 
 `server_secrets` holds two rows the server mints for itself: the JWT signing
 key and, since the Helm chart, the listener's self-signed certificate pair
-(`tls_self_signed_pair` — certificate PEM then key PEM, one value so the two
+(`tls_self_signed_pair` - certificate PEM then key PEM, one value so the two
 are never stored half each). `certs.EnsureKept` owns the rules and
 `resolveTLS` in `cmd/server` calls it; `db.Store` satisfies `certs.PairStore`
 (`StoredTLSPair`, `EnsureTLSPair`, `KeepTLSPair`).
@@ -79,13 +79,13 @@ are never stored half each). `certs.EnsureKept` owns the rules and
 - **Only a self-signed pair is kept.** It is the one agents pin; a CA-issued
   key has no business in the database.
 - **Refuse rather than re-mint.** An unreadable row or an unreadable store
-  fails the boot — minting over either is a silent fleet-wide re-pin.
+  fails the boot - minting over either is a silent fleet-wide re-pin.
   `KUBEMG_TLS_SELF_SIGNED=false` never consults the row.
 - **`KeepTLSPair` is an upsert through `Create`**, so the value passes the
   column's serializer; `TestKeptTLSPairIsSealed` pins that path.
 
 This is what lets the chart mount `/etc/kubemg/tls` on an `emptyDir` and never
-generate a certificate itself — see `make chart-test` in
+generate a certificate itself - see `make chart-test` in
 [Building and testing](verify.md).
 
 ## Configuration and settings
@@ -114,15 +114,15 @@ matters when adding to it:
   failure.
 - A caller can never delete, disable, or change the system role of **their own**
   account, and only a super admin manages another super admin.
-- Read surfaces that are narrowed rather than refused — the audit trail, the
-  kubeconfig register, terminal sessions — narrow a non-admin to their own rows
+- Read surfaces that are narrowed rather than refused - the audit trail, the
+  kubeconfig register, terminal sessions - narrow a non-admin to their own rows
   silently, and a query parameter **cannot widen** that. Somebody else's row
   answers **404, not 403**: a 403 confirms the row exists.
 - Routes with a literal segment that could be mistaken for an id are registered
   **before** the parameterised route. `POST /kubeconfigs/revoke-all` is
   registered before `/:id` so "revoke-all" is never read as an id.
 - CORS must keep `Authorization` in the allowed headers, `PUT` and `PATCH` in
-  the allowed methods, and `Cache-Control` in the allowed headers — the last one
+  the allowed methods, and `Cache-Control` in the allowed headers - the last one
   because it is how the console bypasses the read cache.
 
 ## Reading cluster state
@@ -148,7 +148,7 @@ lazily rather than on a tick.
 
 ## Writes
 
-Workload actions — scale, restart, suspend — are **read-modify-write, not a
+Workload actions - scale, restart, suspend - are **read-modify-write, not a
 patch**: the object is read, changed, and sent back with its `resourceVersion`,
 so a concurrent change becomes a 409 rather than a silent overwrite. A request
 for a state the object already holds is answered rather than written.
@@ -160,7 +160,7 @@ eight objects is eight sequential calls, each with its own audit record.
 `debugPodContainer` (`pkg/api/resources_debug.go`) is the same shape for a
 pod: the pod is read, an ephemeral container is appended to
 `spec.ephemeralContainers`, and the object is written back to the
-`ephemeralcontainers` subresource — still a PUT of the whole object, because
+`ephemeralcontainers` subresource - still a PUT of the whole object, because
 that subresource takes a `Pod`, not a smaller shape the way `scale` does. The
 image is resolved from settings (`debug_image` / `KUBEMG_DEBUG_IMAGE`),
 following the same boot-default-then-override pattern as the browser shell's
@@ -182,13 +182,13 @@ delegated to the cluster, because the datasource has no idea who the caller is.
 ## Audit
 
 Every proxied call is recorded, refusals included, and a streaming call is
-recorded twice — once when it opens and once when it closes. Persistence is
+recorded twice - once when it opens and once when it closes. Persistence is
 asynchronous and **drops on a full queue rather than blocking the proxy**.
 
-A refusal the API layer makes **before** the tunnel — a namespace outside the
+A refusal the API layer makes **before** the tunnel - a namespace outside the
 grant, `requireClusterScope`, a kind kubemg will not create, a manifest
 addressed at another namespace, a scoped caller asking the query path for a
-cluster-wide chart — is recorded by one middleware, `auditRefusals`
+cluster-wide chart - is recorded by one middleware, `auditRefusals`
 (`pkg/api/audit_refusals.go`), not at the forty call sites that answer it. It
 sits on `/clusters/:id/resources` (and the `/:id/resources/...` routes
 registered outside that group), `/:id/metrics`, `/:id/shell`, `/:id/proxy`,
@@ -201,8 +201,8 @@ the error, and the verb the tunnel call would have carried (`scale` is an
 `bastion.Attempt` on its context, and every record written through the proxy's
 or the API's auditor (both wrapped by `bastion.NoteAttempts`) notes its status
 on it. The middleware stays quiet only when the status it is answering with was
-already recorded under the request — the cluster's own 403 carried back through
-`Proxy.Call`, the proxy's namespace check, a guardrail — so one refusal is never
+already recorded under the request - the cluster's own 403 carried back through
+`Proxy.Call`, the proxy's namespace check, a guardrail - so one refusal is never
 two rows. *Any* earlier refusal is deliberately not enough: Helm discovery
 404ing an absent group, then the pre-flight refusing with 403, would otherwise
 hide KubeMG's refusal behind an unrelated one. A same-status collision loses the
@@ -212,7 +212,7 @@ too; an empty `refused_by` on a refused row means the cluster or the tunnel
 answered.
 
 Left out on purpose: kubeconfig issuance and the cluster's KubeMG-side
-configuration (consoles, cost rates, CRD visibility, datasource settings) —
+configuration (consoles, cost rates, CRD visibility, datasource settings) -
 those reach neither a cluster nor its data, and the acts that matter there have
 verbs of their own.
 
@@ -241,7 +241,7 @@ everyone on that cluster.
 
 ## Pacing
 
-`pkg/bastion/ratelimit.go` is a token bucket per **(identity, cluster)** — the
+`pkg/bastion/ratelimit.go` is a token bucket per **(identity, cluster)** - the
 resource it protects is a cluster's API server, not this process. Saved
 accounts are keyed by id; an unsaved `kubemg:` service identity by name, so the
 alarm and event watchers never share an operator's budget. `Handle`, `Call`,
@@ -256,7 +256,7 @@ down the tunnel, not a request to kubemg: one console page is up to fifty.
   `Status` (`reason: TooManyRequests`, `details.retryAfterSeconds`), which
   client-go honours by retrying. A refused or abandoned reservation gives its
   token back.
-- **Streams are never touched** once open — only the handshake spends.
+- **Streams are never touched** once open - only the handshake spends.
 - **On by default, never off.** `proxy_rate_limit_per_second`/`_burst`
   (defaults 50/300, kubectl's own client-side numbers) are runtime settings with
   no environment variable; `0` is the default. Published by `publishRateLimit` on

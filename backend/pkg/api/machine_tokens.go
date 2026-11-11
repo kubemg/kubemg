@@ -192,7 +192,7 @@ func (s *server) issueMachineToken(c *gin.Context) {
 	grant, held := grants[cluster.ID]
 	if !held {
 		c.JSON(http.StatusConflict, gin.H{
-			"error": "this machine account has no access to that cluster yet — grant it a role first, " +
+			"error": "this machine account has no access to that cluster yet - grant it a role first, " +
 				"otherwise the credential authenticates and is then refused by the cluster",
 		})
 		return
@@ -318,7 +318,7 @@ func machineTokenExpiry(c *gin.Context, req issueMachineTokenRequest) (*time.Tim
 	if req.NeverExpires {
 		if req.TTLSeconds > 0 {
 			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "a token either expires or it does not — ttl_seconds and never_expires " +
+				"error": "a token either expires or it does not - ttl_seconds and never_expires " +
 					"cannot both be given",
 			})
 			return nil, "", false

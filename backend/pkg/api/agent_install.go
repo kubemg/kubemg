@@ -130,7 +130,7 @@ func (s *server) rotateAgentToken(c *gin.Context) {
 		// rather than a bare error that reads as "nothing changed".
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "the registration token was rotated but the install package could not be rendered: " +
-				err.Error() + " — open Agent install to try again",
+				err.Error() + " - open Agent install to try again",
 		})
 		return
 	}

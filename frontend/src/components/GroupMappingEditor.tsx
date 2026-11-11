@@ -198,7 +198,7 @@ export function GroupMappingEditor({
                     {mapping.external_group_pattern}
                   </Td>
                   <Td className="truncate text-muted">
-                    {groupName(mapping.target_group_id) ?? '—'}
+                    {groupName(mapping.target_group_id) ?? '-'}
                   </Td>
                   <Td className="text-muted">
                     {mapping.target_k8s_role ? (
@@ -214,10 +214,10 @@ export function GroupMappingEditor({
                         ) : null}
                       </>
                     ) : (
-                      '—'
+                      '-'
                     )}
                   </Td>
-                  <Td className="text-muted">{mapping.target_system_role ?? '—'}</Td>
+                  <Td className="text-muted">{mapping.target_system_role ?? '-'}</Td>
                   <Td className="text-right">
                     <span className="inline-flex gap-1">
                       <Button type="button" size="sm" onClick={() => setEditing(mapping)}>
@@ -320,8 +320,8 @@ function MappingSheet({
         htmlFor="mapping-pattern"
         hint={
           provider.protocol === 'ldap'
-            ? 'Matched against memberOf, case insensitively. Use * for any run of characters — cn=platform-*,ou=groups,dc=example,dc=com.'
-            : 'Matched against the groups claim, case insensitively. Use * for any run of characters — platform-*.'
+            ? 'Matched against memberOf, case insensitively. Use * for any run of characters - cn=platform-*,ou=groups,dc=example,dc=com.'
+            : 'Matched against the groups claim, case insensitively. Use * for any run of characters - platform-*.'
         }
       >
         <TextInput
@@ -356,7 +356,7 @@ function MappingSheet({
       <Field
         label="Kubernetes role"
         htmlFor="mapping-role"
-        hint="Granted directly on every cluster the filter below selects — including clusters registered later, which is what a rule per cluster could never keep up with."
+        hint="Granted directly on every cluster the filter below selects - including clusters registered later, which is what a rule per cluster could never keep up with."
       >
         <Select
           id="mapping-role"

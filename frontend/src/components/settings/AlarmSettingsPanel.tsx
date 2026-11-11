@@ -72,7 +72,7 @@ const KIND_HINT: Record<AlarmChannelKind, string> = {
     'The v2 alerts endpoint, usually https://alertmanager.example.com/api/v2/alerts. Alarms then route through your existing silences and on-call rotation rather than beside them.',
   slack: 'An incoming webhook URL. The URL is the credential, so it needs no token.',
   teams:
-    'A Teams incoming webhook URL. Like Slack’s, the URL is the credential. Alarms arrive as an Adaptive Card — and so do access approval requests, if you use the just-in-time workflow.',
+    'A Teams incoming webhook URL. Like Slack’s, the URL is the credential. Alarms arrive as an Adaptive Card - and so do access approval requests, if you use the just-in-time workflow.',
   pagerduty:
     'https://events.pagerduty.com/v2/enqueue, with the integration’s Events API v2 routing key.',
   servicenow:
@@ -322,7 +322,7 @@ export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
 
       <Panel
         title="What is worth sending"
-        description="Cluster events are read down the agent tunnel — nothing is polled until a cluster-event rule exists. Audit rules cover the half no cluster-side alerting can see: a request kubemg refused never reached the API server, so no cluster has an event for it."
+        description="Cluster events are read down the agent tunnel - nothing is polled until a cluster-event rule exists. Audit rules cover the half no cluster-side alerting can see: a request kubemg refused never reached the API server, so no cluster has an event for it."
         bodyClassName="flex flex-col"
         actions={
           <Button
@@ -338,7 +338,7 @@ export function AlarmSettingsPanel({ clusters }: { clusters: Cluster[] }) {
         {rules && rules.rules.length === 0 ? (
           <p className="px-4 py-6 text-[13px] text-muted">
             {channels.length === 0
-              ? 'Add a channel first — a rule with nowhere to deliver looks like coverage and is not.'
+              ? 'Add a channel first - a rule with nowhere to deliver looks like coverage and is not.'
               : 'No rules yet. Nothing is polled and nothing is delivered until one exists.'}
           </p>
         ) : null}
@@ -561,7 +561,7 @@ function ChannelSheet({
           htmlFor="channel_url"
           hint={
             channel
-              ? `Stored for ${channel.url_masked || 'this channel'} and never read back — a webhook's path is its credential. Leave this empty to keep it.`
+              ? `Stored for ${channel.url_masked || 'this channel'} and never read back - a webhook's path is its credential. Leave this empty to keep it.`
               : 'Dialled from kubemg, so it has to be reachable from here. An internal address is the usual case. Stored encrypted; only the host is shown again.'
           }
         >
@@ -581,7 +581,7 @@ function ChannelSheet({
           htmlFor="channel_auth"
           hint={
             draft.kind === 'pagerduty'
-              ? 'PagerDuty has no header for its routing key — it rides in the payload.'
+              ? 'PagerDuty has no header for its routing key - it rides in the payload.'
               : 'A Slack webhook needs none: the URL is the credential.'
           }
         >
@@ -621,9 +621,9 @@ function ChannelSheet({
             htmlFor="channel_secret"
             hint={
               draft.kind === 'slack'
-                ? "From the Slack app's Basic Information page. Verifies that a just-in-time approval clicked in Slack really came from Slack — without it, one-click approve/reject over this channel is refused."
+                ? "From the Slack app's Basic Information page. Verifies that a just-in-time approval clicked in Slack really came from Slack - without it, one-click approve/reject over this channel is refused."
                 : channel?.has_secret
-                  ? 'A credential is stored. Leave this empty to keep it — it is never read back out.'
+                  ? 'A credential is stored. Leave this empty to keep it - it is never read back out.'
                   : 'Stored and never returned by the API.'
             }
           >
@@ -649,7 +649,7 @@ function ChannelSheet({
             rows={2}
             value={draft.headers ?? ''}
             onChange={(event) => set('headers', event.target.value)}
-            placeholder={storedHeaders.length ? 'Values hidden — leave empty to keep' : '{"X-Tenant":"prod"}'}
+            placeholder={storedHeaders.length ? 'Values hidden - leave empty to keep' : '{"X-Tenant":"prod"}'}
             disabled={clearHeaders}
           />
         </Field>
@@ -839,7 +839,7 @@ function RuleSheet({
                 ? vocabulary.cluster_events_available
                   ? 'The sync state Argo CD and Flux record, read once a minute per cluster a rule covers. Fires when something goes out of sync, never for drift already there.'
                   : 'This server has no proxy, so there is no tunnel to read GitOps records down. A rule here would never fire.'
-                : 'kubemg’s own audit records — including the refusals no cluster ever sees.'
+                : 'kubemg’s own audit records - including the refusals no cluster ever sees.'
           }
         >
           <Select

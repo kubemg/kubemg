@@ -50,7 +50,7 @@ describe('the CLI commands', () => {
     expect(screen.getByRole('link', { name: 'releases page' }).getAttribute('href')).toContain('/releases')
   })
 
-  it('offer this server’s own binaries when it carries them — the air-gapped path', async () => {
+  it('offer this server’s own binaries when it carries them - the air-gapped path', async () => {
     answer = {
       available: true,
       releases_url: 'https://github.com/kubemg/kubemg/releases',

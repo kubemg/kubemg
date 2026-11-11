@@ -221,8 +221,8 @@ function NodeDetail({ node }: { node: NodeCapacityRow }) {
               <span className="font-medium text-fg">Taints.</span>{' '}
               <span className="font-mono text-[12px]">{node.taints.join(', ')}</span>
               {node.placeable
-                ? ' — none keeps an ordinary pod off.'
-                : ' — only pods that tolerate them land here.'}
+                ? ' - none keeps an ordinary pod off.'
+                : ' - only pods that tolerate them land here.'}
             </li>
           ) : null}
         </ul>
@@ -334,13 +334,13 @@ function ClusterRing({
               {used ? (
                 <span className="font-data tabular-nums">{format(dimension.used)}</span>
               ) : (
-                '—'
+                '-'
               )}
             </span>
             <span>
               limits{' '}
               <span className="font-data tabular-nums">
-                {dimension.limited > 0 ? percentText(dimension.limited_percent) : '—'}
+                {dimension.limited > 0 ? percentText(dimension.limited_percent) : '-'}
               </span>
             </span>
           </>
@@ -359,7 +359,7 @@ function Placement({ placement }: { placement: PlacementSummary }) {
   if (placement.placeable_nodes === 0 || !placement.largest_cpu || !placement.largest_memory) {
     return (
       <Notice tone="warn">
-        No node takes an ordinary pod right now — each is not Ready, cordoned, tainted or full.
+        No node takes an ordinary pod right now - each is not Ready, cordoned, tainted or full.
       </Notice>
     )
   }
@@ -673,12 +673,12 @@ export function NodeCapacity() {
           summary="Where these numbers come from"
         >
           <p className="text-[12px] leading-relaxed text-muted">
-            Reserved and limit figures are read from the pod specs and are exact — the same
+            Reserved and limit figures are read from the pod specs and are exact - the same
             arithmetic the scheduler does, sidecars and pod overhead included. Live usage comes
             from the cluster's Metrics API and is a single sample rather than a series; a pod
             using more than it reserved is read from the same API, per pod. QoS classes are the
             ones the cluster wrote on each pod. Where a pod could still be placed considers only
-            requests, pod slots, cordons and NoSchedule/NoExecute taints — node selectors,
+            requests, pod slots, cordons and NoSchedule/NoExecute taints - node selectors,
             affinity, topology spread and tolerations are not read. Nothing here estimates a cost
             or changes anything on the cluster.
           </p>

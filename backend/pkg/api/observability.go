@@ -320,7 +320,7 @@ func (s *server) putObservabilitySource(c *gin.Context) {
 	if target.AccessMode == db.AccessInCluster && connectionMode(*cluster) != db.ModeAgent {
 		c.JSON(http.StatusConflict, gin.H{
 			"error": "an in-cluster datasource is reached through the agent tunnel, " +
-				"which a direct-mode cluster does not have — give its external address instead",
+				"which a direct-mode cluster does not have - give its external address instead",
 		})
 		return
 	}

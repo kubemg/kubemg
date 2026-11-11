@@ -57,7 +57,7 @@ See [Self-protection rules](model.md#self-protection-rules).
 
 ### Repeated failed passwords are slowed down
 
-Every place kubemg checks a password — the sign-in form, an LDAP provider's sign-in, and the current-password field of **Change password** — counts failures three ways:
+Every place kubemg checks a password - the sign-in form, an LDAP provider's sign-in, and the current-password field of **Change password** - counts failures three ways:
 
 - **Per account and address together:** 5 failures in a row are free. Each failure after that locks *that address* out of *that account* for 30 seconds, then 1, 2, 4 minutes and so on, up to 15 minutes. The account's owner, signing in from anywhere else, is not affected, so knowing someone's username is not a way to lock them out.
 - **Per account, from any address:** 50 failures within an hour are free. Past that the account is locked for everyone for 1 minute, doubling up to 15 minutes. Reaching this takes guesses at one account from many addresses, which is a real attack on it; the warning in the log says when it starts.
@@ -110,7 +110,7 @@ The effective grant is computed server-side by the same merge the gateway uses, 
 - `direct` + `jit`: an approved elevation, with its `expires_at`.
 - `group`: inherited through the named group.
 
-The Identity panel also reports the account's [second factor](mfa.md) — how many authenticator apps and recovery codes it holds, or that an OIDC/SAML account's factor belongs to its provider — and offers **Reset second factor** to another administrator.
+The Identity panel also reports the account's [second factor](mfa.md) - how many authenticator apps and recovery codes it holds, or that an OIDC/SAML account's factor belongs to its provider - and offers **Reset second factor** to another administrator.
 
 Left out on purpose: expired grants, grants on deleted clusters and memberships of deleted groups (nothing to act on). Issued kubeconfigs and recent sessions are read from their own endpoints (`GET /api/v1/kubeconfigs?user_id=`, `GET /api/v1/audit/terminal-sessions?user_id=`).
 
