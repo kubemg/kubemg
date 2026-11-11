@@ -74,7 +74,7 @@ func directModeExplanation(serviceAccount string) string {
 		account = "the per-user service account"
 	}
 	return "This cluster is registered for direct API access, so the credential is a token the " +
-		"cluster itself minted and KubeMG cannot withdraw it — it stays valid until it expires. The " +
+		"cluster itself minted and KubeMG cannot withdraw it - it stays valid until it expires. The " +
 		"only lever is on the cluster: deleting the " + account + " ServiceAccount invalidates every " +
 		"token bound to it, which is all of this user's direct-mode kubeconfigs for this cluster."
 }
@@ -381,7 +381,7 @@ func (s *server) revokeAllKubeconfigs(c *gin.Context) {
 		// The kubeconfigs are withdrawn; the sessions are not, and saying the
 		// whole revoke failed would hide the half that landed.
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "the kubeconfigs were revoked, but the CLI sessions could not be — revoke them one by one",
+			"error": "the kubeconfigs were revoked, but the CLI sessions could not be - revoke them one by one",
 		})
 		return
 	}
@@ -417,7 +417,7 @@ func summariseBlanketRevoke(revoked []db.KubeconfigIssuance) revokeAllKubeconfig
 	}
 	sort.Strings(out.Clusters)
 	out.Explanation = "These clusters are registered for direct API access, so their credentials are " +
-		"tokens the clusters themselves minted and KubeMG cannot withdraw them — each stays valid " +
+		"tokens the clusters themselves minted and KubeMG cannot withdraw them - each stays valid " +
 		"until it expires. Delete this account's kubemg service account on those clusters to " +
 		"invalidate them now."
 	return out

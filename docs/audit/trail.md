@@ -7,7 +7,7 @@ The audit trail records every call kubemg proxies to a cluster, plus kubemg's ow
 - Every call the bastion proxies for a user: list, get, watch, create, update, patch, delete and the streaming verbs.
 - kubemg's own sensitive acts: watching or deleting a [session recording](session-recording.md), and every [JIT](../access/jit.md) workflow event (`jit-request`, `jit-approve`, `jit-reject`, `jit-revoke`, `jit-expire`).
 - Second-factor events: `mfa-enroll`, `mfa-remove`, `mfa-reset` (the administrator as the user, the account reset as the impersonated user), `mfa-recovery-used` and `mfa-recovery-regenerate`. See [Two-factor authentication](../access/mfa.md#in-the-audit-trail).
-- Password events: `password-change` (an account changing its own password) and `password-expire` (an administrator forcing somebody's to be changed — the administrator as the user, the account as the impersonated user). See [Password expiry](../access/password-expiry.md#in-the-audit-trail).
+- Password events: `password-change` (an account changing its own password) and `password-expire` (an administrator forcing somebody's to be changed - the administrator as the user, the account as the impersonated user). See [Password expiry](../access/password-expiry.md#in-the-audit-trail).
 - CLI sign-in events: `cli-login` (an approved `kubemg login`, with the machine and source address in the path query) and `cli-session-revoke`. See [The kubemg command line](../access/cli.md#in-the-audit-trail).
 - Agent credential events: an administrator rotating a registration token (`agent-token-rotate`), and a new connection taking over a cluster's tunnel (`agent-displaced`, under the user `kubemg:agent`, with both agents' versions, connection times and addresses in the path query). See [The agent](../clusters/agent.md#when-a-connection-displaces-the-agent).
 
@@ -24,7 +24,7 @@ The trail records every attempt, not only the calls that reached a cluster. When
 - A metrics or logs chart that would cover namespaces outside your grant.
 - A `kubectl` call on a cluster you hold no grant on.
 - A call over your [rate limit](../reference/settings.md#proxy_rate_limit_per_second-and-proxy_rate_limit_burst) for that cluster (`status` `429`). A call that only waited for its turn is recorded as normal.
-- A `kubectl` call whose query has more than 10,000 parameters (`status` `400`). Past that, kubemg cannot read the query in full, so it cannot tell whether the call is a watch.
+- A `kubectl` call whose query has more parameters than Go's `net/url` reads, 10,000 by default (`status` `400`). Past that, whether the cluster reads the query depends on the Go its API server was built with, so kubemg cannot tell whether the call is a watch. The row names the verb the call asked for.
 
 These rows carry `refused_by: kubemg` and the message you were given as `error`. They carry no impersonated identity, because nothing was asserted to the cluster. A refusal the cluster gave has no `refused_by` and is recorded once, by the call that carried it.
 
@@ -44,7 +44,7 @@ Not recorded:
 | `verb` / `method` | The Kubernetes verb (`list`, `get`, `create`, `exec`, ...) and the raw HTTP method. See [Verb naming](#verb-naming) |
 | `path` | The full API path with its query string |
 | `namespace` / `resource` | Parsed out of the path when it looks like a Kubernetes API URL |
-| `name` | The object the call addressed. Taken from the path for every verb that names its object there. A `create` names only the collection in its path, so its name is the one the cluster answered with — including a name the cluster generated. Empty on a create the cluster refused (nothing was made), on a list or watch, and on rows written before kubemg recorded it |
+| `name` | The object the call addressed. Taken from the path for every verb that names its object there. A `create` names only the collection in its path, so its name is the one the cluster answered with - including a name the cluster generated. A list or watch names one object only through its field selector: an exact `metadata.name` term is read as the API server reads it, and that name is the one RBAC checks (`kubectl get pod web-0 -w` sends `fieldSelector=metadata.name=web-0`). Empty on a create the cluster refused (nothing was made), on any other list or watch, and on rows written before kubemg recorded it |
 | `impersonated_user` / `impersonated_groups` | The identity kubemg asserted to the cluster. It ties a kubemg account to the Kubernetes subject that acted |
 | `status` | The HTTP status the call ended with |
 | `duration_ms` | How long the call took |
@@ -59,7 +59,7 @@ Not recorded:
 
 <figure markdown>
   ![One record from the audit trail](../assets/screenshots/audit-trail.png)
-  <figcaption>One record from the trail. The identities crossed — the kubemg account and the subject it was impersonated as — are what joins a person to what the cluster saw.</figcaption>
+  <figcaption>One record from the trail. The identities crossed - the kubemg account and the subject it was impersonated as - are what joins a person to what the cluster saw.</figcaption>
 </figure>
 
 ## Where a call came from
@@ -82,7 +82,7 @@ Both read "not recorded" in the console for calls with no caller (for example th
 
 A call is named by the Kubernetes verb it performs, not its HTTP method.
 
-- `GET` is `list` for a collection, `get` for one object, and `watch` whenever the API server will watch: `?watch=true`, or any other value but `0` and `false` (`watch=1`, `watch=t`, a bare `?watch`). A `watch` is a streaming call, so no verb selection drops it.
+- `GET` is `list` for a collection, `get` for one object, and `watch` whenever the API server will watch a collection: `?watch=true`, or any other value but `0` and `false` (`watch=1`, `watch=t`, a bare `?watch`). A `watch` is a streaming call, so no verb selection drops it. On a named object the API server reads no `watch` and answers once, so that call is a `get`, as RBAC sees it.
 - `POST`/`PUT`/`PATCH`/`DELETE` are `create`/`update`/`patch`/`delete`.
 - A subresource names the call instead: `exec`, `attach`, `portforward`, and `GET` on `pods/log` is `log`. A shell in a production pod is never filed as a plain `get`.
 

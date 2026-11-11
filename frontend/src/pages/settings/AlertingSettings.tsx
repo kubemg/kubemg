@@ -10,7 +10,7 @@ export function AlertingSettings() {
   return (
     <SettingsLayout
       title="Alerting"
-      description="Where kubemg sends what it notices — a cluster’s own events and kubemg’s audit records — and which of them are worth a message."
+      description="Where kubemg sends what it notices - a cluster’s own events and kubemg’s audit records - and which of them are worth a message."
     >
       <div className="flex min-w-0 max-w-5xl flex-col gap-4">
         <AlarmSettingsPanel clusters={clusters} />

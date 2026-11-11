@@ -33,6 +33,8 @@ type UserUpdate struct {
 	CanViewRecordings *bool
 	// CanRevealSecrets is the secret-reveal capability, on the same terms.
 	CanRevealSecrets *bool
+	// SlackUserID links a Slack member ID to the account; "" unlinks it.
+	SlackUserID *string
 	// ClearPasswordExpiry lifts an administrator's forced expiry. Only the
 	// account's own change sets it — see User.PasswordExpiredAt.
 	ClearPasswordExpiry bool
@@ -60,6 +62,9 @@ func (s *Store) UpdateUser(ctx context.Context, id uint, update UserUpdate) (*Us
 	}
 	if update.CanRevealSecrets != nil {
 		fields["can_reveal_secrets"] = *update.CanRevealSecrets
+	}
+	if update.SlackUserID != nil {
+		fields["slack_user_id"] = *update.SlackUserID
 	}
 	now := time.Now().UTC()
 	if update.PasswordHash != nil {

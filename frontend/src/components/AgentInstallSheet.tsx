@@ -89,7 +89,7 @@ export function AgentInstallBody({
       <p className="flex items-start gap-1.5 text-[12px] leading-snug text-warn">
         <AlertTriangle aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
         This token authenticates the tunnel for this cluster. It is not in the URL above; it is inside
-        the package that URL downloads — treat the package like a credential.
+        the package that URL downloads - treat the package like a credential.
       </p>
 
       <div>
@@ -192,7 +192,7 @@ export function AgentInstallSheet({
       <p className="text-[13px] leading-relaxed text-muted">
         Run this against {cluster.name} with a kubeconfig that can create resources in{' '}
         {install?.namespace ?? 'the agent namespace'}. Applying it again is also how the agent is
-        upgraded — the manifests are rendered from this cluster's current registration token, so
+        upgraded - the manifests are rendered from this cluster's current registration token, so
         re-applying them replaces the workload without re-registering the cluster or invalidating
         anything already issued.
       </p>

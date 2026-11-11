@@ -33,7 +33,7 @@ const VERB_GROUPS: Array<{ label: string; hint: string; verbs: string[] }> = [
   },
   {
     label: 'Sessions',
-    hint: 'Interactive access. Recorded whatever is selected here — see below.',
+    hint: 'Interactive access. Recorded whatever is selected here - see below.',
     verbs: ['exec', 'attach', 'portforward'],
   },
 ]
@@ -97,7 +97,7 @@ export function AuditSettingsPanel({
     <>
       <Panel
         title="What reaches the trail"
-        description="Every proxied call is recorded. On a busy fleet most of those rows are reads nobody queries, so the table can be narrowed to the actions worth keeping — the structured log a SIEM tails stays complete either way."
+        description="Every proxied call is recorded. On a busy fleet most of those rows are reads nobody queries, so the table can be narrowed to the actions worth keeping - the structured log a SIEM tails stays complete either way."
         bodyClassName="flex flex-col gap-4 p-4"
         actions={
           selecting ? (
@@ -151,7 +151,7 @@ export function AuditSettingsPanel({
       <Panel
         eyebrow="Retention"
         title="How long it is kept"
-        description="A background pass twice a day deletes anything past these windows. Deletions are permanent — there is no archive behind them."
+        description="A background pass twice a day deletes anything past these windows. Deletions are permanent - there is no archive behind them."
         bodyClassName="flex flex-col gap-4 p-4"
       >
         <Field
@@ -215,8 +215,8 @@ export function AuditSettingsPanel({
             <span className="mt-0.5 block text-[12px] leading-snug text-muted">
               An <code>update</code> row already says a manifest was applied; this makes it say
               what changed. Off by default, because a manifest body can hold values as sensitive as
-              a Secret's without the object being one — an inlined token in a ConfigMap, a
-              certificate in a Deployment's env — so this is a decision to retain more, not a
+              a Secret's without the object being one - an inlined token in a ConfigMap, a
+              certificate in a Deployment's env - so this is a decision to retain more, not a
               cosmetic toggle. A Secret's own diff is never stored, whatever this is set to, and the
               stored diff is pruned by the retention window above like every other row.
             </span>
@@ -247,7 +247,7 @@ export function AuditSettingsPanel({
                 <span className="text-[13px] text-fg">Record exec and attach sessions</span>
                 <span className="mt-0.5 block text-[12px] leading-snug text-muted">
                   Turning this off stops the next session from being recorded and leaves the ones
-                  already running alone. Sessions are still audited either way — what is lost is
+                  already running alone. Sessions are still audited either way - what is lost is
                   the replay.
                 </span>
               </span>
@@ -262,7 +262,7 @@ export function AuditSettingsPanel({
           <Notice tone="warn">
             This server was started without a recording directory, so nothing can be recorded and
             this setting cannot turn it on. Set <code>KUBEMG_SESSION_RECORDING_DIR</code> to a
-            mounted volume and restart — recordings have to outlive the container.
+            mounted volume and restart - recordings have to outlive the container.
           </Notice>
         )}
       </Panel>

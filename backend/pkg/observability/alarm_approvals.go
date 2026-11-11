@@ -202,13 +202,13 @@ type slackBlockMessage struct {
 // which is what works with a plain incoming webhook.
 func slackApprovalMessage(note jit.ApprovalNote) slackBlockMessage {
 	fields := []slackText{
-		mrkdwn("*Requester*\n" + orDash(note.Requester)),
-		mrkdwn("*Cluster*\n`" + orDash(note.Cluster) + "`"),
-		mrkdwn("*Role*\n`" + orDash(note.Role) + "`"),
+		mrkdwn("*Requester*\n" + slackEscape(orDash(note.Requester))),
+		mrkdwn("*Cluster*\n`" + slackEscape(orDash(note.Cluster)) + "`"),
+		mrkdwn("*Role*\n`" + slackEscape(orDash(note.Role)) + "`"),
 		mrkdwn("*Window*\n" + humanDuration(note.Duration)),
 	}
 	if len(note.Namespaces) > 0 {
-		fields = append(fields, mrkdwn("*Namespaces*\n`"+strings.Join(note.Namespaces, ", ")+"`"))
+		fields = append(fields, mrkdwn("*Namespaces*\n`"+slackEscape(strings.Join(note.Namespaces, ", "))+"`"))
 	} else {
 		// Said explicitly, because "every namespace" is the part of a cluster-admin
 		// request an approver most needs to notice.
@@ -218,10 +218,14 @@ func slackApprovalMessage(note jit.ApprovalNote) slackBlockMessage {
 	headline := fmt.Sprintf("%s is requesting %s on %s",
 		orDash(note.Requester), orDash(note.Role), orDash(note.Cluster))
 
+	// The reason is the requester's own words, so it is plain text: as mrkdwn
+	// it could carry <!channel>, a link labelled "Review in KubeMG" to anywhere,
+	// or lines dressed as the fields above. The heading stays bold beside it.
 	blocks := []slackBlock{
-		{Type: "section", Text: ptr(mrkdwn(":lock: *Elevated access request*\n" + headline))},
+		{Type: "section", Text: ptr(mrkdwn(":lock: *Elevated access request*\n" + slackEscape(headline)))},
 		{Type: "section", Fields: fields},
-		{Type: "section", Text: ptr(mrkdwn("*Reason*\n" + orDash(note.Reason)))},
+		{Type: "section", Text: ptr(mrkdwn("*Reason*"))},
+		{Type: "section", Text: ptr(plain(orDash(note.Reason)))},
 	}
 
 	buttons := []slackButton{}
@@ -265,21 +269,21 @@ func slackApprovalMessage(note jit.ApprovalNote) slackBlockMessage {
 		},
 	})
 
-	return slackBlockMessage{Text: "[ACCESS] " + headline, Blocks: blocks}
+	return slackBlockMessage{Text: "[ACCESS] " + slackEscape(headline), Blocks: blocks}
 }
 
 // slackDecisionMessage reports the outcome.
 func slackDecisionMessage(note jit.DecisionNote) slackBlockMessage {
-	headline := decisionHeadline(note)
+	headline := slackEscape(decisionHeadline(note))
 	blocks := []slackBlock{
 		{Type: "section", Text: ptr(mrkdwn(decisionEmoji(note.Status) + " *Elevated access " +
 			note.Status + "*\n" + headline))},
 	}
 	if note.Comment != "" {
-		blocks = append(blocks, slackBlock{
-			Type: "section",
-			Text: ptr(mrkdwn("*Note*\n" + note.Comment)),
-		})
+		blocks = append(blocks,
+			slackBlock{Type: "section", Text: ptr(mrkdwn("*Note*"))},
+			slackBlock{Type: "section", Text: ptr(plain(note.Comment))},
+		)
 	}
 	blocks = append(blocks, slackBlock{
 		Type:   "context",
@@ -287,6 +291,14 @@ func slackDecisionMessage(note jit.DecisionNote) slackBlockMessage {
 	})
 	return slackBlockMessage{Text: "[ACCESS] " + headline, Blocks: blocks}
 }
+
+// slackEscape makes a value inert inside mrkdwn, by the three escapes Slack
+// asks for: an unescaped < opens a link, a mention or <!channel>.
+func slackEscape(text string) string {
+	return slackEscaper.Replace(text)
+}
+
+var slackEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 
 func mrkdwn(text string) slackText  { return slackText{Type: "mrkdwn", Text: text} }
 func plain(text string) slackText   { return slackText{Type: "plain_text", Text: text} }
@@ -309,6 +321,19 @@ type teamsCardElement struct {
 	Size   string           `json:"size,omitempty"`
 	Wrap   bool             `json:"wrap,omitempty"`
 	Facts  []teamsCardField `json:"facts,omitempty"`
+	// Inlines are a RichTextBlock's runs. A TextRun is drawn as written,
+	// where a TextBlock reads Markdown, so text somebody typed goes here.
+	Inlines []teamsTextRun `json:"inlines,omitempty"`
+}
+
+type teamsTextRun struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+// teamsPlain is a block of text drawn as written: no link, no emphasis.
+func teamsPlain(text string) teamsCardElement {
+	return teamsCardElement{Type: "RichTextBlock", Inlines: []teamsTextRun{{Type: "TextRun", Text: text}}}
 }
 
 type teamsCardAction struct {
@@ -350,8 +375,8 @@ func teamsApprovalCard(note jit.ApprovalNote) teamsMessage {
 
 	body := []teamsCardElement{
 		{Type: "TextBlock", Text: "Elevated access request", Weight: "Bolder", Size: "Medium", Wrap: true},
-		{Type: "TextBlock", Wrap: true, Text: fmt.Sprintf("%s is requesting %s on %s.",
-			orDash(note.Requester), orDash(note.Role), orDash(note.Cluster))},
+		teamsPlain(fmt.Sprintf("%s is requesting %s on %s.",
+			orDash(note.Requester), orDash(note.Role), orDash(note.Cluster))),
 		{Type: "FactSet", Facts: []teamsCardField{
 			{Title: "Requester", Value: orDash(note.Requester)},
 			{Title: "Cluster", Value: orDash(note.Cluster)},
@@ -361,7 +386,7 @@ func teamsApprovalCard(note jit.ApprovalNote) teamsMessage {
 			{Title: "Request", Value: note.RequestID},
 		}},
 		{Type: "TextBlock", Weight: "Bolder", Text: "Reason", Wrap: true},
-		{Type: "TextBlock", Wrap: true, Text: orDash(note.Reason)},
+		teamsPlain(orDash(note.Reason)),
 	}
 
 	actions := []teamsCardAction{}
@@ -407,7 +432,7 @@ func teamsDecisionCard(note jit.DecisionNote) teamsMessage {
 		{Type: "FactSet", Facts: facts},
 	}
 	if note.Comment != "" {
-		body = append(body, teamsCardElement{Type: "TextBlock", Wrap: true, Text: note.Comment})
+		body = append(body, teamsPlain(note.Comment))
 	}
 
 	return teamsMessage{

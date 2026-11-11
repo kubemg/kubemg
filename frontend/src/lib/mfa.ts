@@ -44,8 +44,8 @@ export function recoveryCodesFile(codes: string[], account: string, host: string
  */
 export function mfaSummary(mfa: MFAStatus | null): string {
   if (!mfa) return 'Not read'
-  if (!mfa.applies) return 'Held by the identity provider — kubemg does not see it'
-  if (!mfa.enrolled) return mfa.required ? 'None — must set one up at the next sign-in' : 'None — password only'
+  if (!mfa.applies) return 'Held by the identity provider - kubemg does not see it'
+  if (!mfa.enrolled) return mfa.required ? 'None - must set one up at the next sign-in' : 'None - password only'
   const apps = mfa.factors.filter((factor) => factor.kind !== 'webauthn').length
   const keys = mfa.factors.length - apps
   const codes = mfa.recovery_codes_remaining

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -216,6 +217,22 @@ func (s *Server) serveTunnel(
 		slog.String("agent_version", hello.AgentVersion),
 		slog.String("kubernetes_version", hello.KubernetesVersion),
 	)
+
+	// However serving ends — an error, or a panic the HTTP server recovers
+	// from — the tunnel leaves the registry. Without this a panic on the read
+	// loop left a dead tunnel registered: every call answered 503 until the
+	// agent reconnected, the cluster still read connected, and the reconnect
+	// was recorded as a displacement. dropTunnel is idempotent: once removed,
+	// a second call changes nothing.
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			s.logger.Error("agent tunnel read loop panicked",
+				slog.String("cluster", cluster.Name),
+				slog.Any("panic", recovered))
+			s.dropTunnel(tunnel, cluster, fmt.Errorf("the tunnel's read loop failed: %v", recovered))
+			panic(recovered)
+		}
+	}()
 
 	welcome := Message{Type: MessageWelcome, Welcome: &Welcome{
 		ProtocolVersion:  ProtocolVersion,

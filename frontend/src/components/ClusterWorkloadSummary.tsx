@@ -123,7 +123,7 @@ export function ClusterWorkloadSummary({
           title="Nothing to read from this cluster yet"
         >
           What is running here is read through the cluster&rsquo;s own agent tunnel, and this
-          cluster has none open. Ask whoever registered it — until the agent dials in there is no
+          cluster has none open. Ask whoever registered it - until the agent dials in there is no
           live state for kubemg to show.
         </EmptyState>
       </Panel>

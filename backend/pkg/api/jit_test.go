@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,6 +97,71 @@ func (e *jitEnv) doSlackCallback(t *testing.T, body map[string]any) *httptest.Re
 	rec := httptest.NewRecorder()
 	e.router.ServeHTTP(rec, req)
 	return rec
+}
+
+// doSlackInteraction posts what a Slack app's interactivity request is: a
+// form-encoded `payload`, signed over the raw body as Slack signs it.
+func (e *jitEnv) doSlackInteraction(t *testing.T, interaction map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
+	payload, err := json.Marshal(interaction)
+	if err != nil {
+		t.Fatalf("marshal interaction: %v", err)
+	}
+	form := url.Values{"payload": {string(payload)}}.Encode()
+	timestamp := strconv.FormatInt(e.now().Unix(), 10)
+	mac := hmac.New(sha256.New, slackSigningSecret)
+	mac.Write([]byte("v0:" + timestamp + ":" + form))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/jit/webhooks/callback", strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Slack-Request-Timestamp", timestamp)
+	req.Header.Set("X-Slack-Signature", "v0="+hex.EncodeToString(mac.Sum(nil)))
+	rec := httptest.NewRecorder()
+	e.router.ServeHTTP(rec, req)
+	return rec
+}
+
+// A Slack click decides as the account its member ID is linked to, never as
+// whichever account shares the clicker's handle: a handle is a display string
+// a workspace member may be able to set to "admin".
+func TestASlackClickDecidesOnlyAsItsLinkedAccount(t *testing.T) {
+	start := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
+	env := newJitEnv(t, fixedClock(start))
+	secret := []byte("callback-secret")
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	dev := env.store.addUser("dev", "pw", db.RoleUser)
+	cluster := env.store.addCluster("prod-eu", db.EnvProd)
+	click := func(slackID, handle string) *httptest.ResponseRecorder {
+		request := env.store.addJitRequest(db.JitRequest{
+			RequesterID: dev.ID, RequesterUsername: dev.Username,
+			ClusterID: cluster.ID, ClusterName: cluster.Name,
+			RequestedRole: db.K8sRoleClusterAdmin, DurationMinutes: 60, Reason: "incident",
+		})
+		token := jit.SignAction(secret, jit.Action{
+			RequestID: request.ID, Action: jit.ActionApprove, Expires: start.Add(time.Hour),
+		})
+		return env.doSlackInteraction(t, map[string]any{
+			"user":    map[string]any{"id": slackID, "username": handle, "name": handle},
+			"actions": []map[string]any{{"action_id": "kubemg_jit_approve", "value": token}},
+		})
+	}
+
+	if rec := click("U0DEV", "admin"); rec.Code != http.StatusForbidden {
+		t.Fatalf("an unlinked member with the admin's handle: want 403, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if _, ok := env.store.grantOf(dev.ID, cluster.ID, db.GrantSourceJIT); ok {
+		t.Fatal("an unlinked click granted access")
+	}
+
+	admin.SlackUserID = "U0ADMIN"
+	dev.SlackUserID = "U0DEV"
+	if rec := click("U0DEV", "admin"); rec.Code != http.StatusForbidden {
+		t.Fatalf("the requester's own member ID: want 403, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if rec := click("U0ADMIN", "someone-else"); rec.Code != http.StatusOK {
+		t.Fatalf("the admin's linked member ID: want 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	assertAudited(t, env, jit.VerbApprove, admin.Username)
 }
 
 // requestBody is the shape the console posts.

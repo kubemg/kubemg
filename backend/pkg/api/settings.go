@@ -588,7 +588,7 @@ func (s *server) updateSettings(c *gin.Context) {
 		name := strings.TrimSpace(*req.AgentImagePullSecret)
 		if name != "" && !agentpkg.ValidImagePullSecret(name) {
 			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "the image pull secret must be a Secret's name (lowercase letters, digits, dashes and dots) — the name, not its contents",
+				"error": "the image pull secret must be a Secret's name (lowercase letters, digits, dashes and dots) - the name, not its contents",
 			})
 			return
 		}
@@ -857,8 +857,8 @@ func settingsWarnings(s runtimeSettings) []string {
 	// long-lived credential.
 	if ceiling := time.Duration(s.KubeconfigMaxTTLHours) * time.Hour; ceiling > k8s.DefaultMaxTTL {
 		warnings = append(warnings, fmt.Sprintf(
-			"Kubeconfigs may be issued for up to %s. Through an agent tunnel that is safe to revoke — "+
-				"every call re-reads the caller's grant — but a direct-mode kubeconfig carries a token "+
+			"Kubeconfigs may be issued for up to %s. Through an agent tunnel that is safe to revoke - "+
+				"every call re-reads the caller's grant - but a direct-mode kubeconfig carries a token "+
 				"minted on the cluster, which keeps working until it expires however the grant changes.",
 			humanHours(s.KubeconfigMaxTTLHours)))
 	}
@@ -871,7 +871,7 @@ func settingsWarnings(s runtimeSettings) []string {
 	if isLoopbackHost(host) {
 		warnings = append(warnings,
 			"The server URL is a loopback address. An agent running inside a cluster resolves it to "+
-				"its own pod, so it will never reach KubeMG — set the address the cluster can reach.")
+				"its own pod, so it will never reach KubeMG - set the address the cluster can reach.")
 	}
 	if parsed.Scheme == "http" && !isLoopbackHost(host) {
 		warnings = append(warnings,

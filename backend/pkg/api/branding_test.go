@@ -58,9 +58,9 @@ func TestBrandingRoundTrips(t *testing.T) {
 	rec := env.do(t, http.MethodPut, "/api/v1/branding", env.tokenFor(t, admin), map[string]string{
 		"organisation_name": "  Acme Platform  ",
 		"organisation_mark": onePNG(),
-		"banner_text":       "PRODUCTION\n— handle with care",
+		"banner_text":       "PRODUCTION\n- handle with care",
 		"banner_tone":       BannerToneCritical,
-		"footer_notice":     "Internal — Restricted",
+		"footer_notice":     "Internal - Restricted",
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d (%s)", http.StatusOK, rec.Code, rec.Body.String())
@@ -72,13 +72,13 @@ func TestBrandingRoundTrips(t *testing.T) {
 	}
 	// A banner is one line by construction: a pasted newline would push every
 	// page's content down by however many came with it.
-	if body.BannerText != "PRODUCTION — handle with care" {
+	if body.BannerText != "PRODUCTION - handle with care" {
 		t.Fatalf("expected the banner folded to one line, got %q", body.BannerText)
 	}
 	if body.BannerTone != BannerToneCritical {
 		t.Fatalf("expected tone %q, got %q", BannerToneCritical, body.BannerTone)
 	}
-	if body.FooterNotice != "Internal — Restricted" {
+	if body.FooterNotice != "Internal - Restricted" {
 		t.Fatalf("unexpected footer notice %q", body.FooterNotice)
 	}
 
@@ -101,13 +101,13 @@ func TestBrandingOmittedFieldsAreLeftAlone(t *testing.T) {
 	})
 
 	rec := env.do(t, http.MethodPut, "/api/v1/branding", token, map[string]string{
-		"footer_notice": "Internal — Restricted",
+		"footer_notice": "Internal - Restricted",
 	})
 	body := decode[brandingResponse](t, rec)
 	if body.OrganisationName != "Acme" {
 		t.Fatalf("an omitted field must be kept, got %q", body.OrganisationName)
 	}
-	if body.FooterNotice != "Internal — Restricted" {
+	if body.FooterNotice != "Internal - Restricted" {
 		t.Fatalf("expected the notice to change, got %q", body.FooterNotice)
 	}
 }

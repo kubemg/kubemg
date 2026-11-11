@@ -63,7 +63,7 @@ func (c Config) Validate() error {
 		return errors.New("the SMTP host is a host name or address only")
 	}
 	if _, _, err := net.SplitHostPort(host); err == nil && !strings.HasPrefix(host, "[") {
-		return errors.New("the SMTP host takes no port — set the port on its own")
+		return errors.New("the SMTP host takes no port - set the port on its own")
 	}
 	if c.Port < 1 || c.Port > 65535 {
 		return errors.New("the SMTP port must be between 1 and 65535")
@@ -77,7 +77,7 @@ func (c Config) Validate() error {
 		return errors.New("the SMTP username cannot contain a line break")
 	}
 	if c.Security == SecurityNone && c.Username != "" && !isLoopback(host) {
-		return errors.New("a password is never sent over an unencrypted connection — " +
+		return errors.New("a password is never sent over an unencrypted connection - " +
 			"use starttls or tls, or a relay on this host that needs no login")
 	}
 	if _, err := parseAddress(c.From); err != nil {

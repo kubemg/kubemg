@@ -52,7 +52,7 @@ end.
 to the API server with `Impersonate-User` and `Impersonate-Group` headers, so the
 cluster's own RBAC answers for the person rather than for a shared identity.
 kubemg enforces *namespace scope* itself in the proxy and deliberately does not
-enforce role locally — the cluster is the authority on what a role may do.
+enforce role locally - the cluster is the authority on what a role may do.
 
 **The cluster is the primary object, not the kubeconfig.** A kubeconfig is
 issued from a cluster, recorded in a register, and revocable. It is never the
@@ -73,7 +73,7 @@ itself. `agent` is the bastion path: the cluster dials out and kubemg stores onl
 a registration token.
 
 The modes are not interchangeable and the difference reaches further than it
-first looks — health checks, kubeconfig contents, revocability, the browser
+first looks - health checks, kubeconfig contents, revocability, the browser
 shell, machine accounts and in-cluster datasources all branch on it. The user
 guide's [Choosing a connection mode](../clusters/connection-modes.md) is the
 honest comparison, including the direct-mode gap: direct mode mints tokens

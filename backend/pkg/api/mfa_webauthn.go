@@ -98,7 +98,7 @@ func refuseForeignOrigin(c *gin.Context, status webauthnStatus) bool {
 		return false
 	}
 	c.JSON(http.StatusConflict, gin.H{
-		"error": fmt.Sprintf("security keys answer to %s, and this page was opened at %s — sign in there to use one",
+		"error": fmt.Sprintf("security keys answer to %s, and this page was opened at %s - sign in there to use one",
 			status.origin, origin),
 	})
 	return true
@@ -292,7 +292,7 @@ func (s *server) beginWebAuthnAssertion(c *gin.Context) {
 	} else if _, signedIn := auth.ClaimsFrom(c); signedIn {
 		user, ok = s.currentUser(c)
 	} else {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+		auth.RefuseSession(c, "missing bearer token")
 	}
 	if !ok || refuseMFAFor(c, user) {
 		return

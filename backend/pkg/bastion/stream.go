@@ -79,6 +79,14 @@ type Stream struct {
 	closeOnce sync.Once
 	closed    chan struct{}
 
+	// dataMu orders deliver's send on data against Close's close of it. The
+	// closed check alone left a window between the check and the send: a
+	// stream closed by its consumer in that window (a cancelled watch, a
+	// finished log) made the send panic on the tunnel's read loop, which took
+	// the whole tunnel down without deregistering it.
+	dataMu     sync.Mutex
+	dataClosed bool
+
 	mu   sync.Mutex
 	err  error
 	sent bool
@@ -139,7 +147,10 @@ func (s *Stream) Close(cause error) {
 		s.mu.Unlock()
 
 		close(s.closed)
+		s.dataMu.Lock()
+		s.dataClosed = true
 		close(s.data)
+		s.dataMu.Unlock()
 		s.tunnel.dropStream(s.ID)
 
 		// Best effort: if the tunnel is already gone there is nobody to tell.
@@ -159,22 +170,27 @@ func (s *Stream) Close(cause error) {
 // loop — see the bounds' own comment for why. A stream that outruns both of
 // them loses itself rather than the socket everything else shares.
 func (s *Stream) deliver(chunk StreamData) {
-	select {
-	case <-s.closed:
-		return
-	default:
-	}
-
-	if s.queued.Add(int64(len(chunk.Data))) > streamBufferBytes {
-		s.queued.Add(-int64(len(chunk.Data)))
+	size := int64(len(chunk.Data))
+	if s.queued.Add(size) > streamBufferBytes {
+		s.queued.Add(-size)
 		s.Close(ErrStreamBacklog)
 		return
 	}
 
+	// The send is non-blocking, so holding the lock across it costs nothing;
+	// Close is called only after the lock is released, since it takes it too.
+	s.dataMu.Lock()
+	if s.dataClosed {
+		s.dataMu.Unlock()
+		s.queued.Add(-size)
+		return
+	}
 	select {
 	case s.data <- chunk:
+		s.dataMu.Unlock()
 	default:
-		s.queued.Add(-int64(len(chunk.Data)))
+		s.dataMu.Unlock()
+		s.queued.Add(-size)
 		s.Close(ErrStreamBacklog)
 	}
 }

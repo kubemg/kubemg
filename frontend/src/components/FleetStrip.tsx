@@ -53,12 +53,12 @@ function StripLink({ figure }: { figure: StripFigure }) {
   // Unknown and not-yet-read are both *not a number*, and both must look it: a
   // dash for a read that failed, an ellipsis for one still in flight. Neither is
   // ever drawn as 0.
-  const shown = reading ? String(value) : value === null ? '—' : '…'
+  const shown = reading ? String(value) : value === null ? '-' : '…'
 
   return (
     <StatTile
       to={figure.to}
-      title={value === null ? 'Could not be read — open the page for the rows' : undefined}
+      title={value === null ? 'Could not be read - open the page for the rows' : undefined}
       icon={FIGURE_ICON[figure.key] ?? Gauge}
       label={figure.label}
       tone={lit ? (figure.tone === 'bad' ? 'danger' : 'warn') : 'neutral'}

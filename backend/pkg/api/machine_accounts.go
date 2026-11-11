@@ -133,7 +133,7 @@ func (s *server) createMachineAccount(c *gin.Context) {
 	if !machineAccountName.MatchString(username) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "a machine account name must be 3–64 lowercase letters, digits, dots, dashes or " +
-				"underscores, starting and ending with a letter or digit — it is sent to the cluster " +
+				"underscores, starting and ending with a letter or digit - it is sent to the cluster " +
 				"as the impersonated user",
 		})
 		return

@@ -35,7 +35,7 @@ const KIND_TONE: Record<ManifestDiffChange['kind'], string> = {
     form, since that is the only unambiguous way to show a number, a bool, or
     a nested object/array in one line. */
 function renderValue(value: unknown): string {
-  if (value === undefined) return '—'
+  if (value === undefined) return '-'
   if (typeof value === 'string') return value
   try {
     return JSON.stringify(value)
@@ -86,10 +86,10 @@ export function ManifestDiffView({
                   <span className="break-all">{change.path}</span>
                 </td>
                 <td className="max-w-[280px] px-3 py-2 align-top font-mono text-[12px] break-all text-danger/90">
-                  {change.kind === 'added' ? '—' : renderValue(change.old)}
+                  {change.kind === 'added' ? '-' : renderValue(change.old)}
                 </td>
                 <td className="max-w-[280px] px-3 py-2 align-top font-mono text-[12px] break-all text-ok/90">
-                  {change.kind === 'removed' ? '—' : renderValue(change.new)}
+                  {change.kind === 'removed' ? '-' : renderValue(change.new)}
                 </td>
               </tr>
             ))}
@@ -98,7 +98,7 @@ export function ManifestDiffView({
       </div>
       {diff.truncated ? (
         <Notice tone="warn">
-          This object differs in more places than fit here — the list above is a prefix of the real
+          This object differs in more places than fit here - the list above is a prefix of the real
           diff, not a sample of it.
         </Notice>
       ) : null}

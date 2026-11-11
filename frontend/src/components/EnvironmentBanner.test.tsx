@@ -44,8 +44,8 @@ describe('EnvironmentBanner', () => {
   })
 
   it('says what an administrator wrote', () => {
-    draw({ banner_text: 'PRODUCTION — changes here affect customers' })
-    expect(screen.getByText('PRODUCTION — changes here affect customers')).toBeTruthy()
+    draw({ banner_text: 'PRODUCTION - changes here affect customers' })
+    expect(screen.getByText('PRODUCTION - changes here affect customers')).toBeTruthy()
   })
 
   it('is a status rather than an alert', () => {

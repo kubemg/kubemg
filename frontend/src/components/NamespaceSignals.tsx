@@ -217,7 +217,7 @@ export function NamespaceSignals({
         lead={throttled?.count ?? null}
         caption={
           throttleMissing
-            ? 'No datasource — throttling is read from history'
+            ? 'No datasource - throttling is read from history'
             : throttling.error
               ? queryError(throttling.error, 'Could not read throttling.')
               : !throttled
@@ -239,7 +239,7 @@ export function NamespaceSignals({
             ? 'No pod here declares a limit'
             : limits.count > 0
               ? `of ${limits.limited} pod${limits.limited === 1 ? '' : 's'} with limits${limits.measured ? '' : ' · OOM kills only'}`
-              : `None near a limit${limits.measured ? '' : ' — no live sample, OOM kills only'}`
+              : `None near a limit${limits.measured ? '' : ' - no live sample, OOM kills only'}`
         }
         open={open}
       />
@@ -475,8 +475,8 @@ function LegendRow({
   onHover: (key: string | null) => void
 }) {
   const title = slice.kind
-    ? `${slice.kind} ${slice.label} — ${slice.pods} pod${slice.pods === 1 ? '' : 's'}`
-    : `${slice.label} workloads — ${slice.pods} pods`
+    ? `${slice.kind} ${slice.label} - ${slice.pods} pod${slice.pods === 1 ? '' : 's'}`
+    : `${slice.label} workloads - ${slice.pods} pods`
   return (
     <li
       title={title}
@@ -529,7 +529,7 @@ function SignalCell({
 
   const figure = (
     <span className={`font-data text-[22px] leading-none font-bold tabular-nums ${lead === null ? 'text-faint' : tint}`}>
-      {lead === null ? '—' : lead}
+      {lead === null ? '-' : lead}
     </span>
   )
 
@@ -579,7 +579,7 @@ function SignalCell({
                   <button
                     type="button"
                     onClick={onClick}
-                    title={`${pod.namespace}/${pod.name} — ${pod.detail}`}
+                    title={`${pod.namespace}/${pod.name} - ${pod.detail}`}
                     className="-mx-1.5 flex w-[calc(100%+0.75rem)] min-w-0 items-baseline gap-2 rounded-chip px-1.5 py-0.5 transition-colors duration-300 hover:bg-raised"
                   >
                     {body}
@@ -588,7 +588,7 @@ function SignalCell({
                   // A throttled pod from earlier in the window may have gone
                   // since; it is still named, but there is no row to open.
                   <span
-                    title={`${pod.namespace}/${pod.name} — no longer running`}
+                    title={`${pod.namespace}/${pod.name} - no longer running`}
                     className="flex min-w-0 items-baseline gap-2 py-0.5"
                   >
                     {body}
