@@ -440,7 +440,7 @@ func (r *trafficResolver) drawUses(root, namespace string, uses []dependencyUse,
 			keys, failure := r.configMapKeys(namespace, first.name)
 			switch {
 			case failure != nil && failure.status == http.StatusNotFound && optional:
-				node.State, node.Problem = trafficWarn, "absent — every reference to it is optional, so the pods start without it"
+				node.State, node.Problem = trafficWarn, "absent - every reference to it is optional, so the pods start without it"
 			case failure != nil && failure.status == http.StatusNotFound:
 				node.State, node.Problem = trafficBad, "this ConfigMap does not exist"
 			case failure != nil:
@@ -455,7 +455,7 @@ func (r *trafficResolver) drawUses(root, namespace string, uses []dependencyUse,
 			}
 		case "Secret":
 			node.State = trafficUnchecked
-			node.Detail = []string{"named only — never read"}
+			node.Detail = []string{"named only - never read"}
 			for _, message := range messages {
 				if match := secretMissing.FindStringSubmatch(message); match != nil && match[1] == first.name && !optional {
 					node.State, node.Problem = trafficBad, "a pod reports it missing: "+message
@@ -473,7 +473,7 @@ func (r *trafficResolver) drawUses(root, namespace string, uses []dependencyUse,
 			if failure := r.object(namespace, objectKinds["serviceaccounts"].versions, first.name, &account); failure != nil {
 				node.State, node.Problem = failure.state, failure.problem
 				if failure.status == http.StatusNotFound {
-					node.Problem = "this ServiceAccount does not exist — the controller cannot create the pods"
+					node.Problem = "this ServiceAccount does not exist - the controller cannot create the pods"
 				}
 			}
 		case "PersistentVolumeClaim":
@@ -543,7 +543,7 @@ func (r *trafficResolver) drawClaim(node *trafficNode, namespace, name string) {
 	if failure := r.object(namespace, objectKinds["persistentvolumeclaims"].versions, name, &claim); failure != nil {
 		node.State, node.Problem = failure.state, failure.problem
 		if failure.status == http.StatusNotFound {
-			node.Problem = "this claim does not exist — a pod that mounts it stays Pending"
+			node.Problem = "this claim does not exist - a pod that mounts it stays Pending"
 		}
 		return
 	}
@@ -551,10 +551,10 @@ func (r *trafficResolver) drawClaim(node *trafficNode, namespace, name string) {
 		claim.Status.Phase, claim.Spec.Resources.Requests["storage"], deref(claim.Spec.StorageClassName, "")))}
 	switch claim.Status.Phase {
 	case "Pending":
-		node.State, node.Problem = trafficWarn, "Pending — not bound to a volume yet"
+		node.State, node.Problem = trafficWarn, "Pending - not bound to a volume yet"
 		return
 	case "Lost":
-		node.State, node.Problem = trafficBad, "Lost — the volume it was bound to is gone"
+		node.State, node.Problem = trafficBad, "Lost - the volume it was bound to is gone"
 		return
 	}
 	if claim.Spec.VolumeName == "" {
@@ -579,7 +579,7 @@ func (r *trafficResolver) drawClaim(node *trafficNode, namespace, name string) {
 		volume.Detail = []string{strings.TrimSpace(fmt.Sprintf("%s %s · reclaim %s",
 			pv.Status.Phase, pv.Spec.Capacity["storage"], pv.Spec.PersistentVolumeReclaimPolicy))}
 		if pv.Status.Phase == "Failed" || pv.Status.Phase == "Released" {
-			volume.State, volume.Problem = trafficBad, pv.Status.Phase+" — no longer bound to this claim"
+			volume.State, volume.Problem = trafficBad, pv.Status.Phase+" - no longer bound to this claim"
 		}
 	}
 	r.addNode(volume)
@@ -592,7 +592,7 @@ func (r *trafficResolver) drawClaim(node *trafficNode, namespace, name string) {
 func (r *trafficResolver) clusterObject(path string, out any) *readFailure {
 	if len(r.allowed) > 0 {
 		return &readFailure{trafficOutside,
-			"cluster-scoped — outside a namespace-scoped grant, so kubemg did not read it", http.StatusForbidden}
+			"cluster-scoped - outside a namespace-scoped grant, so kubemg did not read it", http.StatusForbidden}
 	}
 	status, body, err := r.read.get(path)
 	if err != nil {

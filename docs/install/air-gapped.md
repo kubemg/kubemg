@@ -8,7 +8,7 @@ carrying them across on media, and pull secrets.
 | Image | Pulled by | Needed for |
 | --- | --- | --- |
 | `ghcr.io/kubemg/kubemg` | this host | the server and console |
-| `postgres:16-alpine` | this host | the Docker Compose path and the Helm chart's evaluation mode — not needed with an external PostgreSQL |
+| `postgres:16-alpine` | this host | the Docker Compose path and the Helm chart's evaluation mode - not needed with an external PostgreSQL |
 | `ghcr.io/kubemg/kubemg-agent` | **your target clusters** | the agent |
 | `ghcr.io/kubemg/kubemg-shell` | **your target clusters** | the [browser shell](../clusters/terminals-and-logs.md) |
 | `busybox:1.36` | **your target clusters** | [debug containers](../clusters/terminals-and-logs.md#debugging-a-pod-with-no-shell) |
@@ -57,7 +57,7 @@ use a mirror.
 **Helm:** `--set global.imageRegistry=registry.internal` rewrites every image,
 including the ones the console hands out. See [Kubernetes](kubernetes.md#mirrored-and-air-gapped-registries).
 
-**Docker Compose:** set each image in `.env` — see
+**Docker Compose:** set each image in `.env` - see
 [Docker Compose](docker-compose.md#air-gapped-installs).
 
 The three cluster-side images can also be changed later, without a restart, on
@@ -88,7 +88,7 @@ from a mirror path that allows anonymous pulls.
 
 ## The kubemg CLI
 
-Nothing extra to carry across. The management-plane image holds the `kubemg` command line for Linux, macOS and Windows (amd64 and arm64), and serves it at `/downloads/cli` — people download it from the server they sign in to, and **My credentials → Use the command line** links it. See [The kubemg command line](../access/cli.md#installing-it).
+Nothing extra to carry across. The management-plane image holds the `kubemg` command line for Linux, macOS and Windows (amd64 and arm64), and serves it at `/downloads/cli` - people download it from the server they sign in to, and **My credentials → Use the command line** links it. See [The kubemg command line](../access/cli.md#installing-it).
 
 ## The chart itself
 

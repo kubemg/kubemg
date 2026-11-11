@@ -385,7 +385,7 @@ func (s *server) loadDeviceRequest(c *gin.Context) (*db.CLIDeviceCode, bool) {
 	}
 	row, err := s.store.CLIDeviceCodeByUserCode(c.Request.Context(), code, time.Now().UTC())
 	if errors.Is(err, db.ErrNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "no sign-in is waiting for that code — it may have expired"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "no sign-in is waiting for that code - it may have expired"})
 		return nil, false
 	}
 	if err != nil {
@@ -458,7 +458,7 @@ func (s *server) decideDeviceLogin(c *gin.Context, status string) {
 		owed := state.Enrolled() || mfaRequiredFor(s.settings(ctx).MFAEnforcement, caller)
 		if owed && (claims == nil || !claims.MFA) {
 			c.JSON(http.StatusForbidden, gin.H{
-				"error": "this browser session did not pass your second factor — sign out, sign in again, and approve from the new session",
+				"error": "this browser session did not pass your second factor - sign out, sign in again, and approve from the new session",
 			})
 			return
 		}
@@ -621,7 +621,7 @@ func (s *server) cliClusters(c *gin.Context) {
 				entry.CAData = base64.StdEncoding.EncodeToString([]byte(s.bastionCA))
 			}
 		} else if !cluster.UsesAgent() {
-			entry.Note = "registered for direct API access — download its kubeconfig from the console"
+			entry.Note = "registered for direct API access - download its kubeconfig from the console"
 		}
 		out = append(out, entry)
 	}
@@ -674,7 +674,7 @@ func (s *server) cliCredential(c *gin.Context) {
 	if !cluster.UsesAgent() {
 		c.JSON(http.StatusConflict, gin.H{
 			"error": "this cluster is registered for direct API access: its credential is a token the cluster " +
-				"mints, which no CLI session governs — download its kubeconfig from the console",
+				"mints, which no CLI session governs - download its kubeconfig from the console",
 		})
 		return
 	}
@@ -712,7 +712,7 @@ func (s *server) cliCredential(c *gin.Context) {
 }
 
 // cliOnlyRefusal is what an agent-mode download says under cli_only.
-const cliOnlyRefusal = "this server issues agent-mode kubectl access through the kubemg CLI only — " +
+const cliOnlyRefusal = "this server issues agent-mode kubectl access through the kubemg CLI only - " +
 	"run kubemg login, then kubemg update-kubeconfig"
 
 // touchCLISession stamps a session's use at most every five minutes, the

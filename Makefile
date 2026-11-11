@@ -47,7 +47,7 @@ DOCKER_AGENT = docker run --rm -v $(PWD)/agent:/app -v kubemg-go-mod:/go/pkg/mod
 DOCKER_CLI   = docker run --rm -v $(PWD)/cli:/app -v kubemg-go-mod:/go/pkg/mod -v kubemg-go-build:/root/.cache/go-build -w /app $(GO_IMAGE)
 DOCKER_NODE  = docker run --rm -v $(PWD)/frontend:/app -v kubemg-npm:/root/.npm -w /app $(NODE_IMAGE)
 
-.PHONY: help build test verify manifest-check chart-test \
+.PHONY: help build test verify manifest-check chart-test images-check \
         backend-build backend-test backend-vet backend-tidy \
         agent-build agent-test agent-vet agent-tidy agent-image agent-image-check agent-push \
         shell-image shell-image-check shell-push \
@@ -62,7 +62,7 @@ help:
 ## ---- aggregate ----
 build: backend-build agent-build cli-build frontend-build ## Build backend + agent + CLI + frontend in containers
 test: backend-test agent-test cli-test frontend-test ## Run all container-based tests
-verify: manifest-check chart-test backend-vet backend-test backend-build agent-vet agent-test agent-build cli-vet cli-test cli-build frontend-lint frontend-test frontend-contrast frontend-build docs-build ## Full containerized verification
+verify: manifest-check chart-test images-check backend-vet backend-test backend-build agent-vet agent-test agent-build cli-vet cli-test cli-build frontend-lint frontend-test frontend-contrast frontend-build docs-build ## Full containerized verification
 
 # The bastion embeds its own copy of the agent manifests so they ship inside the
 # server binary. Two copies can drift; this makes drift a build failure.
@@ -76,6 +76,13 @@ manifest-check: ## Verify the embedded agent manifests match deploy/kustomize/ba
 # as under `helm install` — then the unit tests in deploy/helm/kubemg/tests.
 chart-test: ## Lint, render and unit-test the management plane Helm chart
 	@docker run --rm -v $(PWD):/repo:ro -w /repo --entrypoint sh $(HELM_IMAGE) hack/chart-check.sh
+
+# save-images bundles what an air-gapped install pulls, and the names of those
+# images live in several places: this Makefile, the server's built-in defaults,
+# the chart and the compose file. This reads all of them, the chart as rendered
+# with and without a mirror, and fails when the bundle and an install disagree.
+images-check: ## Verify save-images bundles exactly the images an install pulls
+	@docker run --rm -v $(PWD):/repo:ro -w /repo --entrypoint sh $(HELM_IMAGE) hack/images-check.sh
 
 ## ---- backend ----
 backend-build: ## Compile the Go server binary
@@ -194,6 +201,7 @@ image-check: ## Build the management plane image for every published platform (n
 # install packages, the debug container's image, and the PostgreSQL the compose
 # path and the chart's evaluation mode run. The images are the published ones at
 # this checkout's versions; override the *_IMAGE variables to bundle others.
+# `make images-check` fails when this list and what an install pulls disagree.
 SAVE_PLATFORM  ?= linux/amd64
 DEBUG_IMAGE    ?= busybox:1.36
 POSTGRES_IMAGE ?= postgres:16-alpine

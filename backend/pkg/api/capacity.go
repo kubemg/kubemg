@@ -1172,7 +1172,7 @@ func pressureConcerns(node nodeCapacityRow) []capacityConcern {
 			Title: "Memory in use is near the node's size",
 			Detail: "Live memory use is close to what this node can allocate. If it runs out, the " +
 				"kubelet evicts BestEffort pods first, then the pods using the most above their " +
-				"request — not necessarily the one that grew." + borrowerHint(node),
+				"request - not necessarily the one that grew." + borrowerHint(node),
 		})
 	}
 	if node.CPU.Allocatable > 0 && node.CPU.Used > 0 && node.CPU.UsedPercent >= usagePressurePercent {
@@ -1206,7 +1206,7 @@ func borrowerHint(node nodeCapacityRow) string {
 func overcommitDetail(code, label string) string {
 	if code == "memory" {
 		return "If the containers here used the memory they are allowed, this node would run " +
-			"out. Memory cannot be shared under pressure — the kubelet answers a shortage by " +
+			"out. Memory cannot be shared under pressure - the kubelet answers a shortage by " +
 			"evicting pods, and the pod evicted is not necessarily the one that caused it."
 	}
 	return "Containers here are allowed far more " + label + " than the node has. CPU is " +

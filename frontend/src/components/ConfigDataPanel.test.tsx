@@ -38,7 +38,7 @@ describe('what a ConfigMap or Secret holds', () => {
     const { container } = draw(configMap, false)
     expect(container.textContent).toContain('app.yaml')
     expect(container.textContent).toContain('workers: 2')
-    expect(container.textContent).toContain('Binary data — not shown as text.')
+    expect(container.textContent).toContain('Binary data - not shown as text.')
   })
 
   it('offers a Secret key to reveal only to a caller who holds the capability', () => {

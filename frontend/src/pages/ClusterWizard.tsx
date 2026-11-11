@@ -240,7 +240,7 @@ export function ClusterWizard() {
         ) : null}
 
         {step > 1 && !cluster ? (
-          <Notice tone="info">Register the cluster first — the remaining steps act on it.</Notice>
+          <Notice tone="info">Register the cluster first - the remaining steps act on it.</Notice>
         ) : null}
       </div>
     </AppShell>
@@ -420,7 +420,7 @@ function ConnectionStep({
             tagline="Recommended"
             shape="live"
             points={[
-              'The cluster dials out to kubemg — no inbound firewall rule, no exposed API server.',
+              'The cluster dials out to kubemg - no inbound firewall rule, no exposed API server.',
               'kubemg stores no credential for the cluster.',
               'kubectl traffic is proxied and audited, and acts under your own identity.',
             ]}
@@ -437,7 +437,7 @@ function ConnectionStep({
             points={[
               'kubemg dials the API server itself, so it must be routable from here.',
               'A service account token is stored in kubemg.',
-              'Issues kubeconfigs only — no proxy and no audit trail.',
+              'Issues kubeconfigs only - no proxy and no audit trail.',
             ]}
           />
         </div>
@@ -586,7 +586,7 @@ function AgentInstaller({ install, onRenew }: { install: AgentInstall; onRenew: 
     <Panel
       eyebrow="Handoff"
       title="Install the agent"
-      description={`Run this against ${install.cluster} with a kubeconfig that can create resources in ${install.namespace}. The agent dials back out to kubemg — nothing needs to be opened inbound.`}
+      description={`Run this against ${install.cluster} with a kubeconfig that can create resources in ${install.namespace}. The agent dials back out to kubemg - nothing needs to be opened inbound.`}
       actions={
         /* From the manifest in hand, never from the install URL: a browser
            download would spend the single-use ticket the command still needs. */
@@ -815,7 +815,7 @@ function ObservabilityStep({
 
       <div className="card overflow-hidden">
         <p className="px-4 py-3 text-[13px] leading-relaxed text-muted">
-          Optional. Skip it and the cluster still works — you just see the last couple of minutes
+          Optional. Skip it and the cluster still works - you just see the last couple of minutes
           the cluster keeps itself, and nothing before that. It can be connected later from the
           cluster page.
         </p>
@@ -1072,7 +1072,7 @@ function AccessStep({
         <Notice tone="warn">
           <strong className="font-semibold">These grants govern kubemg, not the cluster.</strong> In
           direct mode kubemg issues a token but creates no RoleBinding, so a grant decides what the
-          kubeconfig claims — not what the cluster allows. Agent-based clusters bind these roles for
+          kubeconfig claims - not what the cluster allows. Agent-based clusters bind these roles for
           real.
         </Notice>
       ) : (

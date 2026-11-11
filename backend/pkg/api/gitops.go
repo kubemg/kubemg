@@ -539,7 +539,7 @@ func findGitopsRecord(read trafficReader, toolName string, managed *managedByVie
 func gitopsNotHere(tool, name string) string {
 	reason := "no " + gitopsKindLabel(tool) + " named " + name + " in this cluster"
 	if tool == gitopsArgoCD {
-		reason += " — Argo CD may run in another cluster and deploy here"
+		reason += " - Argo CD may run in another cluster and deploy here"
 	}
 	return reason
 }

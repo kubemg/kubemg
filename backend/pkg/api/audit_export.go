@@ -123,7 +123,7 @@ func (s *server) exportAudit(c *gin.Context) {
 		// carry its own limits, but it must not carry them as something that
 		// parses as a record.
 		_ = writer.Write([]string{fmt.Sprintf(
-			"# truncated at %d rows — narrow the filter and export again",
+			"# truncated at %d rows - narrow the filter and export again",
 			db.AuditExportLimit,
 		)})
 	}

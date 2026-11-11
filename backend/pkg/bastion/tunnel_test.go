@@ -774,6 +774,34 @@ func TestProxyStreamUpgradeCheckOrigin(t *testing.T) {
 
 	if resp, err := dial("https://evil.example.com"); err == nil {
 		t.Fatalf("expected a disallowed Origin to be refused, got status %d", resp.StatusCode)
+	} else if resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("a disallowed Origin: want 403, got %v", resp)
+	}
+	// Refused before the cluster is asked: opening the stream is what starts
+	// the exec in the container, so a refusal after it would have run the
+	// command it claims to have refused.
+	if opens := agent.streamOpens(); len(opens) != 0 {
+		t.Fatalf("a refused Origin opened %d session(s) on the cluster", len(opens))
+	}
+	var refusal *Event
+	for _, event := range h.audit.events() {
+		if event.Status == http.StatusForbidden {
+			refusal = &event
+		}
+	}
+	if refusal == nil || refusal.RefusedBy != RefusedByKubeMG || refusal.Phase == PhaseOpen {
+		t.Fatalf("a refused Origin must be recorded as kubemg's refusal, got %+v", refusal)
+	}
+
+	// A plain GET on an exec is not a handshake at all, and is refused the
+	// same way: nothing opened, nothing run.
+	plain := h.proxyRequest(http.MethodGet,
+		"/api/v1/clusters/1/proxy/api/v1/namespaces/team-a/pods/web-0/exec?command=sh", h.token(admin))
+	if plain.StatusCode != http.StatusBadRequest {
+		t.Fatalf("a non-WebSocket exec: want 400, got %d", plain.StatusCode)
+	}
+	if opens := agent.streamOpens(); len(opens) != 0 {
+		t.Fatalf("a non-WebSocket exec opened %d session(s) on the cluster", len(opens))
 	}
 	if resp, err := dial("https://console.example.com"); err != nil {
 		status := ""

@@ -81,7 +81,7 @@ export function ClusterLabelsSheet({
 
         <Notice tone="info">
           The name and the connection are fixed. Every kubeconfig, grant and audit record already
-          points at this cluster by them — changing one here would re-aim all of them silently.
+          points at this cluster by them - changing one here would re-aim all of them silently.
           Register a new cluster instead, and remove this one when nothing needs it.
         </Notice>
 

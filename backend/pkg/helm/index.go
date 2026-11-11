@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -321,7 +322,12 @@ func fetch(ctx context.Context, client *http.Client, repo Repository,
 	if err != nil {
 		return nil, fmt.Errorf("the %s URL could not be requested", what)
 	}
-	if repo.Username != "" || repo.Credential != "" {
+	// The credential goes to the repository's own host only. An index may list
+	// its archives anywhere (a CDN, GitHub releases, a host of an attacker's
+	// choosing on a compromised index), and the repository's login is not
+	// theirs. Helm's own default since CVE-2021-32690. A redirect to another
+	// host drops the header too, in net/http.
+	if (repo.Username != "" || repo.Credential != "") && sameOrigin(target, repo.URL) {
 		request.SetBasicAuth(repo.Username, repo.Credential)
 	}
 	request.Header.Set("User-Agent", "kubemg")
@@ -349,4 +355,27 @@ func fetch(ctx context.Context, client *http.Client, repo Repository,
 		return nil, fmt.Errorf("the %s is larger than KubeMG will read (%d MB)", what, limit>>20)
 	}
 	return document, nil
+}
+
+// sameOrigin reports whether two URLs name the same scheme, host and port,
+// the port defaulted from the scheme.
+func sameOrigin(a, b string) bool {
+	ua, errA := url.Parse(a)
+	ub, errB := url.Parse(b)
+	if errA != nil || errB != nil || ua.Host == "" || ub.Host == "" {
+		return false
+	}
+	return strings.EqualFold(ua.Scheme, ub.Scheme) &&
+		strings.EqualFold(ua.Hostname(), ub.Hostname()) &&
+		defaultedPort(ua) == defaultedPort(ub)
+}
+
+func defaultedPort(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	if strings.EqualFold(u.Scheme, "http") {
+		return "80"
+	}
+	return "443"
 }

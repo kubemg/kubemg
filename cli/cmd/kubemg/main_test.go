@@ -79,7 +79,7 @@ func newFakeServer(t *testing.T) *fakeServer {
 			{"id": 8, "name": "edge-eu", "environment": "staging", "connection_mode": "agent", "role": "edit",
 				"server": f.URL + "/api/v1/clusters/8/proxy", "context_name": "dana@edge-eu", "ca_data": caData},
 			{"id": 9, "name": "legacy", "connection_mode": "direct", "role": "view",
-				"note": "registered for direct API access — download its kubeconfig from the console"},
+				"note": "registered for direct API access - download its kubeconfig from the console"},
 		}})
 	}))
 	mux.HandleFunc("POST /api/v1/auth/cli/credential", authed(func(w http.ResponseWriter, r *http.Request) {

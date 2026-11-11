@@ -202,7 +202,7 @@ export function WorkloadActionPanel({
         <>
           <p className="text-[13px] leading-relaxed text-muted">
             Every pod of this {target.label.toLowerCase()} will be replaced, following its own
-            update strategy — the same thing <span className="font-mono">kubectl rollout restart</span>{' '}
+            update strategy - the same thing <span className="font-mono">kubectl rollout restart</span>{' '}
             does. Nothing about its configuration changes: the workload is stamped with the time you
             asked, which is what makes the controller roll it.
           </p>

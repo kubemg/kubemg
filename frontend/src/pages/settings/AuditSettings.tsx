@@ -177,7 +177,7 @@ export function AuditSettings() {
                   ? settings.effective.audit_verbs.join(', ')
                   : 'every verb'
               }
-              reach="A refusal, a streaming call and kubemg's own reads of a recording are recorded whatever is selected here — a trail that could be switched off would not be one."
+              reach="A refusal, a streaming call and kubemg's own reads of a recording are recorded whatever is selected here - a trail that could be switched off would not be one."
             />
             <SettingsAside
               label="Session recording"

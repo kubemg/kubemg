@@ -43,6 +43,16 @@ type Manager struct {
 	ttl    time.Duration
 	// wsTickets backs IssueWSTicket / redeemWSTicket. See wsticket.go.
 	wsTickets WSTicketStore
+	// ticketRoutes are the routes (gin's FullPath) a ticket may authenticate.
+	// Empty means any GET WebSocket upgrade; the server names its two.
+	ticketRoutes []string
+}
+
+// AcceptWSTicketsOn confines ticket sign-in to the named routes, as gin spells
+// them (c.FullPath()). A ticket is for opening one terminal; anywhere else it
+// is a stolen credential, however briefly.
+func (m *Manager) AcceptWSTicketsOn(routes ...string) {
+	m.ticketRoutes = append([]string(nil), routes...)
 }
 
 // NewManager builds a token manager with an HMAC secret and token lifetime.

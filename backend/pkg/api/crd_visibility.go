@@ -126,7 +126,7 @@ func normalizeHiddenCRDs(submitted []string) ([]string, error) {
 		}
 		if !crdResourcePattern.MatchString(resource) {
 			return nil, fmt.Errorf("a hidden resource is named plural.group, like "+
-				"virtualservices.networking.istio.io — got %q", resource)
+				"virtualservices.networking.istio.io - got %q", resource)
 		}
 		if len(out) >= maxHiddenCRDs {
 			return nil, fmt.Errorf("a cluster can hide at most %d custom resources", maxHiddenCRDs)

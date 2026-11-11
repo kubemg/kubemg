@@ -99,14 +99,14 @@ describe('the namespace block', () => {
     // Replicas are summed into their workload: api is 400m of 1000m.
     expect(root.textContent).toContain('Consumption by workload')
     expect(root.textContent).toContain('1.00')
-    const legend = screen.getByTitle('Deployment api — 2 pods')
+    const legend = screen.getByTitle('Deployment api - 2 pods')
     expect(legend.textContent).toContain('400m')
     expect(legend.textContent).toContain('40%')
 
     expect(root.textContent).toContain('ImagePullBackOff')
     expect(root.textContent).toContain('OOMKilled')
 
-    fireEvent.click(screen.getByTitle('shop/worker-1 — ImagePullBackOff'))
+    fireEvent.click(screen.getByTitle('shop/worker-1 - ImagePullBackOff'))
     expect(onOpenPod).toHaveBeenCalledWith(pods[2])
 
     fireEvent.click(screen.getByTitle('Show only restarting pods'))
