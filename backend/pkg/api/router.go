@@ -40,6 +40,7 @@ var defaultAllowedOrigins = []string{"http://localhost:5173"}
 // Store is the persistence surface the HTTP layer depends on.
 type Store interface {
 	UserByUsername(ctx context.Context, username string) (*db.User, error)
+	UserBySlackID(ctx context.Context, slackUserID string) (*db.User, error)
 	UserByID(ctx context.Context, id uint) (*db.User, error)
 	ClustersForUser(ctx context.Context, user *db.User) ([]db.Cluster, error)
 	AccessForUser(ctx context.Context, userID uint) (map[uint]db.UserClusterAccess, error)
@@ -561,6 +562,14 @@ type server struct {
 	jobs context.Context
 }
 
+// wsTicketRoutes are the routes a WebSocket ticket authenticates, as gin
+// spells them. TestWSTicketRoutesAreRegistered keeps them in step with the
+// routes themselves.
+var wsTicketRoutes = []string{
+	"/api/v1/clusters/:id/proxy/*path",
+	"/api/v1/clusters/:id/shell/attach",
+}
+
 // NewRouter builds the KubeMG HTTP router. Authenticated routes are only
 // registered when both a store and a token manager are supplied.
 func NewRouter(opts Options) *gin.Engine {
@@ -748,6 +757,9 @@ func NewRouter(opts Options) *gin.Engine {
 	// claims and cannot tell the two credentials apart.
 	// A console session whose password is due reaches only the routes that
 	// change it; see password_policy.go.
+	// A one-time WebSocket ticket opens a terminal and nothing else: the pod
+	// terminal through the proxy, and the browser shell's attach.
+	s.jwt.AcceptWSTicketsOn(wsTicketRoutes...)
 	requireAuth := auth.RequireAuthGated(s.jwt, newMachineTokenVerifier(s.store), s.gatePasswordAge)
 	// The role is read from the account, not from the token: a token carries
 	// the role it was minted with for its whole lifetime, and an administrator
@@ -777,7 +789,7 @@ func NewRouter(opts Options) *gin.Engine {
 
 	v1 := router.Group("/api/v1")
 	{
-		v1.POST("/auth/login", s.login)
+		v1.POST("/auth/login", limitAnonymous, s.login)
 		v1.GET("/auth/me", requireAuth, s.me)
 		// Editing your own details, beside reading them — PUT /users/:id is an
 		// administrator editing somebody else's account. See profile.go.
@@ -797,10 +809,10 @@ func NewRouter(opts Options) *gin.Engine {
 		// a session — and each is single-use and throttled like the password it
 		// follows. Everything else is the caller's own factor, behind a
 		// session. See mfa.go and mfa_webauthn.go.
-		v1.POST("/auth/mfa/verify", s.verifyMFA)
-		v1.POST("/auth/mfa/challenge/enroll", s.enrollMFA)
-		v1.POST("/auth/mfa/challenge/enroll/confirm", s.confirmMFA)
-		v1.POST("/auth/mfa/challenge/webauthn", s.beginWebAuthnAssertion)
+		v1.POST("/auth/mfa/verify", limitAnonymous, s.verifyMFA)
+		v1.POST("/auth/mfa/challenge/enroll", limitAnonymous, s.enrollMFA)
+		v1.POST("/auth/mfa/challenge/enroll/confirm", limitAnonymous, s.confirmMFA)
+		v1.POST("/auth/mfa/challenge/webauthn", limitAnonymous, s.beginWebAuthnAssertion)
 		v1.GET("/auth/mfa", requireAuth, s.getMFA)
 		v1.POST("/auth/mfa/enroll", requireAuth, s.enrollMFA)
 		v1.POST("/auth/mfa/enroll/confirm", requireAuth, s.confirmMFA)
@@ -813,7 +825,7 @@ func NewRouter(opts Options) *gin.Engine {
 		// anybody has a session — and is narrow for the same reason the public SSO
 		// list is: it answers one boolean and carries nothing else. The other two
 		// are admin-only and read or stamp what the wizard needs.
-		setup := v1.Group("/setup")
+		setup := v1.Group("/setup", limitAnonymous)
 		setup.GET("/state", s.setupState)
 		setup.GET("/preflight", requireAuth, requireAdmin, s.setupPreflight)
 		setup.POST("/complete", requireAuth, requireAdmin, s.completeSetup)
@@ -826,7 +838,7 @@ func NewRouter(opts Options) *gin.Engine {
 		// They hang off a static "providers" segment rather than off
 		// /auth/sso/:id, because gin cannot have a static and a param child at
 		// the same level and the list has to live somewhere.
-		sso := v1.Group("/auth/sso/providers")
+		sso := v1.Group("/auth/sso/providers", limitAnonymous)
 		sso.GET("", s.listSSOProvidersPublic)
 		sso.GET("/:id/login", s.startSSOLogin)
 		// LDAP has no redirect: the credentials are posted here and checked
@@ -871,8 +883,8 @@ func NewRouter(opts Options) *gin.Engine {
 		// person approves it); reading and deciding one is the person's, behind
 		// their session; and the CLI's own calls ride its refresh token, which
 		// RequireAuth refuses everywhere else. See cli_auth.go.
-		v1.POST("/auth/cli/device", s.startDeviceLogin)
-		v1.POST("/auth/cli/token", s.pollDeviceLogin)
+		v1.POST("/auth/cli/device", limitAnonymous, s.startDeviceLogin)
+		v1.POST("/auth/cli/token", limitAnonymous, s.pollDeviceLogin)
 		v1.GET("/auth/cli/device/:code", requireAuth, s.describeDeviceLogin)
 		v1.POST("/auth/cli/device/:code/approve", requireAuth, s.approveDeviceLogin)
 		v1.POST("/auth/cli/device/:code/deny", requireAuth, s.denyDeviceLogin)
@@ -1425,7 +1437,7 @@ func NewRouter(opts Options) *gin.Engine {
 			// app carries no KubeMG session, and authenticates on a signed action
 			// token *plus* an identity that resolves to a KubeMG administrator —
 			// see jitWebhookCallback for why neither half is enough alone.
-			v1.POST(jitCallbackRoute, s.jitWebhookCallback)
+			v1.POST(jitCallbackRoute, limitAnonymous, s.jitWebhookCallback)
 		}
 
 		// The audit trail is readable by everyone, but a non-admin only ever

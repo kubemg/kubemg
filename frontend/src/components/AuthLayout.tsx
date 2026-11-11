@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Moon, Sun } from 'lucide-react'
 import { Lockup } from './Mark'
 import { EnvironmentBanner } from './EnvironmentBanner'
-import { useBranding } from '../state/branding-context'
+import { OrganisationIdentity } from './OrganisationIdentity'
 import { useTheme } from '../lib/theme'
 
 /**
@@ -129,30 +129,5 @@ export function AuthLayout({
         </section>
       </main>
     </div>
-  )
-}
-
-/**
- * The organisation's own mark and name, beside the lockup.
- *
- * It draws nothing when neither is configured, which is the default: an install
- * that has not been branded looks exactly as it did. The divider is only ever
- * drawn between two things that are both there.
- */
-function OrganisationIdentity({ tone }: { tone: 'rail' | 'page' }) {
-  const { branding } = useBranding()
-  const name = branding?.organisation_name?.trim()
-  const mark = branding?.organisation_mark?.trim()
-  if (!name && !mark) return null
-
-  const rule = tone === 'rail' ? 'bg-rail-line' : 'bg-line'
-  const text = tone === 'rail' ? 'text-rail-muted' : 'text-muted'
-
-  return (
-    <>
-      <span aria-hidden="true" className={`h-5 w-px shrink-0 ${rule}`} />
-      {mark ? <img src={mark} alt="" className="size-6 shrink-0 object-contain" /> : null}
-      {name ? <span className={`min-w-0 truncate text-[13px] ${text}`}>{name}</span> : null}
-    </>
   )
 }

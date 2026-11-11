@@ -1205,7 +1205,7 @@ export function quotaInsights(quotas: ResourceQuota[], label: string): ResourceI
       ...(exhausted > 0 ? [reading('at their limit', exhausted, undefined, 'bad')] : []),
     ],
     exhausted > 0
-      ? `${plural(exhausted, 'resource')} at its hard limit — nothing more will schedule`
+      ? `${plural(exhausted, 'resource')} at its hard limit - nothing more will schedule`
       : `${plural(quotas.length, 'quota')} bounding ${plural(entries.length, 'resource')}`,
     exhausted > 0 ? [`${exhausted} exhausted`] : [],
   )
@@ -1255,7 +1255,7 @@ export function disruptionBudgetInsights(
       ? [reading('select no pods', selectsNothing, 'empty selector', 'bad')]
       : [],
     blocking > 0
-      ? `${plural(blocking, 'budget')} allowing no disruption — a drain will block here`
+      ? `${plural(blocking, 'budget')} allowing no disruption - a drain will block here`
       : `${plural(budgets.length, 'budget')}, all allowing disruption`,
     blocking > 0 ? [`${blocking} blocking`] : [],
   )
@@ -1281,7 +1281,7 @@ export function storageClassInsights(classes: StorageClass[], label: string): Re
     defaults === 1
       ? `${plural(classes.length, 'class')}, one of them the default`
       : defaults === 0
-        ? `${plural(classes.length, 'class')} and no default — an unnamed class will not bind`
+        ? `${plural(classes.length, 'class')} and no default - an unnamed class will not bind`
         : `${defaults} classes are marked default, which is one too many`,
     defaults === 1 ? [] : [`${defaults} default`],
   )

@@ -43,7 +43,7 @@ export function formatMemory(bytes: number): string {
  * as nothing at all.
  */
 export function formatCount(value: number): string {
-  if (!Number.isFinite(value)) return '—'
+  if (!Number.isFinite(value)) return '-'
   const magnitude = Math.abs(value)
   if (magnitude >= 10 || Number.isInteger(value)) return Math.round(value).toString()
   return value.toFixed(1)
@@ -56,7 +56,7 @@ export function formatCount(value: number): string {
  * without it.
  */
 export function formatRatio(value: number): string {
-  if (!Number.isFinite(value)) return '—'
+  if (!Number.isFinite(value)) return '-'
   const percent = value * 100
   return `${Math.abs(percent) < 10 ? percent.toFixed(1) : Math.round(percent)}%`
 }

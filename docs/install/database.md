@@ -41,14 +41,14 @@ server wins.
 |---|---|
 | Users, groups, memberships, cluster grants | Postgres (`users`, `groups`, `user_groups`, `user_cluster_access`, `group_cluster_access`) |
 | Clusters, connection mode, registration tokens | Postgres (`clusters`) |
-| The audit trail — every proxied call, refusals included | Postgres (`audit_events`) |
-| Session recording **metadata** — who, which cluster, duration, truncated, encrypted | Postgres (`terminal_sessions`) |
-| Session recording **content** — the actual `.cast.gz` bytes | **Disk**, under `KUBEMG_SESSION_RECORDING_DIR` — not the database. A row with no corresponding file, or a file with no row, is treated as an orphan and cleaned up by retention. |
+| The audit trail - every proxied call, refusals included | Postgres (`audit_events`) |
+| Session recording **metadata** - who, which cluster, duration, truncated, encrypted | Postgres (`terminal_sessions`) |
+| Session recording **content** - the actual `.cast.gz` bytes | **Disk**, under `KUBEMG_SESSION_RECORDING_DIR` - not the database. A row with no corresponding file, or a file with no row, is treated as an orphan and cleaned up by retention. |
 | Settings (public URL, agent image, audit retention, etc.) | Postgres (`settings`, key/value) |
-| The JWT signing key, when not supplied via `JWT_SECRET` | Postgres (`server_secrets`) — generated once at first boot and read on every subsequent boot, so it survives a restart without needing to be set explicitly. Encrypted under `KUBEMG_SECRET_KEY` when one is set |
+| The JWT signing key, when not supplied via `JWT_SECRET` | Postgres (`server_secrets`) - generated once at first boot and read on every subsequent boot, so it survives a restart without needing to be set explicitly. Encrypted under `KUBEMG_SECRET_KEY` when one is set |
 | Just-in-time access requests and grants | Postgres (`jit_requests`, and `user_cluster_access` rows with `source='jit'`) |
-| The alarm-watcher background-job lease | Postgres (`leases`) — see [Choosing a deployment](index.md#sizing-and-high-availability) |
-| The TLS certificate kubemg mints for itself | Postgres (`server_secrets`), with a working copy on disk under `/etc/kubemg/tls` that is written back from the database whenever it is missing — see [TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too). Encrypted under `KUBEMG_SECRET_KEY` when one is set. A certificate you supply is never copied here |
+| The alarm-watcher background-job lease | Postgres (`leases`) - see [Choosing a deployment](index.md#sizing-and-high-availability) |
+| The TLS certificate kubemg mints for itself | Postgres (`server_secrets`), with a working copy on disk under `/etc/kubemg/tls` that is written back from the database whenever it is missing - see [TLS](tls.md#the-minted-certificate-is-kept-in-the-database-too). Encrypted under `KUBEMG_SECRET_KEY` when one is set. A certificate you supply is never copied here |
 
 Backing up the database alone is therefore not a full backup: the recordings
 volume holds audit evidence the database cannot reconstruct. See
@@ -76,7 +76,7 @@ is stored encrypted (AES-256-GCM, written as `enc:v1:…`):
 What is **not** encrypted, and why:
 
 - Local user passwords and machine-account tokens are already stored only as
-  hashes (bcrypt and SHA-256) — there is nothing to decrypt.
+  hashes (bcrypt and SHA-256) - there is nothing to decrypt.
 - Install download tickets and WebSocket tickets are stored as SHA-256 hashes.
 - Each agent token has a SHA-256 lookup hash beside it
   (`clusters.agent_token_hash`). The token itself is encrypted, not only hashed,
@@ -88,18 +88,18 @@ What is **not** encrypted, and why:
 **The key is as important as the database backup.** A restored database is only
 usable with the key it was encrypted under:
 
-- **Key unset** — the server boots, stores credentials in plaintext, and
+- **Key unset** - the server boots, stores credentials in plaintext, and
   warns at boot. The setup wizard and the Deployment posture page say so too.
-- **Key set on an existing install** — the next boot encrypts every
+- **Key set on an existing install** - the next boot encrypts every
   plaintext value in place. It is safe to restart repeatedly: values already
   encrypted are left alone.
-- **Key not exactly 32 bytes** — the server refuses to start.
-- **Key changed, or removed, after values were encrypted** — the server
+- **Key not exactly 32 bytes** - the server refuses to start.
+- **Key changed, or removed, after values were encrypted** - the server
   refuses to start and names the first value it could not read. It never
   treats ciphertext as a credential and never falls back to plaintext.
-  Restore the original key, or — to move to a new one — follow
+  Restore the original key, or - to move to a new one - follow
   [Rotating the key](#rotating-the-key).
-- **Key lost** — the encrypted credentials cannot be recovered. Recovery
+- **Key lost** - the encrypted credentials cannot be recovered. Recovery
   means clearing those columns and re-entering each credential: re-register
   direct-mode clusters, rotate every agent token and re-apply the install
   packages, re-enter datasource, Helm repository, alarm and SSO secrets. The
@@ -107,7 +107,7 @@ usable with the key it was encrypted under:
   and invalidates every issued kubeconfig.
 
 Keep the key in a secret manager or a sealed store that is backed up on its
-own schedule — **never inside the database backup it protects**, where it
+own schedule - **never inside the database backup it protects**, where it
 would protect nothing. `JWT_SECRET` from the environment still takes
 precedence over the stored signing key, and is recommended for any
 production install alongside `KUBEMG_SECRET_KEY`.
@@ -132,9 +132,9 @@ tunnels and integrations carry on as before. The old key is still what opens
 the backups taken before the rotation, so keep it with those.
 
 - **`KUBEMG_SECRET_KEY_PREVIOUS` without `KUBEMG_SECRET_KEY`**, or the same
-  key in both — the server refuses to start. A rotation moves credentials to
+  key in both - the server refuses to start. A rotation moves credentials to
   a new key; it is not a way to remove encryption.
-- **A restart interrupted mid-rotation** — leave both keys set and start
+- **A restart interrupted mid-rotation** - leave both keys set and start
   again; the next boot finishes it. Removing the old key first is refused
   like any other key change, naming the value it cannot read.
 - **One previous key at a time.** To rotate again, finish the first rotation
@@ -157,7 +157,7 @@ or your provider's snapshots), plus:
 A managed Postgres (RDS, Cloud SQL, Azure Database for PostgreSQL, etc.) at
 version 16 works with no changes beyond pointing `DB_HOST`/`DB_PORT` at it
 and setting `DB_SSLMODE=require` (or the stricter mode your provider
-recommends). This is the recommended production posture — see
+recommends). This is the recommended production posture - see
 [Production checklist](production-checklist.md).
 
 ## Next

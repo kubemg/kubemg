@@ -33,6 +33,27 @@ func (s *Store) UserByUsername(ctx context.Context, username string) (*User, err
 	return &user, nil
 }
 
+// UserBySlackID resolves a Slack member ID to the account it is linked to.
+// Two accounts naming the same ID is ErrConflict: the click belongs to neither.
+func (s *Store) UserBySlackID(ctx context.Context, slackUserID string) (*User, error) {
+	if slackUserID == "" {
+		return nil, ErrNotFound
+	}
+	var users []User
+	err := s.gdb.WithContext(ctx).Where("slack_user_id = ?", slackUserID).Limit(2).Find(&users).Error
+	if err != nil {
+		return nil, fmt.Errorf("user by slack id: %w", err)
+	}
+	switch len(users) {
+	case 0:
+		return nil, ErrNotFound
+	case 1:
+		return &users[0], nil
+	default:
+		return nil, ErrConflict
+	}
+}
+
 // UserByID looks up a user by primary key.
 func (s *Store) UserByID(ctx context.Context, id uint) (*User, error) {
 	var user User

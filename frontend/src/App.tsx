@@ -766,7 +766,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </TimeRangeProvider>
-        <ShellDock />
+        <SessionShellDock />
         </ShellDockProvider>
         </ResultProvider>
         </ConfirmProvider>
@@ -774,4 +774,12 @@ export default function App() {
       </BrandingProvider>
     </BrowserRouter>
   )
+}
+
+/** The dock, remounted for every identity: its session state (which cluster's
+    shell it started, the terminal and its socket) belongs to whoever opened it,
+    and a remount is the only reset that cannot miss a field. */
+function SessionShellDock() {
+  const { user } = useAuth()
+  return <ShellDock key={user?.id ?? 'signed-out'} />
 }

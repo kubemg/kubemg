@@ -283,13 +283,13 @@ export function TerminalSessionPlayer({
       <DetailList
         columns={2}
         rows={[
-          { term: 'Who', value: session.username || '—' },
+          { term: 'Who', value: session.username || '-' },
           {
             term: 'Where',
-            value: `${session.cluster} · ${session.namespace ?? '—'}/${session.pod_name ?? '—'}`,
+            value: `${session.cluster} · ${session.namespace ?? '-'}/${session.pod_name ?? '-'}`,
           },
-          { term: 'Container', value: session.container_name || '—' },
-          { term: 'Command', value: session.shell || (session.verb === 'attach' ? 'attach' : '—') },
+          { term: 'Container', value: session.container_name || '-' },
+          { term: 'Command', value: session.shell || (session.verb === 'attach' ? 'attach' : '-') },
           { term: 'Started', value: <Age iso={session.started_at} /> },
           {
             term: 'Ran for',
@@ -336,12 +336,12 @@ export function TerminalSessionPlayer({
              credentials into interactive tools. Reporting it as "nothing was
              typed" would misrepresent the evidence. */
           <Notice tone="info">
-            Keystrokes were not recorded for this session — this server captures output only. What
+            Keystrokes were not recorded for this session - this server captures output only. What
             was typed and echoed back by the shell is still in the replay.
           </Notice>
         ) : keystrokes.length === 0 ? (
           <Notice tone="info">
-            Nothing was typed into this session — it was recorded with no stdin, or the operator only
+            Nothing was typed into this session - it was recorded with no stdin, or the operator only
             watched.
           </Notice>
         ) : (

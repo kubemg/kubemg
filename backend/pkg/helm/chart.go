@@ -86,7 +86,7 @@ func verifyDigest(archive []byte, digest string) error {
 	sum := sha256.Sum256(archive)
 	if got := hex.EncodeToString(sum[:]); got != digest {
 		return fmt.Errorf("this chart archive does not match the digest the repository published " +
-			"for it — the repository is serving something other than what it indexed")
+			"for it - the repository is serving something other than what it indexed")
 	}
 	return nil
 }
@@ -104,7 +104,7 @@ func Installable(loaded *chart.Chart) error {
 		return fmt.Errorf("this is not a readable chart")
 	}
 	if loaded.Metadata.Type == "library" {
-		return fmt.Errorf("%s is a library chart — it has no templates of its own and is imported "+
+		return fmt.Errorf("%s is a library chart - it has no templates of its own and is imported "+
 			"by other charts rather than installed", loaded.Metadata.Name)
 	}
 	if len(loaded.Templates) == 0 && len(loaded.CRDObjects()) == 0 {

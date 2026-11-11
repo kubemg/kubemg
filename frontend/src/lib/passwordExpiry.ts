@@ -40,8 +40,8 @@ export function passwordStatus(
     return {
       tone: 'bad',
       text: user.password_expires_at
-        ? `Expired ${formatInstant(user.password_expires_at)} — must change at next sign-in`
-        : 'Expired — must change at next sign-in',
+        ? `Expired ${formatInstant(user.password_expires_at)} - must change at next sign-in`
+        : 'Expired - must change at next sign-in',
     }
   }
   if (!user.password_expires_at) return { tone: 'idle', text: 'Does not expire' }

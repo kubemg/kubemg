@@ -59,13 +59,13 @@ func (a *app) trustServer(ctx context.Context, server string) ([]byte, error) {
 	}
 	fingerprint := client.Fingerprint(anchor)
 	if !a.interactive() {
-		return nil, fmt.Errorf("the certificate %s presents is not trusted by this system (SHA-256 %s) — "+
+		return nil, fmt.Errorf("the certificate %s presents is not trusted by this system (SHA-256 %s) - "+
 			"pass --ca-file, or run kubemg login in a terminal to check the fingerprint and confirm it", server, fingerprint)
 	}
 
 	if changed {
 		fmt.Fprintf(a.stderr, "WARNING: the certificate %s presents is not the one you trusted at your last sign-in.\n"+
-			"If nobody replaced it, somebody may be intercepting the connection — stop and ask your administrator.\n\n", server)
+			"If nobody replaced it, somebody may be intercepting the connection - stop and ask your administrator.\n\n", server)
 	} else {
 		fmt.Fprintf(a.stderr, "The certificate %s presents is not trusted by this system.\n\n", server)
 	}

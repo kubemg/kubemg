@@ -51,6 +51,28 @@ func newClientUpgrader(allowedOrigins []string) websocket.Upgrader {
 	}
 }
 
+// clientUpgradeRefusal is gorilla's own handshake check, run before anything
+// is opened on the cluster: what Upgrader.Upgrade would refuse, with the status
+// it would answer.
+func clientUpgradeRefusal(r *http.Request, upgrader websocket.Upgrader) (int, string) {
+	if r.Method != http.MethodGet {
+		return http.StatusMethodNotAllowed, "a session is opened with a GET WebSocket handshake"
+	}
+	if !websocket.IsWebSocketUpgrade(r) {
+		return http.StatusBadRequest, "a session needs a WebSocket upgrade request"
+	}
+	if r.Header.Get("Sec-Websocket-Version") != "13" {
+		return http.StatusBadRequest, "the WebSocket handshake must be version 13"
+	}
+	if strings.TrimSpace(r.Header.Get("Sec-Websocket-Key")) == "" {
+		return http.StatusBadRequest, "the WebSocket handshake carries no key"
+	}
+	if upgrader.CheckOrigin != nil && !upgrader.CheckOrigin(r) {
+		return http.StatusForbidden, "the request's Origin is not one kubemg serves its console from"
+	}
+	return 0, ""
+}
+
 // ChannelSubprotocols are the Kubernetes exec/attach channel protocols, newest
 // first. v5 adds a close signal on stdin; v4 is what every current API server
 // speaks.
@@ -173,6 +195,18 @@ func (p *Proxy) serveBodyStream(c *gin.Context, tunnel *Tunnel, event *Event, he
 func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 	header map[string][]string, offered []string, parsed APIPath, activity func(),
 ) {
+	// The client's half of the handshake is checked before the cluster's half
+	// is opened. Opening the stream starts the exec in the container, so an
+	// upgrade refused after it — a request that is not a WebSocket handshake,
+	// or an Origin the console does not trust — would have run the command
+	// while the trail said kubemg refused it, and the Origin check would stop
+	// nothing.
+	if status, reason := clientUpgradeRefusal(c.Request, p.clientUpgrader); reason != "" {
+		event.RefusedBy = RefusedByKubeMG
+		p.fail(c, event, status, reason)
+		return
+	}
+
 	requested := websocket.Subprotocols(c.Request)
 	if len(requested) == 0 {
 		requested = offered
@@ -200,6 +234,13 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 	conn, err := p.clientUpgrader.Upgrade(c.Writer, c.Request, responseHeader)
 	if err != nil {
 		stream.Close(err)
+		// What clientUpgradeRefusal cannot see ahead of time (a hijack that
+		// failed, a connection gone mid-handshake). The session did open on
+		// the cluster, so this is a session that ended at once, not a
+		// refusal: recorded as one, under the status the client was answered.
+		event.Status = c.Writer.Status()
+		p.recordStreamClose(c, event, 0, 0,
+			fmt.Errorf("the client's WebSocket upgrade failed after the session opened on the cluster: %w", err))
 		return
 	}
 	// Say goodbye properly. Dropping the socket instead makes every finished

@@ -131,7 +131,7 @@ export function CliActivateBody({
         </h2>
         <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
           {approved
-            ? `Go back to your terminal — kubemg finishes on its own within a few seconds. The session lasts ${request?.session_hours ?? 12} hours, and you can end it from My credentials.`
+            ? `Go back to your terminal - kubemg finishes on its own within a few seconds. The session lasts ${request?.session_hours ?? 12} hours, and you can end it from My credentials.`
             : 'The command line was told no, and nothing was signed in.'}
         </p>
         <p className="mt-4 text-[13px] text-muted">You can close this tab.</p>
@@ -207,7 +207,7 @@ export function CliActivateBody({
               <Notice tone="warn">
                 This request came from <span className="font-data">{request.source_ip}</span>, not from
                 the address this browser is using. That is normal when you ran kubemg on a remote
-                machine — and it is exactly what it looks like when somebody else started a sign-in
+                machine - and it is exactly what it looks like when somebody else started a sign-in
                 and sent you the link. If you did not just run kubemg login, deny it.
               </Notice>
             </div>

@@ -60,7 +60,7 @@ export function shellReach(state: ShellState): string {
     state.namespaces && state.namespaces.length > 0
       ? state.namespaces.join(', ')
       : 'every namespace'
-  return `Runs as you — ${role} on ${scope}`
+  return `Runs as you - ${role} on ${scope}`
 }
 
 /**

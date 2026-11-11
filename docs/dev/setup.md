@@ -1,7 +1,7 @@
 # Local development
 
 Everything builds and runs in containers. There is no host toolchain to
-install — no Go, no Node, no npm. Docker and `make` are the whole list of
+install - no Go, no Node, no npm. Docker and `make` are the whole list of
 prerequisites.
 
 ## Bring the stack up
@@ -21,7 +21,7 @@ make up
 | Bastion | `https://localhost:8443` | TLS with a self-signed certificate minted on first boot |
 | PostgreSQL | `localhost:5432` | database `kubemg`, user `kubemg`, password `kubemg_secret` |
 
-Sign in with **`admin` / `admin`** — the dev stack seeds that account through
+Sign in with **`admin` / `admin`** - the dev stack seeds that account through
 `KUBEMG_ADMIN_USERNAME` and `KUBEMG_ADMIN_PASSWORD`.
 
 ```bash
@@ -68,7 +68,7 @@ defaults an administrator can override at runtime from
 
 ## The kubemg CLI against the dev stack
 
-Build a binary for the host — the dev image carries none, so the console's
+Build a binary for the host - the dev image carries none, so the console's
 download section points at the releases page:
 
 ```bash
@@ -80,12 +80,12 @@ docker run --rm -v "$PWD/cli:/src" -w /src -e CGO_ENABLED=0 -e GOOS=darwin -e GO
 The stack's certificate is self-signed, so the first `login` shows its SHA-256
 fingerprint and asks before trusting it; **My credentials → Use the command
 line** shows the same fingerprint to compare against. Answer `y` and the
-certificate is pinned with the session — no `--ca-file` to extract, and nothing
+certificate is pinned with the session - no `--ca-file` to extract, and nothing
 turns verification off. `kubemg update-kubeconfig` then asks which clusters to
 add.
 
 The approval address `login` prints is under the public URL, and the dev
-backend serves the API only — open the same `/cli/activate?code=…` path on
+backend serves the API only - open the same `/cli/activate?code=…` path on
 `http://localhost:5173` instead.
 
 The kubeconfig entries point at the **public URL**, not at the address you
@@ -95,7 +95,7 @@ resolves that name to an address that refuses `:8443`; add
 reach it (the certificate already covers the name).
 
 To try the console's server-hosted download buttons, copy binaries into the
-running backend in the image's layout (`<os>-<arch>/kubemg`) — the list is read
+running backend in the image's layout (`<os>-<arch>/kubemg`) - the list is read
 per request, no restart needed:
 
 ```bash
@@ -114,7 +114,7 @@ DOCKER_DEFAULT_PLATFORM=linux/amd64 make verify
 `frontend/package-lock.json` carries only `linux-x64` native bindings for oxlint
 and rolldown. Under an arm64 `node:22-alpine`, `npm ci` installs no native
 binding at all and both tools die with `Cannot find native binding` or
-`MODULE_NOT_FOUND`. This is a lockfile fact, not a stale volume — neither
+`MODULE_NOT_FOUND`. This is a lockfile fact, not a stale volume - neither
 `make reset` nor re-running `npm ci` changes it.
 
 `docker-compose.yml` pins the frontend service to `linux/amd64` for the same

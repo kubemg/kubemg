@@ -132,7 +132,7 @@ export function ConsolesPanel({
               declared with the provider's UI path on the end. */}
           <p className="text-[12px] leading-relaxed text-muted">
             Built from the cluster’s registered datasource address. A datasource reached through
-            the agent tunnel has no such address — it is proxied by the cluster’s API server, not
+            the agent tunnel has no such address - it is proxied by the cluster’s API server, not
             opened by a browser.
           </p>
         </div>
@@ -157,7 +157,7 @@ export function ConsolesPanel({
     return (
       <IntegrationGroup
         title="Other consoles"
-        description="Links only — kubemg stores no session for them, and you sign in as yourself."
+        description="Links only - kubemg stores no session for them, and you sign in as yourself."
       >
         {body}
         {sheet}
@@ -180,7 +180,7 @@ export function ConsolesPanel({
 }
 
 const DESCRIPTION =
-  'Where this cluster is operated from outside kubemg. These are links — kubemg stores no session for them and you sign in as yourself.'
+  'Where this cluster is operated from outside kubemg. These are links - kubemg stores no session for them and you sign in as yourself.'
 
 const CONSOLE_ICON = { grafana: BarChart3, argocd: GitBranch, registry: ShieldAlert } as const
 
@@ -363,7 +363,7 @@ function ConsoleSheet({
         ) : null}
 
         <Notice tone="info">
-          kubemg stores this address and nothing else — no session, no credential, and no proxy to
+          kubemg stores this address and nothing else - no session, no credential, and no proxy to
           it. Anyone this cluster is granted to can see the link; they still sign in to{' '}
           {info.label} as themselves. Leave any username and password out of the address.
         </Notice>

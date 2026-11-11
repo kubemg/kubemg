@@ -36,7 +36,7 @@ and rule out half of this page.
   this server does not have (changed, removed, or restored without it). The
   message names the first unreadable value.
 - Fix: restore the original key. If you meant to change it, set the old
-  key as `KUBEMG_SECRET_KEY_PREVIOUS` for one boot — see
+  key as `KUBEMG_SECRET_KEY_PREVIOUS` for one boot - see
   [Rotating the key](../install/database.md#rotating-the-key). If it is truly
   lost, see [Database](../install/database.md#credentials-encrypted-at-rest).
 
@@ -121,7 +121,7 @@ just the status:
 - Cause: the session's tunnel went away while the command was running: the
   agent pod restarted or was rescheduled, the agent was re-applied, or the
   network between the cluster and kubemg dropped. Whether the command itself
-  completed inside the pod is unknown — only that its result never came back.
+  completed inside the pod is unknown - only that its result never came back.
 - Fix: wait for the cluster to show as connected again and run it again. If it
   keeps happening, read the agent's log for why the tunnel is dropping.
 
@@ -132,8 +132,8 @@ just the status:
   allows. kubectl has already waited and retried before it shows this; a
   script running many kubectl processes in parallel, or a loop with no pause,
   is the usual source. Each refusal is in the audit trail with `status` `429`.
-- Fix: slow the caller down, spread the work across time, or — if the load is
-  legitimate — raise the limit under **Settings → General**. An open shell,
+- Fix: slow the caller down, spread the work across time, or - if the load is
+  legitimate - raise the limit under **Settings → General**. An open shell,
   `exec`, `logs -f` or `port-forward` is never cut off by it.
 
 ## The console

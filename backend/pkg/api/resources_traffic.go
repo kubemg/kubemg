@@ -525,7 +525,7 @@ func (r *trafficResolver) addIngress(object ingressObject, only string) string {
 		node.Detail = append(node.Detail, strings.Join(addresses, ", "))
 	} else {
 		node.State = trafficWarn
-		node.Problem = "no address yet — no ingress controller has admitted it"
+		node.Problem = "no address yet - no ingress controller has admitted it"
 	}
 	r.addNode(node)
 
@@ -584,7 +584,7 @@ func (r *trafficResolver) ingressBackend(from, label, namespace string, backend 
 		to := r.addNode(trafficNode{ID: trafficID("resource", namespace, backend.Resource.Name),
 			Kind: backend.Resource.Kind, Namespace: namespace, Name: backend.Resource.Name,
 			Column: trafficColumnService, State: trafficUnchecked,
-			Problem: "a resource backend — kubemg follows Service backends only"})
+			Problem: "a resource backend - kubemg follows Service backends only"})
 		r.addEdge(from, to, label, trafficUnchecked, "")
 		return
 	}
@@ -687,7 +687,7 @@ func (r *trafficResolver) addHTTPRoute(object httpRouteObject, only string) stri
 	}
 	if node.State == trafficOK && len(object.Spec.ParentRefs) > 0 && len(object.Status.Parents) == 0 {
 		node.State = trafficWarn
-		node.Problem = "no gateway has reported on this route — check its parent reference"
+		node.Problem = "no gateway has reported on this route - check its parent reference"
 	}
 	r.addNode(node)
 
@@ -750,7 +750,7 @@ func (r *trafficResolver) addHTTPRoute(object httpRouteObject, only string) stri
 				to := r.addNode(trafficNode{ID: trafficID("backend", deref(ref.Namespace, namespace), ref.Name),
 					Kind: deref(ref.Kind, "Service"), Namespace: deref(ref.Namespace, namespace), Name: ref.Name,
 					Column: trafficColumnService, State: trafficUnchecked,
-					Problem: "not a core Service — kubemg follows Service backends only"})
+					Problem: "not a core Service - kubemg follows Service backends only"})
 				r.addEdge(id, to, edgeLabel, trafficUnchecked, "")
 				continue
 			}
@@ -929,7 +929,7 @@ func (r *trafficResolver) addVirtualService(object virtualServiceObject, only st
 				}
 				to := r.addNode(trafficNode{ID: "external/" + route.Destination.Host, Kind: "External",
 					Name: route.Destination.Host, Column: trafficColumnService, State: trafficUnchecked,
-					Detail: []string{"not a cluster Service — a ServiceEntry or a host outside the mesh"}})
+					Detail: []string{"not a cluster Service - a ServiceEntry or a host outside the mesh"}})
 				r.addEdge(id, to, label, trafficUnchecked, "")
 				continue
 			}
@@ -1038,7 +1038,7 @@ func (r *trafficResolver) service(namespace, name string) *serviceObject {
 		Column: trafficColumnService}
 	if r.followed >= r.maxServices {
 		node.State = trafficUnchecked
-		node.Problem = fmt.Sprintf("not followed — a map follows at most %d Services", r.maxServices)
+		node.Problem = fmt.Sprintf("not followed - a map follows at most %d Services", r.maxServices)
 		r.addNode(node)
 		r.services[id] = nil
 		return nil
@@ -1085,7 +1085,7 @@ func (r *trafficResolver) followService(id string, object serviceObject) {
 	}
 
 	if len(object.Spec.Selector) == 0 {
-		r.mark(id, trafficWarn, "no selector — its endpoints are written by hand, not by Kubernetes")
+		r.mark(id, trafficWarn, "no selector - its endpoints are written by hand, not by Kubernetes")
 		return
 	}
 	selector, err := encodeLabelSelector(labelSelector{MatchLabels: object.Spec.Selector})
@@ -1110,7 +1110,7 @@ func (r *trafficResolver) followService(id string, object serviceObject) {
 	if endpointsRead {
 		switch {
 		case ready == 0:
-			r.mark(id, trafficBad, "no endpoint is ready — none of the pods it selects passes its readiness probe")
+			r.mark(id, trafficBad, "no endpoint is ready - none of the pods it selects passes its readiness probe")
 		case notReady > 0:
 			r.mark(id, trafficWarn, fmt.Sprintf("%d of %d endpoints are not ready", notReady, ready+notReady))
 		}
@@ -1381,7 +1381,7 @@ func (r *trafficResolver) resolveServiceRoot(namespace, name string) *readFailur
 	if found == 0 && failure == nil {
 		r.note(fmt.Sprintf("No Ingress, HTTPRoute or VirtualService in %s sends traffic to this Service.", namespace))
 	}
-	r.note(fmt.Sprintf("Only routes in %s are searched — an HTTPRoute or VirtualService in another namespace that sends here is not shown.", namespace))
+	r.note(fmt.Sprintf("Only routes in %s are searched - an HTTPRoute or VirtualService in another namespace that sends here is not shown.", namespace))
 	return nil
 }
 
@@ -1466,6 +1466,6 @@ func (r *trafficResolver) resolveNamespace(namespace string) *readFailure {
 		r.note(fmt.Sprintf("No Ingress, HTTPRoute or VirtualService in %s.", namespace))
 		return nil
 	}
-	r.note("A Service no route reaches is not drawn here — open it for its own map.")
+	r.note("A Service no route reaches is not drawn here - open it for its own map.")
 	return nil
 }

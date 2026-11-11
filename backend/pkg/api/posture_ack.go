@@ -137,7 +137,7 @@ func (s *server) acknowledgePostureFinding(c *gin.Context) {
 	}
 	if req.Reason == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "a reason is required — an acknowledgement with no reason is a mute button, " +
+			"error": "a reason is required - an acknowledgement with no reason is a mute button, " +
 				"not an audit-able decision",
 		})
 		return

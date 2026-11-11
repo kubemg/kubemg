@@ -216,7 +216,7 @@ export function AccessReviewPanel({
     <Panel
       eyebrow="The cluster's verdict"
       title="Can this identity do that?"
-      description="Asked of the cluster's own authorizer as a SubjectAccessReview, not derived from the bindings below. Creating a review is itself a write in RBAC's eyes, so a grant that may not create one is refused — by the cluster, in its own words."
+      description="Asked of the cluster's own authorizer as a SubjectAccessReview, not derived from the bindings below. Creating a review is itself a write in RBAC's eyes, so a grant that may not create one is refused - by the cluster, in its own words."
       bodyClassName="flex flex-col gap-4 p-4"
     >
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -279,7 +279,7 @@ export function AccessReviewPanel({
         <Field
           label="API group"
           htmlFor="review-group"
-          hint="Empty means the core group, not any group — which is why picking a known resource fills this in."
+          hint="Empty means the core group, not any group - which is why picking a known resource fills this in."
         >
           <TextInput
             id="review-group"
@@ -307,7 +307,7 @@ export function AccessReviewPanel({
       <p className="text-[12px] text-muted">
         {scope ? (
           <>
-            Asked in <span className="font-data">{scope}</span> — the namespace this page is open
+            Asked in <span className="font-data">{scope}</span> - the namespace this page is open
             on.
           </>
         ) : (
@@ -331,7 +331,7 @@ function AccessReviewVerdict({ result }: { result: AccessReviewResult }) {
   const question = (
     <>
       <span className="font-data">{result.subject}</span>
-      {' — '}
+      {' - '}
       <span className="font-data">
         {result.verb} {result.resource}
       </span>
@@ -376,7 +376,7 @@ function AccessReviewVerdict({ result }: { result: AccessReviewResult }) {
             {result.allowed
               ? 'Allowed.'
               : result.denied
-                ? 'Explicitly denied — an authorizer refused it outright, so adding a binding will not change this.'
+                ? 'Explicitly denied - an authorizer refused it outright, so adding a binding will not change this.'
                 : 'Not allowed. No rule grants it; nothing denies it either.'}{' '}
             {question}
           </span>

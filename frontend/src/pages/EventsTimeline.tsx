@@ -279,7 +279,7 @@ export function EventsTimeline() {
          */}
         {loaded?.truncated ? (
           <Notice tone="warn">
-            This is <strong className="font-semibold">part of the cluster, not all of it</strong> —{' '}
+            This is <strong className="font-semibold">part of the cluster, not all of it</strong> -{' '}
             {loaded.scanned.toLocaleString()}
             {loaded.available ? ` of about ${loaded.available.toLocaleString()}` : ''} events were
             read. Kubernetes pages an event list in storage order rather than by time, so what is

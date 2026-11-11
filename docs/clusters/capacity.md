@@ -23,10 +23,10 @@ A fourth ceiling can bind first: **pod slots**, the kubelet's cap on pod count, 
 
 The top card draws the whole cluster on one screen:
 
-- **Three rings** — CPU, memory and pod slots. Each fills to the **reserved** share and carries a white mark where live use sits; the amber dot on the rim is the 90% line. In-use and limit figures sit under the ring, and the full reading is on the pointer.
-- **Nodes** — one bar split into Ready, Cordoned and Not ready.
-- **Largest pod that fits** — see [below](#where-a-pod-can-still-go).
-- **QoS** — the cluster's pods split into Guaranteed, Burstable and BestEffort.
+- **Three rings** - CPU, memory and pod slots. Each fills to the **reserved** share and carries a white mark where live use sits; the amber dot on the rim is the 90% line. In-use and limit figures sit under the ring, and the full reading is on the pointer.
+- **Nodes** - one bar split into Ready, Cordoned and Not ready.
+- **Largest pod that fits** - see [below](#where-a-pod-can-still-go).
+- **QoS** - the cluster's pods split into Guaranteed, Burstable and BestEffort.
 
 ## Heatmap
 
@@ -40,7 +40,7 @@ Below the cluster totals, the **Heatmap** puts every node on one row and every c
 
 ## Nodes
 
-Each node is three one-line bars (CPU, memory, pod slots), its QoS split and what it still has free. Its concerns are pills — the explanation is on the pointer. **Details** opens every concern in full, its taints, the largest reservations and the pods using more than they reserved, each ranked with a bar.
+Each node is three one-line bars (CPU, memory, pod slots), its QoS split and what it still has free. Its concerns are pills - the explanation is on the pointer. **Details** opens every concern in full, its taints, the largest reservations and the pods using more than they reserved, each ranked with a bar.
 
 ## Where a pod can still go
 
