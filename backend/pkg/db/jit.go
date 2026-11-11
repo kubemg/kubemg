@@ -342,11 +342,10 @@ func deleteJitGrant(tx *gorm.DB, userID, clusterID uint) error {
 // retention setting is about. Anything still live is left alone whatever its age —
 // a window nobody has closed is not history.
 func (s *Store) PruneJitRequests(ctx context.Context, before time.Time) (int64, error) {
-	res := s.gdb.WithContext(ctx).
-		Where("status NOT IN ? AND updated_at < ?", JitLiveStatuses, before).
-		Delete(&JitRequest{})
-	if res.Error != nil {
-		return 0, fmt.Errorf("prune jit requests: %w", res.Error)
+	removed, err := s.pruneByAge(ctx, &JitRequest{}, "updated_at",
+		"status NOT IN ? AND updated_at < ?", JitLiveStatuses, before)
+	if err != nil {
+		return removed, fmt.Errorf("prune jit requests: %w", err)
 	}
-	return res.RowsAffected, nil
+	return removed, nil
 }

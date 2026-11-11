@@ -3,6 +3,7 @@ package api
 import (
 	"compress/gzip"
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -331,6 +332,29 @@ func TestRetentionPassRemovesRecordingsWithTheirRows(t *testing.T) {
 	}
 }
 
+func TestRetentionPassRemovesFilesOfRowsDeletedBeforeAFailure(t *testing.T) {
+	store := newFakeStore()
+	dir := t.TempDir()
+
+	stale := writeCast(t, dir, "stale", "{\"version\":2}\n")
+	store.addTerminalSession(db.TerminalSession{
+		SessionID:   "stale",
+		StartedAt:   time.Now().AddDate(0, 0, -400),
+		StoragePath: stale,
+	})
+	// The store deletes in batches: one that fails after another committed
+	// still hands back the rows already gone, and nothing will find their files
+	// again if this pass leaves them.
+	store.recordingPruneErr = errors.New("connection reset")
+
+	pruner := newPruneServer(store, 30)
+	pruner.recordings = dir
+	pruner.pruneAudit(context.Background())
+
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("the recording of a deleted row is still on disk: %v", err)
+	}
+}
 
 func TestRecordingsNeedTheViewerCapability(t *testing.T) {
 	env, dir := recordingEnv(t)

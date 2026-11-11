@@ -250,9 +250,9 @@ func (s *Store) TouchCLISession(ctx context.Context, id string, at time.Time) er
 // PruneCLISessions drops sessions that ended before the audit window, the
 // register's retention rule.
 func (s *Store) PruneCLISessions(ctx context.Context, before time.Time) (int64, error) {
-	res := s.gdb.WithContext(ctx).Where("expires_at < ?", before).Delete(&CLISession{})
-	if res.Error != nil {
-		return 0, fmt.Errorf("prune cli sessions: %w", res.Error)
+	removed, err := s.pruneByAge(ctx, &CLISession{}, "expires_at", "expires_at < ?", before)
+	if err != nil {
+		return removed, fmt.Errorf("prune cli sessions: %w", err)
 	}
-	return res.RowsAffected, nil
+	return removed, nil
 }
