@@ -78,7 +78,7 @@ function sessionState(session: TerminalSession): string {
 
 /** Where the session was: namespace/pod, with the container when there was a choice. */
 function sessionTarget(session: TerminalSession): string {
-  const pod = session.pod_name || '—'
+  const pod = session.pod_name || '-'
   const where = session.namespace ? `${session.namespace}/${pod}` : pod
   return session.container_name ? `${where} · ${session.container_name}` : where
 }
@@ -335,10 +335,10 @@ export function SessionRecordings() {
                     <Age iso={session.started_at} />
                   </Td>
                   <Td className="truncate font-data text-[12.5px] text-fg">
-                    {session.username || '—'}
+                    {session.username || '-'}
                   </Td>
                   <Td className="hidden truncate font-data text-[12.5px] text-muted md:table-cell">
-                    {session.cluster || '—'}
+                    {session.cluster || '-'}
                   </Td>
                   <Td className="hidden truncate font-data text-[12px] text-muted lg:table-cell">
                     {sessionTarget(session)}
@@ -451,14 +451,14 @@ export function SessionRecordings() {
         </div>
 
         <p className="text-[12px] text-muted">
-          A recording is what was done in a shell, not just that one was opened — the audit trail
+          A recording is what was done in a shell, not just that one was opened - the audit trail
           says the second, this says the first. Only output is drawn on the terminal; what was typed
           has its own view, because a pty echoes keystrokes back and drawing both would double every
           character. Recordings are pruned on the same retention window as the audit trail.
         </p>
         <p className="text-[12px] text-muted">
-          Watching a recording is itself audited — the trail records who replayed which session,
-          refusals included — and a recording written under a recording key is encrypted at rest.
+          Watching a recording is itself audited - the trail records who replayed which session,
+          refusals included - and a recording written under a recording key is encrypted at rest.
         </p>
       </div>
 

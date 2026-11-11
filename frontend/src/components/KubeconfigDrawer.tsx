@@ -172,7 +172,7 @@ export function KubeconfigDrawer({
           <p className="text-[12px] text-muted">
             {cluster.connection_mode === 'agent'
               ? 'A long-lived file, but not long-lived access: every call re-reads your grant, so revoking it stops this kubeconfig at once.'
-              : 'This token is minted on the cluster and cannot be withdrawn before it expires — revoking access in kubemg does not reach it. Keep the file somewhere a laptop backup will not.'}
+              : 'This token is minted on the cluster and cannot be withdrawn before it expires - revoking access in kubemg does not reach it. Keep the file somewhere a laptop backup will not.'}
           </p>
         ) : null}
       </div>

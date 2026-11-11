@@ -202,7 +202,7 @@ export function CreateResourceSheet({
           hint={
             missingNamespace
               ? undefined
-              : 'Where this object is created. Leave metadata.namespace out of the manifest — this is the namespace it is checked against.'
+              : 'Where this object is created. Leave metadata.namespace out of the manifest - this is the namespace it is checked against.'
           }
           error={missingNamespace ? 'No namespace is available for this cluster and grant.' : undefined}
         >
@@ -285,7 +285,7 @@ export function CreateResourceSheet({
         <>
           {handEdited ? (
             <Notice tone="warn">
-              The YAML has been edited by hand. The form does not read it back — changing a field
+              The YAML has been edited by hand. The form does not read it back - changing a field
               here rewrites the manifest and those edits are lost.
             </Notice>
           ) : null}
@@ -303,7 +303,7 @@ export function CreateResourceSheet({
 
       <p className="text-[12px] text-muted">
         {created
-          ? 'Open it from the list to change it — the manifest editor writes to the object that now exists.'
+          ? 'Open it from the list to change it - the manifest editor writes to the object that now exists.'
           : 'Sent to the cluster through the agent tunnel under your own identity. The cluster’s RBAC decides whether you may create this, and the call is recorded in the audit trail as a create.'}
       </p>
 

@@ -66,6 +66,15 @@ func TestVerbFor(t *testing.T) {
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=FALSE", "list"},
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods?watch=0&watch=1", "list"},
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods/web-0?watch=false", "get"},
+		// The API server reads watch only on a collection: on a named object a
+		// GET is a get, answered once, however watch is spelled.
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods/web-0?watch=true", "get"},
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods/web-0?watch=t", "get"},
+		{http.MethodGet, "/api/v1/nodes/worker-1?watch=1", "get"},
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods/web-0/log?watch=true", "log"},
+		// One object watched through its field selector is still a watch.
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name%3Dweb-0&watch=true", "watch"},
+		{http.MethodGet, "/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name%3Dweb-0", "list"},
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods?resourceVersion=0", "list"},
 		// The sensitive ones are named for what they are, not for their method.
 		{http.MethodGet, "/api/v1/namespaces/team-a/pods/web-0/exec?command=sh", "exec"},

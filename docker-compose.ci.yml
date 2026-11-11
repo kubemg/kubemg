@@ -103,6 +103,15 @@ services:
     entrypoint: ["sh"]
     command: hack/chart-check.sh
 
+  # The air-gapped bundle has to hold exactly what an install pulls.
+  images-check:
+    image: helmunittest/helm-unittest:4.2.3-1.1.2
+    working_dir: /repo
+    volumes:
+      - .:/repo:ro
+    entrypoint: ["sh"]
+    command: hack/images-check.sh
+
   frontend-build:
     image: node:22-alpine
     working_dir: /app

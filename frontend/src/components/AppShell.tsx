@@ -64,6 +64,7 @@ import { EnvironmentBanner } from './EnvironmentBanner'
 import type { CommandTarget } from './CommandPalette'
 import { LinkStatus } from './LinkStatus'
 import { Lockup, MarkChip } from './Mark'
+import { OrganisationIdentity } from './OrganisationIdentity'
 import { TimeRangeControl } from './TimeRangeControl'
 import { Button, EnvironmentDot, EnvironmentTag, IconButton, KeyHint } from './primitives'
 
@@ -552,14 +553,14 @@ export function AppShell({
         {/* Level two: what inside it. */}
         {mode === 'full' ? (
           <aside className="flex w-60 shrink-0 flex-col rounded-r-card">
-            <Link
-              to="/"
-              className="flex h-16 shrink-0 items-center px-5 text-rail-fg"
-              title="All clusters"
-              aria-label="kubemg — all clusters"
-            >
-              <Wordmark className="text-[22px]" />
-            </Link>
+            {/* The organisation sits beside the wordmark, outside the link:
+                the link goes to the fleet, and its name is the console's. */}
+            <div className="flex h-16 min-w-0 shrink-0 items-center gap-3 px-5">
+              <Link to="/" className="shrink-0 text-rail-fg" title="All clusters" aria-label="kubemg - all clusters">
+                <Wordmark className="text-[22px]" />
+              </Link>
+              <OrganisationIdentity tone="rail" />
+            </div>
 
             {inAdmin ? (
               <AdminHeader cluster={returnCluster} />
@@ -1068,7 +1069,8 @@ function MobileNav({
         className="relative flex h-full w-[19rem] max-w-[85%] flex-col border-r border-rail-line bg-rail"
       >
         <div className="flex h-14 shrink-0 items-center gap-2.5 px-4">
-          <Lockup className="text-[15px] text-rail-fg" />
+          <Lockup className="shrink-0 text-[15px] text-rail-fg" />
+          <OrganisationIdentity tone="rail" />
           <button
             type="button"
             onClick={onClose}

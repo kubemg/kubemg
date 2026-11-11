@@ -8,20 +8,34 @@ package kubeparams
 import (
 	"net/url"
 	"strings"
+
+	"k8s.io/apimachinery/pkg/api/validate/content"
+	metainternalversion "k8s.io/apimachinery/pkg/apis/meta/internalversion"
+	metainternalversionscheme "k8s.io/apimachinery/pkg/apis/meta/internalversion/scheme"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // MaxParams is net/url's default limit on the parameters of one query. Past
-// it, url.ParseQuery reads nothing at all.
+// it, url.ParseQuery reads nothing at all. GODEBUG=urlmaxqueryparams moves the
+// limit, so TooManyParams asks net/url rather than comparing with this.
 const MaxParams = 10000
 
-// TooManyParams reports whether a path's query is past MaxParams, where Query
-// can no longer say what the API server will make of it. An API server built
-// on a Go with the same limit reads it as empty too; one built before the
-// limit reads every parameter. A caller that has to predict the call cannot
-// tell which, so it should refuse the call rather than guess.
+// TooManyParams reports whether a path's query is past the limit url.ParseQuery
+// applies, where Query can no longer say what the API server will make of it.
+// An API server built on a Go with the same limit reads it as empty too; one
+// built before the limit reads every parameter. A caller that has to predict
+// the call cannot tell which, so it should refuse the call rather than guess.
+//
+// The limit is net/url's own, asked of it with a query of the same number of
+// parameters and nothing in them, so a GODEBUG setting, and the custom limit's
+// own comparison, move this with it.
 func TooManyParams(path string) bool {
 	_, raw, ok := strings.Cut(path, "?")
-	return ok && strings.Count(raw, "&")+1 > MaxParams
+	if !ok {
+		return false
+	}
+	_, err := url.ParseQuery(strings.Repeat("&", strings.Count(raw, "&")))
+	return err != nil
 }
 
 // Query decodes the query string of a request path, or of a request URI, as the
@@ -37,6 +51,37 @@ func Query(path string) url.Values {
 	return values
 }
 
+// QueryPastLimit decodes a query as Query does, pair by pair under the same
+// rules, but reads every pair however many there are. Within the limit the two
+// agree. Past it, Query reads nothing and this still reads what the caller
+// asked for, which is what a call refused for TooManyParams is recorded as.
+// Nothing that decides what a call does reads it.
+func QueryPastLimit(path string) url.Values {
+	values := url.Values{}
+	_, raw, ok := strings.Cut(path, "?")
+	if !ok {
+		return values
+	}
+	for raw != "" {
+		var pair string
+		pair, raw, _ = strings.Cut(raw, "&")
+		if pair == "" || strings.Contains(pair, ";") {
+			continue
+		}
+		key, value, _ := strings.Cut(pair, "=")
+		key, err := url.QueryUnescape(key)
+		if err != nil {
+			continue
+		}
+		value, err = url.QueryUnescape(value)
+		if err != nil {
+			continue
+		}
+		values[key] = append(values[key], value)
+	}
+	return values
+}
+
 // Bool reports a boolean parameter by the API server's rule
 // (runtime.Convert_Slice_string_To_bool): only an absent parameter, `0` or
 // `false` in any case is false. Every other value is true — `t`, `True`, `yes`
@@ -47,4 +92,27 @@ func Bool(query url.Values, name string) bool {
 		return false
 	}
 	return values[0] != "0" && !strings.EqualFold(values[0], "false")
+}
+
+// SelectedName is the object a list or watch addresses through its field
+// selector, read as the API server's request-info resolver reads it: the
+// query decoded as ListOptions, then an exact metadata.name term, kept only if
+// it could be a path segment. RBAC sees that name, so a resourceNames rule
+// applies to the call, and it is how kubectl watches one object
+// (`kubectl get pod web-0 -w` sends fieldSelector=metadata.name=web-0). A query
+// any of whose list options fails to decode names nothing, as it names nothing
+// to the resolver.
+func SelectedName(query url.Values) string {
+	var opts metainternalversion.ListOptions
+	if err := metainternalversionscheme.ParameterCodec.DecodeParameters(query, metav1.SchemeGroupVersion, &opts); err != nil {
+		return ""
+	}
+	if opts.FieldSelector == nil {
+		return ""
+	}
+	name, ok := opts.FieldSelector.RequiresExactMatch("metadata.name")
+	if !ok || len(content.IsPathSegmentName(name)) > 0 {
+		return ""
+	}
+	return name
 }

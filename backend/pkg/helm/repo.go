@@ -77,7 +77,7 @@ func (r Repository) Validate() error {
 	switch strings.ToLower(parsed.Scheme) {
 	case "http", "https":
 	case "oci":
-		return fmt.Errorf("OCI registries are not a chart repository KubeMG can read yet — " +
+		return fmt.Errorf("OCI registries are not a chart repository KubeMG can read yet - " +
 			"it reads the index.yaml of an HTTP chart repository")
 	default:
 		return fmt.Errorf("a chart repository URL has to be http or https")

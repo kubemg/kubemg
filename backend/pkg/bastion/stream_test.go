@@ -114,3 +114,37 @@ func TestDeliverNeverBlocksOnAStalledConsumer(t *testing.T) {
 		t.Fatal("deliver() blocked on a stalled consumer")
 	}
 }
+
+// A consumer closing its stream while the read loop delivers to it must never
+// panic the read loop: the send and the close are ordered, so a chunk either
+// lands before the close or is dropped after it. Before, a chunk checked
+// against an open stream and sent after Close had closed the channel panicked
+// the tunnel's only reader.
+func TestDeliverRacingCloseNeverPanics(t *testing.T) {
+	for range 2000 {
+		tunnel := deliveringTunnel()
+		tunnel.out = make(chan []byte, 4096)
+		stream := newStream("s1", tunnel)
+		tunnel.streams["s1"] = stream
+
+		start := make(chan struct{})
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			<-start
+			for range 64 {
+				stream.deliver(StreamData{Data: []byte("x")})
+			}
+		}()
+		close(start)
+		stream.Close(nil)
+		<-done
+
+		for chunk := range stream.Chunks() {
+			stream.Consumed(len(chunk.Data))
+		}
+		if queued := stream.queued.Load(); queued != 0 {
+			t.Fatalf("after the close, %d bytes are still counted as queued", queued)
+		}
+	}
+}

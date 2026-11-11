@@ -110,7 +110,7 @@ export function CliSessionsPanel({
                   {row.client_os ? <span className="ml-1.5 text-[12px] text-muted">{row.client_os}</span> : null}
                 </Td>
                 <Td className="hidden truncate font-data text-[12.5px] text-muted md:table-cell">
-                  {row.source_ip || '—'}
+                  {row.source_ip || '-'}
                 </Td>
                 <Td className="hidden text-[12.5px] text-muted lg:table-cell">
                   <Age iso={row.created_at} />
@@ -129,7 +129,7 @@ export function CliSessionsPanel({
                       {busy === row.id ? 'Ending…' : 'End'}
                     </Button>
                   ) : (
-                    <span className="text-[12px] text-muted">—</span>
+                    <span className="text-[12px] text-muted">-</span>
                   )}
                 </Td>
               </Row>

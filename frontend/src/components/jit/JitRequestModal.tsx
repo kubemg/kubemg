@@ -174,7 +174,7 @@ export function JitRequestModal({
           ))}
         </div>
         <p className="text-[12px] leading-snug text-muted">
-          Access ends by itself when the window does — nobody has to remember to take it back. You
+          Access ends by itself when the window does - nobody has to remember to take it back. You
           can hand it back earlier from the access requests page.
         </p>
       </div>
@@ -182,7 +182,7 @@ export function JitRequestModal({
       <Field
         label="Namespaces"
         htmlFor="jit-namespaces"
-        hint="Comma-separated. Leave empty for every namespace the role allows — which is usually what cluster-admin is for, and rarely what edit needs."
+        hint="Comma-separated. Leave empty for every namespace the role allows - which is usually what cluster-admin is for, and rarely what edit needs."
       >
         <TextInput
           id="jit-namespaces"
@@ -201,7 +201,7 @@ export function JitRequestModal({
         htmlFor="jit-reason"
         error={
           (tried || reason.length > 0) && reasonTooShort
-            ? `A few more words — at least ${MIN_REASON} characters.`
+            ? `A few more words - at least ${MIN_REASON} characters.`
             : undefined
         }
         hint="Read by whoever approves this, and kept with the record. Name the incident, ticket or change it is for."
@@ -226,7 +226,7 @@ export function JitRequestModal({
             An approval grants <strong>{role}</strong> on{' '}
             <strong>{target ? target.name : 'the cluster'}</strong> for{' '}
             {formatWindow(minutes)}. Every call still goes down the audited tunnel under your own
-            identity, so the cluster&rsquo;s own RBAC decides what that role can do — and you cannot
+            identity, so the cluster&rsquo;s own RBAC decides what that role can do - and you cannot
             approve this yourself.
           </span>
         </span>

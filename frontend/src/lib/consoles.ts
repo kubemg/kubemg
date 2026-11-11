@@ -40,7 +40,7 @@ export const CONSOLES: Record<ConsoleKind, ConsoleInfo> = {
       'What deployed half of what Explore lists. A workload that keeps reverting was reverted by something, and this is where that is visible.',
     placeholder: 'https://argocd.example.com',
     refLabel: 'Project',
-    refHint: 'Optional. Only used to label the link — the application view is found by name.',
+    refHint: 'Optional. Only used to label the link - the application view is found by name.',
   },
   // KubeMG does not scan images and holds no CVE feed — the security posture
   // view is explicit about that. An image's known vulnerabilities belong to
@@ -50,7 +50,7 @@ export const CONSOLES: Record<ConsoleKind, ConsoleInfo> = {
   registry: {
     label: 'Registry scanner',
     purpose:
-      'Where this cluster’s images are actually scanned for known vulnerabilities. kubemg reads manifests, not image contents — this is a link to whatever already does that.',
+      'Where this cluster’s images are actually scanned for known vulnerabilities. kubemg reads manifests, not image contents - this is a link to whatever already does that.',
     placeholder: 'https://scanner.example.com',
     refLabel: null,
   },

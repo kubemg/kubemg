@@ -263,7 +263,7 @@ export function TemplateSheet({
           {selected.description ? <p className="text-[13px] text-muted">{selected.description}</p> : null}
           {renderError ? <Notice tone="error">{renderError}</Notice> : null}
           {selected.parameters.length === 0 ? (
-            <Notice tone="info">This template declares no parameters — it renders exactly as stored.</Notice>
+            <Notice tone="info">This template declares no parameters - it renders exactly as stored.</Notice>
           ) : (
             selected.parameters.map((parameter) => {
               const invalid = invalidNumbers.some((entry) => entry.name === parameter.name)
@@ -314,7 +314,7 @@ export function TemplateSheet({
             <Field
               label="Namespace"
               htmlFor="tpl_namespace"
-              hint="Where every namespaced object below is created — the namespace is the address, not a line in any of the manifests."
+              hint="Where every namespaced object below is created - the namespace is the address, not a line in any of the manifests."
               error={missingNamespace ? 'No namespace is available for this cluster and grant.' : undefined}
             >
               <Select
@@ -373,7 +373,7 @@ export function TemplateSheet({
             </Notice>
           ) : null}
           {finished && !anyCreated ? (
-            <Notice tone="error">Nothing was created — see the refusal above.</Notice>
+            <Notice tone="error">Nothing was created - see the refusal above.</Notice>
           ) : null}
 
           <div className="flex flex-col gap-4">
@@ -437,7 +437,7 @@ function TemplatePicker({
   if (templates.length === 0) {
     return (
       <Notice tone="info">
-        No templates yet. An admin adds one from the app templates page — or by saving one from an
+        No templates yet. An admin adds one from the app templates page - or by saving one from an
         object already in a cluster.
       </Notice>
     )

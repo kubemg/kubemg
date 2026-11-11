@@ -134,7 +134,7 @@ export function AgentSettings() {
               label="Agent image in force"
               value={settings.effective.agent_image}
               source={settingSource(settings.overrides.agent_image, settings.defaults.agent_image)}
-              reach="Install packages rendered from now on. An agent already running keeps the image it was installed with until somebody re-applies its manifests — changing this upgrades nothing on its own."
+              reach="Install packages rendered from now on. An agent already running keeps the image it was installed with until somebody re-applies its manifests - changing this upgrades nothing on its own."
             />
             <SettingsAside
               label="Agent namespace"
@@ -156,7 +156,7 @@ export function AgentSettings() {
               value={settings.effective.shell_enabled ? settings.effective.shell_image || 'on' : 'off'}
               reach={
                 settings.defaults.shell_enabled
-                  ? 'Every agent-mode cluster, on the next shell somebody opens. Turning it off refuses new shells and leaves the ones already open running — a session somebody is mid-command in is not a setting.'
+                  ? 'Every agent-mode cluster, on the next shell somebody opens. Turning it off refuses new shells and leaves the ones already open running - a session somebody is mid-command in is not a setting.'
                   : 'This server was started without a shell image, so a stored value can only ever keep it off.'
               }
             />
@@ -164,7 +164,7 @@ export function AgentSettings() {
               label="Debug image"
               value={settings.effective.debug_image}
               source={settingSource(settings.overrides.debug_image, settings.defaults.debug_image)}
-              reach="The next debug container anyone adds to a pod, on any agent-mode cluster. There is no switch to turn the feature off — any grant that can already exec into a pod can already ask for one."
+              reach="The next debug container anyone adds to a pod, on any agent-mode cluster. There is no switch to turn the feature off - any grant that can already exec into a pod can already ask for one."
             />
           </>
         ) : null
@@ -239,7 +239,7 @@ export function AgentSettings() {
               <Field
                 label="Image pull secret"
                 htmlFor="agent_image_pull_secret"
-                hint={`For a mirror that requires authentication: the name of a docker-registry Secret in the agent namespace, which the agent and the browser shell pull with. KubeMG stores only the name — the install sheet shows the command that creates it. ${settings.defaults.agent_image_pull_secret ? `Leave empty for ${settings.defaults.agent_image_pull_secret}.` : 'Leave empty for none.'}`}
+                hint={`For a mirror that requires authentication: the name of a docker-registry Secret in the agent namespace, which the agent and the browser shell pull with. KubeMG stores only the name - the install sheet shows the command that creates it. ${settings.defaults.agent_image_pull_secret ? `Leave empty for ${settings.defaults.agent_image_pull_secret}.` : 'Leave empty for none.'}`}
               >
                 <TextInput
                   id="agent_image_pull_secret"
@@ -314,7 +314,7 @@ export function AgentSettings() {
               <Field
                 label="Maximum lifetime (hours)"
                 htmlFor="shell_max_lifetime_hours"
-                hint={`Written into the pod itself, so it holds even while this server is down. Capped by the kubeconfig ceiling — a shell must not outlive the credential inside it. Leave empty for ${settings.defaults.shell_max_lifetime_hours} hours.`}
+                hint={`Written into the pod itself, so it holds even while this server is down. Capped by the kubeconfig ceiling - a shell must not outlive the credential inside it. Leave empty for ${settings.defaults.shell_max_lifetime_hours} hours.`}
               >
                 <TextInput
                   id="shell_max_lifetime_hours"
@@ -337,7 +337,7 @@ export function AgentSettings() {
             >
               <p className="text-[12px] leading-snug text-muted">
                 An ephemeral container an operator can add to a running pod, sharing an existing
-                container's process namespace, for exec into an image with no shell of its own —{' '}
+                container's process namespace, for exec into an image with no shell of its own -{' '}
                 <code>kubectl debug</code>'s trick. It cannot be removed once added, and any grant
                 that can already exec into a pod can already ask for one.
               </p>
@@ -359,7 +359,7 @@ export function AgentSettings() {
 
             <Notice tone="info">
               A change applies to install commands generated from now on. Agents already running keep
-              the address they were installed with — re-apply their manifest from the cluster page to
+              the address they were installed with - re-apply their manifest from the cluster page to
               move them.
             </Notice>
           </>

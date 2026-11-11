@@ -310,7 +310,7 @@ export function AuditTrail() {
   return (
     <AppShell
       title="Audit trail"
-      description="Every call that went through kubemg — allowed, refused or failed — with who made it, on which cluster, and what it touched."
+      description="Every call that went through kubemg - allowed, refused or failed - with who made it, on which cluster, and what it touched."
       timeRange
       actions={
         <>
@@ -543,7 +543,7 @@ export function AuditTrail() {
                 Clear
               </button>
             ) : (
-              <span className="ml-1 text-[12px] text-faint">none selected — every verb</span>
+              <span className="ml-1 text-[12px] text-faint">none selected - every verb</span>
             )}
           </div>
 
@@ -584,10 +584,10 @@ export function AuditTrail() {
                     </button>
                   </Td>
                   <Td className="truncate font-data text-[12.5px] text-fg">
-                    {event.username || '—'}
+                    {event.username || '-'}
                   </Td>
                   <Td className="hidden truncate font-data text-[12.5px] text-muted md:table-cell">
-                    {event.cluster || '—'}
+                    {event.cluster || '-'}
                   </Td>
                   <Td>
                     <span
@@ -684,7 +684,7 @@ export function AuditTrail() {
         </div>
 
         <p className="text-[12px] text-muted">
-          A session — exec, attach, watch or a followed log — is recorded twice: once when it opens
+          A session - exec, attach, watch or a followed log - is recorded twice: once when it opens
           and once when it ends, with how long it ran and how much passed through it. An exec or an
           attach is also recorded in full, and plays back from the row it is on.
         </p>

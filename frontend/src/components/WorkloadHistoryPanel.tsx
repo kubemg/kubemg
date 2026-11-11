@@ -144,7 +144,7 @@ export function WorkloadHistoryPanel({
             decides whether you may, and the write is in the audit trail.
           </p>
           <Notice tone="warn">
-            kubemg writes the pod template and stops there — the controller performs the rollout from
+            kubemg writes the pod template and stops there - the controller performs the rollout from
             it, exactly as <span className="font-mono">kubectl rollout undo</span> leaves it to.
           </Notice>
           <ManagedByNotice managed={managedBy} label={label} act="change" />
@@ -192,16 +192,16 @@ export function WorkloadHistoryPanel({
                     {isCurrent ? <span className="ml-2 text-[12px] text-muted">current</span> : null}
                   </Td>
                   <Td className="font-data text-muted" title={entry.created_at}>
-                    {entry.created_at ? <Age iso={entry.created_at} /> : '—'}
+                    {entry.created_at ? <Age iso={entry.created_at} /> : '-'}
                   </Td>
                   <Td className="truncate font-data text-[12.5px]" title={entry.images.join(', ')}>
-                    {entry.images.length > 0 ? entry.images.join(', ') : '—'}
+                    {entry.images.length > 0 ? entry.images.join(', ') : '-'}
                   </Td>
                   <Td className="hidden truncate text-muted md:table-cell" title={entry.change_cause}>
-                    {entry.change_cause || '—'}
+                    {entry.change_cause || '-'}
                   </Td>
                   <Td className="font-data text-muted">
-                    {entry.ready != null && entry.replicas != null ? `${entry.ready}/${entry.replicas}` : '—'}
+                    {entry.ready != null && entry.replicas != null ? `${entry.ready}/${entry.replicas}` : '-'}
                   </Td>
                   <Td className="text-right">
                     {isCurrent ? null : (
@@ -224,7 +224,7 @@ export function WorkloadHistoryPanel({
 
       <p className="flex items-center gap-1.5 text-[12px] text-muted">
         <History aria-hidden="true" className="size-3.5" />
-        Every revision is already in the cluster — a ReplicaSet or a ControllerRevision — and nothing
+        Every revision is already in the cluster - a ReplicaSet or a ControllerRevision - and nothing
         here is stored by kubemg.
       </p>
     </>

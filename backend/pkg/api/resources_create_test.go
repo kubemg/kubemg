@@ -39,6 +39,11 @@ func TestCreateResourceObjectRefusesKindsItDoesNotAuthor(t *testing.T) {
 		{"clusterroles", "kind=clusterroles", "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: r\n"},
 		{"clusterrolebindings", "kind=clusterrolebindings", "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRoleBinding\nmetadata:\n  name: r\n"},
 		{"nodes", "kind=nodes", "apiVersion: v1\nkind: Node\nmetadata:\n  name: n\n"},
+		// The same kinds reached through a custom-resource key, any version.
+		{"crd clusterrolebindings", "kind=crd:rbac.authorization.k8s.io/v1/clusterrolebindings",
+			"apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRoleBinding\nmetadata:\n  name: r\n"},
+		{"crd rolebindings", "kind=crd:rbac.authorization.k8s.io/v1beta1/rolebindings&namespace=default",
+			"apiVersion: rbac.authorization.k8s.io/v1beta1\nkind: RoleBinding\nmetadata:\n  name: r\n"},
 	}
 
 	for _, test := range cases {

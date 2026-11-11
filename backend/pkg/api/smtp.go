@@ -129,7 +129,7 @@ func (s *server) putSMTP(c *gin.Context) {
 		// relay at another host and sending a test would hand the stored
 		// password to that host without anyone having typed it.
 		if !strings.EqualFold(existing.Host, config.Host) || existing.Username != config.Username {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "enter the relay password again — a stored password is kept only for the host and login it was given for"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "enter the relay password again - a stored password is kept only for the host and login it was given for"})
 			return
 		}
 		config.Password = existing.Password
@@ -179,7 +179,7 @@ func (s *server) testSMTP(c *gin.Context) {
 	}
 	if to == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "your account has no email address — name a recipient for the test",
+			"error": "your account has no email address - name a recipient for the test",
 		})
 		return
 	}
@@ -189,7 +189,7 @@ func (s *server) testSMTP(c *gin.Context) {
 		return
 	}
 	if config == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "no mail relay is configured — save one first"})
+		c.JSON(http.StatusConflict, gin.H{"error": "no mail relay is configured - save one first"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), smtpTestTimeout)

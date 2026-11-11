@@ -26,13 +26,13 @@ export function downloadLinkState(expiresAt: string | undefined, now: number): D
   if (at <= now) {
     return {
       expired: true,
-      note: 'The URL in these commands has expired unused — mint a fresh one before running them.',
+      note: 'The URL in these commands has expired unused - mint a fresh one before running them.',
     }
   }
   return {
     expired: false,
     note:
-      `The URL in these commands works once, until ${formatInstant(expiresAt)} — ` +
+      `The URL in these commands works once, until ${formatInstant(expiresAt)} - ` +
       'fetching either form spends it.',
   }
 }
