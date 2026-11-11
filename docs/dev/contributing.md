@@ -231,8 +231,24 @@ contribute. On your first pull request a bot comments with a link to the
 agreement and a sentence to copy; post that sentence as a comment on the pull
 request and the check turns green. Comment `recheck` to run the check again. A
 pull request is not merged while one of its committers has not accepted the
-agreement, so make sure every commit is authored with an email address linked
-to your GitHub account - the bot cannot match a commit that is not.
+agreement.
+
+Every commit must be authored with an email address linked to your own GitHub
+account. The bot matches a commit to a person by the account its email resolves
+to, and without one it would fall back to the name written in git, which anyone
+can set. So a separate **Commit authors** check fails a pull request with a
+commit whose email resolves to no account, or to one of the accounts exempt
+from the agreement (the maintainer, bots) when that account did not open the
+pull request itself. The check lists each commit it refused. A merge the
+maintainer makes with GitHub's *Update branch* button is expected and passes.
+To fix a refused commit, add the email under GitHub's *Settings > Emails*, or set
+`git config user.email` to an address already there (your GitHub noreply
+address works), then rewrite the commits and force-push:
+
+```bash
+git rebase --exec 'git commit --amend --no-edit --reset-author' origin/dev
+git push --force-with-lease
+```
 
 ## Documentation is part of the change
 
