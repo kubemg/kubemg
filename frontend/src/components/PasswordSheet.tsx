@@ -88,7 +88,7 @@ export function PasswordSheet({ onClose, onRevoked }: {
 
       {done ? (
         <Notice tone="ok">
-          Your password is changed. Sessions already signed in keep working — the password is what
+          Your password is changed. Sessions already signed in keep working - the password is what
           opens a new one.
           {done.credentials ? (
             <>

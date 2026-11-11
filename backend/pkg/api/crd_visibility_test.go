@@ -63,7 +63,7 @@ func TestNormalizeHiddenCRDs(t *testing.T) {
 	}
 	want := []string{"certificates.cert-manager.io", "widgets.acme.io"}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v, want %v — deduplicated and ordered", got, want)
+		t.Fatalf("got %v, want %v - deduplicated and ordered", got, want)
 	}
 }
 

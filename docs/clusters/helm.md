@@ -6,7 +6,7 @@ A Helm 3 release is a `Secret` labelled `owner=helm`. kubemg reads those Secrets
 
 ## Reading releases
 
-The list shows each release once, at its **highest revision** — the one describing what is installed.
+The list shows each release once, at its **highest revision** - the one describing what is installed.
 
 Reading a release means reading a Secret, and the built-in `view` role excludes Secrets. A `view` grant is therefore refused here in the cluster's own words. That is the correct answer, not a gap. In agent mode you need `edit` or `cluster-admin` to see releases.
 
@@ -57,7 +57,7 @@ Install from a [registered repository](#chart-repositories). The version is reso
 
 | Request | Answer |
 |---|---|
-| A revision Helm has pruned | `404` ("has no revision `<n>` — Helm may have pruned it") |
+| A revision Helm has pruned | `404` ("has no revision `<n>` - Helm may have pruned it") |
 | The current revision | `409` ("already the current one") |
 | A revision with no stored manifest (old, or written by the values-only fallback) | `409` naming the reason |
 
@@ -104,6 +104,10 @@ Adding a repository is an outbound-egress decision, like adding an [alarm channe
 ### Credential handling
 
 The API reports only `has_credential`. Saving with the credential field **omitted keeps** the stored one; an **empty string clears** it.
+
+- **A kept credential goes only to the host it was given for.** Change the URL to another scheme, host or port and the credential has to be entered again. Otherwise the repository could be pointed somewhere else with the stored password still attached.
+- **The login goes only to the repository's own host.** An index may list chart archives on another host (a CDN, a release page). Those are fetched without the repository's username and password, as Helm itself does.
+- **The username and password go in their own fields, never in the URL.** A URL with `user:password@` in it is refused at save, because the catalogue shows the URL to everyone signed in. A repository saved that way before 0.17.2 keeps working, and the URL is shown without the login.
 
 ### What kind of repository
 

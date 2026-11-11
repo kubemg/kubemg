@@ -228,7 +228,7 @@ func (s *server) scaleWorkload(c *gin.Context) {
 // scaledMessage says what happened in the words an operator would use.
 func scaledMessage(name string, replicas int32) string {
 	if replicas == 0 {
-		return name + " scaled to 0 — its pods are being removed"
+		return name + " scaled to 0 - its pods are being removed"
 	}
 	if replicas == 1 {
 		return name + " scaled to 1 replica"
@@ -294,7 +294,7 @@ func (s *server) restartWorkload(c *gin.Context) {
 		Name:        req.Name,
 		Namespace:   req.Namespace,
 		RestartedAt: stamp,
-		Message:     req.Name + " is rolling out — its pods are being replaced",
+		Message:     req.Name + " is rolling out - its pods are being replaced",
 	})
 }
 
@@ -458,9 +458,9 @@ func alreadySuspended(suspend bool) string {
 // suspendedMessage says what happened in the words an operator would use.
 func suspendedMessage(name string, suspend bool) string {
 	if suspend {
-		return name + " suspended — it will not fire again until it is resumed"
+		return name + " suspended - it will not fire again until it is resumed"
 	}
-	return name + " resumed — its schedule fires again"
+	return name + " resumed - its schedule fires again"
 }
 
 // nodePath is the fixed, cluster-scoped API path for a Node. It is not in
@@ -622,7 +622,7 @@ func alreadySchedulable(unschedulable bool) string {
 // there, and whatever is already running stays exactly where it is.
 func schedulableMessage(name string, unschedulable bool) string {
 	if unschedulable {
-		return name + " cordoned — new pods will not be scheduled there; pods already running are not moved"
+		return name + " cordoned - new pods will not be scheduled there; pods already running are not moved"
 	}
-	return name + " uncordoned — it can be scheduled again"
+	return name + " uncordoned - it can be scheduled again"
 }

@@ -129,7 +129,7 @@ export function CrdVisibilityPanel({
       }
       link={
         <span className="text-[12px] text-faint">
-          Navigation only — the cluster’s RBAC still decides what can be read.
+          Navigation only - the cluster’s RBAC still decides what can be read.
         </span>
       }
       actions={chooseButton}
@@ -210,7 +210,7 @@ export function CrdVisibilityPanel({
 }
 
 const DESCRIPTION =
-  'Which of this cluster’s CRDs everybody browsing it is offered. This is what the navigation shows — it is not a permission.'
+  'Which of this cluster’s CRDs everybody browsing it is offered. This is what the navigation shows - it is not a permission.'
 
 /** How many API groups the summary names before it says how many more. */
 const GROUP_PREVIEW = 8
@@ -340,7 +340,7 @@ function CrdVisibilitySheet({
 
       <p className="text-[12.5px] leading-relaxed text-muted">
         A resource you turn off leaves the Explore sidebar for everybody on this cluster, including
-        you. It is still there — the manifest editor, a link somebody saved and{' '}
+        you. It is still there - the manifest editor, a link somebody saved and{' '}
         <span className="font-mono">kubectl</span> all reach it exactly as before, and what may be read
         stays the cluster’s own RBAC to decide.
       </p>

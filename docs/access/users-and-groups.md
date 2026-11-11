@@ -18,11 +18,12 @@ Routes: `GET|POST /api/v1/users`, `PUT|DELETE /api/v1/users/:id`, `PATCH /api/v1
 | `id` | no | Assigned on creation. |
 | `username` | yes | Unique; a conflict answers `409 username already taken`. No `:` or control characters. |
 | `email` | yes | Optional; local accounts are keyed by username. |
-| `password` | write-only | Never read back. Minimum 8 characters. |
+| `password` | write-only | Never read back. Minimum 8 characters. Not for your own account: that changes from **My profile**, with the current password, so a stolen administrator session cannot lock the owner out (`403`). The setup wizard's first step is the one exception: the seeded administrator replaces the password the install booted with, until setup is complete. |
 | `system_role` | yes, conditionally | `superadmin`, `admin` or `user`. Setting `superadmin` needs a super admin caller; nobody can change their own. |
 | `role` | no | Derived from `system_role`, see [System roles](model.md#system-roles). |
 | `is_active` | via `PATCH .../status` only | Not settable through `PUT`. |
 | `can_view_recordings` | yes, conditionally | Super admin only, see [The recording-viewing capability](#the-recording-viewing-capability). |
+| `slack_user_id` | yes | The Slack member ID (`U…`, or `W…` on Enterprise Grid) whose clicks on an access-request message count as this account. One account per member ID (`409` otherwise); `""` unlinks. See [Just-in-time access](jit.md). |
 | `account_type` | no | `user` or `machine`. The `/users` routes never produce or accept a machine row. |
 | `auth_source` | no | `local` or a federation provider, see [Federated vs. local accounts](#federated-vs-local-accounts). |
 | `last_login_at`, `last_login_addr` | no | Most recent sign-in and where it came from. Only the latest is kept (history is in the [audit trail](../audit/trail.md)); empty for an account that has never signed in. |
@@ -56,7 +57,7 @@ See [Self-protection rules](model.md#self-protection-rules).
 
 ### Repeated failed passwords are slowed down
 
-Every place kubemg checks a password — the sign-in form, an LDAP provider's sign-in, and the current-password field of **Change password** — counts failures three ways:
+Every place kubemg checks a password - the sign-in form, an LDAP provider's sign-in, and the current-password field of **Change password** - counts failures three ways:
 
 - **Per account and address together:** 5 failures in a row are free. Each failure after that locks *that address* out of *that account* for 30 seconds, then 1, 2, 4 minutes and so on, up to 15 minutes. The account's owner, signing in from anywhere else, is not affected, so knowing someone's username is not a way to lock them out.
 - **Per account, from any address:** 50 failures within an hour are free. Past that the account is locked for everyone for 1 minute, doubling up to 15 minutes. Reaching this takes guesses at one account from many addresses, which is a real attack on it; the warning in the log says when it starts.
@@ -109,7 +110,7 @@ The effective grant is computed server-side by the same merge the gateway uses, 
 - `direct` + `jit`: an approved elevation, with its `expires_at`.
 - `group`: inherited through the named group.
 
-The Identity panel also reports the account's [second factor](mfa.md) — how many authenticator apps and recovery codes it holds, or that an OIDC/SAML account's factor belongs to its provider — and offers **Reset second factor** to another administrator.
+The Identity panel also reports the account's [second factor](mfa.md) - how many authenticator apps and recovery codes it holds, or that an OIDC/SAML account's factor belongs to its provider - and offers **Reset second factor** to another administrator.
 
 Left out on purpose: expired grants, grants on deleted clusters and memberships of deleted groups (nothing to act on). Issued kubeconfigs and recent sessions are read from their own endpoints (`GET /api/v1/kubeconfigs?user_id=`, `GET /api/v1/audit/terminal-sessions?user_id=`).
 

@@ -530,9 +530,9 @@ func auditMessage(event bastion.Event, denied bool) string {
 		fmt.Fprintf(&b, " for %s", event.Username)
 	}
 	if event.Error != "" {
-		fmt.Fprintf(&b, " — %s", event.Error)
+		fmt.Fprintf(&b, " - %s", event.Error)
 	} else if event.Status != 0 {
-		fmt.Fprintf(&b, " — HTTP %d", event.Status)
+		fmt.Fprintf(&b, " - HTTP %d", event.Status)
 	}
 	return b.String()
 }

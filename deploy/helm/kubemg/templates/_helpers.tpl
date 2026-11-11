@@ -74,7 +74,8 @@ and the browser shell share one tag.
 The images the console hands out. Each is empty — the server's own built-in
 default — unless set explicitly or a mirror is configured. Under a mirror the
 repository paths are the published ones; the debug image's name and tag mirror
-defaultDebugImage in backend/pkg/config/config.go and have to move with it.
+defaultDebugImage in backend/pkg/config/config.go and have to move with it;
+`make images-check` fails when they do not.
 */}}
 {{- define "kubemg.agentImage" -}}
 {{- if .Values.agent.image -}}

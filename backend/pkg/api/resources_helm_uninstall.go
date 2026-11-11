@@ -63,8 +63,8 @@ import (
 // were not run at all.
 const helmUninstallHookNotice = "Chart delete hooks (pre-delete, post-delete) were not run: a release " +
 	"records its rendered manifest, not the templates behind it, so KubeMG has nothing to render them " +
-	"from. Objects the chart did not render — anything a controller created, and any CustomResourceDefinition " +
-	"from the chart's crds/ directory — are not part of the recorded manifest and stay."
+	"from. Objects the chart did not render - anything a controller created, and any CustomResourceDefinition " +
+	"from the chart's crds/ directory - are not part of the recorded manifest and stay."
 
 // uninstallHelmRelease removes a release and the objects it installed.
 func (s *server) uninstallHelmRelease(c *gin.Context) {
@@ -133,7 +133,7 @@ func (s *server) uninstallHelmRelease(c *gin.Context) {
 			reports = append(reports, objectReport{
 				Kind: "Secret", Name: helmSecretName(revision.secret), Namespace: namespace,
 				Action: actionSkipped,
-				Message: "kept — the release still records what it installed, and something " +
+				Message: "kept - the release still records what it installed, and something " +
 					"above could not be removed",
 			})
 		}
@@ -147,7 +147,7 @@ func (s *server) uninstallHelmRelease(c *gin.Context) {
 		"hook_notice": helmUninstallHookNotice,
 	}
 	if complete {
-		body["message"] = name + " uninstalled — its objects are marked for deletion"
+		body["message"] = name + " uninstalled - its objects are marked for deletion"
 	} else {
 		body["message"] = name + " was not fully removed, so its release record was kept"
 		body["error"] = uninstallFailureMessage(reports)

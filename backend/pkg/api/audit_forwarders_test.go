@@ -44,7 +44,7 @@ func TestCreateAuditForwarderFillsTheSyslogDefaults(t *testing.T) {
 		t.Errorf("kind = %q, want the only transport there is", body.Kind)
 	}
 	if body.Protocol != db.ForwarderProtoTCP {
-		t.Errorf("protocol = %q, want tcp — udp loses records silently", body.Protocol)
+		t.Errorf("protocol = %q, want tcp - udp loses records silently", body.Protocol)
 	}
 	// The port default follows the protocol on purpose: Logsign listens for
 	// syslog on UDP 514 and TCP 515, and one default for both would produce a

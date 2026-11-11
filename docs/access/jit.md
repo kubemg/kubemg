@@ -85,11 +85,13 @@ A Slack or Teams app carries no kubemg session, so this route needs **all three*
 
 1. **A valid Slack request signature** over the raw body (`X-Slack-Request-Timestamp` / `X-Slack-Signature`), checked against every enabled Slack channel's signing secret. No signature headers is an immediate refusal.
 2. **A signed, expiring action token** (valid 48 hours) from the original notification. Expired: `403 that approval link has expired; decide it in kubemg instead`. Forged or unparseable: `403 that approval token is not valid`.
-3. **An `approver_username` that resolves to an active admin who is not the requester.** Unknown: `403 no kubemg account matches that user; decide this request in kubemg`. Disabled: `403 that account is disabled`.
+3. **An approver that resolves to an active admin who is not the requester.** Disabled: `403 that account is disabled`.
+    - **From a Slack button**, the approver is the account **linked to the clicker's Slack member ID**, and only that. An administrator links one under **Admin → Users →** the person **→ Identity → Link Slack account**. One member ID belongs to one account. A click from an unlinked member is refused (`403 this Slack account is not linked to a kubemg account…`). Before 0.17.2 the clicker's Slack handle was matched against usernames; a handle is a display name a member may be able to set, so that match is gone. **Link every approver's Slack account after upgrading**, or their buttons stop working.
+    - **From JSON**, the approver is the `approver_username` named in the body. Unknown: `403 no kubemg account matches that user; decide this request in kubemg`.
 
 None is enough alone: the token is visible to everyone in the channel, and the username is only a claim. The self-approval rule applies unchanged.
 
-Slack's own button payload is read directly. Anything else (a Teams flow, a retry) sends JSON:
+Slack's own button payload is read directly. Anything else (a retry, an integration of your own holding the signing secret) sends JSON:
 
 ```json
 {
@@ -104,7 +106,7 @@ Slack's own button payload is read directly. Anything else (a Teams flow, a retr
 
 ## Delivery through chat channels
 
-Requests and decisions are announced through the existing Slack/Teams channels (Block Kit with the full reason, or an Adaptive Card), always leading with a console link, which works even if the one-click callback is not wired up. See [Alarms](../audit/alarms.md) for configuring and testing a channel.
+Requests and decisions are announced through the existing Slack/Teams channels (Block Kit with the full reason, or an Adaptive Card), always leading with a console link, which works even if the one-click callback is not wired up. The reason and a decision's note are the requester's and approver's own words, so they are shown as typed: plain text in Slack, a text run in Teams. A mention, a link or formatting in them is not rendered. See [Alarms](../audit/alarms.md) for configuring and testing a channel.
 
 ## Operator FAQ
 

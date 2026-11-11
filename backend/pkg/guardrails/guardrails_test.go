@@ -343,3 +343,47 @@ func TestEmptyTerminalInputIsNotEvaluated(t *testing.T) {
 		t.Fatalf("an empty line is not a command, got %+v", decision)
 	}
 }
+
+// A rule is not stepped around by spelling the same call another way. The API
+// server reads a trailing slash, a reordered query and an encoded value alike,
+// so the rule has to as well.
+func TestAnAPIRuleHoldsAcrossSpellingsOfTheSameCall(t *testing.T) {
+	engine := engineWith(t,
+		policy("one namespace", 0, `^DELETE /api/v1/namespaces/[^/?]+$`,
+			db.GuardrailTargetAPIRequest, db.GuardrailActionBlock),
+		policy("orphaning", 0, `[?&]propagationPolicy=Orphan(&|$)`,
+			db.GuardrailTargetAPIRequest, db.GuardrailActionBlock),
+		policy("forced orphaning", 0, `\?gracePeriodSeconds=0&propagationPolicy=Foreground`,
+			db.GuardrailTargetAPIRequest, db.GuardrailActionBlock),
+		policy("selector", 0, `labelSelector=app=payments`,
+			db.GuardrailTargetAPIRequest, db.GuardrailActionWarn),
+	)
+
+	blocked := []struct{ method, path string }{
+		{"DELETE", "/api/v1/namespaces/prod"},
+		{"DELETE", "/api/v1/namespaces/prod/"},
+		{"delete", "/api/v1/namespaces/prod?"},
+		{"DELETE", "/apis/apps/v1/namespaces/a/deployments/web?propagationPolicy=Orphan"},
+		{"DELETE", "/apis/apps/v1/namespaces/a/deployments/web?dryRun=None&propagationPolicy=Orphan"},
+		{"DELETE", "/apis/apps/v1/namespaces/a/deployments/web?propagationPolicy=%4Frphan"},
+		// Written in one order, sent in the other.
+		{"DELETE", "/apis/apps/v1/namespaces/a/deployments/web?propagationPolicy=Foreground&gracePeriodSeconds=0"},
+	}
+	for _, call := range blocked {
+		if !engine.EvaluateAPIRequest(1, call.method, call.path).Blocked() {
+			t.Errorf("%s %s: want blocked", call.method, call.path)
+		}
+	}
+
+	if decision := engine.EvaluateAPIRequest(1, "GET", "/api/v1/namespaces/a/pods?labelSelector=app%3Dpayments"); decision == nil || decision.Blocked() {
+		t.Fatalf("an encoded selector: want the warn rule, got %+v", decision)
+	}
+	for _, path := range []string{
+		"/api/v1/namespaces/prod/pods/web",
+		"/apis/apps/v1/namespaces/a/deployments/web?propagationPolicy=Background",
+	} {
+		if decision := engine.EvaluateAPIRequest(1, "DELETE", path); decision != nil {
+			t.Errorf("DELETE %s: want nothing, got %+v", path, decision)
+		}
+	}
+}

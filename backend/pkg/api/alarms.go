@@ -276,6 +276,15 @@ func (s *server) channelFrom(
 	if rawURL == "" && existing != nil {
 		rawURL = existing.URL
 	}
+	// A kept secret or header set goes only where it was given (see
+	// kept_credentials.go). The URL is kept by sending none, so a new one is
+	// compared with the stored one.
+	if existing != nil && keptChannelSecretMoves(req, rawURL, existing) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "enter the secret and headers again - they are kept only for the host they were given for",
+		})
+		return nil, false
+	}
 	if len(rawURL) > maxAlarmURLLength {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "webhook URL is too long"})
 		return nil, false
@@ -349,6 +358,17 @@ func (s *server) channelFrom(
 		Headers:  headers,
 		Enabled:  enabled,
 	}, true
+}
+
+// keptChannelSecretMoves reports whether an edit keeps a stored secret or
+// header set (by leaving it out) while pointing the channel at another host.
+func keptChannelSecretMoves(req alarmChannelRequest, rawURL string, existing *db.AlarmChannel) bool {
+	keepsSecret := strings.TrimSpace(req.Secret) == "" && existing.Secret != ""
+	keepsHeaders := req.Headers == nil && existing.Headers != ""
+	if !keepsSecret && !keepsHeaders {
+		return false
+	}
+	return !sameOrigin(rawURL, existing.URL)
 }
 
 // defaultAuthMode is what each destination usually wants, so the common case
