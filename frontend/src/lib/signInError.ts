@@ -45,7 +45,7 @@ export const SIGN_IN_TEXT = {
   directoryCredentials:
     'The directory did not accept that username and password. Check both and try again.',
   directoryUnreachable:
-    'kubemg could not reach the directory to check your password — this is not a wrong password. Try again shortly, and tell your administrator if it persists.',
+    'kubemg could not reach the directory to check your password - this is not a wrong password. Try again shortly, and tell your administrator if it persists.',
   noAccount:
     'You were recognised, but there is no kubemg account for you yet and this sign-in does not create one. Ask an administrator to add you.',
   conflict:

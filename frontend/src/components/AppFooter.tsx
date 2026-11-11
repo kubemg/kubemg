@@ -38,12 +38,13 @@ export function AppFooter() {
     }
   }, [])
 
-  // The organisation's own line is drawn whether or not the version read
-  // answered: a handling caveat a site is obliged to state must not be
-  // contingent on an unrelated request having succeeded.
+  // The organisation's handling line is drawn whether or not the version read
+  // answered: a caveat a site is obliged to state must not be contingent on an
+  // unrelated request having succeeded. Its name is not here — it sits beside
+  // the lockup in the sidebar, where it reads as whose install this is rather
+  // than as words running on from the release number.
   const notice = branding?.footer_notice?.trim()
-  const organisation = branding?.organisation_name?.trim()
-  if (!info && !notice && !organisation) return null
+  if (!info && !notice) return null
 
   return (
     <footer className="mt-2 border-t border-line px-4 py-3 xl:px-6">
@@ -52,9 +53,6 @@ export function AppFooter() {
           <span className="font-data text-[11.5px] text-faint">
             kubemg <span className="text-muted">{info.version}</span>
           </span>
-        ) : null}
-        {organisation ? (
-          <span className="min-w-0 truncate text-[12px] text-muted">{organisation}</span>
         ) : null}
         {/* The classification line, in the console's quietest slot. It is not
             styled as a warning: a caveat that is stated on every page all day is

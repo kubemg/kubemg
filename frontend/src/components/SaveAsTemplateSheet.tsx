@@ -127,8 +127,8 @@ export function SaveAsTemplateSheet({
       ) : (
         <>
           <Notice tone="info">
-            The object's own identity — name, namespace, status and every field the API server owns
-            rather than the author — is stripped: it belongs to this cluster's record of the object,
+            The object's own identity - name, namespace, status and every field the API server owns
+            rather than the author - is stripped: it belongs to this cluster's record of the object,
             not to a bundle meant to be created anywhere.
           </Notice>
 

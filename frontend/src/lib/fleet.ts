@@ -105,7 +105,7 @@ export function fleetQueue(clusters: Cluster[], pendingRequests: number): QueueI
       key: `idle-${cluster.id}`,
       tone: 'bad',
       subject: cluster.name,
-      detail: `registered ${relativeAge(cluster.created_at)}, never dialled in — the install command may not have run`,
+      detail: `registered ${relativeAge(cluster.created_at)}, never dialled in - the install command may not have run`,
       action: 'Install command',
       to: clusterPageHref(cluster.id, 'dashboard'),
     })
@@ -130,7 +130,7 @@ export function fleetQueue(clusters: Cluster[], pendingRequests: number): QueueI
         key: `drift-${cluster.id}`,
         tone: 'warn',
         subject: cluster.name,
-        detail: `agent ${cluster.agent_version} is behind ${newest} running elsewhere in the fleet — re-apply its manifests`,
+        detail: `agent ${cluster.agent_version} is behind ${newest} running elsewhere in the fleet - re-apply its manifests`,
         action: 'Manifests',
         to: clusterPageHref(cluster.id, 'dashboard'),
       })

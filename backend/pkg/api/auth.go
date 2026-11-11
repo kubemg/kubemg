@@ -52,6 +52,8 @@ type userResponse struct {
 	// reads it to stop offering a person's affordances to a machine.
 	AccountType string     `json:"account_type"`
 	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
+	// SlackUserID is the Slack member ID linked for access-request decisions.
+	SlackUserID string `json:"slack_user_id,omitempty"`
 	// LastLoginAddr is where the most recent sign-in came from. Empty for an
 	// account that has never signed in and for every sign-in older than the
 	// column — the console says which rather than drawing a blank.
@@ -90,6 +92,7 @@ func toUserResponse(u *db.User) userResponse {
 		AuthSource:        authSourceOf(normalized),
 		AccountType:       accountTypeOf(normalized),
 		LastLoginAt:       normalized.LastLoginAt,
+		SlackUserID:       normalized.SlackUserID,
 		LastLoginAddr:     normalized.LastLoginAddr,
 		PasswordChangedAt: passwordChangedAt(normalized),
 		CreatedAt:         normalized.CreatedAt,
@@ -283,7 +286,7 @@ type wsTicketResponse struct {
 func (s *server) mintWSTicket(c *gin.Context) {
 	claims, ok := auth.ClaimsFrom(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+		auth.RefuseSession(c, "missing bearer token")
 		return
 	}
 
@@ -319,13 +322,13 @@ func (s *server) requireAdmin(c *gin.Context) {
 func (s *server) currentUser(c *gin.Context) (*db.User, bool) {
 	claims, ok := auth.ClaimsFrom(c)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+		auth.RefuseSession(c, "missing bearer token")
 		return nil, false
 	}
 
 	user, err := s.store.UserByID(c.Request.Context(), claims.UserID)
 	if errors.Is(err, db.ErrNotFound) {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "user no longer exists"})
+		auth.RefuseSession(c, "user no longer exists")
 		return nil, false
 	}
 	if err != nil {

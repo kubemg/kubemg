@@ -127,7 +127,7 @@ function ManifestSide({ title, yaml, truncated }: { title: string; yaml: string;
       </pre>
       {truncated ? (
         <p className="border-t border-line-soft px-3 py-2 text-[12px] text-muted">
-          Cut at 256 KiB — the rest of this side is not shown.
+          Cut at 256 KiB - the rest of this side is not shown.
         </p>
       ) : null}
     </details>

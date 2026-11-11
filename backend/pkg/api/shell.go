@@ -524,7 +524,7 @@ func (s *server) createShellPod(
 // between a five-minute fix and an afternoon.
 func staleManifestExplanation(message string) string {
 	return message +
-		" — this is the agent's own RBAC, and this cluster's copy of it is older than the shell needs. " +
+		" - this is the agent's own RBAC, and this cluster's copy of it is older than the shell needs. " +
 		"Re-apply this cluster's agent manifests to install the current kubemg-shell service account " +
 		"and kubemg-shell-runner Role, then try again."
 }

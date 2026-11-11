@@ -168,6 +168,11 @@ func TestProxyRefusesAQueryPastTheParameterLimit(t *testing.T) {
 	if len(events) != 1 || events[0].Status != http.StatusBadRequest || events[0].RefusedBy != RefusedByKubeMG {
 		t.Fatalf("want one 400 refusal by kubemg, got %+v", events)
 	}
+	// The refusal names the call the caller asked for, though net/url cannot
+	// read its query.
+	if events[0].Verb != "watch" {
+		t.Fatalf("a refused watch=true is recorded as %q, want watch", events[0].Verb)
+	}
 	if queued, suppressed := throughSelection(events); len(queued) != 1 || suppressed != 0 {
 		t.Fatalf("a refusal is never the selection's to drop: %d queued, %d suppressed", len(queued), suppressed)
 	}

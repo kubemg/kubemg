@@ -248,7 +248,7 @@ export function MachineAccounts() {
                     </Td>
                     <Td className="font-data text-[12.5px] text-muted">
                       {row.token_count === 0
-                        ? '—'
+                        ? '-'
                         : `${row.active_tokens} live / ${row.token_count}`}
                     </Td>
                     <Td className="hidden text-[12.5px] text-muted lg:table-cell">
@@ -325,7 +325,7 @@ export function MachineAccounts() {
             <p className="flex flex-col items-center gap-2 border-t border-line-soft px-4 py-10 text-center text-[13px] text-muted">
               <Bot aria-hidden="true" className="size-5 text-faint" />
               {accounts.length === 0
-                ? 'No machine accounts yet. Add one for the pipeline that needs a kubeconfig — you grant it a cluster next, and issue its credential after that.'
+                ? 'No machine accounts yet. Add one for the pipeline that needs a kubeconfig - you grant it a cluster next, and issue its credential after that.'
                 : 'Nothing matches that filter.'}
             </p>
           ) : null}
@@ -398,7 +398,7 @@ export function SetupPath({ accounts }: { accounts: MachineAccount[] }) {
     },
     {
       label: 'Issue a credential',
-      body: 'The key button on the row. It hands back a kubeconfig once — paste it into whatever holds it, and revoke it here when that changes.',
+      body: 'The key button on the row. It hands back a kubeconfig once - paste it into whatever holds it, and revoke it here when that changes.',
       done: accounts.some((account) => account.active_tokens > 0),
     },
   ]
@@ -715,7 +715,7 @@ function MachineAccountSheet({
           <Field
             label="Namespaces"
             htmlFor="machine-namespaces"
-            hint="Comma-separated. Leave empty for every namespace the role allows — a pipeline that deploys one service should name it."
+            hint="Comma-separated. Leave empty for every namespace the role allows - a pipeline that deploys one service should name it."
           >
             <TextInput
               id="machine-namespaces"

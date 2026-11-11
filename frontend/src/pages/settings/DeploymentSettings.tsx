@@ -42,7 +42,7 @@ export function DeploymentSettings() {
   return (
     <SettingsLayout
       title="Deployment"
-      description="What this server read from its environment when it started. Nothing here changes from the console — each line names what to change and where, and a restart picks it up."
+      description="What this server read from its environment when it started. Nothing here changes from the console - each line names what to change and where, and a restart picks it up."
       actions={
         <Button type="button" variant="ghost" onClick={() => void load()} disabled={loading}>
           <RotateCcw aria-hidden="true" className="size-4" />
@@ -58,7 +58,7 @@ export function DeploymentSettings() {
           <Panel
             eyebrow="This install"
             title="Settled at boot, not from here"
-            description="Every line below was read when the server started, from an environment no request can change — so this page reports them and names what to change instead. A restart is what picks up a change; nothing here needs the setup wizard back."
+            description="Every line below was read when the server started, from an environment no request can change - so this page reports them and names what to change instead. A restart is what picks up a change; nothing here needs the setup wizard back."
             bodyClassName="flex flex-col gap-3 p-4"
           >
             <DeploymentCheckList checks={posture.checks} />

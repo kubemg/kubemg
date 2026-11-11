@@ -92,7 +92,7 @@ export function ConfigDataView({
           <>
             <Notice tone="info">
               Values are not shown. Revealing one needs the reveal-secrets capability, which a super
-              admin grants — and every reveal is recorded in the audit trail.
+              admin grants - and every reveal is recorded in the audit trail.
             </Notice>
             <EntryList entries={data.entries} />
           </>
@@ -120,7 +120,7 @@ export function ConfigDataView({
             <span className="shrink-0 text-[12px] text-faint">{entry.bytes} bytes</span>
           </div>
           {entry.binary ? (
-            <p className="text-[12.5px] text-muted">Binary data — not shown as text.</p>
+            <p className="text-[12.5px] text-muted">Binary data - not shown as text.</p>
           ) : (
             <CodeBlock value={entry.value ?? ''} wrap />
           )}

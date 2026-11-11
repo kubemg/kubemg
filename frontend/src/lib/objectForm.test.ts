@@ -182,7 +182,7 @@ spec:
     expect(rendered).toContain('image: nginx\n')
   })
 
-  it('never writes metadata.namespace — the namespace is the address', () => {
+  it('never writes metadata.namespace - the namespace is the address', () => {
     for (const kind of ['pods', 'deployments', 'cronjobs'] as const) {
       expect(renderObjectManifest({ ...workload(kind), name: 'x', image: 'nginx' })).not.toContain(
         'namespace:',

@@ -1,11 +1,14 @@
 package api
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,7 +44,25 @@ const (
 	ssoFlowTTL = 10 * time.Minute
 	// consoleCallbackPath is where the browser app finishes a federated sign-in.
 	consoleCallbackPath = "/auth/callback"
+
+	// maxSSOFlows and maxSSOFlowsPerSource bound the sign-ins waiting on an
+	// IdP. Starting one needs no session, so without a bound a loop on the
+	// login route grew the map for ten minutes per request.
+	//
+	// Past a bound the oldest waiting flow is dropped, never the new one
+	// refused: a refusal would let anyone sharing an address (a NAT, or every
+	// caller at once when KubeMG sits behind a proxy it was not told to
+	// trust) lock everyone else out of signing in. A dropped flow costs its
+	// owner one more click. The per-source bound comes first, so one address
+	// cannot push everyone else's flows out of the shared store.
+	maxSSOFlows          = 10000
+	maxSSOFlowsPerSource = 100
 )
+
+// ssoBindingPattern is the console's per-tab value that ties a sign-in to the
+// browser that started it. It is opaque to the server, which only checks that
+// it is a token and hands it back.
+var ssoBindingPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,128}$`)
 
 // ssoFlow is the half of a sign-in that must not travel with the browser: the
 // PKCE verifier, the nonce, and which provider and console the flow belongs to.
@@ -54,6 +75,17 @@ type ssoFlow struct {
 	// against the allowed origins when the flow started.
 	redirect  string
 	expiresAt time.Time
+	// source is the address that started the flow (its /64 for IPv6), for
+	// the per-source bound.
+	source string
+	// binding is the console's value for the tab that started the sign-in,
+	// handed back beside the session so that tab can tell a sign-in it
+	// started from one somebody else started and sent it the end of.
+	binding string
+	// samlRequestID is the ID of the AuthnRequest sent to a SAML IdP. The
+	// assertion has to answer it, so a response captured from another
+	// sign-in cannot be posted against this one.
+	samlRequestID string
 }
 
 // flowStore holds in-flight sign-ins.
@@ -67,24 +99,74 @@ type ssoFlow struct {
 // sign-ins land on the replica that never saw the request start.
 type flowStore struct {
 	mu    sync.Mutex
-	flows map[string]ssoFlow
+	flows map[string]*flowEntry
+	// order holds every waiting flow's state oldest first, and bySource the
+	// same per source. Every flow lives for the same TTL, so oldest is also
+	// soonest to expire, and both the sweep and the bounds work from the front.
+	order    *list.List
+	bySource map[string]*list.List
 }
 
-func newFlowStore() *flowStore { return &flowStore{flows: map[string]ssoFlow{}} }
+type flowEntry struct {
+	flow   ssoFlow
+	global *list.Element
+	local  *list.Element
+}
 
+func newFlowStore() *flowStore {
+	return &flowStore{flows: map[string]*flowEntry{}, order: list.New(), bySource: map[string]*list.List{}}
+}
+
+// put stores a flow, first dropping expired ones and then, past either bound,
+// the oldest waiting flow from the same source or from everyone.
 func (f *flowStore) put(state string, flow ssoFlow) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	// Sweep on write rather than on a timer: the map only grows when someone is
-	// signing in, so that is exactly when it is worth walking.
 	now := time.Now()
-	for key, existing := range f.flows {
-		if now.After(existing.expiresAt) {
-			delete(f.flows, key)
+	for front := f.order.Front(); front != nil; front = f.order.Front() {
+		key := front.Value.(string)
+		if !now.After(f.flows[key].flow.expiresAt) {
+			break
+		}
+		f.forget(key)
+	}
+	f.forget(state)
+
+	flow.source = flowSourceKey(flow.source)
+	for local := f.bySource[flow.source]; local != nil && local.Len() >= maxSSOFlowsPerSource; local = f.bySource[flow.source] {
+		f.forget(local.Front().Value.(string))
+	}
+	for f.order.Len() >= maxSSOFlows {
+		f.forget(f.order.Front().Value.(string))
+	}
+
+	local := f.bySource[flow.source]
+	if local == nil {
+		local = list.New()
+		f.bySource[flow.source] = local
+	}
+	f.flows[state] = &flowEntry{
+		flow:   flow,
+		global: f.order.PushBack(state),
+		local:  local.PushBack(state),
+	}
+}
+
+// forget removes a flow from the map and both orders. The caller holds the lock.
+func (f *flowStore) forget(state string) {
+	entry, ok := f.flows[state]
+	if !ok {
+		return
+	}
+	delete(f.flows, state)
+	f.order.Remove(entry.global)
+	if local := f.bySource[entry.flow.source]; local != nil {
+		local.Remove(entry.local)
+		if local.Len() == 0 {
+			delete(f.bySource, entry.flow.source)
 		}
 	}
-	f.flows[state] = flow
 }
 
 // take returns a flow and removes it, so a state is good for exactly one
@@ -93,15 +175,30 @@ func (f *flowStore) take(state string) (ssoFlow, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	flow, ok := f.flows[state]
+	entry, ok := f.flows[state]
 	if !ok {
 		return ssoFlow{}, false
 	}
-	delete(f.flows, state)
-	if time.Now().After(flow.expiresAt) {
+	f.forget(state)
+	if time.Now().After(entry.flow.expiresAt) {
 		return ssoFlow{}, false
 	}
-	return flow, true
+	return entry.flow, true
+}
+
+// flowSourceKey is the address a flow is counted against. An IPv6 caller
+// usually holds a whole /64, so it is counted as one, or rotating through it
+// would sidestep the per-source bound.
+func flowSourceKey(address string) string {
+	ip := net.ParseIP(address)
+	if ip == nil {
+		return address
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return v4.String()
+	}
+	prefix := net.CIDRMask(64, 128)
+	return (&net.IPNet{IP: ip.Mask(prefix), Mask: prefix}).String()
 }
 
 // ssoProviderPublic is one provider as the login page sees it: enough to draw a
@@ -214,6 +311,12 @@ func (s *server) startSSOLogin(c *gin.Context) {
 		return
 	}
 
+	binding := strings.TrimSpace(c.Query("binding"))
+	if binding != "" && !ssoBindingPattern.MatchString(binding) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "the sign-in's browser binding is not one the console writes"})
+		return
+	}
+
 	state, err := auth.NewStateToken()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not start the sign-in"})
@@ -223,6 +326,8 @@ func (s *server) startSSOLogin(c *gin.Context) {
 		providerID: provider.ID,
 		redirect:   redirect,
 		expiresAt:  time.Now().Add(ssoFlowTTL),
+		source:     c.ClientIP(),
+		binding:    binding,
 	}
 
 	var target string
@@ -252,7 +357,7 @@ func (s *server) startSSOLogin(c *gin.Context) {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 			return
 		}
-		if target, err = client.AuthURL(state); err != nil {
+		if target, flow.samlRequestID, err = client.AuthURL(state); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -331,7 +436,7 @@ func (s *server) ssoCallback(c *gin.Context) {
 			samlEntityID(*provider, settings.PublicURL),
 		)
 		if err == nil {
-			identity, err = client.Assertion(response)
+			identity, err = client.Assertion(response, flow.samlRequestID)
 		}
 
 	default:
@@ -352,11 +457,16 @@ func (s *server) ssoCallback(c *gin.Context) {
 	// The session goes back in the URL *fragment*, which a browser never sends
 	// to a server: a token in the query string would land in the access log of
 	// every proxy in front of the console and in the browser's own history.
+	//
+	// The binding rides beside it: the console accepts the session only in the
+	// tab that started this sign-in, so a callback URL somebody else started
+	// and sent on cannot sign the person who opens it into their account.
 	c.Redirect(http.StatusFound, fmt.Sprintf(
-		"%s%s#token=%s&expires_at=%s",
+		"%s%s#token=%s&expires_at=%s&binding=%s",
 		flow.redirect, consoleCallbackPath,
 		url.QueryEscape(session.Token),
 		url.QueryEscape(session.ExpiresAt.Format(time.RFC3339)),
+		url.QueryEscape(flow.binding),
 	))
 }
 

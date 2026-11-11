@@ -823,6 +823,22 @@ func (s *server) listPersistentVolumeClaims(c *gin.Context) {
 	})
 }
 
+// The annotations that mark a StorageClass as the default. Kubernetes still
+// honours the beta one: the DefaultStorageClass admission plugin fills in an
+// unnamed claim's class from either (IsDefaultAnnotation in pkg/volume/util).
+const (
+	defaultStorageClassAnnotation     = "storageclass.kubernetes.io/is-default-class"
+	betaDefaultStorageClassAnnotation = "storageclass.beta.kubernetes.io/is-default-class"
+)
+
+// isDefaultStorageClass reads a class as default the way the admission plugin
+// does, so the console never says a cluster has no default while the cluster
+// is binding unnamed claims to one.
+func isDefaultStorageClass(annotations map[string]string) bool {
+	return annotations[defaultStorageClassAnnotation] == "true" ||
+		annotations[betaDefaultStorageClassAnnotation] == "true"
+}
+
 func (s *server) listStorageClasses(c *gin.Context) {
 	user, cluster, grant, ok := s.resourceCluster(c)
 	if !ok {
@@ -855,7 +871,7 @@ func (s *server) listStorageClasses(c *gin.Context) {
 			BindingMode:   item.VolumeBindingMode,
 			// The default class is marked by an annotation, and which class is
 			// default decides what an unqualified claim gets.
-			Default: item.Metadata.Annotations["storageclass.kubernetes.io/is-default-class"] == "true",
+			Default: isDefaultStorageClass(item.Metadata.Annotations),
 		})
 	}
 

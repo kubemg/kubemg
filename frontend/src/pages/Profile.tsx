@@ -219,7 +219,7 @@ export function ProfileBody({
           />
           <Fact
             label="From"
-            value={user.last_login_addr || (user.last_login_at ? 'Not recorded for that sign-in' : '—')}
+            value={user.last_login_addr || (user.last_login_at ? 'Not recorded for that sign-in' : '-')}
             data={Boolean(user.last_login_addr)}
           />
           <Fact
@@ -253,7 +253,7 @@ export function ProfileBody({
             You can revoke your issued kubeconfigs with it.
           </>
         ) : federated
-            ? 'Your password is held by your identity provider — change it there.'
+            ? 'Your password is held by your identity provider - change it there.'
             : 'This account signs in with a token, not a password.'}
       </Panel>
 
@@ -335,7 +335,7 @@ function SecondFactorPanel({
                   </span>
                   {keyIsStale(factor, status) ? (
                     <span className="block text-[12px] text-warn">
-                      Registered at <span className="font-data">{factor.rp_id}</span> — this console
+                      Registered at <span className="font-data">{factor.rp_id}</span> - this console
                       moved, and the key answers only there. Add it again and remove this one.
                     </span>
                   ) : null}

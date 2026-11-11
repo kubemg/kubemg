@@ -64,7 +64,7 @@ export function ClusterManagement() {
     const confirmed = await confirm({
       eyebrow: 'Cluster',
       title: `Remove ${cluster.name}?`,
-      body: 'Its grants, its datasources and its console links go with it. Kubeconfigs already issued keep working until they expire — revoke them from Issued credentials if that is not what you want.',
+      body: 'Its grants, its datasources and its console links go with it. Kubeconfigs already issued keep working until they expire - revoke them from Issued credentials if that is not what you want.',
       confirmLabel: 'Remove',
     })
     if (!confirmed) return
@@ -247,7 +247,7 @@ export function ClusterManagement() {
                     </span>
                   </Td>
                   <Td className="hidden truncate font-data text-[12.5px] text-muted md:table-cell">
-                    {cluster.kubernetes_version ?? '—'}
+                    {cluster.kubernetes_version ?? '-'}
                   </Td>
                   <Td>
                     <div className="flex items-center justify-end gap-0.5">

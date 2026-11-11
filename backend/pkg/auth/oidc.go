@@ -241,7 +241,7 @@ func CheckOIDC(ctx context.Context, config *db.SSOProviderConfig) (string, error
 			if config.Vendor == db.VendorOkta {
 				return "", fmt.Errorf(
 					"this authorization server does not offer the scope %q, and Okta refuses every sign-in "+
-						"that asks for it — remove it from Scopes (a custom server carries groups as a claim, not a scope) "+
+						"that asks for it - remove it from Scopes (a custom server carries groups as a claim, not a scope) "+
 						"or add the scope to the server", list,
 				)
 			}

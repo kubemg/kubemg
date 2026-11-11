@@ -44,7 +44,7 @@ const docsURL = "https://kubemg.readthedocs.io/en/latest/access/cli/"
 // so kubectl is never handed one that dies mid-request.
 const refreshAhead = 60 * time.Second
 
-const usage = `kubemg — sign in to kubemg and give kubectl short-lived access.
+const usage = `kubemg - sign in to kubemg and give kubectl short-lived access.
 
 Usage:
   kubemg login --server URL [--ca-file FILE] [--no-browser]
@@ -63,7 +63,7 @@ The first login to a server whose certificate this system does not trust shows
 its SHA-256 fingerprint and asks before trusting it; --ca-file trusts a CA
 without asking. Verification is never turned off.
 
-KUBEMG_TOKEN, set to a machine account token, stands in for a session — the
+KUBEMG_TOKEN, set to a machine account token, stands in for a session - the
 CI path. KUBEMG_SERVER names the server when --server is not given.
 `
 
@@ -196,22 +196,22 @@ func (a *app) resolveServer(flagValue string) (string, error) {
 	case 1:
 		return sessions[0].Server, nil
 	case 0:
-		return "", usageError("no server given and none signed in — run kubemg login --server URL")
+		return "", usageError("no server given and none signed in - run kubemg login --server URL")
 	}
-	return "", usageError("signed in to more than one server — say which with --server")
+	return "", usageError("signed in to more than one server - say which with --server")
 }
 
 // session loads a live session for a server, or says to sign in.
 func (a *app) session(server string) (store.Session, *client.Client, error) {
 	session, err := a.store.LoadSession(server)
 	if errors.Is(err, store.ErrNoSession) {
-		return store.Session{}, nil, fmt.Errorf("not signed in to %s — run: kubemg login --server %s", server, server)
+		return store.Session{}, nil, fmt.Errorf("not signed in to %s - run: kubemg login --server %s", server, server)
 	}
 	if err != nil {
 		return store.Session{}, nil, err
 	}
 	if !a.now().Before(session.ExpiresAt) {
-		return store.Session{}, nil, fmt.Errorf("the session for %s has ended — run: kubemg login --server %s", server, server)
+		return store.Session{}, nil, fmt.Errorf("the session for %s has ended - run: kubemg login --server %s", server, server)
 	}
 	// The client is built from the stored session's own server, so the refresh
 	// token only ever goes back to where it came from.
@@ -430,7 +430,7 @@ func (a *app) updateKubeconfig(ctx context.Context, args []string) error {
 		return usageError("--ttl applies only with --static")
 	}
 	if *alias != "" && (*all || len(names) != 1) {
-		return usageError("--alias names one context — give exactly one cluster")
+		return usageError("--alias names one context - give exactly one cluster")
 	}
 	resolved, err := a.resolveServer(*server)
 	if err != nil {
@@ -545,7 +545,7 @@ func (a *app) selectClusters(list []client.Cluster, names []string, all bool, se
 				return cl.Name == name || strconv.FormatUint(uint64(cl.ID), 10) == name
 			})
 			if idx < 0 {
-				return nil, fmt.Errorf("no cluster %q that %s can reach — kubemg clusters lists them", name, username)
+				return nil, fmt.Errorf("no cluster %q that %s can reach - kubemg clusters lists them", name, username)
 			}
 			cluster := list[idx]
 			if cluster.Server == "" {
@@ -571,11 +571,11 @@ func (a *app) selectClusters(list []client.Cluster, names []string, all bool, se
 	}
 	for _, cluster := range list {
 		if cluster.Server == "" {
-			fmt.Fprintf(table, "  \t%s\t%s\t\t%s\n", cluster.Name, cluster.Environment, "not through the CLI — "+directNote(cluster))
+			fmt.Fprintf(table, "  \t%s\t%s\t\t%s\n", cluster.Name, cluster.Environment, "not through the CLI - "+directNote(cluster))
 		}
 	}
 	_ = table.Flush()
-	answer, err := a.ask("\nAdd which? Numbers like 1,3 — or all. Enter adds none: ")
+	answer, err := a.ask("\nAdd which? Numbers like 1,3 - or all. Enter adds none: ")
 	if err != nil {
 		return nil, err
 	}
@@ -660,7 +660,7 @@ func (a *app) addCluster(
 		); err != nil {
 			return "", "", err
 		}
-		return contextName, fmt.Sprintf("Wrote a static kubeconfig for %s to %s — its token works until %s, whatever happens to this session.",
+		return contextName, fmt.Sprintf("Wrote a static kubeconfig for %s to %s - its token works until %s, whatever happens to this session.",
 			cluster.Name, file.Path(), rendered.ExpiresAt.Local().Format("Mon 2 Jan 15:04")), nil
 	}
 
@@ -850,7 +850,7 @@ func (a *app) printCredential(token string, expiresAt time.Time) error {
 // explain turns an ended session into the one instruction that fixes it.
 func (a *app) explain(server string, err error) error {
 	if errors.Is(err, client.ErrSessionEnded) {
-		return fmt.Errorf("%w — run: kubemg login --server %s", err, server)
+		return fmt.Errorf("%w - run: kubemg login --server %s", err, server)
 	}
 	return err
 }

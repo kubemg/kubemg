@@ -58,7 +58,7 @@ const RAIL_SEAL: Record<LinkState, string> = {
 }
 
 const READING: Record<LinkState, string> = {
-  live: 'Agent tunnel open — traffic flows cluster to kubemg',
+  live: 'Agent tunnel open - traffic flows cluster to kubemg',
   direct: 'kubemg dials this cluster directly',
   down: 'No link to this cluster',
   idle: 'Waiting for the cluster to dial in',

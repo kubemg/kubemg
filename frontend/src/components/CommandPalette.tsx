@@ -31,7 +31,7 @@ function clusterViewTargets(cluster: Cluster): CommandTarget[] {
   const views: CommandTarget[] = [
     {
       id: `cluster-${cluster.id}-dashboard`,
-      label: `${cluster.name} — Dashboard`,
+      label: `${cluster.name} - Dashboard`,
       hint: 'Cluster · Dashboard',
       to: clusterPageHref(cluster.id, 'dashboard'),
       cluster,
@@ -41,7 +41,7 @@ function clusterViewTargets(cluster: Cluster): CommandTarget[] {
     for (const kind of ['pods', 'deployments'] as const) {
       views.push({
         id: `cluster-${cluster.id}-${kind}`,
-        label: `${cluster.name} — ${kind === 'pods' ? 'Pods' : 'Deployments'}`,
+        label: `${cluster.name} - ${kind === 'pods' ? 'Pods' : 'Deployments'}`,
         hint: `Cluster · ${kind === 'pods' ? 'Pods' : 'Deployments'}`,
         to: resourceHref(cluster.id, kind),
         cluster,
@@ -52,42 +52,42 @@ function clusterViewTargets(cluster: Cluster): CommandTarget[] {
     // nothing schedule".
     views.push({
       id: `cluster-${cluster.id}-events`,
-      label: `${cluster.name} — Events`,
+      label: `${cluster.name} - Events`,
       hint: 'Cluster · Events',
       to: clusterPageHref(cluster.id, 'events'),
       cluster,
     })
     views.push({
       id: `cluster-${cluster.id}-alerts`,
-      label: `${cluster.name} — Alerts`,
+      label: `${cluster.name} - Alerts`,
       hint: 'Cluster · Alerts',
       to: clusterPageHref(cluster.id, 'alerts'),
       cluster,
     })
     views.push({
       id: `cluster-${cluster.id}-capacity`,
-      label: `${cluster.name} — Capacity`,
+      label: `${cluster.name} - Capacity`,
       hint: 'Cluster · Capacity',
       to: clusterPageHref(cluster.id, 'capacity'),
       cluster,
     })
     views.push({
       id: `cluster-${cluster.id}-waste`,
-      label: `${cluster.name} — Cost & waste`,
+      label: `${cluster.name} - Cost & waste`,
       hint: 'Cluster · Cost & waste',
       to: clusterPageHref(cluster.id, 'waste'),
       cluster,
     })
     views.push({
       id: `cluster-${cluster.id}-gitops`,
-      label: `${cluster.name} — GitOps`,
+      label: `${cluster.name} - GitOps`,
       hint: 'Cluster · GitOps sync state',
       to: clusterPageHref(cluster.id, 'gitops'),
       cluster,
     })
     views.push({
       id: `cluster-${cluster.id}-security`,
-      label: `${cluster.name} — Security posture`,
+      label: `${cluster.name} - Security posture`,
       hint: 'Cluster · Security posture',
       to: clusterPageHref(cluster.id, 'security'),
       cluster,
@@ -95,7 +95,7 @@ function clusterViewTargets(cluster: Cluster): CommandTarget[] {
   }
   views.push({
     id: `cluster-${cluster.id}-audit`,
-    label: `${cluster.name} — Audit trail`,
+    label: `${cluster.name} - Audit trail`,
     hint: 'Cluster · Audit trail',
     to: clusterPageHref(cluster.id, 'audit'),
     cluster,
@@ -248,7 +248,7 @@ export function CommandPalette({
             const active = index === cursor
             // A cluster's own view is labelled "name — View": the name is an
             // identifier and set as data, the view is a word and is not.
-            const [name, view] = target.cluster ? target.label.split(' — ') : [target.label]
+            const [name, view] = target.cluster ? target.label.split(' - ') : [target.label]
             return (
               <li key={target.id} role="presentation">
                 <button
@@ -279,7 +279,7 @@ export function CommandPalette({
                           <span className="font-data" translate="no">
                             {name}
                           </span>
-                          {view ? ` — ${view}` : null}
+                          {view ? ` - ${view}` : null}
                         </>
                       ) : (
                         target.label

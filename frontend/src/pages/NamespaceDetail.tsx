@@ -305,7 +305,7 @@ function NamespaceIdentity({ entry, loading }: { entry?: Namespace; loading: boo
       <StatTile
         icon={CalendarClock}
         label="Created"
-        value={entry.created_at ? <Age iso={entry.created_at} /> : '—'}
+        value={entry.created_at ? <Age iso={entry.created_at} /> : '-'}
         dim={!entry.created_at}
       />
     </div>

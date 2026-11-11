@@ -71,14 +71,14 @@ func (s *server) changePassword(c *gin.Context) {
 
 	if caller.IsMachine() {
 		c.JSON(http.StatusConflict, gin.H{
-			"error": "a machine account has no password — rotate its token instead",
+			"error": "a machine account has no password - rotate its token instead",
 		})
 		return
 	}
 	if caller.IsFederated() {
 		c.JSON(http.StatusConflict, gin.H{
 			"error": "this account signs in through an identity provider, so its password " +
-				"is not held here — change it with your provider",
+				"is not held here - change it with your provider",
 		})
 		return
 	}

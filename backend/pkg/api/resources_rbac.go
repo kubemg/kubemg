@@ -554,7 +554,7 @@ func (s *server) accessReview(c *gin.Context) {
 	subject := strings.TrimSpace(payload.Subject)
 	if !validRBACName(subject) {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "name the identity to ask about — a user, a group, or " +
+			"error": "name the identity to ask about - a user, a group, or " +
 				"system:serviceaccount:<namespace>:<name>",
 		})
 		return

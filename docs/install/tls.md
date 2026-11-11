@@ -53,8 +53,8 @@ Every agent package pins the minted certificate, so losing it makes every instal
 | `KUBEMG_TLS_SUPPLIED_DIR` | `/etc/kubemg/ssl` | Checked first. A recognised pair here wins even over an already-minted pair. |
 | `KUBEMG_TLS_CERT_FILE` / `KUBEMG_TLS_KEY_FILE` | `/etc/kubemg/tls/tls.crt` / `tls.key` | Where the minted self-signed pair lives. |
 | `KUBEMG_TLS_SELF_SIGNED` | `true` | Mint a self-signed pair when none exists. `false` refuses to start instead. |
-| `KUBEMG_TLS_HOSTS` | — (comma-separated) | Extra SANs for a **minted** certificate, beyond the public URL's host and loopback (`localhost`, `127.0.0.1`, `::1`), which are always included. Every name `kubectl`, the console or an agent dials must be covered. |
-| `KUBEMG_AGENT_CA_BUNDLE` | — | The chain **agents** must trust to dial this server. See [Agent trust](#agent-trust-the-agent_ca_bundle). Read even when `KUBEMG_TLS_ENABLED=false`. |
+| `KUBEMG_TLS_HOSTS` | - (comma-separated) | Extra SANs for a **minted** certificate, beyond the public URL's host and loopback (`localhost`, `127.0.0.1`, `::1`), which are always included. Every name `kubectl`, the console or an agent dials must be covered. |
+| `KUBEMG_AGENT_CA_BUNDLE` | - | The chain **agents** must trust to dial this server. See [Agent trust](#agent-trust-the-agent_ca_bundle). Read even when `KUBEMG_TLS_ENABLED=false`. |
 | `KUBEMG_ALLOW_INSECURE` | `false` | Allow plaintext HTTP on a non-loopback address. Only for use behind a TLS-terminating proxy. |
 
 ## Exact file formats
@@ -124,12 +124,12 @@ Only these two pairs are recognised, in this order:
     ```
 
     `./ssl` is a plain bind mount so dropping a file in from the host is a
-    `cp` and a restart — see [Docker Compose](docker-compose.md#using-a-real-certificate).
+    `cp` and a restart - see [Docker Compose](docker-compose.md#using-a-real-certificate).
 
 === "Kubernetes"
 
     The Helm chart mounts the minted pair's working copy on a memory-backed
-    `emptyDir` — there is no volume for it, because the database holds the
+    `emptyDir` - there is no volume for it, because the database holds the
     copy that matters. Your own certificate is a `kubernetes.io/tls` Secret
     (cert-manager's output fits as-is), named in `tls.existingSecret` and
     mounted read-only at `/etc/kubemg/ssl`:
@@ -219,5 +219,5 @@ The agent logs `dial bastion: x509: certificate signed by unknown authority`. Ca
 ## Next
 
 - [Environment reference](environment.md)
-- [Kubernetes](kubernetes.md) — ingress and passthrough in context
-- [Docker Compose](docker-compose.md) — the `ssl/` directory in context
+- [Kubernetes](kubernetes.md) - ingress and passthrough in context
+- [Docker Compose](docker-compose.md) - the `ssl/` directory in context
