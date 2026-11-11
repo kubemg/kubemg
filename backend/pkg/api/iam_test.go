@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/kubemg/kubemg/backend/pkg/auth"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
@@ -206,6 +208,44 @@ func TestUpdateUserCannotChangeOwnSystemRole(t *testing.T) {
 		map[string]any{"system_role": db.SystemRoleUser})
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected status %d, got %d (%s)", http.StatusForbidden, rec.Code, rec.Body.String())
+	}
+}
+
+// An administrator's own password changes only on their own route, with the
+// current password: a stolen admin session must not set a new one here and
+// lock the owner out. Somebody else's is still set here.
+func TestUpdateUserRefusesYourOwnPassword(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	other := env.store.addUser("devops", "pw", db.RoleUser)
+
+	rec := env.do(t, http.MethodPut, "/api/v1/users/"+itoa(admin.ID), env.tokenFor(t, admin),
+		map[string]any{"password": "a-new-password"})
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "current password") {
+		t.Fatalf("own password: want 403 naming the current password, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	stored, err := env.store.UserByUsername(context.Background(), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !auth.CheckPassword(stored.PasswordHash, "pw") {
+		t.Fatal("the refused request changed the password anyway")
+	}
+
+	rec = env.do(t, http.MethodPut, "/api/v1/users/"+itoa(other.ID), env.tokenFor(t, admin),
+		map[string]any{"password": "a-new-password"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("somebody else's password: want 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// The seeded administrator still holds its original password, but setup is
+	// complete: the exception the wizard uses is closed.
+	env.store.settings[db.SettingBootstrapAdminID] = itoa(admin.ID)
+	env.store.settings[db.SettingSetupCompletedAt] = "2026-01-01T00:00:00Z"
+	rec = env.do(t, http.MethodPut, "/api/v1/users/"+itoa(admin.ID), env.tokenFor(t, admin),
+		map[string]any{"password": "a-new-password"})
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("seeded password after setup: want 403, got %d (%s)", rec.Code, rec.Body.String())
 	}
 }
 
@@ -659,5 +699,35 @@ func TestAssignPermissionRefusesANamespaceThatIsNotOne(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("%q: want 400, got %d (%s)", namespace, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+// A Slack member ID is linked by an administrator, checked for shape, and held
+// by one account at most; "" unlinks it.
+func TestLinkingASlackMemberToAnAccount(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	ada := env.store.addUser("ada", "pw", db.RoleAdmin)
+	bob := env.store.addUser("bob", "pw", db.RoleUser)
+	token := env.tokenFor(t, admin)
+	put := func(user *db.User, id string) *httptest.ResponseRecorder {
+		return env.do(t, http.MethodPut, "/api/v1/users/"+itoa(user.ID), token, map[string]any{"slack_user_id": id})
+	}
+
+	if rec := put(ada, "@ada"); rec.Code != http.StatusBadRequest {
+		t.Fatalf("a handle instead of a member ID: want 400, got %d", rec.Code)
+	}
+	if rec := put(ada, "u0ada1"); rec.Code != http.StatusOK || ada.SlackUserID != "U0ADA1" {
+		t.Fatalf("link: %d %q", rec.Code, ada.SlackUserID)
+	}
+	if rec := put(bob, "U0ADA1"); rec.Code != http.StatusConflict {
+		t.Fatalf("the same member on a second account: want 409, got %d", rec.Code)
+	}
+	if rec := put(ada, ""); rec.Code != http.StatusOK || ada.SlackUserID != "" {
+		t.Fatalf("unlink: %d %q", rec.Code, ada.SlackUserID)
+	}
+	if rec := env.do(t, http.MethodPut, "/api/v1/users/"+itoa(admin.ID), env.tokenFor(t, bob),
+		map[string]any{"slack_user_id": "U0BOB"}); rec.Code != http.StatusForbidden {
+		t.Fatalf("a non-admin linking: want 403, got %d", rec.Code)
 	}
 }

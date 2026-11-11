@@ -41,10 +41,10 @@ const RESOURCE_SPANS = [
 
 /** cellTitle says what a cell measures in units, for the pointer and the screen reader. */
 function cellTitle(node: NodeCapacity, column: HeatColumn, value: number | null): string {
-  const subject = `${node.name} — ${column.resource} ${column.label.toLowerCase()}`
+  const subject = `${node.name} - ${column.resource} ${column.label.toLowerCase()}`
   if (value === null) {
     return column.usage
-      ? `${subject}: not measured — the Metrics API has no reading for this node`
+      ? `${subject}: not measured - the Metrics API has no reading for this node`
       : `${subject}: the node reports no allocatable capacity`
   }
   if (column.key === 'pods') {
@@ -191,7 +191,7 @@ export function CapacityHeatmap({
                             ? 'not ready'
                             : !node.schedulable
                               ? 'cordoned'
-                              : 'tainted — ordinary pods not placed'}
+                              : 'tainted - ordinary pods not placed'}
                         </span>
                       ) : null}
                     </th>
@@ -204,7 +204,7 @@ export function CapacityHeatmap({
                           className={`px-2 py-1.5 text-right font-data text-fg tabular-nums ${LEVEL_CLASS[heatLevel(value, column)]}`}
                         >
                           {value === null ? (
-                            <span className="text-faint">—</span>
+                            <span className="text-faint">-</span>
                           ) : (
                             PERCENT.format(value / 100)
                           )}
@@ -233,7 +233,7 @@ export function CapacityHeatmap({
           the line it stands for, but the line need not be read every visit. */}
       <div
         className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-muted"
-        title="Warning lines: reserved and slots 90%, memory in use 90%, CPU limits 200%, memory limits 100%. CPU in use has none — every pod still gets the CPU it requested."
+        title="Warning lines: reserved and slots 90%, memory in use 90%, CPU limits 200%, memory limits 100%. CPU in use has none - every pod still gets the CPU it requested."
       >
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden="true" className="inline-flex overflow-hidden rounded-chip border border-line-soft">

@@ -149,7 +149,7 @@ func TestNormalizeShortName(t *testing.T) {
 		{"digits are kept", "1234", "1234"},
 		// The one thing it cannot do is invent characters, and empty means "no
 		// chip was chosen" rather than "a blank chip was".
-		{"nothing usable reads as no choice", "—/—", ""},
+		{"nothing usable reads as no choice", "-/-", ""},
 		{"empty stays empty", "", ""},
 	}
 

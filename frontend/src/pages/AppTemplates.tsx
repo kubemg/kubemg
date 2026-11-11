@@ -148,7 +148,7 @@ export function AppTemplates() {
                       </button>
                     </Td>
                     <Td className="hidden truncate text-[12.5px] text-muted md:table-cell">
-                      {template.description ?? '—'}
+                      {template.description ?? '-'}
                     </Td>
                     <Td className="font-data text-[12.5px] text-muted">{template.parameters.length}</Td>
                     <Td className="text-[12.5px] text-muted"><Age iso={template.updated_at} /></Td>
@@ -180,7 +180,7 @@ export function AppTemplates() {
           {!loading && templates.length === 0 ? (
             <EmptyState icon={<LayoutTemplate aria-hidden="true" className="size-5" />} title="No templates yet">
               Add one from scratch, or open an object already in a cluster and save its manifest as a
-              template — that is the path most templates here come from.
+              template - that is the path most templates here come from.
             </EmptyState>
           ) : null}
         </div>
@@ -272,7 +272,7 @@ function TemplateEditorSheet({
           error={name && !nameValid ? 'Lowercase letters, digits, dashes and dots.' : undefined}
           hint={
             template
-              ? 'The address this template is stored and rendered from — renaming means writing a new one.'
+              ? 'The address this template is stored and rendered from - renaming means writing a new one.'
               : 'What this template is addressed by when it is rendered.'
           }
         >

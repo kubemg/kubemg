@@ -234,7 +234,7 @@ func (s *server) streamTerminalSession(c *gin.Context) {
 		s.recordRecordingAccess(c, session, verbReplay, http.StatusConflict,
 			"recording is truncated", started)
 		c.JSON(http.StatusConflict, gin.H{
-			"error": "this recording is incomplete — it was cut off before it was finished, " +
+			"error": "this recording is incomplete - it was cut off before it was finished, " +
 				"so what is on disk cannot be authenticated as a whole session.",
 		})
 		return

@@ -113,7 +113,7 @@ export function ReachabilityTab({
               {result.label_source === 'pod template' ? (
                 <p className="text-[12px] text-muted">
                   Read off the pod template. A running pod can carry additional labels a webhook or a
-                  manual change added afterwards — this does not see those.
+                  manual change added afterwards - this does not see those.
                 </p>
               ) : null}
             </div>
@@ -149,7 +149,7 @@ function Direction({
           // The finding the roadmap calls the most useful one: nothing selects
           // this workload, in a namespace where something else is governed —
           // wide open by omission rather than by decision.
-          <Pill tone="bad">Wide open — no policy selects it here</Pill>
+          <Pill tone="bad">Wide open - no policy selects it here</Pill>
         ) : (
           <Pill tone="idle" dot={false}>
             No NetworkPolicy governs this direction in this namespace

@@ -1,8 +1,8 @@
 # REST API
 
 Every authenticated route lives under `/api/v1`. A handful of routes exist
-outside it because they cannot carry a kubemg session — the agent tunnel,
-the installer kubectl fetches, and the health check — and are listed
+outside it because they cannot carry a kubemg session - the agent tunnel,
+the installer kubectl fetches, and the health check - and are listed
 separately at the end.
 
 ## Authentication
@@ -18,21 +18,36 @@ Two credential shapes arrive at the same middleware (`RequireAuth`):
 A third shape, the **`kubemg` CLI's refresh token** (`kmgr_`), is refused by
 `RequireAuth` by name and accepted only on `/auth/cli/{clusters,credential,logout}`,
 which have a middleware of their own. The fifteen-minute token it mints is an
-ordinary `scope: "proxy"` JWT whose `jti` is the CLI session's id — so ending the
+ordinary `scope: "proxy"` JWT whose `jti` is the CLI session's id - so ending the
 session withdraws every token it minted through the same revocation snapshot a
 revoked kubeconfig uses.
 
 A JWT with `scope: "proxy"` (what a generated kubeconfig carries) is confined
-to exactly one route — `/api/v1/clusters/:id/proxy/*path` for the cluster ID
-in its claims — and is refused with `403` anywhere else. See
+to exactly one route - `/api/v1/clusters/:id/proxy/*path` for the cluster ID
+in its claims - and is refused with `403` anywhere else. See
 [How a request flows](request-flow.md).
 
-`?access_token=<ticket>` is accepted **only** on a WebSocket upgrade request
-(the in-browser terminal and the browser shell), because a browser cannot set
-headers when opening a WebSocket. It carries a one-time ticket from
-`POST /auth/ws-ticket`, never a session JWT — a raw JWT there is `401`. On an
-ordinary request it is ignored — a credential in the URL would otherwise end up
+`?access_token=<ticket>` is accepted **only** on a `GET` WebSocket upgrade to
+the two terminal routes (`/clusters/:id/proxy/*path` for the in-browser
+terminal, `/clusters/:id/shell/attach` for the browser shell), because a
+browser cannot set headers when opening a WebSocket. Upgrade headers on any
+other route or method do not make a ticket a credential there. It carries a one-time ticket from
+`POST /auth/ws-ticket`, never a session JWT - a raw JWT there is `401`. On an
+ordinary request it is ignored - a credential in the URL would otherwise end up
 in proxy logs and browser history for no reason, since a header works there.
+
+A `401` that is about the credential itself (no token, an expired or revoked
+one, an account that no longer exists) carries `"code": "session_invalid"`, and
+the console signs out only on that code. Every other `401` (a wrong current
+password, a wrong code for a factor change, a cluster's own refusal passed
+through the tunnel) is an answer about that one request and leaves the session
+alone.
+
+Routes that answer a caller with no session yet (sign-in, the second-factor and
+CLI device steps, SSO, setup state, the chat callback) read at most **1 MiB** of
+body, and must be sent within **30 seconds**. A body past the limit is refused
+before the handler acts on it. The bound is attached per route, so an
+`Authorization` header does not lift it.
 
 ## Error shape
 
@@ -44,17 +59,17 @@ Every error response is a flat JSON object:
 
 There is one deliberate exception on the proxy route: an error the *target
 cluster's* API server returned is forwarded byte for byte, as Kubernetes'
-own `Status` object, not reshaped into kubemg's envelope — see
+own `Status` object, not reshaped into kubemg's envelope - see
 [Troubleshooting](../reference/troubleshooting.md#kubectl-through-the-proxy) for how to
 tell the two apart.
 
-A second: a console session whose password is due — the
-`password_max_age_days` window passed, or an administrator expired it —
+A second: a console session whose password is due - the
+`password_max_age_days` window passed, or an administrator expired it -
 answers `403` with a stable `code` beside the sentence on every route except
 `GET /auth/me` and `POST /auth/password`:
 
 ```json
-{"error": "your password has expired — change it to continue", "code": "password_change_required"}
+{"error": "your password has expired - change it to continue", "code": "password_change_required"}
 ```
 
 Proxy-scoped credentials (kubeconfigs, CLI tokens) and machine tokens are never
@@ -64,14 +79,14 @@ governs.
 
 ## Conventions used in the tables below
 
-- **Admin** — requires `RequireRole("admin")` (a super admin qualifies too).
-- **Narrows** — a non-admin caller is silently restricted to rows tied to
+- **Admin** - requires `RequireRole("admin")` (a super admin qualifies too).
+- **Narrows** - a non-admin caller is silently restricted to rows tied to
   their own identity rather than refused outright; the query parameters
   cannot widen it.
 - Routes under `/clusters/:id/resources`, `/clusters/:id/metrics` and the
   observability query routes are additionally gated on the cluster's own
   grant (a caller with no access to the cluster gets `403` regardless of
-  role), and on agent mode — a direct-mode cluster answers `409` on anything
+  role), and on agent mode - a direct-mode cluster answers `409` on anything
   that needs a tunnel (Explore, exec, logs, port-forward, CRD discovery,
   session recording).
 
@@ -79,20 +94,20 @@ governs.
 
 | Method & path | Auth | Notes |
 | --- | --- | --- |
-| `POST /auth/login` | — | Body `{username, password}`. `200` `{token, expires_at, user}`. `401` on any bad credential (unknown user, wrong password, a federated or machine-account username) — deliberately identical, to prevent username enumeration; a constant-time dummy bcrypt check runs on every failure path. `403` if the account is disabled. `429` with `Retry-After` and `retry_after_seconds` once the account, the account from this address, or the address is throttled ([policy](../access/users-and-groups.md#repeated-failed-passwords-are-slowed-down)); the password is not checked while it is. When a [second factor](../access/mfa.md) is owed, a right password answers `200` with **no token**: `{mfa_required: true, challenge, challenge_expires_at, methods}` for an account holding a factor (`methods` in offer order: `webauthn` when a key bound to the current public URL's host is held, `totp` when an app is, `recovery` when codes are left), `{mfa_enrollment_required: true, challenge, challenge_expires_at, methods}` for one that must hold one and does not (`totp`, plus `webauthn` when this install can use keys). The LDAP route (`POST /auth/sso/providers/:id/login`) answers the same way. |
-| `POST /auth/mfa/verify` | — | Body `{challenge, code}` — a TOTP code or a recovery code — or `{challenge, webauthn: {ceremony, credential}}`, a security key's answer to a ceremony from `POST /auth/mfa/challenge/webauthn` (`credential` is the browser's `PublicKeyCredential` in WebAuthn's JSON form; the ceremony is spent by the attempt, right or wrong; a signature counter that does not advance is refused). `200` is the login shape plus `recovery_codes_remaining` when a recovery code was spent; the token carries `mfa: true`. `401` for a wrong code (the challenge stays usable) or a spent/expired/wrong-purpose challenge; `429` under the login throttle, keyed on the account. A code's TOTP step is accepted once (conditional update), the challenge is spent by one `DELETE … RETURNING`. Audited `mfa-recovery-used` when a recovery code did it. |
-| `POST /auth/mfa/challenge/webauthn`, `POST /auth/mfa/webauthn` | Verify challenge / Session | Opens a security-key ceremony: body `{challenge}` on the first (a sign-in's code step), `{}` on the second (proving a change to the factors). `200` `{ceremony, expires_at, options}` — `options` is `{publicKey: PublicKeyCredentialRequestOptionsJSON}` naming the account's keys for the current host; the ceremony lives 2 minutes. `409` when keys cannot be used here (public URL unset, plain http, an IP address), when the request's `Origin` is not the public URL's, or when no key is registered for the current host. |
+| `POST /auth/login` | - | Body `{username, password}`. `200` `{token, expires_at, user}`. `401` on any bad credential (unknown user, wrong password, a federated or machine-account username) - deliberately identical, to prevent username enumeration; a constant-time dummy bcrypt check runs on every failure path. `403` if the account is disabled. `429` with `Retry-After` and `retry_after_seconds` once the account, the account from this address, or the address is throttled ([policy](../access/users-and-groups.md#repeated-failed-passwords-are-slowed-down)); the password is not checked while it is. When a [second factor](../access/mfa.md) is owed, a right password answers `200` with **no token**: `{mfa_required: true, challenge, challenge_expires_at, methods}` for an account holding a factor (`methods` in offer order: `webauthn` when a key bound to the current public URL's host is held, `totp` when an app is, `recovery` when codes are left), `{mfa_enrollment_required: true, challenge, challenge_expires_at, methods}` for one that must hold one and does not (`totp`, plus `webauthn` when this install can use keys). The LDAP route (`POST /auth/sso/providers/:id/login`) answers the same way. |
+| `POST /auth/mfa/verify` | - | Body `{challenge, code}` - a TOTP code or a recovery code - or `{challenge, webauthn: {ceremony, credential}}`, a security key's answer to a ceremony from `POST /auth/mfa/challenge/webauthn` (`credential` is the browser's `PublicKeyCredential` in WebAuthn's JSON form; the ceremony is spent by the attempt, right or wrong; a signature counter that does not advance is refused). `200` is the login shape plus `recovery_codes_remaining` when a recovery code was spent; the token carries `mfa: true`. `401` for a wrong code (the challenge stays usable) or a spent/expired/wrong-purpose challenge; `429` under the login throttle, keyed on the account. A code's TOTP step is accepted once (conditional update), the challenge is spent by one `DELETE … RETURNING`. Audited `mfa-recovery-used` when a recovery code did it. |
+| `POST /auth/mfa/challenge/webauthn`, `POST /auth/mfa/webauthn` | Verify challenge / Session | Opens a security-key ceremony: body `{challenge}` on the first (a sign-in's code step), `{}` on the second (proving a change to the factors). `200` `{ceremony, expires_at, options}` - `options` is `{publicKey: PublicKeyCredentialRequestOptionsJSON}` naming the account's keys for the current host; the ceremony lives 2 minutes. `409` when keys cannot be used here (public URL unset, plain http, an IP address), when the request's `Origin` is not the public URL's, or when no key is registered for the current host. |
 | `GET /auth/mfa` | Session | `{applies, required, enrolled, factors, recovery_codes_remaining, webauthn: {available, rp_id?, reason?}}`; a key factor carries the `rp_id` it was registered for. `applies: false` for an OIDC/SAML account (the provider's factor) or a machine account. |
 | `POST /auth/mfa/enroll` | Session | Body `{kind?, name?, current_code?, current_webauthn?}`. `kind` `totp` (default) → `{factor_id, kind, secret, otpauth_uri, qr}` (QR as a PNG data URI); `webauthn` → `{factor_id, kind, webauthn: {publicKey: PublicKeyCredentialCreationOptionsJSON}}` (no attestation asked, resident key and user verification discouraged, the account's existing keys excluded); `409` for `webauthn` where keys cannot be used here, checked before any proof is taken. A proof of a current factor (`current_code`, or `current_webauthn: {ceremony, credential}`) is required once a factor exists (`400` without, `401` wrong). Replaces the caller's previous unconfirmed enrolment. `409` where the factor does not apply. |
-| `POST /auth/mfa/enroll/confirm` | Session | Body `{factor_id, code}` for an app, `{factor_id, credential}` for a key (the browser's `PublicKeyCredential` from `navigator.credentials.create`, WebAuthn's JSON form; `409` if the public URL's host changed since the enrolment began or the key is already registered). `200` `{recovery_codes?}` — ten codes, only for the first factor, shown once. `404` for an enrolment not in progress or older than 15 minutes, `401` wrong code. Audited `mfa-enroll`. |
+| `POST /auth/mfa/enroll/confirm` | Session | Body `{factor_id, code}` for an app, `{factor_id, credential}` for a key (the browser's `PublicKeyCredential` from `navigator.credentials.create`, WebAuthn's JSON form; `409` if the public URL's host changed since the enrolment began or the key is already registered). `200` `{recovery_codes?}` - ten codes, only for the first factor, shown once. `404` for an enrolment not in progress or older than 15 minutes, `401` wrong code. Audited `mfa-enroll`. |
 | `POST /auth/mfa/challenge/enroll`, `POST /auth/mfa/challenge/enroll/confirm` | Enrolment challenge | The same two calls with `challenge` in the body, for a sign-in that cannot finish without a factor; confirm also answers `session`. Throttled like the code step. |
 | `DELETE /auth/mfa/factors/:id` | Session | Body `{code}` or `{webauthn: {ceremony, credential}}`. `409` for the last factor while `mfa_enforcement` covers the account; removing the last factor also removes the recovery codes. Audited `mfa-remove` (never suppressed). |
 | `POST /auth/mfa/recovery-codes` | Session | Body `{code}` or `{webauthn}` → `{recovery_codes}`; the old set stops working in the same transaction. `409` with no factor. Audited `mfa-recovery-regenerate`. |
-| `PATCH /auth/me` | Session | Body `{email?}`. Edits the **caller's own** account — only the email (trimmed; `""` clears it). The username is deliberately not self-served: it is the impersonated identity and every audit record's name. `400` for an invalid address (the same rule `PUT /users/:id` applies), `409` for a federated account (its details are the directory's and are written back at sign-in) or a machine account. An unchanged value is answered with the account and not written. Audited as `profile-update`. |
+| `PATCH /auth/me` | Session | Body `{email?}`. Edits the **caller's own** account - only the email (trimmed; `""` clears it). The username is deliberately not self-served: it is the impersonated identity and every audit record's name. `400` for an invalid address (the same rule `PUT /users/:id` applies), `409` for a federated account (its details are the directory's and are written back at sign-in) or a machine account. An unchanged value is answered with the account and not written. Audited as `profile-update`. |
 | `POST /auth/password` | Session | Body `{current_password, new_password, revoke_kubeconfigs?}`. Rotates the **caller's own** password; the current one is required, so a stolen session cannot lock the owner out. `400` if the new password is under 8 characters or is the current one, `401` if the current password is wrong (throttled like a sign-in: `429` once locked), `409` for a federated account (its password lives with the provider) or a machine account (it has none). `revoke_kubeconfigs: true` also runs the register's blanket revoke for the account and returns its summary under `credentials`. Audited as `password-change`. |
-| `POST /auth/ws-ticket` | Session | Returns `{ticket}`: a single-use credential for the next WebSocket upgrade's `?access_token=`, valid 20 seconds, redeemable on any replica. |
+| `POST /auth/ws-ticket` | Session | Returns `{ticket}`: a single-use credential for the next terminal WebSocket upgrade's `?access_token=`, valid 20 seconds, redeemable on any replica. |
 | `GET /auth/me` | Session | Current `user` object. `401` invalid/expired/deleted account, `403` disabled. |
-| `GET /version` | Session | `{version, docs_url}` — the release this process was built as, and the manual for it. Behind a session on purpose: an exact version is what an unauthenticated scanner needs to match a published advisory against the install. A build with no version stamped answers `"unknown"`. |
+| `GET /version` | Session | `{version, docs_url}` - the release this process was built as, and the manual for it. Behind a session on purpose: an exact version is what an unauthenticated scanner needs to match a published advisory against the install. A build with no version stamped answers `"unknown"`. |
 
 ```bash
 curl -sk https://localhost:8443/api/v1/auth/login \
@@ -104,28 +119,28 @@ curl -sk https://localhost:8443/api/v1/auth/login \
 
 | Method & path | Auth | Notes |
 | --- | --- | --- |
-| `GET /setup/state` | — | `{required: bool}`. Unauthenticated by necessity — the sign-in page needs this before anyone has a session. |
-| `GET /setup/preflight` | Admin | `{admin_password_pristine, checks[], warnings[]}` — the setup wizard's own checklist. |
+| `GET /setup/state` | - | `{required: bool}`. Unauthenticated by necessity - the sign-in page needs this before anyone has a session. |
+| `GET /setup/preflight` | Admin | `{admin_password_pristine, checks[], warnings[]}` - the setup wizard's own checklist. |
 | `POST /setup/complete` | Admin | `200 {required:false}` if already done (idempotent). `409` if the bootstrap admin account still holds its seeded password. |
 
 ## Federated sign-in (SSO)
 
-All unauthenticated by necessity — nobody has a session yet.
+All unauthenticated by necessity - nobody has a session yet.
 
 | Method & path | Notes |
 | --- | --- |
 | `GET /auth/sso/providers` | `{providers:[{id,name,protocol,interactive}]}`. Disabled providers are omitted entirely. |
-| `GET /auth/sso/providers/:id/login` | Redirects (`302`) to the IdP. `400` for a non-interactive protocol (LDAP) or a bad `redirect_uri`. |
-| `POST /auth/sso/providers/:id/login` | LDAP only — posts `{username,password}` straight to the directory. `401` bad credentials, `502` directory unreachable, `429` once throttled (counted per provider, apart from the local form). |
-| `GET`/`POST /auth/sso/providers/:id/callback` | OIDC returns as a `GET` with a code; SAML posts an assertion. On success, `302`-redirects to the console with the token in the URL **fragment** (`#token=...&expires_at=...`), never the query string. |
-| `GET /auth/sso/providers/:id/metadata` | SAML only — the SP metadata document, `application/samlmetadata+xml`. |
+| `GET /auth/sso/providers/:id/login` | Redirects (`302`) to the IdP. `400` for a non-interactive protocol (LDAP), a bad `redirect_uri` or a `binding` that is not a 16–128 character URL-safe token. `binding` is the console's per-tab value, handed back on the callback. At most 100 waiting sign-ins per address (IPv6 by /64) and 10,000 in all; past either, the oldest waiting flow is dropped, not the new one refused. |
+| `POST /auth/sso/providers/:id/login` | LDAP only - posts `{username,password}` straight to the directory. `401` bad credentials, `502` directory unreachable, `429` once throttled (counted per provider, apart from the local form). |
+| `GET`/`POST /auth/sso/providers/:id/callback` | OIDC returns as a `GET` with a code; SAML posts an assertion. On success, `302`-redirects to the console with the token in the URL **fragment** (`#token=...&expires_at=...&binding=...`), never the query string. The console takes the token only when `binding` is the value its tab sent. A SAML assertion must answer the AuthnRequest the flow sent (`InResponseTo`). |
+| `GET /auth/sso/providers/:id/metadata` | SAML only - the SP metadata document, `application/samlmetadata+xml`. |
 
 ### SSO administration
 
 | Method & path | Auth | Notes |
 | --- | --- | --- |
 | `GET /admin/sso/providers` | Admin | Full config, including `has_client_secret`/`has_bind_password` rather than the secrets themselves, plus computed `redirect_url`/`entity_id`/`metadata_url`. |
-| `POST /admin/sso/providers` | Admin | `409` on a name conflict. `vendor` is absent or `okta`; Okta is refused over LDAP, and its issuer/metadata URL is refused when it is the `-admin` console host, an endpoint rather than an issuer (path other than empty or `/oauth2/{id}`), or not `https` — `400` naming the URL to use. |
+| `POST /admin/sso/providers` | Admin | `409` on a name conflict. `vendor` is absent or `okta`; Okta is refused over LDAP, and its issuer/metadata URL is refused when it is the `-admin` console host, an endpoint rather than an issuer (path other than empty or `/oauth2/{id}`), or not `https` - `400` naming the URL to use. |
 | `PUT /admin/sso/providers/:id` | Admin | `404` if not found. |
 | `DELETE /admin/sso/providers/:id` | Admin | `204`. Accounts already provisioned through this IdP are not removed. |
 | `POST /admin/sso/providers/:id/check` | Admin | Live probe against the IdP (OIDC discovery, SAML metadata, or an LDAP bind); records health. A configured scope the discovery document's `scopes_supported` omits fails an Okta provider and is a note on any other. |
@@ -139,25 +154,25 @@ All unauthenticated by necessity — nobody has a session yet.
 | Method & path | Auth | Notes |
 | --- | --- | --- |
 | `GET /clusters` | Session | Clusters the caller may access; role/namespaces narrowed per grant unless admin. |
-| `POST /clusters` | Admin | Body `{name, environment, description?, connection_mode?, api_url, ca_cert_data, service_account_token}` — direct mode requires `api_url`+token; agent mode mints a registration token instead. `409` name conflict. |
+| `POST /clusters` | Admin | Body `{name, environment, description?, connection_mode?, api_url, ca_cert_data, service_account_token}` - direct mode requires `api_url`+token; agent mode mints a registration token instead. `409` name conflict. |
 | `GET /clusters/:id` | Session | `404` if not found or not granted. Includes `agent_attached` (live tunnel state). |
 | `DELETE /clusters/:id` | Admin | `204`. |
-| `POST /clusters/:id/check` | Admin | Re-probes health — tunnel connectivity in agent mode, a real dial in direct mode. |
+| `POST /clusters/:id/check` | Admin | Re-probes health - tunnel connectivity in agent mode, a real dial in direct mode. |
 | `POST /clusters/:id/kubeconfig/generate` | Session | Body `{ttl_seconds?, namespace?}`. `400` TTL outside the configured policy. `409` on an agent-mode cluster while `kubeconfig_issuance` is `cli_only`. `424` if the server has no token minter/proxy/public URL configured for the mode in play. Response carries `warning` for a shortened direct-mode TTL (the cluster's own SA token cap) or a non-HTTPS public URL. |
-| `GET /kubeconfig/policy` | Session | `{min_ttl_seconds, default_ttl_seconds, max_ttl_seconds, issuance, cli_session_max_hours, server_url, tls_fingerprints}` — server-wide, not per cluster. `cli_session_max_hours` is already clamped to the kubeconfig ceiling; `server_url` is what `kubemg login --server` takes; `tls_fingerprints` are the SHA-256s (upper-case, colon-separated) of the certificate kubemg pins into agent installs — what a first `kubemg login` shows before trusting it — and `[]` when the certificate is publicly trusted. |
-| `POST /auth/cli/device` | — | Body `{client_name?, client_host?, client_os?, client_version?}` (printable, bounded). RFC 8628: `{device_code (kmgd_…), user_code (XXXX-XXXX, consonants), verification_uri, verification_uri_complete, expires_in: 600, interval: 5}`. `429` once an address holds 10 unanswered requests; `424` with no public URL. |
-| `POST /auth/cli/token` | Device code | Body `{device_code}`. `400` with RFC 8628 `error`: `authorization_pending`, `slow_down` (polled within the interval), `access_denied`, `expired_token` (expired or already spent). On approval `200` `{refresh_token (kmgr_…), session_id, expires_at, user}` — the session is created here, the request spent by one `DELETE … RETURNING`. |
+| `GET /kubeconfig/policy` | Session | `{min_ttl_seconds, default_ttl_seconds, max_ttl_seconds, issuance, cli_session_max_hours, server_url, tls_fingerprints}` - server-wide, not per cluster. `cli_session_max_hours` is already clamped to the kubeconfig ceiling; `server_url` is what `kubemg login --server` takes; `tls_fingerprints` are the SHA-256s (upper-case, colon-separated) of the certificate kubemg pins into agent installs - what a first `kubemg login` shows before trusting it - and `[]` when the certificate is publicly trusted. |
+| `POST /auth/cli/device` | - | Body `{client_name?, client_host?, client_os?, client_version?}` (printable, bounded). RFC 8628: `{device_code (kmgd_…), user_code (XXXX-XXXX, consonants), verification_uri, verification_uri_complete, expires_in: 600, interval: 5}`. `429` once an address holds 10 unanswered requests; `424` with no public URL. |
+| `POST /auth/cli/token` | Device code | Body `{device_code}`. `400` with RFC 8628 `error`: `authorization_pending`, `slow_down` (polled within the interval), `access_denied`, `expired_token` (expired or already spent). On approval `200` `{refresh_token (kmgr_…), session_id, expires_at, user}` - the session is created here, the request spent by one `DELETE … RETURNING`. |
 | `GET /auth/cli/device/:code` | Session | The waiting request for the approval page: client fields, `source_ip`, `same_address` (whether it matches the caller's), `session_hours`. Code read case- and dash-insensitively. `404` unknown or expired. |
 | `POST /auth/cli/device/:code/approve`, `/deny` | Session | `403` approving from a session without the `mfa` claim when the account holds or must hold a factor; `403` for a machine account; `409` already answered. Approval audited `cli-login` with the client fields and source address in the path query. |
-| `GET /downloads/cli` | — | `{available, downloads: [{os, arch, path, size, sha256}], releases_url}` — the CLI binaries the image carries under `KUBEMG_CLI_DIR`. Digests cached by size + mtime. |
-| `GET /downloads/cli/:os/:arch` | — | One binary, `Content-Disposition: attachment`. The path is built from a fixed platform list, never from the request; anything else, or a platform this server does not carry, is `404`. |
+| `GET /downloads/cli` | - | `{available, downloads: [{os, arch, path, size, sha256}], releases_url}` - the CLI binaries the image carries under `KUBEMG_CLI_DIR`. Digests cached by size + mtime. |
+| `GET /downloads/cli/:os/:arch` | - | One binary, `Content-Disposition: attachment`. The path is built from a fixed platform list, never from the request; anything else, or a platform this server does not carry, is `404`. |
 | `GET /auth/cli/clusters` | CLI session | The account's clusters: `{id, name, environment, connection_mode, role, namespaces}`, and for agent mode the server-authored `server`, `context_name`, `ca_data`; direct mode carries a `note`. |
 | `POST /auth/cli/credential` | CLI session | Body `{cluster_id, namespace?, static?, ttl_seconds?}`. Grant and namespace decided as `kubeconfig/generate` decides them (`403`); direct mode `409`. Answers `{token, expires_at}`: a proxy-scoped JWT whose `jti` is the session id, living `min(15m, session remaining)`. `static: true` answers the `kubeconfig/generate` shape with a register row, refused `409` under `cli_only`. |
 | `POST /auth/cli/logout` | CLI session | Ends the session; `204`. |
-| `GET /cli-sessions` | Session | `{sessions, total}`, newest first; `?status=active`, `?user_id=` (narrows only — a non-admin always reads their own). |
+| `GET /cli-sessions` | Session | `{sessions, total}`, newest first; `?status=active`, `?user_id=` (narrows only - a non-admin always reads their own). |
 | `POST /cli-sessions/:id/revoke` | Session | Your own always, somebody else's as an admin; `404` otherwise. Republishes the revocation snapshot before answering, so every token the session minted is refused at its next call. Audited `cli-session-revoke`. |
 | `GET /clusters/:id/kustomize` | Admin | `409` on a direct-mode cluster (nothing to install). `?format=yaml` downloads the flat manifest; otherwise JSON, and **every JSON read mints a fresh single-use download ticket** carried by `manifest_url`/`archive_url`/the commands, with `download_expires_at`. Never rotates the registration token. `Cache-Control: no-store`. |
-| `POST /clusters/:id/agent-token/rotate` | Admin | Replaces the registration token, withdraws every outstanding install ticket for the cluster, and closes the attached tunnel (another replica's within 30s). `409` on a direct-mode cluster. Answers `{install, disconnected}` — `install` is the `kustomize` envelope for the new token. Audited as `agent-token-rotate`; a store failure is audited with its reason and answers `500` with the old token still valid. |
+| `POST /clusters/:id/agent-token/rotate` | Admin | Replaces the registration token, withdraws every outstanding install ticket for the cluster, and closes the attached tunnel (another replica's within 30s). `409` on a direct-mode cluster. Answers `{install, disconnected}` - `install` is the `kustomize` envelope for the new token. Audited as `agent-token-rotate`; a store failure is audited with its reason and answers `500` with the old token still valid. |
 
 ```bash
 curl -sk https://localhost:8443/api/v1/clusters \
@@ -173,17 +188,17 @@ curl -sk -X POST https://localhost:8443/api/v1/clusters/3/kubeconfig/generate \
 | Method & path | Auth | Notes |
 | --- | --- | --- |
 | `GET /clusters/:id/observability` | Session | `{sources, agent_attached, connection_mode, editable}`. Readable by anyone the cluster is granted to. |
-| `PUT /clusters/:id/observability/sources/:kind` | Admin | `kind` is `metrics`, `logs`, `alerts` or `gitops`. A `gitops` source is provider `argocd`, **bearer only** with a token required (`400` otherwise); in-cluster it sends the token as the `argocd.token` cookie — the only header `Proxy.CallWithHeader` lets a caller add — because the API server's authentication consumes `Authorization` before the Service proxy. Its probe needs `userinfo` to say `loggedIn` and the application list to succeed. `409` registering an in-cluster source on a direct-mode cluster. Probes live on save. An `alerts` source takes `rule_labels` (`{key: value}`, Kubernetes label grammar; `app.kubernetes.io/managed-by` and `kubemg.io/*` refused). |
+| `PUT /clusters/:id/observability/sources/:kind` | Admin | `kind` is `metrics`, `logs`, `alerts` or `gitops`. A `gitops` source is provider `argocd`, **bearer only** with a token required (`400` otherwise); in-cluster it sends the token as the `argocd.token` cookie - the only header `Proxy.CallWithHeader` lets a caller add - because the API server's authentication consumes `Authorization` before the Service proxy. Its probe needs `userinfo` to say `loggedIn` and the application list to succeed. `409` registering an in-cluster source on a direct-mode cluster. Probes live on save. An `alerts` source takes `rule_labels` (`{key: value}`, Kubernetes label grammar; `app.kubernetes.io/managed-by` and `kubemg.io/*` refused). |
 | `DELETE /clusters/:id/observability/sources/:kind` | Admin | `204`; `404` no such source. |
-| `POST /clusters/:id/observability/sources/:kind/test` | Admin | Probes a draft nobody has saved yet — what makes the wizard's "check connection" honest. |
+| `POST /clusters/:id/observability/sources/:kind/test` | Admin | Probes a draft nobody has saved yet - what makes the wizard's "check connection" honest. |
 | `POST /clusters/:id/observability/sources/:kind/check` | Admin | Re-probes the stored source and records the verdict. |
 | `GET /clusters/:id/observability/discover` | Admin | Reads Services through the tunnel and offers guessed datasource endpoints, with the path prefixes that are the usual reason a correct address 404s. |
-| `GET /clusters/:id/observability/metrics/query` | Session | Query params `metric, namespace?, pod?, container?, start?/end?/range?` — never a raw query. `404` `unconfigured` if no datasource, `409` disabled, `400` a cluster-wide chart requested by a scoped grant. |
+| `GET /clusters/:id/observability/metrics/query` | Session | Query params `metric, namespace?, pod?, container?, start?/end?/range?` - never a raw query. `404` `unconfigured` if no datasource, `409` disabled, `400` a cluster-wide chart requested by a scoped grant. |
 | `GET /clusters/:id/observability/metrics/compare` | Session | Same as above plus `topk`. |
 | `GET /clusters/:id/observability/logs/query` | Session | Adds `filter, limit`; the filter is quoted as a literal so a caller can search for a quote without it becoming query syntax. |
 | `GET /clusters/:id/observability/alerts` | Session | The Alertmanager's active alerts, narrowed server-side: a scoped grant sees only its namespaces' alerts and never one without a `namespace` label. Optional `namespace, kind, name` narrow to one object (its kube-state-metrics label, `kubemg_kind`/`kubemg_name`, or its pods by name shape). Each alert carries `can_silence`. `404 unconfigured` with no alerts source. |
 | `GET /clusters/:id/observability/silences` | Session | Active and pending silences; a scoped grant sees only those pinned to one of its namespaces by an exact `namespace` matcher. Each carries `can_expire`. |
-| `POST /clusters/:id/observability/silences` | Session | Body `{fingerprint, duration, comment}`; `duration` one of `1h 4h 12h 1d 3d 7d`, `comment` required. Matchers are the alert's own labels, exact — never sent by the caller. `403` without an edit grant over the alert's namespace (unscoped edit for a cluster-level alert); `404` an alert no longer firing or outside the grant. Audited `silence-create`. |
+| `POST /clusters/:id/observability/silences` | Session | Body `{fingerprint, duration, comment}`; `duration` one of `1h 4h 12h 1d 3d 7d`, `comment` required. Matchers are the alert's own labels, exact - never sent by the caller. `403` without an edit grant over the alert's namespace (unscoped edit for a cluster-level alert); `404` an alert no longer firing or outside the grant. Audited `silence-create`. |
 | `DELETE /clusters/:id/observability/silences/:sid` | Session | Ends a silence. Same rule as creating one, against the namespace it is pinned to. Audited `silence-expire`. |
 | `GET /clusters/:id/observability/alerting/rule-selectors` | Admin | Reads the cluster's Prometheus CRs: `match_labels`, whether match `expressions` exist, and `rule_namespaces` (`all`/`own`/`selected`). |
 | `GET /alerting/conditions` | Session | The alarm catalogue: `conditions` by resource key, `durations`, `severities`. |
@@ -192,7 +207,7 @@ curl -sk -X POST https://localhost:8443/api/v1/clusters/3/kubeconfig/generate \
 
 | Method & path | Auth | Notes |
 | --- | --- | --- |
-| `GET /clusters/:id/crd-visibility` | Session | `{hidden:[...], editable}` — readable as widely as the cluster is granted. |
+| `GET /clusters/:id/crd-visibility` | Session | `{hidden:[...], editable}` - readable as widely as the cluster is granted. |
 | `PUT /clusters/:id/crd-visibility` | Admin | Body `{hidden:[]}` of `plural.group` strings, capped at 500 entries, `400` on an invalid entry. Invalidates the cluster's read cache on save. |
 
 ## Consoles
@@ -208,7 +223,7 @@ curl -sk -X POST https://localhost:8443/api/v1/clusters/3/kubeconfig/generate \
 
 ## Helm repositories
 
-Server-wide, not scoped to a cluster — see [Chart
+Server-wide, not scoped to a cluster - see [Chart
 repositories](../clusters/helm.md#chart-repositories).
 
 | Method & path | Auth | Notes |
@@ -234,14 +249,14 @@ fan-out limit) rather than listing the whole cluster.
 | `GET /pods` | |
 | `GET /pods/:pod` | |
 | `GET /pods/:pod/logs` | Query `tail` (1–5000, default 200), `container?`, `previous?`. |
-| `GET /workload/pods` | Resolves a Deployment/StatefulSet/DaemonSet/ReplicaSet/Job to its pods via a **derived** label selector, never a caller-supplied one — capped at 50 pods. |
-| `GET /traffic` | Query `kind` (`ingresses`/`httproutes`/`virtualservices`/`services`, or `namespaces` with `name` = `namespace` for every route in it — `root` empty, up to 25 Services, fails only if none of the three route lists answered), `namespace`, `name`. A route followed to its Services → EndpointSlices → pods (by the Service's own selector) → controlling workload (ReplicaSet → Deployment); a Service followed back to the routes in its namespace that send to it. `{root, nodes[], edges[], notes[]}`; a node is `{id, kind, resource?, api_group?, namespace?, name, column 0–4, detail[], state, problem?, pod?}`, `state` one of `ok`/`warn`/`bad`/`unchecked`/`denied`/`outside`. A hop the cluster refuses is `denied`, one outside the grant is `outside` and **not read**; only the root object's own failure fails the request (cluster's status and words). Never reads a Secret. At most 10 Services followed, 4 pods per workload drawn. `400` for another kind. |
-| `GET /config/entries` | Query `kind` (`configmaps`/`secrets`), `namespace`, `name`. `{kind, type?, immutable, entries[{key, value?, bytes, binary, truncated?}], values_shown}`. A ConfigMap's text values are included (cut at 64 KiB, `truncated`); `binaryData` is a size. A **Secret's entries carry no value** (`values_shown: false`) — key and decoded size only; values come from `GET /secret/value`. `400` for another kind. |
-| `GET /dependencies` | Query `kind` (`deployments`/`statefulsets`/`daemonsets`/`replicasets`/`jobs`/`cronjobs`/`pods`), `namespace`, `name`. Same shape as `/traffic`, `columns` = `Workload`/`Uses`/`Bound volume`: every ConfigMap (read for key names), Secret (**never read** — broken only when a pod's waiting message reports it missing), ServiceAccount, PersistentVolumeClaim (→ PersistentVolume, not read for a scoped grant) the pod template names, edges labelled with the use. Optional references that are absent are `warn`. At most 40 objects; a StatefulSet's claim templates named for the first 4 replicas. `400` for another kind. |
+| `GET /workload/pods` | Resolves a Deployment/StatefulSet/DaemonSet/ReplicaSet/Job to its pods via a **derived** label selector, never a caller-supplied one - capped at 50 pods. |
+| `GET /traffic` | Query `kind` (`ingresses`/`httproutes`/`virtualservices`/`services`, or `namespaces` with `name` = `namespace` for every route in it - `root` empty, up to 25 Services, fails only if none of the three route lists answered), `namespace`, `name`. A route followed to its Services → EndpointSlices → pods (by the Service's own selector) → controlling workload (ReplicaSet → Deployment); a Service followed back to the routes in its namespace that send to it. `{root, nodes[], edges[], notes[]}`; a node is `{id, kind, resource?, api_group?, namespace?, name, column 0–4, detail[], state, problem?, pod?}`, `state` one of `ok`/`warn`/`bad`/`unchecked`/`denied`/`outside`. A hop the cluster refuses is `denied`, one outside the grant is `outside` and **not read**; only the root object's own failure fails the request (cluster's status and words). Never reads a Secret. At most 10 Services followed, 4 pods per workload drawn. `400` for another kind. |
+| `GET /config/entries` | Query `kind` (`configmaps`/`secrets`), `namespace`, `name`. `{kind, type?, immutable, entries[{key, value?, bytes, binary, truncated?}], values_shown}`. A ConfigMap's text values are included (cut at 64 KiB, `truncated`); `binaryData` is a size. A **Secret's entries carry no value** (`values_shown: false`) - key and decoded size only; values come from `GET /secret/value`. `400` for another kind. |
+| `GET /dependencies` | Query `kind` (`deployments`/`statefulsets`/`daemonsets`/`replicasets`/`jobs`/`cronjobs`/`pods`), `namespace`, `name`. Same shape as `/traffic`, `columns` = `Workload`/`Uses`/`Bound volume`: every ConfigMap (read for key names), Secret (**never read** - broken only when a pod's waiting message reports it missing), ServiceAccount, PersistentVolumeClaim (→ PersistentVolume, not read for a scoped grant) the pod template names, edges labelled with the use. Optional references that are absent are `warn`. At most 40 objects; a StatefulSet's claim templates named for the first 4 replicas. `400` for another kind. |
 | `GET /deployments` `/statefulsets` `/daemonsets` | |
 | `GET /jobs` `/cronjobs` | CronJob rows carry `next_schedule_at` or `schedule_error`. |
 | `GET /replicasets` | Carries the **controlling** owner reference and the `deployment.kubernetes.io/revision` annotation. |
-| `GET /horizontalpodautoscalers` | `autoscaling/v2` only — a cluster serving just `v1` answers `available:false`+`reason`. Each declared metric is paired with its own reading by type and name; a metric never scraped reports no current value rather than zero. |
+| `GET /horizontalpodautoscalers` | `autoscaling/v2` only - a cluster serving just `v1` answers `available:false`+`reason`. Each declared metric is paired with its own reading by type and name; a metric never scraped reports no current value rather than zero. |
 | `GET /workload/autoscaler` | Query `kind,name,namespace?` for `deployments`/`statefulsets`/`replicasets`. `{autoscaler: null}` is the ordinary answer, not a miss; `notice` is the sentence the scale control shows. `400` for a kind no HPA can target. |
 | `GET /resourcequotas` `/limitranges` | Quantities carried as the strings the cluster wrote. A quota's `used` is absent until the controller has counted; an undeclared LimitRange bound is absent, not zero. |
 | `GET /poddisruptionbudgets` | `min_available`/`max_unavailable` are IntOrString and kept as written (`2` and `50%` are different budgets). |
@@ -249,39 +264,39 @@ fan-out limit) rather than listing the whole cluster.
 | `GET /networkpolicies` `/networkpolicies/reachability` `/networkpolicies/coverage` | Derived reachability and coverage; carries a disclaimer that it does not model the CNI. |
 | `GET /persistentvolumes` `/persistentvolumeclaims` `/storageclasses` `/configmaps` | |
 | `GET /secrets` | **Keys only. No value ever enters the response.** |
-| `GET /secret/value` | The one exception, and the only route that returns a secret value. Query `name,key,namespace?` — one key of one Secret. Needs `can_reveal_secrets` on the account (grantable only by a super admin) **and** the cluster's own RBAC on the impersonated read. Refused for a `kubernetes.io/service-account-token` and for KubeMG's own agent registration secret. Audited under `secret-reveal` before the value is written, and `auditpolicy` cannot suppress it. Outside the cached group, answered `Cache-Control: no-store`. A value that is not valid UTF-8 comes back `encoded` with `binary:true` rather than as a mangled string. |
+| `GET /secret/value` | The one exception, and the only route that returns a secret value. Query `name,key,namespace?` - one key of one Secret. Needs `can_reveal_secrets` on the account (grantable only by a super admin) **and** the cluster's own RBAC on the impersonated read. Refused for a `kubernetes.io/service-account-token` and for KubeMG's own agent registration secret. Audited under `secret-reveal` before the value is written, and `auditpolicy` cannot suppress it. Outside the cached group, answered `Cache-Control: no-store`. A value that is not valid UTF-8 comes back `encoded` with `binary:true` rather than as a mangled string. |
 | `GET /crds` | Curated by [CRD visibility](#crd-visibility) for a non-admin. |
 | `GET /nodes` | |
 | `GET /roles` `/clusterroles` `/rolebindings` `/clusterrolebindings` `/serviceaccounts` | |
 | `POST /access-review` | Body `{subject, verb, resource, group?, subresource?, name?, namespace?, groups[]}`. Runs a real `SubjectAccessReview` down the tunnel. `403` if the namespace is outside a scoped grant, or the review itself is cluster-wide for a scoped caller. |
 | `GET /access-review/verbs` | Verb catalogue for the form above. |
-| `GET /access-review/identity` | `{subject, groups, k8s_role, namespaces, cluster}` — the caller's actual impersonation identity. |
+| `GET /access-review/identity` | `{subject, groups, k8s_role, namespaces, cluster}` - the caller's actual impersonation identity. |
 | `GET /custom` | Query `group,version,plural,scope?`. Anchored-pattern validated; the **core group is refused** (must contain a dot). A 404 from the cluster answers `available:false`. |
 | `GET /helm/releases` | Deduplicated to the highest revision per release. |
 | `POST /helm/releases` | Installs from a registered [chart repository](../clusters/helm.md#chart-repositories), version resolved against the stored catalogue. `409` if a release of that name already exists. Pre-flight refuses a cluster-scoped object or an out-of-grant namespace before the first write. |
 | `POST /helm/releases/:name/upgrade` | Re-renders and three-way merges onto the live cluster. Objects the previous revision wrote and this one drops are deleted last, never fatally. |
 | `GET /helm/releases/:name/values` | |
-| `PUT /helm/releases/:name/values` | Renders and applies, the same as an upgrade, reading the chart back off the release itself — no repository needs to be reachable. `helmValuesWarning` appears only for a release whose stored object carries no chart, naming that reason. |
+| `PUT /helm/releases/:name/values` | Renders and applies, the same as an upgrade, reading the chart back off the release itself - no repository needs to be reachable. `helmValuesWarning` appears only for a release whose stored object carries no chart, naming that reason. |
 | `GET /helm/releases/:name/history` | Every stored revision, newest first. |
 | `POST /helm/releases/:name/rollback` | Applies the target revision's stored manifest, three-way merged like an upgrade. `404` unknown revision, `409` if it's already current or if the target revision recorded no manifest. |
 | `DELETE /helm/releases/:name` | Deletes every object the current revision's recorded manifest names, in reverse of install order, one impersonated call each; the release's own Secrets go last and only if all of them went, so a partial failure answers `removed:false` and keeps the record. Pre-flight refuses a cluster-scoped object or an out-of-grant namespace, naming it, before the first delete. `409` if the manifest cannot be read. `hook_notice` always: delete hooks are not run, and unrendered objects stay. |
 | `GET /object` | Query `kind,name,namespace?`. |
 | `PUT /object` | Body `{yaml}`. `409` for a kind the editor treats as read-only. Conditional on `resourceVersion`. |
 | `POST /object` | Creates into the collection derived from the manifest's own `apiVersion`+kind. `409` for `notCreatable` kinds (Roles, RoleBindings, ClusterRoles, ClusterRoleBindings, Nodes). `201` on success. |
-| `DELETE /object` | Always `propagationPolicy=Background`. Response says "marked for deletion", not "deleted". No bulk route — a selection is one call per object from the browser. |
+| `DELETE /object` | Always `propagationPolicy=Background`. Response says "marked for deletion", not "deleted". No bulk route - a selection is one call per object from the browser. |
 | `POST /object/diff` | Pre-image vs. a proposed manifest. |
 | `POST /scale` | Body `{kind,name,namespace?,replicas}`. Goes through the `scale` subresource. `409` non-scalable kind, `400` replicas outside `[0,1000]`. |
 | `POST /restart` | Stamps `kubectl.kubernetes.io/restartedAt`. `409` a kind with no pod template. |
 | `POST /suspend` | CronJob only. A request for the state the object is already in is answered without a write. |
-| `POST /cronjob/run` | Body `{name,namespace?}`. Builds a Job from the CronJob's own `spec.jobTemplate` and posts it to the Jobs collection — `generateName`, `cronjob.kubernetes.io/instantiate: manual`, and deliberately **no** `ownerReferences` so the CronJob's history limits cannot reap it. `201` with the name the cluster generated. |
-| `GET /describe` | Metadata, `status.conditions`, a bounded flatten of spec/status, the object's own events (both legacy and `events.k8s.io` shapes), and `managed_by` — what reconciles it (`controller`/`argocd`/`flux`/`helm`, its name, namespace, and `reverts`), absent when nothing does. The workload, Job, CronJob and ReplicaSet list rows carry the same field. |
+| `POST /cronjob/run` | Body `{name,namespace?}`. Builds a Job from the CronJob's own `spec.jobTemplate` and posts it to the Jobs collection - `generateName`, `cronjob.kubernetes.io/instantiate: manual`, and deliberately **no** `ownerReferences` so the CronJob's history limits cannot reap it. `201` with the name the cluster generated. |
+| `GET /describe` | Metadata, `status.conditions`, a bounded flatten of spec/status, the object's own events (both legacy and `events.k8s.io` shapes), and `managed_by` - what reconciles it (`controller`/`argocd`/`flux`/`helm`, its name, namespace, and `reverts`), absent when nothing does. The workload, Job, CronJob and ReplicaSet list rows carry the same field. |
 | `GET /events` | Filters `range/since/until, kind?, name?, type?`. |
 | `GET /posture` | Fixed posture rules per workload; `findings` are never dropped, only acknowledged. |
 | `POST` / `DELETE .../posture/ack` | Requires an edit-or-above grant (`403` for `view`). `reason` is mandatory. Audited. |
 | `GET /counts?keys=a,b,c` | Batched, read at `limit=1` against `remainingItemCount` so cost is flat regardless of cluster size. `400` past 48 keys, or past 96 effective calls once namespaces multiply in. |
 | `GET /alarms` | PrometheusRules labelled `app.kubernetes.io/managed-by=kubemg`, read as the caller (`namespace` / `all_namespaces`, optional `kind, name` for one object). A cluster without the Prometheus operator, or a role refused the read, is `available:false` + `reason`. |
-| `POST /alarms` | Body `{namespace, kind, name, condition, threshold?, for?, severity?, note?}` — a condition from `GET /alerting/conditions`, never an expression. Posted to the namespace's `prometheusrules` as the caller, so the cluster's RBAC decides. Carries the alerts source's `rule_labels`. `409 unconfigured` with no alerts source; `409` + `existing` when that object already has the condition; `409` no operator. |
-| `PUT /alarms` | Body `{namespace, name, threshold?, for?, severity?, note?}` — the object and condition are fixed. Read-modify-write with `resourceVersion`; `409` on a concurrent change. `404` for a rule kubemg did not write. |
+| `POST /alarms` | Body `{namespace, kind, name, condition, threshold?, for?, severity?, note?}` - a condition from `GET /alerting/conditions`, never an expression. Posted to the namespace's `prometheusrules` as the caller, so the cluster's RBAC decides. Carries the alerts source's `rule_labels`. `409 unconfigured` with no alerts source; `409` + `existing` when that object already has the condition; `409` no operator. |
+| `PUT /alarms` | Body `{namespace, name, threshold?, for?, severity?, note?}` - the object and condition are fixed. Read-modify-write with `resourceVersion`; `409` on a concurrent change. `404` for a rule kubemg did not write. |
 | `DELETE /alarms?namespace=&name=` | `204`; `404` for a rule kubemg did not write. |
 
 ```bash
@@ -293,19 +308,19 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 
 | Method & path | Notes |
 | --- | --- |
-| `GET /clusters/:id/metrics/nodes` | Cluster-wide only — refused to a namespace-scoped grant. `404`/`503` from metrics-server answers `available:false`, not an error. |
+| `GET /clusters/:id/metrics/nodes` | Cluster-wide only - refused to a namespace-scoped grant. `404`/`503` from metrics-server answers `available:false`, not an error. |
 | `GET /clusters/:id/metrics/pods` | Scoped like any other list. |
 | `GET /clusters/:id/metrics/pods/:pod` | |
 | `GET /clusters/:id/metrics/capacity` | Allocation (requests/limits) against allocatable, plus usage, per node: taints and `placeable`, `headroom`, `qos`, and `top_borrowers` from the per-pod Metrics API (`pod_usage_available`; a 403 there is reported, not fatal). `summary.placement` is the fragmentation reading. |
-| `GET /clusters/:id/metrics/waste?window=1d\|7d\|14d\|30d` | Reserved and not used. `workloads` (Deployments/StatefulSets/DaemonSets over-requesting by >1.5× the CPU p95 / memory peak from the metrics datasource, with `recommended` requests and `reclaimable`; absent datasource → `workloads_available: false` + `workloads_reason`, not an error), `volumes` (unmounted bound PVCs with StatefulSet attribution, Released/Available PVs — PVs not read for a scoped grant, `volumes_pv_reason`), `load_balancers` (no ready EndpointSlice endpoint; `load_balancers_available` false when the slices are refused). `query` carries the PromQL asked. `reserved` totals every placed pod's requests (the scheduler's sum: sidecars, init peaks, overhead) per namespace and workload — 100 namespaces, 25 workloads each, counts exact, `unscheduled` pods left out — with or without a datasource. With rates set, `cost` `{currency, rates, hours_per_month: 730}` and a `monthly` figure on reserved rows, listed workloads, volumes (storage rate) and load balancers (LB rate), plus `summary.monthly {reclaimable, unused_storage?, idle_load_balancers?, total, unpriced}`; a category without its rate is absent and named in `unpriced`. A rates store error is `cost_reason`, never a failed report. Default window `7d`; anything else 400. Scoped grants read their own namespaces. |
+| `GET /clusters/:id/metrics/waste?window=1d\|7d\|14d\|30d` | Reserved and not used. `workloads` (Deployments/StatefulSets/DaemonSets over-requesting by >1.5× the CPU p95 / memory peak from the metrics datasource, with `recommended` requests and `reclaimable`; absent datasource → `workloads_available: false` + `workloads_reason`, not an error), `volumes` (unmounted bound PVCs with StatefulSet attribution, Released/Available PVs - PVs not read for a scoped grant, `volumes_pv_reason`), `load_balancers` (no ready EndpointSlice endpoint; `load_balancers_available` false when the slices are refused). `query` carries the PromQL asked. `reserved` totals every placed pod's requests (the scheduler's sum: sidecars, init peaks, overhead) per namespace and workload - 100 namespaces, 25 workloads each, counts exact, `unscheduled` pods left out - with or without a datasource. With rates set, `cost` `{currency, rates, hours_per_month: 730}` and a `monthly` figure on reserved rows, listed workloads, volumes (storage rate) and load balancers (LB rate), plus `summary.monthly {reclaimable, unused_storage?, idle_load_balancers?, total, unpriced}`; a category without its rate is absent and named in `unpriced`. A rates store error is `cost_reason`, never a failed report. Default window `7d`; anything else 400. Scoped grants read their own namespaces. |
 
 ## GitOps sync state
 
 | Method & path | Notes |
 | --- | --- |
-| `GET /clusters/:id/gitops/applications` | Argo CD Applications, Flux Kustomizations and Flux HelmReleases in one shape: `{tool, namespace, name, project?, sources[{repo, path?, chart?, target_revision?}], revision?, attempted_revision?, sync: synced\|out_of_sync\|unknown, health, auto_heal: bool\|null, suspended, reconciled_at?, message?, remote?, console_url?, resources[{group, kind, namespace?, name, sync, health?}], resources_hidden, resources_truncated}`. Read as the service identity `kubemg:gitops-reader` (group `kubemg:cluster-admin`, the watchers' posture) and **narrowed server-side**: a scoped grant sees a record only when one of its entries, its own namespace or its destination namespace is in the grant, sees only those entries (`resources_hidden` counts the rest, cluster-scoped entries always hidden), never a `remote` record, and loses `message` when anything was cut; a **view** grant (scoped or not) never sees a core `Secret` entry — counted in `resources_hidden` — because the cluster's view role refuses Secrets. Response structs are allowlists — Helm values, `parameters`, plugin env, `postBuild` and HelmRelease values are never decoded; repository URLs lose their userinfo. `tools[{tool, installed, available, reason?}]`: an absent CRD is `installed: false`, a refused list keeps the cluster's words — neither fails the request. Flux entries are always `sync: unknown`. Out of sync first, then degraded. ≤500 entries per record. `console_url` = `/applications/{namespace}/{name}` (both escaped) on the cluster's `argocd` console row — **never the `gitops` datasource URL** — set on an Argo CD record **after** narrowing, absent with no console row and on Flux; the response's `argocd_console_url` is the row itself. Through `listResponse`. Agent mode only (`409` direct). |
-| `GET /clusters/:id/gitops/object?kind=&namespace=&name=` | The object is read **as the caller** first (the cluster's refusal is the answer); its tracking record is then found from its own `managed_by` — never from the query — by a direct read where the namespace is known (Argo CD's default `argocd` is tried for a tracking id without one), else by listing and preferring the record that lists the object. A tracking value that is not a valid name is refused without a read. A record outside the grant answers **exactly as an absent one** (no oracle), and a refusal of KubeMG's own read is reported generically, never in the cluster's words. `{tracked, managed_by, record (narrowed and linked as above) \| null, entry \| null, reason?, diff?: {available, reason?}}` — `diff` only for an Argo CD record, from the stored `gitops` source (absent, off or a core Secret → `available: false` + reason); Argo CD is not dialled. |
-| `GET /clusters/:id/gitops/diff?kind=&namespace=&name=` | Steps in order, each can end it: grant (namespace / cluster scope); **core `Secret` refused `409` before any read**; the object read **as the caller** (the cluster's refusal is the answer, Argo CD never asked); the record resolved from the object's own `managed_by` exactly as `/object` does — not Argo CD-tracked or not found → `409`; then Argo CD's `GET /api/v1/applications/{app}/managed-resources?appNamespace=&group=&kind=&namespace=&name=` as `kubemg:gitops-reader` (in-cluster) for that one item. `{available, reason?, application?, modified, diff?: {changes[{path, kind, old?, new?}], truncated}, live, desired, live_truncated, desired_truncated}`: `normalizedLiveState` → `predictedLiveState` through `objdiff.Diff` (the editor's diff), each side YAML with `status`, `managedFields`, `resourceVersion`, `generation`, `uid`, `creationTimestamp`, `selfLink` and the last-applied annotation stripped, cut at 256 KiB on a line. No source, source off, Argo CD refusing (401/403/404 named, never "does not exist") or unreachable → `200 available: false` + reason. On an available diff, `attribution: {change: {username, verb, at} \| null, since?, scoped_to_self, note?}` — the newest accepted `create`/`update`/`patch`/`delete` in the audit trail on that cluster + namespace + resource + name since the Application's `operationState.finishedAt` (absent → no lower bound), under the trail's read rule (non-admin narrowed to own `user_id`); `note` says a change outside KubeMG leaves no record. Not separately audited — the live read is. |
+| `GET /clusters/:id/gitops/applications` | Argo CD Applications, Flux Kustomizations and Flux HelmReleases in one shape: `{tool, namespace, name, project?, sources[{repo, path?, chart?, target_revision?}], revision?, attempted_revision?, sync: synced\|out_of_sync\|unknown, health, auto_heal: bool\|null, suspended, reconciled_at?, message?, remote?, console_url?, resources[{group, kind, namespace?, name, sync, health?}], resources_hidden, resources_truncated}`. Read as the service identity `kubemg:gitops-reader` (group `kubemg:cluster-admin`, the watchers' posture) and **narrowed server-side**: a scoped grant sees a record only when one of its entries, its own namespace or its destination namespace is in the grant, sees only those entries (`resources_hidden` counts the rest, cluster-scoped entries always hidden), never a `remote` record, and loses `message` when anything was cut; a **view** grant (scoped or not) never sees a core `Secret` entry - counted in `resources_hidden` - because the cluster's view role refuses Secrets. Response structs are allowlists - Helm values, `parameters`, plugin env, `postBuild` and HelmRelease values are never decoded; repository URLs lose their userinfo. `tools[{tool, installed, available, reason?}]`: an absent CRD is `installed: false`, a refused list keeps the cluster's words - neither fails the request. Flux entries are always `sync: unknown`. Out of sync first, then degraded. ≤500 entries per record. `console_url` = `/applications/{namespace}/{name}` (both escaped) on the cluster's `argocd` console row - **never the `gitops` datasource URL** - set on an Argo CD record **after** narrowing, absent with no console row and on Flux; the response's `argocd_console_url` is the row itself. Through `listResponse`. Agent mode only (`409` direct). |
+| `GET /clusters/:id/gitops/object?kind=&namespace=&name=` | The object is read **as the caller** first (the cluster's refusal is the answer); its tracking record is then found from its own `managed_by` - never from the query - by a direct read where the namespace is known (Argo CD's default `argocd` is tried for a tracking id without one), else by listing and preferring the record that lists the object. A tracking value that is not a valid name is refused without a read. A record outside the grant answers **exactly as an absent one** (no oracle), and a refusal of KubeMG's own read is reported generically, never in the cluster's words. `{tracked, managed_by, record (narrowed and linked as above) \| null, entry \| null, reason?, diff?: {available, reason?}}` - `diff` only for an Argo CD record, from the stored `gitops` source (absent, off or a core Secret → `available: false` + reason); Argo CD is not dialled. |
+| `GET /clusters/:id/gitops/diff?kind=&namespace=&name=` | Steps in order, each can end it: grant (namespace / cluster scope); **core `Secret` refused `409` before any read**; the object read **as the caller** (the cluster's refusal is the answer, Argo CD never asked); the record resolved from the object's own `managed_by` exactly as `/object` does - not Argo CD-tracked or not found → `409`; then Argo CD's `GET /api/v1/applications/{app}/managed-resources?appNamespace=&group=&kind=&namespace=&name=` as `kubemg:gitops-reader` (in-cluster) for that one item. `{available, reason?, application?, modified, diff?: {changes[{path, kind, old?, new?}], truncated}, live, desired, live_truncated, desired_truncated}`: `normalizedLiveState` → `predictedLiveState` through `objdiff.Diff` (the editor's diff), each side YAML with `status`, `managedFields`, `resourceVersion`, `generation`, `uid`, `creationTimestamp`, `selfLink` and the last-applied annotation stripped, cut at 256 KiB on a line. No source, source off, Argo CD refusing (401/403/404 named, never "does not exist") or unreachable → `200 available: false` + reason. On an available diff, `attribution: {change: {username, verb, at} \| null, since?, scoped_to_self, note?}` - the newest accepted `create`/`update`/`patch`/`delete` in the audit trail on that cluster + namespace + resource + name since the Application's `operationState.finishedAt` (absent → no lower bound), under the trail's read rule (non-admin narrowed to own `user_id`); `note` says a change outside KubeMG leaves no record. Not separately audited - the live read is. |
 
 ## Machine accounts
 
@@ -316,16 +331,16 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | `PATCH /machine-accounts/:id/status` | Admin | Enable/disable. |
 | `DELETE /machine-accounts/:id` | Admin | Deletes its tokens too. |
 | `GET /machine-accounts/:id/tokens` | Admin | |
-| `POST /machine-accounts/:id/tokens` | Admin | Body `{name, cluster_id, namespace?, ttl_seconds? or never_expires}`. `409` disabled account, direct-mode cluster (refused outright — no revocable credential to hand out), or no grant yet on that cluster. `424` no proxy/public URL configured. Response `{token, secret, kubeconfig, ...}` — **`secret` is shown once**, `kmgm_`-prefixed. |
+| `POST /machine-accounts/:id/tokens` | Admin | Body `{name, cluster_id, namespace?, ttl_seconds? or never_expires}`. `409` disabled account, direct-mode cluster (refused outright - no revocable credential to hand out), or no grant yet on that cluster. `424` no proxy/public URL configured. Response `{token, secret, kubeconfig, ...}` - **`secret` is shown once**, `kmgm_`-prefixed. |
 | `DELETE /machine-accounts/:id/tokens/:tokenId` | Admin | `404` if the token belongs to a different account (never discloses whose). The row is kept, marked revoked. |
 
 ## Issued credentials
 
 | Method & path | Auth | Notes |
 | --- | --- | --- |
-| `GET /kubeconfigs` | Session, narrows | Filters `user_id`, `cluster_id`, `status=active`, and `expiring` — a range preset (`15m`…`30d`, not `all`) read *forward*: live credentials that run out within it; implies `status=active`, `400` on any other value. Pages with `limit`/`offset` and answers `{kubeconfigs, total}`, so `limit=1` is a count. Non-admin forced to their own `user_id`; the query cannot widen it. |
+| `GET /kubeconfigs` | Session, narrows | Filters `user_id`, `cluster_id`, `status=active`, and `expiring` - a range preset (`15m`…`30d`, not `all`) read *forward*: live credentials that run out within it; implies `status=active`, `400` on any other value. Pages with `limit`/`offset` and answers `{kubeconfigs, total}`, so `limit=1` is a count. Non-admin forced to their own `user_id`; the query cannot widen it. |
 | `POST /kubeconfigs/:id/revoke` | Session | Your own always; somebody else's needs an admin. `404`, not `403`, for a row you cannot read. `409` for a direct-mode credential, naming the ServiceAccount. |
-| `POST /kubeconfigs/revoke-all` | Session | Registered before `/:id`. Answers `{revoked, cli_sessions_revoked, still_valid, clusters_not_reached}` — CLI sessions are ended with the kubeconfigs. |
+| `POST /kubeconfigs/revoke-all` | Session | Registered before `/:id`. Answers `{revoked, cli_sessions_revoked, still_valid, clusters_not_reached}` - CLI sessions are ended with the kubeconfigs. |
 
 ## Users
 
@@ -333,12 +348,12 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 | --- | --- | --- |
 | `GET /users` | Admin | Excludes machine accounts. |
 | `POST /users` | Admin | Body `{username, email?, password(min 8), system_role, can_view_recordings?}`. `403` a non-super-admin creating a super admin or granting recording access. `409` username taken. |
-| `PUT /users/:id` | Admin | `403` changing your own system role, or a non-super-admin granting super admin/recording access. |
+| `PUT /users/:id` | Admin | `slack_user_id` links a Slack member ID (`U…`/`W…`, `400` otherwise; `409` if another account holds it; `""` unlinks). `403` changing your own system role or your own password (that is `POST /auth/password`, with the current one; only the seeded administrator replacing its boot password before setup completes may set it here), or a non-super-admin granting super admin/recording access. |
 | `PATCH /users/:id/status` | Admin | `403` disabling your own account. |
 | `DELETE /users/:id` | Admin | `403` deleting your own account. |
 | `GET /users/:id/mfa` | Admin | The account's second factor, the `GET /auth/mfa` shape; never a secret. |
 | `POST /users/:id/mfa/reset` | Admin | Removes every factor and recovery code. `403` on your own account or (for a non-super-admin) a super admin, `409` where kubemg's factor does not apply. `{factors_removed}`. Audited `mfa-reset` with the target as `impersonated_user` (never suppressed). |
-| `POST /users/:id/password/expire` | Admin | The account must change its password before anything else — at its next sign-in, or at the next call of a session already open. `403` on your own account or (for a non-super-admin) a super admin, `404` a machine account, `409` a federated account (its password is not held here). Already expired is answered, not re-recorded. Returns the user. Audited `password-expire` with the target as `impersonated_user`. Lifted only by the account's own `POST /auth/password` — a `PUT /users/:id` password restarts the age clock but does not lift it. |
+| `POST /users/:id/password/expire` | Admin | The account must change its password before anything else - at its next sign-in, or at the next call of a session already open. `403` on your own account or (for a non-super-admin) a super admin, `404` a machine account, `409` a federated account (its password is not held here). Already expired is answered, not re-recorded. Returns the user. Audited `password-expire` with the target as `impersonated_user`. Lifted only by the account's own `POST /auth/password` - a `PUT /users/:id` password restarts the age clock but does not lift it. |
 
 ## Groups
 
@@ -353,7 +368,7 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 
 | Method & path | Auth | Notes |
 | --- | --- | --- |
-| `GET /permissions` | Admin | `{user_permissions, group_permissions}`, each row carrying `source` and `expires_at` — a live JIT elevation shows up here. |
+| `GET /permissions` | Admin | `{user_permissions, group_permissions}`, each row carrying `source` and `expires_at` - a live JIT elevation shows up here. |
 | `POST /permissions/assign` | Admin | Body `{subject_type, subject_id, cluster_id, k8s_role, namespaces[]}`. Replaces an existing grant for that subject/cluster/source. |
 | `POST /permissions/revoke` | Admin | Body `{subject_type, subject_id, cluster_id}`. `404` no such grant. |
 
@@ -361,11 +376,11 @@ curl -sk "https://localhost:8443/api/v1/clusters/3/resources/pods?namespace=paym
 
 | Method & path | Auth | Notes |
 | --- | --- | --- |
-| `GET /settings` | Admin | `{effective, overrides, defaults, warnings}` — three-tier resolution. |
+| `GET /settings` | Admin | `{effective, overrides, defaults, warnings}` - three-tier resolution. |
 | `PUT /settings` | Admin | An empty string or `0` clears an override back to the default. `public_url`, `agent_namespace`, and the TTL/retention fields are each validated on the way in. `proxy_rate_limit_per_second` (1–10000) and `proxy_rate_limit_burst` (1–100000) are published to the gateway on save; `0` is the default, never off. |
-| `GET /settings/deployment` | Admin | `{checks[], attention}` — deployment posture; see [Troubleshooting](../reference/troubleshooting.md). |
+| `GET /settings/deployment` | Admin | `{checks[], attention}` - deployment posture; see [Troubleshooting](../reference/troubleshooting.md). |
 | `GET /settings/smtp` | Admin | The mail relay: `{configured, host, port, security, username, has_password, from, updated_at}`. The password is never returned. |
-| `PUT /settings/smtp` | Admin | Body `{host, port, security (starttls\|tls\|none), username, password?, from}`. `password` absent keeps the stored one — only while `host` (case-insensitive) and `username` are unchanged, else `400` — `""` clears it; an empty `username` drops it. Validated, never dialled: `400` for a host with a scheme or port, a bad port or sender, or a login over `none` to anything but a loopback host. Password stored sealed. |
+| `PUT /settings/smtp` | Admin | Body `{host, port, security (starttls\|tls\|none), username, password?, from}`. `password` absent keeps the stored one - only while `host` (case-insensitive) and `username` are unchanged, else `400` - `""` clears it; an empty `username` drops it. Validated, never dialled: `400` for a host with a scheme or port, a bad port or sender, or a login over `none` to anything but a loopback host. Password stored sealed. |
 | `DELETE /settings/smtp` | Admin | Mail stops. `204`. |
 | `POST /settings/smtp/test` | Admin | Body `{to?}` (defaults to the caller's email). Sends one message through the stored relay. `409` no relay, `400` no recipient, `502` with the relay's own refusal. |
 
@@ -375,7 +390,7 @@ See [Runtime settings](../reference/settings.md) for what each field means.
 
 | Method & path | Auth | Notes |
 | --- | --- | --- |
-| `GET /guardrails` | Admin | `?cluster_id=` filters (`0` is a real fleet-wide filter, distinct from omitting it). Response includes `enforcing`, the live compiled rule count — which can differ from the stored count if a pattern fails to compile. |
+| `GET /guardrails` | Admin | `?cluster_id=` filters (`0` is a real fleet-wide filter, distinct from omitting it). Response includes `enforcing`, the live compiled rule count - which can differ from the stored count if a pattern fails to compile. |
 | `GET /guardrails/templates` | Admin | Preset catalogue. |
 | `POST /guardrails` | Admin | Body `{name, description?, cluster_id?, pattern, target?, action?, enabled?}`. `400` an invalid pattern or an unknown `cluster_id`. |
 | `PUT /guardrails/:id` `DELETE /guardrails/:id` | Admin | |
@@ -384,9 +399,9 @@ See [Runtime settings](../reference/settings.md) for what each field means.
 
 | Method & path | Auth | Notes |
 | --- | --- | --- |
-| `GET /alarms/channels` `POST /alarms/channels` | Admin | A channel's URL, secret and extra-header values are write-only — never read back; the response carries `url_masked` (scheme + host, `/…` for any path or query), `has_secret` and `header_names`. On `PUT`, an omitted or empty `url` keeps the stored one. On `PUT`, omitting `headers` (or sending `null`) keeps the stored set, `""` clears it, and a JSON object replaces it whole. |
+| `GET /alarms/channels` `POST /alarms/channels` | Admin | A channel's URL, secret and extra-header values are write-only - never read back; the response carries `url_masked` (scheme + host, `/…` for any path or query), `has_secret` and `header_names`. On `PUT`, an omitted or empty `url` keeps the stored one. On `PUT`, omitting `headers` (or sending `null`) keeps the stored set, `""` clears it, and a JSON object replaces it whole. |
 | `PUT /alarms/channels/:id` `DELETE /alarms/channels/:id` | Admin | `409` duplicate name. `400` invalid header JSON, or a missing PagerDuty routing key/basic-auth username. |
-| `POST /alarms/channels/:id/test` | Admin | Bypasses the matcher and cool-off. `200` even if delivery itself failed — the test is about the endpoint, not the rule. |
+| `POST /alarms/channels/:id/test` | Admin | Bypasses the matcher and cool-off. `200` even if delivery itself failed - the test is about the endpoint, not the rule. |
 | `GET /alarms/rules` `POST /alarms/rules` | Admin | Response includes the trigger/severity vocabulary alongside the rules, and `gitops_tools`. A `gitops_drift` rule takes `gitops_tools[]` (unknown tool `400` by name) and `gitops_apps[]` (RFC 1123 names); both are dropped on any other trigger. |
 | `PUT /alarms/rules/:id` `DELETE /alarms/rules/:id` | Admin | |
 
@@ -396,10 +411,10 @@ See [Runtime settings](../reference/settings.md) for what each field means.
 | --- | --- | --- |
 | `POST /jit/requests` | Session | Body `{cluster_id, requested_role, namespaces[], duration_minutes, reason}`. `reason` is mandatory. |
 | `GET /jit/requests` | Session, narrows | Non-admin forced to their own requests. |
-| `POST /jit/requests/:id/approve` | Admin | Never the requester's own — enforced even for a super admin. |
+| `POST /jit/requests/:id/approve` | Admin | Never the requester's own - enforced even for a super admin. |
 | `POST /jit/requests/:id/reject` | Session | Not admin-only: withdrawing your own request needs no permission. |
 | `POST /jit/requests/:id/revoke` | Session | Handing an elevation back early needs no permission either. |
-| `POST /jit/webhooks/callback` | Unauthenticated | Requires a valid Slack signature, a signed non-expired action token, **and** an `approver_username` resolving to an active, non-requester admin — the token alone is not enough. |
+| `POST /jit/webhooks/callback` | Unauthenticated | Requires a valid Slack signature, a signed non-expired action token, **and** an `approver_username` resolving to an active, non-requester admin - the token alone is not enough. |
 
 ## Audit and terminal sessions
 
@@ -407,10 +422,10 @@ See [Runtime settings](../reference/settings.md) for what each field means.
 | --- | --- | --- |
 | `GET /audit` | Session, narrows | Filters `verb[], status, from/to, since/until,` or a fixed range preset. Non-admin forced to their own `user_id`; the query cannot widen it. Each row carries `name` (the object addressed; for a `create`, the name the cluster answered with, absent when it refused); `q` matches it too. |
 | `GET /audit/summary` | Admin | 24-hour rollup: `{total, failed, streams, window_hours}`. |
-| `GET /audit/export` | Session, narrows | The same filter as `GET /audit`, as CSV. `limit`/`offset` ignored — paging is the page's, not the file's. Bounded at 5000 rows; past that the file says so and `X-Kubemg-Export-Truncated` carries the bound. Not itself audited. |
-| `GET /audit/recording-policy` | Session | `{enabled, input_recorded, encrypted, retention_days}` — disclosed to anyone, since anyone might be recorded. |
+| `GET /audit/export` | Session, narrows | The same filter as `GET /audit`, as CSV. `limit`/`offset` ignored - paging is the page's, not the file's. Bounded at 5000 rows; past that the file says so and `X-Kubemg-Export-Truncated` carries the bound. Not itself audited. |
+| `GET /audit/recording-policy` | Session | `{enabled, input_recorded, encrypted, retention_days}` - disclosed to anyone, since anyone might be recorded. |
 | `GET /audit/terminal-sessions` | Session, narrows | `recording_enabled: false` is distinct from a genuinely empty list. |
-| `GET /audit/terminal-sessions/:id` | Session, narrows | `404`, not `403`, for someone else's session without the capability — whether it exists is not theirs to learn. |
+| `GET /audit/terminal-sessions/:id` | Session, narrows | `404`, not `403`, for someone else's session without the capability - whether it exists is not theirs to learn. |
 | `GET /audit/terminal-sessions/:id/stream` | Session, narrows | `503` recording disabled, `404` file missing, `409` for a key-required/key-mismatch/truncated recording (three distinct messages). Audited as `replay` before any bytes are sent. |
 | `DELETE /audit/terminal-sessions/:id` | Admin + `CanViewRecordings` | Audited before the file is removed. |
 
@@ -418,12 +433,12 @@ See [Runtime settings](../reference/settings.md) for what each field means.
 
 | Method & path | Auth | Notes |
 | --- | --- | --- |
-| `GET /health` | — | `{"status":"ok"}`. Process liveness only — nothing about TLS, the database or the tunnel. |
-| `GET /metrics` | — | Prometheus scrape endpoint. Served on a **separate internal listener** (`KUBEMG_METRICS_ADDR`), never on this router. Discloses version, route inventory, and process details — not for the public port. See [Prometheus metrics](../install/metrics.md). |
-| `GET /agent/v1/tunnel` | Agent registration token | The tunnel's WebSocket upgrade. Outside the JWT middleware entirely — an agent authenticates on its own registration token as a bearer token on the upgrade. |
-| `GET /install/:ticket/agent.yaml` | Single-use download ticket in the path | Unauthenticated by necessity — `kubectl` cannot carry a kubemg session. The ticket (`kmgi_…`, minted by `GET /clusters/:id/kustomize`) is spent by the first fetch of either form and expires after 15 minutes unused; spent/expired/unknown → `404`, unreadable store → `500`. A `kmg_…` segment (the pre-ticket form, carrying the registration token) → `410` without a lookup. Renders the flat install manifest, which carries the registration token. |
+| `GET /health` | - | `{"status":"ok"}`. Process liveness only - nothing about TLS, the database or the tunnel. |
+| `GET /metrics` | - | Prometheus scrape endpoint. Served on a **separate internal listener** (`KUBEMG_METRICS_ADDR`), never on this router. Discloses version, route inventory, and process details - not for the public port. See [Prometheus metrics](../install/metrics.md). |
+| `GET /agent/v1/tunnel` | Agent registration token | The tunnel's WebSocket upgrade. Outside the JWT middleware entirely - an agent authenticates on its own registration token as a bearer token on the upgrade. |
+| `GET /install/:ticket/agent.yaml` | Single-use download ticket in the path | Unauthenticated by necessity - `kubectl` cannot carry a kubemg session. The ticket (`kmgi_…`, minted by `GET /clusters/:id/kustomize`) is spent by the first fetch of either form and expires after 15 minutes unused; spent/expired/unknown → `404`, unreadable store → `500`. A `kmg_…` segment (the pre-ticket form, carrying the registration token) → `410` without a lookup. Renders the flat install manifest, which carries the registration token. |
 | `GET /install/:ticket/kustomize.tar.gz` | Single-use download ticket in the path | Same route family and the same ticket, the Kustomize archive instead. |
-| `ANY /api/v1/clusters/:id/proxy/*path` | Session or `ScopeProxy` JWT or machine token | The `kubectl` server URL. Every verb — get, watch, exec, port-forward — lands on this one route; see [How a request flows](request-flow.md). |
+| `ANY /api/v1/clusters/:id/proxy/*path` | Session or `ScopeProxy` JWT or machine token | The `kubectl` server URL. Every verb - get, watch, exec, port-forward - lands on this one route; see [How a request flows](request-flow.md). |
 
 ```bash
 # Read the audit trail, narrowed to your own activity unless you're an admin

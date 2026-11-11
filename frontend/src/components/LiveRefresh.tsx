@@ -45,7 +45,7 @@ export function LiveChip({
       onClick={() => setLive(!live)}
       title={
         live
-          ? `${read}Re-reads every ${Math.round(interval / 1000)}s while this tab is in front — a hidden or untouched tab reads nothing. Click to pause everywhere.`
+          ? `${read}Re-reads every ${Math.round(interval / 1000)}s while this tab is in front - a hidden or untouched tab reads nothing. Click to pause everywhere.`
           : `${read}Automatic re-reads are paused for the whole console. Refresh still asks the cluster.`
       }
     >

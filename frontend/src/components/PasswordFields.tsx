@@ -40,7 +40,7 @@ export function PasswordFields({
       <Field
         label="New password"
         htmlFor="password-new"
-        hint="At least 8 characters — the rule your account was created under."
+        hint="At least 8 characters - the rule your account was created under."
         error={tried && !draft.next ? 'Choose the new password.' : undefined}
       >
         <TextInput

@@ -3,7 +3,7 @@
 This half of the manual is for people who work **on** kubemg: reading the
 source, building it, changing it, and sending the change back. If you only want
 to attach clusters and run them, everything you need is in the
-[User guide](../introduction/overview.md) — nothing here is required to operate
+[User guide](../introduction/overview.md) - nothing here is required to operate
 an install.
 
 <div class="grid cards" markdown>
@@ -58,7 +58,7 @@ backend/            Go server: Gin + GORM + PostgreSQL 16
   pkg/k8s/            direct-mode clients, TokenRequest, kubeconfig rendering
   pkg/terminal/       session recording (asciinema v2, encrypted at rest)
   pkg/jit/            just-in-time elevation engine
-  pkg/guardrails/     command guardrails — the one refusal kubemg makes itself
+  pkg/guardrails/     command guardrails - the one refusal kubemg makes itself
   pkg/auditpolicy/    which verbs reach the table, and the floor nothing suppresses
   pkg/auditforward/   syslog forwarding of the complete trail
   pkg/observability/  datasources, the server-side query builder, alarms
@@ -68,21 +68,21 @@ backend/            Go server: Gin + GORM + PostgreSQL 16
   pkg/agentpkg/       renders the agent install package (embedded manifests)
   pkg/cache/ certs/ config/ credentials/ cronsched/ objdiff/ secretbox/
   pkg/webui/          the built console, embedded and served on NoRoute
-  migrations/         reference DDL only — nothing executes it
+  migrations/         reference DDL only - nothing executes it
 frontend/           Vite + React + TypeScript + Tailwind v4
-agent/              the in-cluster agent — a separate Go module
+agent/              the in-cluster agent - a separate Go module
 deploy/kustomize/   the agent's install manifests (human-facing copy)
-deploy/compose/     standalone-VM install — pulls published images, builds nothing
+deploy/compose/     standalone-VM install - pulls published images, builds nothing
 deploy/helm/kubemg/ the management plane's Helm chart, published to ghcr.io as OCI
 shell/              the browser shell image
 docs/               this manual (MkDocs Material)
-Dockerfile          the management plane image — spans both Go modules
+Dockerfile          the management plane image - spans both Go modules
 ```
 
 Three layout facts are load-bearing rather than incidental:
 
 - **The agent is its own Go module.** It depends on `gorilla/websocket` and
-  nothing else — no client-go — and compiles to about 7 MB. Adding a dependency
+  nothing else - no client-go - and compiles to about 7 MB. Adding a dependency
   there is a decision, not a detail. See [The agent module](agent.md).
 - **The agent manifests exist twice**, `deploy/kustomize/base/` for people to
   read and an embedded copy the server renders install packages from.

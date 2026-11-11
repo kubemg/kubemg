@@ -53,7 +53,7 @@ const TARGET_LABEL: Record<GuardrailTarget, string> = {
 
 const TARGET_HINT: Record<GuardrailTarget, string> = {
   api_request:
-    'Matched against “METHOD /path” on a proxied call — so `^DELETE /api/v1/namespaces/[^/?]+$` is a rule about deleting namespaces.',
+    'Matched against “METHOD /path” on a proxied call - so `^DELETE /api/v1/namespaces/[^/?]+$` is a rule about deleting namespaces.',
   terminal_exec:
     'Matched against each line typed into a container, and against the argv of a non-interactive `kubectl exec -- …`.',
   both: 'Matched against both subjects. Right for a pattern that reads naturally against either, and wrong for most.',
@@ -181,7 +181,7 @@ export function GuardrailSettingsPanel({ clusters }: { clusters: Cluster[] }) {
     <>
       <Panel
         title="Command guardrails"
-        description="Rules that refuse a call whatever the cluster’s RBAC allows — because the person who deletes the wrong namespace is usually the person entitled to delete it. They cover proxied API calls and what is typed into a container."
+        description="Rules that refuse a call whatever the cluster’s RBAC allows - because the person who deletes the wrong namespace is usually the person entitled to delete it. They cover proxied API calls and what is typed into a container."
         bodyClassName="flex flex-col"
         actions={
           <>
@@ -206,7 +206,7 @@ export function GuardrailSettingsPanel({ clusters }: { clusters: Cluster[] }) {
           <div className="px-4 pt-4">
             <Notice tone="warn">
               {silent} enabled {silent === 1 ? 'rule is' : 'rules are'} not being enforced, because
-              the pattern no longer compiles. Check the server log and re-save the rule — until then
+              the pattern no longer compiles. Check the server log and re-save the rule - until then
               it reads as armed and stops nothing.
             </Notice>
           </div>
@@ -216,7 +216,7 @@ export function GuardrailSettingsPanel({ clusters }: { clusters: Cluster[] }) {
 
         {!loading && policies.length === 0 ? (
           <p className="px-4 py-6 text-[13px] text-muted">
-            No guardrails yet. Start from a preset — the rules worth having on day one are written
+            No guardrails yet. Start from a preset - the rules worth having on day one are written
             there already.
           </p>
         ) : null}
@@ -591,7 +591,7 @@ function PresetSheet({
     >
       <div className="flex flex-col gap-3">
         <Notice tone="info">
-          Each preset opens the editor rather than saving straight away — the scope is the one thing
+          Each preset opens the editor rather than saving straight away - the scope is the one thing
           a catalogue cannot decide for you.
         </Notice>
 

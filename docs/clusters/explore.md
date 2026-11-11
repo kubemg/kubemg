@@ -9,7 +9,7 @@ The tree is a **fixed** inventory (namespaces, workloads, pods, services, ingres
 - **HTTPRoutes and VirtualServices** appear only when the cluster serves them, and get a proper hostname/gateway/rules table. Every other CRD gets a generic name/kind/age table.
 - **Other CRDs are grouped by API group family.** `kafka.strimzi.io` and `core.strimzi.io` both become *strimzi.io*. A family with **two or more** kinds gets its own section; a single-kind family lands in **Other**, at the bottom.
 - Discovered sections and **Other** **start collapsed**. A section holding your current selection opens anyway.
-- The cluster's own pages come first: **Cluster** (Dashboard, Nodes, Namespaces, Events, Alerts) is open, and the reports — Capacity, Cost & waste, Security, Audit trail — sit in **Insights** below it, which **starts collapsed** and opens when one of them is the page you are on.
+- The cluster's own pages come first: **Cluster** (Dashboard, Nodes, Namespaces, Events, Alerts) is open, and the reports - Capacity, Cost & waste, Security, Audit trail - sit in **Insights** below it, which **starts collapsed** and opens when one of them is the page you are on.
 - An administrator can hide CRDs from the sidebar: see [Managing a cluster](managing.md#curating-which-crds-the-explore-sidebar-offers). Hiding is navigation only, never access control.
 
 While discovery is still running the sidebar waits. If it finds no CRDs, it falls back to Pods.
@@ -29,7 +29,7 @@ Quantities are shown **as the cluster wrote them** (`500m`, `2Gi`, `50%`). A quo
 
 Both sit under **Workloads**.
 
-- **HPAs** are read as `autoscaling/v2` only. A cluster serving only `v1` is told the kind is not served, rather than shown an empty list. A metric with no reading yet shows `—/80%`, not `0%/80%`. See [the notice the scale control carries](actions.md#an-autoscaler-owns-the-replica-count).
+- **HPAs** are read as `autoscaling/v2` only. A cluster serving only `v1` is told the kind is not served, rather than shown an empty list. A metric with no reading yet shows `-/80%`, not `0%/80%`. See [the notice the scale control carries](actions.md#an-autoscaler-owns-the-replica-count).
 - **ReplicaSets** have **Owner** and **Revision** columns, so you can tell the two ReplicaSets of a Deployment mid-rollout apart. Zero desired replicas is the resting state of a superseded one and is drawn as idle, not as a fault.
 
 ## Favorites

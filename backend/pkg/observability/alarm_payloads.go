@@ -102,7 +102,7 @@ func summary(signal Signal, severity string) string {
 
 func orDash(s string) string {
 	if strings.TrimSpace(s) == "" {
-		return "—"
+		return "-"
 	}
 	return s
 }

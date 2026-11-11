@@ -74,6 +74,7 @@ import {
   Segmented,
   Select,
   Sheet,
+  Tabs,
 } from './primitives'
 import { useConfirm } from '../state/confirm-context'
 
@@ -517,13 +518,15 @@ export function ResourceDetailDrawer({
           means scrolling back up to find the control. It sits on the sheet's
           surface, across the full width, the way the page's own header sits
           over the canvas. What kind the object is lives in the summary card
-          below and the line under the title — not a third time here. */}
-      <div className="sticky -top-4 z-10 -mx-5 -mt-4 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line-soft bg-surface px-5 py-2.5">
+          below and the line under the title — not a third time here. There
+          is no bottom padding: the open tab's underline sits on the bar's own
+          rule, so the strip reads as the edge of the view it opens. */}
+      <div className="sticky -top-4 z-10 -mx-5 -mt-4 flex shrink-0 flex-wrap items-end gap-x-3 border-b border-line-soft bg-surface px-5 pt-1">
         {tabs.length > 1 ? (
-          <Segmented<DetailTab> ariaLabel="Resource view" value={tab} onChange={setTab} options={tabs} />
+          <Tabs<DetailTab> ariaLabel="Resource view" value={tab} onChange={setTab} options={tabs} />
         ) : null}
 
-        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+        <div className="ml-auto flex min-h-10 min-w-0 flex-wrap items-center justify-end gap-2 py-1.5">
           {alarmTarget ? (
             <Button type="button" size="sm" variant="primary" onClick={() => openAlarm(null)}>
               <BellPlus aria-hidden="true" className="size-4" />
@@ -1028,7 +1031,7 @@ function ObjectSummary({
     {
       icon: CalendarClock,
       term: 'Age',
-      value: describe.created_at ? <Age iso={describe.created_at} /> : '—',
+      value: describe.created_at ? <Age iso={describe.created_at} /> : '-',
     },
   ]
 
@@ -1047,7 +1050,7 @@ function ObjectSummary({
   if (pod) {
     facts.push(
       { icon: Server, term: 'Node', value: pod.node || 'Unscheduled', phrase: !pod.node },
-      { icon: Network, term: 'Pod IP', value: pod.pod_ip || '—' },
+      { icon: Network, term: 'Pod IP', value: pod.pod_ip || '-' },
       {
         icon: CircleCheck,
         term: 'Ready',
@@ -1170,7 +1173,7 @@ function Metadata({
                 <span className="shrink-0 border-r border-line bg-raised px-2 py-1 text-muted">
                   {key}
                 </span>
-                <span className="truncate px-2 py-1 text-fg">{value || '—'}</span>
+                <span className="truncate px-2 py-1 text-fg">{value || '-'}</span>
               </li>
             ))}
           </ul>
@@ -1206,7 +1209,7 @@ function Metadata({
                   {key}
                 </dt>
                 <dd className="truncate font-data text-[12px] text-fg" title={value}>
-                  {value || '—'}
+                  {value || '-'}
                 </dd>
               </div>
             ))}
@@ -1332,7 +1335,7 @@ function Events({ describe }: { describe: ResourceDescribeResult }) {
                 ) : null}
               </div>
               <span className="text-[11.5px] text-faint">
-                {event.last_seen ? <Age iso={event.last_seen} /> : '—'}
+                {event.last_seen ? <Age iso={event.last_seen} /> : '-'}
               </span>
             </li>
           )
@@ -1369,7 +1372,7 @@ function Fields({
       eyebrow={String(fields.length)}
       description={
         truncated
-          ? 'Only the first fields are summarised here — the YAML tab has the whole object.'
+          ? 'Only the first fields are summarised here - the YAML tab has the whole object.'
           : undefined
       }
     >

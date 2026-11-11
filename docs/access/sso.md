@@ -53,7 +53,7 @@ The flow is authorization code with PKCE; the ID token is verified against the i
 
 ### SAML 2.0
 
-kubemg is the service provider (SP-initiated, redirect out, POST back). It **requires signed assertions**, verified against the certificates in the IdP's metadata, and the audience must equal kubemg's entity ID. Neither check is configurable.
+kubemg is the service provider (SP-initiated, redirect out, POST back). It **requires signed assertions**, verified against the certificates in the IdP's metadata, and the audience must equal kubemg's entity ID. The assertion must also **answer the request this sign-in sent**: its `InResponseTo` names the request kubemg sent the IdP. A response captured from another sign-in is therefore refused even while it is still valid. None of these checks is configurable, and an IdP-initiated sign-in (a tile in the IdP's portal, with no request from kubemg) is not accepted.
 
 | Field | Notes |
 | --- | --- |
@@ -183,12 +183,22 @@ A federated account has no local password. `POST /api/v1/auth/login` answers an 
 
 The sign-in page keeps that promise: all four read *That username and password did not match*, plus (once a provider exists) a pointer to the provider's button, added to every refusal alike. A **disabled** account is the one refusal that reads as itself, because the server only says so after the password was right. An LDAP failure because the directory is unreachable says so.
 
+## A sign-in belongs to the tab that started it
+
+Signing in through an IdP goes out from the console and comes back to it. Two checks hold the round trip to the browser that started it:
+
+- **The session is taken only by the tab that started the sign-in.** The console sends a per-tab value with the sign-in, and the session comes back with it. A callback link someone else started and sent on, or a link carrying a session token, is refused with *This sign-in was not started in this browser tab*. Without this check, opening such a link would sign you into the sender's account. Start the sign-in again from the sign-in page; a browser that blocks site storage cannot complete one.
+- **At most 100 sign-ins wait on an IdP from one address** (an IPv6 caller counts by its /64), and 10,000 in all. Each one waits at most ten minutes.
+    - Past a limit, the oldest waiting sign-in is dropped, never the new one refused. Whoever started that one sees *This sign-in request has expired* and starts again; nobody is locked out.
+    - Behind an ingress or a load balancer, set [`KUBEMG_TRUSTED_PROXIES`](../install/environment.md#client-addresses-behind-a-proxy) so the limit counts callers, not the proxy.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
 | --- | --- |
 | SAML `the SAML assertion is expired or not yet valid` | Clock skew between the bastion and the IdP. Check NTP on both sides first. |
 | Sign-in fails at the callback | The redirect URI (OIDC) or ACS URL (SAML) at the IdP must match `{public_url}/api/v1/auth/sso/providers/{id}/callback` byte for byte. If `KUBEMG_PUBLIC_URL` (or the Settings override) changes, update every provider at its IdP. |
+| SAML `the SAML assertion answers a different sign-in request` or `does not say which request it answers` | The response was not the answer to this sign-in's request: a response replayed from elsewhere, an IdP-initiated sign-in, or an IdP that leaves `InResponseTo` out of the assertion's subject confirmation. Start the sign-in from the kubemg sign-in page. |
 | SAML `the SAML assertion was issued for a different service` | The entity ID kubemg sends does not match the IdP's registration. Check `saml_entity_id` (or the default metadata URL) and re-upload the SP metadata if it changed. |
 | `the ID token carries no username claim` / `the SAML assertion carries no username` | The IdP sends none of the fallback names. Set the claim name explicitly or add a claim mapping at the IdP. |
 | Signed in but no groups | The IdP keeps groups out of the ID token and UserInfo (Google Workspace, some default Okta/Entra setups). Change the IdP to emit the claim, or use a `*` rule for a baseline grant. |

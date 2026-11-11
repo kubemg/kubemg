@@ -115,7 +115,7 @@ function Reading({
   if (value === undefined) {
     return (
       <span className="text-faint" title={missing}>
-        —
+        -
       </span>
     )
   }
@@ -246,7 +246,7 @@ export function WorkloadSheet({
             <CodeBlock label="Apply it by hand" value={rightsizingCommand(workload)} />
             <p className="text-[12.5px] leading-relaxed text-muted">
               Only the requests found over-asked change; limits and everything else stay as the
-              manifest has them. Apply it where the manifest is kept — if Argo CD, Flux or Helm
+              manifest has them. Apply it where the manifest is kept - if Argo CD, Flux or Helm
               manages this workload, a patch here is put back at the next sync. Nothing on this
               page writes to the cluster.
             </p>
@@ -371,7 +371,7 @@ export function WorkloadsSection({
                         {formatCPU(workload.reclaimable.cpu)}
                       </span>
                     ) : (
-                      <span className="text-faint">—</span>
+                      <span className="text-faint">-</span>
                     )}
                   </Td>
                   <Td className="text-[12.5px]">
@@ -380,7 +380,7 @@ export function WorkloadsSection({
                         {formatMemory(workload.reclaimable.memory)}
                       </span>
                     ) : (
-                      <span className="text-faint">—</span>
+                      <span className="text-faint">-</span>
                     )}
                   </Td>
                   {currency ? (
@@ -409,7 +409,7 @@ function Money({ amount, currency }: { amount: number | undefined; currency: str
   if (amount === undefined) {
     return (
       <span className="text-faint" title="No rate for this">
-        —
+        -
       </span>
     )
   }
@@ -512,7 +512,7 @@ export function ReservedSection({
             What it reserves
           </h2>
           <p className="mt-0.5 text-[13px] text-muted">
-            The requests of every placed pod, by namespace — what a node-billed cluster pays for
+            The requests of every placed pod, by namespace - what a node-billed cluster pays for
           </p>
         </div>
         {reserved ? (
@@ -734,14 +734,14 @@ export function Waste() {
             <StatTile
               icon={Cpu}
               label="CPU to give back"
-              value={sized ? formatCPU(summary.reclaimable_cpu) : '—'}
+              value={sized ? formatCPU(summary.reclaimable_cpu) : '-'}
               dim={!sized}
               sub={sized ? `across ${loaded?.workloads_total ?? 0} workloads` : 'needs usage history'}
             />
             <StatTile
               icon={MemoryStick}
               label="Memory to give back"
-              value={sized ? formatMemory(summary.reclaimable_memory) : '—'}
+              value={sized ? formatMemory(summary.reclaimable_memory) : '-'}
               dim={!sized}
               sub={sized ? `over the last ${SPAN_LABEL[span]}` : 'needs usage history'}
             />
@@ -758,7 +758,7 @@ export function Waste() {
             <StatTile
               icon={Network}
               label="Idle load balancers"
-              value={loaded?.load_balancers_available ? summary.idle_load_balancers : '—'}
+              value={loaded?.load_balancers_available ? summary.idle_load_balancers : '-'}
               dim={!loaded?.load_balancers_available}
               tone={summary.idle_load_balancers > 0 ? 'warn' : 'neutral'}
               sub={
@@ -833,10 +833,10 @@ export function Waste() {
                       </Pill>
                     </Td>
                     <Td className="font-data text-[12.5px] tabular-nums">
-                      {volume.capacity > 0 ? formatMemory(volume.capacity) : '—'}
+                      {volume.capacity > 0 ? formatMemory(volume.capacity) : '-'}
                     </Td>
                     <Td className="hidden truncate font-data text-[12.5px] text-muted lg:table-cell">
-                      {volume.storage_class || '—'}
+                      {volume.storage_class || '-'}
                     </Td>
                     <Td className="text-[12.5px] text-muted">{volumeExplanation(volume)}</Td>
                     {currency && loaded.cost?.rates.storage_gib_month !== undefined ? (
@@ -932,13 +932,13 @@ export function Waste() {
               request counts as over-asked when it is more than one and a half times that reading;
               the suggestion is the reading plus 20%, never below 10m of CPU or 32 MiB of memory,
               and a workload is listed only when it would give back at least 100m or 128 MiB.
-              A workload with less than a day of history — counted from its oldest pod’s start or the
-              datasource’s first sample of it, whichever is later — is not sized. Jobs, CronJobs and bare pods
+              A workload with less than a day of history - counted from its oldest pod’s start or the
+              datasource’s first sample of it, whichever is later - is not sized. Jobs, CronJobs and bare pods
               are left out. Nothing here changes the cluster.
             </p>
             <p className="text-[12px] leading-relaxed text-muted">
-              What a pod reserves is the scheduler’s own sum — its containers and sidecars, the largest
-              init step, and the runtime’s overhead — counted only once it is placed on a node. A
+              What a pod reserves is the scheduler’s own sum - its containers and sidecars, the largest
+              init step, and the runtime’s overhead - counted only once it is placed on a node. A
               figure in money is that reservation times this cluster’s rates over a 730-hour month,
               and appears only where an administrator has set them. Usage above a request is not
               charged: the reservation is what fills a node.

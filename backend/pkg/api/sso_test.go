@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -578,5 +579,70 @@ func TestOnlyASuperAdminChangesAProviderASuperAdminSignsInThrough(t *testing.T) 
 	provider["issuer_url"] = "https://idp3.example.com"
 	if rec := env.do(t, http.MethodPut, path, rootToken, provider); rec.Code != http.StatusOK {
 		t.Fatalf("super admin: want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Starting a sign-in needs no session, so the flows waiting on an IdP are
+// bounded. Past a bound the oldest waiting flow goes, never the new one: a
+// refusal would let anyone sharing an address lock everyone else out.
+func TestSSOFlowsAreBoundedByDroppingTheOldest(t *testing.T) {
+	flows := newFlowStore()
+	live := time.Now().Add(time.Minute)
+	for i := range maxSSOFlowsPerSource {
+		flows.put(fmt.Sprintf("s%d", i), ssoFlow{source: "203.0.113.7", expiresAt: live})
+	}
+	flows.put("elsewhere", ssoFlow{source: "198.51.100.1", expiresAt: live})
+	flows.put("newest", ssoFlow{source: "203.0.113.7", expiresAt: live})
+
+	if _, ok := flows.take("newest"); !ok {
+		t.Fatal("a new flow past the per-address bound must be kept")
+	}
+	if _, ok := flows.take("s0"); ok {
+		t.Fatal("the address's oldest flow should have made room")
+	}
+	if _, ok := flows.take("s1"); !ok {
+		t.Fatal("only the oldest flow goes")
+	}
+	if _, ok := flows.take("elsewhere"); !ok {
+		t.Fatal("another address's flow is not touched by the first one's bound")
+	}
+
+	// An IPv6 caller is counted by its /64.
+	v6 := newFlowStore()
+	for i := range maxSSOFlowsPerSource + 5 {
+		v6.put(fmt.Sprintf("v%d", i), ssoFlow{source: fmt.Sprintf("2001:db8:1:2::%x", i+1), expiresAt: live})
+	}
+	if len(v6.flows) != maxSSOFlowsPerSource || len(v6.bySource) != 1 {
+		t.Fatalf("one /64: %d flows across %d sources, want %d across 1", len(v6.flows), len(v6.bySource), maxSSOFlowsPerSource)
+	}
+
+	// Expired flows are swept from the front at the next insert.
+	expired := newFlowStore()
+	for i := range 5 {
+		expired.put(fmt.Sprintf("e%d", i), ssoFlow{source: "203.0.113.9", expiresAt: time.Now().Add(-time.Second)})
+	}
+	expired.put("fresh", ssoFlow{source: "203.0.113.9", expiresAt: live})
+	if len(expired.flows) != 1 || expired.order.Len() != 1 || expired.bySource["203.0.113.9"].Len() != 1 {
+		t.Fatalf("after the sweep: %d flows, %d in order", len(expired.flows), expired.order.Len())
+	}
+}
+
+// The binding the console sends is handed back beside the session, so the tab
+// that started the sign-in can tell it from one somebody else started; a value
+// that is not a token is refused rather than echoed.
+func TestSSOLoginCarriesTheConsolesBinding(t *testing.T) {
+	env := newTestEnv(t)
+	provider := env.store.addProvider("Okta", db.ProtocolOIDC, true)
+
+	bad := env.do(t, http.MethodGet, providerPath(provider.ID, "/login?binding=%3Cscript%3E"), "", nil)
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("a malformed binding: want 400, got %d", bad.Code)
+	}
+
+	// A binding the console writes is not refused; the provider here has no
+	// reachable issuer, so the request stops later, at discovery.
+	good := env.do(t, http.MethodGet, providerPath(provider.ID, "/login?binding=tab-binding-0123456789abcdef"), "", nil)
+	if good.Code == http.StatusBadRequest {
+		t.Fatalf("a well-formed binding was refused: %s", good.Body.String())
 	}
 }

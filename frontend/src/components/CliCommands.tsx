@@ -99,7 +99,7 @@ export function CliCommands({
           >
             releases page
           </a>{' '}
-          and put it on your PATH — one static binary, no dependencies.
+          and put it on your PATH - one static binary, no dependencies.
         </p>
       ) : null}
       <CodeBlock label="Sign in (once a day)" value={`kubemg login --server ${server}`} wrap />

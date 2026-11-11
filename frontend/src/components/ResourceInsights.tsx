@@ -473,7 +473,7 @@ function Alert({
   onOpen?: (name: string, namespace: string) => void
   href?: string
 }) {
-  const title = `${alert.namespace ? `${alert.namespace}/` : ''}${alert.name} — ${alert.reason}`
+  const title = `${alert.namespace ? `${alert.namespace}/` : ''}${alert.name} - ${alert.reason}`
   const tint = alert.tone === 'bad' ? 'text-danger' : 'text-warn'
 
   const body = (

@@ -279,8 +279,9 @@ func (s *server) decideJitRequest(
 // button was pressed, and who pressed it.
 type slackInteraction struct {
 	User struct {
-		Username string `json:"username"`
-		Name     string `json:"name"`
+		// ID is the Slack member ID, the one field of the clicker Slack
+		// vouches for. Username and name are display strings.
+		ID string `json:"id"`
 	} `json:"user"`
 	Actions []struct {
 		ActionID string `json:"action_id"`
@@ -296,6 +297,9 @@ type jitCallbackBody struct {
 	// approval attributed to "slack" is a record that answers nothing.
 	ApproverUsername string `json:"approver_username"`
 	Comment          string `json:"comment"`
+	// slackUserID is who clicked, when the decision is Slack's interaction
+	// payload. It resolves through the account's linked Slack member ID only.
+	slackUserID string
 }
 
 // jitWebhookCallback applies a decision that arrived from a chat integration.
@@ -355,11 +359,23 @@ func (s *server) jitWebhookCallback(c *gin.Context) {
 		return
 	}
 
-	approver, err := s.store.UserByUsername(c.Request.Context(), body.ApproverUsername)
-	if errors.Is(err, db.ErrNotFound) {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "no KubeMG account matches that user; decide this request in KubeMG",
-		})
+	// A Slack click is the account its member ID is linked to, and nothing
+	// else: the handle and display name are strings the clicker may be able to
+	// set, and matching one against a username let anyone in the workspace
+	// with the right handle decide as that administrator.
+	var approver *db.User
+	if body.slackUserID != "" {
+		approver, err = s.store.UserBySlackID(c.Request.Context(), body.slackUserID)
+	} else {
+		approver, err = s.store.UserByUsername(c.Request.Context(), body.ApproverUsername)
+	}
+	if errors.Is(err, db.ErrNotFound) || errors.Is(err, db.ErrConflict) {
+		message := "no KubeMG account matches that user; decide this request in KubeMG"
+		if body.slackUserID != "" {
+			message = "this Slack account is not linked to a KubeMG account; an administrator links it on " +
+				"the account's page, or decide this request in KubeMG"
+		}
+		c.JSON(http.StatusForbidden, gin.H{"error": message})
 		return
 	}
 	if err != nil {
@@ -455,14 +471,13 @@ func (s *server) readJitCallback(c *gin.Context) (jitCallbackBody, bool) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "that interaction carried no action"})
 			return jitCallbackBody{}, false
 		}
-		username := interaction.User.Username
-		if username == "" {
-			username = interaction.User.Name
+		if strings.TrimSpace(interaction.User.ID) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "that interaction does not say who clicked"})
+			return jitCallbackBody{}, false
 		}
 		return jitCallbackBody{
-			Token:            interaction.Actions[0].Value,
-			ApproverUsername: username,
-			Comment:          "",
+			Token:       interaction.Actions[0].Value,
+			slackUserID: strings.TrimSpace(interaction.User.ID),
 		}, true
 	}
 

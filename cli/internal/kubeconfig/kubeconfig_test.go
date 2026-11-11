@@ -12,7 +12,7 @@ import (
 
 // A kubeconfig somebody has lived with: comments, another tool's entries, an
 // extension field nobody here knows about.
-const lived = `# my clusters — do not lose this
+const lived = `# my clusters - do not lose this
 apiVersion: v1
 kind: Config
 clusters:
@@ -102,7 +102,7 @@ func TestMergingKeepsEverythingElse(t *testing.T) {
 	addKubemg(t, path, "https://kubemg.example.com/api/v1/clusters/7/proxy")
 
 	got, raw := read(t, path)
-	for _, want := range []string{"# my clusters — do not lose this", "# the old one", "cluster_info", "client-certificate"} {
+	for _, want := range []string{"# my clusters - do not lose this", "# the old one", "cluster_info", "client-certificate"} {
 		if !strings.Contains(raw, want) {
 			t.Errorf("lost %q:\n%s", want, raw)
 		}

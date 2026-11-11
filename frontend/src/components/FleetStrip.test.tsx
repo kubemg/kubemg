@@ -35,12 +35,12 @@ describe('FleetStrip', () => {
 
     expect(links[0].textContent).toContain('0')
     // A failed read is a dash and says so — it never draws a 0.
-    expect(links[1].textContent).toContain('—')
+    expect(links[1].textContent).toContain('-')
     expect(links[1].textContent).toContain('could not be read')
     expect(links[1].textContent).not.toMatch(/\d/)
     // A read in flight is neither a number nor the failed dash.
     expect(links[2].textContent).toContain('…')
-    expect(links[2].textContent).not.toMatch(/\d|—/)
+    expect(links[2].textContent).not.toMatch(/\d|-/)
     expect(links[3].textContent).toContain('3')
   })
 })
