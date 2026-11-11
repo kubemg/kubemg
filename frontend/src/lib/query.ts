@@ -96,11 +96,54 @@ function entryAge(key: string): number | null {
  */
 export function sameAnswer(a: unknown, b: unknown): boolean {
   if (a === b) return true
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false
+  }
+  if (hasPodItems(a) && hasPodItems(b)) {
+    if (a.items.length !== b.items.length) return false
+    const result = rvMatch(a.items, b.items)
+    if (result !== null) return result
+  }
   try {
     return JSON.stringify(a) === JSON.stringify(b)
   } catch {
     return false
   }
+}
+
+type WithItems = { items: unknown[] }
+
+function hasPodItems(v: unknown): v is WithItems {
+  return (
+    v !== null &&
+    typeof v === 'object' &&
+    !Array.isArray(v) &&
+    'items' in v &&
+    Array.isArray((v as WithItems).items)
+  )
+}
+
+function itemRV(item: unknown): string | undefined {
+  if (item !== null && typeof item === 'object') {
+    const rv = (item as Record<string, unknown>).resource_version
+    if (typeof rv === 'string') return rv
+  }
+  return undefined
+}
+
+// rvMatch returns true when all items match by resource_version, false when any
+// differ, or null when not all items carry a resource_version (falling through
+// to stringify).
+function rvMatch(as: unknown[], bs: unknown[]): boolean | null {
+  if (as.length === 0) return null
+  for (let i = 0; i < as.length; i++) {
+    const a = itemRV(as[i])
+    if (a === undefined) return null
+    const b = itemRV(bs[i])
+    if (b === undefined) return null
+    if (a !== b) return false
+  }
+  return true
 }
 
 function writeEntry(key: string, value: unknown) {
