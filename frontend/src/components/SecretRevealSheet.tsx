@@ -26,7 +26,7 @@ import { Button, CodeBlock, Notice, Sheet } from './primitives'
 /** What a reveal costs, said before the first click rather than after it. */
 const REVEAL_BLURB =
   'Each value is read on its own and recorded on its own: the audit trail gets a line naming ' +
-  'you, this Secret and the key, written before the value is sent. Nothing caches it — closing ' +
+  'you, this Secret and the key, written before the value is sent. Nothing caches it - closing ' +
   'this view is the end of the copy here.'
 
 export function SecretRevealSheet({

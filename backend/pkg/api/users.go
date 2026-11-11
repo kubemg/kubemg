@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -37,7 +38,13 @@ type updateUserRequest struct {
 	SystemRole        *string `json:"system_role" binding:"omitempty,oneof=superadmin admin user"`
 	CanViewRecordings *bool   `json:"can_view_recordings"`
 	CanRevealSecrets  *bool   `json:"can_reveal_secrets"`
+	// SlackUserID links the account's Slack member ID; "" unlinks it.
+	SlackUserID *string `json:"slack_user_id"`
 }
+
+// slackUserIDPattern is a Slack member ID: U… in a workspace, W… on
+// Enterprise Grid.
+var slackUserIDPattern = regexp.MustCompile(`^[UW][A-Z0-9]{2,31}$`)
 
 // recordingCapabilityDenied refuses a caller who is not a super admin. Watching
 // other people's shells is the most invasive read in the product, so the account
@@ -201,6 +208,20 @@ func (s *server) updateUser(c *gin.Context) {
 		update.Username = &username
 	}
 	if req.Password != nil {
+		// Your own password changes only with your current one, on your own
+		// route: a stolen administrator session must not be able to set a new
+		// password here and lock the owner out of their account.
+		//
+		// The one exception is the setup wizard's first step: the seeded
+		// administrator replacing the password the install was booted with,
+		// before setup is complete. That password came from the operator's own
+		// configuration, so asking for it again proves nothing.
+		if target.ID == caller.ID && !s.replacingSeededPassword(c.Request.Context(), caller.ID) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "change your own password from your profile, with your current password",
+			})
+			return
+		}
 		if len(*req.Password) < minPasswordLength {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "password must be at least 8 characters"})
 			return
@@ -234,6 +255,37 @@ func (s *server) updateUser(c *gin.Context) {
 			return
 		}
 		update.CanRevealSecrets = req.CanRevealSecrets
+	}
+
+	if req.SlackUserID != nil {
+		slackID := strings.ToUpper(strings.TrimSpace(*req.SlackUserID))
+		if slackID != "" {
+			if !slackUserIDPattern.MatchString(slackID) {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": "a Slack member ID looks like U0123ABCD - copy it from the person's Slack profile, not their handle",
+				})
+				return
+			}
+			// One Slack member decides as one account: a second link would make
+			// every click of theirs ambiguous, and an ambiguous click decides
+			// nothing.
+			holder, err := s.store.UserBySlackID(c.Request.Context(), slackID)
+			if errors.Is(err, db.ErrConflict) {
+				c.JSON(http.StatusConflict, gin.H{"error": "that Slack member is already linked to another account"})
+				return
+			}
+			if err != nil && !errors.Is(err, db.ErrNotFound) {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check the Slack link"})
+				return
+			}
+			if err == nil && holder.ID != target.ID {
+				c.JSON(http.StatusConflict, gin.H{"error": "that Slack member is already linked to " + holder.Username})
+				return
+			}
+		}
+		if slackID != target.SlackUserID {
+			update.SlackUserID = &slackID
+		}
 	}
 
 	user, err := s.store.UpdateUser(c.Request.Context(), target.ID, update)

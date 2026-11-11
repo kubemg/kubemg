@@ -502,7 +502,7 @@ function NamespaceCell({ show, namespace }: { show: boolean; namespace?: string 
   if (!show) return null
   return (
     <Td className="truncate font-data text-[12.5px] text-muted" title={namespace}>
-      {namespace || '—'}
+      {namespace || '-'}
     </Td>
   )
 }
@@ -521,7 +521,7 @@ function opener(
 }
 
 /** List renders a set of values that is usually one value and sometimes six. */
-function List({ values, empty = '—' }: { values: string[] | undefined; empty?: string }) {
+function List({ values, empty = '-' }: { values: string[] | undefined; empty?: string }) {
   const items = values ?? []
   if (items.length === 0) return <span className="text-faint">{empty}</span>
   return (
@@ -922,14 +922,14 @@ function HelmReleaseTable({
               </Name>
             </Td>
             <NamespaceCell show={showNamespace} namespace={release.namespace} />
-            <Td className={`hidden md:table-cell ${DATA}`}>{release.chart_name || '—'}</Td>
-            <Td className={`hidden lg:table-cell ${DATA}`}>{release.chart_version || '—'}</Td>
-            <Td className={`hidden lg:table-cell ${DATA}`}>{release.app_version || '—'}</Td>
+            <Td className={`hidden md:table-cell ${DATA}`}>{release.chart_name || '-'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{release.chart_version || '-'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{release.app_version || '-'}</Td>
             <Td className="font-data text-[12.5px] text-muted">{release.revision}</Td>
             <Td>
               <Pill tone={helmTone(release.status)}>{release.status || 'unknown'}</Pill>
             </Td>
-            <Td className={AGE}>{release.updated_at ? <Age iso={release.updated_at} /> : '—'}</Td>
+            <Td className={AGE}>{release.updated_at ? <Age iso={release.updated_at} /> : '-'}</Td>
             {onValues ? (
               <Td className="whitespace-nowrap">
                 <span className="flex items-center justify-end gap-0.5">
@@ -1202,7 +1202,7 @@ function PodTable({
             >
               {pod.restarts}
             </Td>
-            <Td className={`hidden xl:table-cell ${DATA}`}>{pod.node || '—'}</Td>
+            <Td className={`hidden xl:table-cell ${DATA}`}>{pod.node || '-'}</Td>
             <Td className={`whitespace-nowrap ${AGE}`}><Age iso={pod.created_at} /></Td>
             <ManifestCell
               onManifest={onManifest}
@@ -1250,7 +1250,7 @@ function UsageCell({
     return (
       <Td className="hidden font-data text-[12.5px] text-faint sm:table-cell">
         <span title={usage ? 'No sample for this pod yet' : 'This cluster serves no Metrics API'}>
-          —
+          -
         </span>
       </Td>
     )
@@ -1396,7 +1396,7 @@ function WorkloadTable({
               {workload.ready}/{workload.desired}
             </Td>
             <Td className={`hidden lg:table-cell ${DATA}`} title={workload.images?.join(', ')}>
-              {workload.images?.[0] ?? '—'}
+              {workload.images?.[0] ?? '-'}
             </Td>
             <Td className={AGE}><Age iso={workload.created_at} /></Td>
             <ManifestCell
@@ -1480,7 +1480,7 @@ function JobTable({
               {job.failed}
             </Td>
             <Td className={`hidden lg:table-cell ${DATA}`} title={job.images?.join(', ')}>
-              {job.images?.[0] ?? '—'}
+              {job.images?.[0] ?? '-'}
             </Td>
             <Td className={AGE}><Age iso={job.created_at} /></Td>
             <ManifestCell
@@ -1730,9 +1730,9 @@ function ReplicaSetTable({
             </Td>
             <NamespaceCell show={showNamespace} namespace={replicaset.namespace} />
             <Td className={`hidden md:table-cell ${DATA}`} title={replicaset.owner}>
-              {replicaset.owner || '—'}
+              {replicaset.owner || '-'}
             </Td>
-            <Td className="font-data text-[12.5px] text-muted">{replicaset.revision || '—'}</Td>
+            <Td className="font-data text-[12.5px] text-muted">{replicaset.revision || '-'}</Td>
             <Td className="font-data text-[12.5px] text-fg">
               {replicaset.ready}/{replicaset.desired}
             </Td>
@@ -1855,7 +1855,7 @@ function AutoscalerTable({
  * idle workload and the other is an autoscaler that has never scraped.
  */
 function metricText(metric: { name: string; target: string; current?: string }): string {
-  if (!metric.current) return `${metric.name} —/${metric.target}`
+  if (!metric.current) return `${metric.name} -/${metric.target}`
   return `${metric.name} ${metric.current}/${metric.target}`
 }
 
@@ -1909,7 +1909,7 @@ function QuotaTable({
             <Td className={DATA}>
               <List
                 values={quota.entries.map(
-                  (entry) => `${entry.resource} ${entry.used || '—'}/${entry.hard}`,
+                  (entry) => `${entry.resource} ${entry.used || '-'}/${entry.hard}`,
                 )}
                 empty="nothing bounded"
               />
@@ -1983,7 +1983,7 @@ function limitText(entry: LimitRangeEntry): string {
   if (entry.default) parts.push(`default ${entry.default}`)
   if (entry.default_request) parts.push(`request ${entry.default_request}`)
   if (entry.max_limit_request_ratio) parts.push(`ratio ${entry.max_limit_request_ratio}`)
-  return `${entry.type}/${entry.resource} ${parts.join(' ') || '—'}`
+  return `${entry.type}/${entry.resource} ${parts.join(' ') || '-'}`
 }
 
 /**
@@ -2067,7 +2067,7 @@ function DisruptionBudgetTable({
 function budgetRule(budget: PodDisruptionBudget): string {
   if (budget.min_available) return `min available ${budget.min_available}`
   if (budget.max_unavailable) return `max unavailable ${budget.max_unavailable}`
-  return '—'
+  return '-'
 }
 
 function ServiceTable({
@@ -2117,7 +2117,7 @@ function ServiceTable({
             </Td>
             <NamespaceCell show={showNamespace} namespace={service.namespace} />
             <Td className="text-[12.5px] text-muted">{service.type}</Td>
-            <Td className={`hidden md:table-cell ${DATA}`}>{service.cluster_ip || '—'}</Td>
+            <Td className={`hidden md:table-cell ${DATA}`}>{service.cluster_ip || '-'}</Td>
             <Td className={`hidden lg:table-cell ${DATA}`}>
               <List values={service.external_ips} />
             </Td>
@@ -2183,7 +2183,7 @@ function IngressTable({
               </Name>
             </Td>
             <NamespaceCell show={showNamespace} namespace={ingress.namespace} />
-            <Td className={DATA}>{ingress.class || '—'}</Td>
+            <Td className={DATA}>{ingress.class || '-'}</Td>
             <Td className={DATA}>
               <List values={ingress.hosts} empty="*" />
             </Td>
@@ -2381,12 +2381,12 @@ function PersistentVolumeTable({
             <Td>
               <Pill tone={phaseTone(volume.status)}>{volume.status}</Pill>
             </Td>
-            <Td className="font-data text-[12.5px] text-fg">{volume.capacity || '—'}</Td>
+            <Td className="font-data text-[12.5px] text-fg">{volume.capacity || '-'}</Td>
             <Td className={`hidden md:table-cell ${DATA}`}>
               <List values={volume.access_modes} />
             </Td>
-            <Td className={`hidden lg:table-cell ${DATA}`}>{volume.claim || '—'}</Td>
-            <Td className={`hidden lg:table-cell ${DATA}`}>{volume.storage_class || '—'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{volume.claim || '-'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{volume.storage_class || '-'}</Td>
             <Td className={AGE}><Age iso={volume.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={volume.name} />
           </Row>
@@ -2449,12 +2449,12 @@ function ClaimTable({
             <Td>
               <Pill tone={phaseTone(claim.status)}>{claim.status}</Pill>
             </Td>
-            <Td className="font-data text-[12.5px] text-fg">{claim.capacity || '—'}</Td>
+            <Td className="font-data text-[12.5px] text-fg">{claim.capacity || '-'}</Td>
             <Td className={`hidden md:table-cell ${DATA}`}>
               <List values={claim.access_modes} />
             </Td>
-            <Td className={`hidden lg:table-cell ${DATA}`}>{claim.storage_class || '—'}</Td>
-            <Td className={`hidden lg:table-cell ${DATA}`}>{claim.volume || '—'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{claim.storage_class || '-'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{claim.volume || '-'}</Td>
             <Td className={AGE}><Age iso={claim.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={claim.name} namespace={claim.namespace} />
           </Row>
@@ -2505,8 +2505,8 @@ function StorageClassTable({
               </span>
             </Td>
             <Td className={DATA}>{entry.provisioner}</Td>
-            <Td className={`hidden md:table-cell ${DATA}`}>{entry.reclaim_policy || '—'}</Td>
-            <Td className={`hidden lg:table-cell ${DATA}`}>{entry.binding_mode || '—'}</Td>
+            <Td className={`hidden md:table-cell ${DATA}`}>{entry.reclaim_policy || '-'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{entry.binding_mode || '-'}</Td>
             <Td className={AGE}><Age iso={entry.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={entry.name} />
           </Row>
@@ -2577,7 +2577,7 @@ function ConfigTable({
               </span>
             </Td>
             <NamespaceCell show={showNamespace} namespace={entry.namespace} />
-            {secrets ? <Td className={`hidden md:table-cell ${DATA}`}>{entry.type || '—'}</Td> : null}
+            {secrets ? <Td className={`hidden md:table-cell ${DATA}`}>{entry.type || '-'}</Td> : null}
             <Td className="font-data text-[12.5px] text-muted">{entry.keys?.length ?? 0}</Td>
             {/* Key names, never values: a value is not in the response at all. */}
             <Td className={`hidden lg:table-cell ${DATA}`}>
@@ -2986,9 +2986,9 @@ function CustomResourceTable({
             </Td>
             <NamespaceCell show={showNamespace} namespace={row.namespace} />
             <Td className="hidden truncate text-[12.5px] text-fg md:table-cell">
-              {row.kind || '—'}
+              {row.kind || '-'}
             </Td>
-            <Td className={`hidden lg:table-cell ${DATA}`}>{row.api_version || '—'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{row.api_version || '-'}</Td>
             <Td className={AGE}><Age iso={row.created_at} /></Td>
             <ManifestCell onManifest={onManifest} name={row.name} namespace={row.namespace} />
           </Row>
@@ -3056,8 +3056,8 @@ function NodeTable({
               <List values={node.roles} />
             </Td>
             <Td className={DATA}>{node.version}</Td>
-            <Td className={`hidden lg:table-cell ${DATA}`}>{node.internal_ip || '—'}</Td>
-            <Td className={`hidden lg:table-cell ${DATA}`}>{node.cpu || '—'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{node.internal_ip || '-'}</Td>
+            <Td className={`hidden lg:table-cell ${DATA}`}>{node.cpu || '-'}</Td>
             <Td className={AGE}><Age iso={node.created_at} /></Td>
             <ManifestCell
               onManifest={onManifest}
@@ -3146,7 +3146,7 @@ function NamespaceTable({
               )}
             </Td>
             <Td className={AGE}>
-              {namespace.created_at ? <Age iso={namespace.created_at} /> : '—'}
+              {namespace.created_at ? <Age iso={namespace.created_at} /> : '-'}
             </Td>
             <ManifestCell onManifest={onManifest} name={namespace.name} />
           </Row>

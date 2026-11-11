@@ -98,7 +98,7 @@ export function Login() {
             <div className="mt-4">
               <Notice tone="info">
                 With no administrator password configured, one was generated on first boot and
-                printed once to the server’s log — <span className="font-mono">docker compose logs
+                printed once to the server’s log - <span className="font-mono">docker compose logs
                 kubemg</span> on a compose install. Setup makes changing it the first step.
               </Notice>
             </div>

@@ -253,7 +253,7 @@ export function SsoSettingsPanel() {
       !(await confirm({
         eyebrow: 'Identity provider',
         title: `Delete ${provider.name}?`,
-        body: 'Accounts it created keep their access and their audit history, but nobody will be able to sign in through it — including anybody who has no local password.',
+        body: 'Accounts it created keep their access and their audit history, but nobody will be able to sign in through it - including anybody who has no local password.',
         confirmLabel: 'Delete',
       }))
     ) {
@@ -279,7 +279,7 @@ export function SsoSettingsPanel() {
       <Panel
         eyebrow="Identity"
         title="Single sign-on"
-        description="Federate kubemg accounts to your own directory. An account signs in through exactly one of these or with a local password — never both — and what an external group is worth here is decided by the mapping rules, not by the directory."
+        description="Federate kubemg accounts to your own directory. An account signs in through exactly one of these or with a local password - never both - and what an external group is worth here is decided by the mapping rules, not by the directory."
         actions={
           <Button type="button" variant="primary" onClick={() => setEditing('new')}>
             <Plus aria-hidden="true" className="size-4" />
@@ -509,7 +509,7 @@ function ProviderSheet({
       {!provider && okta ? (
         <Notice tone="info">
           {draft.protocol === 'oidc'
-            ? 'In the Okta Admin Console, create an app integration of type OIDC — Web Application and copy its client ID and secret here. The sign-in redirect URI to give Okta appears on this provider once it is saved.'
+            ? 'In the Okta Admin Console, create an app integration of type OIDC - Web Application and copy its client ID and secret here. The sign-in redirect URI to give Okta appears on this provider once it is saved.'
             : 'In the Okta Admin Console, create an app integration of type SAML 2.0 and paste its metadata URL here. The single sign-on URL and audience URI to give Okta appear on this provider once it is saved.'}
         </Notice>
       ) : null}
@@ -536,7 +536,7 @@ function ProviderSheet({
             htmlFor="sso-issuer"
             hint={
               okta
-                ? 'Your org domain alone for the org authorization server, or /oauth2/{server id} after it for a custom one — not the -admin console address.'
+                ? 'Your org domain alone for the org authorization server, or /oauth2/{server id} after it for a custom one - not the -admin console address.'
                 : "kubemg reads the provider's discovery document from here; no endpoint has to be entered by hand."
             }
           >
@@ -859,7 +859,7 @@ function ProviderSheet({
             'The default username claim'
           )}{' '}
           is one many providers let a person edit. The first sign-in makes it the account's name for good, and a
-          person who renames themselves at the provider to somebody else's name is refused rather than let in —
+          person who renames themselves at the provider to somebody else's name is refused rather than let in -
           but only once that account has signed in and recorded its provider ID. Use{' '}
           <span className="font-data">sub</span> or an attribute only a directory administrator writes.
         </Notice>
@@ -883,7 +883,7 @@ function ProviderSheet({
       <Field
         label="Role for new accounts"
         htmlFor="sso-default-role"
-        hint="Administrators can also be conferred by a mapping rule. Super admin never is — that account has to survive an outage of this provider."
+        hint="Administrators can also be conferred by a mapping rule. Super admin never is - that account has to survive an outage of this provider."
       >
         <Select
           id="sso-default-role"

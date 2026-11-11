@@ -12,6 +12,7 @@ import (
 
 	"github.com/kubemg/kubemg/backend/pkg/db"
 	"github.com/kubemg/kubemg/backend/pkg/helm"
+	"github.com/kubemg/kubemg/backend/pkg/observability"
 )
 
 /*
@@ -62,7 +63,7 @@ type repositoryResponse struct {
 func toRepositoryResponse(repository db.HelmRepository) repositoryResponse {
 	return repositoryResponse{
 		Name:          repository.Name,
-		URL:           repository.URL,
+		URL:           observability.WithoutUserinfo(repository.URL),
 		Description:   repository.Description,
 		Username:      repository.Username,
 		HasCredential: repository.HasCredential(),
@@ -151,6 +152,11 @@ func (s *server) putHelmRepository(c *gin.Context) {
 		return
 	}
 
+	if request.Credential == nil && stored != nil && stored.Credential != "" &&
+		!sameOrigin(request.URL, stored.URL) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errRetypeCredential})
+		return
+	}
 	repository := db.HelmRepository{
 		Name:        name,
 		URL:         strings.TrimSpace(request.URL),
@@ -163,6 +169,11 @@ func (s *server) putHelmRepository(c *gin.Context) {
 		repository.Seeded = stored.Seeded
 	}
 	if err := repository.Repository().Validate(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// The catalogue shows the address to everyone signed in.
+	if err := observability.RefuseUserinfo(repository.URL, "the repository's username and credential fields"); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

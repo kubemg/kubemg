@@ -173,7 +173,7 @@ export function EmailSettings() {
   async function remove() {
     const ok = await confirm({
       title: 'Remove mail relay',
-      body: 'KubeMG stops sending mail. Passwords still expire on schedule — nobody is reminded before theirs does.',
+      body: 'KubeMG stops sending mail. Passwords still expire on schedule - nobody is reminded before theirs does.',
       confirmLabel: 'Remove',
       tone: 'danger',
     })
@@ -194,13 +194,13 @@ export function EmailSettings() {
   return (
     <SettingsLayout
       title="Email"
-      description="The SMTP relay KubeMG sends its own mail through — today, reminders before a password expires."
+      description="The SMTP relay KubeMG sends its own mail through - today, reminders before a password expires."
       aside={
         relay ? (
           <>
             <SettingsAside
               label="Relay in force"
-              value={stored ? `${stored.host}:${stored.port}` : 'None — no mail is sent'}
+              value={stored ? `${stored.host}:${stored.port}` : 'None - no mail is sent'}
               reach="Reminders go 14, 7, 3 and 1 days before a password expires, and once when it has, to the account's own email address. An account with no address gets none."
             />
             {stored ? (
@@ -326,7 +326,7 @@ export function EmailSettings() {
                 }
                 error={
                   passwordMoved && draft.username.trim() !== ''
-                    ? 'Enter the password again — a stored password is kept only for the host and login it was given for.'
+                    ? 'Enter the password again - a stored password is kept only for the host and login it was given for.'
                     : undefined
                 }
               >
@@ -357,7 +357,7 @@ export function EmailSettings() {
           <Panel
             eyebrow="Check"
             title="Send a test message"
-            description="Sends one message through the saved relay — save changes first. A refusal is shown in the relay's own words."
+            description="Sends one message through the saved relay - save changes first. A refusal is shown in the relay's own words."
             bodyClassName="flex flex-col gap-4 p-4"
           >
             <Field

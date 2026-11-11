@@ -203,7 +203,7 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
         <>
           A kubeconfig for a cluster reached through an agent carries a kubemg token, so revoking
           it here stops the next call. One for a cluster registered for direct API access carries a
-          token that cluster minted, which kubemg cannot withdraw — those rows say so, and the only
+          token that cluster minted, which kubemg cannot withdraw - those rows say so, and the only
           lever is deleting the account’s <code className="font-mono text-[12.5px]">kubemg-…</code>{' '}
           ServiceAccount on the cluster.
         </>
@@ -379,7 +379,7 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
                         className="text-[12px] text-muted"
                         title={row.explanation ?? undefined}
                       >
-                        {row.status === 'active' ? 'cluster-side only' : '—'}
+                        {row.status === 'active' ? 'cluster-side only' : '-'}
                       </span>
                     )}
                   </Td>
@@ -394,7 +394,7 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
               title={rows.length === 0 ? 'No credentials on record' : 'Nothing matches that filter'}
             >
               {rows.length === 0
-                ? 'A row appears here the moment somebody generates a kubeconfig. Credentials issued before this register existed are not listed — nothing recorded them.'
+                ? 'A row appears here the moment somebody generates a kubeconfig. Credentials issued before this register existed are not listed - nothing recorded them.'
                 : null}
             </EmptyState>
           ) : null}

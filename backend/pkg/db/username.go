@@ -11,7 +11,7 @@ import (
 // ErrUnsafeUsername is returned when a new or renamed account would carry a
 // name Kubernetes reads as something other than a plain user.
 var ErrUnsafeUsername = errors.New(
-	"a username may not contain ':' or control characters — Kubernetes reads " +
+	"a username may not contain ':' or control characters - Kubernetes reads " +
 		"colon-separated names such as system:serviceaccount:<namespace>:<name> as " +
 		"identities of its own",
 )

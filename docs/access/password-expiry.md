@@ -11,14 +11,14 @@ account's password by hand at any time.
 |---|---|
 | Local (a password held by kubemg) | Yes |
 | LDAP, OIDC or SAML | No. The password belongs to the directory or identity provider; set its policy there. |
-| Machine account | No. It has no password — it signs in with a stored, revocable token. |
+| Machine account | No. It has no password - it signs in with a stored, revocable token. |
 
 ## Turning it on
 
 Under **Admin → Settings → General → Password expiry**, enter how many days a
 password lasts (1 to 3650). Leave it empty for no expiry, which is the default.
 
-The count starts from each password's **last change** — by its owner, or by an
+The count starts from each password's **last change** - by its owner, or by an
 administrator setting it on the account. Accounts whose password was set before
 your kubemg version had this feature count from the upgrade, so turning the
 policy on never finds every old account already expired.
@@ -28,7 +28,7 @@ immediately; their owners are held at the change screen at their next click.
 
 ## What happens when a password expires
 
-The expired password **still signs in** — it was the right password — and the
+The expired password **still signs in** - it was the right password - and the
 console then shows only one screen: **Choose a new password**, asking for the
 current password, the new one, and the new one again. Nothing else opens until
 the password is changed. Somebody who is already signed in when their password
@@ -51,10 +51,10 @@ not the same as the current one.
 
 Open the account under **Admin → Users**. The *Identity* panel shows when its
 password was last changed and when it expires; **Expire password** makes the
-person choose a new one before anything else — at their next sign-in, or at
+person choose a new one before anything else - at their next sign-in, or at
 their next click if they are signed in now.
 
-- You cannot expire your own password — change it from **My profile** instead.
+- You cannot expire your own password - change it from **My profile** instead.
 - Only a super admin can expire a super admin's password.
 - The button is absent for an LDAP, OIDC, SAML or machine account.
 
@@ -76,7 +76,7 @@ reminders again for its own expiry date.
 Reminders need two things:
 
 - a **mail relay**, configured under **Admin → Settings → Email** (below). With
-  none, passwords still expire on schedule — nobody is warned. The General
+  none, passwords still expire on schedule - nobody is warned. The General
   settings page says so while the policy is on and no relay is set.
 - an **email address on the account**. An account without one gets no
   reminders; people can set their own under **My profile**.
@@ -92,13 +92,13 @@ Under **Admin → Settings → Email**:
 |---|---|
 | Host | The SMTP relay's host name or address, without a scheme or port. |
 | Port | Usually 587 for STARTTLS, 465 for TLS, 25 for none. |
-| Security | **STARTTLS** (default) upgrades the connection before anything is sent; a relay that does not offer it is refused, never used in plain text. **TLS** is encrypted from the first byte. **None** is plain text, and only for a relay that needs no login — a password is never sent unencrypted except to a relay on the same host. |
+| Security | **STARTTLS** (default) upgrades the connection before anything is sent; a relay that does not offer it is refused, never used in plain text. **TLS** is encrypted from the first byte. **None** is plain text, and only for a relay that needs no login - a password is never sent unencrypted except to a relay on the same host. |
 | Sender address | The *From* of every message, for example `KubeMG <kubemg@example.com>`. |
-| Username / Password | For a relay that needs a login. The password is stored encrypted (under `KUBEMG_SECRET_KEY` when set) and never shown again; leave the field empty to keep it. A stored password is kept only while the host and username stay the same — change either and it has to be entered again, so the relay cannot be pointed somewhere else with the stored password still attached. |
+| Username / Password | For a relay that needs a login. The password is stored encrypted (under `KUBEMG_SECRET_KEY` when set) and never shown again; leave the field empty to keep it. A stored password is kept only while the host and username stay the same - change either and it has to be entered again, so the relay cannot be pointed somewhere else with the stored password still attached. |
 
 Saving checks the values but does not contact the relay. **Send test message**
-sends one message through the saved relay — to your own address unless you name
-another — and shows the relay's own words if it refuses.
+sends one message through the saved relay - to your own address unless you name
+another - and shows the relay's own words if it refuses.
 
 ## In the audit trail
 

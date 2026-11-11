@@ -183,7 +183,7 @@ func Discover(services []ServiceRef) []Candidate {
 				ServiceScheme:    "http",
 				Score:            1,
 				Reason: "the Service name matches " + providerLabel(sig.provider) +
-					", but not on its usual port — confirm the port before saving",
+					", but not on its usual port - confirm the port before saving",
 			}
 			if sig.prefix != nil {
 				candidate.PathPrefix = sig.prefix(name)

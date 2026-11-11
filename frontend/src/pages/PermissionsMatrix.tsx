@@ -195,7 +195,7 @@ export function PermissionsMatrix() {
             <p className="text-[12.5px] leading-relaxed text-muted">
               These grants govern kubemg. On an agent cluster the substantive
               &ldquo;may they&rdquo; is the cluster&rsquo;s, decided by its own RBAC through
-              impersonation —{' '}
+              impersonation -{' '}
               <Link
                 to={`/clusters/${rbacCluster.id}/explore/clusterroles`}
                 className="text-accent hover:underline"
@@ -314,7 +314,7 @@ export function PermissionsMatrix() {
                                 // words would read as a form nobody filled in.
                                 <>
                                   <span className="text-[13px] text-faint group-hover/cell:hidden group-focus-visible/cell:hidden">
-                                    —
+                                    -
                                   </span>
                                   <span className="hidden items-center gap-1 text-[12.5px] font-medium text-accent group-hover/cell:inline-flex group-focus-visible/cell:inline-flex">
                                     <Plus aria-hidden="true" className="size-3.5" />
@@ -331,7 +331,7 @@ export function PermissionsMatrix() {
                                     temporary.expires_at
                                       ? formatInstant(temporary.expires_at)
                                       : 'its window ends'
-                                  } — granted by an approved access request.`}
+                                  } - granted by an approved access request.`}
                                 >
                                   <Timer aria-hidden="true" className="size-3 shrink-0" />
                                   <span className="truncate font-data">

@@ -289,7 +289,7 @@ export function WorkloadPodsView({
                     {pod.restarts}
                   </Td>
                   <Td className="hidden truncate font-data text-[12.5px] text-muted xl:table-cell">
-                    {pod.node || '—'}
+                    {pod.node || '-'}
                   </Td>
                   <Td className="whitespace-nowrap font-data text-[12px] text-muted">
                     <Age iso={pod.created_at} />
@@ -427,7 +427,7 @@ function podImages(pod: Pod): string[] {
  */
 function podImageLabel(pod: Pod): string {
   const images = podImages(pod)
-  if (images.length === 0) return '—'
+  if (images.length === 0) return '-'
   if (images.length === 1) return images[0]
   return `${images[0]} +${images.length - 1}`
 }
@@ -459,7 +459,7 @@ function UsageCell({
     return (
       <Td className="hidden font-data text-[12.5px] text-faint sm:table-cell">
         <span title={usage ? 'No sample for this pod yet' : 'This cluster serves no Metrics API'}>
-          —
+          -
         </span>
       </Td>
     )

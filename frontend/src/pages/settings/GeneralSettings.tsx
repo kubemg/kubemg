@@ -193,7 +193,7 @@ export function GeneralSettings() {
               label="Longest kubeconfig window"
               value={humanHours(settings.effective.kubeconfig_max_ttl_hours)}
               source={settingSource(settings.overrides.kubeconfig_max_ttl_hours, 0)}
-              reach="Credentials issued from now on. A kubeconfig already in somebody's hands keeps the window it was signed with — shortening the ceiling does not shorten it, revoking it does."
+              reach="Credentials issued from now on. A kubeconfig already in somebody's hands keeps the window it was signed with - shortening the ceiling does not shorten it, revoking it does."
             />
             <SettingsAside
               label="Calls per account and cluster"
@@ -202,13 +202,13 @@ export function GeneralSettings() {
                 settings.overrides.proxy_rate_limit_per_second || settings.overrides.proxy_rate_limit_burst,
                 0,
               )}
-              reach="Takes effect at once, for kubectl, the console, the CLI and machine tokens alike. A shell, exec, log follow or port-forward already open is never cut off — only opening one counts."
+              reach="Takes effect at once, for kubectl, the console, the CLI and machine tokens alike. A shell, exec, log follow or port-forward already open is never cut off - only opening one counts."
             />
             <SettingsAside
               label="Second factor"
               value={MFA_POLICY.find((p) => p.value === (settings.effective.mfa_enforcement || 'off'))?.label ?? 'Optional'}
               source={settingSource(settings.overrides.mfa_enforcement, '')}
-              reach="Sign-ins from now on. A session already open runs to its own expiry — requiring a factor does not end it."
+              reach="Sign-ins from now on. A session already open runs to its own expiry - requiring a factor does not end it."
             />
             <SettingsAside
               label="Password expiry"
@@ -275,7 +275,7 @@ export function GeneralSettings() {
           <Panel
             eyebrow="Server"
             title="Where clusters reach kubemg"
-            description="Baked into every agent install command and into the agent's tunnel address, so it must be routable from inside a target cluster — not the address your browser uses."
+            description="Baked into every agent install command and into the agent's tunnel address, so it must be routable from inside a target cluster - not the address your browser uses."
             bodyClassName="flex flex-col gap-4 p-4"
           >
             <Field
@@ -301,7 +301,7 @@ export function GeneralSettings() {
           <Panel
             eyebrow="Cluster access"
             title="How long a kubeconfig may live"
-            description="The ceiling anyone generating a kubeconfig is measured against. They still choose their own window inside it — this is the longest one the choice offers."
+            description="The ceiling anyone generating a kubeconfig is measured against. They still choose their own window inside it - this is the longest one the choice offers."
             bodyClassName="flex flex-col gap-4 p-4"
           >
             <Field
@@ -333,7 +333,7 @@ export function GeneralSettings() {
           <Panel
             eyebrow="Cluster access"
             title="The kubemg command line"
-            description="kubemg login signs a command line in through this console — your second factor included — and it then hands kubectl a fifteen-minute credential at a time."
+            description="kubemg login signs a command line in through this console - your second factor included - and it then hands kubectl a fifteen-minute credential at a time."
             bodyClassName="flex flex-col gap-4 p-4"
           >
             <Field
@@ -363,7 +363,7 @@ export function GeneralSettings() {
               htmlFor="kubeconfig_issuance"
               hint={
                 issuance === 'cli_only'
-                  ? 'Not handed out. kubectl reaches agent-mode clusters through the CLI only. Direct-mode clusters are unaffected — their credential is a token the cluster mints, which no CLI session governs.'
+                  ? 'Not handed out. kubectl reaches agent-mode clusters through the CLI only. Direct-mode clusters are unaffected - their credential is a token the cluster mints, which no CLI session governs.'
                   : 'Handed out from the console, alongside the CLI.'
               }
             >
@@ -387,7 +387,7 @@ export function GeneralSettings() {
           <Panel
             eyebrow="Cluster access"
             title="How fast one account may call a cluster"
-            description="Every call kubemg makes into a cluster on somebody's behalf spends from that person's budget for that cluster — a kubectl command, each read behind a console page, a CLI or machine token. A call over budget waits up to two seconds for its turn, then is refused with 429 and recorded in the audit trail; kubectl waits and retries on its own."
+            description="Every call kubemg makes into a cluster on somebody's behalf spends from that person's budget for that cluster - a kubectl command, each read behind a console page, a CLI or machine token. A call over budget waits up to two seconds for its turn, then is refused with 429 and recorded in the audit trail; kubectl waits and retries on its own."
             bodyClassName="flex flex-col gap-4 p-4"
           >
             <Field
@@ -415,7 +415,7 @@ export function GeneralSettings() {
             <Field
               label="Burst"
               htmlFor="proxy_rate_limit_burst"
-              hint={`Leave empty for the default of ${settings.defaults.proxy_rate_limit_burst}. How many calls may go at once before the rate applies — one console page across every namespace is up to fifty.`}
+              hint={`Leave empty for the default of ${settings.defaults.proxy_rate_limit_burst}. How many calls may go at once before the rate applies - one console page across every namespace is up to fifty.`}
               error={rateBurstError}
             >
               <TextInput

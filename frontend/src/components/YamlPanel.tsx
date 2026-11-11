@@ -334,7 +334,7 @@ export function YamlPanel({
           ) : diffError ? (
             <Notice tone="warn">{diffError}</Notice>
           ) : diff ? (
-            <ManifestDiffView diff={diff} emptyLabel="This manifest matches the object on the cluster — nothing would change." />
+            <ManifestDiffView diff={diff} emptyLabel="This manifest matches the object on the cluster - nothing would change." />
           ) : null}
           {guardrail ? (
             <Notice tone="error">
@@ -367,8 +367,8 @@ export function YamlPanel({
         {reviewing
           ? 'Confirming replaces the object through the agent tunnel under your own identity. The cluster’s RBAC decides whether you may, and the change is recorded in the audit trail.'
           : editing
-            ? 'Apply reviews the change before writing it — nothing reaches the cluster until you confirm.'
-            : 'Read live through the agent tunnel under your own identity. Server-side bookkeeping — managed fields and kubectl’s last-applied copy — is stripped.'}
+            ? 'Apply reviews the change before writing it - nothing reaches the cluster until you confirm.'
+            : 'Read live through the agent tunnel under your own identity. Server-side bookkeeping - managed fields and kubectl’s last-applied copy - is stripped.'}
       </p>
 
       {savingTemplate && manifest ? (

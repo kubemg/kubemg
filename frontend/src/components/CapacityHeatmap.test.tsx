@@ -63,7 +63,7 @@ describe('CapacityHeatmap', () => {
     render(<CapacityHeatmap nodes={[node('n1')]} usageAvailable={false} onSelect={() => {}} />)
     const cells = within(rowOf('n1')).getAllByRole('cell')
     // Reserved, in use, limits — CPU first.
-    expect(cells[1].textContent).toBe('—')
+    expect(cells[1].textContent).toBe('-')
     expect(cells[1].getAttribute('title')).toContain('not measured')
     expect(cells[0].textContent).toBe('0%')
   })

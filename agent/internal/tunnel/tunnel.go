@@ -540,7 +540,7 @@ func readWelcome(conn *websocket.Conn) (protocol.Welcome, error) {
 	}
 	if msg.Welcome.ProtocolVersion != protocol.ProtocolVersion {
 		return protocol.Welcome{}, fmt.Errorf(
-			"bastion speaks tunnel protocol v%d, this agent speaks v%d — upgrade the agent",
+			"bastion speaks tunnel protocol v%d, this agent speaks v%d - upgrade the agent",
 			msg.Welcome.ProtocolVersion, protocol.ProtocolVersion,
 		)
 	}

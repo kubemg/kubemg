@@ -110,7 +110,7 @@ describe('the workloads section', () => {
     section(report({ workloads: [workload], workloads_total: 1 }), false)
     expect(screen.getByRole('button', { name: /web/ })).toBeTruthy()
     expect(screen.getByText('1.71 cores')).toBeTruthy()
-    expect(screen.getAllByText('—').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('-').length).toBeGreaterThan(0)
   })
 })
 

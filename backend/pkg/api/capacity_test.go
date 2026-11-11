@@ -57,7 +57,7 @@ func TestDemandOfSumsRegularContainers(t *testing.T) {
 		t.Errorf("memory request = %d, want %d", got.memoryRequest, want)
 	}
 	if got.cpuLimit != 1000 {
-		t.Errorf("cpu limit = %d, want 1000 — a container declaring none adds nothing", got.cpuLimit)
+		t.Errorf("cpu limit = %d, want 1000 - a container declaring none adds nothing", got.cpuLimit)
 	}
 	if got.cpuUnlimited != 1 || got.memoryUnlimited != 1 {
 		t.Errorf("one container declares no limit at all: got cpu %d, memory %d",
@@ -100,7 +100,7 @@ func TestDemandOfIgnoresAFinishedInitContainersLimit(t *testing.T) {
 
 	got := demandOf(pod)
 	if got.cpuLimit != 500 {
-		t.Errorf("cpu limit = %d, want 500 — an init container's limit constrains a step that has finished",
+		t.Errorf("cpu limit = %d, want 500 - an init container's limit constrains a step that has finished",
 			got.cpuLimit)
 	}
 	if got.cpuUnlimited != 0 {
@@ -117,13 +117,13 @@ func TestDemandOfAddsPodOverhead(t *testing.T) {
 
 	got := demandOf(pod)
 	if got.cpuRequest != 550 {
-		t.Errorf("cpu request = %d, want 550 — a sandboxed runtime charges for the sandbox", got.cpuRequest)
+		t.Errorf("cpu request = %d, want 550 - a sandboxed runtime charges for the sandbox", got.cpuRequest)
 	}
 	if want := int64(320 << 20); got.memoryRequest != want {
 		t.Errorf("memory request = %d, want %d", got.memoryRequest, want)
 	}
 	if got.cpuLimit != 550 {
-		t.Errorf("cpu limit = %d, want 550 — overhead is charged against the ceiling too", got.cpuLimit)
+		t.Errorf("cpu limit = %d, want 550 - overhead is charged against the ceiling too", got.cpuLimit)
 	}
 }
 
@@ -238,7 +238,7 @@ func TestBuildCapacityCountsPodsThatReserveNothing(t *testing.T) {
 			rows[0].Pods.WithoutRequests, summary.Pods.WithoutRequests)
 	}
 	if !hasConcern(rows[0], "requests-unset") {
-		t.Error("a node carrying a pod that reserves nothing must say so — the reserved figure understates it")
+		t.Error("a node carrying a pod that reserves nothing must say so - the reserved figure understates it")
 	}
 }
 
@@ -358,7 +358,7 @@ func TestOvercommitThresholdsDifferByResource(t *testing.T) {
 		t.Errorf("memory over the node's own size is a warning, got %q", memory.Severity)
 	}
 	if !strings.Contains(memory.Detail, "evicting") {
-		t.Errorf("the memory case must say what happens — eviction — got %q", memory.Detail)
+		t.Errorf("the memory case must say what happens - eviction - got %q", memory.Detail)
 	}
 }
 
@@ -397,7 +397,7 @@ func TestPodSlotsCapANodeBeforeItsCPUDoes(t *testing.T) {
 		t.Errorf("a node with no pod slots left takes nothing more, got %q", got.Severity)
 	}
 	if rows[0].CPU.RequestedPercent > 1 {
-		t.Fatal("this node's CPU is untouched — the ceiling here is the kubelet's own")
+		t.Fatal("this node's CPU is untouched - the ceiling here is the kubelet's own")
 	}
 }
 

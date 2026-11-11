@@ -43,7 +43,7 @@ var GuardrailTemplates = []GuardrailTemplate{
 	{
 		Key:  "delete-collection",
 		Name: "Block bulk deletion of a resource collection",
-		Description: "A DELETE against a collection rather than a named object — " +
+		Description: "A DELETE against a collection rather than a named object - " +
 			"`kubectl delete pods --all`. One character separates it from deleting one pod.",
 		Pattern: `^DELETE /api(/v[0-9a-z]+|s/[^/]+/v[0-9a-z]+)/namespaces/[^/]+/[a-z]+(\?|$)`,
 		Target:  GuardrailTargetAPIRequest,
@@ -105,7 +105,7 @@ var GuardrailTemplates = []GuardrailTemplate{
 		Name: "Flag reads of a single Secret",
 		Description: "Warn rather than block: reading a Secret is legitimate and constant, " +
 			"but a burst of it is worth a line in the trail. A good rule to run in warn " +
-			"first — that is what the mode is for.",
+			"first - that is what the mode is for.",
 		Pattern: `^GET /api/v1/namespaces/[^/]+/secrets/[^/?]+`,
 		Target:  GuardrailTargetAPIRequest,
 		Action:  GuardrailActionWarn,

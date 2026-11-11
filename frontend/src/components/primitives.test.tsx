@@ -4,7 +4,9 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { ArcGauge, Disclosure, Meter, OBJECT_NAME, Pill, Row, Switch, TickMeter } from './primitives'
+import { useState } from 'react'
+
+import { ArcGauge, Disclosure, Meter, OBJECT_NAME, Pill, Row, Switch, Tabs, TickMeter } from './primitives'
 
 /*
  * The DOM half of the suite, kept deliberately small. What is worth rendering a
@@ -246,5 +248,81 @@ describe('an object name', () => {
     expect(row.className).toContain('group/row')
     expect(row.className).toContain('focus-within:bg-raised')
     expect(screen.getByRole('button').className).toContain('group-hover/row:text-accent')
+  })
+})
+
+describe('Tabs', () => {
+  type View = 'overview' | 'describe' | 'yaml'
+  const OPTIONS: Array<{ value: View; label: string; count?: number }> = [
+    { value: 'overview', label: 'Overview' },
+    { value: 'describe', label: 'Describe & Events', count: 4 },
+    { value: 'yaml', label: 'YAML' },
+  ]
+
+  function Harness({ onChange }: { onChange?: (next: View) => void }) {
+    const [value, setValue] = useState<View>('overview')
+    return (
+      <Tabs<View>
+        ariaLabel="Resource view"
+        value={value}
+        onChange={(next) => {
+          setValue(next)
+          onChange?.(next)
+        }}
+        options={OPTIONS}
+      />
+    )
+  }
+
+  it('is a tablist with the open view selected and the only tab in the tab order', () => {
+    render(<Harness />)
+    expect(screen.getByRole('tablist', { name: 'Resource view' })).toBeTruthy()
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.map((tab) => tab.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false'])
+    expect(tabs.map((tab) => tab.tabIndex)).toEqual([0, -1, -1])
+    // The count is part of the tab's name, so a screen reader hears it too.
+    expect(screen.getByRole('tab', { name: 'Describe & Events 4' })).toBeTruthy()
+  })
+
+  it('opens a view on click', () => {
+    const onChange = vi.fn()
+    render(<Harness onChange={onChange} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'YAML' }))
+    expect(onChange).toHaveBeenCalledWith('yaml')
+    expect(screen.getByRole('tab', { name: 'YAML' }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('moves with the arrow keys, wrapping at either end, and Home/End', () => {
+    render(<Harness />)
+    const tab = (name: string) => screen.getByRole('tab', { name })
+    const selected = () => screen.getAllByRole('tab').find((t) => t.getAttribute('aria-selected') === 'true')
+
+    fireEvent.keyDown(tab('Overview'), { key: 'ArrowLeft' })
+    expect(selected()).toBe(tab('YAML'))
+    expect(document.activeElement).toBe(tab('YAML'))
+
+    fireEvent.keyDown(tab('YAML'), { key: 'ArrowRight' })
+    expect(selected()).toBe(tab('Overview'))
+
+    fireEvent.keyDown(tab('Overview'), { key: 'End' })
+    expect(selected()).toBe(tab('YAML'))
+    fireEvent.keyDown(tab('YAML'), { key: 'Home' })
+    expect(selected()).toBe(tab('Overview'))
+    expect(document.activeElement).toBe(tab('Overview'))
+  })
+
+  it('leaves every other key alone', () => {
+    const onChange = vi.fn()
+    render(<Harness onChange={onChange} />)
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Overview' }), { key: 'a' })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('marks the open view with the lime underline and leaves the rest without one', () => {
+    render(<Harness />)
+    const underline = (name: string) =>
+      screen.getByRole('tab', { name }).querySelector('[aria-hidden="true"].bg-accent')
+    expect(underline('Overview')?.className).toContain('opacity-100')
+    expect(underline('YAML')?.className).toContain('opacity-0')
   })
 })

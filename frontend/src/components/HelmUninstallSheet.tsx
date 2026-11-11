@@ -24,7 +24,7 @@ import { Button, Notice, Sheet } from './primitives'
 /** What the sheet says before anything has been removed. */
 const UNINSTALL_BLURB =
   'Uninstalling removes every object this release recorded in its manifest, one call at a time ' +
-  'and in reverse of the order they were installed — each answered by the cluster’s own RBAC and ' +
+  'and in reverse of the order they were installed - each answered by the cluster’s own RBAC and ' +
   'each its own line in the audit trail. The release’s own records go last, and only if ' +
   'everything else went: if something cannot be removed, the release is left in place so it ' +
   'still describes what is there.'
@@ -34,9 +34,9 @@ const UNINSTALL_BLURB =
  * than in the report, because neither is recoverable by reading afterwards.
  */
 const UNINSTALL_LIMITS =
-  'Chart delete hooks are not run, and anything the chart did not render — a volume a ' +
+  'Chart delete hooks are not run, and anything the chart did not render - a volume a ' +
   'StatefulSet expanded, anything a controller created, and any CustomResourceDefinition the ' +
-  'chart shipped — is not in the manifest and stays behind.'
+  'chart shipped - is not in the manifest and stays behind.'
 
 export function HelmUninstallSheet({
   cluster,

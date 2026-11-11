@@ -112,7 +112,7 @@ func TestATunnelDropEndsAnExecWithAFailureStatus(t *testing.T) {
 				t.Fatalf("status = %v, want a Failure naming the lost session", statuses[0])
 			}
 			if closeErr.Code != websocket.CloseNormalClosure {
-				t.Fatalf("close code = %d, want %d — a 1011 behind the Status fails client-go's read of it",
+				t.Fatalf("close code = %d, want %d - a 1011 behind the Status fails client-go's read of it",
 					closeErr.Code, websocket.CloseNormalClosure)
 			}
 		})

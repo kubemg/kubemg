@@ -170,7 +170,7 @@ export function ConditionTiles({ conditions }: { conditions: readonly ResourceCo
         return (
           <li
             key={condition.type}
-            title={[condition.reason, condition.message].filter(Boolean).join(' — ') || condition.type}
+            title={[condition.reason, condition.message].filter(Boolean).join(' - ') || condition.type}
             className={`flex min-w-0 items-start gap-2.5 rounded-control border px-3 py-2.5 ${
               tone === 'ok' ? 'border-line-soft bg-sunken' : 'border-transparent ' + TONE_SOFT[tone]
             }`}

@@ -192,7 +192,7 @@ export function JitApprovalsPanel({
         // list otherwise means either "nothing is happening" or "you cannot see
         // it", and those call for different actions.
         <Notice tone="info">
-          You are seeing your own access requests. Approving is administrative — ask an
+          You are seeing your own access requests. Approving is administrative - ask an
           administrator, or the channel your fleet routes approvals to.
         </Notice>
       ) : null}
@@ -202,7 +202,7 @@ export function JitApprovalsPanel({
         title={waiting.length === 1 ? '1 request waiting' : `${waiting.length} requests waiting`}
         description={
           canApprove
-            ? 'Somebody is blocked on each of these. Read the reason, then decide — you cannot approve your own request, whatever your role.'
+            ? 'Somebody is blocked on each of these. Read the reason, then decide - you cannot approve your own request, whatever your role.'
             : 'Requests you have submitted that nobody has decided yet.'
         }
         actions={
@@ -299,7 +299,7 @@ export function JitApprovalsPanel({
 
                 {canApprove && request.requester_id === user?.id ? (
                   <p className="text-[12px] text-muted">
-                    This is your own request — an approval needs somebody else.
+                    This is your own request - an approval needs somebody else.
                   </p>
                 ) : null}
               </li>
@@ -418,7 +418,7 @@ export function JitApprovalsPanel({
                     <Pill tone={STATUS_TONE[request.status]}>{request.status}</Pill>
                   </Td>
                   <Td className="hidden truncate text-[13px] text-muted md:table-cell">
-                    {request.approver_username ?? '—'}
+                    {request.approver_username ?? '-'}
                   </Td>
                   <Td className="text-[12.5px] text-muted"><Age iso={request.updated_at} /></Td>
                 </Row>
@@ -445,7 +445,7 @@ export function JitApprovalsPanel({
           view, and the row is above. */}
       {focusRequest && !requests.some((request) => request.id === focusRequest) ? (
         <Notice tone="warn">
-          The request this link names is not in your list any more — it may have been decided, or it
+          The request this link names is not in your list any more - it may have been decided, or it
           may belong to somebody else.
         </Notice>
       ) : null}
