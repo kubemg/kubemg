@@ -214,10 +214,21 @@ func (c *Client) connectOnce(ctx context.Context) error {
 	dialer := &websocket.Dialer{
 		HandshakeTimeout: handshakeTimeout,
 		TLSClientConfig:  c.tlsConfig,
+		Proxy:            http.ProxyFromEnvironment,
 	}
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+c.token)
 	header.Set("User-Agent", "kubemg-agent/"+c.version)
+
+	// Log which proxy (if any) will be used, without credentials.
+	if ep, perr := url.Parse(endpoint); perr == nil {
+		ep.Scheme = "https" // wss→https so ProxyFromEnvironment reads HTTPS_PROXY
+		if proxyURL, perr := http.ProxyFromEnvironment(&http.Request{URL: ep}); perr == nil && proxyURL != nil {
+			masked := *proxyURL
+			masked.User = nil
+			c.logger.Info("dialling through proxy", slog.String("proxy", masked.String()))
+		}
+	}
 
 	conn, resp, err := dialer.DialContext(ctx, endpoint, header)
 	if err != nil {
