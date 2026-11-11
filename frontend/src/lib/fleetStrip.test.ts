@@ -43,7 +43,7 @@ describe('operatorFigures', () => {
     expect(byKey.behind).toBe('/admin/clusters?agent=behind')
   })
 
-  it('keeps a failed read unknown and a pending read pending — never zero', () => {
+  it('keeps a failed read unknown and a pending read pending - never zero', () => {
     const figures = operatorFigures({ pending: null, refused: undefined, expiring: 0 }, [])
     const byKey = Object.fromEntries(figures.map((figure) => [figure.key, figure.value]))
     expect(byKey.requests).toBeNull()

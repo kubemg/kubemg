@@ -211,7 +211,7 @@ func TestShellRunnerIsKubeMGsOwnIdentity(t *testing.T) {
 		t.Fatalf("runner = %q, want KubeMG's own name", user.Username)
 	}
 	if grant.K8sRole != db.K8sRoleView {
-		t.Fatalf("runner role = %q, want a read-only baseline — its pod verbs come from a Role bound in one namespace",
+		t.Fatalf("runner role = %q, want a read-only baseline - its pod verbs come from a Role bound in one namespace",
 			grant.K8sRole)
 	}
 	if grant.ClusterID != 9 {
@@ -260,6 +260,30 @@ func TestRouterRegistersTheShell(t *testing.T) {
 	} {
 		if !found[want] {
 			t.Fatalf("route %s is not registered", want)
+		}
+	}
+}
+
+// A WebSocket ticket authenticates only the two terminal routes, so the
+// allowlist must name routes that exist: a renamed route would otherwise lose
+// its terminal without a test noticing.
+func TestWSTicketRoutesAreRegistered(t *testing.T) {
+	router := NewRouter(Options{
+		Store:        &db.Store{},
+		JWT:          auth.NewManager("secret", time.Hour),
+		Proxy:        bastion.NewProxy(bastion.ProxyOptions{}),
+		ShellEnabled: true,
+		ShellImage:   "ghcr.io/kubemg/kubemg-shell:test",
+	})
+	found := make(map[string]bool)
+	for _, route := range router.Routes() {
+		if route.Method == http.MethodGet {
+			found[route.Path] = true
+		}
+	}
+	for _, path := range wsTicketRoutes {
+		if !found[path] {
+			t.Errorf("ticket route %s is not a registered GET route", path)
 		}
 	}
 }

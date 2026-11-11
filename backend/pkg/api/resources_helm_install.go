@@ -109,7 +109,7 @@ func (s *server) installHelmRelease(c *gin.Context) {
 	// meant something other than what they pressed.
 	if s.helmReleaseExists(c, user, cluster, grant, namespace, name) {
 		c.JSON(http.StatusConflict, gin.H{
-			"error": fmt.Sprintf("a release named %q already exists in %s — upgrade it instead",
+			"error": fmt.Sprintf("a release named %q already exists in %s - upgrade it instead",
 				name, namespace),
 		})
 		return
@@ -139,7 +139,7 @@ func (s *server) installHelmRelease(c *gin.Context) {
 	if !result.ok() {
 		status = helm.StatusFailed
 		description = "Install failed: " + result.Failed.Kind + "/" + result.Failed.Name +
-			" — " + result.Failed.Message
+			" - " + result.Failed.Message
 	}
 
 	release := helm.NewRelease(name, namespace, 1, loaded, values, rendered, status, description)
@@ -255,7 +255,7 @@ func (s *server) renderAndApply(c *gin.Context, user *db.User, cluster *db.Clust
 	if !result.ok() {
 		status = helm.StatusFailed
 		description = "Upgrade failed: " + result.Failed.Kind + "/" + result.Failed.Name +
-			" — " + result.Failed.Message
+			" - " + result.Failed.Message
 	}
 
 	next := helm.NextRelease(previous, loaded, values, rendered, status, description)
@@ -293,7 +293,7 @@ func (s *server) chartFromRepository(c *gin.Context, repository, chart, version 
 	switch {
 	case errors.Is(err, db.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{
-			"error": fmt.Sprintf("%s does not publish a chart named %q — "+
+			"error": fmt.Sprintf("%s does not publish a chart named %q - "+
 				"if it was added recently, sync the repository", repository, chart),
 		})
 		return nil, helm.ChartVersion{}, false

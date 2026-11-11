@@ -105,7 +105,7 @@ export function IssueMachineTokenSheet({
     >
       {eligible.length === 0 ? (
         <Notice tone="warn">
-          This account has no cluster access yet. Grant it a role first — a credential issued now
+          This account has no cluster access yet. Grant it a role first - a credential issued now
           would authenticate and then be refused by the cluster.
         </Notice>
       ) : null}
@@ -145,7 +145,7 @@ export function IssueMachineTokenSheet({
           cluster itself, so kubemg could not revoke what it issued. */}
       {direct ? (
         <Notice tone="warn">
-          {cluster?.name} is registered in direct mode. Programmatic access needs an agent tunnel —
+          {cluster?.name} is registered in direct mode. Programmatic access needs an agent tunnel -
           in direct mode the credential is minted on the cluster, so kubemg cannot revoke it and the
           cluster’s RBAC has nothing bound to it.
         </Notice>
@@ -165,7 +165,7 @@ export function IssueMachineTokenSheet({
         {ttl === '0' ? (
           <p className="text-[12px] text-warn">
             Nothing closes this credential except revoking it here or disabling the account. Review
-            it against its last-used time — that column is what replaces the clock.
+            it against its last-used time - that column is what replaces the clock.
           </p>
         ) : null}
       </div>
@@ -176,7 +176,7 @@ export function IssueMachineTokenSheet({
         hint={
           grant && grant.namespaces.length > 0
             ? `This account’s grant covers ${grant.namespaces.join(', ')}.`
-            : 'The kubeconfig’s default context namespace. It is a convenience — the boundary is the account’s grant.'
+            : 'The kubeconfig’s default context namespace. It is a convenience - the boundary is the account’s grant.'
         }
       >
         <TextInput
@@ -230,7 +230,7 @@ function IssuedCredential({
       {/* Said before the value, not after: what is stored is a hash, so this
           screen is the only place the secret will ever exist. */}
       <Notice tone="warn">
-        This is the only time the credential is shown. kubemg stores a hash of it — if it is lost,
+        This is the only time the credential is shown. kubemg stores a hash of it - if it is lost,
         revoke this one and issue another.
       </Notice>
 
@@ -299,7 +299,7 @@ function IssuedCredential({
           It acts as <span className="font-data">{account.username}</span> with the{' '}
           <span className="font-data">{issued.k8s_role}</span> role, and every call it makes is in
           the audit trail under that name. In a pipeline, keep the file in the runner&rsquo;s own
-          secret store — kubemg cannot hand it out a second time.
+          secret store - kubemg cannot hand it out a second time.
         </p>
       </div>
 

@@ -267,7 +267,7 @@ spec:
   accessModes:
     - ReadWriteOnce
   persistentVolumeReclaimPolicy: Retain
-  # Replace this with the volume this actually is — a PV that outlives its
+  # Replace this with the volume this actually is - a PV that outlives its
   # node's local path is a claim the cluster cannot keep.
   hostPath:
     path: /mnt/data/example

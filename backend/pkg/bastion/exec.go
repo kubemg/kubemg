@@ -127,15 +127,17 @@ func (p *Proxy) beginRecording(ctx context.Context, event *Event, parsed APIPath
 
 // queryOf pulls the query string off a proxied path. The path has already had
 // KubeMG's own parameters stripped by the time it lands in an Event.
+//
+// A query with a malformed pair still yields every pair that parsed: that is
+// what the API server reads (net/http drops the bad pair and keeps the rest),
+// so it is what the guardrails and the recording have to read too. Dropping
+// the whole query on an error made one bad pair hide an exec's command.
 func queryOf(path string) url.Values {
 	i := strings.IndexByte(path, '?')
 	if i < 0 {
 		return url.Values{}
 	}
-	values, err := url.ParseQuery(path[i+1:])
-	if err != nil {
-		return url.Values{}
-	}
+	values, _ := url.ParseQuery(path[i+1:])
 	return values
 }
 

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -72,7 +73,7 @@ func RequireAuthGated(m *Manager, verifier MachineTokenVerifier, gate SessionGat
 			} else {
 				claims, err = m.Parse(token)
 			}
-		} else if isWebSocketUpgrade(c.Request) {
+		} else if m.acceptsWSTicket(c) {
 			// A browser cannot set a header when opening a WebSocket, so the
 			// upgrade carries a ticket on the query string instead — see
 			// QueryTokenParam. The ticket is redeemed once and discarded; it is
@@ -80,21 +81,21 @@ func RequireAuthGated(m *Manager, verifier MachineTokenVerifier, gate SessionGat
 			// leave sitting in proxy access logs and browser history.
 			ticket := strings.TrimSpace(c.Query(QueryTokenParam))
 			if ticket == "" {
-				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+				RefuseSession(c, "missing bearer token")
 				return
 			}
 			var redeemed bool
 			claims, redeemed = m.redeemWSTicket(c.Request.Context(), ticket)
 			if !redeemed {
-				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired ticket"})
+				RefuseSession(c, "invalid or expired ticket")
 				return
 			}
 		} else {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
+			RefuseSession(c, "missing bearer token")
 			return
 		}
 		if err != nil || claims == nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+			RefuseSession(c, "invalid or expired token")
 			return
 		}
 		// A kubeconfig token is a file on someone's laptop. It authenticates
@@ -141,6 +142,31 @@ func isProxyRequest(c *gin.Context, clusterID uint) bool {
 }
 
 // isWebSocketUpgrade reports whether this request is opening a WebSocket.
+// acceptsWSTicket reports whether this request may authenticate with a ticket
+// on its query string: a GET WebSocket handshake, on a route the server named.
+// The headers alone were not enough — anyone holding a leaked ticket could add
+// Upgrade and Connection to a POST on any route and run it as the ticket's
+// owner.
+func (m *Manager) acceptsWSTicket(c *gin.Context) bool {
+	if c.Request.Method != http.MethodGet || !isWebSocketUpgrade(c.Request) {
+		return false
+	}
+	return len(m.ticketRoutes) == 0 || slices.Contains(m.ticketRoutes, c.FullPath())
+}
+
+// SessionInvalidCode marks a 401 that is about the caller's credential itself:
+// none, expired, revoked, or an account that no longer exists. It is the
+// console's cue to sign out. Every other 401 (a wrong current password, a
+// wrong second-factor code, a cluster refusing what the tunnel carried) is an
+// answer about one request, and signing out on it threw away a session that
+// was fine.
+const SessionInvalidCode = "session_invalid"
+
+// RefuseSession answers 401 for a credential that does not authenticate.
+func RefuseSession(c *gin.Context, message string) {
+	c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": message, "code": SessionInvalidCode})
+}
+
 func isWebSocketUpgrade(r *http.Request) bool {
 	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		return false

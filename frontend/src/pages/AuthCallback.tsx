@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { errorMessage } from '../api/client'
 import { callbackErrorText } from '../lib/signInError'
+import { takeSSOBinding } from '../lib/ssoBinding'
 import { Notice, Spinner } from '../components/primitives'
 import { Lockup } from '../components/Mark'
 import { useAuth } from '../state/auth-context'
@@ -34,6 +35,13 @@ export function AuthCallback() {
     }
     if (!token) {
       setError('This sign-in did not return a session. Please try again.')
+      return
+    }
+    // Only a sign-in this tab started. A callback somebody else started and
+    // sent on, or a bare #token= link, would otherwise sign this browser into
+    // their account.
+    if (!takeSSOBinding(params.get('binding'))) {
+      setError('This sign-in was not started in this browser tab, so it was not used. Start it again from the sign-in page.')
       return
     }
 

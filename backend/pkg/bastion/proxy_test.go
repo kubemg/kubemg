@@ -141,6 +141,13 @@ func TestStreamRouting(t *testing.T) {
 		{path: "/api/v1/namespaces/team-a/pods"},
 		// follow means something only on a log.
 		{path: "/api/v1/namespaces/team-a/pods?follow=true"},
+		// watch means something only on a collection: the API server answers a
+		// named object once, and a log streams only when followed.
+		{path: "/api/v1/namespaces/team-a/pods/web-0?watch=true"},
+		{path: "/api/v1/nodes/worker-1?watch=1"},
+		{path: "/api/v1/namespaces/team-a/pods/web-0/log?watch=true"},
+		// One object watched through its field selector streams.
+		{path: "/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name%3Dweb-0&watch=true", body: true},
 	}
 
 	for _, tc := range cases {

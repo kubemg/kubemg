@@ -57,7 +57,12 @@ A regular expression matched against one of two subjects, with an action on a ma
 ## Matching rules
 
 - **`api_request`**: a proxied API call. The pattern is matched against the string `"METHOD /path"` with the query string, so `^DELETE /api/v1/namespaces/[^/?]+(\?.*)?$` means "deleting one namespace object" and not something inside it.
-- **`terminal_exec`**: a command run in a container, either the argv of a non-interactive `kubectl exec`, or a line typed in an interactive shell, evaluated when Enter is pressed. The shell tracks editing keys (backspace, Ctrl-C, Ctrl-U), so a backspaced character is not matched. Lines are buffered up to 8 KB.
+    - The same call can be spelled more than one way, and the API server reads them alike, so a rule is matched against each spelling and the strictest answer wins:
+        - the call exactly as it arrived;
+        - its path without a trailing slash, with the query's parameters sorted by name, percent-encoded;
+        - the same with the values decoded, so `labelSelector=app=web` matches `labelSelector=app%3Dweb`.
+    - Sorting means a rule naming two parameters together should write them in alphabetical order. A rule for one parameter should not assume it comes first: write `[?&]propagationPolicy=Orphan`, not `\?propagationPolicy=Orphan`.
+- **`terminal_exec`**: a command run in a container, either the argv of a non-interactive `kubectl exec`, or a line typed in an interactive shell, evaluated when Enter is pressed. A non-interactive command is read from the query the way the API server reads it, so a malformed parameter beside it does not hide it. The shell tracks editing keys (backspace, Ctrl-C, Ctrl-U), so a backspaced character is not matched. Lines are buffered up to 8 KB.
 
 A pattern must not match the empty string. `.*`, `.?` and `^` are refused at save, because a `block` rule that matches everything would lock everyone out of the console that could undo it. The matched subject is truncated at 4096 characters.
 

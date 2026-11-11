@@ -122,7 +122,7 @@ export function CapacityRing({
           <span
             className={`font-data text-[26px] leading-none font-bold tabular-nums ${TEXT[tone]}`}
           >
-            {measured ? percentText(reservedPercent) : '—'}
+            {measured ? percentText(reservedPercent) : '-'}
           </span>
           <span className="mt-1 text-[12px] text-muted">{label}</span>
         </div>
@@ -248,7 +248,7 @@ function TrackLine({
           percent === null ? 'text-faint' : TEXT[tone]
         }`}
       >
-        {percent === null ? '—' : percentText(percent)}
+        {percent === null ? '-' : percentText(percent)}
       </span>
       <span className="hidden truncate text-right font-data text-[12px] text-faint tabular-nums sm:block">
         {detail}
@@ -376,7 +376,7 @@ export function ShareRow({
 }) {
   return (
     <li
-      title={`${namespace}/${name} — ${detail}`}
+      title={`${namespace}/${name} - ${detail}`}
       className="grid grid-cols-[minmax(0,1fr)_minmax(60px,30%)_44px] items-center gap-x-2.5 font-data text-[12px]"
     >
       <span className="min-w-0 truncate">

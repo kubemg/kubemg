@@ -42,7 +42,7 @@ function Absent({ children = 'not recorded' }: { children?: ReactNode }) {
  */
 function absentName(event: AuditEvent): string {
   if (event.verb === 'create' && (event.error || event.status >= 400)) {
-    return 'none — nothing was created'
+    return 'none - nothing was created'
   }
   if (event.verb === 'list' || event.verb === 'watch') return 'none'
   return 'not recorded'
@@ -159,7 +159,7 @@ export function AuditRecordSheet({
         />
         {!event.source_addr && !event.user_agent ? (
           <p className="mt-2 text-[12px] leading-relaxed text-faint">
-            Either this server did it on its own — an expiring grant closed out, an alarm poll —
+            Either this server did it on its own - an expiring grant closed out, an alarm poll -
             or the record predates the columns that hold it. Neither can be filled in afterwards.
           </p>
         ) : null}

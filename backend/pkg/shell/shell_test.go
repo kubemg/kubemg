@@ -44,7 +44,7 @@ func TestPodMountsNoServiceAccountToken(t *testing.T) {
 	_, spec, _ := podSpec()
 
 	if spec["automountServiceAccountToken"] != false {
-		t.Fatalf("automountServiceAccountToken = %v, want false — a shell with a cluster identity is a way around the tunnel",
+		t.Fatalf("automountServiceAccountToken = %v, want false - a shell with a cluster identity is a way around the tunnel",
 			spec["automountServiceAccountToken"])
 	}
 	if spec["serviceAccountName"] != ServiceAccount {
@@ -134,7 +134,7 @@ func TestPodCarriesItsOwnDeadline(t *testing.T) {
 			spec["activeDeadlineSeconds"])
 	}
 	if spec["restartPolicy"] != "Never" {
-		t.Fatalf("restartPolicy = %v, want Never — a crash loop must not silently produce a fresh terminal",
+		t.Fatalf("restartPolicy = %v, want Never - a crash loop must not silently produce a fresh terminal",
 			spec["restartPolicy"])
 	}
 

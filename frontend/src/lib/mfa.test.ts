@@ -54,7 +54,7 @@ describe('the access review line', () => {
   })
 
   it('says none, and whether one is owed', () => {
-    expect(mfaSummary({ ...enrolled, enrolled: false, factors: [] })).toBe('None — password only')
+    expect(mfaSummary({ ...enrolled, enrolled: false, factors: [] })).toBe('None - password only')
     expect(mfaSummary({ ...enrolled, enrolled: false, factors: [], required: true })).toMatch(/next sign-in/)
   })
 

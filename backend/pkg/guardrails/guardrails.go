@@ -19,7 +19,10 @@ package guardrails
 
 import (
 	"fmt"
+	"maps"
+	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -243,15 +246,73 @@ func (e *Engine) Snapshot() Snapshot {
 //
 // The subject is "METHOD /path", including the query string, which is what makes
 // `DELETE /api/v1/namespaces/.*` read as the rule an operator meant to write.
+//
+// One call can be spelled several ways the API server reads alike: a trailing
+// slash, the query's parameters in another order, a value percent-encoded or
+// not. A rule written against one spelling must not be stepped around with
+// another, so the call is matched as it arrived and in its canonical forms
+// (apiSubjects), and the strictest answer wins. Matching more spellings only
+// ever adds matches, so no existing rule stops applying.
 func (e *Engine) EvaluateAPIRequest(clusterID uint, method, path string) *Decision {
 	if e == nil {
 		return nil
 	}
+	var warned *Decision
+	for _, subject := range apiSubjects(method, path) {
+		decision := e.evaluate(clusterID, subject, func(r rule) bool { return r.api })
+		if decision.Blocked() {
+			return decision
+		}
+		if decision != nil && warned == nil {
+			warned = decision
+		}
+	}
+	return warned
+}
+
+// apiSubjects is the call as it arrived, then canonical: the path without a
+// trailing slash and the query sorted by parameter (values in their own
+// order, since the API server reads repeated values in order), once
+// percent-encoded the way net/url writes it and once decoded. Duplicates are
+// dropped.
+func apiSubjects(method, path string) []string {
+	method = strings.ToUpper(strings.TrimSpace(method))
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	subject := strings.ToUpper(strings.TrimSpace(method)) + " " + path
-	return e.evaluate(clusterID, subject, func(r rule) bool { return r.api })
+	subjects := []string{method + " " + path}
+	add := func(subject string) {
+		if !slices.Contains(subjects, subject) {
+			subjects = append(subjects, subject)
+		}
+	}
+
+	route, rawQuery, hasQuery := strings.Cut(path, "?")
+	if len(route) > 1 {
+		route = strings.TrimSuffix(route, "/")
+	}
+	if !hasQuery || rawQuery == "" {
+		add(method + " " + route)
+		return subjects
+	}
+	// The pairs net/http would read, as the API server does: a malformed pair
+	// is dropped and the rest kept.
+	values, _ := url.ParseQuery(rawQuery)
+	if len(values) == 0 {
+		add(method + " " + route)
+		return subjects
+	}
+	add(method + " " + route + "?" + values.Encode())
+
+	keys := slices.Sorted(maps.Keys(values))
+	decoded := make([]string, 0, len(keys))
+	for _, key := range keys {
+		for _, value := range values[key] {
+			decoded = append(decoded, key+"="+value)
+		}
+	}
+	add(method + " " + route + "?" + strings.Join(decoded, "&"))
+	return subjects
 }
 
 // EvaluateTerminalInput matches a command run inside a container — one line an

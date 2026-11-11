@@ -6,10 +6,10 @@ Explore offers three write actions beyond the manifest editor: **scale**, **rest
 
 | Kind | Scale | Restart | Suspend | Run now |
 |---|---|---|---|---|
-| Deployment | yes | yes | — | — |
-| StatefulSet | yes | yes | — | — |
-| DaemonSet | — | yes | — | — |
-| CronJob | — | — | yes | yes |
+| Deployment | yes | yes | - | - |
+| StatefulSet | yes | yes | - | - |
+| DaemonSet | - | yes | - | - |
+| CronJob | - | - | yes | yes |
 
 A DaemonSet has no replica count, and a CronJob owns Jobs rather than pods. ReplicaSets can be scaled but are listed for reading; rolling one is a Deployment's job.
 
@@ -51,7 +51,7 @@ Each action reads the object first and sends its version back with the write. If
 ??? info "Why it works this way"
     These are `POST`s, not patches: the tunnel sends bodies as plain `application/json`, which the API server refuses (`415`) for a patch. Scale uses the `scale` subresource, so it cannot disturb the pod template.
 
-The console answers in plain words, for example *"`<name>` scaled to 0 replicas — its pods are being removed"*, *"`<name>` suspended — it will not fire again until it is resumed"*, *"`<name>` is already suspended"*, or *"`<generated name>` started from `<cronjob>`"*.
+The console answers in plain words, for example *"`<name>` scaled to 0 replicas - its pods are being removed"*, *"`<name>` suspended - it will not fire again until it is resumed"*, *"`<name>` is already suspended"*, or *"`<generated name>` started from `<cronjob>`"*.
 
 ## Running a CronJob now
 

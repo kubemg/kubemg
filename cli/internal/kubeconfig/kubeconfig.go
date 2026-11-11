@@ -153,7 +153,7 @@ type ForeignEntryError struct {
 }
 
 func (e *ForeignEntryError) Error() string {
-	return fmt.Sprintf("there is already a %s named %q that kubemg did not write; it was left alone — remove it, or choose another name", e.Kind, e.Name)
+	return fmt.Sprintf("there is already a %s named %q that kubemg did not write; it was left alone - remove it, or choose another name", e.Kind, e.Name)
 }
 
 // marker is the ownership extension, naming the server the entry belongs to.
@@ -294,7 +294,7 @@ func TokenFrom(rendered []byte) (string, error) {
 	}
 	for i := 0; i+1 < len(user.Content); i += 2 {
 		if key := user.Content[i].Value; key != "token" {
-			return "", fmt.Errorf("the server's kubeconfig user carries %q — only a token is accepted", key)
+			return "", fmt.Errorf("the server's kubeconfig user carries %q - only a token is accepted", key)
 		}
 	}
 	token := getKey(user, "token")

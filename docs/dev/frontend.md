@@ -9,7 +9,7 @@ configuration.
 frontend/src/
   pages/        one file per route
   components/   sheets, panels, tables, the rail
-  lib/          derivations — pure TypeScript, no React
+  lib/          derivations - pure TypeScript, no React
   api/          the axios client and typed calls
   state/        session and cluster context
   index.css     the design tokens
@@ -23,7 +23,7 @@ components. The pattern to follow:
 
 | Module | Owns |
 |---|---|
-| `lib/resources.ts` | The Explore inventory — the fixed kinds, and the CRD sections discovered per cluster |
+| `lib/resources.ts` | The Explore inventory - the fixed kinds, and the CRD sections discovered per cluster |
 | `lib/insights.ts` | Pod bucketing by phase and readiness, and the alert list |
 | `lib/objectForm.ts` | The seven-kind create form, and the YAML it writes |
 | `lib/live.ts` | Polling cadences and the rules for a tick |
@@ -33,7 +33,7 @@ Two details in `resources.ts` that look like edge cases and are not: a CRD famil
 needs at least two kinds to earn its own sidebar section, a single-kind family
 falls to **Other** at the bottom, and discovered sections sit **below** the fixed
 inventory and start collapsed. And `crds === null` (discovery still running) is
-not `[]` (there are none) — the first waits, the second falls back.
+not `[]` (there are none) - the first waits, the second falls back.
 
 ## Reading data
 
@@ -55,29 +55,29 @@ Live reads (`lib/live.ts`) follow five rules:
   for every viewer. The refusal stands until the key changes, Refresh asks
   again, or the page is reopened. `useCachedQuery` does this itself; a
   hand-written poller uses `useRefusalHold` and passes `enabled: !refused` to
-  `useLiveTick`. Where the answer is known before asking — a cluster-wide
+  `useLiveTick`. Where the answer is known before asking - a cluster-wide
   reading for a namespace-scoped grant (`cluster.namespaces` non-empty), a
-  namespace the grant does not name — the page says so and does not read.
+  namespace the grant does not name - the page says so and does not read.
 
 State reads as a word, never a spinner. The YAML tab, the logs and terminal tab,
 the fleet capacity fan-out and the wizard's handshake step are deliberately not
 live.
 
-Streaming reads — logs and the terminal — use `fetch` and `WebSocket` against the
+Streaming reads - logs and the terminal - use `fetch` and `WebSocket` against the
 proxy URL directly, bypassing axios. `PodTerminal` is **lazy-loaded**, because
 xterm is about 290 kB and must not sit in the main bundle.
 
 ## Surfaces
 
 Every editing surface is a `Sheet`. Widths are `md`, `lg`, `xl`, `2xl` and
-`wide` — 520, 680, 900, 1100 pixels and 85vw. A new modal shape is almost always
+`wide` - 520, 680, 900, 1100 pixels and 85vw. A new modal shape is almost always
 a `Sheet` that has not been recognised as one.
 
 Two exceptions exist and both are deliberate. **Cluster registration is a page,
 not a drawer** (`/clusters/new`), because it is a five-step process where the
 record is created halfway through and steps one and two lock afterwards.
 **`ShellDock` mounts above the router**, because inside the app shell it would be
-torn down on every navigation — it is not a page and has no address.
+torn down on every navigation - it is not a page and has no address.
 
 There is no third navigation level. A 60-pixel icon rail carries three sections
 and opens a 240-pixel panel; anything deeper goes in the page's own panel.
@@ -93,7 +93,7 @@ hex and never add a one-off colour.**
 | bone | `#F2F3EF` | The light ground |
 | lime | `#BFF23C` | The **only** interactive accent |
 | moss | `#3A4033` | Structure |
-| sage / amber / rust | `#7FB069` / `#E8A33D` / `#D1553C` | Semantic state only — never interaction |
+| sage / amber / rust | `#7FB069` / `#E8A33D` / `#D1553C` | Semantic state only - never interaction |
 
 Text on lime is **always ink, never white**. The wordmark is always lowercase.
 Radii are 12, 8 and 6 pixels for card, control and chip.
@@ -106,16 +106,16 @@ Charts use the categorical palette `--chart-1` through `--chart-8`. Slot order i
 the colour-blindness mechanism: never reorder it and never add a ninth.
 
 Nothing loops. `LinkStatus` uses four static icons for live, direct, down and
-idle, With its word the state is a badge — a soft plate in its tone with a hairline
+idle, With its word the state is a badge - a soft plate in its tone with a hairline
 edge. Alone, the glyph is a seal: a solid disc in the state's tone, the glyph in
 `on-state` on it, ringed twice in the same tone fading outwards; the neutral
 states keep only the rings. There is no travelling pulse and no marquee; the only repeating motion is a
 single breathing indicator on a genuinely open stream. The chrome's state
-changes — the navigation pill filling, a rail chip on hover — ease over 300 to
+changes - the navigation pill filling, a rail chip on hover - ease over 300 to
 500ms on colour and opacity only, and switch off under `prefers-reduced-motion`.
 
 Three typefaces, all self-hosted from `public/fonts`: Inter for the interface and
-for data (`font-data` — identifiers and figures; a figure compared down a column
+for data (`font-data` - identifiers and figures; a figure compared down a column
 adds `tabular-nums`, which is never set on a name because Inter's widens the
 hyphen), Archivo
 only for the `kubemg` wordmark, and Commit Mono (`font-mono`) only for code:
@@ -128,9 +128,9 @@ the panel side by side. The row you are on, and the row under the pointer, fill
 with the `nav-pill` utility (a lime gradient with an ink label, lit by
 `aria-current`); the rail's current cluster carries the `rail-arc` corner.
 
-A dashboard opens on a `slab` — the one dark plate on a page, ink into moss on
+A dashboard opens on a `slab` - the one dark plate on a page, ink into moss on
 both decks, with its own `slab-*` text and state tokens and `Button`'s `slab`
-variant for actions on it — and states its facts as `StatTile`s, which take a
+variant for actions on it - and states its facts as `StatTile`s, which take a
 tone's soft fill only when the reading is asking for something.
 A `StatTile` can also be a link onto what it counts, or a toggle that filters
 the list under it, and can carry a bar or a breakdown below its reading.
@@ -160,7 +160,7 @@ it is now, so two in one handler compose. A form with unsaved edits calls
 `useUnsavedGuard(dirty)`: leaving the console is asked about by the browser,
 and following a link inside it is asked about on the console's own dialog.
 A form's submit button stays enabled until the request starts; a field that
-cannot be saved is pointed at — its error shown, focus moved to it — when the
+cannot be saved is pointed at - its error shown, focus moved to it - when the
 form is submitted. A row in a list that can run to hundreds takes the
 `defer-row` utility, so the browser skips laying out the rows off screen.
 
@@ -171,7 +171,7 @@ make frontend-test
 ```
 
 A derivation gets a `.test.ts` beside its module. A component assertion gets a
-`.test.tsx` with `@vitest-environment jsdom` in its own docblock — vitest runs
+`.test.tsx` with `@vitest-environment jsdom` in its own docblock - vitest runs
 `node` per file by default, so a component test without the docblock fails on
 `document`. Anything you would otherwise check by clicking through the console
 belongs here instead; see [Building and testing](verify.md#choosing-a-verification-level).

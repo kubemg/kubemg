@@ -47,6 +47,25 @@ func TestObjectName(t *testing.T) {
 			"/api/v1/namespaces/team-a/pods/web-0/eviction", jsonResponse(201, `{}`), "web-0"},
 		{"a list names nothing", http.MethodGet,
 			"/api/v1/namespaces/team-a/pods", jsonResponse(200, `{"metadata":{"resourceVersion":"9"}}`), ""},
+		// A list or watch of one object names it in its field selector, which
+		// is the name the API server resolves for it.
+		{"a watch of one object", http.MethodGet,
+			"/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name%3Dweb-0&watch=true", nil, "web-0"},
+		{"a list of one object", http.MethodGet,
+			"/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name%3Dweb-0", jsonResponse(200, `{}`), "web-0"},
+		{"a selector that names no one object", http.MethodGet,
+			"/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name%21%3Dweb-0&watch=true", nil, ""},
+		// The path is the name when there is one; the resolver reads no
+		// selector then.
+		{"a named path ignores the selector", http.MethodGet,
+			"/api/v1/namespaces/team-a/pods/web-0?fieldSelector=metadata.name%3Dother", nil, "web-0"},
+		// A collection delete is not a list: the resolver names nothing.
+		{"a collection delete names nothing", http.MethodDelete,
+			"/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name%3Dweb-0", nil, ""},
+		{"a selected name with a control character is dropped", http.MethodGet,
+			"/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name%3Dweb%0A0&watch=true", nil, ""},
+		{"an over-long selected name is dropped", http.MethodGet,
+			"/api/v1/namespaces/team-a/pods?watch=true&fieldSelector=metadata.name%3D" + strings.Repeat("a", maxObjectName+1), nil, ""},
 		// A refused create made nothing; the Status it answers with is not an
 		// object, and its details are not read as one.
 		{"refused create is not guessed at", http.MethodPost,
@@ -72,7 +91,7 @@ func TestObjectName(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ObjectName(ParsePath(tc.path), VerbFor(tc.method, tc.path), tc.resp)
+			got := ObjectName(ParsePath(tc.path), VerbFor(tc.method, tc.path), tc.path, tc.resp)
 			if got != tc.want {
 				t.Fatalf("ObjectName = %q, want %q", got, tc.want)
 			}

@@ -77,7 +77,7 @@ const ACTION_ICON: Record<BulkActionName, typeof Trash2> = {
 const ACTION_BLURB: Record<BulkActionName, string> = {
   delete:
     'Deleting asks the cluster to remove these objects, along with anything they own. ' +
-    'Anything under a controller — a pod belonging to a Deployment, say — will be replaced by it.',
+    'Anything under a controller - a pod belonging to a Deployment, say - will be replaced by it.',
   restart:
     'A rollout restart replaces every pod these workloads own, one batch at a time. ' +
     'Nothing about the spec changes.',
@@ -85,11 +85,11 @@ const ACTION_BLURB: Record<BulkActionName, string> = {
   resume: 'A resumed schedule fires again at its next matching time. Missed runs are not made up.',
   cordon:
     'Cordoning stops new pods from being scheduled onto this node. Pods already running there ' +
-    'are not moved — that is a drain, which kubemg does not do here.',
+    'are not moved - that is a drain, which kubemg does not do here.',
   uncordon: 'Uncordoning lets this node be scheduled onto again.',
   run:
     'Running a schedule now creates a Job from the CronJob\u2019s own template, straight away. ' +
-    'It is deliberately not owned by the CronJob, so its history limits will not reap it — ' +
+    'It is deliberately not owned by the CronJob, so its history limits will not reap it - ' +
     'which also means it is yours to delete when you are done with it. The schedule itself is ' +
     'untouched and still fires at its next matching time.',
 }
