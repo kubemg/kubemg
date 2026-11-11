@@ -1074,7 +1074,13 @@ func followRequested(path string) bool {
 
 // tunnelFailure maps a tunnel error onto an HTTP status the client can act on.
 func tunnelFailure(err error) (int, string) {
+	var remote *ErrRemoteStatus
 	switch {
+	case errors.As(err, &remote):
+		// The cluster's API server replied with a non-101 HTTP status (e.g.
+		// 401 Unauthorized, 403 Forbidden). Relay it verbatim — the client
+		// is talking to the cluster, not to the tunnel.
+		return remote.Status, remote.Message
 	case errors.Is(err, ErrTunnelClosed), errors.Is(err, ErrNoTunnel):
 		return http.StatusServiceUnavailable, "the in-cluster agent disconnected before the request completed"
 	case errors.Is(err, context.DeadlineExceeded):

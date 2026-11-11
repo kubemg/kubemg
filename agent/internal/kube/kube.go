@@ -215,11 +215,39 @@ func (c *Client) DialUpgrade(
 	conn, resp, err := dialer.DialContext(ctx, endpoint, out)
 	if err != nil {
 		if resp != nil {
-			return nil, "", fmt.Errorf("api server refused the session: %s", resp.Status)
+			return nil, "", readRefusedError(resp)
 		}
 		return nil, "", fmt.Errorf("open session: %w", err)
 	}
 	return conn, conn.Subprotocol(), nil
+}
+
+// RefusedError is returned by DialUpgrade when the API server replied with a
+// non-101 status. It carries the HTTP status code and the message from the
+// Kubernetes Status body so the bastion can relay the right code to the client.
+type RefusedError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *RefusedError) Error() string {
+	return fmt.Sprintf("api server refused the session: %d %s", e.StatusCode, e.Message)
+}
+
+// readRefusedError reads the response body, extracts the Kubernetes Status
+// message if present, and returns a RefusedError with the HTTP status code.
+func readRefusedError(resp *http.Response) *RefusedError {
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+
+	var status struct {
+		Message string `json:"message"`
+	}
+	msg := resp.Status
+	if json.Unmarshal(body, &status) == nil && status.Message != "" {
+		msg = status.Message
+	}
+	return &RefusedError{StatusCode: resp.StatusCode, Message: msg}
 }
 
 // handshakeHeaders are owned by the WebSocket dialer.

@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/kubemg/kubemg/agent/internal/kube"
 	"github.com/kubemg/kubemg/agent/internal/protocol"
 )
 
@@ -211,7 +212,13 @@ func (c *Client) runBodyStream(ctx context.Context, s *stream, open protocol.Str
 func (c *Client) runUpgradeStream(ctx context.Context, s *stream, open protocol.StreamOpen, out *writer) {
 	conn, subprotocol, err := c.kube.DialUpgrade(ctx, open.Path, open.Header, open.Subprotocols)
 	if err != nil {
-		out.start(s.id, protocol.StreamStart{Error: err.Error()})
+		start := protocol.StreamStart{Error: err.Error()}
+		var refused *kube.RefusedError
+		if errors.As(err, &refused) {
+			start.Status = refused.StatusCode
+			start.Error = refused.Message
+		}
+		out.start(s.id, start)
 		return
 	}
 	defer conn.Close()
