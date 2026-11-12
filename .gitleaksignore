@@ -2,7 +2,7 @@
 # reason it is here. Nothing goes in this file to make a check quiet: a live
 # credential is rotated, not ignored.
 #
-# Both entries below are values that were committed to a development stack
+# The entries below are values that were committed to a development stack
 # early in the project and have since been taken out of the tree — the
 # recording key is read from the environment now, and the agent Secret is
 # rendered by the install package rather than checked in. They stay in
@@ -14,3 +14,9 @@
 
 # kubemg-agent/secret.yaml: a registration token for a throwaway dev cluster.
 f60dc38da6acd1ba7cbcc76c43e05dafe3479eae:kubemg-agent/secret.yaml:generic-api-key:12
+
+# deploy/helm/kubemg/ci/edge-values.yaml: placeholder keys for the CI edge
+# values file (commit c21ecc9b). The values decode to the literal string
+# "thirty-two-bytes-of-key-material!!" — a synthetic test key, not a real one.
+c21ecc9b093dea6ec570ead67804124f560e80df:deploy/helm/kubemg/ci/edge-values.yaml:generic-api-key:12
+c21ecc9b093dea6ec570ead67804124f560e80df:deploy/helm/kubemg/ci/edge-values.yaml:generic-api-key:13
