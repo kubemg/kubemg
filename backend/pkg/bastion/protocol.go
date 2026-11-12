@@ -38,6 +38,11 @@ const (
 	// response_part frames ahead of the response that ends it, instead of as
 	// one frame. See ResponsePart.
 	CapabilityResponseParts = "response-parts"
+	// CapabilityBinaryStreamData sends stream_data as a binary WebSocket
+	// message, the chunk's raw bytes behind a short header, instead of base64
+	// inside a JSON envelope. Every other frame stays JSON. See
+	// encodeStreamData.
+	CapabilityBinaryStreamData = "binary-stream-data"
 )
 
 // ResponsePartSize is the largest slice of a response body one frame carries
@@ -192,7 +197,7 @@ type ResponsePart struct {
 }
 
 // supportedCapabilities is what this server accepts from an agent.
-var supportedCapabilities = []string{CapabilityResponseParts}
+var supportedCapabilities = []string{CapabilityResponseParts, CapabilityBinaryStreamData}
 
 // negotiateCapabilities answers a hello's capabilities with the ones this
 // server accepts, in the agent's order. An unknown capability is not an error:

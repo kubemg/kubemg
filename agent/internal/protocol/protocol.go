@@ -31,6 +31,11 @@ const (
 	// CapabilityResponseParts lets the agent send a response body as a run of
 	// response_part frames ahead of the response that ends it.
 	CapabilityResponseParts = "response-parts"
+	// CapabilityBinaryStreamData sends stream_data as a binary WebSocket
+	// message, the chunk's raw bytes behind a short header, instead of base64
+	// inside a JSON envelope. Every other frame stays JSON. See
+	// EncodeStreamData.
+	CapabilityBinaryStreamData = "binary-stream-data"
 )
 
 // ResponsePartSize is the largest slice of a response body one frame carries

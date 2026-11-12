@@ -252,7 +252,7 @@ func (c *Client) connectOnce(ctx context.Context) error {
 		ProtocolVersion:   protocol.ProtocolVersion,
 		AgentVersion:      c.version,
 		KubernetesVersion: kubernetesVersion,
-		Capabilities:      []string{protocol.CapabilityResponseParts},
+		Capabilities:      []string{protocol.CapabilityResponseParts, protocol.CapabilityBinaryStreamData},
 	}}
 	if err := writeMessage(conn, hello); err != nil {
 		return fmt.Errorf("send handshake: %w", err)
@@ -278,13 +278,15 @@ func (c *Client) connectOnce(ctx context.Context) error {
 	// A bastion that predates response parts does not name them, and gets
 	// whole responses exactly as before.
 	parts := protocol.Has(welcome.Capabilities, protocol.CapabilityResponseParts)
-	return c.pump(ctx, conn, parts)
+	// Likewise one that predates binary stream frames gets base64 in JSON.
+	binary := protocol.Has(welcome.Capabilities, protocol.CapabilityBinaryStreamData)
+	return c.pump(ctx, conn, parts, binary)
 }
 
 // pump serves proxied requests until the socket dies. Each request is handled
 // in its own goroutine so a slow API call cannot stall the tunnel, and writes
 // are serialised because gorilla permits one writer at a time.
-func (c *Client) pump(ctx context.Context, conn *websocket.Conn, parts bool) error {
+func (c *Client) pump(ctx context.Context, conn *websocket.Conn, parts, binary bool) error {
 	conn.SetReadLimit(maxFrame)
 	if err := conn.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
 		return err
@@ -296,7 +298,7 @@ func (c *Client) pump(ctx context.Context, conn *websocket.Conn, parts bool) err
 		return conn.WriteControl(websocket.PongMessage, []byte(payload), time.Now().Add(writeTimeout))
 	})
 
-	out := newWriter(conn, c.logger)
+	out := newWriter(conn, c.logger, binary)
 	defer out.stop()
 	var wg sync.WaitGroup
 
@@ -311,12 +313,24 @@ func (c *Client) pump(ctx context.Context, conn *websocket.Conn, parts bool) err
 	defer cancel()
 
 	for {
-		_, payload, err := conn.ReadMessage()
+		kind, payload, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				return nil
 			}
 			return err
+		}
+
+		if kind == websocket.BinaryMessage {
+			id, chunk, err := protocol.DecodeStreamData(payload)
+			if err != nil {
+				c.logger.Warn("ignoring malformed binary frame", slog.String("error", err.Error()))
+				continue
+			}
+			if s, ok := c.streams.get(id); ok {
+				s.push(chunk)
+			}
+			continue
 		}
 
 		var msg protocol.Message

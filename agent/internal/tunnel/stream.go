@@ -366,6 +366,9 @@ func (t *streamTable) closeAll() {
 // frames while urgent ones keep coming, so a busy port-forward cannot starve an
 // API call into its timeout either.
 type writer struct {
+	// binary sends stream_data as binary frames; the bastion negotiated
+	// protocol.CapabilityBinaryStreamData.
+	binary bool
 	urgent chan []byte
 	bulk   chan []byte
 	conn   *websocket.Conn
@@ -397,8 +400,9 @@ const urgentBurst = 16
 // it and leaves the tunnel alone.
 var errBacklog = errors.New("the tunnel's outbound queue is full")
 
-func newWriter(conn *websocket.Conn, logger *slog.Logger) *writer {
+func newWriter(conn *websocket.Conn, logger *slog.Logger, binary bool) *writer {
 	w := &writer{
+		binary: binary,
 		urgent: make(chan []byte, outboundQueue),
 		bulk:   make(chan []byte, bulkQueue),
 		conn:   conn,
@@ -422,7 +426,11 @@ func (w *writer) run() {
 		if err := w.conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
 			return
 		}
-		if err := w.conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+		kind := websocket.TextMessage
+		if protocol.IsBinaryFrame(payload) {
+			kind = websocket.BinaryMessage
+		}
+		if err := w.conn.WriteMessage(kind, payload); err != nil {
 			// The pump's own read will see the same broken socket and end
 			// the tunnel; there is nothing useful to do from here.
 			return
@@ -469,6 +477,12 @@ func (w *writer) send(msg protocol.Message) error {
 	if err != nil {
 		return err
 	}
+	return w.queue(payload)
+}
+
+// queue puts an encoded frame on the urgent queue, waiting up to writeTimeout
+// for room.
+func (w *writer) queue(payload []byte) error {
 
 	select {
 	case <-w.done:
@@ -518,7 +532,14 @@ func (w *writer) start(id string, head protocol.StreamStart) {
 	}
 }
 
+// data sends a stream chunk. The chunk is copied into the frame before this
+// returns, so the caller may reuse its buffer.
 func (w *writer) data(id string, chunk protocol.StreamData) error {
+	if w.binary {
+		if frame, ok := protocol.EncodeStreamData(id, chunk); ok {
+			return w.queue(frame)
+		}
+	}
 	return w.send(protocol.Message{
 		Type: protocol.MessageStreamData, ID: id, StreamData: &chunk,
 	})
