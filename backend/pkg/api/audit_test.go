@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -121,7 +122,7 @@ func TestAuditFilters(t *testing.T) {
 		"?namespace=team-a":               1,
 		"?streaming=true":                 1,
 		"?failed=true":                    1,
-		"?q=secrets":                      1,
+		"?q=secrets&range=24h":            1,
 		"?cluster_id=" + itoa(cluster.ID): 3,
 		"":                                3,
 	}
@@ -149,6 +150,38 @@ func TestAuditRejectsMalformedFilters(t *testing.T) {
 		rec := env.do(t, http.MethodGet, "/api/v1/audit"+query, token, nil)
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: expected status %d, got %d", query, http.StatusBadRequest, rec.Code)
+		}
+	}
+}
+
+func TestAuditSearchNeedsAWindow(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	env.store.addAuditEvent(db.AuditEvent{
+		UserID: admin.ID, Username: "admin", Verb: "get",
+		Path: "/api/v1/namespaces/kube-system/secrets", Namespace: "kube-system", Status: 200,
+	})
+	token := env.tokenFor(t, admin)
+	from := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+
+	for query, want := range map[string]int{
+		"?q=secrets":                       http.StatusBadRequest,
+		"?q=secrets&range=all":             http.StatusBadRequest,
+		"?q=secrets&until=" + from:         http.StatusBadRequest,
+		"?q=secrets&range=24h":             http.StatusOK,
+		"?q=secrets&from=" + from:          http.StatusOK,
+		"?q=secrets&since=" + from:         http.StatusOK,
+		"?q=%20%20":                        http.StatusOK,
+		"?namespace=kube-system&range=all": http.StatusOK,
+	} {
+		for _, path := range []string{"/api/v1/audit", "/api/v1/audit/export"} {
+			rec := env.do(t, http.MethodGet, path+query, token, nil)
+			if rec.Code != want {
+				t.Errorf("%s%s: status %d, want %d (%s)", path, query, rec.Code, want, rec.Body.String())
+			}
+			if want == http.StatusBadRequest && !strings.Contains(rec.Body.String(), "needs a time range") {
+				t.Errorf("%s%s: refusal does not say what to do: %s", path, query, rec.Body.String())
+			}
 		}
 	}
 }

@@ -97,6 +97,17 @@ func Migrate(gdb *gorm.DB) error {
 		return err
 	}
 
+	// AutoMigrate creates the audit indexes it is given and never drops the ones
+	// it no longer is. These are maintained on every proxied call and serve no
+	// read: user_id and cluster_id alone are the leading columns of
+	// idx_audit_user_at and idx_audit_cluster_at, which AutoMigrate has just
+	// made, and nothing filters on the other three.
+	for _, index := range obsoleteAuditIndexes {
+		if err := gdb.Exec(`DROP INDEX IF EXISTS ` + index).Error; err != nil {
+			return fmt.Errorf("drop %s: %w", index, err)
+		}
+	}
+
 	// The tunnel credential used to be looked up by its own value through this
 	// index. It is ciphertext now and found by agent_token_hash, so an index over
 	// it serves nothing.
@@ -185,6 +196,16 @@ func Migrate(gdb *gorm.DB) error {
 		return err
 	}
 	return nil
+}
+
+// obsoleteAuditIndexes are the audit_events indexes Migrate drops. See
+// migrations/029_audit_indexes.sql.
+var obsoleteAuditIndexes = []string{
+	"idx_audit_events_user_id",
+	"idx_audit_events_cluster_id",
+	"idx_audit_events_streaming",
+	"idx_audit_events_guardrail_policy",
+	"idx_audit_events_source_addr",
 }
 
 // legacyUserAccessIndex is the unique index that used to hold one grant per
