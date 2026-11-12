@@ -399,13 +399,20 @@ func NormalizeShortName(raw string) string {
 //
 // Fields are denormalised on purpose: an audit record must still read correctly
 // after the user or the cluster it names has been deleted.
+//
+// Every insert maintains every index below, on the hottest write path in the
+// server, so each one is here for a read the server runs. idx_audit_user_at and
+// idx_audit_cluster_at serve the trail as a non-admin and as a cluster's page
+// see it, newest first: in (at, id) order, so the page comes off the index with
+// no sort and without walking every other account's rows to find this one's.
+// See migrations/029_audit_indexes.sql for the plans behind them.
 type AuditEvent struct {
-	ID uint      `gorm:"primaryKey" json:"id"`
-	At time.Time `gorm:"index:idx_audit_at,sort:desc;not null" json:"at"`
+	ID uint      `gorm:"primaryKey;index:idx_audit_user_at,priority:3,sort:desc;index:idx_audit_cluster_at,priority:3,sort:desc" json:"id"`
+	At time.Time `gorm:"index:idx_audit_at,sort:desc;index:idx_audit_user_at,priority:2,sort:desc;index:idx_audit_cluster_at,priority:2,sort:desc;not null" json:"at"`
 
-	UserID    uint   `gorm:"index" json:"user_id"`
+	UserID    uint   `gorm:"index:idx_audit_user_at,priority:1" json:"user_id"`
 	Username  string `gorm:"size:120;index" json:"username"`
-	ClusterID uint   `gorm:"index" json:"cluster_id"`
+	ClusterID uint   `gorm:"index:idx_audit_cluster_at,priority:1" json:"cluster_id"`
 	Cluster   string `gorm:"size:120" json:"cluster"`
 
 	// Verb is the Kubernetes verb ("get", "list", "watch", "create", …), which
@@ -418,7 +425,9 @@ type AuditEvent struct {
 	// Name is the object the call addressed — from the path, or for a create
 	// from the API server's answer. Empty on a refused create, on a call that
 	// addresses no single object (a list), and on rows written before it existed.
-	Name string `gorm:"size:253" json:"name,omitempty"`
+	// Indexed for the GitOps attribution, which asks for the last write to one
+	// object by its name.
+	Name string `gorm:"size:253;index:idx_audit_name" json:"name,omitempty"`
 
 	// The identity KubeMG asserted to the API server. This is the crux of the
 	// record: it ties a KubeMG account to the Kubernetes subject that acted.
@@ -432,7 +441,7 @@ type AuditEvent struct {
 
 	// Streaming calls are recorded twice, at PhaseOpen and PhaseClose, so a
 	// session that runs for an hour is visible while it is still running.
-	Streaming bool   `gorm:"index" json:"streaming"`
+	Streaming bool   `json:"streaming"`
 	Phase     string `gorm:"size:10" json:"phase,omitempty"`
 	BytesOut  int64  `json:"bytes_out,omitempty"`
 	BytesIn   int64  `json:"bytes_in,omitempty"`
@@ -443,10 +452,9 @@ type AuditEvent struct {
 	SessionID string `gorm:"size:64;index" json:"session_id,omitempty"`
 
 	// GuardrailPolicy names the safety policy this call matched and
-	// GuardrailAction says what the match did. They are indexed together with
-	// nothing else because the question they answer is one query — "what has this
-	// rule caught?" — asked of a rule running in warn before it is armed.
-	GuardrailPolicy string `gorm:"size:120;index" json:"guardrail_policy,omitempty"`
+	// GuardrailAction says what the match did. Not indexed: nothing reads the
+	// trail by policy, and the column is empty on nearly every row.
+	GuardrailPolicy string `gorm:"size:120" json:"guardrail_policy,omitempty"`
 	GuardrailAction string `gorm:"size:16" json:"guardrail_action,omitempty"`
 
 	Error string `gorm:"type:text" json:"error,omitempty"`
@@ -462,7 +470,7 @@ type AuditEvent struct {
 	// are empty on a record with no caller (the JIT expirer, the alarm poller)
 	// and on every row written before these columns existed, which is a real
 	// state and reads as "not recorded" rather than as an unknown address.
-	SourceAddr string `gorm:"size:64;index" json:"source_addr,omitempty"`
+	SourceAddr string `gorm:"size:64" json:"source_addr,omitempty"`
 	UserAgent  string `gorm:"type:text" json:"user_agent,omitempty"`
 
 	// Diff is the field-level structural diff of a manifest write (an `update`
