@@ -165,6 +165,28 @@ agent:
   # registry credentials, and the install sheet shows the command that creates
   # the Secret. Distinct from `imagePullSecrets`, which is this chart's own pod.
   imagePullSecret: ""
+  # -- The address agents dial, when clusters reach KubeMG somewhere other than
+  # `publicURL`: over the internet, say, while the console stays internal.
+  # Install packages carry it and their download links are rendered on it;
+  # kubeconfigs and the console keep `publicURL`. Empty is `publicURL`. Set it
+  # before the first boot so the minted certificate covers its host.
+  url: ""
+  endpoint:
+    # -- A second listener, and a Service of its own, that answers only the
+    # agent tunnel and the install downloads and 404s everything else. Expose
+    # this one at `agent.url` and keep the main Service internal. It speaks TLS
+    # in passthrough mode and plain HTTP in edge mode, like the main port.
+    enabled: false
+    port: 8444
+    service:
+      # -- Like `service.type`: `ClusterIP` reaches nothing outside this
+      # cluster, so expose it with `LoadBalancer`, `NodePort` or a route.
+      type: ClusterIP
+      # -- Defaults to 443 in passthrough mode and 80 in edge mode.
+      port: null
+      nodePort: null
+      annotations: {}
+      loadBalancerSourceRanges: []
 
 shell:
   # -- The browser shell: a kubectl pod per user per cluster, run by KubeMG.

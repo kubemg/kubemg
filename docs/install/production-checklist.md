@@ -10,6 +10,14 @@ why and links to the detail.
       Deployment** reports the certificate in force. See
       [TLS and certificates](tls.md).
 
+- [ ] **Only the agent endpoint on the internet**, where clusters reach kubemg
+      over it: `KUBEMG_AGENT_URL` and `KUBEMG_AGENT_LISTEN_ADDR` (on
+      Kubernetes, `agent.url` and `agent.endpoint.enabled`), with the main
+      listener on an internal address. The bastion holds `system:masters` on
+      every agent-mode cluster, so its sign-in page and API are worth keeping
+      off the internet. See
+      [A separate address for agents](kubernetes.md#a-separate-address-for-agents).
+
 - [ ] **Bootstrap admin password changed.** Setup will not finish while the
       generated password is unchanged, so completing setup ticks this box. See
       [Environment reference](environment.md#auth-jwt-bootstrap).

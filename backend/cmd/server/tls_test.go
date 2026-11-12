@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"io"
 	"log/slog"
 	"os"
@@ -194,4 +196,33 @@ func writeSuppliedPair(t *testing.T, dir string) {
 
 func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+// Agents verify the name they dial, so a minted certificate has to cover a
+// separate agent URL's host as well as the public one.
+func TestResolveTLSMintsForTheAgentURLToo(t *testing.T) {
+	cfg := tlsConfigIn(t)
+	cfg.AgentURL = "https://agents.example.com:8444"
+
+	material, err := resolveTLS(context.Background(), cfg, nil, quietLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(material.certFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(raw)
+	if block == nil {
+		t.Fatal("the minted certificate is not PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, host := range []string{"kubemg.example.com", "agents.example.com"} {
+		if err := cert.VerifyHostname(host); err != nil {
+			t.Errorf("the minted certificate does not cover %s: %v", host, err)
+		}
+	}
 }
