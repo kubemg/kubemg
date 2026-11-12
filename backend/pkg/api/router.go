@@ -323,6 +323,10 @@ type Options struct {
 	// PublicURL is the outside address of this server, baked into generated
 	// agent install commands. Defaults to the Vite dev server's API origin.
 	PublicURL string
+	// AgentURL is the address agents dial when it is not the public URL. Install
+	// packages carry it and their download links are rendered on it; empty
+	// leaves both on the effective public URL. See config.Config.AgentURL.
+	AgentURL string
 	// AgentImage and AgentNamespace parameterise the generated manifests.
 	AgentImage     string
 	AgentNamespace string
@@ -480,6 +484,7 @@ type server struct {
 	proxy          *bastion.Proxy
 	saNamespace    string
 	publicURL      string
+	agentURL       string
 	agentImage     string
 	agentNamespace string
 	// agentImagePullSecret is the boot-time pull secret; see Options.
@@ -619,6 +624,7 @@ func NewRouter(opts Options) *gin.Engine {
 		proxy:                opts.Proxy,
 		saNamespace:          saNamespace,
 		publicURL:            publicURL,
+		agentURL:             strings.TrimRight(strings.TrimSpace(opts.AgentURL), "/"),
 		agentImage:           opts.AgentImage,
 		agentNamespace:       opts.AgentNamespace,
 		agentImagePullSecret: strings.TrimSpace(opts.AgentImagePullSecret),
@@ -772,7 +778,7 @@ func NewRouter(opts Options) *gin.Engine {
 		// Agents authenticate on their own registration token, so this route
 		// sits outside the JWT middleware. It is the only inbound entry point
 		// the Phase 2 architecture adds.
-		router.GET("/agent/v1/tunnel", opts.Bastion.HandleAgent)
+		router.GET(agentTunnelPath, opts.Bastion.HandleAgent)
 
 		// The installer is fetched by kubectl, which cannot carry a KubeMG
 		// session; a single-use download ticket in the path is the credential —

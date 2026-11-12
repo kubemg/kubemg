@@ -108,11 +108,23 @@ spec:
             - name: metrics
               containerPort: {{ .Values.metrics.port }}
             {{- end }}
+            {{- if .Values.agent.endpoint.enabled }}
+            - name: agent
+              containerPort: {{ .Values.agent.endpoint.port }}
+            {{- end }}
           env:
             - name: KUBEMG_PUBLIC_URL
               value: {{ .Values.publicURL | quote }}
             - name: KUBEMG_LISTEN_ADDR
               value: ":8443"
+            {{- with .Values.agent.url }}
+            - name: KUBEMG_AGENT_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.agent.endpoint.enabled }}
+            - name: KUBEMG_AGENT_LISTEN_ADDR
+              value: {{ printf ":%v" .Values.agent.endpoint.port | quote }}
+            {{- end }}
             {{- if $passthrough }}
             - name: KUBEMG_TLS_ENABLED
               value: "true"

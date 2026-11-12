@@ -1,0 +1,34 @@
+{{- if .Values.agent.endpoint.enabled }}
+{{- $service := .Values.agent.endpoint.service -}}
+# The agent endpoint's own Service: the tunnel and the install downloads, so it
+# can be exposed while the main Service stays internal. The listener behind it
+# 404s everything else.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kubemg.fullname" . }}-agent
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubemg.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent-endpoint
+  {{- with $service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $service.type }}
+  {{- with $service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    {{- include "kubemg.serverSelectorLabels" . | nindent 4 }}
+  ports:
+    - name: agent
+      port: {{ $service.port | default (ternary 443 80 (eq (include "kubemg.passthrough" .) "true")) }}
+      targetPort: agent
+      protocol: TCP
+      {{- if and $service.nodePort (ne $service.type "ClusterIP") }}
+      nodePort: {{ $service.nodePort }}
+      {{- end }}
+{{- end }}
