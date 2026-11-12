@@ -19,5 +19,5 @@ export function headersHint(storedNames: readonly string[] | undefined, clear: b
     'Optional JSON object, for a SIEM\'s tenant id or an API version. Authorization and Content-Type are set by kubemg and cannot be overridden here.'
   if (!storedNames?.length) return base
   if (clear) return `The stored headers (${storedNames.join(', ')}) will be removed on save.`
-  return `Sent now: ${storedNames.join(', ')}. Values are stored encrypted and never read back — leave this empty to keep them, or enter a JSON object to replace them all.`
+  return `Sent now: ${storedNames.join(', ')}. Values are stored encrypted and never read back - leave this empty to keep them, or enter a JSON object to replace them all.`
 }

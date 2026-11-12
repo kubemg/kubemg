@@ -21,13 +21,29 @@ var (
 
 // Open dials PostgreSQL using the supplied settings.
 func Open(cfg config.DB) (*gorm.DB, error) {
-	gdb, err := gorm.Open(postgres.Open(cfg.DSN()), &gorm.Config{
+	return open(postgres.Open(cfg.DSN()), cfg)
+}
+
+// open is Open with the dialector passed in, so a test can hand it a pool that
+// needs no server and read back what was set on it.
+func open(dialector gorm.Dialector, cfg config.DB) (*gorm.DB, error) {
+	gdb, err := gorm.Open(dialector, &gorm.Config{
 		Logger:         logger.Default.LogMode(logger.Warn),
 		TranslateError: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("connect postgres: %w", err)
 	}
+	// database/sql's own defaults are no cap on open connections and 2 idle,
+	// which under a console's parallel reads means dialling and closing a
+	// connection for nearly every query.
+	pool, err := gdb.DB()
+	if err != nil {
+		return nil, fmt.Errorf("connection pool: %w", err)
+	}
+	pool.SetMaxOpenConns(cfg.MaxOpenConns)
+	pool.SetMaxIdleConns(cfg.MaxIdleConns)
+	pool.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 	if err := registerSecretCallbacks(gdb); err != nil {
 		return nil, fmt.Errorf("register secret callbacks: %w", err)
 	}

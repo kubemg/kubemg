@@ -88,6 +88,10 @@ validation:
 plugins:
   - search
 
+# The console links into the manual; the build checks every link resolves.
+hooks:
+  - hack/mkdocs_console_links.py
+
 nav:
   - Home: index.md
   - User guide:

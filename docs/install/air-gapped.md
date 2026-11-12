@@ -8,7 +8,7 @@ carrying them across on media, and pull secrets.
 | Image | Pulled by | Needed for |
 | --- | --- | --- |
 | `ghcr.io/kubemg/kubemg` | this host | the server and console |
-| `postgres:16-alpine` | this host | the Docker Compose path and the Helm chart's evaluation mode — not needed with an external PostgreSQL |
+| `postgres:16-alpine` | this host | the Docker Compose path and the Helm chart's evaluation mode - not needed with an external PostgreSQL |
 | `ghcr.io/kubemg/kubemg-agent` | **your target clusters** | the agent |
 | `ghcr.io/kubemg/kubemg-shell` | **your target clusters** | the [browser shell](../clusters/terminals-and-logs.md) |
 | `busybox:1.36` | **your target clusters** | [debug containers](../clusters/terminals-and-logs.md#debugging-a-pod-with-no-shell) |
@@ -27,9 +27,9 @@ amd64+arm64 index.
 internet access (the pull runs in a container):
 
 ```bash
-make save-images                          # kubemg-images-0.17.1-linux-amd64.tar
+make save-images                          # kubemg-images-0.17.2-linux-amd64.tar
 make save-images SAVE_PLATFORM=linux/arm64
-make save-images KUBEMG_VERSION=0.17.1 AGENT_VERSION=0.17.1 SHELL_VERSION=0.17.1
+make save-images KUBEMG_VERSION=0.17.2 AGENT_VERSION=0.17.2 SHELL_VERSION=0.17.2
 ```
 
 That writes one tarball with all five images at the pinned (or named)
@@ -37,12 +37,12 @@ versions, for **one** platform: the one you name, not the machine's. Carry it
 across, load it and push it to your registry:
 
 ```bash
-docker load -i kubemg-images-0.17.1-linux-amd64.tar
+docker load -i kubemg-images-0.17.2-linux-amd64.tar
 mirror=registry.internal
 for pair in \
-  ghcr.io/kubemg/kubemg:0.17.1=kubemg/kubemg:0.17.1 \
-  ghcr.io/kubemg/kubemg-agent:0.17.1=kubemg/kubemg-agent:0.17.1 \
-  ghcr.io/kubemg/kubemg-shell:0.17.1=kubemg/kubemg-shell:0.17.1 \
+  ghcr.io/kubemg/kubemg:0.17.2=kubemg/kubemg:0.17.2 \
+  ghcr.io/kubemg/kubemg-agent:0.17.2=kubemg/kubemg-agent:0.17.2 \
+  ghcr.io/kubemg/kubemg-shell:0.17.2=kubemg/kubemg-shell:0.17.2 \
   busybox:1.36=library/busybox:1.36 \
   postgres:16-alpine=library/postgres:16-alpine; do
   docker tag "${pair%%=*}" "$mirror/${pair#*=}" && docker push "$mirror/${pair#*=}"
@@ -57,7 +57,7 @@ use a mirror.
 **Helm:** `--set global.imageRegistry=registry.internal` rewrites every image,
 including the ones the console hands out. See [Kubernetes](kubernetes.md#mirrored-and-air-gapped-registries).
 
-**Docker Compose:** set each image in `.env` — see
+**Docker Compose:** set each image in `.env` - see
 [Docker Compose](docker-compose.md#air-gapped-installs).
 
 The three cluster-side images can also be changed later, without a restart, on
@@ -88,9 +88,9 @@ from a mirror path that allows anonymous pulls.
 
 ## The kubemg CLI
 
-Nothing extra to carry across. The management-plane image holds the `kubemg` command line for Linux, macOS and Windows (amd64 and arm64), and serves it at `/downloads/cli` — people download it from the server they sign in to, and **My credentials → Use the command line** links it. See [The kubemg command line](../access/cli.md#installing-it).
+Nothing extra to carry across. The management-plane image holds the `kubemg` command line for Linux, macOS and Windows (amd64 and arm64), and serves it at `/downloads/cli` - people download it from the server they sign in to, and **My credentials → Use the command line** links it. See [The kubemg command line](../access/cli.md#installing-it).
 
 ## The chart itself
 
 Carry the chart across with `helm pull oci://ghcr.io/kubemg/charts/kubemg
---version 0.17.1` and install from the `.tgz`.
+--version 0.17.2` and install from the `.tgz`.

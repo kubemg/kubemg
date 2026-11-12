@@ -207,7 +207,7 @@ var metricCatalogue = map[MetricKind]metricSpec{
 		rise:        TrendNeutral,
 		legend:      "container",
 		namespaced:  true,
-		description: "Working set per container — what the kernel cannot reclaim.",
+		description: "Working set per container - what the kernel cannot reclaim.",
 		query: func(sel selector) string {
 			return withFallback(`sum by (container) (container_memory_working_set_bytes{%s})`, sel)
 		},

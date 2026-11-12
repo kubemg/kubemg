@@ -91,7 +91,7 @@ export function MetricsChart({
           title="No metrics datasource"
         >
           This cluster has no metrics backend registered, so there is no history to
-          read — the live meters are all kubemg can show.
+          read - the live meters are all kubemg can show.
           {onConfigure ? (
             <span className="mt-3 block">
               <Button type="button" onClick={onConfigure}>
@@ -163,7 +163,7 @@ export function MetricsChart({
 
           {result.truncated ? (
             <p className="text-[12px] text-warn">
-              Only the first {MAX_SERIES} series are drawn — this query matched more than a
+              Only the first {MAX_SERIES} series are drawn - this query matched more than a
               chart can show.
             </p>
           ) : null}

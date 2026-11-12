@@ -1,5 +1,8 @@
 import { AlertTriangle, CheckCircle2, Info, ShieldCheck } from 'lucide-react'
 import type { SetupCheck } from '../../api/types'
+import { DOCS } from '../../lib/docs'
+import type { DocTarget } from '../../lib/docs'
+import { DocsLink } from '../DocsLink'
 import { CodeBlock } from '../primitives'
 
 /*
@@ -27,9 +30,13 @@ const CHECK_TONE = {
   blocked: 'border-danger/35 bg-danger-soft text-danger',
 } as const
 
-/** One check: what is true, why it matters, and the literal line that changes
-    it. A check that passed carries no fix, and neither does one whose remedy is
-    a field on the page it is shown next to. */
+/* The manual's section for each check, by its key. A key the console does not
+   know yet draws no link rather than a guess. */
+const CHECK_DOCS: Record<string, DocTarget> = DOCS.deployment.checks
+
+/** One check: what is true in a line, the literal line that changes it, and
+    the manual for the rest. A check that passed carries no fix, and neither
+    does one whose remedy is a field on the page it is shown next to. */
 export function DeploymentCheck({ check }: { check: SetupCheck }) {
   const Icon = CHECK_ICON[check.severity] ?? Info
   const tone = CHECK_TONE[check.severity] ?? CHECK_TONE.ok
@@ -40,7 +47,15 @@ export function DeploymentCheck({ check }: { check: SetupCheck }) {
         <Icon aria-hidden="true" className="size-4 shrink-0" />
         {check.title}
       </p>
-      <p className="text-[12.5px] leading-relaxed text-muted">{check.detail}</p>
+      <p className="text-[12.5px] leading-relaxed text-muted">
+        {check.detail}
+        {CHECK_DOCS[check.key] ? (
+          <>
+            {' '}
+            <DocsLink to={CHECK_DOCS[check.key]} />
+          </>
+        ) : null}
+      </p>
       {check.fix ? <CodeBlock label="To change it" value={check.fix} /> : null}
     </div>
   )

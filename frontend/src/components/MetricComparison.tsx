@@ -179,7 +179,7 @@ export function MetricComparison({
                   </Td>
                   <Td className="hidden text-right font-data tabular-nums text-muted sm:table-cell">
                     {row.previous === undefined
-                      ? '—'
+                      ? '-'
                       : formatMetric(result?.unit ?? 'count', row.previous)}
                   </Td>
                   <Td className="text-right">

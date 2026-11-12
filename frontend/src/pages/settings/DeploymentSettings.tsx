@@ -5,6 +5,7 @@ import type { DeploymentPosture } from '../../api/types'
 import { Button, Notice, Panel } from '../../components/primitives'
 import { DeploymentCheckList } from '../../components/settings/DeploymentChecks'
 import { SettingsLayout } from '../../components/settings/SettingsLayout'
+import { DOCS } from '../../lib/docs'
 
 /**
  * What this install was started with — the certificate it serves, whether
@@ -42,7 +43,8 @@ export function DeploymentSettings() {
   return (
     <SettingsLayout
       title="Deployment"
-      description="What this server read from its environment when it started. Nothing here changes from the console — each line names what to change and where, and a restart picks it up."
+      description="Read from the server's environment at boot. Change it there and restart."
+      docs={DOCS.deployment.page}
       actions={
         <Button type="button" variant="ghost" onClick={() => void load()} disabled={loading}>
           <RotateCcw aria-hidden="true" className="size-4" />
@@ -57,8 +59,7 @@ export function DeploymentSettings() {
         {posture ? (
           <Panel
             eyebrow="This install"
-            title="Settled at boot, not from here"
-            description="Every line below was read when the server started, from an environment no request can change — so this page reports them and names what to change instead. A restart is what picks up a change; nothing here needs the setup wizard back."
+            title="Set at boot"
             bodyClassName="flex flex-col gap-3 p-4"
           >
             <DeploymentCheckList checks={posture.checks} />

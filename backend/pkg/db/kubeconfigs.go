@@ -200,11 +200,9 @@ func (s *Store) TouchKubeconfigIssuance(ctx context.Context, tokenID string, at 
 // credential having existed — and a register that outlived the audit records of
 // the calls the credential made would be half an answer.
 func (s *Store) PruneKubeconfigIssuances(ctx context.Context, before time.Time) (int64, error) {
-	result := s.gdb.WithContext(ctx).
-		Where("created_at < ?", before).
-		Delete(&KubeconfigIssuance{})
-	if result.Error != nil {
-		return 0, fmt.Errorf("prune kubeconfig issuances: %w", result.Error)
+	removed, err := s.pruneByAge(ctx, &KubeconfigIssuance{}, "created_at", "created_at < ?", before)
+	if err != nil {
+		return removed, fmt.Errorf("prune kubeconfig issuances: %w", err)
 	}
-	return result.RowsAffected, nil
+	return removed, nil
 }

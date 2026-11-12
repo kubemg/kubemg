@@ -77,7 +77,7 @@ function result(over: Partial<DebugContainerResult> = {}): DebugContainerResult 
     container: 'debug-abcd1234',
     target_container: 'app',
     image: 'busybox:1.36',
-    message: 'debug-abcd1234 is starting on checkout-7f9 — connecting once it is running',
+    message: 'debug-abcd1234 is starting on checkout-7f9 - connecting once it is running',
     ...over,
   }
 }
@@ -145,7 +145,7 @@ describe('DebugContainerSheet', () => {
     })
 
     await waitFor(() =>
-      expect(screen.getByText(/is starting on checkout-7f9 — waiting for it to report running/)).toBeTruthy(),
+      expect(screen.getByText(/is starting on checkout-7f9 - waiting for it to report running/)).toBeTruthy(),
     )
     expect(started).not.toHaveBeenCalled()
     // No retry button while waiting — there is nothing to retry, only to watch.

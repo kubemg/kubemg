@@ -40,13 +40,13 @@ For scripted installs, secrets from a manager, or agreeing on a signing key,
 copy `.env.example` to `.env`. Anything set there wins over setup.
 
 ```dotenv
-DB_PASSWORD=<generate one — openssl rand -base64 24>
-JWT_SECRET=<generate one — openssl rand -base64 48>
-KUBEMG_ADMIN_PASSWORD=<optional — otherwise generated and logged>
+DB_PASSWORD=<generate one - openssl rand -base64 24>
+JWT_SECRET=<generate one - openssl rand -base64 48>
+KUBEMG_ADMIN_PASSWORD=<optional - otherwise generated and logged>
 KUBEMG_PUBLIC_URL=https://kubemg.internal:8443
 KUBEMG_TLS_HOSTS=kubemg.internal,192.0.2.10
-KUBEMG_SESSION_RECORDING_KEY=<generate one — openssl rand -base64 32>
-KUBEMG_SECRET_KEY=<generate another — openssl rand -base64 32>
+KUBEMG_SESSION_RECORDING_KEY=<generate one - openssl rand -base64 32>
+KUBEMG_SECRET_KEY=<generate another - openssl rand -base64 32>
 ```
 
 `KUBEMG_PUBLIC_URL` is the easy one to get wrong: it is baked into every agent
@@ -73,9 +73,9 @@ certificate into it from the host. See [TLS and certificates](tls.md).
 Mirror the three images and point `.env` at them:
 
 ```dotenv
-KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.17.1
+KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.17.2
 KUBEMG_POSTGRES_IMAGE=registry.internal/postgres:16-alpine
-KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.17.1
+KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.17.2
 ```
 
 The agent image must be reachable from your **target clusters**. For

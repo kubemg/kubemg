@@ -97,7 +97,7 @@ export function LogExplorer({
           title="No logs datasource"
         >
           This cluster ships its logs nowhere kubemg knows about, so there is no history
-          to search — a pod&rsquo;s own log is all there is, and it goes when the pod does.
+          to search - a pod&rsquo;s own log is all there is, and it goes when the pod does.
           {onConfigure ? (
             <span className="mt-3 block">
               <Button type="button" onClick={onConfigure}>
@@ -250,7 +250,7 @@ function LogLines({
                 className="w-40 shrink-0 truncate text-muted"
                 title={`${entry.namespace ?? ''}/${entry.pod ?? ''}`}
               >
-                {entry.pod || '—'}
+                {entry.pod || '-'}
               </span>
             ) : null}
 
@@ -273,6 +273,6 @@ function LogLines({
 /** clockTime renders just the time — the date is the range picker's job. */
 function clockTime(at: string): string {
   const parsed = new Date(at)
-  if (Number.isNaN(parsed.getTime())) return '—'
+  if (Number.isNaN(parsed.getTime())) return '-'
   return formatClock(parsed, { seconds: true })
 }

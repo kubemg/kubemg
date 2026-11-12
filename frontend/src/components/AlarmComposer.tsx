@@ -107,7 +107,7 @@ export function AlarmComposer({
         setError(errorMessage(err, 'This cluster has no Alertmanager registered.'))
       } else if (axios.isAxiosError(err) && err.response?.status === 403) {
         setError(
-          `${errorMessage(err, 'The cluster refused it.')} — creating an alarm takes write access to PrometheusRules in ${target.namespace}.`,
+          `${errorMessage(err, 'The cluster refused it.')} - creating an alarm takes write access to PrometheusRules in ${target.namespace}.`,
         )
       } else {
         setError(errorMessage(err, 'Could not save the alarm.'))
@@ -234,7 +234,7 @@ export function AlarmComposer({
       ) : null}
 
       {condition ? (
-        <Field label="Note" htmlFor="alarm-note" hint="Optional. Added to the alert's description — who to call, what to check.">
+        <Field label="Note" htmlFor="alarm-note" hint="Optional. Added to the alert's description - who to call, what to check.">
           <TextArea id="alarm-note" rows={2} maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} />
         </Field>
       ) : null}

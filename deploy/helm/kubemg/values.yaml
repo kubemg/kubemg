@@ -86,6 +86,14 @@ database:
   # -- A Secret holding the database password.
   existingSecret: ""
   existingSecretPasswordKey: DB_PASSWORD
+  # -- The connections the server keeps to PostgreSQL. `maxOpenConns` caps what
+  # it holds open, so keep it under the server's `max_connections` (100 by
+  # default) with room for anything else that connects. `connMaxLifetime`
+  # retires a connection after that long; `0` keeps it.
+  pool:
+    maxOpenConns: 25
+    maxIdleConns: 10
+    connMaxLifetime: 30m
 
 # A plain PostgreSQL StatefulSet for evaluation — deliberately not a subchart,
 # which would be a second chart for an air-gapped site to mirror. It uses the

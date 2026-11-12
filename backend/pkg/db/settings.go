@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -185,10 +186,13 @@ type Setting struct {
 	UpdatedBy uint      `json:"updated_by"`
 }
 
-// Settings returns every stored override keyed by setting name.
+// Settings returns every stored override keyed by setting name, excluding
+// organisation_mark. The mark can be up to 64 KB of base64 and is not needed
+// on any hot or unauthenticated route that calls Settings; callers that
+// need it use OrgMark.
 func (s *Store) Settings(ctx context.Context) (map[string]string, error) {
 	var rows []Setting
-	if err := s.gdb.WithContext(ctx).Find(&rows).Error; err != nil {
+	if err := s.gdb.WithContext(ctx).Where("key <> ?", SettingOrganisationMark).Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list settings: %w", err)
 	}
 	out := make(map[string]string, len(rows))
@@ -196,6 +200,19 @@ func (s *Store) Settings(ctx context.Context) (map[string]string, error) {
 		out[row.Key] = row.Value
 	}
 	return out, nil
+}
+
+// OrgMark returns the stored organisation_mark, or empty string if not set.
+func (s *Store) OrgMark(ctx context.Context) (string, error) {
+	var row Setting
+	err := s.gdb.WithContext(ctx).Where("key = ?", SettingOrganisationMark).First(&row).Error
+	if errors.Is(err, ErrNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get organisation mark: %w", err)
+	}
+	return row.Value, nil
 }
 
 // PutSettings upserts the supplied overrides. Keys absent from the map are left

@@ -117,7 +117,7 @@ func (t Target) Validate() error {
 			return fmt.Errorf("Argo CD is read with an account token: choose bearer authentication")
 		}
 		if strings.TrimSpace(t.Credential) == "" {
-			return fmt.Errorf("Argo CD needs the account token — an account with the apiKey capability, " +
+			return fmt.Errorf("Argo CD needs the account token - an account with the apiKey capability, " +
 				"bound to role:readonly")
 		}
 	}
@@ -179,5 +179,39 @@ func (t Target) Endpoint() string {
 		return fmt.Sprintf("%s://%s.%s.svc:%s%s",
 			t.scheme(), t.ServiceName, t.ServiceNamespace, t.ServicePort, t.prefix())
 	}
-	return strings.TrimRight(t.URL, "/") + t.prefix()
+	return strings.TrimRight(WithoutUserinfo(t.URL), "/") + t.prefix()
+}
+
+// RefuseUserinfo is the save's check on an address: a user:password@ in it
+// would be shown to everyone who can read the row, where a credential field is
+// write-only. It is a save rule, not part of Validate, so a row stored before
+// it keeps working until somebody edits it.
+func RefuseUserinfo(raw, fields string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err == nil && parsed.User != nil {
+		return fmt.Errorf("leave the username and password out of the address - put them in %s", fields)
+	}
+	return nil
+}
+
+// WithoutUserinfo is an address as it may be shown: any user:password@ cut.
+// A save refuses one now, but a row stored before it may still carry it, and
+// it keeps working for the call; it is never shown.
+func WithoutUserinfo(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		// Not a URL, so nothing to cut by structure; cut by text instead of
+		// echoing whatever sits before an @ in the authority.
+		if at := strings.LastIndex(raw, "@"); at >= 0 {
+			if scheme := strings.Index(raw, "://"); scheme >= 0 && scheme < at {
+				return raw[:scheme+3] + raw[at+1:]
+			}
+		}
+		return raw
+	}
+	if parsed.User == nil {
+		return raw
+	}
+	parsed.User = nil
+	return parsed.String()
 }

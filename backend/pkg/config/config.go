@@ -21,6 +21,20 @@ type DB struct {
 	Password string
 	Name     string
 	SSLMode  string
+	// MaxOpenConns caps the connections one replica holds open. Without a cap a
+	// burst of console panels opens as many as it has queries in flight, and a
+	// few replicas together can run Postgres into max_connections.
+	// `DB_MAX_OPEN_CONNS`.
+	MaxOpenConns int
+	// MaxIdleConns is how many of those are kept for the next request rather
+	// than closed, so a burst does not dial and tear down a connection per
+	// query. `DB_MAX_IDLE_CONNS`.
+	MaxIdleConns int
+	// ConnMaxLifetime retires a connection after this long, so a failover or a
+	// connection pooler in front of Postgres is followed within the window
+	// rather than never. Zero keeps connections for good.
+	// `DB_CONN_MAX_LIFETIME`.
+	ConnMaxLifetime time.Duration
 }
 
 // DSN renders the settings as a lib/pq connection string.
@@ -243,6 +257,10 @@ func Load() Config {
 			Password: env("DB_PASSWORD", "kubemg_secret"),
 			Name:     env("DB_NAME", "kubemg"),
 			SSLMode:  env("DB_SSLMODE", "disable"),
+
+			MaxOpenConns:    envInt("DB_MAX_OPEN_CONNS", 25),
+			MaxIdleConns:    envInt("DB_MAX_IDLE_CONNS", 10),
+			ConnMaxLifetime: envDuration("DB_CONN_MAX_LIFETIME", 30*time.Minute),
 		},
 		AdminUsername: env("KUBEMG_ADMIN_USERNAME", "admin"),
 		AdminPassword: env("KUBEMG_ADMIN_PASSWORD", ""),

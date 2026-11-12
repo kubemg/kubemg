@@ -13,12 +13,12 @@ Findings are ordered by what they **permit**, highest first, never by how often 
 
 | Rule id | Title | Permits | Field | PSS control |
 |---|---|---|---|---|
-| `privileged_container` | Privileged container | 100 | `securityContext.privileged` | Baseline — Privileged Containers |
-| `host_namespace` | Shares a host namespace | 90 | `hostNetwork` / `hostPID` / `hostIPC` | Baseline — Host Namespaces |
-| `hostpath_volume` | hostPath volume | 80 | `volumes[].hostPath` | Baseline — HostPath Volumes |
+| `privileged_container` | Privileged container | 100 | `securityContext.privileged` | Baseline - Privileged Containers |
+| `host_namespace` | Shares a host namespace | 90 | `hostNetwork` / `hostPID` / `hostIPC` | Baseline - Host Namespaces |
+| `hostpath_volume` | hostPath volume | 80 | `volumes[].hostPath` | Baseline - HostPath Volumes |
 | `namespace_no_network_policy` | No NetworkPolicy in this namespace | 55 | (namespace-level) | not a PSS control |
 | `automount_default_service_account` | Default ServiceAccount token automounted | 45 | `automountServiceAccountToken` | not a PSS control |
-| `no_nonroot_declaration` | No non-root user declared | 30 | `securityContext` | Restricted — Running as Non-root |
+| `no_nonroot_declaration` | No non-root user declared | 30 | `securityContext` | Restricted - Running as Non-root |
 | `no_resource_limits` | No resource limits | 10 | `resources.limits` | not a PSS control |
 
 A clean scan means "clean on the four PSS controls checked", never "baseline- or restricted-compliant". `pss_unchecked` on every response lists the controls not evaluated.

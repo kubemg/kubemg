@@ -5,7 +5,7 @@ The manual is MkDocs Material in `docs/`, published at
 
 ```bash
 make docs-serve   # http://localhost:8000, live reload
-make docs-build   # warnings are errors — this is what runs inside make verify
+make docs-build   # warnings are errors - this is what runs inside make verify
 ```
 
 ## Which half a page belongs in
@@ -30,8 +30,8 @@ developer guide, and the user-guide page should say what the reader sees instead
 and link across.
 
 Two things are *not* implementation detail and belong in the user guide even
-though they look technical: **REST routes an administrator can call** — those
-link to the [REST API reference](api.md) — and **behaviour a reader would
+though they look technical: **REST routes an administrator can call** - those
+link to the [REST API reference](api.md) - and **behaviour a reader would
 otherwise misread**, such as a delete being marked rather than performed, or a
 revoke that could not land.
 
@@ -42,7 +42,7 @@ revoke that could not land.
   refusals are the part that saves somebody an afternoon.
 - Tables for fields, settings and comparisons. Prose for arguments.
 - Never state a default from memory. Read it out of the code, and link to the
-  page that owns it rather than restating it — a restated default goes stale
+  page that owns it rather than restating it - a restated default goes stale
   silently.
 - Do not write version numbers into prose. The version selector at the bottom of
   the sidebar already tells the reader which release they are reading.
@@ -57,6 +57,17 @@ anchor.
 
 Links are relative to the page's own file, so a link from `docs/access/sso.md`
 into the developer guide is `../dev/api.md`.
+
+### Links from the console
+
+The settings pages say what a field does in a line and link here for the
+rest. Every such link is listed in `frontend/src/lib/docs.ts` as a source path
+and heading anchor (`install/tls.md#renewal`), and the console draws it with
+`DocsLink` against the manual address the server reports. Every build of the
+manual, including Read the Docs, runs `hack/mkdocs_console_links.py`. That hook
+fails the build on a target whose page or heading this build did not produce.
+So renaming a heading the console links to means updating its entry in
+`docs.ts` in the same change.
 
 ## Screenshots
 
@@ -77,7 +88,7 @@ Rules that keep them worth having:
   looks like one product.
 - No real hostnames, no real user names, no real tokens. The dev stack's seeded
   admin and a cluster called `prod-eu-west-1` are the house fixtures.
-- Crop to the surface being described — a full-page capture of a sheet wastes
+- Crop to the surface being described - a full-page capture of a sheet wastes
   most of its pixels on the page behind it.
 - A screenshot of a surface that changed is worse than none. If a change moves
   a field, either recapture or delete the image in the same pull request.
@@ -86,6 +97,6 @@ A page that wants an image it does not have yet carries a placeholder rather
 than a broken link, because a missing image file fails the strict build:
 
 ```markdown
-!!! info "Screenshot pending — `helm-install-sheet.png`"
+!!! info "Screenshot pending - `helm-install-sheet.png`"
     The Helm install sheet, with a chart picked and its values open.
 ```

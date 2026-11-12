@@ -88,14 +88,16 @@ var markMediaTypes = []string{"image/png", "image/jpeg", "image/gif", "image/web
 // page, and a console that will not render because it could not read an
 // optional banner is a worse failure than a console with no banner.
 func (s *server) branding(c *gin.Context) brandingResponse {
-	stored, err := s.store.Settings(c.Request.Context())
+	ctx := c.Request.Context()
+	stored, err := s.store.Settings(ctx)
 	if err != nil {
 		return brandingResponse{}
 	}
+	mark, _ := s.store.OrgMark(ctx)
 
 	out := brandingResponse{
 		OrganisationName: strings.TrimSpace(stored[db.SettingOrganisationName]),
-		OrganisationMark: strings.TrimSpace(stored[db.SettingOrganisationMark]),
+		OrganisationMark: strings.TrimSpace(mark),
 		BannerText:       strings.TrimSpace(stored[db.SettingEnvironmentBannerText]),
 		BannerTone:       strings.TrimSpace(stored[db.SettingEnvironmentBannerTone]),
 		FooterNotice:     strings.TrimSpace(stored[db.SettingFooterNotice]),
@@ -235,7 +237,7 @@ func (s *server) updateBranding(c *gin.Context) {
 func validateMark(mark string) error {
 	const prefix = "data:"
 	if !strings.HasPrefix(mark, prefix) {
-		return fmt.Errorf("the mark must be an inline data: URI — an image file, not a link to one")
+		return fmt.Errorf("the mark must be an inline data: URI - an image file, not a link to one")
 	}
 
 	head, payload, found := strings.Cut(mark[len(prefix):], ",")
@@ -246,7 +248,7 @@ func validateMark(mark string) error {
 	mediaType, encoding, _ := strings.Cut(head, ";")
 	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
 	if !slices.Contains(markMediaTypes, mediaType) {
-		return fmt.Errorf("the mark must be one of %s — an SVG can carry script and is refused",
+		return fmt.Errorf("the mark must be one of %s - an SVG can carry script and is refused",
 			strings.Join(markMediaTypes, ", "))
 	}
 	if strings.ToLower(strings.TrimSpace(encoding)) != "base64" {
@@ -264,7 +266,7 @@ func validateMark(mark string) error {
 		return fmt.Errorf("the mark is empty")
 	}
 	if len(decoded) > maxMarkBytes {
-		return fmt.Errorf("the mark must be %d KB or smaller — it is drawn at 28 pixels", maxMarkBytes/1024)
+		return fmt.Errorf("the mark must be %d KB or smaller - it is drawn at 28 pixels", maxMarkBytes/1024)
 	}
 	return nil
 }

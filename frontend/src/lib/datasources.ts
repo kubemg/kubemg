@@ -72,14 +72,14 @@ export const PROVIDERS: Record<DatasourceProvider, ProviderInfo> = {
     kind: 'alerts',
     defaultPort: '9093',
     defaultPrefix: '',
-    hint: 'The Service kube-prometheus-stack installs next to Prometheus — not the headless alertmanager-operated one.',
+    hint: 'The Service kube-prometheus-stack installs next to Prometheus - not the headless alertmanager-operated one.',
   },
   argocd: {
     label: 'Argo CD',
     kind: 'gitops',
     defaultPort: '443',
     defaultPrefix: '',
-    hint: 'The argocd-server Service. Read with an account token — an account with the apiKey capability, bound to role:readonly.',
+    hint: 'The argocd-server Service. Read with an account token - an account with the apiKey capability, bound to role:readonly.',
   },
 }
 

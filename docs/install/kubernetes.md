@@ -21,16 +21,16 @@ The chart's version is the release's version and it pulls that release's images.
 
 The chart refuses to render until the first two are made.
 
-1. **The public URL** (`publicURL`) — the `https://` address every target
+1. **The public URL** (`publicURL`) - the `https://` address every target
    cluster's agent dials, and the one browsers and `kubectl` use. Choose it
    first: the minted certificate covers this host and is pinned into every
    agent package. Plain `http://` is refused.
-2. **The database** — an external PostgreSQL 16 (`database.host`, the
+2. **The database** - an external PostgreSQL 16 (`database.host`, the
    default), or `postgresql.enabled=true` for a single in-chart PostgreSQL
    pod meant for evaluation. The password always comes from you
    (`database.existingSecret`, or `database.password`); see
    [what the chart does not generate](#what-the-chart-does-not-generate).
-3. **How agents reach it** — who terminates TLS (`tls.mode`) and what exposes
+3. **How agents reach it** - who terminates TLS (`tls.mode`) and what exposes
    the pod (`service.type`, `ingress`). See [TLS](#tls) and
    [Exposing it](#exposing-it).
 
@@ -58,7 +58,7 @@ optional.
 
 ```bash
 helm install kubemg oci://ghcr.io/kubemg/charts/kubemg \
-  --version 0.17.1 --namespace kubemg \
+  --version 0.17.2 --namespace kubemg \
   --set publicURL=https://kubemg.example.com \
   --set database.host=postgres.example.internal \
   --set database.existingSecret=kubemg-db \
@@ -99,7 +99,7 @@ agent token and the pinned certificate. Do not attach clusters you care about.
 |---|---|---|
 | Terminates TLS | kubemg | The ingress in front of it |
 | The pod serves | HTTPS on 8443 | Plain HTTP on 8443 |
-| The certificate agents verify | kubemg's own — minted, or yours | The ingress's |
+| The certificate agents verify | kubemg's own - minted, or yours | The ingress's |
 | Exposed by | A `LoadBalancer`/`NodePort` Service, or an ingress that passes TLS through | An ingress |
 
 **Passthrough is recommended**: one certificate in the whole path, the one
@@ -134,9 +134,9 @@ What agents are told to trust then depends on who issued it:
 
 | The certificate is | Set |
 |---|---|
-| Publicly trusted (an ACME issuer, a public CA) | Nothing — agents trust it through the public CAs. |
-| Self-signed | Nothing — kubemg pins a self-signed certificate into agent packages on its own. |
-| Issued by a private CA (cert-manager's CA issuer, a corporate PKI) | `tls.agentCABundle.existingSecret` — cert-manager writes the CA into the same Secret as `ca.crt`, so `--set tls.agentCABundle.existingSecret=kubemg-tls` is enough. |
+| Publicly trusted (an ACME issuer, a public CA) | Nothing - agents trust it through the public CAs. |
+| Self-signed | Nothing - kubemg pins a self-signed certificate into agent packages on its own. |
+| Issued by a private CA (cert-manager's CA issuer, a corporate PKI) | `tls.agentCABundle.existingSecret` - cert-manager writes the CA into the same Secret as `ca.crt`, so `--set tls.agentCABundle.existingSecret=kubemg-tls` is enough. |
 
 **Changing the certificate (or CA) after agents are installed means
 re-applying every agent's install package.**
@@ -218,25 +218,26 @@ its explanation. The ones most installs touch:
 
 | Value | Default | What it does |
 |---|---|---|
-| `publicURL` | — (required) | The `https://` address agents, browsers and `kubectl` reach. |
-| `tls.mode` | `passthrough` | `passthrough` or `edge` — see [TLS](#tls). |
-| `tls.existingSecret` | — | A `kubernetes.io/tls` Secret to serve instead of a minted certificate. Passthrough only. |
-| `tls.agentCABundle.existingSecret` / `.key` | — / `ca.crt` | The CA agents are told to trust, for a certificate a private CA issued. |
-| `tls.hosts` | — | Extra names for the minted certificate. |
-| `database.host` / `.port` / `.name` / `.user` / `.sslMode` | — / `5432` / `kubemg` / `kubemg` / `require` | The external PostgreSQL. |
-| `database.existingSecret` / `.existingSecretPasswordKey` | — / `DB_PASSWORD` | Where the database password comes from. `database.password` renders it into the chart's own Secret instead. |
+| `publicURL` | - (required) | The `https://` address agents, browsers and `kubectl` reach. |
+| `tls.mode` | `passthrough` | `passthrough` or `edge` - see [TLS](#tls). |
+| `tls.existingSecret` | - | A `kubernetes.io/tls` Secret to serve instead of a minted certificate. Passthrough only. |
+| `tls.agentCABundle.existingSecret` / `.key` | - / `ca.crt` | The CA agents are told to trust, for a certificate a private CA issued. |
+| `tls.hosts` | - | Extra names for the minted certificate. |
+| `database.host` / `.port` / `.name` / `.user` / `.sslMode` | - / `5432` / `kubemg` / `kubemg` / `require` | The external PostgreSQL. |
+| `database.pool.maxOpenConns` / `.maxIdleConns` / `.connMaxLifetime` | `25` / `10` / `30m` | The server's connection pool. See [Database](database.md#connection-pool). |
+| `database.existingSecret` / `.existingSecretPasswordKey` | - / `DB_PASSWORD` | Where the database password comes from. `database.password` renders it into the chart's own Secret instead. |
 | `postgresql.enabled` | `false` | Run one PostgreSQL pod in the chart, for evaluation. |
-| `secrets.existingSecret` | — | A Secret holding any of `KUBEMG_SECRET_KEY`, `KUBEMG_SESSION_RECORDING_KEY`, `KUBEMG_ADMIN_PASSWORD`, `JWT_SECRET`. |
+| `secrets.existingSecret` | - | A Secret holding any of `KUBEMG_SECRET_KEY`, `KUBEMG_SESSION_RECORDING_KEY`, `KUBEMG_ADMIN_PASSWORD`, `JWT_SECRET`. |
 | `admin.username` | `admin` | The first administrator. |
 | `recordings.persistence.*` | on, `20Gi`, `ReadWriteOnce` | The session-recordings volume. `existingClaim` uses one you made. |
 | `service.type` / `.port` | `ClusterIP` / 443 (80 in edge mode) | What exposes the pod. |
 | `ingress.*` | off | See [Exposing it](#exposing-it). |
-| `trustedProxies` | — | IPs or CIDRs whose `X-Forwarded-For` is believed (`KUBEMG_TRUSTED_PROXIES`). Unset, every audit row records the connecting peer — in edge mode, the ingress controller. Set it to the controller's pod range to record the real client. |
-| `metrics.enabled` / `.serviceMonitor.enabled` | off / off | [Prometheus metrics](metrics.md) on their own port, behind their own `ClusterIP` Service — never the one agents reach. |
-| `global.imageRegistry` | — | A mirror for every image; see [below](#mirrored-and-air-gapped-registries). |
-| `imagePullSecrets` | — | For the server's pod and the in-chart PostgreSQL. |
-| `agent.imagePullSecret` | — | The name of a pull secret on your **target** clusters, for the agent and browser shell images; see [Air-gapped installs](air-gapped.md#a-mirror-that-requires-authentication). |
-| `extraEnv` | — | Anything else from the [environment reference](environment.md). |
+| `trustedProxies` | - | IPs or CIDRs whose `X-Forwarded-For` is believed (`KUBEMG_TRUSTED_PROXIES`). Unset, every audit row records the connecting peer - in edge mode, the ingress controller. Set it to the controller's pod range to record the real client. |
+| `metrics.enabled` / `.serviceMonitor.enabled` | off / off | [Prometheus metrics](metrics.md) on their own port, behind their own `ClusterIP` Service - never the one agents reach. |
+| `global.imageRegistry` | - | A mirror for every image; see [below](#mirrored-and-air-gapped-registries). |
+| `imagePullSecrets` | - | For the server's pod and the in-chart PostgreSQL. |
+| `agent.imagePullSecret` | - | The name of a pull secret on your **target** clusters, for the agent and browser shell images; see [Air-gapped installs](air-gapped.md#a-mirror-that-requires-authentication). |
+| `extraEnv` | - | Anything else from the [environment reference](environment.md). |
 
 ## What the chart does not generate
 
@@ -249,7 +250,7 @@ the certificate is minted by the server and kept in its database.
 So you can also render and apply without Helm on the cluster:
 
 ```bash
-helm template kubemg oci://ghcr.io/kubemg/charts/kubemg --version 0.17.1 \
+helm template kubemg oci://ghcr.io/kubemg/charts/kubemg --version 0.17.2 \
   --namespace kubemg -f values.yaml > kubemg.yaml
 kubectl apply -n kubemg -f kubemg.yaml
 ```
@@ -311,7 +312,7 @@ certificate agents already pinned.
 
 ## Next
 
-- [TLS and certificates](tls.md) — file formats, SANs, the agent trust chain
-- [Environment reference](environment.md) — every variable the server reads
-- [Database](database.md) — PostgreSQL sizing, backup and migrations
+- [TLS and certificates](tls.md) - file formats, SANs, the agent trust chain
+- [Environment reference](environment.md) - every variable the server reads
+- [Database](database.md) - PostgreSQL sizing, backup and migrations
 - [Production checklist](production-checklist.md)

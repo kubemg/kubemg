@@ -28,8 +28,8 @@ to the default.
 
 | Variable | Default | What it is |
 |---|---|---|
-| `KUBEMG_LISTEN_ADDR` | `:8080` (dev) / `:8443` (production image) | Listen address. Must be loopback if `KUBEMG_TLS_ENABLED=false` unless `KUBEMG_ALLOW_INSECURE=true` — see [TLS](tls.md). |
-| `KUBEMG_MEMORY_LIMIT_BYTES` | — | The container's memory limit in bytes. The server sets the Go runtime's soft limit to 80% of it, so it reclaims memory harder as it nears the limit instead of being OOM-killed. The Helm chart fills it from `resources.limits.memory`; unset, the runtime is left alone. An explicit `GOMEMLIMIT` wins. |
+| `KUBEMG_LISTEN_ADDR` | `:8080` (dev) / `:8443` (production image) | Listen address. Must be loopback if `KUBEMG_TLS_ENABLED=false` unless `KUBEMG_ALLOW_INSECURE=true` - see [TLS](tls.md). |
+| `KUBEMG_MEMORY_LIMIT_BYTES` | - | The container's memory limit in bytes. The server sets the Go runtime's soft limit to 80% of it, so it reclaims memory harder as it nears the limit instead of being OOM-killed. The Helm chart fills it from `resources.limits.memory`; unset, the runtime is left alone. An explicit `GOMEMLIMIT` wins. |
 
 ## Database
 
@@ -38,9 +38,12 @@ to the default.
 | `DB_HOST` | `localhost` | PostgreSQL host. |
 | `DB_PORT` | `5432` | PostgreSQL port. |
 | `DB_USER` | `kubemg` | PostgreSQL user. |
-| `DB_PASSWORD` | `kubemg_secret` | PostgreSQL password. **Change this in production** — the default is a development placeholder. |
+| `DB_PASSWORD` | `kubemg_secret` | PostgreSQL password. **Change this in production** - the default is a development placeholder. |
 | `DB_NAME` | `kubemg` | Database name. |
 | `DB_SSLMODE` | `disable` | libpq `sslmode`. Use `require` (or stricter) against anything but a loopback/private-network Postgres. |
+| `DB_MAX_OPEN_CONNS` | `25` | Most connections one replica holds open. Keep replicas × this under Postgres's `max_connections`. |
+| `DB_MAX_IDLE_CONNS` | `10` | Connections kept open between requests rather than closed. Capped at `DB_MAX_OPEN_CONNS`. |
+| `DB_CONN_MAX_LIFETIME` | `30m` | A connection is closed and redialled after this long (a Go duration or seconds). `0` keeps it. |
 
 See [Database](database.md) for how the schema is applied.
 
@@ -48,10 +51,10 @@ See [Database](database.md) for how the schema is applied.
 
 | Variable | Default | What it is |
 |---|---|---|
-| `JWT_SECRET` | generated, kept in the database | Signs sessions, generated kubeconfigs and JIT approval callback tokens. Unset, the server mints a 32-byte random key on first boot and stores it in the database; replicas booting together converge on the same key. Set it explicitly to supply your own key, or to be able to rotate it deliberately — which invalidates every issued token at once. |
+| `JWT_SECRET` | generated, kept in the database | Signs sessions, generated kubeconfigs and JIT approval callback tokens. Unset, the server mints a 32-byte random key on first boot and stores it in the database; replicas booting together converge on the same key. Set it explicitly to supply your own key, or to be able to rotate it deliberately - which invalidates every issued token at once. |
 | `JWT_TTL` | `12h` | Session token lifetime. |
-| `KUBEMG_SECRET_KEY` | — | 32 bytes, hex or base64 (`openssl rand -base64 32`). Encrypts the credentials stored in the database — the generated signing key, agent tunnel tokens, direct-mode ServiceAccount tokens, and datasource, Helm repository, alarm channel and SSO credentials — with AES-256-GCM. Unset, they are stored in plaintext and the server warns at boot. With a key set, every plaintext value is encrypted in place on the next boot. A key that is not exactly 32 bytes **refuses to boot**; so does a database holding values encrypted under a different key, or under a key that has since been removed. **Back it up separately from the database** — see [Database](database.md#credentials-encrypted-at-rest). |
-| `KUBEMG_SECRET_KEY_PREVIOUS` | — | The key `KUBEMG_SECRET_KEY` replaces, set only for the restart that rotates to a new key. It opens what it encrypted and never encrypts: that boot re-encrypts every stored credential under `KUBEMG_SECRET_KEY`, then the Deployment posture page warns until it is removed. Set without `KUBEMG_SECRET_KEY`, or equal to it, **refuses to boot**. See [Rotating the key](database.md#rotating-the-key). |
+| `KUBEMG_SECRET_KEY` | - | 32 bytes, hex or base64 (`openssl rand -base64 32`). Encrypts the credentials stored in the database - the generated signing key, agent tunnel tokens, direct-mode ServiceAccount tokens, and datasource, Helm repository, alarm channel and SSO credentials - with AES-256-GCM. Unset, they are stored in plaintext and the server warns at boot. With a key set, every plaintext value is encrypted in place on the next boot. A key that is not exactly 32 bytes **refuses to boot**; so does a database holding values encrypted under a different key, or under a key that has since been removed. **Back it up separately from the database** - see [Database](database.md#credentials-encrypted-at-rest). |
+| `KUBEMG_SECRET_KEY_PREVIOUS` | - | The key `KUBEMG_SECRET_KEY` replaces, set only for the restart that rotates to a new key. It opens what it encrypted and never encrypts: that boot re-encrypts every stored credential under `KUBEMG_SECRET_KEY`, then the Deployment posture page warns until it is removed. Set without `KUBEMG_SECRET_KEY`, or equal to it, **refuses to boot**. See [Rotating the key](database.md#rotating-the-key). |
 | `KUBEMG_ADMIN_USERNAME` | `admin` | Bootstrap administrator's username, created only when the users table is empty. |
 | `KUBEMG_ADMIN_PASSWORD` | generated, printed once to the log | Bootstrap administrator's password. Left unset, a random 20-character password (drawn from an alphabet with no visually-ambiguous characters) is generated and logged exactly once. Setup will not let you finish until it's changed either way. |
 | `KUBEMG_MFA_RESET_USERNAME` | unset | **Break-glass.** The account named has its second factor removed at every boot, with an `ERROR` log line and a `mfa-reset` audit record. For a sole super admin who lost both phone and recovery codes; unset it once they have enrolled again. See [Two-factor authentication](../access/mfa.md#break-glass-the-only-super-admin-lost-both-phone-and-codes). |
@@ -61,22 +64,22 @@ See [Database](database.md) for how the schema is applied.
 ## Public URL & agent
 
 *`KUBEMG_PUBLIC_URL`, `KUBEMG_AGENT_IMAGE`, `KUBEMG_AGENT_NAMESPACE` and
-`KUBEMG_AGENT_IMAGE_PULL_SECRET` are boot-time defaults only — each is
+`KUBEMG_AGENT_IMAGE_PULL_SECRET` are boot-time defaults only - each is
 overridable at runtime from Settings.*
 
 | Variable | Default | What it is |
 |---|---|---|
-| `KUBEMG_PUBLIC_URL` | `http://localhost:8080` | The address agents and operators reach this server on. Baked into every generated agent install command and kubeconfig — must be reachable from a **target cluster**, not this process's own listen address. A non-HTTPS value here surfaces as a warning rather than a kubeconfig that silently fails at first use. |
+| `KUBEMG_PUBLIC_URL` | `http://localhost:8080` | The address agents and operators reach this server on. Baked into every generated agent install command and kubeconfig - must be reachable from a **target cluster**, not this process's own listen address. A non-HTTPS value here surfaces as a warning rather than a kubeconfig that silently fails at first use. |
 | `KUBEMG_AGENT_IMAGE` | pinned release image (`ghcr.io/kubemg/kubemg-agent:<version>`) | The agent container image rendered into every generated install manifest. Point this at an internal mirror for an air-gapped install. |
 | `KUBEMG_AGENT_NAMESPACE` | `kubemg-system` | Namespace the agent is installed into on target clusters. Browser shell pods run here too. |
-| `KUBEMG_AGENT_IMAGE_PULL_SECRET` | — | The name of a `docker-registry` Secret in that namespace, for a mirror that requires authentication. The agent and browser shell pods pull with it. Only the name — the Secret is created on each cluster, and the install sheet shows the command. See [Air-gapped installs](air-gapped.md#a-mirror-that-requires-authentication). |
+| `KUBEMG_AGENT_IMAGE_PULL_SECRET` | - | The name of a `docker-registry` Secret in that namespace, for a mirror that requires authentication. The agent and browser shell pods pull with it. Only the name - the Secret is created on each cluster, and the install sheet shows the command. See [Air-gapped installs](air-gapped.md#a-mirror-that-requires-authentication). |
 | `KUBEMG_SHELL_ENABLED` | `true` | Offer the [browser shell](../clusters/terminals-and-logs.md) on agent-mode clusters. A settings row can turn this off; it cannot turn it on for a server with no shell image. |
 | `KUBEMG_SHELL_IMAGE` | pinned release image (`ghcr.io/kubemg/kubemg-shell:<version>`) | The image a shell pod runs. Point this at an internal mirror for an air-gapped install; clearing it switches the feature off, since a shell with no image is a button that fails. |
-| `KUBEMG_DEBUG_IMAGE` | `busybox:1.36` | The image an [ephemeral debug container](../clusters/terminals-and-logs.md#debugging-a-pod-with-no-shell) runs, for a pod whose own containers have no shell to exec into. Point this at an internal mirror for an air-gapped install. Unlike the browser shell there is no enable switch — any grant that can already exec into a pod can already ask for one. |
+| `KUBEMG_DEBUG_IMAGE` | `busybox:1.36` | The image an [ephemeral debug container](../clusters/terminals-and-logs.md#debugging-a-pod-with-no-shell) runs, for a pod whose own containers have no shell to exec into. Point this at an internal mirror for an air-gapped install. Unlike the browser shell there is no enable switch - any grant that can already exec into a pod can already ask for one. |
 
 ## TLS
 
-See [TLS and certificates](tls.md) for the full detail — this is the summary.
+See [TLS and certificates](tls.md) for the full detail - this is the summary.
 
 | Variable | Default | What it is |
 |---|---|---|
@@ -84,8 +87,8 @@ See [TLS and certificates](tls.md) for the full detail — this is the summary.
 | `KUBEMG_TLS_CERT_FILE` / `KUBEMG_TLS_KEY_FILE` | `/etc/kubemg/tls/tls.crt` / `tls.key` | Where a minted (or explicitly configured) pair lives. |
 | `KUBEMG_TLS_SUPPLIED_DIR` | `/etc/kubemg/ssl` | Checked first; a recognised pair here wins over anything minted. |
 | `KUBEMG_TLS_SELF_SIGNED` | `true` | Mint a self-signed pair when nothing is supplied. `false` refuses to start instead of minting. |
-| `KUBEMG_TLS_HOSTS` | — | Extra SANs for a minted certificate, comma-separated. |
-| `KUBEMG_AGENT_CA_BUNDLE` | — | The CA chain agents must trust, when it isn't one this process's own certificate can reveal (an ingress, an internal PKI). Validated at boot. |
+| `KUBEMG_TLS_HOSTS` | - | Extra SANs for a minted certificate, comma-separated. |
+| `KUBEMG_AGENT_CA_BUNDLE` | - | The CA chain agents must trust, when it isn't one this process's own certificate can reveal (an ingress, an internal PKI). Validated at boot. |
 | `KUBEMG_ALLOW_INSECURE` | `false` | Serve plaintext HTTP on a non-loopback address anyway. Only correct behind a TLS-terminating proxy. |
 
 ## Session recording
@@ -95,20 +98,20 @@ See [TLS and certificates](tls.md) for the full detail — this is the summary.
 | `KUBEMG_SESSION_RECORDING_ENABLED` | `true` | Record every `exec`/`attach` for replay. |
 | `KUBEMG_SESSION_RECORDING_DIR` | `/var/lib/kubemg/recordings` | Where `.cast.gz` recordings are written. **Mount this on a persistent volume.** |
 | `KUBEMG_SESSION_RECORDING_MAX_BYTES` | recorder's own default (32 MiB) | Per-recording cap; `0` (or unset) takes the built-in default. |
-| `KUBEMG_SESSION_RECORDING_KEY` | — | 32 bytes, hex or base64 (`openssl rand -base64 32`). Encrypts recordings at rest. Unset, recordings are written in plaintext and the server warns loudly at boot — this is the documented default every existing install starts in, so the warning is informational rather than an error. **Keep the key out of the backup that holds the recordings volume** — a key stored beside the ciphertext it protects defends against nothing, and losing it loses the recordings. |
-| `KUBEMG_SESSION_RECORDING_INPUT` | `true` | Record keystrokes as well as output. `false` keeps only what the container printed — set this where operators type credentials into interactive tools, since that's exactly what a prompt refuses to echo and therefore what dropping input actually loses. |
+| `KUBEMG_SESSION_RECORDING_KEY` | - | 32 bytes, hex or base64 (`openssl rand -base64 32`). Encrypts recordings at rest. Unset, recordings are written in plaintext and the server warns loudly at boot - this is the documented default every existing install starts in, so the warning is informational rather than an error. **Keep the key out of the backup that holds the recordings volume** - a key stored beside the ciphertext it protects defends against nothing, and losing it loses the recordings. |
+| `KUBEMG_SESSION_RECORDING_INPUT` | `true` | Record keystrokes as well as output. `false` keeps only what the container printed - set this where operators type credentials into interactive tools, since that's exactly what a prompt refuses to echo and therefore what dropping input actually loses. |
 
 ## Caching
 
 | Variable | Default | What it is |
 |---|---|---|
 | `KUBEMG_RESOURCE_CACHE_TTL` | `5s` | How long a per-caller cluster read is served from memory before being re-asked of the cluster. A **negative** value turns the cache off entirely. |
-| `KUBEMG_EVENT_CACHE_TTL` | `30s` | The same window, specifically for the cluster events timeline — longer by default because Events are the cluster's own append-only record and nothing kubemg does writes one, so there's no write for a stale cache entry to hide. |
-| `KUBEMG_EVENT_SCAN_LIMIT` | `4000` | How many events a single timeline read walks before reporting the answer as partial — bounds the cost of "read the newest events" on a cluster holding tens of thousands of them. |
+| `KUBEMG_EVENT_CACHE_TTL` | `30s` | The same window, specifically for the cluster events timeline - longer by default because Events are the cluster's own append-only record and nothing kubemg does writes one, so there's no write for a stale cache entry to hide. |
+| `KUBEMG_EVENT_SCAN_LIMIT` | `4000` | How many events a single timeline read walks before reporting the answer as partial - bounds the cost of "read the newest events" on a cluster holding tens of thousands of them. |
 
 ## Audit retention
 
-*Boot-time default only — overridable at runtime from Settings, where it is
+*Boot-time default only - overridable at runtime from Settings, where it is
 also validated on the way in (1–3650 days) and on the way out.*
 
 | Variable | Default | What it is |
@@ -119,19 +122,19 @@ also validated on the way in (1–3650 days) and on the way out.*
 
 | Variable | Default | What it is |
 |---|---|---|
-| `KUBEMG_METRICS_ADDR` | — | `host:port` for a separate internal listener that serves only `GET /metrics` for Prometheus scraping. Unset, the endpoint is not exposed at all. Bind to a loopback or private address (e.g. `127.0.0.1:9090`), or to `:9090` in a container — **never** to the port of `KUBEMG_LISTEN_ADDR`, which is reachable from agent clusters; the server refuses to start if the two share one. A non-loopback address logs a warning at boot, since the endpoint is plaintext and unauthenticated. See [Prometheus metrics](metrics.md#in-a-container). |
+| `KUBEMG_METRICS_ADDR` | - | `host:port` for a separate internal listener that serves only `GET /metrics` for Prometheus scraping. Unset, the endpoint is not exposed at all. Bind to a loopback or private address (e.g. `127.0.0.1:9090`), or to `:9090` in a container - **never** to the port of `KUBEMG_LISTEN_ADDR`, which is reachable from agent clusters; the server refuses to start if the two share one. A non-loopback address logs a warning at boot, since the endpoint is plaintext and unauthenticated. See [Prometheus metrics](metrics.md#in-a-container). |
 
 ## Client addresses behind a proxy
 
 | Variable | Default | What it is |
 |---|---|---|
-| `KUBEMG_TRUSTED_PROXIES` | — | The proxies in front of kubemg whose `X-Forwarded-For` / `X-Real-IP` are believed, as comma-separated IPs or CIDRs (`10.244.0.0/16,192.0.2.7`). **Unset, no proxy is trusted**: the audit trail's `source_addr`, an account's last sign-in address and the per-address sign-in limit all see the connecting peer. Behind an ingress or a load balancer that does not preserve the source address, that peer is the proxy; name its range here to record the real client. Never name a range callers can connect from directly — a trusted peer can claim any address it likes. An entry that is not an IP or a CIDR **stops the server from starting**. |
+| `KUBEMG_TRUSTED_PROXIES` | - | The proxies in front of kubemg whose `X-Forwarded-For` / `X-Real-IP` are believed, as comma-separated IPs or CIDRs (`10.244.0.0/16,192.0.2.7`). **Unset, no proxy is trusted**: the audit trail's `source_addr`, an account's last sign-in address and the per-address sign-in limit all see the connecting peer. Behind an ingress or a load balancer that does not preserve the source address, that peer is the proxy; name its range here to record the real client. Never name a range callers can connect from directly - a trusted peer can claim any address it likes. An entry that is not an IP or a CIDR **stops the server from starting**. |
 
 ## CORS
 
 | Variable | Default | What it is |
 |---|---|---|
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Browser origins allowed to call the API, comma-separated. **Not needed at all** in the production single-image deployment, where the console is served same-origin — this only matters for the dev stack, where Vite serves the console on a different port than the API. |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Browser origins allowed to call the API, comma-separated. **Not needed at all** in the production single-image deployment, where the console is served same-origin - this only matters for the dev stack, where Vite serves the console on a different port than the API. |
 
 ## Copy-pasteable annotated `.env`
 
@@ -141,8 +144,8 @@ For the Docker Compose deployment at `deploy/compose/` (see
 ```dotenv
 # --- credentials --------------------------------------------------------
 DB_PASSWORD=CHANGE_ME                         # openssl rand -base64 24
-JWT_SECRET=CHANGE_ME                          # openssl rand -base64 48 — required if >1 replica
-KUBEMG_SECRET_KEY=CHANGE_ME                   # openssl rand -base64 32 — back up separately from the database
+JWT_SECRET=CHANGE_ME                          # openssl rand -base64 48 - required if >1 replica
+KUBEMG_SECRET_KEY=CHANGE_ME                   # openssl rand -base64 32 - back up separately from the database
 KUBEMG_ADMIN_USERNAME=admin
 KUBEMG_ADMIN_PASSWORD=                        # leave empty: generated + logged once on first boot
 
@@ -161,16 +164,16 @@ KUBEMG_TLS_SUPPLIED_DIR=/etc/kubemg/ssl
 # KUBEMG_AGENT_CA_BUNDLE=/etc/kubemg/ssl/proxy-ca.crt
 
 # --- air-gapped / internal registry --------------------------------------
-# KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.17.1
+# KUBEMG_IMAGE=registry.internal/kubemg/kubemg:0.17.2
 # KUBEMG_POSTGRES_IMAGE=registry.internal/postgres:16-alpine
-# KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.17.1
+# KUBEMG_AGENT_IMAGE=registry.internal/kubemg/kubemg-agent:0.17.2
 # KUBEMG_AGENT_IMAGE_PULL_SECRET=registry-internal
 KUBEMG_AGENT_NAMESPACE=kubemg-system
 
 # --- audit & recordings ----------------------------------------------------
 KUBEMG_AUDIT_RETENTION_DAYS=30                # also editable at runtime from Settings
 KUBEMG_SESSION_RECORDING_ENABLED=true
-KUBEMG_SESSION_RECORDING_KEY=CHANGE_ME        # openssl rand -base64 32 — keep out of the recordings backup
+KUBEMG_SESSION_RECORDING_KEY=CHANGE_ME        # openssl rand -base64 32 - keep out of the recordings backup
 KUBEMG_SESSION_RECORDING_INPUT=true
 
 # --- database ---------------------------------------------------------------
@@ -183,7 +186,7 @@ DB_SSLMODE=require                            # against anything but a loopback/
 
 ## Next
 
-- [Settings reference](../reference/settings.md) — the runtime side of the
+- [Settings reference](../reference/settings.md) - the runtime side of the
   boot-time defaults above
 - [TLS and certificates](tls.md)
 - [Database](database.md)

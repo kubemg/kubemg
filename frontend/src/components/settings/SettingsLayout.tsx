@@ -4,7 +4,9 @@ import { TriangleAlert } from 'lucide-react'
 import { Link } from 'react-router'
 import { fetchDeploymentPosture } from '../../api/client'
 import type { SettingSource } from '../../lib/settings'
+import type { DocTarget } from '../../lib/docs'
 import { AppShell } from '../AppShell'
+import { DocsLink } from '../DocsLink'
 
 /**
  * SettingsLayout is the shared frame every settings sub-page renders through.
@@ -34,11 +36,15 @@ export function SettingsLayout({
   description,
   actions,
   aside,
+  docs,
   children,
 }: {
   title: string
-  /** What this group of settings governs, said once under the title. */
+  /** What this group of settings governs, in one line under the title. The
+      reasoning lives in the manual, behind `docs`. */
   description?: ReactNode
+  /** The manual's page for this group, linked at the end of the description. */
+  docs?: DocTarget
   actions?: ReactNode
   /** The right column: what is in force, where it came from, what it reaches.
       A page with nothing to say there passes nothing and the form takes the
@@ -49,7 +55,15 @@ export function SettingsLayout({
   return (
     <AppShell
       title={title}
-      description={description}
+      description={
+        description || docs ? (
+          <>
+            {description}
+            {description && docs ? ' ' : null}
+            {docs ? <DocsLink to={docs}>Documentation</DocsLink> : null}
+          </>
+        ) : undefined
+      }
       parent={{ label: 'Settings', to: '/admin/settings/general' }}
       actions={actions}
     >
@@ -114,7 +128,7 @@ export function SettingsAside({
  * something from this page at all.
  */
 const SOURCE_COPY: Record<SettingSource, string> = {
-  default: "The build's own default — nothing has been set.",
+  default: "The build's own default - nothing has been set.",
   environment: 'From this server’s environment at boot.',
   override: 'Overridden here, and stored. Clearing the field restores the default.',
 }

@@ -153,6 +153,13 @@ type User struct {
 	// can grant it to itself; pretending otherwise would be theatre.
 	CanRevealSecrets bool `gorm:"not null;default:false" json:"can_reveal_secrets"`
 
+	// SlackUserID is the Slack member ID (U…, or W… on Enterprise Grid) whose
+	// button clicks on an access-request message count as this account's. An
+	// administrator sets it; nothing else does. A Slack handle is a display
+	// name its owner may be able to change, so it is never matched against the
+	// username: an unlinked click decides nothing.
+	SlackUserID string `gorm:"size:32;index" json:"slack_user_id,omitempty"`
+
 	// AuthSource is where this account's credentials live: AuthSourceLocal for a
 	// bcrypt hash in this database, or a federation protocol for an account an
 	// identity provider vouches for. A federated account has no usable password,
@@ -469,7 +476,7 @@ type AuditEvent struct {
 	// stored for a refused write, never stored for a redacted kind, only
 	// stored when the setting is on — lives in exactly one place. Because it
 	// rides on this row rather than a table of its own, PruneAuditEvents'
-	// existing `DELETE ... WHERE at < ?` prunes it for free; a diff outliving
+	// existing delete by age prunes it for free; a diff outliving
 	// the write it describes would be the retention window lying about what it
 	// retains.
 	Diff string `gorm:"type:text" json:"-"`

@@ -98,6 +98,9 @@ type fakeStore struct {
 	// on the window the pruner chose rather than only on what survived.
 	pruned   []time.Time
 	pruneErr error
+	// recordingPruneErr fails a recording prune after it has removed rows, the
+	// way a batch failing after earlier ones committed does.
+	recordingPruneErr error
 	// alarms holds the channel and rule tables; see alarms_fake_test.go.
 	alarms *alarmTables
 
@@ -487,7 +490,26 @@ func (f *fakeStore) UpdateUser(_ context.Context, id uint, update db.UserUpdate)
 	if update.CanRevealSecrets != nil {
 		user.CanRevealSecrets = *update.CanRevealSecrets
 	}
+	if update.SlackUserID != nil {
+		user.SlackUserID = *update.SlackUserID
+	}
 	return user, nil
+}
+
+func (f *fakeStore) UserBySlackID(_ context.Context, slackUserID string) (*db.User, error) {
+	var found *db.User
+	for _, user := range f.users {
+		if slackUserID != "" && user.SlackUserID == slackUserID {
+			if found != nil {
+				return nil, db.ErrConflict
+			}
+			found = user
+		}
+	}
+	if found == nil {
+		return nil, db.ErrNotFound
+	}
+	return found, nil
 }
 
 func (f *fakeStore) SetUserActive(_ context.Context, id uint, active bool) (*db.User, error) {
@@ -874,15 +896,22 @@ func (f *fakeStore) PruneTerminalSessions(
 		kept = append(kept, session)
 	}
 	f.recordings = kept
-	return stale, nil
+	return stale, f.recordingPruneErr
 }
 
 func (f *fakeStore) Settings(_ context.Context) (map[string]string, error) {
 	out := make(map[string]string, len(f.settings))
 	for key, value := range f.settings {
+		if key == db.SettingOrganisationMark {
+			continue
+		}
 		out[key] = value
 	}
 	return out, nil
+}
+
+func (f *fakeStore) OrgMark(_ context.Context) (string, error) {
+	return f.settings[db.SettingOrganisationMark], nil
 }
 
 func (f *fakeStore) PutSettings(_ context.Context, values map[string]string, _ uint) error {

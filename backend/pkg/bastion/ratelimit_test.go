@@ -227,7 +227,7 @@ func TestCallOverBudgetIsRefusedAndRecorded(t *testing.T) {
 	seen := len(agent.seen)
 	agent.mu.Unlock()
 	if seen != 3 {
-		t.Fatalf("the agent saw %d calls, want 3 — the refused one must not reach the tunnel", seen)
+		t.Fatalf("the agent saw %d calls, want 3 - the refused one must not reach the tunnel", seen)
 	}
 }
 

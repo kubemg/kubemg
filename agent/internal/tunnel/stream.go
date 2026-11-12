@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/kubemg/kubemg/agent/internal/kube"
 	"github.com/kubemg/kubemg/agent/internal/protocol"
 )
 
@@ -177,11 +178,9 @@ func (c *Client) runBodyStream(ctx context.Context, s *stream, open protocol.Str
 	for {
 		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
-			// The buffer is reused, so the chunk has to be copied before it
-			// goes into a frame that is marshalled on another goroutine.
-			chunk := make([]byte, n)
-			copy(chunk, buf[:n])
-			if err := out.data(s.id, protocol.StreamData{Data: chunk}); err != nil {
+			// send marshals the frame synchronously before returning, so the
+			// buffer is safe to reuse on the next iteration without a copy.
+			if err := out.data(s.id, protocol.StreamData{Data: buf[:n]}); err != nil {
 				return
 			}
 		}
@@ -211,7 +210,13 @@ func (c *Client) runBodyStream(ctx context.Context, s *stream, open protocol.Str
 func (c *Client) runUpgradeStream(ctx context.Context, s *stream, open protocol.StreamOpen, out *writer) {
 	conn, subprotocol, err := c.kube.DialUpgrade(ctx, open.Path, open.Header, open.Subprotocols)
 	if err != nil {
-		out.start(s.id, protocol.StreamStart{Error: err.Error()})
+		start := protocol.StreamStart{Error: err.Error()}
+		var refused *kube.RefusedError
+		if errors.As(err, &refused) {
+			start.Status = refused.StatusCode
+			start.Error = refused.Message
+		}
+		out.start(s.id, start)
 		return
 	}
 	defer conn.Close()

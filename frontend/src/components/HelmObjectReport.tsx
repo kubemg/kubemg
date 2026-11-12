@@ -76,7 +76,7 @@ export function HelmObjectTable({ objects }: { objects: ObjectReport[] }) {
               </Td>
               <Td className="truncate font-data">{object.name}</Td>
               <Td className="hidden truncate font-data text-muted md:table-cell">
-                {object.namespace ?? '—'}
+                {object.namespace ?? '-'}
               </Td>
               <Td>
                 <Pill tone={actionTone(object.action)}>{object.action}</Pill>

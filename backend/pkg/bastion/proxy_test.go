@@ -141,6 +141,13 @@ func TestStreamRouting(t *testing.T) {
 		{path: "/api/v1/namespaces/team-a/pods"},
 		// follow means something only on a log.
 		{path: "/api/v1/namespaces/team-a/pods?follow=true"},
+		// watch means something only on a collection: the API server answers a
+		// named object once, and a log streams only when followed.
+		{path: "/api/v1/namespaces/team-a/pods/web-0?watch=true"},
+		{path: "/api/v1/nodes/worker-1?watch=1"},
+		{path: "/api/v1/namespaces/team-a/pods/web-0/log?watch=true"},
+		// One object watched through its field selector streams.
+		{path: "/api/v1/namespaces/team-a/pods?fieldSelector=metadata.name%3Dweb-0&watch=true", body: true},
 	}
 
 	for _, tc := range cases {
@@ -427,5 +434,45 @@ func TestProxyRefusesTheAgentNamespaceToAnEditGrant(t *testing.T) {
 	resp := h.proxyRequest(http.MethodGet, "/api/v1/clusters/1/proxy/api/v1/namespaces/team-a/secrets", h.token(dev))
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("an ordinary namespace: want 200, got %d", resp.StatusCode)
+	}
+}
+
+// A cluster RBAC refusal on an exec/attach upgrade must reach the client as
+// the cluster's own status code, not as 502 Bad Gateway.
+func TestTunnelFailureRelaysClusterRefusal(t *testing.T) {
+	cases := []struct {
+		name       string
+		clusterErr error
+		wantStatus int
+		wantMsg    string
+	}{
+		{
+			name:       "403 Forbidden relayed verbatim",
+			clusterErr: &ErrRemoteStatus{Status: http.StatusForbidden, Message: `User "dev" cannot exec in pods`},
+			wantStatus: http.StatusForbidden,
+			wantMsg:    `User "dev" cannot exec in pods`,
+		},
+		{
+			name:       "401 Unauthorized relayed verbatim",
+			clusterErr: &ErrRemoteStatus{Status: http.StatusUnauthorized, Message: "Unauthorized"},
+			wantStatus: http.StatusUnauthorized,
+			wantMsg:    "Unauthorized",
+		},
+		{
+			name:       "real tunnel failure stays 502",
+			clusterErr: ErrTunnelClosed,
+			wantStatus: http.StatusServiceUnavailable,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			status, msg := tunnelFailure(tc.clusterErr)
+			if status != tc.wantStatus {
+				t.Errorf("status = %d; want %d", status, tc.wantStatus)
+			}
+			if tc.wantMsg != "" && msg != tc.wantMsg {
+				t.Errorf("message = %q; want %q", msg, tc.wantMsg)
+			}
+		})
 	}
 }

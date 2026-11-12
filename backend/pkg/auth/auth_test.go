@@ -310,6 +310,45 @@ func TestWSTicketUnreadableStoreRefuses(t *testing.T) {
 	}
 }
 
+// A ticket is for opening a terminal. Upgrade headers on a POST, or a GET
+// upgrade on a route the server did not name, are not that, and a leaked
+// ticket must not run them as its owner.
+func TestAWSTicketOpensOnlyTheNamedRoutesByGET(t *testing.T) {
+	m := NewManager("secret", time.Hour)
+	m.AcceptWSTicketsOn("/terminal")
+	issue := func() string {
+		ticket, err := m.IssueWSTicket(context.Background(), &Claims{UserID: 3, Username: "devops", Role: "user"})
+		if err != nil {
+			t.Fatalf("issue ticket: %v", err)
+		}
+		return ticket
+	}
+	router := gin.New()
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	router.GET("/terminal", RequireAuth(m), ok)
+	router.GET("/users", RequireAuth(m), ok)
+	router.POST("/terminal", RequireAuth(m), ok)
+
+	send := func(method, path, ticket string) int {
+		req := httptest.NewRequest(method, path+"?"+QueryTokenParam+"="+ticket, nil)
+		req.Header.Set("Upgrade", "websocket")
+		req.Header.Set("Connection", "Upgrade")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if code := send(http.MethodPost, "/terminal", issue()); code != http.StatusUnauthorized {
+		t.Fatalf("a ticket on a POST: want 401, got %d", code)
+	}
+	if code := send(http.MethodGet, "/users", issue()); code != http.StatusUnauthorized {
+		t.Fatalf("a ticket on a route not named: want 401, got %d", code)
+	}
+	if code := send(http.MethodGet, "/terminal", issue()); code != http.StatusOK {
+		t.Fatalf("a ticket on the terminal route: want 200, got %d", code)
+	}
+}
+
 // TestRequireAuthWebSocketUpgrade covers the query-string fallback that only
 // a WebSocket handshake may use: a browser cannot set a header when opening
 // one, so it authenticates with a ticket instead. See QueryTokenParam.
@@ -417,5 +456,25 @@ func TestSessionGateSeesOnlySessions(t *testing.T) {
 	}
 	if code := serve("/api/v1/clusters/7/proxy/api", proxy); code != http.StatusOK || asked != 1 {
 		t.Fatalf("a proxy token was gated: %d (asked %d)", code, asked)
+	}
+}
+
+// A 401 from the session gate says so in a code, the console's one cue to sign
+// out; a 401 a handler writes about one request carries none.
+func TestASessionRefusalCarriesItsCode(t *testing.T) {
+	m := NewManager("secret", time.Hour)
+	router := gin.New()
+	router.GET("/protected", RequireAuth(m), func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	for name, header := range map[string]string{"no token": "", "a bad token": "Bearer not-a-jwt"} {
+		req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+		if header != "" {
+			req.Header.Set("Authorization", header)
+		}
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), `"code":"`+SessionInvalidCode+`"`) {
+			t.Errorf("%s: want 401 with the session code, got %d %s", name, rec.Code, rec.Body.String())
+		}
 	}
 }

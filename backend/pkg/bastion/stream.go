@@ -41,6 +41,18 @@ const streamOpenTimeout = 30 * time.Second
 // ErrStreamBacklog is returned when a consumer falls too far behind.
 var ErrStreamBacklog = errors.New("stream consumer fell too far behind")
 
+// ErrRemoteStatus is returned by OpenStream when the agent relays an HTTP
+// refusal from the cluster's API server (e.g. 401, 403, 404). The bastion
+// relays the original status code rather than mapping it to 502.
+type ErrRemoteStatus struct {
+	Status  int
+	Message string
+}
+
+func (e *ErrRemoteStatus) Error() string {
+	return fmt.Sprintf("cluster refused the stream: %d %s", e.Status, e.Message)
+}
+
 // ErrStreamClosed is returned when a stream has already ended.
 var ErrStreamClosed = errors.New("stream is closed")
 
@@ -66,6 +78,14 @@ type Stream struct {
 
 	closeOnce sync.Once
 	closed    chan struct{}
+
+	// dataMu orders deliver's send on data against Close's close of it. The
+	// closed check alone left a window between the check and the send: a
+	// stream closed by its consumer in that window (a cancelled watch, a
+	// finished log) made the send panic on the tunnel's read loop, which took
+	// the whole tunnel down without deregistering it.
+	dataMu     sync.Mutex
+	dataClosed bool
 
 	mu   sync.Mutex
 	err  error
@@ -127,7 +147,10 @@ func (s *Stream) Close(cause error) {
 		s.mu.Unlock()
 
 		close(s.closed)
+		s.dataMu.Lock()
+		s.dataClosed = true
 		close(s.data)
+		s.dataMu.Unlock()
 		s.tunnel.dropStream(s.ID)
 
 		// Best effort: if the tunnel is already gone there is nobody to tell.
@@ -147,22 +170,27 @@ func (s *Stream) Close(cause error) {
 // loop — see the bounds' own comment for why. A stream that outruns both of
 // them loses itself rather than the socket everything else shares.
 func (s *Stream) deliver(chunk StreamData) {
-	select {
-	case <-s.closed:
-		return
-	default:
-	}
-
-	if s.queued.Add(int64(len(chunk.Data))) > streamBufferBytes {
-		s.queued.Add(-int64(len(chunk.Data)))
+	size := int64(len(chunk.Data))
+	if s.queued.Add(size) > streamBufferBytes {
+		s.queued.Add(-size)
 		s.Close(ErrStreamBacklog)
 		return
 	}
 
+	// The send is non-blocking, so holding the lock across it costs nothing;
+	// Close is called only after the lock is released, since it takes it too.
+	s.dataMu.Lock()
+	if s.dataClosed {
+		s.dataMu.Unlock()
+		s.queued.Add(-size)
+		return
+	}
 	select {
 	case s.data <- chunk:
+		s.dataMu.Unlock()
 	default:
-		s.queued.Add(-int64(len(chunk.Data)))
+		s.dataMu.Unlock()
+		s.queued.Add(-size)
 		s.Close(ErrStreamBacklog)
 	}
 }
@@ -199,6 +227,12 @@ func (t *Tunnel) OpenStream(ctx context.Context, open *StreamOpen) (*Stream, *St
 	case head := <-stream.start:
 		if head.Error != "" {
 			stream.Close(nil)
+			// When the agent carries a non-101 status the cluster replied with
+			// an HTTP refusal (401/403/404 …). Return a typed sentinel so the
+			// caller can relay the original code instead of wrapping it in 502.
+			if head.Status != 0 {
+				return nil, nil, &ErrRemoteStatus{Status: head.Status, Message: head.Error}
+			}
 			return nil, nil, fmt.Errorf("agent refused the stream: %s", head.Error)
 		}
 		return stream, head, nil

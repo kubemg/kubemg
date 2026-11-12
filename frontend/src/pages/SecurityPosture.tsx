@@ -270,7 +270,7 @@ export function SecurityPosture() {
 
         {loaded?.truncated || loaded?.findings_capped ? (
           <Notice tone="warn">
-            This scan hit its bound —{' '}
+            This scan hit its bound -{' '}
             {loaded.scanned_workloads + loaded.scanned_pods} objects were evaluated
             {loaded.findings_capped ? ' and the finding list itself was capped' : ''}. Narrow to one
             namespace for a complete answer over a smaller scope.
@@ -528,7 +528,7 @@ function FindingRow({
 
         {finding.acknowledged ? (
           <p className="mt-1 text-[12px] text-muted">
-            {finding.ack_by} — {finding.ack_reason}
+            {finding.ack_by} - {finding.ack_reason}
             {finding.ack_at ? <> · <Age iso={finding.ack_at} /></> : null}
           </p>
         ) : null}
@@ -630,7 +630,7 @@ function AcknowledgeSheet({
       <form id="ack-form" onSubmit={submit} className="flex flex-col gap-3">
         <p>
           {finding.title}. The finding stays on every future scan, marked as acknowledged with your
-          name and this reason — it does not disappear.
+          name and this reason - it does not disappear.
         </p>
 
         {error ? <Notice tone="error">{error}</Notice> : null}

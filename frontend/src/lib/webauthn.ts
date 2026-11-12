@@ -176,7 +176,7 @@ export function keyErrorText(err: unknown): string | null {
   const name = err instanceof DOMException || err instanceof Error ? err.name : ''
   switch (name) {
     case 'NotAllowedError':
-      return 'The key did not answer — the prompt was closed or timed out. Try again.'
+      return 'The key did not answer - the prompt was closed or timed out. Try again.'
     case 'InvalidStateError':
       return 'That key is already registered to your account.'
     case 'SecurityError':

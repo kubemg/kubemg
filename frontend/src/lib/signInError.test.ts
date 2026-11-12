@@ -121,7 +121,7 @@ describe('signInErrorText on the directory form', () => {
         {
           status: 403,
           message:
-            "the identity provider asserted a username containing ':' or control characters, which no KubeMG account may carry — configure the provider's username claim to one without them",
+            "the identity provider asserted a username containing ':' or control characters, which no KubeMG account may carry - configure the provider's username claim to one without them",
         },
         'directory',
       ),
