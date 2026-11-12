@@ -1,4 +1,4 @@
-GO_IMAGE   ?= golang:1.26.10-alpine
+GO_IMAGE   ?= golang:1.26-alpine
 NODE_IMAGE ?= node:22-alpine
 # Pinned rather than :latest so a theme release cannot change the published
 # manual without a commit. Keep it in step with docs/requirements.txt.
