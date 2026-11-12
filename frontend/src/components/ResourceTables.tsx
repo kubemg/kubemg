@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
 import type {
@@ -644,18 +644,56 @@ function SelectHead({
  */
 function SelectCell({ row, selection }: { row?: SelectedRow; selection?: RowSelection }) {
   if (!selection) return null
+  return (
+    <SelectToggle row={row} selected={row ? selection.has(row.key) : false} onToggle={selection.toggle} />
+  )
+}
+
+/**
+ * SelectToggle is SelectCell taking the answer rather than the selection, which
+ * is what lets a memoized row skip redrawing when a box on another row is
+ * ticked: the selection object is new on every tick, a row's own `selected` is
+ * not.
+ */
+function SelectToggle({
+  row,
+  selected,
+  onToggle,
+}: {
+  row?: SelectedRow
+  selected: boolean
+  onToggle: (row: SelectedRow) => void
+}) {
   if (!row) return <Td />
   return (
     <Td>
       <input
         type="checkbox"
         className={CHECKBOX}
-        checked={selection.has(row.key)}
-        onChange={() => selection.toggle(row)}
+        checked={selected}
+        onChange={() => onToggle(row)}
         aria-label={`Select ${row.name}`}
       />
     </Td>
   )
+}
+
+/**
+ * useStable gives a memoized row a handler that keeps one identity across
+ * renders and always calls the latest one the page passed. The page writes its
+ * handlers inline, so they are new on every render, and a row that compared
+ * them would redraw on every render all the same. Absent stays absent: a row
+ * reads a missing handler as a control it should not draw.
+ */
+function useStable<A extends unknown[], R>(
+  handler: ((...args: A) => R) | undefined,
+): ((...args: A) => R) | undefined {
+  const latest = useRef(handler)
+  useLayoutEffect(() => {
+    latest.current = handler
+  })
+  const stable = useCallback((...args: A) => latest.current!(...args), [])
+  return handler ? stable : undefined
 }
 
 /*
@@ -1086,6 +1124,10 @@ function PodTable({
   const [sort, setSort] = useState<PodSort | null>(null)
   const rows = useMemo(() => sortPods(pods, usage, sort), [pods, usage, sort])
   const selectable = useMemo(() => rows.map(podRow), [rows])
+  const toggle = useStable(selection?.toggle)
+  const select = useStable(onSelect)!
+  const manifest = useStable(onManifest)
+  const remove = useStable(onDelete)
 
   /** Every heading sorts the same way, so the wiring is written once. */
   const column = (key: PodSortKey) => ({
@@ -1148,74 +1190,126 @@ function PodTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((pod) => (
-          <Row key={`${pod.namespace}/${pod.name}`}>
-            <SelectCell row={podRow(pod)} selection={selection} />
-            <Td>
-              {/* The pod list used to inline its own copy of this cell; it is
-                  the same cell every other list draws, so it uses the same one. */}
-              <Name
-                tone={podTone(pod)}
-                title={pod.name}
-                namespace={pod.namespace}
-                onOpen={() => onSelect(pod)}
-              >
-                {pod.name}
-              </Name>
-            </Td>
-            <NamespaceCell show={showNamespace} namespace={pod.namespace} />
-            {/* The cell clips and the count does not shrink: the phase pill is
-                the only part of this reading that can be abbreviated, so when
-                `CrashLoopBackOff` does not fit it is the pill that ellipsises —
-                inside its own column — rather than the pair spilling onto the
-                CPU reading next door. The column is sized against the longest
-                phase name rather than against `Running`, so the clip is the
-                floor and not the normal case. */}
-            <Td className="overflow-hidden whitespace-nowrap">
-              <span className="flex items-center gap-1.5">
-                <Pill tone={podTone(pod)} title={pod.phase}>
-                  {pod.phase}
-                </Pill>
-                <span className="shrink-0 font-data text-[12.5px] text-muted">
-                  {pod.ready}/{pod.total}
-                </span>
-              </span>
-            </Td>
-            <UsageCell
-              usage={usage}
+        {rows.map((pod, index) => {
+          const row = selectable[index]
+          return (
+            <PodRow
+              key={row.key}
               pod={pod}
-              resource="cpu"
-              read={(sample) => sample.cpu_millicores}
-              format={formatCPU}
-            />
-            <UsageCell
+              row={row}
               usage={usage}
-              pod={pod}
-              resource="memory"
-              read={(sample) => sample.memory_bytes}
-              format={formatMemory}
+              showNamespace={showNamespace}
+              selecting={Boolean(selection)}
+              selected={selection ? selection.has(row.key) : false}
+              onToggle={toggle}
+              onSelect={select}
+              onManifest={manifest}
+              onDelete={remove}
             />
-            <Td
-              className={`hidden font-data text-[12.5px] md:table-cell ${
-                pod.restarts > 0 ? 'text-warn' : 'text-muted'
-              }`}
-            >
-              {pod.restarts}
-            </Td>
-            <Td className={`hidden xl:table-cell ${DATA}`}>{pod.node || '-'}</Td>
-            <Td className={`whitespace-nowrap ${AGE}`}><Age iso={pod.created_at} /></Td>
-            <ManifestCell
-              onManifest={onManifest}
-              name={pod.name}
-              namespace={pod.namespace}
-              onDelete={onDelete ? () => onDelete(podRow(pod)) : undefined}
-            />
-          </Row>
-        ))}
+          )
+        })}
       </tbody>
     </Table>
   )
 }
+
+/**
+ * PodRow is one pod, memoized so that ticking a box, sorting the selection or
+ * any other render of the table redraws only the rows whose own props changed.
+ * Every row used to redraw on each of those, and on a 2000-pod list that was
+ * the whole cost of a click.
+ */
+const PodRow = memo(function PodRow({
+  pod,
+  row,
+  usage,
+  showNamespace,
+  selecting,
+  selected,
+  onToggle,
+  onSelect,
+  onManifest,
+  onDelete,
+}: {
+  pod: Pod
+  /** The row as a selection target, built once per list by the table. */
+  row: SelectedRow
+  usage: PodUsageIndex | null
+  showNamespace: boolean
+  selecting: boolean
+  selected: boolean
+  onToggle?: (row: SelectedRow) => void
+  onSelect: (pod: Pod) => void
+  onManifest?: OpenManifest
+  onDelete?: OpenRowAction
+}) {
+  return (
+    <Row>
+      {selecting && onToggle ? (
+        <SelectToggle row={row} selected={selected} onToggle={onToggle} />
+      ) : null}
+      <Td>
+        {/* The pod list used to inline its own copy of this cell; it is
+            the same cell every other list draws, so it uses the same one. */}
+        <Name
+          tone={podTone(pod)}
+          title={pod.name}
+          namespace={pod.namespace}
+          onOpen={() => onSelect(pod)}
+        >
+          {pod.name}
+        </Name>
+      </Td>
+      <NamespaceCell show={showNamespace} namespace={pod.namespace} />
+      {/* The cell clips and the count does not shrink: the phase pill is
+          the only part of this reading that can be abbreviated, so when
+          `CrashLoopBackOff` does not fit it is the pill that ellipsises —
+          inside its own column — rather than the pair spilling onto the
+          CPU reading next door. The column is sized against the longest
+          phase name rather than against `Running`, so the clip is the
+          floor and not the normal case. */}
+      <Td className="overflow-hidden whitespace-nowrap">
+        <span className="flex items-center gap-1.5">
+          <Pill tone={podTone(pod)} title={pod.phase}>
+            {pod.phase}
+          </Pill>
+          <span className="shrink-0 font-data text-[12.5px] text-muted">
+            {pod.ready}/{pod.total}
+          </span>
+        </span>
+      </Td>
+      <UsageCell
+        usage={usage}
+        pod={pod}
+        resource="cpu"
+        read={(sample) => sample.cpu_millicores}
+        format={formatCPU}
+      />
+      <UsageCell
+        usage={usage}
+        pod={pod}
+        resource="memory"
+        read={(sample) => sample.memory_bytes}
+        format={formatMemory}
+      />
+      <Td
+        className={`hidden font-data text-[12.5px] md:table-cell ${
+          pod.restarts > 0 ? 'text-warn' : 'text-muted'
+        }`}
+      >
+        {pod.restarts}
+      </Td>
+      <Td className={`hidden xl:table-cell ${DATA}`}>{pod.node || '-'}</Td>
+      <Td className={`whitespace-nowrap ${AGE}`}><Age iso={pod.created_at} /></Td>
+      <ManifestCell
+        onManifest={onManifest}
+        name={pod.name}
+        namespace={pod.namespace}
+        onDelete={onDelete ? () => onDelete(row) : undefined}
+      />
+    </Row>
+  )
+})
 
 /** How a reading against its ceiling reads: comfortable, worth a look, at it. */
 const USAGE_TEXT = { ok: 'text-muted', warn: 'text-warn', bad: 'text-danger' } as const
@@ -1346,8 +1440,18 @@ function WorkloadTable({
   // A row whose Kind the resource API does not address is not selectable — the
   // table serves three Kinds and a fourth would arrive here before it arrived
   // in the action table.
-  const selectable = workloads.map(workloadRow).filter((row): row is SelectedRow => Boolean(row))
-
+  // Built once per list rather than once per row per render: the table renders
+  // on every tick of a box, and 2000 targets rebuilt each time were most of
+  // what a tick cost once the rows themselves stopped redrawing.
+  const targets = useMemo(() => workloads.map(workloadRow), [workloads])
+  const selectable = useMemo(
+    () => targets.filter((row): row is SelectedRow => Boolean(row)),
+    [targets],
+  )
+  const toggle = useStable(selection?.toggle)
+  const manifest = useStable(onManifest)
+  const action = useStable(onAction)
+  const remove = useStable(onDelete)
   return (
     <Table resizeKey="kubemg_cols_workloads">
       <thead>
@@ -1373,45 +1477,89 @@ function WorkloadTable({
         </tr>
       </thead>
       <tbody>
-        {workloads.map((workload) => (
-          <Row key={`${workload.kind}/${workload.namespace}/${workload.name}`}>
-            <SelectCell row={workloadRow(workload)} selection={selection} />
-            <Td>
-              <Name
-                tone={workloadTone(workload)}
-                title={workload.name}
-                onOpen={opener(onManifest, workload)}
-                namespace={workload.namespace}
-              >
-                {workload.name}
-              </Name>
-            </Td>
-            <NamespaceCell show={showNamespace} namespace={workload.namespace} />
-            <Td className="text-[12.5px] text-muted">{workload.kind}</Td>
-            <Td
-              className={`font-data text-[12.5px] ${
-                workload.ready === workload.desired ? 'text-muted' : 'text-warn'
-              }`}
-            >
-              {workload.ready}/{workload.desired}
-            </Td>
-            <Td className={`hidden lg:table-cell ${DATA}`} title={workload.images?.join(', ')}>
-              {workload.images?.[0] ?? '-'}
-            </Td>
-            <Td className={AGE}><Age iso={workload.created_at} /></Td>
-            <ManifestCell
-              onManifest={onManifest}
-              name={workload.name}
-              namespace={workload.namespace}
-              actions={<WorkloadActions workload={workload} onAction={onAction} />}
-              onDelete={rowDeleter(onDelete, workloadRow(workload))}
+        {workloads.map((workload, index) => {
+          const row = targets[index]
+          return (
+            <WorkloadRow
+              key={`${workload.kind}/${workload.namespace}/${workload.name}`}
+              workload={workload}
+              row={row}
+              showNamespace={showNamespace}
+              selecting={Boolean(selection)}
+              selected={row && selection ? selection.has(row.key) : false}
+              onToggle={toggle}
+              onManifest={manifest}
+              onAction={action}
+              onDelete={remove}
             />
-          </Row>
-        ))}
+          )
+        })}
       </tbody>
     </Table>
   )
 }
+
+/** WorkloadRow is one workload, memoized for the reason PodRow is. */
+const WorkloadRow = memo(function WorkloadRow({
+  workload,
+  row,
+  showNamespace,
+  selecting,
+  selected,
+  onToggle,
+  onManifest,
+  onAction,
+  onDelete,
+}: {
+  workload: Workload
+  /** The row as a selection target, built once per list by the table. */
+  row?: SelectedRow
+  showNamespace: boolean
+  selecting: boolean
+  selected: boolean
+  onToggle?: (row: SelectedRow) => void
+  onManifest?: OpenManifest
+  onAction?: OpenWorkloadAction
+  onDelete?: OpenRowAction
+}) {
+  return (
+    <Row>
+      {selecting && onToggle ? (
+        <SelectToggle row={row} selected={selected} onToggle={onToggle} />
+      ) : null}
+      <Td>
+        <Name
+          tone={workloadTone(workload)}
+          title={workload.name}
+          onOpen={opener(onManifest, workload)}
+          namespace={workload.namespace}
+        >
+          {workload.name}
+        </Name>
+      </Td>
+      <NamespaceCell show={showNamespace} namespace={workload.namespace} />
+      <Td className="text-[12.5px] text-muted">{workload.kind}</Td>
+      <Td
+        className={`font-data text-[12.5px] ${
+          workload.ready === workload.desired ? 'text-muted' : 'text-warn'
+        }`}
+      >
+        {workload.ready}/{workload.desired}
+      </Td>
+      <Td className={`hidden lg:table-cell ${DATA}`} title={workload.images?.join(', ')}>
+        {workload.images?.[0] ?? '-'}
+      </Td>
+      <Td className={AGE}><Age iso={workload.created_at} /></Td>
+      <ManifestCell
+        onManifest={onManifest}
+        name={workload.name}
+        namespace={workload.namespace}
+        actions={<WorkloadActions workload={workload} onAction={onAction} />}
+        onDelete={rowDeleter(onDelete, row)}
+      />
+    </Row>
+  )
+})
 
 function JobTable({
   jobs,
