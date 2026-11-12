@@ -29,7 +29,7 @@ token - the cluster identity is derived from that token server-side, so an
 agent cannot claim to be a cluster it holds no token for.
 
 One socket carries every call, multiplexed by correlation ID, as JSON
-frames:
+frames (and `stream_data` as a binary one, when negotiated - see below):
 
 | Frame | Direction | Meaning |
 |---|---|---|
@@ -58,7 +58,7 @@ breaking change that has to move both together.
 can do in `hello.capabilities`; the bastion answers with the subset it accepts
 in `welcome.capabilities` (`negotiateCapabilities`), and each side uses only
 what both named. A side that names nothing gets the v2 behaviour exactly, so an
-agent and a bastion can be upgraded in either order. The one capability today
+agent and a bastion can be upgraded in either order. There are two. The first
 is `response-parts`: a response body leaves the agent as `ResponsePartSize`
 (256 KB) slices read straight off the API server's answer, and the bastion joins
 them under the same ceiling a whole response always had (`maxResponseBody` =
@@ -67,6 +67,22 @@ server sent them - compressed, when the client asked for gzip, as kubectl and
 the console's own reads do). A final `response` carrying
 `error` discards the parts before it - half a list is never presented as a
 whole one.
+
+The second is `binary-stream-data`: `stream_data` goes as a binary WebSocket
+message instead of a JSON envelope, and every other frame stays JSON. The
+message is a 3-byte header - frame type `0x01`, flags (bit 0: replay the chunk
+as a binary message), the stream ID's length - then the ID, then the chunk to
+the end of the message. In JSON every byte of `exec`, `attach`, `logs -f` and
+watch output was base64: a third more on the wire, an encode on the sender, and
+a decode and a copy on the receiver. Measured on 256 MiB of `exec` output
+through the real agent, that was 341 MiB on the wire and ~2 s of CPU against
+256 MiB and ~0.7 s; encoding and decoding one 32 KiB chunk runs at ~170 MB/s as
+JSON and several GB/s as a binary frame (`BenchmarkStreamDataFrame`). The writer
+tells the two apart by the first byte (`{` or `0x01`), so the queues below carry
+nothing beside the frame. `pkg/bastion/binaryframe.go` and
+`agent/internal/protocol/binary.go` test the format against the same bytes, and
+a binary message the bastion cannot read drops the tunnel as an unparseable JSON
+frame does.
 
 **Two outbound queues on each side.** Stream frames (`stream_*`) go in an
 *urgent* queue; `request`, `response` and `response_part` go in a *bulk* one.
