@@ -40,7 +40,7 @@ type ClusterVulnScanning struct {
 	Provider string `gorm:"size:40;not null" json:"provider"`
 	// Enabled lets an administrator stop the alerts without forgetting which
 	// scanner the cluster runs — the same switch a datasource has.
-	Enabled bool `gorm:"not null;default:true" json:"enabled"`
+	Enabled bool `gorm:"not null" json:"enabled"`
 
 	LastCheckedAt *time.Time `json:"last_checked_at,omitempty"`
 	LastStatus    string     `gorm:"size:20;not null;default:pending" json:"last_status"`

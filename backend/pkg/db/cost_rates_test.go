@@ -35,3 +35,16 @@ func TestVulnScanningColumnsAreTheOnesTheUpsertNames(t *testing.T) {
 		}
 	}
 }
+
+// A bool the upsert writes must carry no GORM default: GORM leaves a zero value
+// out of an INSERT when the field declares one, so `false` became the column's
+// default `true` and switching alerts off silently did nothing (e2e caught it).
+func TestTheUpsertedSwitchHasNoDefaultToFallBackTo(t *testing.T) {
+	parsed, err := schemaOf(&ClusterVulnScanning{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if field := parsed.LookUpField("enabled"); field == nil || field.HasDefaultValue {
+		t.Fatalf("enabled must not declare a default: %+v", field)
+	}
+}

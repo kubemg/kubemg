@@ -23,7 +23,7 @@ Install from a [registered repository](#chart-repositories). The version is reso
 
 - Rendering is Helm's own: values merging, subcharts, `.Release`, `tpl` and sprig. `.Capabilities` and `.APIVersions` come from the target cluster through the tunnel.
 - Objects are written one at a time in Helm's order: `crds/`, pre-install hooks, the release, post-install hooks. Each object is its own audit record, so a forty-object chart is forty rows.
-- CRDs from `crds/` are not recorded on the release, as with Helm.
+- CRDs from `crds/` are not recorded on the release, as with Helm. A chart that also ships instances of its own CRDs installs in one run: each instance waits until the cluster reports its definition established (up to 30 seconds), as `helm install` does.
 - The manifest editor's deny list (RBAC kinds, Node) does **not** apply. Charts normally ship a ServiceAccount, ClusterRole and binding.
 - A namespace that does not exist yet can be created first, as `helm install --create-namespace` does. Like Helm, kubemg does **not** record it on the release, so an uninstall leaves the namespace in place. A namespace-scoped grant cannot create one (`403`); the console only offers it when the chart was chosen for you, such as the scanner for [vulnerability alerts](vulnerability-alerts.md).
 - A namespace-scoped grant is checked **before the first write**. A chart with a cluster-scoped object, or one targeting a namespace outside the grant, is refused with the object named and nothing is written.

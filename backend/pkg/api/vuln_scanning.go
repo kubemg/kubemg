@@ -480,6 +480,11 @@ func (s *server) putVulnScanning(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save the scanning settings"})
 		return
 	}
+	// Answer with what was stored, not with the request's copy: an upsert keeps
+	// the first connection's created_at, which the copy does not know.
+	if stored, err := s.store.ClusterVulnScanning(c.Request.Context(), cluster.ID); err == nil {
+		row = stored
+	}
 	s.invalidateClusterReads(cluster.ID)
 	c.JSON(http.StatusOK, gin.H{"scanning": row, "detection": detection})
 }
