@@ -268,10 +268,27 @@ down the tunnel, not a request to kubemg: one console page is up to fifty.
 
 Several background jobs must run on exactly one replica: the alarm watcher, the
 GitOps drift watcher, the Helm index sync, the browser shell reaper, the password
-notices. Each takes a conditional-upsert lease
+notices, the vulnerability-report summariser. Each takes a conditional-upsert lease
 in the database rather than a Postgres advisory lock, so the holder survives a
 connection blip. **A store error while taking the lease means do not run**, not
 run anyway.
+
+## Vulnerability findings
+
+`pkg/api/vuln_findings.go` summarises Trivy Operator's `VulnerabilityReport`s
+behind `db.LeaseVulnWatcher`, every 10 minutes, into `vuln_workload_summaries`
+(one row per workload, replaced whole per cluster in one transaction; a failed
+pass writes only `summary_message` and leaves the last good summary). Reports
+are paged at `limit=20` (they carry every finding) up to 5000. A report on a
+ReplicaSet folds into its Deployment through the pods' `pod-template-hash`
+(`podOwner`); a ReplicaSet with no pods is a retired revision and is dropped.
+Exposure = a `LoadBalancer`/`NodePort` Service, or a Service an Ingress or
+HTTPRoute backs, selecting the workload's pods; a refused exposure read is a
+note, never a failed pass. Level: `danger` = fixable critical + exposed, `warn`
+= fixable critical/high, else `none`. The audience (`vulnVisible`: admin or an
+unscoped `cluster-admin` grant) is decided in the handler and answered `404`
+otherwise. `summarizeVulnReports` takes a `trafficReader`, so the whole rule is
+tested over `fakeCluster`.
 
 The same "fail closed on nothing" rule governs every published snapshot in the
 backend: a failed refresh keeps the previous value. It never empties and never

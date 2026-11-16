@@ -3581,8 +3581,103 @@ export interface VulnScanning {
   last_status: 'pending' | 'healthy' | 'unhealthy'
   last_message?: string
   detected_version?: string
+  /** When the reports were last read and summarised; absent until the first. */
+  summarized_at?: string
+  /** The last pass's outcome in words, failed or not. */
+  summary_message?: string
+  summary_truncated?: boolean
   created_at: string
   updated_at: string
+}
+
+/**
+ * How urgent a workload's findings are, decided on the server: `danger` is a
+ * fixable critical on a workload reachable from outside the cluster, `warn` a
+ * fixable critical or high, `none` everything else.
+ */
+export type VulnLevel = 'danger' | 'warn' | 'none'
+
+/** One workload's findings, as of the last summary. */
+export interface VulnWorkloadSummary {
+  namespace: string
+  kind: string
+  name: string
+  critical: number
+  high: number
+  medium: number
+  low: number
+  unknown: number
+  fixable_critical: number
+  fixable_high: number
+  exposed: boolean
+  level: VulnLevel
+  images: string[]
+  scanned_at?: string
+}
+
+export interface VulnTotals {
+  workloads: number
+  danger: number
+  warn: number
+  exposed: number
+  critical: number
+  high: number
+  fixable: number
+}
+
+/** A cluster's findings page. Only its audience ever receives one. */
+export interface VulnFindings {
+  connected: boolean
+  enabled: boolean
+  provider?: string
+  summarized_at?: string
+  summary_message?: string
+  summary_truncated?: boolean
+  workloads: VulnWorkloadSummary[]
+  totals?: VulnTotals
+}
+
+export interface VulnFinding {
+  id: string
+  severity: string
+  package: string
+  installed: string
+  fixed?: string
+  title?: string
+  link?: string
+  score?: number
+  published?: string
+}
+
+export interface VulnContainer {
+  container: string
+  image: string
+  scanned_at?: string
+  critical: number
+  high: number
+  medium: number
+  low: number
+  unknown: number
+  total: number
+  findings: VulnFinding[]
+}
+
+/** One workload's reports, read live when its drawer opens. */
+export interface VulnWorkloadDetail {
+  connected: boolean
+  enabled: boolean
+  found: boolean
+  summary?: VulnWorkloadSummary
+  summarized_at?: string
+  containers?: VulnContainer[]
+  missing?: number
+}
+
+/** Workloads per level on one cluster, for the sidebar and the rail. */
+export interface VulnClusterCounts {
+  cluster_id: number
+  danger: number
+  warn: number
 }
 
 /** One report kind the scanner can write, and whether this cluster serves it. */

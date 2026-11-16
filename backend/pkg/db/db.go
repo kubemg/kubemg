@@ -68,6 +68,7 @@ func Migrate(gdb *gorm.DB) error {
 		&ClusterConsole{},
 		&ClusterCostRates{},
 		&ClusterVulnScanning{},
+		&VulnWorkloadSummary{},
 		&SSOProviderConfig{},
 		&SSOGroupMapping{},
 		&AlarmChannel{},

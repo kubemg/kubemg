@@ -74,6 +74,10 @@ const (
 	// per interval, which every replica running would multiply on the clusters,
 	// and every replica alarming would multiply on the pager.
 	LeaseGitOpsWatcher = "gitops_watcher"
+	// LeaseVulnWatcher covers reading the scanners' vulnerability reports and
+	// summarising them. Reports are the largest objects KubeMG reads — every
+	// finding of every image — so one replica reads them, not each.
+	LeaseVulnWatcher = "vuln_watcher"
 )
 
 // Lease is one held claim on a background job.

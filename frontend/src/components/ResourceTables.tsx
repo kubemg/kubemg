@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { VulnBadge } from './VulnBadge'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
 import type {
@@ -1385,6 +1386,7 @@ function WorkloadTable({
               >
                 {workload.name}
               </Name>
+              <VulnBadge kind={workload.kind} namespace={workload.namespace} name={workload.name} />
             </Td>
             <NamespaceCell show={showNamespace} namespace={workload.namespace} />
             <Td className="text-[12.5px] text-muted">{workload.kind}</Td>
@@ -1604,6 +1606,7 @@ function CronJobTable({
               >
                 {cronjob.name}
               </Name>
+              <VulnBadge kind="CronJob" namespace={cronjob.namespace} name={cronjob.name} />
             </Td>
             <NamespaceCell show={showNamespace} namespace={cronjob.namespace} />
             <Td className="hidden truncate font-data text-[12.5px] text-fg md:table-cell">

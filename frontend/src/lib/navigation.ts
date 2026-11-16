@@ -26,7 +26,7 @@ export function hasTunnel(cluster: Cluster): boolean {
 
 /**
  * A page a cluster carries that is not one of its resource lists. Everything
- * else under `/clusters/:id/` is a resource key, which is why these eight names
+ * else under `/clusters/:id/` is a resource key, which is why these nine names
  * are reserved: the resource route is a splat, so a kind called `capacity`
  * would otherwise be unreachable.
  *
@@ -43,6 +43,7 @@ export type ClusterPage =
   | 'waste'
   | 'gitops'
   | 'security'
+  | 'vulnerabilities'
   | 'audit'
 
 export const CLUSTER_PAGES: readonly ClusterPage[] = [
@@ -53,6 +54,7 @@ export const CLUSTER_PAGES: readonly ClusterPage[] = [
   'waste',
   'gitops',
   'security',
+  'vulnerabilities',
   'audit',
 ]
 

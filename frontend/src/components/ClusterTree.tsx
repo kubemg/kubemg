@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import {
   Boxes,
+  Bug,
   ChartColumn,
   ChevronDown,
   Cpu,
@@ -36,6 +37,8 @@ import {
   resourceHref,
 } from '../lib/navigation'
 import { useFavorites } from '../lib/favorites'
+import { useVulnCounts } from '../lib/useVulnCounts'
+import { vulnNavCount } from '../lib/vulnFindings'
 import { queryKey, useCachedQuery } from '../lib/query'
 import type {
   CategoryId,
@@ -127,6 +130,9 @@ const INSIGHT_ROWS: readonly PageEntry[] = [
   { page: 'waste', label: 'Cost & waste', icon: Recycle },
   { page: 'gitops', label: 'GitOps', icon: GitCompareArrows },
   { page: 'security', label: 'Security', icon: ShieldAlert },
+  // Present only where the caller is in the findings' audience and the
+  // cluster's alerts are on — see buildGroups.
+  { page: 'vulnerabilities', label: 'Vulnerabilities', icon: Bug },
   { page: 'audit', label: 'Audit trail', icon: ScrollText },
 ]
 
@@ -185,6 +191,7 @@ function favoriteRows(
 function buildGroups(
   categories: ResourceCategory[],
   favorites: ReadonlySet<ResourceKey>,
+  vulnerabilities: boolean,
 ): Group[] {
   const clusterCategory = categories.find((category) => category.id === 'cluster')
   const rest = categories.filter((category) => category.id !== 'cluster')
@@ -210,7 +217,7 @@ function buildGroups(
       label: 'Insights',
       icon: ChartColumn,
       collapsed: true,
-      rows: INSIGHT_ROWS.map(pageRow),
+      rows: INSIGHT_ROWS.filter((entry) => vulnerabilities || entry.page !== 'vulnerabilities').map(pageRow),
     },
     ...rest.map((category) => ({
       id: category.id,
@@ -332,7 +339,16 @@ export function ClusterTree({
 
   const { favorites, toggle } = useFavorites()
 
-  const groups = useMemo(() => buildGroups(categories, favorites), [categories, favorites])
+  // The Vulnerabilities row exists only where the server says this caller may
+  // see findings and the cluster's alerts are on: an entry in the counts.
+  const vulnCounts = useVulnCounts(useMemo(() => [cluster], [cluster])).get(cluster.id)
+  const showVulns = vulnCounts !== undefined
+  const vulnCount = vulnNavCount(vulnCounts)
+
+  const groups = useMemo(
+    () => buildGroups(categories, favorites, showVulns),
+    [categories, favorites, showVulns],
+  )
 
   // Filtering hides what does not match and ignores collapse: a search that
   // silently skipped a closed category would be lying about what is here.
@@ -470,7 +486,11 @@ export function ClusterTree({
                         selected={selected}
                         live={rowIsLive(row, live)}
                         count={
-                          row.kind === 'resource' ? countLabel(countOf[row.item.key]) : null
+                          row.kind === 'resource'
+                            ? countLabel(countOf[row.item.key])
+                            : row.page === 'vulnerabilities' && vulnCount !== null
+                              ? String(vulnCount)
+                              : null
                         }
                         pinned={row.kind === 'resource' && favorites.has(row.item.key)}
                         onPin={toggle}
@@ -535,6 +555,9 @@ function TreeRow({
         className={({ isActive }) => rowClass(isActive)}
       >
         <span className="min-w-0 flex-1 truncate">{row.label}</span>
+        {count === null ? null : (
+          <span className="shrink-0 font-data text-[11px] text-rail-muted tabular-nums">{count}</span>
+        )}
       </NavLink>
     )
   }

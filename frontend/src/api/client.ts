@@ -177,6 +177,9 @@ import type {
   VulnDetection,
   VulnRecommendation,
   VulnScanning,
+  VulnClusterCounts,
+  VulnFindings,
+  VulnWorkloadDetail,
 } from './types'
 import { completeCapacity } from './capacity'
 import { completeWaste, type ClusterWaste, type CostRates, type WasteSpan } from './waste'
@@ -2294,6 +2297,31 @@ export async function putClusterCostRates(clusterId: number, rates: CostRates): 
  * never asks the cluster; `detect` is the live look, and a connect detects again
  * on the server before it stores anything.
  */
+/** A cluster's findings. 404 for anyone outside the audience — the caller asks only when it may. */
+export async function fetchVulnFindings(clusterId: number): Promise<VulnFindings> {
+  const { data } = await http.get<VulnFindings>(`/clusters/${clusterId}/vulnerabilities`)
+  return data
+}
+
+/** One workload's reports, read live through the tunnel. */
+export async function fetchVulnWorkload(
+  clusterId: number,
+  kind: string,
+  namespace: string,
+  name: string,
+): Promise<VulnWorkloadDetail> {
+  const { data } = await http.get<VulnWorkloadDetail>(`/clusters/${clusterId}/vulnerabilities/workload`, {
+    params: { kind, namespace, name },
+  })
+  return data
+}
+
+/** Per-cluster counts for every cluster the caller may see findings on. */
+export async function fetchVulnClusterCounts(): Promise<VulnClusterCounts[]> {
+  const { data } = await http.get<{ clusters: VulnClusterCounts[] }>('/vulnerabilities/clusters')
+  return data.clusters
+}
+
 export async function fetchVulnScanning(
   clusterId: number,
 ): Promise<{ scanning: VulnScanning | null; recommendation: VulnRecommendation }> {

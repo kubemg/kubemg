@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { VulnIndexContext } from '../components/VulnBadge'
+import { indexVulnSummaries, mayAskForVulns } from '../lib/vulnFindings'
 import { Boxes, CheckSquare, LayoutTemplate, Plus, X } from 'lucide-react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import {
@@ -35,6 +37,7 @@ import {
   fetchStatefulSets,
   fetchStorageClasses,
   fetchVirtualServices,
+  fetchVulnFindings,
   withReadReport,
 } from '../api/client'
 import type { ReadReport } from '../api/client'
@@ -560,6 +563,9 @@ function readResourceParam(raw: string | undefined): ResourceKey | null {
   return raw ? (raw as ResourceKey) : null
 }
 
+/** The lists whose rows carry a vulnerability badge. */
+const VULN_BADGE_LISTS: ReadonlySet<string> = new Set(['workloads', 'deployments', 'statefulsets', 'daemonsets', 'cronjobs'])
+
 export function Explore() {
   const { clusters, loading: clustersLoading } = useClusters()
   const { user } = useAuth()
@@ -667,6 +673,20 @@ export function Explore() {
     [clusters],
   )
   const cluster = reachable.find((entry) => entry.id === clusterId) ?? null
+
+  // The findings summary, for the workload and CronJob rows' badges. Asked only
+  // where the server will answer (an unscoped cluster-admin grant) and only on
+  // the lists a summary row can belong to; a failure is silence.
+  const vulnFindings = useCachedQuery(
+    cluster && mayAskForVulns(cluster) && VULN_BADGE_LISTS.has(resource)
+      ? queryKey('vuln-findings', cluster.id)
+      : null,
+    () => fetchVulnFindings(cluster!.id),
+  )
+  const vulnIndex = useMemo(
+    () => (vulnFindings.data?.enabled ? indexVulnSummaries(vulnFindings.data.workloads) : null),
+    [vulnFindings.data],
+  )
   // A cluster that is registered but cannot be read: the address is honoured and
   // explained rather than quietly swapped for a different cluster's resources.
   const unreadable = cluster ? null : (clusters.find((entry) => entry.id === clusterId) ?? null)
@@ -1360,6 +1380,7 @@ export function Explore() {
           ) : null}
 
           {filtered && !unavailable ? (
+            <VulnIndexContext.Provider value={vulnIndex}>
             <ResourceView
               loaded={filtered}
               clusterId={cluster?.id}
@@ -1440,6 +1461,7 @@ export function Explore() {
                 })
               }
             />
+            </VulnIndexContext.Provider>
           ) : null}
 
           {!loading && namespaced && !namespace ? (

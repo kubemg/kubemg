@@ -73,6 +73,7 @@ type fakeStore struct {
 	// costRates holds each cluster's unit prices; costRatesErr fails every read.
 	costRates    map[uint]db.ClusterCostRates
 	vulnScanning map[uint]db.ClusterVulnScanning
+	vulnSummaries map[uint][]db.VulnWorkloadSummary
 	costRatesErr error
 	// hiddenCRDs is each cluster's sidebar curation: the resources an admin
 	// took off the list, keyed plural.group.
@@ -153,6 +154,7 @@ func newFakeStore() *fakeStore {
 		consoles:     map[uint]map[string]db.ClusterConsole{},
 		costRates:    map[uint]db.ClusterCostRates{},
 		vulnScanning: map[uint]db.ClusterVulnScanning{},
+		vulnSummaries: map[uint][]db.VulnWorkloadSummary{},
 		hiddenCRDs:   map[uint][]string{},
 		providers:    map[uint]*db.SSOProviderConfig{},
 		mappings:     map[uint]*db.SSOGroupMapping{},
@@ -1171,7 +1173,74 @@ func (f *fakeStore) DeleteClusterVulnScanning(_ context.Context, clusterID uint)
 		return db.ErrNotFound
 	}
 	delete(f.vulnScanning, clusterID)
+	delete(f.vulnSummaries, clusterID)
 	return nil
+}
+
+func (f *fakeStore) ReplaceVulnSummaries(_ context.Context, clusterID uint, pass db.VulnSummaryPass) error {
+	row, ok := f.vulnScanning[clusterID]
+	if !ok {
+		return db.ErrNotFound
+	}
+	at := pass.At
+	row.SummarizedAt, row.SummaryMessage, row.SummaryTruncated = &at, pass.Message, pass.Truncated
+	f.vulnScanning[clusterID] = row
+	f.vulnSummaries[clusterID] = append([]db.VulnWorkloadSummary(nil), pass.Rows...)
+	return nil
+}
+
+func (f *fakeStore) RecordVulnSummaryFailure(_ context.Context, clusterID uint, message string) error {
+	if row, ok := f.vulnScanning[clusterID]; ok {
+		row.SummaryMessage = message
+		f.vulnScanning[clusterID] = row
+	}
+	return nil
+}
+
+func (f *fakeStore) VulnSummaries(_ context.Context, clusterID uint) ([]db.VulnWorkloadSummary, error) {
+	return append([]db.VulnWorkloadSummary(nil), f.vulnSummaries[clusterID]...), nil
+}
+
+func (f *fakeStore) VulnWorkloadSummaryFor(
+	_ context.Context, clusterID uint, namespace, kind, name string,
+) (*db.VulnWorkloadSummary, error) {
+	for _, row := range f.vulnSummaries[clusterID] {
+		if row.Namespace == namespace && row.Kind == kind && row.Name == name {
+			return &row, nil
+		}
+	}
+	return nil, db.ErrNotFound
+}
+
+func (f *fakeStore) VulnCountsByCluster(_ context.Context) ([]db.VulnClusterCounts, error) {
+	out := []db.VulnClusterCounts{}
+	for id := uint(1); id <= 64; id++ {
+		row, ok := f.vulnScanning[id]
+		if !ok || !row.Enabled {
+			continue
+		}
+		count := db.VulnClusterCounts{ClusterID: id}
+		for _, summary := range f.vulnSummaries[id] {
+			switch summary.Level {
+			case db.VulnLevelDanger:
+				count.Danger++
+			case db.VulnLevelWarn:
+				count.Warn++
+			}
+		}
+		out = append(out, count)
+	}
+	return out, nil
+}
+
+func (f *fakeStore) EnabledVulnScanning(_ context.Context) ([]db.ClusterVulnScanning, error) {
+	out := []db.ClusterVulnScanning{}
+	for id := uint(1); id <= 64; id++ {
+		if row, ok := f.vulnScanning[id]; ok && row.Enabled {
+			out = append(out, row)
+		}
+	}
+	return out, nil
 }
 
 // fakeIssuer stands in for a target Kubernetes cluster's TokenRequest API. Like
