@@ -287,6 +287,12 @@ type Store interface {
 	PutClusterCostRates(ctx context.Context, rates *db.ClusterCostRates) error
 	DeleteClusterCostRates(ctx context.Context, clusterID uint) error
 
+	// Whether a cluster's vulnerability alerts are on — see pkg/api/vuln_scanning.go.
+	ClusterVulnScanning(ctx context.Context, clusterID uint) (*db.ClusterVulnScanning, error)
+	PutClusterVulnScanning(ctx context.Context, row *db.ClusterVulnScanning) error
+	UpdateClusterVulnScanningHealth(ctx context.Context, clusterID uint, health db.SourceHealth) error
+	DeleteClusterVulnScanning(ctx context.Context, clusterID uint) error
+
 	// Workload security posture acknowledgements — see pkg/api/resources_posture.go.
 	// The scan itself is stateless; this is the one thing it cannot recompute.
 	ListPostureAcknowledgements(ctx context.Context, clusterID uint) ([]db.PostureAcknowledgement, error)
@@ -1078,6 +1084,18 @@ func NewRouter(opts Options) *gin.Engine {
 			gitops.GET("/applications", s.listGitopsRecords)
 			gitops.GET("/object", s.showGitopsObject)
 			gitops.GET("/diff", s.showGitopsDiff)
+
+			// Vulnerability alerts — see pkg/api/vuln_scanning.go. KubeMG reads
+			// what the cluster's own scanner wrote; it scans nothing. Admin-only
+			// including the read: the reports are read as KubeMG, and a map of
+			// what is vulnerable is not something every grant should be handed.
+			// Not cached — detect is the "ask the cluster now" button.
+			vuln := clusters.Group("/:id/vulnerability-scanning", refusals, requireAdmin)
+			vuln.GET("", s.showVulnScanning)
+			vuln.PUT("", s.putVulnScanning)
+			vuln.DELETE("", s.deleteVulnScanning)
+			vuln.GET("/detect", s.detectVulnScanning)
+			vuln.POST("/check", s.checkVulnScanning)
 
 			// How many of each kind the caller can see, read at limit=1 so the
 			// cost is flat in the size of the cluster rather than proportional

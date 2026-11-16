@@ -211,4 +211,9 @@ var SeededHelmRepositories = []HelmRepository{
 		URL:         "https://argoproj.github.io/argo-helm",
 		Description: "Argo CD, Workflows, Rollouts and Events.",
 	},
+	{
+		Name:        "aqua",
+		URL:         "https://aquasecurity.github.io/helm-charts/",
+		Description: "Trivy Operator - the in-cluster scanner KubeMG's vulnerability alerts read.",
+	},
 }

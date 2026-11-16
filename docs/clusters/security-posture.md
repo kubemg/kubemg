@@ -5,7 +5,7 @@ The posture page (`/clusters/:id/posture`) scans a cluster for seven risky manif
 The rules cover a container's `securityContext`, `hostPath` volumes, host namespaces, resource limits, ServiceAccount token automounting, and namespaces without any `NetworkPolicy`. It adds no permission or dependency; it only evaluates fields Explore already reads.
 
 !!! warning "This is not a vulnerability scanner"
-    kubemg holds no registry credential and no CVE feed and does not inspect images. It reads only manifest fields the API server served. Image vulnerabilities belong to whatever scans your registry; if the cluster has a registry console registered, a finding's image links there. This notice (`non_goal_notice`) is on every scan response and on the page.
+    kubemg holds no registry credential and no CVE feed and does not inspect images. It reads only manifest fields the API server served. Image vulnerabilities belong to a scanner: [vulnerability alerts](vulnerability-alerts.md) connects kubemg to one running in the cluster. If the cluster has a registry console registered, a finding's image links there. This notice (`non_goal_notice`) is on every scan response and on the page.
 
 ## The seven rules
 

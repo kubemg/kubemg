@@ -72,6 +72,7 @@ type fakeStore struct {
 	consoles map[uint]map[string]db.ClusterConsole
 	// costRates holds each cluster's unit prices; costRatesErr fails every read.
 	costRates    map[uint]db.ClusterCostRates
+	vulnScanning map[uint]db.ClusterVulnScanning
 	costRatesErr error
 	// hiddenCRDs is each cluster's sidebar curation: the resources an admin
 	// took off the list, keyed plural.group.
@@ -151,6 +152,7 @@ func newFakeStore() *fakeStore {
 		appTemplates: map[string]*db.AppTemplate{},
 		consoles:     map[uint]map[string]db.ClusterConsole{},
 		costRates:    map[uint]db.ClusterCostRates{},
+		vulnScanning: map[uint]db.ClusterVulnScanning{},
 		hiddenCRDs:   map[uint][]string{},
 		providers:    map[uint]*db.SSOProviderConfig{},
 		mappings:     map[uint]*db.SSOGroupMapping{},
@@ -1135,6 +1137,40 @@ func (f *fakeStore) DeleteClusterCostRates(_ context.Context, clusterID uint) er
 		return db.ErrNotFound
 	}
 	delete(f.costRates, clusterID)
+	return nil
+}
+
+func (f *fakeStore) ClusterVulnScanning(_ context.Context, clusterID uint) (*db.ClusterVulnScanning, error) {
+	row, ok := f.vulnScanning[clusterID]
+	if !ok {
+		return nil, db.ErrNotFound
+	}
+	return &row, nil
+}
+
+func (f *fakeStore) PutClusterVulnScanning(_ context.Context, row *db.ClusterVulnScanning) error {
+	row.UpdatedAt = time.Now()
+	f.vulnScanning[row.ClusterID] = *row
+	return nil
+}
+
+func (f *fakeStore) UpdateClusterVulnScanningHealth(_ context.Context, clusterID uint, health db.SourceHealth) error {
+	row, ok := f.vulnScanning[clusterID]
+	if !ok {
+		return db.ErrNotFound
+	}
+	checked := health.CheckedAt
+	row.LastStatus, row.LastMessage, row.DetectedVersion, row.LastCheckedAt =
+		health.Status, health.Message, health.DetectedVersion, &checked
+	f.vulnScanning[clusterID] = row
+	return nil
+}
+
+func (f *fakeStore) DeleteClusterVulnScanning(_ context.Context, clusterID uint) error {
+	if _, ok := f.vulnScanning[clusterID]; !ok {
+		return db.ErrNotFound
+	}
+	delete(f.vulnScanning, clusterID)
 	return nil
 }
 

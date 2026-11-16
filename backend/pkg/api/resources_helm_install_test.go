@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -356,5 +357,66 @@ func TestAClusterScopedObjectIsWrittenWithoutANamespace(t *testing.T) {
 	}
 	if !contains(string(stripped), `"name":"n"`) {
 		t.Fatalf("the object was damaged: %s", stripped)
+	}
+}
+
+func TestCreatingTheNamespaceIsRefusedForAScopedGrant(t *testing.T) {
+	// The namespace is the grant's own, so it already exists — and creating one
+	// is a cluster-scoped write. Refused before any chart is fetched.
+	env := newTestEnv(t)
+	user := env.store.addUser("scoped", "secret123", "user")
+	cluster := env.store.addAgentCluster("edge", "dev", "agent-token")
+	env.store.grant(user.ID, cluster.ID, "edit", []string{"team-a"})
+
+	rec := env.do(t, http.MethodPost,
+		"/api/v1/clusters/"+itoa(cluster.ID)+"/resources/helm/releases", env.tokenFor(t, user),
+		map[string]any{
+			"repository": "nowhere", "chart": "web", "name": "web",
+			"namespace": "team-a", "create_namespace": true,
+		})
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "cluster-scoped") {
+		t.Fatalf("expected a 403 naming the cluster-scoped write, got %d (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAKindTheChartDefinesInTheSameRunIsAddressedByItsDefinition(t *testing.T) {
+	// Trivy Operator's chart ships its CRDs in crds/ and compliance specs in
+	// templates/. The plural and scope come from the definition, which is what
+	// the API server will serve — asked, not pluralised.
+	crd := helm.Object{
+		APIVersion: crdAPIVersion, Kind: "CustomResourceDefinition", Name: "widgets.example.com", CRD: true,
+		Document: []byte(`{"apiVersion":"apiextensions.k8s.io/v1","kind":"CustomResourceDefinition",
+			"metadata":{"name":"widgets.example.com"},
+			"spec":{"group":"example.com","scope":"Cluster","names":{"kind":"Widget","plural":"widgetry"},
+			"versions":[{"name":"v1","served":true},{"name":"v0","served":false}]}}`),
+	}
+	rendered := &helm.Rendered{
+		CRDs:    []helm.Object{crd},
+		Objects: []helm.Object{{APIVersion: "example.com/v1", Kind: "Widget", Name: "w"}},
+	}
+	discovery := twoKinds()
+	discovery.resources[crdAPIVersion] = map[string]apiResource{
+		"CustomResourceDefinition": {Plural: "customresourcedefinitions"},
+	}
+
+	plan, recorder := planFor(t, db.UserClusterAccess{}, discovery, rendered)
+	if plan == nil {
+		t.Fatalf("the instance was refused: %d (%s)", recorder.Code, recorder.Body.String())
+	}
+	resource, err := discovery.resolve("example.com/v1", "Widget")
+	if err != nil || resource.Plural != "widgetry" || resource.Namespaced {
+		t.Fatalf("addressed as %+v (%v), want the definition's plural and scope", resource, err)
+	}
+	if _, err := discovery.resolve("example.com/v0", "Widget"); err == nil {
+		t.Fatal("a version the definition does not serve was declared")
+	}
+	if plan.declared["example.com/v1|Widget"] != "widgets.example.com" {
+		t.Fatalf("apply is not told to wait for the definition: %v", plan.declared)
+	}
+
+	// A scoped grant is still refused — the definition is cluster-scoped, and
+	// so is this instance.
+	if plan, _ := planFor(t, db.UserClusterAccess{Namespaces: "team-a"}, twoKinds(), rendered); plan != nil {
+		t.Fatal("a scoped grant planned a CRD")
 	}
 }

@@ -67,6 +67,7 @@ func Migrate(gdb *gorm.DB) error {
 		&ObservabilitySource{},
 		&ClusterConsole{},
 		&ClusterCostRates{},
+		&ClusterVulnScanning{},
 		&SSOProviderConfig{},
 		&SSOGroupMapping{},
 		&AlarmChannel{},

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"helm.sh/helm/v3/pkg/chartutil"
@@ -124,6 +125,125 @@ func (d *clusterDiscovery) resolve(apiVersion, kind string) (apiResource, error)
 			"established before the instance can be written", kind, apiVersion)
 	}
 	return resource, nil
+}
+
+// crdDefinition is the part of a CustomResourceDefinition that says how its
+// kind is addressed.
+type crdDefinition struct {
+	Metadata struct {
+		Name string `json:"name"`
+	} `json:"metadata"`
+	Spec struct {
+		Group string `json:"group"`
+		Scope string `json:"scope"`
+		Names struct {
+			Kind   string `json:"kind"`
+			Plural string `json:"plural"`
+		} `json:"names"`
+		Versions []struct {
+			Name   string `json:"name"`
+			Served bool   `json:"served"`
+		} `json:"versions"`
+	} `json:"spec"`
+}
+
+const crdAPIVersion = "apiextensions.k8s.io/v1"
+
+/*
+ * declareChartCRDs teaches discovery the kinds a chart defines in the same run.
+ *
+ * A chart that ships a CRD and an instance of it is the ordinary case — Trivy
+ * Operator's compliance specs, cert-manager's issuers in an umbrella chart —
+ * and Helm handles it by installing `crds/` first and re-reading discovery.
+ * Here the plural and scope are read from the definition itself, which is
+ * asking the authority rather than pluralising: the API server will serve the
+ * kind under exactly the `names.plural` the CRD declares. A kind the cluster
+ * already serves keeps the cluster's answer.
+ *
+ * What comes back is, per declared kind, the CRD that has to be established
+ * before an instance can be written — apply waits for it.
+ */
+func (d *clusterDiscovery) declareChartCRDs(objects []helm.Object) map[string]string {
+	declared := map[string]string{}
+	for _, object := range objects {
+		if object.Kind != "CustomResourceDefinition" || object.APIVersion != crdAPIVersion {
+			continue
+		}
+		var crd crdDefinition
+		if err := json.Unmarshal(object.Document, &crd); err != nil {
+			continue
+		}
+		spec := crd.Spec
+		if spec.Group == "" || spec.Names.Kind == "" || spec.Names.Plural == "" || crd.Metadata.Name == "" {
+			continue
+		}
+		for _, version := range spec.Versions {
+			if !version.Served || version.Name == "" {
+				continue
+			}
+			groupVersion := spec.Group + "/" + version.Name
+			if _, served := d.resources[groupVersion][spec.Names.Kind]; served {
+				continue
+			}
+			if d.resources == nil {
+				d.resources = map[string]map[string]apiResource{}
+			}
+			if d.resources[groupVersion] == nil {
+				d.resources[groupVersion] = map[string]apiResource{}
+			}
+			d.resources[groupVersion][spec.Names.Kind] = apiResource{
+				Plural: spec.Names.Plural, Namespaced: spec.Scope != "Cluster",
+			}
+			declared[groupVersion+"|"+spec.Names.Kind] = crd.Metadata.Name
+		}
+	}
+	return declared
+}
+
+// crdEstablishTimeout bounds how long a run waits for a definition it just
+// wrote before writing an instance of it. A variable so a test can shorten it.
+var crdEstablishTimeout = 30 * time.Second
+
+// waitForCRD polls a definition until the API server reports it Established —
+// Helm's own wait after `crds/`. Without it the first instance races the
+// definition and gets a 404 the operator cannot read.
+func (s *server) waitForCRD(c *gin.Context, user *db.User, cluster *db.Cluster,
+	grant db.UserClusterAccess, name string,
+) error {
+	path := "/apis/" + crdAPIVersion + "/customresourcedefinitions/" + url.PathEscape(name)
+	deadline := time.Now().Add(crdEstablishTimeout)
+	for {
+		resp, err := s.proxy.Call(c.Request.Context(), user, cluster, grant, http.MethodGet, path, nil, nil)
+		if err != nil {
+			return errors.New(callFailureMessage(err))
+		}
+		if resp.Status >= 200 && resp.Status < 300 {
+			var crd struct {
+				Status struct {
+					Conditions []struct {
+						Type   string `json:"type"`
+						Status string `json:"status"`
+					} `json:"conditions"`
+				} `json:"status"`
+			}
+			if json.Unmarshal(resp.Body, &crd) == nil {
+				for _, condition := range crd.Status.Conditions {
+					if condition.Type == "Established" && condition.Status == "True" {
+						return nil
+					}
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("the definition %s was written but the cluster had not established it after %s",
+				name, crdEstablishTimeout)
+		}
+		select {
+		case <-c.Request.Context().Done():
+			return c.Request.Context().Err()
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 // discoverCluster reads what the cluster serves.
@@ -324,6 +444,9 @@ type applyPlan struct {
 	// one run belongs to the same release, by definition.
 	release   string
 	namespace string
+	// declared maps a kind the chart defines in this run (groupVersion|Kind) to
+	// the CRD that defines it, so apply can wait for the definition first.
+	declared map[string]string
 }
 
 // planApply resolves every object against discovery and the grant, and refuses
@@ -344,14 +467,18 @@ func (s *server) planApply(c *gin.Context, discovery *clusterDiscovery,
 	plan.objects = append(plan.objects, rendered.Objects...)
 	plan.objects = append(plan.objects, rendered.PostInstall...)
 
+	// A CRD's own instances are the ordinary case: the chart installs the
+	// definition in this same run, so the kind is not served yet. The
+	// definition says how it will be addressed; see declareChartCRDs.
+	plan.declared = discovery.declareChartCRDs(plan.objects)
+
 	allowed := grant.NamespaceList()
 	for _, object := range plan.objects {
 		resource, err := discovery.resolve(object.APIVersion, object.Kind)
 		if err != nil {
-			// A CRD's own instances are the ordinary case: the chart installs
-			// the definition in this same run, so the kind is not served yet.
-			// It is still refused rather than guessed at, because writing to a
-			// path this invented would be a 404 the operator cannot read.
+			// A kind neither the cluster nor the chart defines is refused rather
+			// than guessed at, because writing to a path this invented would be
+			// a 404 the operator cannot read.
 			c.JSON(http.StatusConflict, gin.H{
 				"error": fmt.Sprintf("%s (%s) cannot be written: %s", object.Ref(), object.Source, err),
 			})
@@ -429,9 +556,24 @@ func (s *server) apply(c *gin.Context, user *db.User, cluster *db.Cluster,
 ) applyResult {
 	result := applyResult{Reports: make([]objectReport, 0, len(plan.objects)+len(plan.removals))}
 
+	established := map[string]bool{}
 	for _, object := range plan.objects {
-		report := s.applyObject(c, user, cluster, grant, plan.discovery, object,
-			original[object.APIVersion+"|"+object.Ref()], plan.release, plan.namespace)
+		var report objectReport
+		crd, defined := plan.declared[object.APIVersion+"|"+object.Kind]
+		if defined && !established[crd] {
+			if err := s.waitForCRD(c, user, cluster, grant, crd); err != nil {
+				report = objectReport{
+					Kind: object.Kind, Name: object.Name, Namespace: object.Namespace,
+					Source: object.Source, Hook: object.Hook, Action: actionFailed, Message: err.Error(),
+				}
+			} else {
+				established[crd] = true
+			}
+		}
+		if report.Action == "" {
+			report = s.applyObject(c, user, cluster, grant, plan.discovery, object,
+				original[object.APIVersion+"|"+object.Ref()], plan.release, plan.namespace)
+		}
 		result.Reports = append(result.Reports, report)
 
 		if report.Action == actionFailed {

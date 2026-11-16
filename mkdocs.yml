@@ -121,6 +121,7 @@ nav:
           - Cost & waste: clusters/waste.md
           - GitOps sync state: clusters/gitops.md
           - Security posture: clusters/security-posture.md
+          - Vulnerability alerts: clusters/vulnerability-alerts.md
       - Access:
           - The access model: access/model.md
           - Users and groups: access/users-and-groups.md
