@@ -174,6 +174,9 @@ import type {
   WorkloadHistory,
   WorkloadPods,
   WorkloadRollbackResult,
+  VulnDetection,
+  VulnRecommendation,
+  VulnScanning,
 } from './types'
 import { completeCapacity } from './capacity'
 import { completeWaste, type ClusterWaste, type CostRates, type WasteSpan } from './waste'
@@ -1693,6 +1696,8 @@ export interface HelmInstallInput {
   name: string
   namespace: string
   yaml: string
+  /** Helm's --create-namespace: created first, never recorded on the release. */
+  create_namespace?: boolean
 }
 
 /**
@@ -2282,6 +2287,51 @@ export async function fetchGitopsDiff(
 export async function putClusterCostRates(clusterId: number, rates: CostRates): Promise<CostRates> {
   const { data } = await http.put<{ rates: CostRates }>(`/clusters/${clusterId}/cost-rates`, rates)
   return data.rates
+}
+
+/**
+ * A cluster's vulnerability alerts (admin). The read is stored state only and
+ * never asks the cluster; `detect` is the live look, and a connect detects again
+ * on the server before it stores anything.
+ */
+export async function fetchVulnScanning(
+  clusterId: number,
+): Promise<{ scanning: VulnScanning | null; recommendation: VulnRecommendation }> {
+  const { data } = await http.get<{ scanning: VulnScanning | null; recommendation: VulnRecommendation }>(
+    `/clusters/${clusterId}/vulnerability-scanning`,
+  )
+  return data
+}
+
+export async function detectVulnScanning(clusterId: number): Promise<VulnDetection> {
+  const { data } = await http.get<{ detection: VulnDetection }>(
+    `/clusters/${clusterId}/vulnerability-scanning/detect`,
+  )
+  return data.detection
+}
+
+export async function putVulnScanning(
+  clusterId: number,
+  input: { provider: string; enabled: boolean },
+): Promise<{ scanning: VulnScanning; detection: VulnDetection }> {
+  const { data } = await http.put<{ scanning: VulnScanning; detection: VulnDetection }>(
+    `/clusters/${clusterId}/vulnerability-scanning`,
+    input,
+  )
+  return data
+}
+
+export async function checkVulnScanning(
+  clusterId: number,
+): Promise<{ scanning: VulnScanning; detection: VulnDetection }> {
+  const { data } = await http.post<{ scanning: VulnScanning; detection: VulnDetection }>(
+    `/clusters/${clusterId}/vulnerability-scanning/check`,
+  )
+  return data
+}
+
+export async function deleteVulnScanning(clusterId: number): Promise<void> {
+  await http.delete(`/clusters/${clusterId}/vulnerability-scanning`)
 }
 
 /** Remove a cluster's unit prices (admin). */

@@ -19,3 +19,19 @@ func TestCostRatesColumnsAreTheOnesTheUpsertNames(t *testing.T) {
 		}
 	}
 }
+
+// Same rule for the vulnerability-scanning row: the upsert names its columns.
+func TestVulnScanningColumnsAreTheOnesTheUpsertNames(t *testing.T) {
+	parsed, err := schemaOf(&ClusterVulnScanning{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, column := range []string{
+		"cluster_id", "provider", "enabled", "last_checked_at", "last_status",
+		"last_message", "detected_version", "updated_at",
+	} {
+		if parsed.LookUpField(column) == nil {
+			t.Errorf("no column %q on cluster_vuln_scanning", column)
+		}
+	}
+}

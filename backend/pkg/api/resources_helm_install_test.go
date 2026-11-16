@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -356,5 +357,24 @@ func TestAClusterScopedObjectIsWrittenWithoutANamespace(t *testing.T) {
 	}
 	if !contains(string(stripped), `"name":"n"`) {
 		t.Fatalf("the object was damaged: %s", stripped)
+	}
+}
+
+func TestCreatingTheNamespaceIsRefusedForAScopedGrant(t *testing.T) {
+	// The namespace is the grant's own, so it already exists — and creating one
+	// is a cluster-scoped write. Refused before any chart is fetched.
+	env := newTestEnv(t)
+	user := env.store.addUser("scoped", "secret123", "user")
+	cluster := env.store.addAgentCluster("edge", "dev", "agent-token")
+	env.store.grant(user.ID, cluster.ID, "edit", []string{"team-a"})
+
+	rec := env.do(t, http.MethodPost,
+		"/api/v1/clusters/"+itoa(cluster.ID)+"/resources/helm/releases", env.tokenFor(t, user),
+		map[string]any{
+			"repository": "nowhere", "chart": "web", "name": "web",
+			"namespace": "team-a", "create_namespace": true,
+		})
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "cluster-scoped") {
+		t.Fatalf("expected a 403 naming the cluster-scoped write, got %d (%s)", rec.Code, rec.Body.String())
 	}
 }

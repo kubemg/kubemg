@@ -51,6 +51,11 @@ type installRequest struct {
 	Name       string `json:"name"`
 	Namespace  string `json:"namespace"`
 	YAML       string `json:"yaml"`
+	// CreateNamespace is Helm's --create-namespace: the namespace is created
+	// first when it is not there, and — as Helm does — it is **not** recorded on
+	// the release, so an uninstall never deletes a namespace other things may
+	// have moved into.
+	CreateNamespace bool `json:"create_namespace"`
 }
 
 // upgradeRequest is an install's second act. Every chart field is optional:
@@ -94,6 +99,14 @@ func (s *server) installHelmRelease(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if request.CreateNamespace && len(grant.NamespaceList()) > 0 {
+		// A scoped grant can only name namespaces it already holds, and creating
+		// one is a cluster-scoped write it was never given.
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "creating a namespace is a cluster-scoped write a namespace-scoped grant cannot make",
+		})
+		return
+	}
 	values, ok := helmValuesDocumentFrom(c, request.YAML)
 	if !ok {
 		return
@@ -132,7 +145,19 @@ func (s *server) installHelmRelease(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// After the plan, so a refused chart leaves no namespace behind either.
+	var created *objectReport
+	if request.CreateNamespace {
+		report, ok := s.ensureHelmNamespace(c, user, cluster, grant, namespace)
+		if !ok {
+			return
+		}
+		created = &report
+	}
 	result := s.apply(c, user, cluster, grant, plan, nil)
+	if created != nil {
+		result.Reports = append([]objectReport{*created}, result.Reports...)
+	}
 
 	status := helm.StatusDeployed
 	description := "Install complete"
@@ -332,6 +357,51 @@ func (s *server) chartFromRepository(c *gin.Context, repository, chart, version 
 }
 
 /* ------------------------------------------------------- writing it down --- */
+
+// ensureHelmNamespace creates the release's namespace when it is not there, as
+// the caller, down the same tunnel as every object after it. An existing one is
+// left alone and reported unchanged; one created between the read and the write
+// is the same answer.
+func (s *server) ensureHelmNamespace(c *gin.Context, user *db.User, cluster *db.Cluster,
+	grant db.UserClusterAccess, namespace string,
+) (objectReport, bool) {
+	report := objectReport{Kind: "Namespace", Name: namespace, Source: "create_namespace"}
+	path := "/api/v1/namespaces/" + url.PathEscape(namespace)
+
+	resp, ok := s.callResource(c, user, cluster, grant, path)
+	if !ok {
+		return report, false
+	}
+	switch {
+	case resp.Status >= 200 && resp.Status < 300:
+		report.Action = actionUnchanged
+		return report, true
+	case resp.Status != http.StatusNotFound:
+		c.JSON(resp.Status, gin.H{"error": kubeErrorMessage(resp.Body, resp.Status)})
+		return report, false
+	}
+
+	document, _ := json.Marshal(map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Namespace",
+		"metadata":   map[string]any{"name": namespace},
+	})
+	resp, ok = s.callResourceWith(c, user, cluster, grant,
+		http.MethodPost, "/api/v1/namespaces", document, "could not write to the cluster")
+	if !ok {
+		return report, false
+	}
+	switch {
+	case resp.Status == http.StatusConflict:
+		report.Action = actionUnchanged
+	case resp.Status < 200 || resp.Status >= 300:
+		c.JSON(resp.Status, gin.H{"error": kubeErrorMessage(resp.Body, resp.Status)})
+		return report, false
+	default:
+		report.Action = actionCreated
+	}
+	return report, true
+}
 
 // helmReleaseExists reports whether a release of that name is already stored. It
 // is a read that tolerates a refusal: a caller the cluster will not let list

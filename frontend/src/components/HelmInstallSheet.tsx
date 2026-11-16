@@ -26,6 +26,7 @@ export function HelmInstallSheet({
   cluster,
   namespace,
   namespaces,
+  preset,
   onClose,
   onInstalled,
 }: {
@@ -33,16 +34,26 @@ export function HelmInstallSheet({
   /** The namespace the list is open on, or '' for "all namespaces". */
   namespace: string
   namespaces: string[]
+  /**
+   * A chart somebody else already chose — the vulnerability-alerts sheet's
+   * scanner. Its namespace may not exist yet; when it does not, the install
+   * creates it first (Helm's --create-namespace), and says so.
+   */
+  preset?: HelmChartSelection & { name: string; namespace: string }
   onClose: () => void
   onInstalled: () => Promise<void> | void
 }) {
   const [selection, setSelection] = useState<HelmChartSelection>({
-    repository: '',
-    chart: '',
-    version: '',
+    repository: preset?.repository ?? '',
+    chart: preset?.chart ?? '',
+    version: preset?.version ?? '',
   })
-  const [name, setName] = useState('')
-  const [target, setTarget] = useState(namespace || (namespaces[0] ?? ''))
+  const [name, setName] = useState(preset?.name ?? '')
+  const [target, setTarget] = useState(preset?.namespace || namespace || (namespaces[0] ?? ''))
+  // Only a preset can name a namespace the cluster does not have: the picker
+  // below lists the ones it does.
+  const missingNamespace = target !== '' && !namespaces.includes(target)
+  const namespaceOptions = missingNamespace ? [target, ...namespaces] : namespaces
   const [yaml, setYaml] = useState('{}\n')
 
   const [busy, setBusy] = useState(false)
@@ -66,6 +77,7 @@ export function HelmInstallSheet({
         name: name.trim(),
         namespace: target,
         yaml,
+        create_namespace: missingNamespace,
       })
       setResult(written)
       if (written.applied !== false) await onInstalled()
@@ -135,17 +147,26 @@ export function HelmInstallSheet({
               />
             </Field>
 
-            <Field label="Namespace" htmlFor="helm_install_namespace">
+            <Field
+              label="Namespace"
+              htmlFor="helm_install_namespace"
+              hint={
+                missingNamespace
+                  ? 'Not in this cluster yet - the install creates it first. It is not recorded on the release, so uninstalling leaves it.'
+                  : undefined
+              }
+            >
               <Select
                 id="helm_install_namespace"
                 value={target}
-                disabled={namespaces.length === 0}
+                disabled={namespaceOptions.length === 0}
                 onChange={(event) => setTarget(event.target.value)}
               >
-                {namespaces.length === 0 ? <option value="">No namespaces</option> : null}
-                {namespaces.map((entry) => (
+                {namespaceOptions.length === 0 ? <option value="">No namespaces</option> : null}
+                {namespaceOptions.map((entry) => (
                   <option key={entry} value={entry}>
                     {entry}
+                    {missingNamespace && entry === target ? ' (new)' : ''}
                   </option>
                 ))}
               </Select>

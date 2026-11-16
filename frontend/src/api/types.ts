@@ -3569,3 +3569,64 @@ export interface PrometheusRuleSelector {
   expressions: boolean
   rule_namespaces: 'all' | 'own' | 'selected'
 }
+
+/* Vulnerability alerts — the cluster's own scanner, connected (pkg/api/vuln_scanning.go). */
+
+/** A cluster's vulnerability-alerts switch, as stored. */
+export interface VulnScanning {
+  cluster_id: number
+  provider: string
+  enabled: boolean
+  last_checked_at?: string
+  last_status: 'pending' | 'healthy' | 'unhealthy'
+  last_message?: string
+  detected_version?: string
+  created_at: string
+  updated_at: string
+}
+
+/** One report kind the scanner can write, and whether this cluster serves it. */
+export interface VulnReportKind {
+  kind: string
+  label: string
+  covers: 'workloads' | 'kubernetes' | 'nodes'
+  required: boolean
+  served: boolean
+  count?: number
+  approximate?: boolean
+  reason?: string
+}
+
+export interface TrivyOperatorInfo {
+  namespace: string
+  name: string
+  version?: string
+  replicas: number
+  ready_replicas: number
+  scanner_disabled: boolean
+}
+
+/** What a live look at the cluster found. */
+export interface VulnDetection {
+  provider: string
+  installed: boolean
+  reports: VulnReportKind[]
+  operator: TrivyOperatorInfo | null
+  operator_reason?: string
+  status: 'healthy' | 'unhealthy'
+  message: string
+}
+
+/** What the sheet offers when no scanner is installed. */
+export interface VulnRecommendation {
+  provider: string
+  name: string
+  license: string
+  repository_name: string
+  repository_url: string
+  chart: string
+  release: string
+  namespace: string
+  docs_url: string
+  catalogue: { repository: string; status: string; chart_version?: string } | null
+}

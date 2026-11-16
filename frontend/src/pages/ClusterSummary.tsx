@@ -32,6 +32,7 @@ import { ConnectionChain } from '../components/ConnectionChain'
 import { ConsolesPanel } from '../components/ConsolesPanel'
 import { CrdVisibilityPanel } from '../components/CrdVisibilityPanel'
 import { DatasourcePanel } from '../components/DatasourcePanel'
+import { VulnScanningPanel } from '../components/VulnScanningPanel'
 import { MetricComparison } from '../components/MetricComparison'
 import type { ComparisonKind } from '../components/MetricComparison'
 import { MetricsChart } from '../components/MetricsChart'
@@ -511,11 +512,14 @@ function AdminDashboard({ cluster, username }: { cluster: Cluster; username: str
           the navigation, never the access. */}
       <Panel
         title="Integrations"
-        description="What this cluster is wired to: where its history and alerts come from, the other tools it is operated from, and what its Explore sidebar offers."
+        description="What this cluster is wired to: where its history and alerts come from, the other tools it is operated from, the scanner its vulnerability alerts read, and what its Explore sidebar offers."
         bodyClassName="flex flex-col gap-7 p-5"
       >
         <DatasourcePanel cluster={cluster} bare />
         <ConsolesPanel cluster={cluster} bare />
+        {/* The scanner's reports are read through the agent, as KubeMG — a
+            direct-mode cluster has no path to them. */}
+        {viaAgent ? <VulnScanningPanel cluster={cluster} bare /> : null}
         {viaAgent ? <CrdVisibilityPanel cluster={cluster} bare /> : null}
       </Panel>
 
