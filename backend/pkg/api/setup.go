@@ -50,6 +50,9 @@ type Deployment struct {
 	// AgentCABundleSet reports that an operator supplied the chain agents must
 	// trust explicitly, which is the case an ingress in front of KubeMG creates.
 	AgentCABundleSet bool
+	// AgentListenAddr is KUBEMG_AGENT_LISTEN_ADDR: the listener that answers
+	// only the agent tunnel and the install downloads. Empty when there is none.
+	AgentListenAddr string
 	// SecretKeySet reports that KUBEMG_SECRET_KEY is in force, so the
 	// credentials stored in the database are encrypted at rest.
 	SecretKeySet bool
@@ -213,6 +216,49 @@ func (s *server) deploymentPosture(c *gin.Context) {
 	c.JSON(http.StatusOK, deploymentPostureResponse{Checks: checks, Attention: attention})
 }
 
+// agentURLCheck reports the address install packages are rendered on, which is
+// set in the environment and was otherwise nowhere an operator could read it.
+// A plain http:// one is called out: on a TLS listener agents cannot complete
+// the handshake, and without one their registration tokens cross the network in
+// the clear. The public URL has its own warning for the same thing.
+func (s *server) agentURLCheck() setupCheck {
+	scheme, rest, _ := strings.Cut(s.agentURL, "://")
+	fix := "KUBEMG_AGENT_URL=https://" + rest
+	if strings.EqualFold(scheme, "http") {
+		if s.deployment.TLSEnabled {
+			return setupCheck{
+				Key:      "agent-url",
+				Title:    "The agent URL is plain http, and this server speaks TLS",
+				Severity: checkWarn,
+				Detail:   "Install packages tell agents to dial " + s.agentURL + ", where no handshake can complete.",
+				Fix:      fix,
+			}
+		}
+		return setupCheck{
+			Key:      "agent-url",
+			Title:    "Agents dial over plain http",
+			Severity: checkWarn,
+			Detail: "Every agent's registration token crosses the network to " + s.agentURL +
+				" in the clear, unless a proxy in front terminates TLS for it.",
+			Fix: fix,
+		}
+	}
+
+	detail := "Install packages are rendered on it. Kubeconfigs, the console and the browser shell's " +
+		"kubectl stay on the public URL, so the browser shell needs the public URL reachable from the " +
+		"cluster as well."
+	if s.deployment.AgentListenAddr != "" {
+		detail = "Served on its own listener at " + s.deployment.AgentListenAddr +
+			", which answers only the tunnel and the install downloads. " + detail
+	}
+	return setupCheck{
+		Key:      "agent-url",
+		Title:    "Agents dial " + s.agentURL,
+		Severity: checkOK,
+		Detail:   detail,
+	}
+}
+
 // deploymentChecks resolves the boot-time facts into something a console can
 // render. The order is the order they matter in: a bastion without TLS cannot
 // serve kubectl at all, an unencrypted recording is production shell output
@@ -269,6 +315,10 @@ func (s *server) deploymentChecks() []setupCheck {
 			Severity: checkOK,
 			Detail:   "Every agent install package carries the CA chain you supplied.",
 		})
+	}
+
+	if s.agentURL != "" {
+		checks = append(checks, s.agentURLCheck())
 	}
 
 	switch {

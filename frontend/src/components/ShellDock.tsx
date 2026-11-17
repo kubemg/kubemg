@@ -205,6 +205,18 @@ export function ShellDock() {
       <div className="flex min-h-0 flex-1 flex-col gap-2 p-3">
         {error ? <DockMessage tone="danger">{error}</DockMessage> : null}
 
+        {/* Agents can be given an address of their own, but the shell's kubectl
+            still dials the public one from inside the cluster. Without this
+            line a cluster that reaches only the agent address gets a prompt
+            whose every kubectl hangs, and nothing says why. */}
+        {state?.kubectl_url && view && (view.kind === 'ready' || view.kind === 'starting') ? (
+          <DockMessage>
+            kubectl here connects back to <span className="font-data text-fg">{state.kubectl_url}</span>,
+            not to the agent address. If this cluster cannot reach it, kubectl waits until it times
+            out.
+          </DockMessage>
+        ) : null}
+
         {!error && (busy || !state) ? <DockMessage>Starting a shell…</DockMessage> : null}
 
         {view?.kind === 'disabled' || view?.kind === 'unavailable' ? (
