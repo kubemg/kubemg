@@ -25,6 +25,7 @@ import { MachineAccounts } from './pages/MachineAccounts'
 import { PermissionsMatrix } from './pages/PermissionsMatrix'
 import { Profile } from './pages/Profile'
 import { SecurityPosture } from './pages/SecurityPosture'
+import { Vulnerabilities } from './pages/Vulnerabilities'
 import { SessionRecordings } from './pages/SessionRecordings'
 import { Setup } from './pages/Setup'
 import { AgentSettings } from './pages/settings/AgentSettings'
@@ -379,6 +380,17 @@ export default function App() {
               element={
                 <RequireAuth>
                   <SecurityPosture />
+                </RequireAuth>
+              }
+            />
+            {/* What the cluster's own scanner found. Not adminOnly: a
+                cluster-admin grant with no namespace scope is in the audience
+                too, and the server decides — answering 404 to anyone else. */}
+            <Route
+              path="/clusters/:id/vulnerabilities"
+              element={
+                <RequireAuth>
+                  <Vulnerabilities />
                 </RequireAuth>
               }
             />

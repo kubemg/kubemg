@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ExternalLink, Plug, RefreshCw, Settings2, ShieldAlert } from 'lucide-react'
+import { Link } from 'react-router'
 import {
   checkVulnScanning,
   deleteVulnScanning,
@@ -334,6 +335,20 @@ function VulnScanningSheet({
                     Disconnect
                   </Button>
                 </div>
+                {scanning.enabled ? (
+                  <div className="flex flex-col gap-1.5 rounded-control border border-line-soft px-3 py-2.5">
+                    <p className="text-[12.5px] text-muted">
+                      {scanning.summary_message ||
+                        'The reports have not been summarised yet - Check and record reads them now.'}
+                    </p>
+                    <Link
+                      to={`/clusters/${cluster.id}/vulnerabilities`}
+                      className="text-[13px] font-medium text-accent hover:underline"
+                    >
+                      Open the findings
+                    </Link>
+                  </div>
+                ) : null}
                 <p className="text-[12px] text-faint">
                   Disconnecting leaves Trivy Operator installed - it is a Helm release in this
                   cluster, removed from Explore if you want it gone.

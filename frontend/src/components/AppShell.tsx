@@ -54,6 +54,8 @@ import {
 import type { ResourceKey } from '../lib/resources'
 import { railChip } from '../lib/branding'
 import { linkState } from '../lib/status'
+import { useVulnCounts } from '../lib/useVulnCounts'
+import { vulnRailDot } from '../lib/vulnFindings'
 import { ClusterMenu } from './ClusterMenu'
 import { ClusterSwitcher } from './ClusterSwitcher'
 import { ClusterTree } from './ClusterTree'
@@ -413,6 +415,9 @@ export function AppShell({
     slot?.kind === 'resource' ? (slot.key as ResourceKey) : null
 
   const railClusters = useMemo(() => clusters.slice(0, RAIL_CLUSTERS), [clusters])
+  // A rust dot on a cluster with a fixable critical somebody outside can reach
+  // — rust only, so the dot keeps meaning something. See lib/vulnFindings.
+  const vulnCounts = useVulnCounts(railClusters)
 
   /** What ⌘K reaches beyond the fleet and each cluster's own views. */
   const pages = useMemo<CommandTarget[]>(() => {
@@ -516,7 +521,16 @@ export function AppShell({
                   <span className="absolute top-1 right-1">
                     <EnvironmentDot environment={cluster.environment} />
                   </span>
-                  <span className="sr-only">{cluster.name}</span>
+                  {vulnRailDot(vulnCounts.get(cluster.id)) ? (
+                    <span
+                      aria-hidden="true"
+                      className="absolute right-1 bottom-1 size-1.5 rounded-full bg-danger"
+                    />
+                  ) : null}
+                  <span className="sr-only">
+                    {cluster.name}
+                    {vulnRailDot(vulnCounts.get(cluster.id)) ? ', exposed workloads with a fixable critical' : ''}
+                  </span>
                 </Link>
               )
             })}

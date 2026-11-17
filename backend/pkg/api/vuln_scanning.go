@@ -480,6 +480,12 @@ func (s *server) putVulnScanning(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save the scanning settings"})
 		return
 	}
+	// Connecting is when somebody is waiting to see findings, so the first
+	// summary is read now rather than at the watcher's next pass. A failure is
+	// recorded on the row and does not undo the connection.
+	if enabled {
+		_ = s.summarizeVulnCluster(c.Request.Context(), cluster)
+	}
 	// Answer with what was stored, not with the request's copy: an upsert keeps
 	// the first connection's created_at, which the copy does not know.
 	if stored, err := s.store.ClusterVulnScanning(c.Request.Context(), cluster.ID); err == nil {
@@ -495,7 +501,8 @@ func (s *server) checkVulnScanning(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if _, err := s.store.ClusterVulnScanning(c.Request.Context(), cluster.ID); err != nil {
+	current, err := s.store.ClusterVulnScanning(c.Request.Context(), cluster.ID)
+	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "vulnerability alerts are not connected on this cluster"})
 			return
@@ -517,6 +524,11 @@ func (s *server) checkVulnScanning(c *gin.Context) {
 	if err := s.store.UpdateClusterVulnScanningHealth(c.Request.Context(), cluster.ID, health); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not record the check"})
 		return
+	}
+	// A check also re-reads the findings, so "Check and record" is the way to
+	// see a fresh scan without waiting for the watcher.
+	if current.Enabled && detection.Installed {
+		_ = s.summarizeVulnCluster(c.Request.Context(), cluster)
 	}
 	row, err := s.store.ClusterVulnScanning(c.Request.Context(), cluster.ID)
 	if err != nil {

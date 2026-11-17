@@ -292,6 +292,13 @@ type Store interface {
 	PutClusterVulnScanning(ctx context.Context, row *db.ClusterVulnScanning) error
 	UpdateClusterVulnScanningHealth(ctx context.Context, clusterID uint, health db.SourceHealth) error
 	DeleteClusterVulnScanning(ctx context.Context, clusterID uint) error
+	// What the scanner found, summarised per workload — see pkg/api/vuln_findings.go.
+	ReplaceVulnSummaries(ctx context.Context, clusterID uint, pass db.VulnSummaryPass) error
+	RecordVulnSummaryFailure(ctx context.Context, clusterID uint, message string) error
+	VulnSummaries(ctx context.Context, clusterID uint) ([]db.VulnWorkloadSummary, error)
+	VulnWorkloadSummaryFor(ctx context.Context, clusterID uint, namespace, kind, name string) (*db.VulnWorkloadSummary, error)
+	VulnCountsByCluster(ctx context.Context) ([]db.VulnClusterCounts, error)
+	EnabledVulnScanning(ctx context.Context) ([]db.ClusterVulnScanning, error)
 
 	// Workload security posture acknowledgements — see pkg/api/resources_posture.go.
 	// The scan itself is stateless; this is the one thing it cannot recompute.
@@ -729,6 +736,11 @@ func NewRouter(opts Options) *gin.Engine {
 			// and likewise nothing is read until a gitops_drift rule exists.
 			go s.startGitopsWatcher(opts.Background)
 		}
+		// Scanner reports are summarised behind a lease for the sidebar, the
+		// lists and the findings page; see vuln_findings.go.
+		if opts.Proxy != nil {
+			go s.startVulnWatcher(opts.Background)
+		}
 		// Stops the event watches nobody is reading. It is a sweeper rather than
 		// a timer per cluster, for the reason the JIT expirer is: one loop that
 		// knows about all of them is easier to reason about than N that each know
@@ -858,6 +870,9 @@ func NewRouter(opts Options) *gin.Engine {
 
 		clusters := v1.Group("/clusters", requireAuth)
 		clusters.GET("", s.listClusters)
+		// Per-cluster counts of workloads needing a look, for the sidebar and
+		// the rail — only the clusters the caller may see findings on.
+		v1.GET("/vulnerabilities/clusters", requireAuth, s.listVulnClusterCounts)
 		clusters.GET("/:id", s.showCluster)
 		clusters.POST("", requireAdmin, s.createCluster)
 		// PATCH edits labels only — see patchCluster for why a connection is not
@@ -1096,6 +1111,14 @@ func NewRouter(opts Options) *gin.Engine {
 			vuln.DELETE("", s.deleteVulnScanning)
 			vuln.GET("/detect", s.detectVulnScanning)
 			vuln.POST("/check", s.checkVulnScanning)
+
+			// What the scanner found — see pkg/api/vuln_findings.go. Not
+			// admin-only: a cluster-admin grant with no namespace scope is in
+			// the audience too, and the handler decides that, answering 404 to
+			// anyone else rather than an empty list.
+			findings := clusters.Group("/:id/vulnerabilities", refusals)
+			findings.GET("", s.showVulnFindings)
+			findings.GET("/workload", s.showVulnWorkload)
 
 			// How many of each kind the caller can see, read at limit=1 so the
 			// cost is flat in the size of the cluster rather than proportional

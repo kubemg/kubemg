@@ -49,6 +49,15 @@ type ClusterVulnScanning struct {
 	// the last check.
 	DetectedVersion string `gorm:"size:80" json:"detected_version,omitempty"`
 
+	// SummarizedAt is when the reports were last read and summarised — the
+	// watcher's pass, or an administrator's check. A failed pass leaves it, and
+	// the summaries, where the last good one put them.
+	SummarizedAt *time.Time `json:"summarized_at,omitempty"`
+	// SummaryMessage is the last pass's outcome in words, failed or not.
+	SummaryMessage string `gorm:"type:text" json:"summary_message,omitempty"`
+	// SummaryTruncated is set when the last pass stopped at the report ceiling.
+	SummaryTruncated bool `gorm:"not null;default:false" json:"summary_truncated"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -113,22 +122,35 @@ func (s *Store) UpdateClusterVulnScanningHealth(ctx context.Context, clusterID u
 	return nil
 }
 
-// DeleteClusterVulnScanning disconnects a cluster.
+// DeleteClusterVulnScanning disconnects a cluster, and forgets what its
+// reports said: a disconnected cluster's findings would otherwise go on being
+// shown from a summary nothing refreshes.
 func (s *Store) DeleteClusterVulnScanning(ctx context.Context, clusterID uint) error {
-	res := s.gdb.WithContext(ctx).Where("cluster_id = ?", clusterID).Delete(&ClusterVulnScanning{})
-	if res.Error != nil {
-		return fmt.Errorf("delete cluster vulnerability scanning: %w", res.Error)
+	var affected int64
+	err := s.gdb.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("cluster_id = ?", clusterID).Delete(&ClusterVulnScanning{})
+		if res.Error != nil {
+			return res.Error
+		}
+		affected = res.RowsAffected
+		return tx.Where("cluster_id = ?", clusterID).Delete(&VulnWorkloadSummary{}).Error
+	})
+	if err != nil {
+		return fmt.Errorf("delete cluster vulnerability scanning: %w", err)
 	}
-	if res.RowsAffected == 0 {
+	if affected == 0 {
 		return ErrNotFound
 	}
 	return nil
 }
 
-// deleteClusterVulnScanning removes a cluster's row with it.
+// deleteClusterVulnScanning removes a cluster's row, and its summaries, with it.
 func deleteClusterVulnScanning(tx *gorm.DB, clusterID uint) error {
 	if err := tx.Where("cluster_id = ?", clusterID).Delete(&ClusterVulnScanning{}).Error; err != nil {
 		return fmt.Errorf("delete cluster vulnerability scanning: %w", err)
+	}
+	if err := tx.Where("cluster_id = ?", clusterID).Delete(&VulnWorkloadSummary{}).Error; err != nil {
+		return fmt.Errorf("delete vulnerability summaries: %w", err)
 	}
 	return nil
 }

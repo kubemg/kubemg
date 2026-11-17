@@ -41,6 +41,7 @@ import { ConditionTiles, ObjectGlance } from './ObjectGlance'
 import { DebugContainerSheet } from './DebugContainerSheet'
 import { AlarmComposer } from './AlarmComposer'
 import type { AlarmTarget } from './AlarmComposer'
+import { VulnerabilityPanel, showsVulnerabilities } from './VulnerabilityPanel'
 import { GitopsObjectPanel } from './GitopsObjectPanel'
 import { ObjectAlertsPanel } from './ObjectAlertsPanel'
 import { hasAlerting, supportsAlarms } from '../lib/alerting'
@@ -886,6 +887,13 @@ function OverviewTab({
           object's identity rather than under the wiring. */}
       {describe.managed_by?.manager === 'argocd' || describe.managed_by?.manager === 'flux' ? (
         <GitopsObjectPanel cluster={cluster} kind={kind} name={name} namespace={namespace} />
+      ) : null}
+
+      {/* What the cluster's scanner found in this workload's images — with
+          the object's identity, because "is this one exposed and fixable" is
+          the question an advisory raises. Absent outside the audience. */}
+      {showsVulnerabilities(cluster, kind, namespace) && namespace ? (
+        <VulnerabilityPanel cluster={cluster} kind={kind} name={name} namespace={namespace} />
       ) : null}
 
       {/* A ConfigMap or a Secret is opened for what it holds, not for its
