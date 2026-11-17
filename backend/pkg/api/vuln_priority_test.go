@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"fmt"
 	"compress/gzip"
 	"encoding/json"
 	"net/http"
@@ -287,5 +288,26 @@ func TestAnExpiredAcceptanceCountsAgain(t *testing.T) {
 	}
 	if !(db.VulnAcceptance{}).Live(time.Now()) {
 		t.Fatal("no expiry holds")
+	}
+}
+
+func TestAcceptedFindingsAreNeverCutByTheCap(t *testing.T) {
+	findings := []map[string]any{}
+	for i := 0; i < maxDrawerFindings+10; i++ {
+		findings = append(findings, vulnFinding(fmt.Sprintf("CVE-2024-%04d", i+1000), "CRITICAL", "1"))
+	}
+	findings = append(findings, vulnFinding("CVE-2023-2603", "LOW", ""))
+	var report trivyReport
+	raw, _ := json.Marshal(vulnReport("monitoring", "StatefulSet", "loki", "loki", 60, 0, findings...))
+	if err := json.Unmarshal(raw, &report); err != nil {
+		t.Fatal(err)
+	}
+	view := vulnContainer(report, vulnDrawerIntel{accepted: map[string]db.VulnAcceptance{"CVE-2023-2603": {Reason: "e2e"}}})
+	last := view.Findings[len(view.Findings)-1]
+	if len(view.Findings) != maxDrawerFindings+1 || last.ID != "CVE-2023-2603" || last.Accepted == nil {
+		t.Fatalf("fifty open findings, then the accepted one: %d, last %+v", len(view.Findings), last)
+	}
+	if view.Total != maxDrawerFindings+11 {
+		t.Fatalf("total is every finding: %d", view.Total)
 	}
 }

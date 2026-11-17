@@ -780,9 +780,21 @@ func vulnContainer(report trivyReport, intel vulnDrawerIntel) vulnContainerView 
 		Total:    len(findings),
 		Findings: []vulnFindingView{},
 	}
-	for i, finding := range findings {
-		if i == maxDrawerFindings {
-			break
+	// The cap is for open findings. Accepted ones are decisions somebody has
+	// to be able to review and withdraw, so they come after it, bounded on
+	// their own — sorting them last and cutting at the cap hid them.
+	open, accepted := 0, 0
+	for _, finding := range findings {
+		if intel.isAccepted(finding) {
+			if accepted == maxDrawerFindings {
+				continue
+			}
+			accepted++
+		} else {
+			if open == maxDrawerFindings {
+				continue
+			}
+			open++
 		}
 		out.Findings = append(out.Findings, intel.decorate(vulnFindingView{
 			ID: finding.VulnerabilityID, Severity: strings.ToUpper(finding.Severity),

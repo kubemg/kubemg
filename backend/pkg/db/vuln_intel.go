@@ -41,8 +41,13 @@ const (
 )
 
 // Default feed addresses. An administrator may point either at a mirror.
+//
+// KEV defaults to CISA's own GitHub publication of the catalogue rather than
+// cisa.gov: the cisa.gov feed sits behind a bot filter that answered 403 to a
+// server's egress in testing while a desktop got the file. The content is the
+// same document, published by CISA.
 const (
-	DefaultKEVURL  = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+	DefaultKEVURL  = "https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json"
 	DefaultEPSSURL = "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
 )
 

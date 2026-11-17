@@ -109,7 +109,7 @@ function IntelSource({ source, onChange }: { source: VulnIntelSource; onChange: 
         </Notice>
       ) : null}
       {error ? <Notice tone="error">{error}</Notice> : null}
-      <Field label="Address" htmlFor={`intel-url-${source.kind}`} hint="Point it at a mirror if this server cannot reach the public one.">
+      <Field label="Address" htmlFor={`intel-url-${source.kind}`} hint="Leave empty for the default. KEV defaults to CISA's GitHub publication of the catalogue; the cisa.gov feed is the same file.">
         <div className="flex flex-wrap gap-2">
           <TextInput
             id={`intel-url-${source.kind}`}
