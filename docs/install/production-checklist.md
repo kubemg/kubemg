@@ -15,7 +15,9 @@ why and links to the detail.
       Kubernetes, `agent.url` and `agent.endpoint.enabled`), with the main
       listener on an internal address. The bastion holds `system:masters` on
       every agent-mode cluster, so its sign-in page and API are worth keeping
-      off the internet. See
+      off the internet. The browser shell still dials the public URL from
+      inside the cluster, so it works only where the cluster can reach that
+      address too. See
       [A separate address for agents](kubernetes.md#a-separate-address-for-agents).
 
 - [ ] **Bootstrap admin password changed.** Setup will not finish while the

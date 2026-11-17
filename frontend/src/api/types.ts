@@ -700,6 +700,12 @@ export interface ShellState {
   namespaces?: string[]
   /** Whether the session is captured for replay. Said before the first keystroke. */
   recorded: boolean
+  /**
+   * Where the shell's kubectl dials back to KubeMG, sent only when agents are
+   * given a separate address: the cluster has to reach this one too, or kubectl
+   * in the shell times out.
+   */
+  kubectl_url?: string
   status: ShellPodStatus
 }
 

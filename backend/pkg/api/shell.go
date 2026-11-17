@@ -152,7 +152,28 @@ type shellResponse struct {
 	// somebody afterwards is not disclosure.
 	Recorded bool `json:"recorded"`
 
+	// KubectlURL is the address the shell's kubectl dials back to KubeMG on,
+	// set only when agents are given a separate address. The shell pod runs in
+	// the cluster but its kubeconfig points at the public URL, and the agent
+	// listener does not serve the kubectl proxy, so a cluster that reaches only
+	// the agent address gets a shell whose kubectl times out. Said here because
+	// nothing else would say why.
+	KubectlURL string `json:"kubectl_url,omitempty"`
+
 	Status shell.Status `json:"status"`
+}
+
+// shellKubectlURL is shellResponse.KubectlURL: the public URL when agents dial
+// somewhere else, empty when they dial it too.
+func (s *server) shellKubectlURL(ctx context.Context) string {
+	if s.agentURL == "" {
+		return ""
+	}
+	public := s.settings(ctx).PublicURL
+	if public == s.agentURL {
+		return ""
+	}
+	return public
 }
 
 // shellRunner is the identity KubeMG manages shell pods as. The grant is
@@ -218,6 +239,7 @@ func (s *server) showShell(c *gin.Context) {
 		K8sRole:            k8sRole,
 		Namespaces:         grant.NamespaceList(),
 		Recorded:           s.settings(c.Request.Context()).RecordExecSessions,
+		KubectlURL:         s.shellKubectlURL(c.Request.Context()),
 	}
 	if reason := shellUnavailable(cluster, config); reason != "" {
 		response.Reason = reason
@@ -315,6 +337,7 @@ func (s *server) startShell(c *gin.Context) {
 		K8sRole:            k8sRole,
 		Namespaces:         grant.NamespaceList(),
 		Recorded:           s.settings(ctx).RecordExecSessions,
+		KubectlURL:         s.shellKubectlURL(ctx),
 		Status:             status,
 	}
 

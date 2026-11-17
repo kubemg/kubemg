@@ -137,7 +137,7 @@ The credential written into the shell is listed under **You → My access**, mar
 ### Requirements
 
 - The cluster must be in **agent mode**. A direct-mode cluster is refused, with the reason named.
-- Pods must be able to reach `KUBEMG_PUBLIC_URL`, the same egress the agent uses.
+- Pods must be able to reach `KUBEMG_PUBLIC_URL`. That is the agent's own egress unless agents are given a [separate address](../install/kubernetes.md#a-separate-address-for-agents): `kubectl` in the shell still dials the public URL, and the dock says so.
 - The agent's manifests must be current (the `kubemg-shell` service account and `kubemg-shell-runner` Role). **An existing install picks these up only by re-applying its manifests.**
 
 ### Operator settings

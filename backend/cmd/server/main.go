@@ -352,6 +352,7 @@ func main() {
 			TLSSuppliedDir:    tlsMaterial.suppliedDir,
 			TLSSupplied:       tlsMaterial.supplied,
 			AgentCABundleSet:  strings.TrimSpace(cfg.TLS.AgentCABundle) != "",
+			AgentListenAddr:   cfg.AgentListenAddr,
 			MFAResetArmed:     strings.TrimSpace(cfg.MFAResetUsername) != "",
 		},
 		Background: auditCtx,
