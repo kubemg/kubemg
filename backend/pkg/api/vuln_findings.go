@@ -718,8 +718,13 @@ func (s *server) showVulnWorkload(c *gin.Context) {
 	kind, known := vulnWorkloadKinds[strings.TrimSpace(c.Query("kind"))]
 	namespace := strings.TrimSpace(c.Query("namespace"))
 	name := strings.TrimSpace(c.Query("name"))
-	if !known || namespace == "" || name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "kind, namespace and name are required, for a workload kind"})
+	if !known {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "scanner reports belong to workloads: kind must be one of " +
+			"deployments, statefulsets, daemonsets, cronjobs, jobs, pods or replicasets"})
+		return
+	}
+	if namespace == "" || name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "namespace and name are required"})
 		return
 	}
 	if !alarmObjectName.MatchString(namespace) {
