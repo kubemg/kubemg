@@ -62,7 +62,8 @@ unsuppressible floor and in the alarm verb vocabulary.
 it is a breaking change that requires every agent to be upgraded, so it is a
 decision rather than a bump. What can be added without one is negotiated as a
 **capability** instead (`negotiateCapabilities`, `welcome.capabilities`) - see
-the agent page for `response-parts` and the two outbound queues. The tunnel
+the agent page for `response-parts`, `binary-stream-data` and the two outbound
+queues. The tunnel
 files `response_part` frames on the waiting call itself (`pendingCall`), so a
 caller that gives up takes its parts with it (`forget`) - a body part-sent and
 never finished is not held for the life of the tunnel. A body past
