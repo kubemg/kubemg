@@ -117,6 +117,7 @@ A rule watches exactly one signal:
 - **`cluster_event`**: Kubernetes Events read down the agent tunnel (`OOMKilled`, `FailedScheduling`, anything of `type: Warning`).
 - **`audit`**: kubemg's own audit records. Only kubemg can see these. A call it refused never reached the cluster, so there is no Event for it.
 - **`gitops_drift`**: an object going out of sync with what Argo CD or Flux declares. See [GitOps drift](#gitops-drift).
+- **`vulnerability_kev`**: a workload starting to run a vulnerability on CISA's Known Exploited Vulnerabilities catalogue. See [Known exploited vulnerabilities](#known-exploited-vulnerabilities).
 
 Cover several streams with one rule each.
 
@@ -128,6 +129,7 @@ Every rule may narrow by `cluster_id` (0 means every cluster, including ones reg
 |---|---|
 | `cluster_event` | `event_type` (`Normal` or `Warning`); `event_reasons` (comma-separated, e.g. `OOMKilled,BackOff`) |
 | `audit` | `verbs` (comma-separated audit verbs); `denied_only` (only refusals: a 4xx/5xx or a call that never reached the API server); `min_status` (records at or above an HTTP status) |
+| `vulnerability_kev` | None beyond cluster and namespace (the workload's) |
 | `gitops_drift` | `gitops_tools` (comma-separated: `argocd`, `flux-kustomization`, `flux-helmrelease`); `gitops_apps` (comma-separated Application, Kustomization or HelmRelease names). For Argo CD the namespace is the drifted object's; for Flux it is the record's target namespace, else its own |
 
 `agent-displaced` fires whenever a new connection takes over a cluster's agent tunnel. Every agent rollout does this once per cluster, so expect it after each re-apply. Outside a rollout it means someone else holding the registration token has become the agent. The message names the new and previous addresses and versions. `agent-token-rotate` fires on each rotation.
@@ -138,7 +140,7 @@ The rule form suggests common reasons (`OOMKilled`, `FailedScheduling`, `BackOff
 
 - A `cluster_event` rule with **neither** an `event_type` nor any `event_reasons` is refused, since it would match every event the cluster emits.
 - A `gitops_drift` rule naming an unknown tool, or an application name that is not a valid Kubernetes name, is refused. Drift matchers sent with another trigger are dropped.
-- An `audit` rule naming a verb the trail never records is refused, since it could never fire. Valid verbs are the suppressible verbs, `replay`, `recording-get`, `recording-delete`, `agent-displaced`, `agent-token-rotate`, `mfa-reset`, `mfa-remove`, `mfa-recovery-used`, `cli-login`, `cli-session-revoke` and `password-expire`.
+- An `audit` rule naming a verb the trail never records is refused, since it could never fire. Valid verbs are the suppressible verbs, `replay`, `recording-get`, `recording-delete`, `agent-displaced`, `agent-token-rotate`, `mfa-reset`, `mfa-remove`, `mfa-recovery-used`, `cli-login`, `cli-session-revoke`, `password-expire`, `risk-accept` and `risk-withdraw`.
 
 ## Testing a channel
 
@@ -181,6 +183,12 @@ It fires on the transition only. Something already out of sync when the rule is 
 The alarm (`alertname` `KubeMGGitOpsDrift`, labels `tool` and `application`) names the **last write to the object that went through kubemg** since Argo CD last synced it, and carries that person as `username`. When there is none it says that a change made outside kubemg leaves no record here. Flux alarms name no writer, because Flux records no per-object state.
 
 A helm-controller drift report in `warn` mode does not change the release's `Ready` condition, so it does not fire this trigger. helm-controller emits it as a Kubernetes Event with reason `DriftDetected`, which a `cluster_event` rule can match.
+
+## Known exploited vulnerabilities
+
+A `vulnerability_kev` rule reads the [vulnerability summary](../clusters/vulnerability-alerts.md), taken every ten minutes on each cluster with vulnerability alerts on. It fires when a workload has a vulnerability on CISA's Known Exploited Vulnerabilities catalogue that it did not have at the previous summary. That covers a new or updated workload running one, and also CISA adding a CVE a workload already runs. One alarm goes out per workload, naming the CVEs it gained and whether the workload is reachable from outside the cluster.
+
+It needs a KEV list in hand (Vulnerabilities, Exploit intelligence). The first summary that can see the list is where things stand and fires nothing, so turning KEV on does not page for everything at once. A summary taken while the list cannot be read fires nothing either. A finding accepted as a risk never fires. The alarm's `alertname` is `KubeMGKnownExploitedVulnerability` and it links to the cluster's Vulnerabilities page.
 
 ## JIT approval notices
 

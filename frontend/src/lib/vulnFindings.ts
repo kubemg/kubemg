@@ -23,6 +23,18 @@ export function mayAskForVulns(cluster: Pick<Cluster, 'k8s_role' | 'namespaces' 
   )
 }
 
+/** The drawer kinds a scanner report belongs to. A controlled pod's findings are its workload's. */
+const PANEL_KINDS: ReadonlySet<string> = new Set(['deployments', 'statefulsets', 'daemonsets', 'cronjobs', 'jobs'])
+
+/** Whether a drawer draws the Vulnerabilities panel at all. */
+export function showsVulnerabilities(
+  cluster: Pick<Cluster, 'k8s_role' | 'namespaces' | 'connection_mode'>,
+  kind: string,
+  namespace?: string,
+): boolean {
+  return Boolean(namespace) && PANEL_KINDS.has(kind) && mayAskForVulns(cluster)
+}
+
 /** Rust only for danger, amber only for warn; a `none` row carries no colour. */
 export function vulnTone(level: VulnLevel): Tone | null {
   switch (level) {
@@ -67,6 +79,9 @@ export function vulnResourceKey(kind: string): ResourceKey | null {
 
 /** The words on a row's badge — what makes it coloured, never just a count. */
 export function vulnBadgeText(row: VulnWorkloadSummary): string {
+  if (row.kev > 0) {
+    return `${row.kev} known exploited`
+  }
   if (row.level === 'danger') {
     return `${row.fixable_critical} fixable critical, exposed`
   }
@@ -83,7 +98,44 @@ export function vulnBadgeTitle(row: VulnWorkloadSummary): string {
     `${row.low} low`,
   ]
   const fixable = row.fixable_critical + row.fixable_high
-  return `${parts.join(', ')} - ${fixable} critical/high with a fix${row.exposed ? ' - reachable from outside the cluster' : ''}`
+  const extra = [
+    row.kev > 0 ? `${row.kev_ids.join(', ')} on CISA's known-exploited catalogue` : '',
+    row.exposed ? 'reachable from outside the cluster' : '',
+    row.accepted > 0 ? `${row.accepted} accepted, not counted` : '',
+  ].filter(Boolean)
+  return [`${parts.join(', ')}`, `${fixable} critical/high with a fix`, ...extra].join(' - ')
+}
+
+/** EPSS as a person reads it: the 30-day probability, and where it ranks. */
+export function epssText(score: number, percentile?: number): string {
+  const percent = score * 100
+  const shown = percent >= 10 ? percent.toFixed(0) : percent.toFixed(1)
+  const rank = percentile !== undefined ? `, top ${Math.max(0.1, (1 - percentile) * 100).toFixed(percentile > 0.99 ? 1 : 0)}%` : ''
+  return `EPSS ${shown}%${rank}`
+}
+
+/** The hover on a known-exploited marker. */
+export function kevText(kev: { added?: string; due?: string; ransomware: boolean; name?: string }): string {
+  const parts = ["On CISA's Known Exploited Vulnerabilities catalogue"]
+  if (kev.added) parts.push(`added ${kev.added.slice(0, 10)}`)
+  if (kev.due) parts.push(`remediation due ${kev.due.slice(0, 10)}`)
+  if (kev.ransomware) parts.push('known to be used in ransomware campaigns')
+  return parts.join(' - ')
+}
+
+/** How long an accepted risk holds. The server refuses anything past a year. */
+export const ACCEPT_EXPIRY_CHOICES: ReadonlyArray<{ days: number; label: string }> = [
+  { days: 30, label: 'In 30 days' },
+  { days: 90, label: 'In 90 days' },
+  { days: 180, label: 'In 180 days' },
+  { days: 365, label: 'In a year' },
+  { days: 0, label: 'Never - until withdrawn' },
+]
+
+/** The expiry sent for a choice; 0 sends none. */
+export function acceptExpiry(days: number, now: Date): string | undefined {
+  if (days <= 0) return undefined
+  return new Date(now.getTime() + days * 86_400_000).toISOString()
 }
 
 /** The sidebar's number: workloads that need a look, danger or warn. */

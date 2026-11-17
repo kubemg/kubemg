@@ -74,6 +74,11 @@ type fakeStore struct {
 	costRates    map[uint]db.ClusterCostRates
 	vulnScanning map[uint]db.ClusterVulnScanning
 	vulnSummaries map[uint][]db.VulnWorkloadSummary
+	// vulnIntel holds the KEV/EPSS state; nil maps read as never configured.
+	vulnIntel       map[string]db.VulnIntelSource
+	vulnKEV         map[string]db.VulnKEVEntry
+	vulnEPSS        map[string]db.VulnEPSSEntry
+	vulnAcceptances []db.VulnAcceptance
 	costRatesErr error
 	// hiddenCRDs is each cluster's sidebar curation: the resources an admin
 	// took off the list, keyed plural.group.
@@ -1184,6 +1189,7 @@ func (f *fakeStore) ReplaceVulnSummaries(_ context.Context, clusterID uint, pass
 	}
 	at := pass.At
 	row.SummarizedAt, row.SummaryMessage, row.SummaryTruncated = &at, pass.Message, pass.Truncated
+	row.KEVWatermark = pass.KEVKnown
 	f.vulnScanning[clusterID] = row
 	f.vulnSummaries[clusterID] = append([]db.VulnWorkloadSummary(nil), pass.Rows...)
 	return nil
@@ -1229,6 +1235,127 @@ func (f *fakeStore) VulnCountsByCluster(_ context.Context) ([]db.VulnClusterCoun
 			}
 		}
 		out = append(out, count)
+	}
+	return out, nil
+}
+
+func (f *fakeStore) VulnIntelSources(_ context.Context) ([]db.VulnIntelSource, error) {
+	out := []db.VulnIntelSource{}
+	for _, kind := range []string{db.IntelKEV, db.IntelEPSS} {
+		row, ok := f.vulnIntel[kind]
+		if !ok {
+			row = db.VulnIntelSource{Kind: kind, URL: db.DefaultIntelURL(kind), Status: db.StatusPending}
+		}
+		out = append(out, row)
+	}
+	return out, nil
+}
+
+func (f *fakeStore) PutVulnIntelSource(_ context.Context, kind string, enabled bool, url string) error {
+	if f.vulnIntel == nil {
+		f.vulnIntel = map[string]db.VulnIntelSource{}
+	}
+	row := f.vulnIntel[kind]
+	row.Kind, row.Enabled, row.URL = kind, enabled, url
+	f.vulnIntel[kind] = row
+	return nil
+}
+
+func (f *fakeStore) RecordVulnIntelFailure(_ context.Context, kind, message string) error {
+	if f.vulnIntel == nil {
+		f.vulnIntel = map[string]db.VulnIntelSource{}
+	}
+	row := f.vulnIntel[kind]
+	row.Kind, row.Status, row.Message = kind, db.StatusUnhealthy, message
+	f.vulnIntel[kind] = row
+	return nil
+}
+
+func (f *fakeStore) putIntelOutcome(kind string, count int, outcome db.IntelOutcome) {
+	if f.vulnIntel == nil {
+		f.vulnIntel = map[string]db.VulnIntelSource{}
+	}
+	row := f.vulnIntel[kind]
+	at := outcome.At
+	row.Kind, row.Status, row.Message, row.Entries = kind, db.StatusHealthy, outcome.Message, count
+	row.SyncedAt, row.Origin, row.Version = &at, outcome.Origin, outcome.Version
+	f.vulnIntel[kind] = row
+}
+
+func (f *fakeStore) ReplaceKEV(_ context.Context, entries []db.VulnKEVEntry, outcome db.IntelOutcome) error {
+	f.vulnKEV = map[string]db.VulnKEVEntry{}
+	for _, e := range entries {
+		f.vulnKEV[e.CVE] = e
+	}
+	f.putIntelOutcome(db.IntelKEV, len(entries), outcome)
+	return nil
+}
+
+func (f *fakeStore) ReplaceEPSS(_ context.Context, entries []db.VulnEPSSEntry, outcome db.IntelOutcome) error {
+	f.vulnEPSS = map[string]db.VulnEPSSEntry{}
+	for _, e := range entries {
+		f.vulnEPSS[e.CVE] = e
+	}
+	f.putIntelOutcome(db.IntelEPSS, len(entries), outcome)
+	return nil
+}
+
+func (f *fakeStore) KEVCatalogue(_ context.Context) (map[string]db.VulnKEVEntry, error) {
+	out := map[string]db.VulnKEVEntry{}
+	for k, v := range f.vulnKEV {
+		out[k] = v
+	}
+	return out, nil
+}
+
+func (f *fakeStore) EPSSFor(_ context.Context, cves []string) (map[string]db.VulnEPSSEntry, error) {
+	out := map[string]db.VulnEPSSEntry{}
+	for _, id := range cves {
+		if e, ok := f.vulnEPSS[id]; ok {
+			out[id] = e
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) EnabledVulnIntel(_ context.Context) ([]db.VulnIntelSource, error) {
+	out := []db.VulnIntelSource{}
+	for _, kind := range []string{db.IntelEPSS, db.IntelKEV} {
+		if row, ok := f.vulnIntel[kind]; ok && row.Enabled {
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) PutVulnAcceptance(_ context.Context, row *db.VulnAcceptance) error {
+	for i, a := range f.vulnAcceptances {
+		if a.ClusterID == row.ClusterID && a.Namespace == row.Namespace && a.Kind == row.Kind && a.Name == row.Name && a.CVE == row.CVE {
+			f.vulnAcceptances[i] = *row
+			return nil
+		}
+	}
+	row.ID = uint(len(f.vulnAcceptances) + 1)
+	f.vulnAcceptances = append(f.vulnAcceptances, *row)
+	return nil
+}
+
+func (f *fakeStore) DeleteVulnAcceptance(_ context.Context, clusterID uint, namespace, kind, name, cve string) error {
+	for i, a := range f.vulnAcceptances {
+		if a.ClusterID == clusterID && a.Namespace == namespace && a.Kind == kind && a.Name == name && a.CVE == cve {
+			f.vulnAcceptances = append(f.vulnAcceptances[:i], f.vulnAcceptances[i+1:]...)
+			return nil
+		}
+	}
+	return db.ErrNotFound
+}
+
+func (f *fakeStore) VulnAcceptances(_ context.Context, clusterID uint) ([]db.VulnAcceptance, error) {
+	out := []db.VulnAcceptance{}
+	for _, a := range f.vulnAcceptances {
+		if a.ClusterID == clusterID {
+			out = append(out, a)
+		}
 	}
 	return out, nil
 }

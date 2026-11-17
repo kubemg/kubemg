@@ -48,6 +48,13 @@ type VulnWorkloadSummary struct {
 	// ones an upgrade closes, which is what the level is decided on.
 	FixableCritical int `gorm:"not null;default:0" json:"fixable_critical"`
 	FixableHigh     int `gorm:"not null;default:0" json:"fixable_high"`
+	// KEV counts distinct findings on CISA's Known Exploited Vulnerabilities
+	// catalogue; KEVIDs names them, so the next pass can tell what is new.
+	KEV    int      `gorm:"not null;default:0" json:"kev"`
+	KEVIDs []string `gorm:"column:kev_ids;serializer:json;type:text" json:"kev_ids"`
+	// Accepted counts findings an administrator accepted as a risk; they are
+	// left out of every count above that decides the level.
+	Accepted int `gorm:"not null;default:0" json:"accepted"`
 	// Exposed is whether a LoadBalancer or NodePort Service, or a Service an
 	// Ingress or HTTPRoute sends to, selects this workload's pods.
 	Exposed bool   `gorm:"not null;default:false" json:"exposed"`
@@ -70,6 +77,8 @@ type VulnSummaryPass struct {
 	At        time.Time
 	Message   string
 	Truncated bool
+	// KEVKnown is whether a KEV catalogue was in hand for this pass.
+	KEVKnown bool
 }
 
 // ReplaceVulnSummaries writes a pass: the cluster's rows replaced whole, and the
@@ -82,6 +91,7 @@ func (s *Store) ReplaceVulnSummaries(ctx context.Context, clusterID uint, pass V
 			"summarized_at":     pass.At,
 			"summary_message":   pass.Message,
 			"summary_truncated": pass.Truncated,
+			"kev_watermark":     pass.KEVKnown,
 		})
 		if res.Error != nil {
 			return res.Error

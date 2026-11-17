@@ -84,10 +84,13 @@ const (
 	// or Flux declares, read from the controller's own records. It fires on the
 	// transition, never on a state that was already there when it was switched on.
 	TriggerGitOpsDrift = "gitops_drift"
+	// TriggerVulnerabilityKEV matches a workload that starts running a
+	// vulnerability on CISA's Known Exploited Vulnerabilities catalogue.
+	TriggerVulnerabilityKEV = "vulnerability_kev"
 )
 
 // AlarmTriggers enumerates the supported rule sources.
-var AlarmTriggers = []string{TriggerClusterEvent, TriggerAudit, TriggerGitOpsDrift}
+var AlarmTriggers = []string{TriggerClusterEvent, TriggerAudit, TriggerGitOpsDrift, TriggerVulnerabilityKEV}
 
 // Alarm severities, ordered least to most urgent. They are KubeMG's own word for
 // it and each channel renders them into its vendor's vocabulary.

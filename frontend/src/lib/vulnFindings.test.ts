@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { VulnWorkloadSummary } from '../api/types'
 import {
+  acceptExpiry,
+  epssText,
   filterVulnRows,
+  kevText,
+  vulnBadgeTitle,
   indexVulnSummaries,
   mayAskForVulns,
   vulnBadgeText,
@@ -15,7 +19,7 @@ function row(over: Partial<VulnWorkloadSummary>): VulnWorkloadSummary {
   return {
     namespace: 'shop', kind: 'Deployment', name: 'web',
     critical: 0, high: 0, medium: 0, low: 0, unknown: 0,
-    fixable_critical: 0, fixable_high: 0, exposed: false, level: 'none', images: [],
+    fixable_critical: 0, fixable_high: 0, kev: 0, kev_ids: [], accepted: 0, exposed: false, level: 'none', images: [],
     ...over,
   }
 }
@@ -71,5 +75,31 @@ describe('rows', () => {
     expect(filterVulnRows(rows, 'attention', '').map((r) => r.name)).toEqual(['web', 'db'])
     expect(filterVulnRows(rows, 'all', '').length).toBe(3)
     expect(filterVulnRows(rows, 'all', 'nginx').map((r) => r.name)).toEqual(['web'])
+  })
+})
+
+describe('what comes first', () => {
+  it('names a known-exploited finding before anything else on the badge', () => {
+    const exploited = row({ level: 'danger', kev: 1, kev_ids: ['CVE-2024-3094'], fixable_critical: 2, exposed: true })
+    expect(vulnBadgeText(exploited)).toBe('1 known exploited')
+    expect(vulnBadgeTitle(exploited)).toContain("CVE-2024-3094 on CISA's known-exploited catalogue")
+    expect(vulnBadgeTitle(row({ accepted: 2 }))).toContain('2 accepted, not counted')
+  })
+
+  it('reads EPSS as a probability and a rank', () => {
+    expect(epssText(0.853, 0.996)).toBe('EPSS 85%, top 0.4%')
+    expect(epssText(0.034, 0.9)).toBe('EPSS 3.4%, top 10%')
+    expect(epssText(0.5)).toBe('EPSS 50%')
+  })
+
+  it('says ransomware use on the KEV hover', () => {
+    expect(kevText({ ransomware: true, due: '2024-04-22T00:00:00Z' })).toContain('known to be used in ransomware campaigns')
+    expect(kevText({ ransomware: false })).not.toContain('ransomware')
+  })
+
+  it('sends no expiry for "never" and a date otherwise', () => {
+    const now = new Date('2026-01-01T00:00:00Z')
+    expect(acceptExpiry(0, now)).toBeUndefined()
+    expect(acceptExpiry(30, now)).toBe('2026-01-31T00:00:00.000Z')
   })
 })

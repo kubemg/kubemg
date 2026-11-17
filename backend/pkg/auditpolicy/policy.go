@@ -83,6 +83,9 @@ var alwaysRecorded = map[string]bool{
 	"jit-reject":         true,
 	"jit-revoke":         true,
 	"jit-expire":         true,
+	// Accepting a vulnerability as a risk switches a security signal off.
+	"risk-accept":   true,
+	"risk-withdraw": true,
 }
 
 // Snapshot is one resolved policy. It is replaced wholesale rather than mutated,

@@ -104,7 +104,7 @@ func vulnRowFor(t *testing.T, pass db.VulnSummaryPass, kind, name string) db.Vul
 }
 
 func TestReplicaSetReportsFoldIntoTheirDeploymentAndRetiredOnesAreLeftOut(t *testing.T) {
-	pass, err := summarizeVulnReports(vulnFixture(), time.Now())
+	pass, err := summarizeVulnReports(vulnFixture(), time.Now(), vulnIntel{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestReplicaSetReportsFoldIntoTheirDeploymentAndRetiredOnesAreLeftOut(t *tes
 }
 
 func TestRedIsOnlyAFixableCriticalSomethingOutsideCanReach(t *testing.T) {
-	pass, err := summarizeVulnReports(vulnFixture(), time.Now())
+	pass, err := summarizeVulnReports(vulnFixture(), time.Now(), vulnIntel{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestAnHTTPRouteBackendIsExposureToo(t *testing.T) {
 			map[string]any{"name": "web", "port": 80},
 		}}}},
 	})
-	pass, err := summarizeVulnReports(f, time.Now())
+	pass, err := summarizeVulnReports(f, time.Now(), vulnIntel{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestAnHTTPRouteBackendIsExposureToo(t *testing.T) {
 func TestARefusedExposureReadIsPartialNotAFailure(t *testing.T) {
 	f := vulnFixture()
 	f.refuse("/api/v1/services?limit=250", http.StatusForbidden)
-	pass, err := summarizeVulnReports(f, time.Now())
+	pass, err := summarizeVulnReports(f, time.Now(), vulnIntel{})
 	if err != nil {
 		t.Fatalf("exposure qualifies the findings, it is not them: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestARefusedExposureReadIsPartialNotAFailure(t *testing.T) {
 func TestARefusedReportListFailsThePass(t *testing.T) {
 	f := vulnFixture()
 	f.refuse(vulnReportsPage, http.StatusForbidden)
-	if _, err := summarizeVulnReports(f, time.Now()); err == nil || !strings.Contains(err.Error(), "forbidden") {
+	if _, err := summarizeVulnReports(f, time.Now(), vulnIntel{}); err == nil || !strings.Contains(err.Error(), "forbidden") {
 		t.Fatalf("expected the cluster's refusal, got %v", err)
 	}
 }
@@ -194,7 +194,7 @@ func TestReportsArePagedSmall(t *testing.T) {
 	f.object(trivyAPI+"vulnerabilityreports?continue=next&limit=20", map[string]any{
 		"items": []any{vulnReport("data", "StatefulSet", "cache", "redis", 0, 1, vulnFinding("CVE-7", "HIGH", "7.2"))},
 	})
-	pass, err := summarizeVulnReports(f, time.Now())
+	pass, err := summarizeVulnReports(f, time.Now(), vulnIntel{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestTheDrawerPutsTheUrgentFirstAndDropsNonWebLinks(t *testing.T) {
 	if err := json.Unmarshal(raw, &report); err != nil {
 		t.Fatal(err)
 	}
-	view := vulnContainer(report)
+	view := vulnContainer(report, vulnDrawerIntel{})
 	var order []string
 	for _, f := range view.Findings {
 		order = append(order, f.ID)

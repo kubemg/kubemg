@@ -299,6 +299,17 @@ type Store interface {
 	VulnWorkloadSummaryFor(ctx context.Context, clusterID uint, namespace, kind, name string) (*db.VulnWorkloadSummary, error)
 	VulnCountsByCluster(ctx context.Context) ([]db.VulnClusterCounts, error)
 	EnabledVulnScanning(ctx context.Context) ([]db.ClusterVulnScanning, error)
+	VulnIntelSources(ctx context.Context) ([]db.VulnIntelSource, error)
+	PutVulnIntelSource(ctx context.Context, kind string, enabled bool, url string) error
+	RecordVulnIntelFailure(ctx context.Context, kind, message string) error
+	ReplaceKEV(ctx context.Context, entries []db.VulnKEVEntry, outcome db.IntelOutcome) error
+	ReplaceEPSS(ctx context.Context, entries []db.VulnEPSSEntry, outcome db.IntelOutcome) error
+	KEVCatalogue(ctx context.Context) (map[string]db.VulnKEVEntry, error)
+	EPSSFor(ctx context.Context, cves []string) (map[string]db.VulnEPSSEntry, error)
+	EnabledVulnIntel(ctx context.Context) ([]db.VulnIntelSource, error)
+	PutVulnAcceptance(ctx context.Context, row *db.VulnAcceptance) error
+	DeleteVulnAcceptance(ctx context.Context, clusterID uint, namespace, kind, name, cve string) error
+	VulnAcceptances(ctx context.Context, clusterID uint) ([]db.VulnAcceptance, error)
 
 	// Workload security posture acknowledgements — see pkg/api/resources_posture.go.
 	// The scan itself is stateless; this is the one thing it cannot recompute.
@@ -757,6 +768,9 @@ func NewRouter(opts Options) *gin.Engine {
 		// see helm_index.go for why that is a lease rather than a timer per
 		// process.
 		go s.startHelmIndexSync(opts.Background)
+		// The KEV and EPSS lists, likewise on one replica — and only those an
+		// administrator switched on; see vuln_intel.go.
+		go s.startVulnIntelSync(opts.Background)
 		// An elevation ends by itself, and the resolver already refuses it the
 		// moment its window passes. This is what closes the rows out and stops the
 		// console counting down something that has finished.
@@ -873,6 +887,13 @@ func NewRouter(opts Options) *gin.Engine {
 		// Per-cluster counts of workloads needing a look, for the sidebar and
 		// the rail — only the clusters the caller may see findings on.
 		v1.GET("/vulnerabilities/clusters", requireAuth, s.listVulnClusterCounts)
+		// The KEV and EPSS lists — server-wide, admin-only including the read:
+		// the switches decide what this server fetches from the internet.
+		intel := v1.Group("/vulnerabilities/intel", requireAuth, requireAdmin)
+		intel.GET("", s.listVulnIntel)
+		intel.PUT("/:kind", s.putVulnIntel)
+		intel.POST("/:kind/sync", s.syncVulnIntelNow)
+		intel.POST("/:kind/upload", s.uploadVulnIntel)
 		clusters.GET("/:id", s.showCluster)
 		clusters.POST("", requireAdmin, s.createCluster)
 		// PATCH edits labels only — see patchCluster for why a connection is not
@@ -1119,6 +1140,9 @@ func NewRouter(opts Options) *gin.Engine {
 			findings := clusters.Group("/:id/vulnerabilities", refusals)
 			findings.GET("", s.showVulnFindings)
 			findings.GET("/workload", s.showVulnWorkload)
+			findings.GET("/acceptances", s.listVulnAcceptances)
+			findings.POST("/acceptances", s.acceptVulnRisk)
+			findings.DELETE("/acceptances", s.withdrawVulnRisk)
 
 			// How many of each kind the caller can see, read at limit=1 so the
 			// cost is flat in the size of the cluster rather than proportional

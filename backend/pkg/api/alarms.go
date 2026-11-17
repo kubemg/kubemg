@@ -703,6 +703,7 @@ var auditVerbVocabulary = append(
 	verbMFAReset, verbMFARemove, verbMFARecoveryUsed,
 	verbCLILogin, verbCLISessionRevoke,
 	verbPasswordExpire,
+	verbRiskAccept, verbRiskWithdraw,
 )
 
 // joinList renders a submitted list into the stored comma-separated form,
