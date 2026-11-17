@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { Bug, Globe, RefreshCw } from 'lucide-react'
+import { Bug, Globe, RefreshCw, ShieldAlert } from 'lucide-react'
 import { errorMessage, fetchVulnFindings } from '../api/client'
 import type { VulnWorkloadSummary } from '../api/types'
 import { AppShell } from '../components/AppShell'
@@ -21,6 +21,8 @@ import {
   Th,
 } from '../components/primitives'
 import { TableSkeleton } from '../components/SkeletonLoader'
+import { VulnIntelSheet } from '../components/VulnIntelSheet'
+import { useAuth } from '../state/auth-context'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { useUrlText } from '../lib/urlState'
 import type { VulnLevelFilter } from '../lib/vulnFindings'
@@ -38,9 +40,10 @@ import { useClusters } from '../state/clusters-context'
  *
  * It opens on what needs attention, not on everything: a real cluster carries
  * hundreds of base-image findings with no fix, and a page that leads with them
- * buries the two that matter. Rust is a fixable critical on something reachable
- * from outside the cluster; amber a fixable critical or high; the rest is a
- * number, one toggle away.
+ * buries the two that matter. Rust is a known-exploited vulnerability (CISA's
+ * KEV), or a fixable critical on something reachable from outside the cluster;
+ * amber a fixable critical or high; the rest is a number, one toggle away.
+ * Accepted findings are out of every count.
  */
 export function Vulnerabilities() {
   const params = useParams()
@@ -56,6 +59,9 @@ export function Vulnerabilities() {
   const filter: VulnLevelFilter = filterParam === 'all' ? 'all' : 'attention'
   const [search, setSearch] = useUrlText('q')
   const [detail, setDetail] = useState<DetailTarget | null>(null)
+  const [intelOpen, setIntelOpen] = useState(false)
+  const { user } = useAuth()
+  const admin = user?.role === 'admin'
 
   const data = state.data
   const rows = useMemo(() => filterVulnRows(data?.workloads ?? [], filter, search), [data, filter, search])
@@ -81,10 +87,18 @@ export function Vulnerabilities() {
       title="Vulnerabilities"
       fullWidth
       actions={
-        <Button onClick={() => void state.refresh()} disabled={loading}>
-          <RefreshCw aria-hidden="true" className={`size-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <>
+          {admin ? (
+            <Button onClick={() => setIntelOpen(true)}>
+              <ShieldAlert aria-hidden="true" className="size-4" />
+              Exploit intelligence
+            </Button>
+          ) : null}
+          <Button onClick={() => void state.refresh()} disabled={loading}>
+            <RefreshCw aria-hidden="true" className={`size-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </>
       }
     >
       <div className="flex min-w-0 flex-col gap-4">
@@ -127,11 +141,29 @@ export function Vulnerabilities() {
               </Notice>
             ) : null}
 
+            {data.kev_known === false ? (
+              <Notice tone="info">
+                No known-exploited list is in hand, so nothing here is marked as being exploited in the wild - which is
+                not the same as nothing being exploited.{' '}
+                {admin ? (
+                  <button type="button" className="text-accent hover:underline" onClick={() => setIntelOpen(true)}>
+                    Turn on CISA KEV
+                  </button>
+                ) : (
+                  'An administrator turns it on.'
+                )}
+              </Notice>
+            ) : null}
+
             {totals ? (
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <Figure label="Exposed, fixable critical" value={totals.danger} tone={totals.danger > 0 ? 'bad' : null} />
+                <Figure label="Needs attention now" value={totals.danger} tone={totals.danger > 0 ? 'bad' : null} />
                 <Figure label="Fix waiting" value={totals.warn} tone={totals.warn > 0 ? 'warn' : null} />
-                <Figure label="Reachable from outside" value={totals.exposed} tone={null} />
+                {data.kev_known ? (
+                  <Figure label="Known exploited" value={totals.kev} tone={totals.kev > 0 ? 'bad' : null} />
+                ) : (
+                  <Figure label="Reachable from outside" value={totals.exposed} tone={null} />
+                )}
                 <Figure label="Workloads scanned" value={totals.workloads} tone={null} />
               </div>
             ) : null}
@@ -159,7 +191,7 @@ export function Vulnerabilities() {
               ) : rows.length === 0 ? (
                 <p className="px-5 py-6 text-[13px] text-muted">
                   {filter === 'attention'
-                    ? 'No workload has a fixable critical or high finding.'
+                    ? 'No workload has a known-exploited, or a fixable critical or high, finding.'
                     : 'Nothing matches.'}
                 </p>
               ) : (
@@ -176,6 +208,14 @@ export function Vulnerabilities() {
           target={detail}
           onClose={() => setDetail(null)}
           onOpen={setDetail}
+        />
+      ) : null}
+      {intelOpen ? (
+        <VulnIntelSheet
+          onClose={() => {
+            setIntelOpen(false)
+            void state.refresh()
+          }}
         />
       ) : null}
     </AppShell>

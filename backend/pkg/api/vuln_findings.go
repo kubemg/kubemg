@@ -43,7 +43,9 @@ import (
  *   - warn:   a critical or high finding that has a fix;
  *   - none:   everything else — still counted, shown as numbers, never coloured.
  *
- * KEV-listed findings join danger, and accepted risk leaves it, in PR 3.
+ * A finding on CISA's Known Exploited Vulnerabilities catalogue is danger on
+ * its own, whatever its severity, fix or exposure: somebody is using it. An
+ * accepted finding counts towards none of it.
  */
 
 const (
@@ -359,7 +361,7 @@ func fixable(finding trivyFinding) bool { return strings.TrimSpace(finding.Fixed
 // vulnLevel is the red-fatigue rule.
 func vulnLevel(row db.VulnWorkloadSummary) string {
 	switch {
-	case row.FixableCritical > 0 && row.Exposed:
+	case row.KEV > 0, row.FixableCritical > 0 && row.Exposed:
 		return db.VulnLevelDanger
 	case row.FixableCritical+row.FixableHigh > 0:
 		return db.VulnLevelWarn
@@ -377,7 +379,7 @@ func vulnLevel(row db.VulnWorkloadSummary) string {
  * has moved past: its image is not running, so its report is not counted —
  * "where are we running it" is the question.
  */
-func summarizeVulnReports(read trafficReader, now time.Time) (db.VulnSummaryPass, error) {
+func summarizeVulnReports(read trafficReader, now time.Time, intel vulnIntel) (db.VulnSummaryPass, error) {
 	reports, truncated, err := readVulnReports(read)
 	if err != nil {
 		return db.VulnSummaryPass{}, err
@@ -388,6 +390,7 @@ func summarizeVulnReports(read trafficReader, now time.Time) (db.VulnSummaryPass
 	}
 
 	rows := map[vulnWorkloadKey]*db.VulnWorkloadSummary{}
+	accepted := map[vulnWorkloadKey]map[string]bool{}
 	var order []vulnWorkloadKey
 	retired := 0
 	for _, report := range reports {
@@ -412,9 +415,10 @@ func summarizeVulnReports(read trafficReader, now time.Time) (db.VulnSummaryPass
 		if !ok {
 			row = &db.VulnWorkloadSummary{
 				Namespace: key.namespace, Kind: key.kind, Name: key.name,
-				Exposed: exposed[key], Images: []string{}, Reports: []string{},
+				Exposed: exposed[key], Images: []string{}, Reports: []string{}, KEVIDs: []string{},
 			}
 			rows[key] = row
+			accepted[key] = map[string]bool{}
 			order = append(order, key)
 		}
 		summary := report.Report.Summary
@@ -424,6 +428,28 @@ func summarizeVulnReports(read trafficReader, now time.Time) (db.VulnSummaryPass
 		row.Low += summary.LowCount
 		row.Unknown += summary.UnknownCount
 		for _, finding := range report.Report.Vulnerabilities {
+			id := strings.ToUpper(strings.TrimSpace(finding.VulnerabilityID))
+			if intel.accepts(key, id) {
+				// Out of every count, not just the coloured ones: the numbers
+				// beside a workload are what is still open.
+				accepted[key][id] = true
+				switch strings.ToUpper(finding.Severity) {
+				case "CRITICAL":
+					row.Critical--
+				case "HIGH":
+					row.High--
+				case "MEDIUM":
+					row.Medium--
+				case "LOW":
+					row.Low--
+				default:
+					row.Unknown--
+				}
+				continue
+			}
+			if intel.exploited(id) && !containsString(row.KEVIDs, id) {
+				row.KEVIDs = append(row.KEVIDs, id)
+			}
 			if !fixable(finding) {
 				continue
 			}
@@ -444,10 +470,21 @@ func summarizeVulnReports(read trafficReader, now time.Time) (db.VulnSummaryPass
 		}
 	}
 
-	pass := db.VulnSummaryPass{At: now, Truncated: truncated, Rows: make([]db.VulnWorkloadSummary, 0, len(order))}
+	pass := db.VulnSummaryPass{At: now, Truncated: truncated, KEVKnown: intel.kevKnown(),
+		Rows: make([]db.VulnWorkloadSummary, 0, len(order))}
 	levels := map[string]int{}
+	exploitedWorkloads, acceptedTotal := 0, 0
 	for _, key := range order {
 		row := rows[key]
+		row.Critical, row.High = max(row.Critical, 0), max(row.High, 0)
+		row.Medium, row.Low, row.Unknown = max(row.Medium, 0), max(row.Low, 0), max(row.Unknown, 0)
+		sort.Strings(row.KEVIDs)
+		row.KEV = len(row.KEVIDs)
+		row.Accepted = len(accepted[key])
+		acceptedTotal += row.Accepted
+		if row.KEV > 0 {
+			exploitedWorkloads++
+		}
 		row.Level = vulnLevel(*row)
 		levels[row.Level]++
 		pass.Rows = append(pass.Rows, *row)
@@ -455,6 +492,12 @@ func summarizeVulnReports(read trafficReader, now time.Time) (db.VulnSummaryPass
 
 	message := fmt.Sprintf("Read %d reports covering %d workloads: %d need attention now, %d have a fix waiting.",
 		len(reports), len(pass.Rows), levels[db.VulnLevelDanger], levels[db.VulnLevelWarn])
+	if intel.kevKnown() {
+		message += fmt.Sprintf(" %d run a known-exploited vulnerability.", exploitedWorkloads)
+	}
+	if acceptedTotal > 0 {
+		message += fmt.Sprintf(" %d accepted findings are not counted.", acceptedTotal)
+	}
 	if truncated {
 		message += fmt.Sprintf(" Stopped at %d reports; the rest are not summarised.", maxVulnReports)
 	}
@@ -487,13 +530,28 @@ func (s *server) summarizeVulnCluster(ctx context.Context, cluster *db.Cluster) 
 		_ = s.store.RecordVulnSummaryFailure(ctx, cluster.ID, err.Error())
 		return err
 	}
-	pass, err := summarizeVulnReports(vulnServiceReader{s: s, ctx: ctx, cluster: cluster}, time.Now().UTC())
+	now := time.Now().UTC()
+	intel, err := s.loadVulnIntel(ctx, cluster.ID, now)
+	if err != nil {
+		// Without the acceptances, accepted findings would come back red and
+		// page somebody; the last good summary is the better answer.
+		_ = s.store.RecordVulnSummaryFailure(ctx, cluster.ID, "The last pass could not read the accepted risks: "+err.Error())
+		return err
+	}
+	previous, err := s.vulnKEVBaseline(ctx, cluster.ID)
+	if err != nil {
+		return err
+	}
+	pass, err := summarizeVulnReports(vulnServiceReader{s: s, ctx: ctx, cluster: cluster}, now, intel)
 	if err != nil {
 		_ = s.store.RecordVulnSummaryFailure(ctx, cluster.ID, "The last read failed: "+err.Error())
 		return err
 	}
 	if err := s.store.ReplaceVulnSummaries(ctx, cluster.ID, pass); err != nil {
 		return err
+	}
+	for _, signal := range vulnKEVSignals(cluster, previous, pass) {
+		s.alarms.Observe(signal)
 	}
 	return nil
 }
@@ -554,6 +612,8 @@ type vulnTotals struct {
 	Critical  int `json:"critical"`
 	High      int `json:"high"`
 	Fixable   int `json:"fixable"`
+	KEV       int `json:"kev"`
+	Accepted  int `json:"accepted"`
 }
 
 // showVulnFindings answers the cluster's summary. Not connected, or switched
@@ -598,6 +658,10 @@ func (s *server) showVulnFindings(c *gin.Context) {
 		totals.Critical += summary.Critical
 		totals.High += summary.High
 		totals.Fixable += summary.FixableCritical + summary.FixableHigh
+		totals.Accepted += summary.Accepted
+		if summary.KEV > 0 {
+			totals.KEV++
+		}
 		if summary.Exposed {
 			totals.Exposed++
 		}
@@ -610,6 +674,13 @@ func (s *server) showVulnFindings(c *gin.Context) {
 	}
 	out["workloads"] = summaries
 	out["totals"] = totals
+	// Whether each list is in hand, so a page with no KEV column can say why
+	// rather than look like a cluster with nothing exploited.
+	if sources, err := s.store.VulnIntelSources(ctx); err == nil {
+		for _, source := range sources {
+			out[source.Kind+"_known"] = source.Entries > 0
+		}
+	}
 	c.JSON(http.StatusOK, out)
 }
 
@@ -623,6 +694,24 @@ type vulnFindingView struct {
 	Link      string   `json:"link,omitempty"`
 	Score     *float64 `json:"score,omitempty"`
 	Published string   `json:"published,omitempty"`
+
+	// KEV is set when the finding is on CISA's catalogue: when it was added,
+	// the date CISA asks federal agencies to have fixed it by, and whether it
+	// is known to be used in ransomware campaigns.
+	KEV *vulnKEVView `json:"kev,omitempty"`
+	// EPSS is the probability of exploitation in the next 30 days, and its
+	// percentile, when the score is at least db.EpssKeepThreshold.
+	EPSS           *float64 `json:"epss,omitempty"`
+	EPSSPercentile *float64 `json:"epss_percentile,omitempty"`
+	// Accepted is set when somebody accepted this finding on this workload.
+	Accepted *db.VulnAcceptance `json:"accepted,omitempty"`
+}
+
+type vulnKEVView struct {
+	Added      *time.Time `json:"added,omitempty"`
+	Due        *time.Time `json:"due,omitempty"`
+	Ransomware bool       `json:"ransomware"`
+	Name       string     `json:"name,omitempty"`
 }
 
 type vulnContainerView struct {
@@ -657,17 +746,27 @@ func safeLink(raw string) string {
 	return parsed.String()
 }
 
-// vulnContainer orders a report's findings most urgent first — severity, then
-// whether a fix exists, then score — and keeps the first maxDrawerFindings.
-func vulnContainer(report trivyReport) vulnContainerView {
+// vulnContainer orders a report's findings most urgent first — accepted ones
+// last, then known-exploited, severity, whether a fix exists, the exploit
+// prediction, then score — and keeps the first maxDrawerFindings.
+func vulnContainer(report trivyReport, intel vulnDrawerIntel) vulnContainerView {
 	findings := append([]trivyFinding(nil), report.Report.Vulnerabilities...)
 	sort.SliceStable(findings, func(i, j int) bool {
 		a, b := findings[i], findings[j]
+		if intel.isAccepted(a) != intel.isAccepted(b) {
+			return !intel.isAccepted(a)
+		}
+		if intel.isKEV(a) != intel.isKEV(b) {
+			return intel.isKEV(a)
+		}
 		if rankOf(a.Severity) != rankOf(b.Severity) {
 			return rankOf(a.Severity) < rankOf(b.Severity)
 		}
 		if fixable(a) != fixable(b) {
 			return fixable(a)
+		}
+		if ea, eb := intel.epssOf(a), intel.epssOf(b); ea != eb {
+			return ea > eb
 		}
 		return deref(a.Score, 0) > deref(b.Score, 0)
 	})
@@ -685,12 +784,12 @@ func vulnContainer(report trivyReport) vulnContainerView {
 		if i == maxDrawerFindings {
 			break
 		}
-		out.Findings = append(out.Findings, vulnFindingView{
+		out.Findings = append(out.Findings, intel.decorate(vulnFindingView{
 			ID: finding.VulnerabilityID, Severity: strings.ToUpper(finding.Severity),
 			Package: finding.Resource, Installed: finding.InstalledVersion, Fixed: finding.FixedVersion,
 			Title: finding.Title, Link: safeLink(finding.PrimaryLink), Score: finding.Score,
 			Published: finding.PublishedDate,
-		})
+		}))
 	}
 	return out
 }
@@ -753,7 +852,7 @@ func (s *server) showVulnWorkload(c *gin.Context) {
 	}
 
 	read := vulnServiceReader{s: s, ctx: ctx, cluster: cluster}
-	containers := []vulnContainerView{}
+	reports := []trivyReport{}
 	missing := 0
 	for i, report := range summary.Reports {
 		if i == maxDrawerReports {
@@ -781,9 +880,20 @@ func (s *server) showVulnWorkload(c *gin.Context) {
 			c.JSON(http.StatusBadGateway, gin.H{"error": "the cluster returned an unreadable report"})
 			return
 		}
-		containers = append(containers, vulnContainer(object))
+		reports = append(reports, object)
+	}
+	intel, err := s.loadVulnDrawerIntel(ctx, cluster.ID, vulnWorkloadKey{namespace: namespace, kind: kind, name: name}, reports)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load the exploit intelligence"})
+		return
+	}
+	containers := make([]vulnContainerView, 0, len(reports))
+	for _, report := range reports {
+		containers = append(containers, vulnContainer(report, intel))
 	}
 	c.JSON(http.StatusOK, gin.H{
+		"kev_known":  intel.kevKnown,
+		"epss_known": intel.epssKnown,
 		"connected": true, "enabled": true, "found": true,
 		"summary":       summary,
 		"summarized_at": row.SummarizedAt,

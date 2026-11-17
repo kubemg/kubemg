@@ -57,6 +57,10 @@ type ClusterVulnScanning struct {
 	SummaryMessage string `gorm:"type:text" json:"summary_message,omitempty"`
 	// SummaryTruncated is set when the last pass stopped at the report ceiling.
 	SummaryTruncated bool `gorm:"not null;default:false" json:"summary_truncated"`
+	// KEVWatermark is set once a pass has run with a KEV catalogue in hand.
+	// Only a pass after one fires vulnerability_kev alarms: the first pass
+	// that can see KEV at all is where things stand, not a burst of news.
+	KEVWatermark bool `gorm:"not null;default:false" json:"-"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -151,6 +155,11 @@ func deleteClusterVulnScanning(tx *gorm.DB, clusterID uint) error {
 	}
 	if err := tx.Where("cluster_id = ?", clusterID).Delete(&VulnWorkloadSummary{}).Error; err != nil {
 		return fmt.Errorf("delete vulnerability summaries: %w", err)
+	}
+	// Acceptances outlive a disconnect (they are decisions, not readings) but
+	// not the cluster itself.
+	if err := tx.Where("cluster_id = ?", clusterID).Delete(&VulnAcceptance{}).Error; err != nil {
+		return fmt.Errorf("delete vulnerability acceptances: %w", err)
 	}
 	return nil
 }

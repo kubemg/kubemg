@@ -78,6 +78,9 @@ const (
 	// summarising them. Reports are the largest objects KubeMG reads — every
 	// finding of every image — so one replica reads them, not each.
 	LeaseVulnWatcher = "vuln_watcher"
+	// LeaseVulnIntel covers refreshing the KEV and EPSS lists from the internet:
+	// the Helm index's reason — one fetch per installation, not per replica.
+	LeaseVulnIntel = "vuln_intel"
 )
 
 // Lease is one held claim on a background job.

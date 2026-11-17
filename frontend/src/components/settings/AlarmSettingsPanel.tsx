@@ -431,6 +431,10 @@ function describeRule(rule: AlarmRule, clusters: Cluster[]): string {
     return `drift recorded by ${tools}${apps} on ${scope}`
   }
 
+  if (rule.trigger === 'vulnerability_kev') {
+    return `a workload newly running a known-exploited vulnerability on ${scope}`
+  }
+
   const verbs = rule.verbs || 'any action'
   const outcome = rule.denied_only ? 'refused' : 'audited'
   const status = rule.min_status ? ` at or above HTTP ${rule.min_status}` : ''
@@ -839,7 +843,9 @@ function RuleSheet({
                 ? vocabulary.cluster_events_available
                   ? 'The sync state Argo CD and Flux record, read once a minute per cluster a rule covers. Fires when something goes out of sync, never for drift already there.'
                   : 'This server has no proxy, so there is no tunnel to read GitOps records down. A rule here would never fire.'
-                : 'kubemg’s own audit records - including the refusals no cluster ever sees.'
+                : trigger === 'vulnerability_kev'
+                  ? 'The vulnerability summary, every ten minutes per cluster with alerts on. Fires when a workload starts running a CVE on CISA’s known-exploited catalogue - a new deployment, or CISA adding one the cluster already runs.'
+                  : 'kubemg’s own audit records - including the refusals no cluster ever sees.'
           }
         >
           <Select
@@ -850,6 +856,7 @@ function RuleSheet({
             <option value="cluster_event">Cluster events</option>
             <option value="audit">kubemg audit records</option>
             <option value="gitops_drift">GitOps drift</option>
+            <option value="vulnerability_kev">Known exploited vulnerability</option>
           </Select>
         </Field>
 
@@ -956,6 +963,12 @@ function RuleSheet({
               outside kubemg leaves no record here, and the alarm says so.
             </p>
           </>
+        ) : trigger === 'vulnerability_kev' ? (
+          <p className="text-[12px] leading-snug text-muted">
+            Needs vulnerability alerts on the cluster and a CISA KEV list in hand (Vulnerabilities, Exploit
+            intelligence). The first summary that can see the list is where things stand and fires nothing; an
+            accepted finding never fires.
+          </p>
         ) : (
           <>
             <div className="flex flex-col gap-2">
@@ -1083,6 +1096,8 @@ const AUDIT_VERBS = [
   'cli-login',
   'cli-session-revoke',
   'password-expire',
+  'risk-accept',
+  'risk-withdraw',
 ]
 
 function splitList(raw: string | undefined): string[] {

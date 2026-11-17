@@ -74,6 +74,8 @@ func summary(signal Signal, severity string) string {
 		if signal.Application != "" {
 			fmt.Fprintf(&b, " (%s)", signal.Application)
 		}
+	case SourceVulnerabilityKEV:
+		fmt.Fprintf(&b, "Known exploited vulnerability: %s", orDash(signal.Object))
 	case SourceAudit:
 		verb := signal.Verb
 		if verb == "" {
@@ -148,6 +150,9 @@ func alertName(signal Signal) string {
 	if signal.Source == SourceGitOpsDrift {
 		return "KubeMGGitOpsDrift"
 	}
+	if signal.Source == SourceVulnerabilityKEV {
+		return "KubeMGKnownExploitedVulnerability"
+	}
 	if signal.Source == SourceAudit {
 		if signal.Denied {
 			return "KubeMGActionDenied"
@@ -206,6 +211,9 @@ func (d *Dispatcher) generatorURL(signal Signal) string {
 	}
 	if signal.Source == SourceGitOpsDrift && signal.ClusterID != 0 {
 		return fmt.Sprintf("%s/clusters/%d/gitops", d.origin, signal.ClusterID)
+	}
+	if signal.Source == SourceVulnerabilityKEV && signal.ClusterID != 0 {
+		return fmt.Sprintf("%s/clusters/%d/vulnerabilities", d.origin, signal.ClusterID)
 	}
 	if signal.ClusterID != 0 {
 		return fmt.Sprintf("%s/explore/%d", d.origin, signal.ClusterID)

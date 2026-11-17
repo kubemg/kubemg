@@ -180,6 +180,9 @@ import type {
   VulnClusterCounts,
   VulnFindings,
   VulnWorkloadDetail,
+  VulnAcceptance,
+  VulnIntel,
+  VulnIntelKind,
 } from './types'
 import { completeCapacity } from './capacity'
 import { completeWaste, type ClusterWaste, type CostRates, type WasteSpan } from './waste'
@@ -2312,6 +2315,69 @@ export async function fetchVulnWorkload(
 ): Promise<VulnWorkloadDetail> {
   const { data } = await http.get<VulnWorkloadDetail>(`/clusters/${clusterId}/vulnerabilities/workload`, {
     params: { kind, namespace, name },
+  })
+  return data
+}
+
+export interface VulnAcceptInput {
+  kind: string
+  namespace: string
+  name: string
+  cve: string
+  reason: string
+  expires_at?: string
+}
+
+/** Accept one finding on one workload as a risk. */
+export async function acceptVulnRisk(
+  clusterId: number,
+  input: VulnAcceptInput,
+): Promise<{ acceptance: VulnAcceptance; message: string }> {
+  const { data } = await http.post<{ acceptance: VulnAcceptance; message: string }>(
+    `/clusters/${clusterId}/vulnerabilities/acceptances`,
+    input,
+  )
+  return data
+}
+
+/** Withdraw an accepted risk, so the finding counts again. */
+export async function withdrawVulnRisk(
+  clusterId: number,
+  target: { kind: string; namespace: string; name: string; cve: string },
+): Promise<{ message: string }> {
+  const { data } = await http.delete<{ message: string }>(`/clusters/${clusterId}/vulnerabilities/acceptances`, {
+    params: target,
+  })
+  return data
+}
+
+export async function fetchVulnAcceptances(clusterId: number): Promise<VulnAcceptance[]> {
+  const { data } = await http.get<{ acceptances: VulnAcceptance[] }>(
+    `/clusters/${clusterId}/vulnerabilities/acceptances`,
+  )
+  return data.acceptances
+}
+
+/** The KEV and EPSS lists: admin-only, server-wide. */
+export async function fetchVulnIntel(): Promise<VulnIntel> {
+  const { data } = await http.get<VulnIntel>('/vulnerabilities/intel')
+  return data
+}
+
+export async function putVulnIntel(kind: VulnIntelKind, enabled: boolean, url: string): Promise<VulnIntel> {
+  const { data } = await http.put<VulnIntel>(`/vulnerabilities/intel/${kind}`, { enabled, url })
+  return data
+}
+
+export async function syncVulnIntel(kind: VulnIntelKind): Promise<VulnIntel> {
+  const { data } = await http.post<VulnIntel>(`/vulnerabilities/intel/${kind}/sync`)
+  return data
+}
+
+/** Replace a list from a file - the air-gapped path. Sent as the raw bytes. */
+export async function uploadVulnIntel(kind: VulnIntelKind, file: File): Promise<VulnIntel> {
+  const { data } = await http.post<VulnIntel>(`/vulnerabilities/intel/${kind}/upload`, file, {
+    headers: { 'Content-Type': 'application/octet-stream' },
   })
   return data
 }

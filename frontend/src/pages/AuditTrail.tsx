@@ -92,6 +92,8 @@ const VERBS = [
   'cli-login',
   'cli-session-revoke',
   'password-expire',
+  'risk-accept',
+  'risk-withdraw',
 ]
 
 const MUTATING = new Set(['create', 'update', 'patch', 'delete'])

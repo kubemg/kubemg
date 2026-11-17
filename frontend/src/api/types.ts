@@ -2502,7 +2502,7 @@ export type AlarmChannelKind =
 
 export type AlarmAuthMode = 'none' | 'bearer' | 'basic' | 'key'
 
-export type AlarmTrigger = 'cluster_event' | 'audit' | 'gitops_drift'
+export type AlarmTrigger = 'cluster_event' | 'audit' | 'gitops_drift' | 'vulnerability_kev'
 
 export type AlarmSeverity = 'info' | 'warning' | 'critical'
 
@@ -3609,6 +3609,11 @@ export interface VulnWorkloadSummary {
   unknown: number
   fixable_critical: number
   fixable_high: number
+  /** Distinct findings on CISA's Known Exploited Vulnerabilities catalogue. */
+  kev: number
+  kev_ids: string[]
+  /** Findings accepted as a risk, left out of every other count. */
+  accepted: number
   exposed: boolean
   level: VulnLevel
   images: string[]
@@ -3623,6 +3628,9 @@ export interface VulnTotals {
   critical: number
   high: number
   fixable: number
+  /** Workloads running a known-exploited vulnerability. */
+  kev: number
+  accepted: number
 }
 
 /** A cluster's findings page. Only its audience ever receives one. */
@@ -3635,6 +3643,9 @@ export interface VulnFindings {
   summary_truncated?: boolean
   workloads: VulnWorkloadSummary[]
   totals?: VulnTotals
+  /** Whether a KEV / EPSS list is in hand on this server. */
+  kev_known?: boolean
+  epss_known?: boolean
 }
 
 export interface VulnFinding {
@@ -3647,6 +3658,48 @@ export interface VulnFinding {
   link?: string
   score?: number
   published?: string
+  kev?: { added?: string; due?: string; ransomware: boolean; name?: string }
+  /** Probability of exploitation in the next 30 days (0-1), when at least 1%. */
+  epss?: number
+  epss_percentile?: number
+  accepted?: VulnAcceptance
+}
+
+/** One CVE on one workload that somebody accepted as a risk. */
+export interface VulnAcceptance {
+  id: number
+  cluster_id: number
+  namespace: string
+  kind: string
+  name: string
+  cve: string
+  reason: string
+  expires_at?: string
+  accepted_by: string
+  accepted_by_id: number
+  created_at: string
+  updated_at: string
+  expired?: boolean
+}
+
+export type VulnIntelKind = 'kev' | 'epss'
+
+/** A server-wide exploit-intelligence list and the outcome of its last refresh. */
+export interface VulnIntelSource {
+  kind: VulnIntelKind
+  enabled: boolean
+  url: string
+  status: string
+  message?: string
+  entries: number
+  synced_at?: string
+  origin?: 'sync' | 'upload'
+  version?: string
+}
+
+export interface VulnIntel {
+  sources: VulnIntelSource[]
+  epss_threshold: number
 }
 
 export interface VulnContainer {
@@ -3671,6 +3724,8 @@ export interface VulnWorkloadDetail {
   summarized_at?: string
   containers?: VulnContainer[]
   missing?: number
+  kev_known?: boolean
+  epss_known?: boolean
 }
 
 /** Workloads per level on one cluster, for the sidebar and the rail. */

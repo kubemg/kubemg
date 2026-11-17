@@ -268,7 +268,7 @@ down the tunnel, not a request to kubemg: one console page is up to fifty.
 
 Several background jobs must run on exactly one replica: the alarm watcher, the
 GitOps drift watcher, the Helm index sync, the browser shell reaper, the password
-notices, the vulnerability-report summariser. Each takes a conditional-upsert lease
+notices, the vulnerability-report summariser, the KEV/EPSS sync. Each takes a conditional-upsert lease
 in the database rather than a Postgres advisory lock, so the holder survives a
 connection blip. **A store error while taking the lease means do not run**, not
 run anyway.
@@ -289,6 +289,19 @@ note, never a failed pass. Level: `danger` = fixable critical + exposed, `warn`
 unscoped `cluster-admin` grant) is decided in the handler and answered `404`
 otherwise. `summarizeVulnReports` takes a `trafficReader`, so the whole rule is
 tested over `fakeCluster`.
+
+Priority (`vuln_priority.go`, `vuln_intel.go`, `db/vuln_intel.go`,
+`db/vuln_acceptance.go`): KEV and EPSS are server-wide tables replaced whole by
+a download (behind `db.LeaseVulnIntel`, daily, only sources with `enabled`) or
+an upload that parsed; a failure records `status`/`message` on
+`vuln_intel_sources` and keeps the list. EPSS below `db.EpssKeepThreshold` is
+not stored. `summarizeVulnReports` takes a `vulnIntel` (KEV map, nil = unknown;
+live acceptances): an accepted CVE leaves every count on that workload, a KEV
+CVE is `danger`. The `vulnerability_kev` alarm compares the pass with the
+previous summaries' `kev_ids`, and only when the previous pass also had KEV
+(`ClusterVulnScanning.KEVWatermark`) - so the first list never bursts. A failed
+acceptance read fails the pass (accepted findings would otherwise page); a
+failed KEV read reads as unknown and fires nothing.
 
 The same "fail closed on nothing" rule governs every published snapshot in the
 backend: a failed refresh keeps the previous value. It never empties and never

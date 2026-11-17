@@ -48,3 +48,28 @@ func TestTheUpsertedSwitchHasNoDefaultToFallBackTo(t *testing.T) {
 		t.Fatalf("enabled must not declare a default: %+v", field)
 	}
 }
+
+// The vulnerability-priority stores write by column name too: the upserts and
+// the Updates maps in vuln_intel.go, vuln_acceptance.go and vuln_findings.go.
+func TestVulnPriorityColumnsAreTheOnesTheWritesName(t *testing.T) {
+	for model, columns := range map[any][]string{
+		&VulnIntelSource{}:     {"kind", "enabled", "url", "status", "message", "entries", "synced_at", "origin", "version", "updated_at"},
+		&VulnAcceptance{}:      {"cluster_id", "namespace", "kind", "name", "cve", "reason", "expires_at", "accepted_by", "accepted_id", "updated_at"},
+		&ClusterVulnScanning{}: {"kev_watermark", "summarized_at", "summary_message", "summary_truncated"},
+		&VulnWorkloadSummary{}: {"kev", "kev_ids", "accepted"},
+	} {
+		parsed, err := schemaOf(model)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, column := range columns {
+			if parsed.LookUpField(column) == nil {
+				t.Errorf("no column %q on %s", column, parsed.Table)
+			}
+		}
+	}
+	parsed, _ := schemaOf(&VulnIntelSource{})
+	if field := parsed.LookUpField("enabled"); field == nil || field.HasDefaultValue {
+		t.Fatalf("the intelligence switch must not declare a default: %+v", field)
+	}
+}

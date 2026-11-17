@@ -76,6 +76,10 @@ const (
 	SourceClusterEvent = db.TriggerClusterEvent
 	SourceAudit        = db.TriggerAudit
 	SourceGitOpsDrift  = db.TriggerGitOpsDrift
+	// SourceVulnerabilityKEV is a workload newly running a known-exploited
+	// vulnerability. It has no matchers of its own beyond cluster and
+	// namespace: which CVE is not something a rule should have to guess.
+	SourceVulnerabilityKEV = db.TriggerVulnerabilityKEV
 )
 
 // Signal is one thing that happened, normalised so that a rule can be matched
@@ -608,6 +612,9 @@ func Matches(rule db.AlarmRule, signal Signal) bool {
 				return false
 			}
 		}
+		return true
+
+	case db.TriggerVulnerabilityKEV:
 		return true
 
 	default:
