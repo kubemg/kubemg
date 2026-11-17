@@ -305,3 +305,33 @@ func TestANeverConnectedClusterIsSaidNotEmpty(t *testing.T) {
 		t.Fatalf("got %d (%s)", rec.Code, rec.Body.String())
 	}
 }
+
+func TestKubernetesComponentsAreOneClusterRow(t *testing.T) {
+	f := vulnFixture()
+	report := vulnReport("", "ClusterSbomReport", "6789697bc", "k8s-cluster", 1, 2,
+		vulnFinding("CVE-2025-1974", "CRITICAL", "1.31.6"), vulnFinding("CVE-2024-0002", "HIGH", ""))
+	report["metadata"].(map[string]any)["name"] = "clustersbomreport-6789697bc-k8s-cluster"
+	f.object(trivyAPI+"clustervulnerabilityreports?limit=250", map[string]any{"items": []any{report}})
+
+	pass, err := summarizeVulnReports(f, time.Now(), kevIntel("CVE-2025-1974"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := vulnRowFor(t, pass, vulnKindKubernetes, "k8s-cluster")
+	if row.Namespace != "" || row.Exposed || row.Critical != 1 || row.KEV != 1 || row.Level != db.VulnLevelDanger {
+		t.Fatalf("one cluster row, KEV makes it red, never exposed: %+v", row)
+	}
+	if len(row.Reports) != 1 || row.Reports[0] != "clustersbomreport-6789697bc-k8s-cluster" {
+		t.Fatalf("the report name is kept for the live read: %+v", row.Reports)
+	}
+
+	g := vulnFixture()
+	g.refuse(trivyAPI+"clustervulnerabilityreports?limit=250", http.StatusForbidden)
+	pass, err = summarizeVulnReports(g, time.Now(), vulnIntel{})
+	if err != nil || !strings.Contains(pass.Message, "Kubernetes component reports could not be read") {
+		t.Fatalf("a refused component list is said, not a failed pass: %v %q", err, pass.Message)
+	}
+	if strings.Contains(pass.Message, "Exposure is partial") {
+		t.Fatalf("and it is not an exposure note: %q", pass.Message)
+	}
+}

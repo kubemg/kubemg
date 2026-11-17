@@ -157,6 +157,9 @@ export function AuditTrail() {
   const [verbs, setVerbs] = useUrlList('verb')
   const [status, setStatus] = useUrlText('status')
   const [search, setSearch] = useUrlText('q')
+  // One namespace, exact. Arrives from a link ("access since disclosure" on a
+  // vulnerability) more often than it is typed, so it shows as a chip to drop.
+  const [namespace, setNamespace] = useUrlText('namespace')
   // `?failed=true` is also how the fleet's refusals figure opens this page on
   // the rows it counted; the window rides the console's own `range` parameter.
   const [failedOnly, setFailedOnly] = useUrlFlag('failed')
@@ -190,6 +193,7 @@ export function AuditTrail() {
       verb: verbs.length > 0 ? verbs : undefined,
       status: status ? Number(status) : undefined,
       q: search.trim() || undefined,
+      namespace: namespace.trim() || undefined,
       failed: failedOnly || undefined,
       streaming: streamsOnly || undefined,
       // An explicit boundary beats the preset on the server too, so sending both
@@ -201,7 +205,7 @@ export function AuditTrail() {
       limit: PAGE_SIZE,
       offset,
     }),
-    [clusterId, userId, verbs, status, search, failedOnly, streamsOnly, from, to, range, offset],
+    [clusterId, userId, verbs, status, search, namespace, failedOnly, streamsOnly, from, to, range, offset],
   )
 
   const load = useCallback(async () => {
@@ -445,6 +449,13 @@ export function AuditTrail() {
             >
               Sessions
             </Chip>
+            {namespace ? (
+              <Chip active onClick={() => narrow(() => setNamespace(''))}>
+                <span className="font-data">namespace {namespace}</span>
+                <span aria-hidden="true">×</span>
+                <span className="sr-only">Remove the namespace filter</span>
+              </Chip>
+            ) : null}
 
             <span className="ml-auto text-[13px] text-muted">
               {total} {total === 1 ? 'record' : 'records'}

@@ -14,6 +14,7 @@ import {
   OBJECT_NAME,
   Pill,
   Row,
+  Sheet,
   SearchInput,
   Segmented,
   Table,
@@ -26,7 +27,16 @@ import { useAuth } from '../state/auth-context'
 import { queryKey, useCachedQuery } from '../lib/query'
 import { useUrlText } from '../lib/urlState'
 import type { VulnLevelFilter } from '../lib/vulnFindings'
-import { filterVulnRows, mayAskForVulns, vulnBadgeText, vulnBadgeTitle, vulnResourceKey, vulnTone } from '../lib/vulnFindings'
+import {
+  filterVulnRows,
+  isKubernetesRow,
+  mayAskForVulns,
+  vulnBadgeText,
+  vulnBadgeTitle,
+  vulnResourceKey,
+  vulnTone,
+} from '../lib/vulnFindings'
+import { VulnerabilityPanel } from '../components/VulnerabilityPanel'
 import { useClusters } from '../state/clusters-context'
 
 /**
@@ -43,7 +53,8 @@ import { useClusters } from '../state/clusters-context'
  * buries the two that matter. Rust is a known-exploited vulnerability (CISA's
  * KEV), or a fixable critical on something reachable from outside the cluster;
  * amber a fixable critical or high; the rest is a number, one toggle away.
- * Accepted findings are out of every count.
+ * Accepted findings are out of every count. Kubernetes' own components (the
+ * scanner's cluster report) are one cluster-wide row, opened in a sheet.
  */
 export function Vulnerabilities() {
   const params = useParams()
@@ -60,6 +71,7 @@ export function Vulnerabilities() {
   const [search, setSearch] = useUrlText('q')
   const [detail, setDetail] = useState<DetailTarget | null>(null)
   const [intelOpen, setIntelOpen] = useState(false)
+  const [components, setComponents] = useState<string | null>(null)
   const { user } = useAuth()
   const admin = user?.role === 'admin'
 
@@ -195,7 +207,7 @@ export function Vulnerabilities() {
                     : 'Nothing matches.'}
                 </p>
               ) : (
-                <FindingsTable rows={rows} onOpen={setDetail} />
+                <FindingsTable rows={rows} onOpen={setDetail} onComponents={setComponents} />
               )}
             </div>
           </>
@@ -209,6 +221,11 @@ export function Vulnerabilities() {
           onClose={() => setDetail(null)}
           onOpen={setDetail}
         />
+      ) : null}
+      {components && cluster ? (
+        <Sheet title="Kubernetes components" eyebrow="Vulnerabilities" width="xl" onClose={() => setComponents(null)}>
+          <VulnerabilityPanel cluster={cluster} kind="kubernetes" name={components} namespace="" title="Kubernetes components" />
+        </Sheet>
       ) : null}
       {intelOpen ? (
         <VulnIntelSheet
@@ -235,9 +252,11 @@ function Figure({ label, value, tone }: { label: string; value: number; tone: 'b
 function FindingsTable({
   rows,
   onOpen,
+  onComponents,
 }: {
   rows: VulnWorkloadSummary[]
   onOpen: (target: DetailTarget) => void
+  onComponents: (name: string) => void
 }) {
   return (
     <Table>
@@ -258,7 +277,9 @@ function FindingsTable({
           const tone = vulnTone(row.level)
           const open = key
             ? () => onOpen({ kind: key, label: row.kind, name: row.name, namespace: row.namespace })
-            : undefined
+            : isKubernetesRow(row)
+              ? () => onComponents(row.name)
+              : undefined
           return (
             <Row key={`${row.kind}/${row.namespace}/${row.name}`} onOpen={open}>
               <Td>
@@ -271,7 +292,7 @@ function FindingsTable({
                 )}
                 <span className="text-[12px] text-muted">{row.kind}</span>
               </Td>
-              <Td className="font-data text-[12.5px] text-muted">{row.namespace}</Td>
+              <Td className="font-data text-[12.5px] text-muted">{row.namespace || 'cluster-wide'}</Td>
               <Td>
                 <span className="flex flex-wrap items-center gap-1.5">
                   {tone ? (

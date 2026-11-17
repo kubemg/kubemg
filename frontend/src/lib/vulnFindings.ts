@@ -181,3 +181,29 @@ export function severityTone(severity: string): Tone {
       return 'idle'
   }
 }
+
+/**
+ * "Who could have touched it since it was known": the cluster's audit trail
+ * for this workload's namespace, matching its name, from the day the CVE was
+ * published. `from` is written as the trail's own date-time box writes it, in
+ * local time. Null for a cluster-wide row or a finding with no date.
+ */
+export function disclosureAuditLink(
+  clusterId: number,
+  namespace: string,
+  name: string,
+  published: string | undefined,
+): string | null {
+  if (!namespace || !published) return null
+  const at = new Date(published)
+  if (Number.isNaN(at.getTime())) return null
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const from = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`
+  const query = new URLSearchParams({ namespace, q: name, from })
+  return `/clusters/${clusterId}/audit?${query.toString()}`
+}
+
+/** The summary row Kubernetes' own components are counted on. */
+export function isKubernetesRow(row: Pick<VulnWorkloadSummary, 'kind' | 'namespace'>): boolean {
+  return row.kind === 'Kubernetes' && row.namespace === ''
+}

@@ -118,6 +118,7 @@ It is off by default because a manifest body can hold values as sensitive as a S
 | `limit` / `offset` | Paging, capped at 100 rows per page |
 
 - An explicit `from`/`since` wins over a `range` preset. `range=all` means no lower bound.
+- The console's trail page reads `namespace` from its address too, and shows it as a chip you can remove. **Access since disclosure** on a vulnerability opens the trail that way: see [Vulnerability alerts](../clusters/vulnerability-alerts.md#access-since-disclosure).
 - An unrecognised verb is dropped, not refused, so an old bookmark narrows to nothing instead of erroring.
 
 ### The narrowing rule
