@@ -171,6 +171,10 @@ func (s *server) auditSummary(c *gin.Context) {
 	})
 }
 
+// auditSearchNeedsWindow is the refusal of a search with no start. The console
+// shows it as it stands, so it says what to do in the console's words.
+const auditSearchNeedsWindow = "A search needs a time range. Pick one other than all time, or set a start."
+
 // auditFilterFrom parses the query string, writing the error response itself on
 // anything malformed.
 func auditFilterFrom(c *gin.Context) (db.AuditFilter, bool) {
@@ -267,6 +271,14 @@ func auditFilterFrom(c *gin.Context) (db.AuditFilter, bool) {
 			since := time.Now().UTC().Add(-window)
 			filter.Since = &since
 		}
+	}
+
+	// A search matches fragments of five columns, which no index serves, so it
+	// reads every row in its window. Without a start that window is the whole
+	// trail, however long retention is, so a search has to name one.
+	if filter.Search != "" && filter.Since == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": auditSearchNeedsWindow})
+		return filter, false
 	}
 
 	if raw := c.Query("limit"); raw != "" {
