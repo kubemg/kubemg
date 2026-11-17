@@ -10,7 +10,9 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -47,6 +49,9 @@ func main() {
 	if err := config.ParseTrustedProxies(cfg.TrustedProxies); err != nil {
 		log.Fatalf("refusing to start: %v", err)
 	}
+	if err := config.ParseAgentURL(cfg.AgentURL); err != nil {
+		log.Fatalf("refusing to start: %v", err)
+	}
 	// The metrics listener binds long before the API does, so a metrics address
 	// that collides with the API's wins the port, and the API dies afterwards
 	// with "address already in use" — an error that names neither variable.
@@ -57,6 +62,16 @@ func main() {
 				"on an overlapping interface. Give the metrics listener a port of its own, e.g. 127.0.0.1:9090",
 			cfg.MetricsAddr, cfg.ListenAddr,
 		)
+	}
+	// The agent listener is the same collision a third way round.
+	for name, addr := range map[string]string{"KUBEMG_LISTEN_ADDR": cfg.ListenAddr, "KUBEMG_METRICS_ADDR": cfg.MetricsAddr} {
+		if sameListener(addr, cfg.AgentListenAddr) {
+			log.Fatalf(
+				"refusing to start: KUBEMG_AGENT_LISTEN_ADDR (%s) and %s (%s) bind the same port "+
+					"on an overlapping interface. Give the agent listener a port of its own, e.g. :8444",
+				cfg.AgentListenAddr, name, addr,
+			)
+		}
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	applyMemoryLimit(logger)
@@ -295,6 +310,7 @@ func main() {
 		Bastion:              gateway,
 		Proxy:                proxy,
 		PublicURL:            cfg.PublicURL,
+		AgentURL:             cfg.AgentURL,
 		AgentImage:           cfg.AgentImage,
 		AgentNamespace:       cfg.AgentNamespace,
 		AgentImagePullSecret: cfg.AgentImagePullSecret,
@@ -349,6 +365,21 @@ func main() {
 	// frontend build — the dev stack, where Vite serves the console — has none
 	// embedded, and this is a no-op that says so.
 	webui.Mount(router, logger)
+
+	if cfg.AgentListenAddr != "" {
+		// Refused before either listener starts, for the same reason the main
+		// listener's plaintext bind is: the agent endpoint is the one meant to be
+		// reachable from outside.
+		if !cfg.TLS.Enabled && !isLoopbackAddr(cfg.AgentListenAddr) && !cfg.AllowInsecureBind {
+			log.Fatalf(
+				"refusing to serve the agent endpoint as plaintext HTTP on %s: it is reachable from more than "+
+					"this machine. Set KUBEMG_TLS_ENABLED=true, or KUBEMG_ALLOW_INSECURE=true when a proxy in "+
+					"front terminates TLS",
+				cfg.AgentListenAddr,
+			)
+		}
+		go serveAgentListener(cfg, router.Handler(), tlsMaterial, logger)
+	}
 
 	if cfg.TLS.Enabled {
 		logger.Info("serving https",
@@ -441,6 +472,34 @@ func sealStoredSecrets(ctx context.Context, gdb *gorm.DB, box *secretbox.Box, lo
 			slog.Int("rotated", report.Rotated))
 	}
 	return nil
+}
+
+// serveAgentListener runs the agent listener: the tunnel and the install
+// downloads on a port of their own, so the main listener, and with it the
+// console, sign-in and API, can stay on an internal address. It terminates TLS
+// with the main listener's certificate, which every agent already pins.
+func serveAgentListener(cfg config.Config, router http.Handler, material tlsMaterial, logger *slog.Logger) {
+	server := newHTTPServer(cfg.AgentListenAddr, api.AgentListenerHandler(router))
+	if cfg.TLS.Enabled {
+		logger.Info("serving the agent endpoint over https", slog.String("addr", cfg.AgentListenAddr))
+		if err := server.ListenAndServeTLS(material.certFile, material.keyFile); err != nil {
+			log.Fatalf("agent listener exited: %v", err)
+		}
+		return
+	}
+	logger.Info("serving the agent endpoint over http", slog.String("addr", cfg.AgentListenAddr))
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatalf("agent listener exited: %v", err)
+	}
+}
+
+// urlHost is the host of an address, or empty for none.
+func urlHost(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return parsed.Hostname()
 }
 
 // headerTimeout bounds how long a client may take to send its request headers.
@@ -730,7 +789,13 @@ func resolveTLS(ctx context.Context, cfg config.Config, pairs certs.PairStore, l
 		//
 		// The stored copy is not consulted with self-signing off either: what it
 		// holds is a pair this process minted, which is what that setting forbids.
-		hosts := certs.HostsFor(cfg.PublicURL, cfg.TLS.Hosts)
+		// Agents verify the name they dial, so a separate agent URL's host goes
+		// on the certificate beside the public one.
+		extra := cfg.TLS.Hosts
+		if host := urlHost(cfg.AgentURL); host != "" {
+			extra = append(slices.Clone(extra), host)
+		}
+		hosts := certs.HostsFor(cfg.PublicURL, extra)
 		if !cfg.TLS.SelfSigned {
 			has, err := certs.HasPair(cfg.TLS.CertFile, cfg.TLS.KeyFile)
 			if err != nil {

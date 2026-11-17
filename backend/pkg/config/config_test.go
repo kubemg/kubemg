@@ -123,3 +123,31 @@ func TestTrustedProxies(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadReadsTheAgentEndpoint(t *testing.T) {
+	if cfg := Load(); cfg.AgentURL != "" || cfg.AgentListenAddr != "" {
+		t.Fatalf("expected no agent endpoint by default, got %q on %q", cfg.AgentURL, cfg.AgentListenAddr)
+	}
+	t.Setenv("KUBEMG_AGENT_URL", "https://agents.example.com/")
+	t.Setenv("KUBEMG_AGENT_LISTEN_ADDR", ":8444")
+	cfg := Load()
+	if cfg.AgentURL != "https://agents.example.com" || cfg.AgentListenAddr != ":8444" {
+		t.Fatalf("expected the agent endpoint from env, got %q on %q", cfg.AgentURL, cfg.AgentListenAddr)
+	}
+}
+
+func TestParseAgentURL(t *testing.T) {
+	for raw, ok := range map[string]bool{
+		"":                           true,
+		"https://agents.example.com": true,
+		"http://10.0.0.5:8444":       true,
+		"agents.example.com":         false,
+		"ftp://agents.example.com":   false,
+		"https://":                   false,
+		"://broken":                  false,
+	} {
+		if err := ParseAgentURL(raw); (err == nil) != ok {
+			t.Errorf("ParseAgentURL(%q) = %v, want ok=%t", raw, err, ok)
+		}
+	}
+}

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -97,6 +98,17 @@ type Config struct {
 	// baked into every generated install command, so it has to be the outside
 	// view of the bastion rather than its listen address.
 	PublicURL string
+	// AgentURL is the address agents dial, when it is not PublicURL: clusters
+	// that can reach this server only over the internet, while the console,
+	// sign-in and API stay on an internal address. It is what install packages
+	// carry as bastion-url, and what their download links are rendered on.
+	// Empty, the default, is PublicURL. `KUBEMG_AGENT_URL`.
+	AgentURL string
+	// AgentListenAddr opens a second listener that answers only the agent
+	// tunnel and the install downloads, everything else 404. It is the port to
+	// expose for AgentURL, so the main listener can stay internal. Empty, the
+	// default, opens none. `KUBEMG_AGENT_LISTEN_ADDR`.
+	AgentListenAddr string
 	// AgentImage is the container image installed into target clusters.
 	AgentImage string
 	// AgentNamespace is where the agent is installed on target clusters.
@@ -273,6 +285,8 @@ func Load() Config {
 		),
 		TrustedProxies: envList("KUBEMG_TRUSTED_PROXIES", nil),
 		PublicURL:            strings.TrimRight(env("KUBEMG_PUBLIC_URL", "http://localhost:8080"), "/"),
+		AgentURL:             strings.TrimRight(env("KUBEMG_AGENT_URL", ""), "/"),
+		AgentListenAddr:      env("KUBEMG_AGENT_LISTEN_ADDR", ""),
 		AgentImage:           env("KUBEMG_AGENT_IMAGE", agentpkg.DefaultImage),
 		AgentNamespace:       env("KUBEMG_AGENT_NAMESPACE", agentpkg.DefaultNamespace),
 		AgentImagePullSecret: env("KUBEMG_AGENT_IMAGE_PULL_SECRET", ""),
@@ -345,6 +359,20 @@ func ParseTrustedProxies(entries []string) error {
 		if _, _, err := net.ParseCIDR(entry); err != nil {
 			return fmt.Errorf("KUBEMG_TRUSTED_PROXIES: %q is neither an IP address nor a CIDR", entry)
 		}
+	}
+	return nil
+}
+
+// ParseAgentURL checks KUBEMG_AGENT_URL is an address an agent can dial. It is
+// checked at boot because the value lands verbatim in every install package, and
+// a bad one surfaces only as agents that never connect.
+func ParseAgentURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return fmt.Errorf("KUBEMG_AGENT_URL: %q is not an absolute http:// or https:// address", raw)
 	}
 	return nil
 }

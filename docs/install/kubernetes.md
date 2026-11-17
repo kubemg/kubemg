@@ -211,6 +211,33 @@ cluster.
     in `ingress.annotations`); a 60-second default can end an idle
     `kubectl exec`.
 
+### A separate address for agents
+
+Clusters that can reach kubemg only over the internet (another cloud, an edge
+site behind CGNAT) need the agent endpoint to be public. Everything else can
+stay internal: give agents an address and a port of their own.
+
+```bash
+--set agent.url=https://agents.example.com \
+--set agent.endpoint.enabled=true \
+--set agent.endpoint.service.type=LoadBalancer
+```
+
+- `agent.url` is what install packages carry as `bastion-url`, and what their
+  download links are rendered on. Kubeconfigs and the console stay on
+  `publicURL`.
+- `agent.endpoint.enabled` opens a second listener, on its own `kubemg-agent`
+  Service, that answers only the agent tunnel and the install downloads. Every
+  other path, sign-in, API and kubectl proxy included, is a `404` there. The
+  main Service can then stay `ClusterIP` or internal-only.
+- The agent listener uses the same TLS as the main port: passthrough serves the
+  same certificate, so `agent.url`'s host has to be on it. A certificate the
+  chart mints covers `agent.url` when it is set before the first boot. Later,
+  or with a certificate of your own, add the host to it. In edge mode the
+  listener is plain HTTP and needs a TLS-terminating route of its own.
+- Agents already installed keep the address they were installed with. Re-apply
+  their install package to move them.
+
 ## Values
 
 `helm show values oci://ghcr.io/kubemg/charts/kubemg` prints every value with
@@ -232,6 +259,7 @@ its explanation. The ones most installs touch:
 | `recordings.persistence.*` | on, `20Gi`, `ReadWriteOnce` | The session-recordings volume. `existingClaim` uses one you made. |
 | `service.type` / `.port` | `ClusterIP` / 443 (80 in edge mode) | What exposes the pod. |
 | `ingress.*` | off | See [Exposing it](#exposing-it). |
+| `agent.url` / `agent.endpoint.enabled` | - / `false` | A separate address for agents, and a listener and Service that answer only them. See [A separate address for agents](#a-separate-address-for-agents). |
 | `trustedProxies` | - | IPs or CIDRs whose `X-Forwarded-For` is believed (`KUBEMG_TRUSTED_PROXIES`). Unset, every audit row records the connecting peer - in edge mode, the ingress controller. Set it to the controller's pod range to record the real client. |
 | `metrics.enabled` / `.serviceMonitor.enabled` | off / off | [Prometheus metrics](metrics.md) on their own port, behind their own `ClusterIP` Service - never the one agents reach. |
 | `global.imageRegistry` | - | A mirror for every image; see [below](#mirrored-and-air-gapped-registries). |

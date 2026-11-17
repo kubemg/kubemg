@@ -1,0 +1,118 @@
+suite: the agent endpoint
+templates:
+  - deployment.yaml
+  - agent-service.yaml
+release:
+  name: kubemg
+  namespace: kubemg
+values:
+  - values/base.yaml
+tests:
+  - it: leaves agents on the public URL and opens no second listener by default
+    template: deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_AGENT_URL
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_AGENT_LISTEN_ADDR
+          any: true
+      - lengthEqual:
+          path: spec.template.spec.containers[0].ports
+          count: 1
+
+  - it: renders no agent Service by default
+    template: agent-service.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: hands the server the agent URL
+    template: deployment.yaml
+    set:
+      agent.url: https://agents.example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_AGENT_URL
+            value: https://agents.example.com
+
+  - it: opens the agent listener on its own port
+    template: deployment.yaml
+    set:
+      agent.endpoint.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEMG_AGENT_LISTEN_ADDR
+            value: ":8444"
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            name: agent
+            containerPort: 8444
+
+  - it: publishes the agent listener on a Service of its own, TLS on 443
+    template: agent-service.yaml
+    set:
+      agent.endpoint.enabled: true
+    asserts:
+      - equal:
+          path: metadata.name
+          value: kubemg-agent
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.ports[0].port
+          value: 443
+      - equal:
+          path: spec.ports[0].targetPort
+          value: agent
+      - equal:
+          path: spec.selector["app.kubernetes.io/component"]
+          value: server
+
+  - it: publishes plain HTTP on 80 behind an edge proxy
+    template: agent-service.yaml
+    set:
+      agent.endpoint.enabled: true
+      tls.mode: edge
+    asserts:
+      - equal:
+          path: spec.ports[0].port
+          value: 80
+
+  - it: takes the agent Service's exposure from the values
+    template: agent-service.yaml
+    set:
+      agent.endpoint.enabled: true
+      agent.endpoint.port: 9443
+      agent.endpoint.service.type: LoadBalancer
+      agent.endpoint.service.port: 8443
+      agent.endpoint.service.nodePort: 30443
+      agent.endpoint.service.loadBalancerSourceRanges: [203.0.113.0/24]
+      agent.endpoint.service.annotations:
+        example.com/lb: public
+    asserts:
+      - equal:
+          path: spec.type
+          value: LoadBalancer
+      - equal:
+          path: spec.ports[0].port
+          value: 8443
+      - equal:
+          path: spec.ports[0].nodePort
+          value: 30443
+      - equal:
+          path: spec.loadBalancerSourceRanges
+          value: [203.0.113.0/24]
+      - equal:
+          path: metadata.annotations["example.com/lb"]
+          value: public

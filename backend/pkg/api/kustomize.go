@@ -299,7 +299,7 @@ func (s *server) installTarget(c *gin.Context) (agentpkg.Options, *db.Cluster, b
 func (s *server) agentOptions(ctx context.Context, token string) agentpkg.Options {
 	settings := s.settings(ctx)
 	return agentpkg.Options{
-		BastionURL:   settings.PublicURL,
+		BastionURL:   s.agentAddress(settings),
 		ClusterToken: token,
 		Namespace:    settings.AgentNamespace,
 		Image:        settings.AgentImage,
@@ -311,6 +311,18 @@ func (s *server) agentOptions(ctx context.Context, token string) agentpkg.Option
 	}
 }
 
+// installURL is rendered on the agent's address rather than the console's: the
+// download is fetched from where the cluster is, which is the side that may
+// reach this server only through the agent endpoint.
 func (s *server) installURL(ctx context.Context, ticket, file string) string {
-	return fmt.Sprintf("%s/install/%s/%s", s.settings(ctx).PublicURL, ticket, file)
+	return fmt.Sprintf("%s/install/%s/%s", s.agentAddress(s.settings(ctx)), ticket, file)
+}
+
+// agentAddress is where agents reach this server: the configured agent URL, or
+// the effective public URL when none is set.
+func (s *server) agentAddress(settings runtimeSettings) string {
+	if s.agentURL != "" {
+		return s.agentURL
+	}
+	return settings.PublicURL
 }
