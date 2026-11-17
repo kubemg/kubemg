@@ -303,6 +303,11 @@ previous summaries' `kev_ids`, and only when the previous pass also had KEV
 acceptance read fails the pass (accepted findings would otherwise page); a
 failed KEV read reads as unknown and fires nothing.
 
+The pass also reads `clustervulnerabilityreports` (optional: 404 = none, a
+refusal is a sentence in the message, not an exposure note) into one row of
+kind `Kubernetes` (`vulnKindKubernetes`), namespace empty, named by the
+report's container label, never exposed.
+
 The same "fail closed on nothing" rule governs every published snapshot in the
 backend: a failed refresh keeps the previous value. It never empties and never
 inverts.

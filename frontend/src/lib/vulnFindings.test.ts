@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { VulnWorkloadSummary } from '../api/types'
 import {
   acceptExpiry,
+  disclosureAuditLink,
+  isKubernetesRow,
   epssText,
   filterVulnRows,
   kevText,
@@ -101,5 +103,28 @@ describe('what comes first', () => {
     const now = new Date('2026-01-01T00:00:00Z')
     expect(acceptExpiry(0, now)).toBeUndefined()
     expect(acceptExpiry(30, now)).toBe('2026-01-31T00:00:00.000Z')
+  })
+})
+
+describe('access since disclosure', () => {
+  it('links the namespace, the name and the publish date, in the trail\'s local form', () => {
+    const published = new Date(2024, 2, 29, 17, 15).toISOString()
+    const link = disclosureAuditLink(4, 'shop', 'web', published)!
+    const url = new URL(link, 'https://kubemg.example')
+    expect(url.pathname).toBe('/clusters/4/audit')
+    expect(url.searchParams.get('namespace')).toBe('shop')
+    expect(url.searchParams.get('q')).toBe('web')
+    expect(url.searchParams.get('from')).toBe('2024-03-29T17:15')
+  })
+
+  it('offers nothing for a cluster-wide row or a finding with no date', () => {
+    expect(disclosureAuditLink(4, '', 'k8s-cluster', '2024-03-29T00:00:00Z')).toBeNull()
+    expect(disclosureAuditLink(4, 'shop', 'web', undefined)).toBeNull()
+    expect(disclosureAuditLink(4, 'shop', 'web', 'not a date')).toBeNull()
+  })
+
+  it('knows the Kubernetes row', () => {
+    expect(isKubernetesRow(row({ kind: 'Kubernetes', namespace: '' }))).toBe(true)
+    expect(isKubernetesRow(row({}))).toBe(false)
   })
 })

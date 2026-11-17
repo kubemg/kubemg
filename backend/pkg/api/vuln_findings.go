@@ -72,6 +72,10 @@ const (
 	maxDrawerFindings = 50
 )
 
+// vulnKindKubernetes is the row Kubernetes' own components are summarised on:
+// cluster-scoped, no namespace, never "exposed" — it is the cluster.
+const vulnKindKubernetes = "Kubernetes"
+
 // Trivy's labels on a report, naming what it scanned.
 const (
 	trivyLabelKind      = "trivy-operator.resource.kind"
@@ -392,6 +396,67 @@ func summarizeVulnReports(read trafficReader, now time.Time, intel vulnIntel) (d
 	rows := map[vulnWorkloadKey]*db.VulnWorkloadSummary{}
 	accepted := map[vulnWorkloadKey]map[string]bool{}
 	var order []vulnWorkloadKey
+	// add folds one report into its row.
+	add := func(key vulnWorkloadKey, report trivyReport) {
+	row, ok := rows[key]
+	if !ok {
+		row = &db.VulnWorkloadSummary{
+			Namespace: key.namespace, Kind: key.kind, Name: key.name,
+			Exposed: exposed[key], Images: []string{}, Reports: []string{}, KEVIDs: []string{},
+		}
+		rows[key] = row
+		accepted[key] = map[string]bool{}
+		order = append(order, key)
+	}
+	summary := report.Report.Summary
+	row.Critical += summary.CriticalCount
+	row.High += summary.HighCount
+	row.Medium += summary.MediumCount
+	row.Low += summary.LowCount
+	row.Unknown += summary.UnknownCount
+	for _, finding := range report.Report.Vulnerabilities {
+		id := strings.ToUpper(strings.TrimSpace(finding.VulnerabilityID))
+		if intel.accepts(key, id) {
+			// Out of every count, not just the coloured ones: the numbers
+			// beside a workload are what is still open.
+			accepted[key][id] = true
+			switch strings.ToUpper(finding.Severity) {
+			case "CRITICAL":
+				row.Critical--
+			case "HIGH":
+				row.High--
+			case "MEDIUM":
+				row.Medium--
+			case "LOW":
+				row.Low--
+			default:
+				row.Unknown--
+			}
+			continue
+		}
+		if intel.exploited(id) && !containsString(row.KEVIDs, id) {
+			row.KEVIDs = append(row.KEVIDs, id)
+		}
+		if !fixable(finding) {
+			continue
+		}
+		switch strings.ToUpper(finding.Severity) {
+		case "CRITICAL":
+			row.FixableCritical++
+		case "HIGH":
+			row.FixableHigh++
+		}
+	}
+	if image := report.image(); image != "" && !containsString(row.Images, image) {
+		row.Images = append(row.Images, image)
+	}
+	row.Reports = append(row.Reports, report.Metadata.Name)
+	if at := report.Report.UpdateTimestamp; at != nil && (row.ScannedAt == nil || at.After(*row.ScannedAt)) {
+		stamp := at.UTC()
+		row.ScannedAt = &stamp
+	}
+	}
+
 	retired := 0
 	for _, report := range reports {
 		labels := report.Metadata.Labels
@@ -411,63 +476,18 @@ func summarizeVulnReports(read trafficReader, now time.Time, intel vulnIntel) (d
 			}
 			key.kind, key.name = "Deployment", deployment
 		}
-		row, ok := rows[key]
-		if !ok {
-			row = &db.VulnWorkloadSummary{
-				Namespace: key.namespace, Kind: key.kind, Name: key.name,
-				Exposed: exposed[key], Images: []string{}, Reports: []string{}, KEVIDs: []string{},
-			}
-			rows[key] = row
-			accepted[key] = map[string]bool{}
-			order = append(order, key)
-		}
-		summary := report.Report.Summary
-		row.Critical += summary.CriticalCount
-		row.High += summary.HighCount
-		row.Medium += summary.MediumCount
-		row.Low += summary.LowCount
-		row.Unknown += summary.UnknownCount
-		for _, finding := range report.Report.Vulnerabilities {
-			id := strings.ToUpper(strings.TrimSpace(finding.VulnerabilityID))
-			if intel.accepts(key, id) {
-				// Out of every count, not just the coloured ones: the numbers
-				// beside a workload are what is still open.
-				accepted[key][id] = true
-				switch strings.ToUpper(finding.Severity) {
-				case "CRITICAL":
-					row.Critical--
-				case "HIGH":
-					row.High--
-				case "MEDIUM":
-					row.Medium--
-				case "LOW":
-					row.Low--
-				default:
-					row.Unknown--
-				}
-				continue
-			}
-			if intel.exploited(id) && !containsString(row.KEVIDs, id) {
-				row.KEVIDs = append(row.KEVIDs, id)
-			}
-			if !fixable(finding) {
-				continue
-			}
-			switch strings.ToUpper(finding.Severity) {
-			case "CRITICAL":
-				row.FixableCritical++
-			case "HIGH":
-				row.FixableHigh++
-			}
-		}
-		if image := report.image(); image != "" && !containsString(row.Images, image) {
-			row.Images = append(row.Images, image)
-		}
-		row.Reports = append(row.Reports, report.Metadata.Name)
-		if at := report.Report.UpdateTimestamp; at != nil && (row.ScannedAt == nil || at.After(*row.ScannedAt)) {
-			stamp := at.UTC()
-			row.ScannedAt = &stamp
-		}
+		add(key, report)
+	}
+
+	// Kubernetes' own components — the API server, kubelet, kube-proxy at the
+	// cluster's version — reported once for the cluster. Optional: a scanner
+	// without the kind, or a refusal, is said, never a failed pass.
+	clusterReports, clusterNote, err := readVulnContext[trivyReport](read, trivyAPI+"clustervulnerabilityreports", "Kubernetes component reports")
+	if err != nil {
+		return db.VulnSummaryPass{}, err
+	}
+	for _, report := range clusterReports {
+		add(vulnWorkloadKey{kind: vulnKindKubernetes, name: cmpOr(report.Metadata.Labels[trivyLabelContainer], report.Metadata.Name)}, report)
 	}
 
 	pass := db.VulnSummaryPass{At: now, Truncated: truncated, KEVKnown: intel.kevKnown(),
@@ -503,6 +523,9 @@ func summarizeVulnReports(read trafficReader, now time.Time, intel vulnIntel) (d
 	}
 	if retired > 0 {
 		message += fmt.Sprintf(" %d reports on ReplicaSets with no running pods were left out.", retired)
+	}
+	if clusterNote != "" {
+		message += " " + strings.ToUpper(clusterNote[:1]) + clusterNote[1:] + "."
 	}
 	if len(notes) > 0 {
 		message += " Exposure is partial: " + strings.Join(notes, "; ") + "."
@@ -826,19 +849,25 @@ func (s *server) showVulnWorkload(c *gin.Context) {
 	if !ok {
 		return
 	}
-	kind, known := vulnWorkloadKinds[strings.TrimSpace(c.Query("kind"))]
+	resource := strings.TrimSpace(c.Query("kind"))
+	kind, known := vulnWorkloadKinds[resource]
 	namespace := strings.TrimSpace(c.Query("namespace"))
 	name := strings.TrimSpace(c.Query("name"))
+	// Kubernetes' own components are one cluster-scoped row: no namespace.
+	components := resource == "kubernetes"
+	if components {
+		kind, known, namespace = vulnKindKubernetes, true, ""
+	}
 	if !known {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "scanner reports belong to workloads: kind must be one of " +
-			"deployments, statefulsets, daemonsets, cronjobs, jobs, pods or replicasets"})
+			"deployments, statefulsets, daemonsets, cronjobs, jobs, pods, replicasets or kubernetes"})
 		return
 	}
-	if namespace == "" || name == "" {
+	if name == "" || (!components && namespace == "") {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "namespace and name are required"})
 		return
 	}
-	if !alarmObjectName.MatchString(namespace) {
+	if !components && !alarmObjectName.MatchString(namespace) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid namespace"})
 		return
 	}
@@ -874,6 +903,9 @@ func (s *server) showVulnWorkload(c *gin.Context) {
 			continue
 		}
 		path := trivyAPI + "namespaces/" + namespace + "/vulnerabilityreports/" + report
+		if components {
+			path = trivyAPI + "clustervulnerabilityreports/" + report
+		}
 		status, body, err := read.get(path)
 		if err != nil {
 			writeGitopsReadError(c, err)

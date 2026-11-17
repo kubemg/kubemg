@@ -271,11 +271,16 @@ func vulnAcceptTarget(c *gin.Context, resource, namespace, name, cve string) (vu
 	kind, known := vulnWorkloadKinds[strings.TrimSpace(resource)]
 	namespace, name = strings.TrimSpace(namespace), strings.TrimSpace(name)
 	cve = strings.ToUpper(strings.TrimSpace(cve))
+	// Kubernetes' own components: one cluster-scoped row, no namespace.
+	components := strings.TrimSpace(resource) == "kubernetes"
+	if components {
+		kind, known, namespace = vulnKindKubernetes, true, ""
+	}
 	switch {
 	case !known:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "an accepted risk belongs to a workload: kind must be one of " +
-			"deployments, statefulsets, daemonsets, cronjobs, jobs, pods or replicasets"})
-	case !alarmObjectName.MatchString(namespace) || !alarmObjectName.MatchString(name):
+			"deployments, statefulsets, daemonsets, cronjobs, jobs, pods, replicasets or kubernetes"})
+	case (!components && !alarmObjectName.MatchString(namespace)) || !alarmObjectName.MatchString(name):
 		c.JSON(http.StatusBadRequest, gin.H{"error": "namespace and name must be Kubernetes names"})
 	case !vulnIDPattern.MatchString(cve):
 		c.JSON(http.StatusBadRequest, gin.H{"error": "cve must be a vulnerability identifier, such as CVE-2024-3094"})

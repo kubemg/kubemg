@@ -41,8 +41,8 @@ import { ConditionTiles, ObjectGlance } from './ObjectGlance'
 import { DebugContainerSheet } from './DebugContainerSheet'
 import { AlarmComposer } from './AlarmComposer'
 import type { AlarmTarget } from './AlarmComposer'
-import { VulnerabilityPanel } from './VulnerabilityPanel'
-import { showsVulnerabilities } from '../lib/vulnFindings'
+import { KubernetesComponentsPanel, VulnerabilityPanel } from './VulnerabilityPanel'
+import { mayAskForVulns, showsVulnerabilities } from '../lib/vulnFindings'
 import { GitopsObjectPanel } from './GitopsObjectPanel'
 import { ObjectAlertsPanel } from './ObjectAlertsPanel'
 import { hasAlerting, supportsAlarms } from '../lib/alerting'
@@ -896,6 +896,10 @@ function OverviewTab({
       {showsVulnerabilities(cluster, kind, namespace) && namespace ? (
         <VulnerabilityPanel cluster={cluster} kind={kind} name={name} namespace={namespace} />
       ) : null}
+      {/* A node runs the cluster's kubelet and kube-proxy: their findings,
+          once for the cluster, on every node. Node OS packages are not
+          something upstream Trivy Operator reports. */}
+      {kind === 'nodes' && mayAskForVulns(cluster) ? <KubernetesComponentsPanel cluster={cluster} /> : null}
 
       {/* A ConfigMap or a Secret is opened for what it holds, not for its
           metadata — so that leads, one key at a time. */}
