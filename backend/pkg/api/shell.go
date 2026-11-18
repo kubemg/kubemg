@@ -165,7 +165,8 @@ func shellRunner(clusterID uint) (*db.User, db.UserClusterAccess) {
 
 // shellRunnerGroups is what the API server sees beside the runner's username.
 func shellRunnerGroups() []string {
-	return bastion.ImpersonationGroups(db.K8sRoleView)
+	_, grant := shellRunner(0)
+	return bastion.ImpersonationGroups(grant, nil)
 }
 
 // shellCluster resolves the caller, their cluster and the policy, refusing the
