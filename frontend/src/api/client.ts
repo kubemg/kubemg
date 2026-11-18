@@ -15,6 +15,7 @@ import type {
   SilenceDuration,
   AccessReviewResult,
   AgentInstall,
+  AgentTeamGroups,
   AgentTokenRotation,
   AlarmChannel,
   AlarmChannelInput,
@@ -678,6 +679,19 @@ export async function deleteCluster(id: number): Promise<void> {
     call mints a fresh single-use download URL; none rotates the credential. */
 export async function fetchAgentInstall(clusterId: number): Promise<AgentInstall> {
   const { data } = await http.get<AgentInstall>(`/clusters/${clusterId}/kustomize`)
+  return data
+}
+
+/** confirmAgentTeamGroups records that the agent package naming these team
+    groups is applied on the cluster, so KubeMG starts asserting them. */
+export async function confirmAgentTeamGroups(
+  clusterId: number,
+  teamGroups: string[],
+): Promise<AgentTeamGroups> {
+  const { data } = await http.post<AgentTeamGroups>(
+    `/clusters/${clusterId}/agent-team-groups/confirm`,
+    { team_groups: teamGroups },
+  )
   return data
 }
 

@@ -61,7 +61,7 @@ Gating:
 
 ### The identity endpoint
 
-`GET .../resources/access-review/identity` answers "what does my own grant amount to here?" It returns the exact `subject` and `groups` kubemg impersonates for you, plus your `k8s_role` and `namespaces`. Reviewing that identity checks the matrix's promise ("you have `view` on `payments`") against what the cluster's RBAC actually grants.
+`GET .../resources/access-review/identity` answers "what does my own grant amount to here?" It returns the exact `subject` and `groups` kubemg impersonates for you, plus your `k8s_role` and `namespaces`. `groups` includes your [team groups](model.md#team-groups) on this cluster; `withheld_team_groups` lists any that kubemg does not send yet because the cluster's agent has not been re-applied with them, so a review answered now may change after the re-apply. Reviewing that identity checks the matrix's promise ("you have `view` on `payments`") against what the cluster's RBAC actually grants.
 
 ## How this differs from the kubemg permission matrix
 

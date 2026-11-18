@@ -238,6 +238,23 @@ func (s *Store) CreateGroup(ctx context.Context, group *Group) error {
 // DeleteGroup removes a group along with its memberships and cluster grants.
 func (s *Store) DeleteGroup(ctx context.Context, id uint) error {
 	return s.gdb.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var group Group
+		if err := tx.Select("id", "name").First(&group, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("load group: %w", err)
+		}
+		clusterIDs := []uint{}
+		if err := tx.Model(&GroupClusterAccess{}).Where("group_id = ?", id).
+			Pluck("cluster_id", &clusterIDs).Error; err != nil {
+			return fmt.Errorf("group cluster access: %w", err)
+		}
+		for _, clusterID := range clusterIDs {
+			if err := forgetAgentTeamGroup(tx, clusterID, group.Name); err != nil {
+				return err
+			}
+		}
 		res := tx.Delete(&Group{}, id)
 		if res.Error != nil {
 			return fmt.Errorf("delete group: %w", res.Error)
@@ -359,15 +376,51 @@ func (s *Store) RevokeUserAccess(ctx context.Context, userID, clusterID uint) er
 }
 
 // RevokeGroupAccess drops a group's grant on a cluster.
+//
+// The group's team confirmation on that cluster goes with it. The agent package
+// applied there still names the group until the next re-apply, but nothing says
+// the *next* package will: were the confirmation kept, a later grant would be
+// asserted at once against an agent that may no longer allow it, and the
+// cluster would refuse every call its members make. A later grant waits for a
+// fresh confirmation instead.
 func (s *Store) RevokeGroupAccess(ctx context.Context, groupID, clusterID uint) error {
-	res := s.gdb.WithContext(ctx).
-		Where("group_id = ? AND cluster_id = ?", groupID, clusterID).
-		Delete(&GroupClusterAccess{})
-	if res.Error != nil {
-		return fmt.Errorf("revoke group access: %w", res.Error)
+	return s.gdb.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("group_id = ? AND cluster_id = ?", groupID, clusterID).
+			Delete(&GroupClusterAccess{})
+		if res.Error != nil {
+			return fmt.Errorf("revoke group access: %w", res.Error)
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		var group Group
+		if err := tx.Select("id", "name").First(&group, groupID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return fmt.Errorf("load group: %w", err)
+		}
+		return forgetAgentTeamGroup(tx, clusterID, group.Name)
+	})
+}
+
+// forgetAgentTeamGroup drops a group from a cluster's confirmed team groups.
+func forgetAgentTeamGroup(tx *gorm.DB, clusterID uint, name string) error {
+	var cluster Cluster
+	err := tx.Select("id", "agent_team_groups").First(&cluster, clusterID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
 	}
-	if res.RowsAffected == 0 {
-		return ErrNotFound
+	if err != nil {
+		return fmt.Errorf("load cluster team groups: %w", err)
+	}
+	kept := WithoutTeamGroup(cluster.AgentTeamGroups, name)
+	if kept == cluster.AgentTeamGroups {
+		return nil
+	}
+	if err := tx.Model(&Cluster{}).Where("id = ?", clusterID).
+		Update("agent_team_groups", kept).Error; err != nil {
+		return fmt.Errorf("forget agent team group: %w", err)
 	}
 	return nil
 }

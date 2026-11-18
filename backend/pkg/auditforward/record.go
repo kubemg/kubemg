@@ -60,6 +60,9 @@ func encode(ctx context.Context, event bastion.Event) (record, bool) {
 		"status_code":        event.Status,
 		"duration_ms":        event.Duration.Milliseconds(),
 	}
+	if len(event.WithheldTeamGroups) > 0 {
+		fields["withheld_team_groups"] = strings.Join(event.WithheldTeamGroups, ",")
+	}
 	if source := bastion.SourceFrom(ctx).Truncate(); source.Addr != "" || source.UserAgent != "" {
 		fields["source_addr"] = source.Addr
 		fields["user_agent"] = source.UserAgent

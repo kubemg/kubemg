@@ -275,7 +275,8 @@ func (p *Proxy) Handle(c *gin.Context) {
 		Method:             c.Request.Method,
 		Path:               path,
 		ImpersonatedUser:   ImpersonationUser(user),
-		ImpersonatedGroups: ImpersonationGroups(grant.K8sRole),
+		ImpersonatedGroups: ImpersonationGroups(grant, cluster),
+		WithheldTeamGroups: WithheldTeamGroups(grant, cluster),
 	}
 	parsed := ParsePath(path)
 	event.Namespace = parsed.Namespace
@@ -365,7 +366,7 @@ func (p *Proxy) Handle(c *gin.Context) {
 		return
 	}
 
-	header := forwardHeaders(c.Request.Header, user, grant)
+	header := forwardHeaders(c.Request.Header, user, cluster, grant)
 
 	// exec and attach need a live channel in both directions; a watch or a
 	// followed log needs one that stays open. Both are streams, and neither
@@ -480,7 +481,8 @@ func (p *Proxy) CallWithHeader(
 		Resource:           parsed.Resource,
 		Name:               ObjectName(parsed, verb, path, nil),
 		ImpersonatedUser:   ImpersonationUser(user),
-		ImpersonatedGroups: ImpersonationGroups(grant.K8sRole),
+		ImpersonatedGroups: ImpersonationGroups(grant, cluster),
+		WithheldTeamGroups: WithheldTeamGroups(grant, cluster),
 	}
 
 	record := func(status int, err error) {
@@ -540,7 +542,7 @@ func (p *Proxy) CallWithHeader(
 		// the bytes. It is undone here, under maxDecodedBody — see decodeBody.
 		"Accept-Encoding":   {"gzip"},
 		"Impersonate-User":  {ImpersonationUser(user)},
-		"Impersonate-Group": ImpersonationGroups(grant.K8sRole),
+		"Impersonate-Group": ImpersonationGroups(grant, cluster),
 	}
 	if len(body) > 0 {
 		header["Content-Type"] = []string{contentTypeFor(method)}
@@ -625,7 +627,8 @@ func (p *Proxy) Watch(
 		Resource:           parsed.Resource,
 		Name:               ObjectName(parsed, verb, path, nil),
 		ImpersonatedUser:   ImpersonationUser(user),
-		ImpersonatedGroups: ImpersonationGroups(grant.K8sRole),
+		ImpersonatedGroups: ImpersonationGroups(grant, cluster),
+		WithheldTeamGroups: WithheldTeamGroups(grant, cluster),
 	}
 
 	record := func(status int, err error) {
@@ -679,7 +682,7 @@ func (p *Proxy) Watch(
 		Header: map[string][]string{
 			"Accept":            {"application/json"},
 			"Impersonate-User":  {ImpersonationUser(user)},
-			"Impersonate-Group": ImpersonationGroups(grant.K8sRole),
+			"Impersonate-Group": ImpersonationGroups(grant, cluster),
 		},
 	})
 	if err != nil {
@@ -907,20 +910,78 @@ func contentTypeFor(method string) string {
 	return "application/json"
 }
 
-// ImpersonationGroups renders the Kubernetes groups asserted for a grant. The
-// role travels as a group rather than as a local allow/deny check on purpose:
-// the target cluster's RBAC stays the authority on what the role can do.
-func ImpersonationGroups(k8sRole string) []string {
-	if k8sRole == "" {
-		k8sRole = db.K8sRoleView
+// ImpersonationGroups renders the Kubernetes groups asserted for a grant on a
+// cluster. The role travels as a group rather than as a local allow/deny check
+// on purpose: the target cluster's RBAC stays the authority on what the role
+// can do.
+//
+// After the role and GroupAllUsers come the caller's team groups on this
+// cluster — see TeamGroups for which of them. Every header, audit row and
+// identity page reads this one function, so what a cluster is told and what
+// KubeMG says it told it cannot drift apart. A nil cluster asserts no team
+// groups; it is how KubeMG's own fixed identities, which belong to no group,
+// call it.
+func ImpersonationGroups(grant db.UserClusterAccess, cluster *db.Cluster) []string {
+	role := grant.K8sRole
+	if role == "" {
+		role = db.K8sRoleView
 	}
-	return []string{GroupPrefix + k8sRole, GroupAllUsers}
+	asserted, _ := TeamGroups(grant, cluster)
+	return append([]string{GroupPrefix + role, GroupAllUsers}, asserted...)
+}
+
+// TeamGroupPrefix namespaces a KubeMG group asserted as a Kubernetes group, so
+// an operator can bind a Role to `kubemg:g:<team>` once per cluster and manage
+// who is in the team from KubeMG.
+const TeamGroupPrefix = GroupPrefix + "g:"
+
+// TeamGroups splits the grant's team groups on a cluster into those asserted
+// and those withheld, both as Kubernetes group names, sorted.
+//
+// A team group is asserted only on an agent cluster, only for a group whose
+// grant on this cluster put it on the grant (AccessForUser), only for a name
+// that is a valid team group name, and only once an administrator confirmed the
+// cluster's agent package allows it. That last condition is what makes it
+// withheld rather than asserted: the agent's ClusterRole names the groups it
+// may impersonate, the API server refuses the whole call when one is not on the
+// list, and a refused call would take the member's base role down with it.
+// Withheld groups are recorded on the audit row and shown on the identity page,
+// so the narrower identity is visible, never silent.
+//
+// A name that is not valid is neither: it can never be asserted, so it is not
+// waiting for anything. Creating such a group is refused; one that predates the
+// rule is flagged where groups are managed.
+func TeamGroups(grant db.UserClusterAccess, cluster *db.Cluster) (asserted, withheld []string) {
+	if cluster == nil || !cluster.UsesAgent() || len(grant.TeamGroups) == 0 {
+		return nil, nil
+	}
+	confirmed := cluster.AgentTeamGroupList()
+	for _, name := range grant.TeamGroups {
+		if !db.ValidTeamGroupName(name) {
+			continue
+		}
+		group := TeamGroupPrefix + name
+		if slices.Contains(confirmed, name) {
+			asserted = append(asserted, group)
+		} else {
+			withheld = append(withheld, group)
+		}
+	}
+	slices.Sort(asserted)
+	slices.Sort(withheld)
+	return slices.Compact(asserted), slices.Compact(withheld)
+}
+
+// WithheldTeamGroups is the withheld half of TeamGroups, for the audit row.
+func WithheldTeamGroups(grant db.UserClusterAccess, cluster *db.Cluster) []string {
+	_, withheld := TeamGroups(grant, cluster)
+	return withheld
 }
 
 // forwardHeaders builds the header set the agent replays. Client-supplied
 // credentials and impersonation headers are dropped first, then KubeMG asserts
 // the identity it decided on.
-func forwardHeaders(src http.Header, user *db.User, grant db.UserClusterAccess) map[string][]string {
+func forwardHeaders(src http.Header, user *db.User, cluster *db.Cluster, grant db.UserClusterAccess) map[string][]string {
 	out := map[string][]string{}
 	for name, values := range src {
 		if slices.ContainsFunc(hopByHopHeaders, func(h string) bool {
@@ -937,7 +998,7 @@ func forwardHeaders(src http.Header, user *db.User, grant db.UserClusterAccess) 
 	}
 
 	out["Impersonate-User"] = []string{ImpersonationUser(user)}
-	out["Impersonate-Group"] = ImpersonationGroups(grant.K8sRole)
+	out["Impersonate-Group"] = ImpersonationGroups(grant, cluster)
 	return out
 }
 

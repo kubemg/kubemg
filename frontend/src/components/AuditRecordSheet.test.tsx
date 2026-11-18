@@ -55,6 +55,26 @@ describe('an audit record, opened', () => {
     expect(screen.getByText('kubemg:edit')).toBeTruthy()
   })
 
+  it('names the team groups a call was sent without, and only when there are some', () => {
+    // A grant whose team the cluster's agent was not yet re-applied with: the
+    // call carried less than the grant says, and the record says which and why.
+    render(
+      <AuditRecordSheet
+        event={record({
+          impersonated_groups: ['kubemg:view', 'kubemg:users'],
+          withheld_team_groups: ['kubemg:g:payments'],
+        })}
+        onClose={() => {}}
+      />,
+    )
+    expect(screen.getByText('Team groups withheld')).toBeTruthy()
+    expect(screen.getByText('kubemg:g:payments')).toBeTruthy()
+    cleanup()
+
+    render(<AuditRecordSheet event={record()} onClose={() => {}} />)
+    expect(screen.queryByText('Team groups withheld')).toBeNull()
+  })
+
   it('says where the call came from', () => {
     render(
       <AuditRecordSheet

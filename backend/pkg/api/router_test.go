@@ -80,6 +80,9 @@ type fakeStore struct {
 	vulnEPSS        map[string]db.VulnEPSSEntry
 	vulnAcceptances []db.VulnAcceptance
 	costRatesErr error
+	// teamGroupsErr makes the groups granted a cluster unreadable, for the
+	// fail-closed render and confirmation.
+	teamGroupsErr error
 	// hiddenCRDs is each cluster's sidebar curation: the resources an admin
 	// took off the list, keyed plural.group.
 	hiddenCRDs map[uint][]string
@@ -322,6 +325,11 @@ func (f *fakeStore) AccessForUser(_ context.Context, userID uint) (map[uint]db.U
 				K8sRole:    grant.K8sRole,
 				Namespaces: grant.Namespaces,
 			}
+			// The group's name rides on the grant it came from, as the store
+			// resolves it.
+			if group, ok := f.groups[groupID]; ok {
+				candidate.TeamGroups = []string{group.Name}
+			}
 			if existing, ok := out[clusterID]; ok {
 				out[clusterID] = db.MergeAccess(existing, candidate)
 				continue
@@ -330,6 +338,34 @@ func (f *fakeStore) AccessForUser(_ context.Context, userID uint) (map[uint]db.U
 		}
 	}
 	return out, nil
+}
+
+// TeamGroupsForCluster mirrors the store: the valid names of the groups granted
+// the cluster, sorted. teamGroupsErr makes it unreadable.
+func (f *fakeStore) TeamGroupsForCluster(_ context.Context, clusterID uint) ([]string, error) {
+	if f.teamGroupsErr != nil {
+		return nil, f.teamGroupsErr
+	}
+	out := []string{}
+	for groupID, grants := range f.groupAccess {
+		if _, ok := grants[clusterID]; !ok {
+			continue
+		}
+		if group, ok := f.groups[groupID]; ok && db.ValidTeamGroupName(group.Name) {
+			out = append(out, group.Name)
+		}
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
+func (f *fakeStore) ConfirmAgentTeamGroups(_ context.Context, clusterID uint, names []string) error {
+	cluster, ok := f.clusters[clusterID]
+	if !ok {
+		return db.ErrNotFound
+	}
+	cluster.AgentTeamGroups = db.JoinNamespaces(names)
+	return nil
 }
 
 func (f *fakeStore) Clusters(_ context.Context) ([]db.Cluster, error) {
@@ -606,8 +642,16 @@ func (f *fakeStore) CreateGroup(_ context.Context, group *db.Group) error {
 }
 
 func (f *fakeStore) DeleteGroup(_ context.Context, id uint) error {
-	if _, ok := f.groups[id]; !ok {
+	group, ok := f.groups[id]
+	if !ok {
 		return db.ErrNotFound
+	}
+	// The store forgets the group's team confirmation on every cluster it was
+	// granted, with the grants.
+	for clusterID := range f.groupAccess[id] {
+		if cluster, ok := f.clusters[clusterID]; ok {
+			cluster.AgentTeamGroups = db.WithoutTeamGroup(cluster.AgentTeamGroups, group.Name)
+		}
 	}
 	delete(f.groups, id)
 	delete(f.members, id)
@@ -684,6 +728,11 @@ func (f *fakeStore) RevokeGroupAccess(_ context.Context, groupID, clusterID uint
 		return db.ErrNotFound
 	}
 	delete(f.groupAccess[groupID], clusterID)
+	if group, ok := f.groups[groupID]; ok {
+		if cluster, ok := f.clusters[clusterID]; ok {
+			cluster.AgentTeamGroups = db.WithoutTeamGroup(cluster.AgentTeamGroups, group.Name)
+		}
+	}
 	return nil
 }
 

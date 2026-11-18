@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/kubemg/kubemg/backend/pkg/bastion"
 	"github.com/kubemg/kubemg/backend/pkg/db"
 )
 
@@ -17,6 +18,11 @@ type groupResponse struct {
 	Description string `json:"description,omitempty"`
 	MemberIDs   []uint `json:"member_ids"`
 	CreatedAt   string `json:"created_at"`
+	// TeamGroup is the Kubernetes group this group is asserted as on the agent
+	// clusters it is granted, or empty for a name created before team groups
+	// that is not a valid one — the console flags that group, since an operator
+	// binding a Role to its team would otherwise wait for a group never sent.
+	TeamGroup string `json:"team_group"`
 }
 
 func toGroupResponse(g db.GroupSummary) groupResponse {
@@ -30,7 +36,17 @@ func toGroupResponse(g db.GroupSummary) groupResponse {
 		Description: g.Description,
 		MemberIDs:   members,
 		CreatedAt:   g.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		TeamGroup:   teamGroupFor(g.Name),
 	}
+}
+
+// teamGroupFor names the Kubernetes group a KubeMG group is asserted as, or ""
+// when its name can never be asserted.
+func teamGroupFor(name string) string {
+	if !db.ValidTeamGroupName(name) {
+		return ""
+	}
+	return bastion.TeamGroupPrefix + name
 }
 
 type createGroupRequest struct {
@@ -68,6 +84,18 @@ func (s *server) createGroup(c *gin.Context) {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+	// A group's name is also the Kubernetes group it is asserted as on the
+	// clusters it is granted, kubemg:g:<name>, so it is held to the rule that
+	// keeps that inert: no colon to forge another kubemg: segment with, no case
+	// for two teams to differ by alone, nothing the agent's ClusterRole would
+	// have to quote. Groups do not rename, so this is the one write to check.
+	if !db.ValidTeamGroupName(name) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "a group name must be at most 63 lowercase letters, digits and '-', starting and " +
+				"ending with a letter or digit, because clusters see the group as kubemg:g:<name>",
+		})
 		return
 	}
 

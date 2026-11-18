@@ -11,14 +11,110 @@ import (
 )
 
 func TestImpersonationGroupsCarryTheGrant(t *testing.T) {
-	got := ImpersonationGroups(db.K8sRoleEdit)
+	got := ImpersonationGroups(db.UserClusterAccess{K8sRole: db.K8sRoleEdit}, nil)
 	if !slices.Equal(got, []string{"kubemg:edit", "kubemg:users"}) {
 		t.Fatalf("unexpected groups: %v", got)
 	}
 
 	// An empty grant must never fall through to something permissive.
-	if got := ImpersonationGroups(""); got[0] != "kubemg:view" {
+	if got := ImpersonationGroups(db.UserClusterAccess{}, nil); got[0] != "kubemg:view" {
 		t.Fatalf("an empty role should default to view, got %v", got)
+	}
+}
+
+// agentCluster is an agent cluster whose applied package an administrator
+// confirmed allows the named team groups.
+func agentCluster(confirmed ...string) *db.Cluster {
+	return &db.Cluster{ID: 7, Name: "prod", ConnectionMode: db.ModeAgent, AgentTeamGroups: db.JoinNamespaces(confirmed)}
+}
+
+// A caller granted the cluster through two groups is told to it as both teams,
+// after today's groups, once each and in a stable order whatever order the
+// grants were read in.
+func TestImpersonationGroupsAddConfirmedTeamGroups(t *testing.T) {
+	cluster := agentCluster("payments", "platform")
+	want := []string{"kubemg:view", "kubemg:users", "kubemg:g:payments", "kubemg:g:platform"}
+	for _, teams := range [][]string{
+		{"platform", "payments"},
+		{"payments", "platform", "payments"},
+	} {
+		grant := db.UserClusterAccess{K8sRole: db.K8sRoleView, TeamGroups: teams}
+		if got := ImpersonationGroups(grant, cluster); !slices.Equal(got, want) {
+			t.Fatalf("teams %v: groups = %v, want %v", teams, got, want)
+		}
+	}
+}
+
+// No group grant is exactly today's identity, on any cluster.
+func TestImpersonationGroupsWithoutTeamsAreUnchanged(t *testing.T) {
+	grant := db.UserClusterAccess{K8sRole: db.K8sRoleEdit}
+	got := ImpersonationGroups(grant, agentCluster("payments"))
+	if !slices.Equal(got, []string{"kubemg:edit", "kubemg:users"}) {
+		t.Fatalf("groups = %v, want only the role and kubemg:users", got)
+	}
+	if withheld := WithheldTeamGroups(grant, agentCluster("payments")); len(withheld) != 0 {
+		t.Fatalf("withheld = %v, want none", withheld)
+	}
+}
+
+// A team group the cluster's agent is not confirmed to allow is withheld, not
+// asserted: asserting it would have the API server refuse the whole call, base
+// role included. Withheld is recorded, so it is never silent.
+func TestTeamGroupsWaitForTheAgentReapply(t *testing.T) {
+	grant := db.UserClusterAccess{K8sRole: db.K8sRoleView, TeamGroups: []string{"payments", "platform"}}
+	cluster := agentCluster("platform")
+
+	asserted, withheld := TeamGroups(grant, cluster)
+	if !slices.Equal(asserted, []string{"kubemg:g:platform"}) {
+		t.Fatalf("asserted = %v, want only the confirmed team", asserted)
+	}
+	if !slices.Equal(withheld, []string{"kubemg:g:payments"}) {
+		t.Fatalf("withheld = %v, want the team waiting for the re-apply", withheld)
+	}
+	if got := ImpersonationGroups(grant, cluster); slices.Contains(got, "kubemg:g:payments") {
+		t.Fatalf("an unconfirmed team group reached the header: %v", got)
+	}
+}
+
+// A group name that is not a valid team group name is never asserted, and is
+// not waiting for anything either: no re-apply would ever make it valid. A name
+// that would forge another kubemg: segment is the case that matters most.
+func TestInvalidTeamGroupNamesAreNeverAsserted(t *testing.T) {
+	bad := []string{"Platform", "platform team", "a:b", "u:admin", "-edge", "", strings.Repeat("a", 64)}
+	cluster := agentCluster(bad...)
+	cluster.AgentTeamGroups = strings.Join(bad, ",")
+	grant := db.UserClusterAccess{K8sRole: db.K8sRoleView, TeamGroups: bad}
+
+	asserted, withheld := TeamGroups(grant, cluster)
+	if len(asserted) != 0 || len(withheld) != 0 {
+		t.Fatalf("asserted = %v, withheld = %v, want neither for invalid names", asserted, withheld)
+	}
+	for _, group := range ImpersonationGroups(grant, cluster) {
+		if strings.HasPrefix(group, TeamGroupPrefix) {
+			t.Fatalf("an invalid name was asserted as %q", group)
+		}
+	}
+}
+
+// Direct mode has no agent and nothing in the cluster to bind a team to, so it
+// asserts no team groups, confirmed or not.
+func TestTeamGroupsAreAgentModeOnly(t *testing.T) {
+	cluster := agentCluster("payments")
+	cluster.ConnectionMode = db.ModeDirect
+	grant := db.UserClusterAccess{K8sRole: db.K8sRoleView, TeamGroups: []string{"payments"}}
+	asserted, withheld := TeamGroups(grant, cluster)
+	if len(asserted) != 0 || len(withheld) != 0 {
+		t.Fatalf("direct mode: asserted = %v, withheld = %v, want neither", asserted, withheld)
+	}
+}
+
+// A team group is only ever what the grant for *this* cluster carries. A group
+// confirmed on the cluster but not behind this caller's grant is not theirs.
+func TestTeamGroupsComeOnlyFromTheGrant(t *testing.T) {
+	grant := db.UserClusterAccess{K8sRole: db.K8sRoleView, TeamGroups: []string{"payments"}}
+	got := ImpersonationGroups(grant, agentCluster("payments", "platform"))
+	if slices.Contains(got, "kubemg:g:platform") {
+		t.Fatalf("a team the caller is not granted through was asserted: %v", got)
 	}
 }
 
@@ -34,7 +130,8 @@ func TestForwardHeadersStripsClientCredentials(t *testing.T) {
 		"User-Agent":        []string{"kubectl/v1.31.4"},
 	}
 
-	out := forwardHeaders(src, &db.User{Username: "devops"}, db.UserClusterAccess{K8sRole: db.K8sRoleView})
+	grant := db.UserClusterAccess{K8sRole: db.K8sRoleView, TeamGroups: []string{"payments"}}
+	out := forwardHeaders(src, &db.User{Username: "devops"}, agentCluster("payments"), grant)
 
 	// A client that could pick its own identity would defeat the gateway.
 	if got := out["Impersonate-User"]; !slices.Equal(got, []string{"kubemg:u:devops"}) {
@@ -47,6 +144,11 @@ func TestForwardHeadersStripsClientCredentials(t *testing.T) {
 	}
 	if got := out["Impersonate-Group"]; slices.Contains(got, "system:masters") {
 		t.Fatalf("a client-supplied group survived: %v", got)
+	}
+	// The groups on the wire are the ones decided in one place, team included.
+	want := ImpersonationGroups(grant, agentCluster("payments"))
+	if got := out["Impersonate-Group"]; !slices.Equal(got, want) {
+		t.Fatalf("Impersonate-Group = %v, want %v", got, want)
 	}
 	if _, ok := out["Authorization"]; ok {
 		t.Fatal("the caller's KubeMG token must not reach the target cluster")
