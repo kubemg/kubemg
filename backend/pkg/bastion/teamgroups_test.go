@@ -1,8 +1,12 @@
 package bastion
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/kubemg/kubemg/backend/pkg/db"
@@ -92,5 +96,121 @@ func TestProxyDropsAClientSuppliedTeamGroup(t *testing.T) {
 	}
 	if got := seen[0].Header["Impersonate-Group"]; slices.Contains(got, "kubemg:g:platform") {
 		t.Fatalf("a client-supplied team group reached the agent: %v", got)
+	}
+}
+
+// impersonationRefusal is what the API server answers when the agent asserts a
+// group its ClusterRole does not name.
+func impersonationRefusal(group string) string {
+	return `{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"groups \"` + group +
+		`\" is forbidden: User \"system:serviceaccount:kubemg-system:kubemg-agent\" cannot impersonate resource \"groups\" in API group \"\" at the cluster scope","reason":"Forbidden","details":{"name":"` + group +
+		`","kind":"groups"},"code":403}`
+}
+
+func TestStaleAgentRefusalNamesTheFix(t *testing.T) {
+	asserted := []string{"kubemg:view", "kubemg:users", "kubemg:g:ops"}
+	message, ok := staleAgentRefusal(http.StatusForbidden, statusMessage([]byte(impersonationRefusal("kubemg:g:ops"))), asserted)
+	if !ok {
+		t.Fatal("the refusal of a confirmed team group was not recognised")
+	}
+	for _, want := range []string{"kubemg:g:ops", "Re-apply the package", "Agent install"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("message %q does not say %q", message, want)
+		}
+	}
+
+	// Anything else is the cluster's own answer and is left exactly as it was.
+	for name, tc := range map[string]struct {
+		status int
+		body   string
+	}{
+		"another 403":               {http.StatusForbidden, `{"message":"pods is forbidden: User \"kubemg:u:bob\" cannot list resource \"pods\""}`},
+		"a group KubeMG never sent": {http.StatusForbidden, impersonationRefusal("kubemg:g:platform")},
+		"a fixed group":             {http.StatusForbidden, impersonationRefusal("kubemg:edit")},
+		"not a 403":                 {http.StatusOK, impersonationRefusal("kubemg:g:ops")},
+	} {
+		if _, ok := staleAgentRefusal(tc.status, statusMessage([]byte(tc.body)), asserted); ok {
+			t.Fatalf("%s: rewritten, want the cluster's answer untouched", name)
+		}
+	}
+}
+
+// teamHarness is a harness whose caller is granted the cluster through the
+// confirmed team ops, served by an agent that answers every call with resp.
+func teamHarness(t *testing.T, respond func(Request) Response) (*harness, *db.User, *fakeAgent) {
+	t.Helper()
+	h := newHarness(t)
+	cluster := h.addCluster(1, "prod-eu", "kmg_valid")
+	h.store.mu.Lock()
+	cluster.AgentTeamGroups = "ops"
+	h.store.mu.Unlock()
+	user := h.addUser(10, "bob", db.SystemRoleUser)
+	h.grant(10, 1, db.K8sRoleView, nil)
+	h.store.mu.Lock()
+	grant := h.store.access[10][1]
+	grant.TeamGroups = []string{"ops"}
+	h.store.access[10][1] = grant
+	h.store.mu.Unlock()
+	agent, err := h.dialAgent("kmg_valid", respond)
+	if err != nil {
+		t.Fatalf("dial agent: %v", err)
+	}
+	waitFor(t, func() bool { return h.gateway.Registry().Connected(1) })
+	return h, user, agent
+}
+
+func refusedByCluster(Request) Response {
+	return Response{
+		Status: http.StatusForbidden,
+		Header: map[string][]string{"Content-Type": {"application/json"}},
+		Body:   []byte(impersonationRefusal("kubemg:g:ops")),
+	}
+}
+
+// kubectl through the proxy gets a Kubernetes Status naming the re-apply, so
+// it prints the reason instead of the agent's ServiceAccount, and the audit
+// row carries the same explanation.
+func TestProxyExplainsAStaleAgentRefusal(t *testing.T) {
+	h, user, _ := teamHarness(t, refusedByCluster)
+
+	resp := h.proxyRequest(http.MethodGet, "/api/v1/clusters/1/proxy/api/v1/namespaces/team-a/pods", h.token(user))
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", resp.StatusCode)
+	}
+	var status struct {
+		Kind, Reason, Message string
+		Code                  int
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		t.Fatalf("the refusal is not a Kubernetes Status: %v", err)
+	}
+	if status.Kind != "Status" || status.Reason != "Forbidden" || status.Code != http.StatusForbidden ||
+		!strings.Contains(status.Message, "Re-apply the package") {
+		t.Fatalf("unexpected refusal: %+v", status)
+	}
+
+	events := h.audit.events()
+	if len(events) != 1 || events[0].Status != http.StatusForbidden || !strings.Contains(events[0].Error, "kubemg:g:ops") {
+		t.Fatalf("the audit row must carry the explanation, got %+v", events)
+	}
+	if events[0].RefusedBy != "" {
+		t.Fatalf("the cluster refused the call, not KubeMG: refused_by=%q", events[0].RefusedBy)
+	}
+}
+
+// The console's calls get the same explanation as a CallError.
+func TestCallExplainsAStaleAgentRefusal(t *testing.T) {
+	h, user, _ := teamHarness(t, refusedByCluster)
+	h.store.mu.Lock()
+	cluster, grant := h.store.clusters[1], h.store.access[10][1]
+	h.store.mu.Unlock()
+
+	_, err := h.proxy.Call(context.Background(), user, cluster, grant, http.MethodGet,
+		"/api/v1/namespaces/team-a/pods", nil, nil)
+	var callErr *CallError
+	if !errors.As(err, &callErr) || callErr.Status != http.StatusForbidden ||
+		!strings.Contains(callErr.Message, "Re-apply the package") {
+		t.Fatalf("expected the explained refusal, got %v", err)
 	}
 }
