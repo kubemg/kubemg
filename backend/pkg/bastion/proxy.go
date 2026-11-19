@@ -2,6 +2,7 @@ package bastion
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -411,6 +412,14 @@ func (p *Proxy) Handle(c *gin.Context) {
 		p.fail(c, &event, http.StatusBadGateway, "the in-cluster agent could not reach the API server: "+resp.Error)
 		return
 	}
+	// A refusal is small, so reading it decoded costs nothing; anything else is
+	// passed through exactly as the API server sent it.
+	if resp.Status == http.StatusForbidden && decodeBody(resp, maxDecodedBody) == nil {
+		if message, ok := staleAgentRefusal(resp.Status, statusMessage(resp.Body), event.ImpersonatedGroups); ok {
+			p.failStaleAgent(c, &event, message)
+			return
+		}
+	}
 
 	// The body is already whole here; ObjectName reads a create's name off it
 	// only when it is plain JSON, and leaves a compressed or protobuf answer be.
@@ -569,6 +578,10 @@ func (p *Proxy) CallWithHeader(
 	if err := decodeBody(resp, maxDecodedBody); err != nil {
 		record(http.StatusBadGateway, err)
 		return nil, &CallError{Status: http.StatusBadGateway, Message: err.Error()}
+	}
+	if message, ok := staleAgentRefusal(resp.Status, statusMessage(resp.Body), event.ImpersonatedGroups); ok {
+		record(resp.Status, errors.New(message))
+		return nil, &CallError{Status: resp.Status, Message: message}
 	}
 
 	// The diff is attached only once the round trip is known to have
@@ -976,6 +989,62 @@ func TeamGroups(grant db.UserClusterAccess, cluster *db.Cluster) (asserted, with
 func WithheldTeamGroups(grant db.UserClusterAccess, cluster *db.Cluster) []string {
 	_, withheld := TeamGroups(grant, cluster)
 	return withheld
+}
+
+// staleAgentRefusal recognises the API server refusing the agent a team group
+// its ClusterRole does not name, and says what to do about it.
+//
+// It is the one way a team group still breaks a call: an administrator
+// confirmed the re-apply, so KubeMG asserts the group, but the package applied
+// on the cluster does not carry it. The API server then refuses the whole
+// impersonation — base role included — in words about a ServiceAccount the
+// caller has never heard of. The refusal stays the cluster's; only its reason is
+// put in terms of the step that fixes it.
+func staleAgentRefusal(status int, message string, asserted []string) (string, bool) {
+	if status != http.StatusForbidden || !strings.Contains(message, `cannot impersonate resource "groups"`) {
+		return "", false
+	}
+	for _, group := range asserted {
+		if strings.HasPrefix(group, TeamGroupPrefix) && strings.Contains(message, `groups "`+group+`" is forbidden`) {
+			return "the cluster refused this call because its agent may not assert the team group " + group +
+				": the re-apply was confirmed, but the agent package applied on the cluster does not name the group. " +
+				"Re-apply the package from the cluster's Agent install sheet", true
+		}
+	}
+	return "", false
+}
+
+// statusMessage reads the message out of a Kubernetes Status body, which is
+// where the API server puts a refusal's reason, quotes escaped. A body that is
+// not one is read as it is.
+func statusMessage(body []byte) string {
+	var status struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(body, &status) == nil && status.Message != "" {
+		return status.Message
+	}
+	return string(body)
+}
+
+// failStaleAgent answers a call staleAgentRefusal recognised, as the Kubernetes
+// Status a client reads a refusal from, so kubectl prints the reason rather
+// than an empty "Error from server". It is recorded as the cluster's refusal,
+// which it is, with the explanation on the audit row.
+func (p *Proxy) failStaleAgent(c *gin.Context, event *Event, message string) {
+	event.Status = http.StatusForbidden
+	event.Error = message
+	event.Duration = time.Since(event.At)
+	p.auditor.Record(c.Request.Context(), *event)
+	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+		"kind":       "Status",
+		"apiVersion": "v1",
+		"metadata":   gin.H{},
+		"status":     "Failure",
+		"message":    message,
+		"reason":     "Forbidden",
+		"code":       http.StatusForbidden,
+	})
 }
 
 // forwardHeaders builds the header set the agent replays. Client-supplied
