@@ -75,6 +75,7 @@ export function AuditRecordSheet({
   onViewDiff?: () => void
 }) {
   const groups = event.impersonated_groups ?? []
+  const withheld = event.withheld_team_groups ?? []
 
   return (
     <Sheet
@@ -141,6 +142,12 @@ export function AuditRecordSheet({
               term: 'Groups asserted',
               value: groups.length > 0 ? groups.join(', ') : <Absent>none</Absent>,
             },
+            // A team group the grant named but the cluster was not told, because
+            // its agent was not re-applied with it yet. Shown only when there is
+            // one: it is the reason a call carried less than the grant says.
+            ...(withheld.length > 0
+              ? [{ term: 'Team groups withheld', value: withheld.join(', ') }]
+              : []),
           ]}
         />
       </section>

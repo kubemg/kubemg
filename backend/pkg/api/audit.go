@@ -36,6 +36,9 @@ type auditEventResponse struct {
 	Phase              string    `json:"phase,omitempty"`
 	BytesOut           int64     `json:"bytes_out,omitempty"`
 	BytesIn            int64     `json:"bytes_in,omitempty"`
+	// WithheldTeamGroups are team groups the caller's grant named but KubeMG did
+	// not assert, because the cluster's agent was not yet confirmed to allow them.
+	WithheldTeamGroups []string `json:"withheld_team_groups,omitempty"`
 	// SessionID is set on an interactive session, and is what a recording of
 	// that session is filed under — the join between this row and its replay.
 	SessionID string `json:"session_id,omitempty"`
@@ -89,6 +92,7 @@ func toAuditResponse(event db.AuditEvent) auditEventResponse {
 		Name:               event.Name,
 		ImpersonatedUser:   event.ImpersonatedUser,
 		ImpersonatedGroups: groups,
+		WithheldTeamGroups: event.WithheldTeamGroupList(),
 		Status:             event.Status,
 		DurationMS:         event.DurationMS,
 		Streaming:          event.Streaming,

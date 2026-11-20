@@ -197,6 +197,7 @@ func toAuditRow(ctx context.Context, event Event) db.AuditEvent {
 		Name:               event.Name,
 		ImpersonatedUser:   event.ImpersonatedUser,
 		ImpersonatedGroups: strings.Join(event.ImpersonatedGroups, ","),
+		WithheldTeamGroups: strings.Join(event.WithheldTeamGroups, ","),
 		Status:             event.Status,
 		DurationMS:         event.Duration.Milliseconds(),
 		Streaming:          event.Streaming,

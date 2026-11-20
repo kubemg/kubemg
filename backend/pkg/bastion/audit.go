@@ -42,6 +42,10 @@ type Event struct {
 	// subject that actually performed the action.
 	ImpersonatedUser   string
 	ImpersonatedGroups []string
+	// WithheldTeamGroups are the caller's team groups KubeMG did not assert
+	// because the cluster's agent was not yet confirmed to allow them (see
+	// TeamGroups). Empty on almost every record.
+	WithheldTeamGroups []string
 	Status             int
 	Duration           time.Duration
 	// Error explains a call that never reached the API server.
@@ -133,6 +137,9 @@ func (a *SlogAuditor) Record(ctx context.Context, event Event) {
 		slog.String("impersonate_groups", strings.Join(event.ImpersonatedGroups, ",")),
 		slog.Int("status_code", event.Status),
 		slog.Int64("duration_ms", event.Duration.Milliseconds()),
+	}
+	if len(event.WithheldTeamGroups) > 0 {
+		attrs = append(attrs, slog.String("withheld_team_groups", strings.Join(event.WithheldTeamGroups, ",")))
 	}
 	// The same two facts the stored row carries, from the same place: a SIEM
 	// correlating on source address should not have to join against the table to

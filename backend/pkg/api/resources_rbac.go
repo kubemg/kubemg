@@ -718,12 +718,20 @@ func (s *server) grantIdentity(c *gin.Context) {
 	// The same two values the proxy puts on the wire as `Impersonate-User` and
 	// `Impersonate-Group`, read from the same function rather than restated here:
 	// an identity page that disagrees with what is actually impersonated would be
-	// worse than no identity page.
+	// worse than no identity page. The withheld team groups are the other half of
+	// that honesty: a team grant the cluster is not yet told about is shown as
+	// waiting, not left out.
+	asserted := bastion.ImpersonationGroups(grant, cluster)
+	withheld := bastion.WithheldTeamGroups(grant, cluster)
+	if withheld == nil {
+		withheld = []string{}
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"subject":    bastion.ImpersonationUser(user),
-		"groups":     bastion.ImpersonationGroups(grant.K8sRole),
-		"k8s_role":   string(grant.K8sRole),
-		"namespaces": grant.NamespaceList(),
-		"cluster":    cluster.Name,
+		"subject":              bastion.ImpersonationUser(user),
+		"groups":               asserted,
+		"withheld_team_groups": withheld,
+		"k8s_role":             string(grant.K8sRole),
+		"namespaces":           grant.NamespaceList(),
+		"cluster":              cluster.Name,
 	})
 }

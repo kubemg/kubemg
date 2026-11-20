@@ -221,6 +221,10 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 	})
 	if err != nil {
 		status, message := tunnelFailure(err)
+		if explained, ok := staleAgentRefusal(status, message, event.ImpersonatedGroups); ok {
+			p.failStaleAgent(c, event, explained)
+			return
+		}
 		p.fail(c, event, status, message)
 		return
 	}

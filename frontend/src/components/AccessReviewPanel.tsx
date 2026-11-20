@@ -99,6 +99,17 @@ function splitResource(input: string): { resource: string; subresource: string }
   return { resource, subresource }
 }
 
+/**
+ * withheldNote names the team groups this caller's grant carries that the
+ * cluster is not told yet, because its agent has not been re-applied with them.
+ * Said beside the identity, so an answer that would change after the re-apply
+ * does not read as the final word.
+ */
+function withheldNote(withheld: string[] | undefined): string {
+  if (!withheld || withheld.length === 0) return ''
+  return `; waiting for the agent re-apply: ${withheld.join(', ')}`
+}
+
 export function AccessReviewPanel({
   cluster,
   namespace,
@@ -228,7 +239,7 @@ export function AccessReviewPanel({
               identity && subject.trim() === identity.subject
                 ? `You, as kubemg impersonates you here${
                     identity.groups.length > 0 ? ` (${identity.groups.join(', ')})` : ''
-                  }`
+                  }${withheldNote(identity.withheld_team_groups)}`
                 : 'A user, a group, or system:serviceaccount:<namespace>:<name>'
             }
           >

@@ -10,11 +10,14 @@ metadata:
 # never gets a standing grant over your workloads.
 #
 # The groups are named, not open: KubeMG only ever asserts the four kubemg:
-# groups below, so the agent cannot be made to claim system:masters or any
-# group the cluster already trusts. Users cannot be narrowed the same way —
-# resourceNames has no prefix match and usernames are not known in advance —
-# which is why KubeMG impersonates every account as kubemg:u:<username> rather
-# than as the bare name. ServiceAccounts are deliberately absent: KubeMG never
+# groups below and kubemg:g:<group> for a KubeMG group granted this cluster,
+# so the agent cannot be made to claim system:masters or any group the
+# cluster already trusts. A team group is named here too: the package the
+# console renders adds each one to the list, and a copy applied from this
+# directory carries none until you add them. Users cannot be narrowed the
+# same way — resourceNames has no prefix match and usernames are not known in
+# advance — which is why KubeMG impersonates every account as
+# kubemg:u:<username> rather than as the bare name. ServiceAccounts are deliberately absent: KubeMG never
 # impersonates one, and without this grant a username shaped like
 # system:serviceaccount:<namespace>:<name> is refused by the API server too.
 apiVersion: rbac.authorization.k8s.io/v1
