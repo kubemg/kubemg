@@ -210,6 +210,7 @@ export function PermissionsMatrix() {
         {clusters.length === 0 || subjects.length === 0 ? (
           <div className="card">
             <EmptyState
+              detail="visible"
               icon={<KeyRound aria-hidden="true" className="size-5" />}
               title="Nothing to map yet"
             >

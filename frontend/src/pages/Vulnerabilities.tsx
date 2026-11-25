@@ -82,7 +82,7 @@ export function Vulnerabilities() {
     return (
       <AppShell title="Vulnerabilities">
         <div className="card">
-          <EmptyState icon={<Bug aria-hidden="true" className="size-5" />} title="Nothing to show here">
+          <EmptyState detail="visible" icon={<Bug aria-hidden="true" className="size-5" />} title="Nothing to show here">
             Vulnerability findings are shown to administrators and to people granted cluster-admin on
             the whole cluster.
           </EmptyState>
@@ -120,7 +120,7 @@ export function Vulnerabilities() {
 
         {data && !data.connected ? (
           <div className="card">
-            <EmptyState icon={<Bug aria-hidden="true" className="size-5" />} title="Vulnerability alerts are not connected">
+            <EmptyState detail="visible" icon={<Bug aria-hidden="true" className="size-5" />} title="Vulnerability alerts are not connected">
               KubeMG reads what a scanner already running in the cluster found; it scans nothing itself.
               An administrator connects one from the{' '}
               <Link to={`/clusters/${clusterId}/dashboard`} className="text-accent hover:underline">

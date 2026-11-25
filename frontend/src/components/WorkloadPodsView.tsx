@@ -135,7 +135,7 @@ export function WorkloadPodsView({
 
   if (pods.length === 0) {
     return (
-      <EmptyState title="No pods right now">
+      <EmptyState detail="visible" title="No pods right now">
         This {label.toLowerCase()} owns no pods at the moment. Scale it up, or look at its events to
         find out why.
       </EmptyState>

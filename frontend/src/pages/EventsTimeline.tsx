@@ -191,6 +191,7 @@ export function EventsTimeline() {
       <AppShell title="Events">
         <div className="card">
           <EmptyState
+            detail="visible"
             icon={<Siren aria-hidden="true" className="size-5" />}
             title={
               unreadable ? `${unreadable.name} has no live connection` : 'That cluster is not registered'
