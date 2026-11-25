@@ -2,6 +2,7 @@ import { useSearchParams } from 'react-router'
 import { AppShell } from '../components/AppShell'
 import { JitApprovalsPanel } from '../components/jit/JitApprovalsPanel'
 import { useClusters } from '../state/clusters-context'
+import { DOCS } from '../lib/docs'
 
 /**
  * Access requests: the page behind the just-in-time workflow.
@@ -27,7 +28,8 @@ export function AccessRequests() {
   return (
     <AppShell
       title="Access requests"
-      description="Elevated access is asked for with a reason, decided by somebody other than the person asking, and ends by itself when its window runs out."
+      description="Time-bound access, approved by someone else."
+      docs={DOCS.pages.accessRequests}
     >
       <JitApprovalsPanel clusters={clusters} focusRequest={params.get('request')} />
     </AppShell>

@@ -94,7 +94,7 @@ export function AppTemplates() {
   return (
     <AppShell
       title="App templates"
-      description="A template renders to YAML and stops there: filling in its parameters produces manifests in an editor, and creating them is the same per-object create every manifest editor here makes. Listed to everyone signed in; only an admin writes one."
+      description="Reusable manifests with parameters."
       actions={
         <Button variant="primary" onClick={() => setEditing('new')}>
           <Plus aria-hidden="true" className="size-4" />

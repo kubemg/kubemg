@@ -59,6 +59,7 @@ import { useClusters } from '../state/clusters-context'
 import { useConfirm } from '../state/confirm-context'
 import { useUnsavedGuard } from '../lib/unsavedGuard'
 import { isRefusal } from '../lib/live'
+import { DOCS } from '../lib/docs'
 
 const ENVIRONMENTS: Environment[] = ['prod', 'staging', 'dev']
 const K8S_ROLES: K8sRole[] = ['cluster-admin', 'edit', 'view']
@@ -167,7 +168,8 @@ export function ClusterWizard() {
   return (
     <AppShell
       title="Register cluster"
-      description="Five steps: name the cluster, choose how kubemg reaches it, watch it connect, point it at metrics and logs if it has them, and grant access. The cluster is created when you leave step two."
+      description="Five steps. Created when you leave step two."
+      docs={DOCS.pages.registerCluster}
       parent={{ label: 'Clusters', to: '/admin/clusters' }}
       actions={
         cluster ? (

@@ -32,6 +32,7 @@ import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
 import { useConfirm } from '../state/confirm-context'
 import { useUrlText } from '../lib/urlState'
+import { DOCS } from '../lib/docs'
 
 const K8S_ROLES: K8sRole[] = ['cluster-admin', 'edit', 'view']
 
@@ -146,7 +147,8 @@ export function PermissionsMatrix() {
   return (
     <AppShell
       title="Permissions"
-      description="Which cluster, which role and which namespaces each account or group is carried to. A group grant reaches every member; where a user holds both, the more permissive one applies."
+      description="Who reaches which cluster, and with what role."
+      docs={DOCS.pages.permissions}
     >
       <div className="flex min-w-0 flex-col gap-4">
         {error ? <Notice tone="error">{error}</Notice> : null}

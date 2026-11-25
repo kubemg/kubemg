@@ -39,6 +39,7 @@ import {
 import { relativeAge } from '../lib/time'
 import { useConfirm } from '../state/confirm-context'
 import { useResult } from '../state/result-context'
+import { DOCS } from '../lib/docs'
 
 const ROLES: K8sRole[] = ['view', 'edit', 'cluster-admin']
 
@@ -153,7 +154,8 @@ export function MachineAccounts() {
   return (
     <AppShell
       title="Machine accounts"
-      description="A machine account acts under its own name inside the cluster, so the cluster’s own RBAC decides what it may do and every call it makes is in the audit trail. Its credential is stored here rather than signed: revoking one stops the next call, with no expiry to wait for."
+      description="Automation that acts under its own name."
+      docs={DOCS.pages.machineAccounts}
       actions={
         <Button variant="primary" onClick={() => setCreateOpen(true)}>
           <Plus aria-hidden="true" className="size-4" />

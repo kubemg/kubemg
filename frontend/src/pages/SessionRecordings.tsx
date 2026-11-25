@@ -44,6 +44,7 @@ import { useClusters } from '../state/clusters-context'
 import { useConfirm } from '../state/confirm-context'
 import { useResult } from '../state/result-context'
 import { useUrlFlag, useUrlText } from '../lib/urlState'
+import { DOCS } from '../lib/docs'
 
 // The player carries the terminal emulator, which is the heaviest thing in the
 // app. Even on the page that exists to replay sessions it is loaded on the first
@@ -211,7 +212,8 @@ export function SessionRecordings() {
   return (
     <AppShell
       title="Session recordings"
-      description="Every exec and attach through kubemg, recorded as it happened and replayable here. Watching a recording is itself written to the audit trail."
+      description="Every shell session, replayable. Watching one is audited."
+      docs={DOCS.pages.recordings}
       actions={
         <Button onClick={() => void load()} disabled={loading}>
           <RefreshCw aria-hidden="true" className={`size-4 ${loading ? 'animate-spin' : ''}`} />

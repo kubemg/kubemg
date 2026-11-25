@@ -61,6 +61,7 @@ import { formatInstant, relativeAge } from '../lib/time'
 import { useAuth } from '../state/auth-context'
 import { useResult } from '../state/result-context'
 import { useClusters } from '../state/clusters-context'
+import { DOCS } from '../lib/docs'
 
 const PAGE_SIZE = 50
 
@@ -316,7 +317,8 @@ export function AuditTrail() {
   return (
     <AppShell
       title="Audit trail"
-      description="Every call that went through kubemg - allowed, refused or failed - with who made it, on which cluster, and what it touched."
+      description="Every call through kubemg, allowed or refused."
+      docs={DOCS.pages.audit}
       timeRange
       actions={
         <>
