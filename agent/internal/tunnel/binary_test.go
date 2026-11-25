@@ -173,3 +173,79 @@ func TestABastionThatDoesNotGrantItGetsJSON(t *testing.T) {
 		t.Fatalf("echo = %q (binary %t), want %q", echoed.Data, echoed.Binary, sent.Data)
 	}
 }
+
+// afterABadFrame opens an exec session against a stand-in bastion granting
+// grant, sends frame down it, and returns the next frame the agent answers with.
+func afterABadFrame(t *testing.T, grant []string, frame []byte) protocol.Message {
+	t.Helper()
+	api := echoExec(t)
+	answers := make(chan protocol.Message, 1)
+	upgrader := websocket.Upgrader{}
+	bastion := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		var hello protocol.Message
+		_ = conn.ReadJSON(&hello)
+		_ = conn.WriteJSON(protocol.Message{Type: protocol.MessageWelcome, Welcome: &protocol.Welcome{
+			ProtocolVersion: protocol.ProtocolVersion, ClusterID: 7, HeartbeatSeconds: 30, Capabilities: grant,
+		}})
+		_ = conn.WriteJSON(protocol.Message{Type: protocol.MessageStreamOpen, ID: "7-1", StreamOpen: &protocol.StreamOpen{
+			Method: http.MethodGet, Path: "/exec", Upgrade: true, Subprotocols: []string{"v4.channel.k8s.io"},
+		}})
+		var start protocol.Message
+		if err := conn.ReadJSON(&start); err != nil || start.StreamStart == nil {
+			return
+		}
+		_ = conn.WriteMessage(websocket.BinaryMessage, frame)
+		var next protocol.Message
+		if err := conn.ReadJSON(&next); err == nil {
+			answers <- next
+		}
+	}))
+	t.Cleanup(bastion.Close)
+
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenPath, []byte("sa-token"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	kubeClient, err := kube.New(kube.Options{APIURL: api.URL, InsecureSkipVerify: true, TokenPath: tokenPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := New(Options{BastionURL: bastion.URL, Token: "kmg_test", Kube: kubeClient})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = client.Run(ctx) }()
+
+	select {
+	case next := <-answers:
+		return next
+	case <-time.After(10 * time.Second):
+		t.Fatal("the agent never answered the bad frame")
+	}
+	return protocol.Message{}
+}
+
+// A frame the agent cannot read used to be skipped, leaving a silent gap in
+// the session's bytes. Where it still names its stream, that stream is closed.
+func TestAnUnreadableFrameClosesItsStream(t *testing.T) {
+	bad := []byte{0x01, 0x80, 0x03, '7', '-', '1', 'x'} // a flag this side does not know
+	next := afterABadFrame(t, []string{protocol.CapabilityBinaryStreamData}, bad)
+	if next.Type != protocol.MessageStreamClose || next.ID != "7-1" || next.StreamClose == nil || next.StreamClose.Error == "" {
+		t.Fatalf("after a bad frame the agent sent %+v, want stream_close for 7-1 with a reason", next)
+	}
+}
+
+func TestABinaryFrameTheBastionDidNotGrantClosesItsStream(t *testing.T) {
+	frame, _ := protocol.EncodeStreamData("7-1", protocol.StreamData{Data: []byte("\x00ls"), Binary: true})
+	next := afterABadFrame(t, []string{protocol.CapabilityResponseParts}, frame)
+	if next.Type != protocol.MessageStreamClose || next.ID != "7-1" {
+		t.Fatalf("after an ungranted binary frame the agent sent %+v, want stream_close for 7-1", next)
+	}
+}

@@ -81,8 +81,10 @@ JSON and several GB/s as a binary frame (`BenchmarkStreamDataFrame`). The writer
 tells the two apart by the first byte (`{` or `0x01`), so the queues below carry
 nothing beside the frame. `pkg/bastion/binaryframe.go` and
 `agent/internal/protocol/binary.go` test the format against the same bytes, and
-a binary message the bastion cannot read drops the tunnel as an unparseable JSON
-frame does.
+a binary message the bastion cannot read, or one from an agent that did not
+negotiate the capability, drops the tunnel as an unparseable JSON frame does.
+The agent closes the stream a frame it cannot read names, rather than skip the
+frame and leave a gap in the session.
 
 **Two outbound queues on each side.** Stream frames (`stream_*`) go in an
 *urgent* queue; `request`, `response` and `response_part` go in a *bulk* one.

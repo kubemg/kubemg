@@ -60,6 +60,21 @@ func DecodeStreamData(frame []byte) (string, StreamData, error) {
 	return string(frame[3 : 3+n]), chunk, nil
 }
 
+// StreamIDOf reads the stream ID out of a binary frame whose header is intact
+// enough to name one, even when the frame is otherwise unreadable (a flag this
+// side does not know). It is how a bad frame closes its own stream instead of
+// leaving a silent gap in it.
+func StreamIDOf(frame []byte) (string, bool) {
+	if len(frame) < 3 || frame[0] != binaryStreamData {
+		return "", false
+	}
+	n := int(frame[2])
+	if n == 0 || len(frame) < 3+n {
+		return "", false
+	}
+	return string(frame[3 : 3+n]), true
+}
+
 // IsBinaryFrame reports whether an encoded frame goes out as a binary message.
 // A JSON frame always opens with '{', and a binary frame with its frame type,
 // so the frame says which it is and the writer's queues carry nothing beside it.

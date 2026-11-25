@@ -120,9 +120,14 @@ type Tunnel struct {
 	// queueWait is how long a sender waits for room in that queue before giving
 	// up on its own frame. It is a field only so a test can shorten it.
 	queueWait time.Duration
+	// capabilities are what this server accepted from the agent's hello, the
+	// list its welcome sends back. Negotiated once, here, so the welcome and
+	// the tunnel's own behaviour read one answer and cannot drift apart.
+	capabilities []string
 	// binaryStreams says the agent negotiated CapabilityBinaryStreamData, so
-	// stream_data goes to it as a binary message. Set at construction and
-	// never changed, so senders read it without a lock.
+	// stream_data goes to it as a binary message, and a binary message from it
+	// is a frame it may send. Set at construction and never changed, so
+	// senders read it without a lock.
 	binaryStreams bool
 	// bodyLimit and budget are maxResponseBody and assemblyBudget, as fields
 	// only so a test can shorten them.
@@ -146,6 +151,7 @@ type Tunnel struct {
 }
 
 func newTunnel(conn *websocket.Conn, clusterID uint, clusterName string, hello Hello) *Tunnel {
+	capabilities := negotiateCapabilities(hello.Capabilities)
 	t := &Tunnel{
 		ClusterID:         clusterID,
 		ClusterName:       clusterName,
@@ -156,7 +162,8 @@ func newTunnel(conn *websocket.Conn, clusterID uint, clusterName string, hello H
 		out:               make(chan []byte, outboundQueue),
 		bulk:              make(chan []byte, outboundQueue),
 		queueWait:         writeTimeout,
-		binaryStreams:     slices.Contains(negotiateCapabilities(hello.Capabilities), CapabilityBinaryStreamData),
+		capabilities:      capabilities,
+		binaryStreams:     slices.Contains(capabilities, CapabilityBinaryStreamData),
 		bodyLimit:         maxResponseBody,
 		budget:            assemblyBudget,
 		pending:           map[string]*pendingCall{},
@@ -343,6 +350,13 @@ func (t *Tunnel) serve() error {
 		}
 
 		if kind == websocket.BinaryMessage {
+			// An agent that did not name the capability gets v2 exactly, and
+			// v2 has no binary frames: one from it is a protocol violation.
+			if !t.binaryStreams {
+				err = errors.New("binary frame from an agent that did not negotiate " + CapabilityBinaryStreamData)
+				t.closeWith(err)
+				return err
+			}
 			id, chunk, err := decodeStreamData(payload)
 			if err != nil {
 				err = fmt.Errorf("malformed binary frame from agent: %w", err)

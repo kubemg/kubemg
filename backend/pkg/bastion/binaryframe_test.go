@@ -199,3 +199,38 @@ func TestAMalformedBinaryFrameDropsTheTunnel(t *testing.T) {
 	}
 	waitFor(t, func() bool { return !h.gateway.Registry().Connected(1) })
 }
+
+// An agent that did not name the capability gets v2 exactly, and v2 has no
+// binary frames: a well-formed one from it still drops the tunnel.
+func TestABinaryFrameFromAnAgentThatDidNotNegotiateDropsTheTunnel(t *testing.T) {
+	h := newHarness(t)
+	h.addCluster(1, "edge", "kmg_v2")
+	conn, welcome := rawAgent(t, h, "kmg_v2", []string{CapabilityResponseParts})
+	if slices.Contains(welcome.Capabilities, CapabilityBinaryStreamData) {
+		t.Fatal("granted a capability the agent did not offer")
+	}
+	waitFor(t, func() bool { return h.gateway.Registry().Connected(1) })
+
+	frame, _ := encodeStreamData("s1-1", StreamData{Data: []byte("x")})
+	if err := conn.WriteMessage(websocket.BinaryMessage, frame); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return !h.gateway.Registry().Connected(1) })
+}
+
+// The welcome and the tunnel read one negotiation: what the welcome grants is
+// what the tunnel acts on.
+func TestTheWelcomeGrantsWhatTheTunnelUses(t *testing.T) {
+	h := newHarness(t)
+	h.addCluster(1, "edge", "kmg_once")
+	_, welcome := rawAgent(t, h, "kmg_once", []string{"something-new", CapabilityBinaryStreamData, CapabilityResponseParts})
+	waitFor(t, func() bool { return h.gateway.Registry().Connected(1) })
+	tunnel, _ := h.gateway.Registry().Get(1)
+
+	if !slices.Equal(welcome.Capabilities, tunnel.capabilities) {
+		t.Fatalf("welcome granted %v, the tunnel uses %v", welcome.Capabilities, tunnel.capabilities)
+	}
+	if !tunnel.binaryStreams {
+		t.Fatal("the tunnel does not use the binary frames its welcome granted")
+	}
+}

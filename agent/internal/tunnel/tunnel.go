@@ -323,8 +323,22 @@ func (c *Client) pump(ctx context.Context, conn *websocket.Conn, parts, binary b
 
 		if kind == websocket.BinaryMessage {
 			id, chunk, err := protocol.DecodeStreamData(payload)
+			if err == nil && !binary {
+				// A bastion that did not grant the capability sends no binary
+				// frames; one that arrives anyway is read as unreadable.
+				err = errors.New("binary frame without " + protocol.CapabilityBinaryStreamData)
+			}
 			if err != nil {
-				c.logger.Warn("ignoring malformed binary frame", slog.String("error", err.Error()))
+				c.logger.Warn("dropping a malformed binary frame", slog.String("error", err.Error()))
+				// Skipping it would leave a silent gap in an exec session's
+				// bytes. Where the frame still names its stream, that stream is
+				// closed instead, and says why.
+				if id, ok := protocol.StreamIDOf(payload); ok {
+					if s, ok := c.streams.get(id); ok {
+						s.close()
+						out.close(id, "the tunnel delivered a malformed frame for this stream")
+					}
+				}
 				continue
 			}
 			if s, ok := c.streams.get(id); ok {

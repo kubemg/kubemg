@@ -83,3 +83,23 @@ func TestOnlyBinaryFramesGoOutAsBinary(t *testing.T) {
 		t.Fatal("a JSON frame would go out as binary")
 	}
 }
+
+func TestStreamIDOfNamesTheStreamOfAnUnreadableFrame(t *testing.T) {
+	for name, tc := range map[string]struct {
+		frame []byte
+		id    string
+		ok    bool
+	}{
+		"unknown flag":   {[]byte{0x01, 0x02, 0x03, '7', '-', '1', 'x'}, "7-1", true},
+		"a good frame":   {streamDataVector, "7-42", true},
+		"wrong type":     {[]byte{0x02, 0x00, 0x03, '7', '-', '1'}, "", false},
+		"no ID":          {[]byte{0x01, 0x00, 0x00}, "", false},
+		"truncated ID":   {[]byte{0x01, 0x00, 0x05, '7'}, "", false},
+		"a JSON message": {[]byte(`{"type":"stream_data"}`), "", false},
+	} {
+		id, ok := StreamIDOf(tc.frame)
+		if id != tc.id || ok != tc.ok {
+			t.Errorf("%s: StreamIDOf = %q, %t; want %q, %t", name, id, ok, tc.id, tc.ok)
+		}
+	}
+}
