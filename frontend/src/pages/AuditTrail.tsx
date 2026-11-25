@@ -23,6 +23,8 @@ import {
 } from '../api/client'
 import type { AuditEvent, AuditQuery, AuditSummary, User } from '../api/types'
 import { AppShell } from '../components/AppShell'
+import { VerbPicker } from '../components/VerbPicker'
+import type { VerbGroup } from '../components/VerbPicker'
 import { AuditRecordSheet } from '../components/AuditRecordSheet'
 import { ManifestDiffView } from '../components/ManifestDiffView'
 import { nameBesidePath } from '../lib/fleet'
@@ -72,28 +74,24 @@ const PAGE_SIZE = 50
    agent verbs are here for the same reason: they answer who is, or became,
    a cluster's agent — and the second-factor ones answer whose sign-in was
    weakened, and by whom. */
-const VERBS = [
-  'get',
-  'list',
-  'watch',
-  'create',
-  'update',
-  'patch',
-  'delete',
-  'exec',
-  'log',
-  'replay',
-  'recording-delete',
-  'agent-displaced',
-  'agent-token-rotate',
-  'mfa-reset',
-  'mfa-remove',
-  'mfa-recovery-used',
-  'cli-login',
-  'cli-session-revoke',
-  'password-expire',
-  'risk-accept',
-  'risk-withdraw',
+const VERB_GROUPS: readonly VerbGroup[] = [
+  { label: 'Reads', verbs: ['get', 'list', 'watch', 'log'] },
+  { label: 'Writes', verbs: ['create', 'update', 'patch', 'delete'] },
+  { label: 'Sessions', verbs: ['exec', 'replay', 'recording-delete'] },
+  { label: 'Agents', verbs: ['agent-displaced', 'agent-token-rotate'] },
+  {
+    label: 'Account and security',
+    verbs: [
+      'mfa-reset',
+      'mfa-remove',
+      'mfa-recovery-used',
+      'cli-login',
+      'cli-session-revoke',
+      'password-expire',
+      'risk-accept',
+      'risk-withdraw',
+    ],
+  },
 ]
 
 const MUTATING = new Set(['create', 'update', 'patch', 'delete'])
@@ -437,6 +435,11 @@ export function AuditTrail() {
               </Select>
             </div>
 
+            <VerbPicker
+              groups={VERB_GROUPS}
+              selected={verbs}
+              onChange={(next) => narrow(() => setVerbs(next))}
+            />
             <Chip
               active={failedOnly}
               onClick={() => narrow(() => setFailedOnly((current) => !current))}
@@ -524,41 +527,6 @@ export function AuditTrail() {
               ) : null}
             </div>
           ) : null}
-
-          {/* Verbs as badges rather than a dropdown: the question is almost
-              always a set — "the writes", "the sessions" — and a dropdown makes
-              a set into one query per member. */}
-          <div className="flex flex-wrap items-center gap-2 border-b border-line-soft px-4 py-2.5">
-            <span className="label mr-1">Verbs</span>
-            {VERBS.map((value) => (
-              <Chip
-                key={value}
-                active={verbs.includes(value)}
-                onClick={() =>
-                  narrow(() =>
-                    setVerbs((current) =>
-                      current.includes(value)
-                        ? current.filter((entry) => entry !== value)
-                        : [...current, value],
-                    ),
-                  )
-                }
-              >
-                <span className="font-data text-[12.5px]">{value}</span>
-              </Chip>
-            ))}
-            {verbs.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => narrow(() => setVerbs([]))}
-                className="ml-1 text-[12.5px] text-accent hover:underline"
-              >
-                Clear
-              </button>
-            ) : (
-              <span className="ml-1 text-[12px] text-faint">none selected - every verb</span>
-            )}
-          </div>
 
           <Table>
             <thead>
