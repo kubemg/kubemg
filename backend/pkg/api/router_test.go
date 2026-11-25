@@ -368,6 +368,13 @@ func (f *fakeStore) ConfirmAgentTeamGroups(_ context.Context, clusterID uint, na
 	return nil
 }
 
+func (f *fakeStore) ForgetAgentTeamGroup(_ context.Context, clusterID uint, name string) error {
+	if cluster, ok := f.clusters[clusterID]; ok {
+		cluster.AgentTeamGroups = db.WithoutTeamGroup(cluster.AgentTeamGroups, name)
+	}
+	return nil
+}
+
 func (f *fakeStore) Clusters(_ context.Context) ([]db.Cluster, error) {
 	out := []db.Cluster{}
 	for _, cluster := range f.clusters {

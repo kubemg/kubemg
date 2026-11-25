@@ -337,6 +337,41 @@ func TestAlarmRuleCanNameTheAgentCredentialVerbs(t *testing.T) {
 	}
 }
 
+// Confirming a team group changes which identities a cluster is told about, so
+// an alarm rule must be able to name it, and its message must say what was
+// confirmed rather than describing a proxied call.
+func TestAlarmRuleCanNameTheTeamGroupConfirmation(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	channel := env.store.addAlarmChannel(db.AlarmChannel{
+		Name: "am", Kind: db.ChannelAlertmanager, URL: "https://am.example.com/x", Enabled: true,
+	})
+
+	rec := env.do(t, http.MethodPost, "/api/v1/alarms/rules", env.tokenFor(t, admin), map[string]any{
+		"name":       "team group confirmed",
+		"trigger":    db.TriggerAudit,
+		"channel_id": channel.ID,
+		"verbs":      []string{bastion.VerbAgentTeamGroups},
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected %d, got %d (%s)", http.StatusCreated, rec.Code, rec.Body.String())
+	}
+
+	message := auditMessage(bastion.Event{
+		Verb:     bastion.VerbAgentTeamGroups,
+		Username: "admin",
+		Cluster:  "prod-eu",
+		Name:     "kubemg:g:payments",
+		Method:   http.MethodPost,
+		Path:     "/api/v1/clusters/3/agent-team-groups/confirm",
+		Status:   http.StatusOK,
+	}, false)
+	if strings.Contains(message, "proxied") || !strings.Contains(message, "kubemg:g:payments") ||
+		!strings.Contains(message, "prod-eu") {
+		t.Fatalf("unexpected team group alarm message: %q", message)
+	}
+}
+
 func TestTestingAChannelWithoutADispatcherSaysSo(t *testing.T) {
 	env := newTestEnv(t)
 	admin := env.store.addUser("admin", "pw", db.RoleAdmin)

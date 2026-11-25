@@ -404,6 +404,16 @@ func (s *Store) RevokeGroupAccess(ctx context.Context, groupID, clusterID uint) 
 	})
 }
 
+// ForgetAgentTeamGroup withdraws the confirmation of one team group on one
+// cluster. The proxy calls it when the cluster itself shows the confirmation was
+// wrong: its agent refused to assert the group, so the package applied there
+// does not name it. The group then waits again until an administrator confirms
+// a re-apply. A group that was not confirmed is left alone, and so is a cluster
+// that no longer exists.
+func (s *Store) ForgetAgentTeamGroup(ctx context.Context, clusterID uint, name string) error {
+	return forgetAgentTeamGroup(s.gdb.WithContext(ctx), clusterID, name)
+}
+
 // forgetAgentTeamGroup drops a group from a cluster's confirmed team groups.
 func forgetAgentTeamGroup(tx *gorm.DB, clusterID uint, name string) error {
 	var cluster Cluster

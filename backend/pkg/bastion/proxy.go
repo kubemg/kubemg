@@ -112,6 +112,10 @@ type ProxyStore interface {
 	UserByID(ctx context.Context, id uint) (*db.User, error)
 	ClusterByID(ctx context.Context, id uint) (*db.Cluster, error)
 	AccessForUser(ctx context.Context, userID uint) (map[uint]db.UserClusterAccess, error)
+	// ForgetAgentTeamGroup withdraws a team group's confirmation on a cluster,
+	// for the one case where the cluster shows the confirmation was wrong. See
+	// withdrawStaleGroup.
+	ForgetAgentTeamGroup(ctx context.Context, clusterID uint, name string) error
 }
 
 // Proxy replays a client's Kubernetes API calls down a cluster's agent tunnel
@@ -397,28 +401,46 @@ func (p *Proxy) Handle(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), proxyTimeout)
 	defer cancel()
 
-	resp, err := tunnel.Do(ctx, &Request{
-		Method: c.Request.Method,
-		Path:   path,
-		Header: header,
-		Body:   body,
-	})
-	if err != nil {
-		status, message := tunnelFailure(err)
-		p.fail(c, &event, status, message)
-		return
-	}
-	if resp.Error != "" {
-		p.fail(c, &event, http.StatusBadGateway, "the in-cluster agent could not reach the API server: "+resp.Error)
-		return
-	}
-	// A refusal is small, so reading it decoded costs nothing; anything else is
-	// passed through exactly as the API server sent it.
-	if resp.Status == http.StatusForbidden && decodeBody(resp, maxDecodedBody) == nil {
-		if message, ok := staleAgentRefusal(resp.Status, statusMessage(resp.Body), event.ImpersonatedGroups); ok {
-			p.failStaleAgent(c, &event, message)
+	var resp *Response
+	for withdrawn := 0; ; withdrawn++ {
+		resp, err = tunnel.Do(ctx, &Request{
+			Method: c.Request.Method,
+			Path:   path,
+			Header: header,
+			Body:   body,
+		})
+		if err != nil {
+			status, message := tunnelFailure(err)
+			p.fail(c, &event, status, message)
 			return
 		}
+		if resp.Error != "" {
+			p.fail(c, &event, http.StatusBadGateway, "the in-cluster agent could not reach the API server: "+resp.Error)
+			return
+		}
+		// A refusal is small, so reading it decoded costs nothing; anything else is
+		// passed through exactly as the API server sent it.
+		if resp.Status != http.StatusForbidden || decodeBody(resp, maxDecodedBody) != nil {
+			break
+		}
+		message, stale := staleAgentRefusal(resp.Status, statusMessage(resp.Body), event.ImpersonatedGroups)
+		if !stale {
+			break
+		}
+		// The cluster refused before it looked at the request, so nothing ran and
+		// the same call can go again. Withdraw the group it named and ask again
+		// without it, so the caller gets the base role instead of a lockout.
+		if withdrawn < len(event.ImpersonatedGroups) {
+			if next, ok := p.withdrawStaleGroup(c.Request.Context(), user, cluster, resp.Status, statusMessage(resp.Body), event.ImpersonatedGroups); ok {
+				cluster = next
+				header = forwardHeaders(c.Request.Header, user, cluster, grant)
+				event.ImpersonatedGroups = ImpersonationGroups(grant, cluster)
+				event.WithheldTeamGroups = WithheldTeamGroups(grant, cluster)
+				continue
+			}
+		}
+		p.failStaleAgent(c, &event, message)
+		return
 	}
 
 	// The body is already whole here; ObjectName reads a create's name off it
@@ -562,24 +584,40 @@ func (p *Proxy) CallWithHeader(
 		}
 	}
 
-	resp, err := tunnel.Do(ctx, &Request{Method: method, Path: path, Header: header, Body: body})
-	if err != nil {
-		status, message := tunnelFailure(err)
-		record(status, err)
-		return nil, &CallError{Status: status, Message: message}
-	}
-	if resp.Error != "" {
-		record(http.StatusBadGateway, errors.New(resp.Error))
-		return nil, &CallError{
-			Status:  http.StatusBadGateway,
-			Message: "the in-cluster agent could not reach the API server: " + resp.Error,
+	var resp *Response
+	for withdrawn := 0; ; withdrawn++ {
+		var err error
+		resp, err = tunnel.Do(ctx, &Request{Method: method, Path: path, Header: header, Body: body})
+		if err != nil {
+			status, message := tunnelFailure(err)
+			record(status, err)
+			return nil, &CallError{Status: status, Message: message}
 		}
-	}
-	if err := decodeBody(resp, maxDecodedBody); err != nil {
-		record(http.StatusBadGateway, err)
-		return nil, &CallError{Status: http.StatusBadGateway, Message: err.Error()}
-	}
-	if message, ok := staleAgentRefusal(resp.Status, statusMessage(resp.Body), event.ImpersonatedGroups); ok {
+		if resp.Error != "" {
+			record(http.StatusBadGateway, errors.New(resp.Error))
+			return nil, &CallError{
+				Status:  http.StatusBadGateway,
+				Message: "the in-cluster agent could not reach the API server: " + resp.Error,
+			}
+		}
+		if err := decodeBody(resp, maxDecodedBody); err != nil {
+			record(http.StatusBadGateway, err)
+			return nil, &CallError{Status: http.StatusBadGateway, Message: err.Error()}
+		}
+		message, stale := staleAgentRefusal(resp.Status, statusMessage(resp.Body), event.ImpersonatedGroups)
+		if !stale {
+			break
+		}
+		// Withdraw the group the cluster named and ask again without it; see Handle.
+		if withdrawn < len(event.ImpersonatedGroups) {
+			if next, ok := p.withdrawStaleGroup(ctx, user, cluster, resp.Status, statusMessage(resp.Body), event.ImpersonatedGroups); ok {
+				cluster = next
+				header["Impersonate-Group"] = ImpersonationGroups(grant, cluster)
+				event.ImpersonatedGroups = ImpersonationGroups(grant, cluster)
+				event.WithheldTeamGroups = WithheldTeamGroups(grant, cluster)
+				continue
+			}
+		}
 		record(resp.Status, errors.New(message))
 		return nil, &CallError{Status: resp.Status, Message: message}
 	}
@@ -1001,17 +1039,89 @@ func WithheldTeamGroups(grant db.UserClusterAccess, cluster *db.Cluster) []strin
 // caller has never heard of. The refusal stays the cluster's; only its reason is
 // put in terms of the step that fixes it.
 func staleAgentRefusal(status int, message string, asserted []string) (string, bool) {
+	group, ok := staleGroup(status, message, asserted)
+	if !ok {
+		return "", false
+	}
+	return "the cluster refused this call because its agent may not assert the team group " + group +
+		": the re-apply was confirmed, but the agent package applied on the cluster does not name the group. " +
+		"Re-apply the package from the cluster's Agent install sheet", true
+}
+
+// staleGroup is the group a refusal staleAgentRefusal recognises is about. The
+// API server names one group per refusal, the first it finds the agent may not
+// assert.
+func staleGroup(status int, message string, asserted []string) (string, bool) {
 	if status != http.StatusForbidden || !strings.Contains(message, `cannot impersonate resource "groups"`) {
 		return "", false
 	}
 	for _, group := range asserted {
 		if strings.HasPrefix(group, TeamGroupPrefix) && strings.Contains(message, `groups "`+group+`" is forbidden`) {
-			return "the cluster refused this call because its agent may not assert the team group " + group +
-				": the re-apply was confirmed, but the agent package applied on the cluster does not name the group. " +
-				"Re-apply the package from the cluster's Agent install sheet", true
+			return group, true
 		}
 	}
 	return "", false
+}
+
+// withdrawStaleGroup is what happens when the cluster shows a confirmation was
+// wrong. The API server refuses an impersonation whose group the agent may not
+// assert before it looks at anything else, so one stale group would otherwise
+// take the cluster away from every member of every confirmed team, base role
+// included, until somebody re-applies the package. Instead the confirmation is
+// withdrawn, which is the visible state a group is in before anyone confirms:
+// the team is withheld, the base role is asserted, and the call can go again.
+//
+// It answers the cluster as it now stands, for the caller to retry with. It
+// answers false, and changes nothing the caller can see, if the group cannot be
+// withdrawn, in which case the explained refusal is the answer. The withdrawal
+// is recorded on its own audit row, because it changes which identities the
+// cluster is told about, like the confirmation it undoes.
+func (p *Proxy) withdrawStaleGroup(ctx context.Context, user *db.User, cluster *db.Cluster, status int, message string, asserted []string) (*db.Cluster, bool) {
+	group, ok := staleGroup(status, message, asserted)
+	if !ok {
+		return nil, false
+	}
+	who := Event{UserID: user.ID, Username: user.Username, ClusterID: cluster.ID, Cluster: cluster.Name}
+	if !p.forgetStaleGroup(ctx, who, group, status) {
+		return nil, false
+	}
+	next := *cluster
+	next.AgentTeamGroups = db.WithoutTeamGroup(cluster.AgentTeamGroups, strings.TrimPrefix(group, TeamGroupPrefix))
+	return &next, true
+}
+
+// forgetStaleGroup withdraws one team group's confirmation and records it. who
+// carries the caller and the cluster, which is all the stream path has to hand.
+func (p *Proxy) forgetStaleGroup(ctx context.Context, who Event, group string, status int) bool {
+	if err := p.store.ForgetAgentTeamGroup(ctx, who.ClusterID, strings.TrimPrefix(group, TeamGroupPrefix)); err != nil {
+		return false
+	}
+	p.auditor.Record(ctx, Event{
+		At:        time.Now().UTC(),
+		UserID:    who.UserID,
+		Username:  who.Username,
+		ClusterID: who.ClusterID,
+		Cluster:   who.Cluster,
+		Verb:      VerbAgentTeamGroups,
+		Method:    http.MethodDelete,
+		Path:      "/api/v1/clusters/" + strconv.FormatUint(uint64(who.ClusterID), 10) + "/agent-team-groups",
+		Resource:  "agent",
+		Name:      group,
+		Status:    status,
+		Error: "withdrawn: the cluster's agent may not assert " + group +
+			", so its confirmation was dropped and the team is waiting again until the package is re-applied and confirmed",
+	})
+	return true
+}
+
+// staleWithdrawnMessage is what a stream's caller reads when the confirmation
+// was withdrawn but the stream cannot be asked for again on their behalf: the
+// next attempt is made without the group.
+func staleWithdrawnMessage(group string) string {
+	return "the cluster refused this call because its agent may not assert the team group " + group +
+		": the agent package applied on the cluster does not name it. KubeMG has withdrawn the confirmation, " +
+		"so the team is waiting again and this call will work with the base role if you try it again. " +
+		"Re-apply the package from the cluster's Agent install sheet and confirm it to restore the team's access"
 }
 
 // statusMessage reads the message out of a Kubernetes Status body, which is

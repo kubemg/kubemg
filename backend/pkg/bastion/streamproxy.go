@@ -221,7 +221,13 @@ func (p *Proxy) serveUpgradeStream(c *gin.Context, tunnel *Tunnel, event *Event,
 	})
 	if err != nil {
 		status, message := tunnelFailure(err)
-		if explained, ok := staleAgentRefusal(status, message, event.ImpersonatedGroups); ok {
+		if group, ok := staleGroup(status, message, event.ImpersonatedGroups); ok {
+			// The stream cannot be asked for again from here, but the next one
+			// can: withdraw the group so it does not take the base role with it.
+			explained, _ := staleAgentRefusal(status, message, event.ImpersonatedGroups)
+			if p.forgetStaleGroup(c.Request.Context(), *event, group, status) {
+				explained = staleWithdrawnMessage(group)
+			}
 			p.failStaleAgent(c, event, explained)
 			return
 		}

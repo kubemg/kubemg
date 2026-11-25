@@ -56,6 +56,9 @@ type Store interface {
 	// confirmation that the applied agent allows them — see agent_team_groups.go.
 	TeamGroupsForCluster(ctx context.Context, clusterID uint) ([]string, error)
 	ConfirmAgentTeamGroups(ctx context.Context, clusterID uint, names []string) error
+	// ForgetAgentTeamGroup is the proxy withdrawing a confirmation the cluster
+	// showed to be wrong; see bastion.ProxyStore.
+	ForgetAgentTeamGroup(ctx context.Context, clusterID uint, name string) error
 	CreateCluster(ctx context.Context, cluster *db.Cluster) error
 	DeleteCluster(ctx context.Context, id uint) error
 	UpdateClusterHealth(ctx context.Context, id uint, health db.ClusterHealth) error

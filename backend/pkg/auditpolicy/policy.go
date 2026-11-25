@@ -56,6 +56,11 @@ var Verbs = []string{
 //     replaced, and a live tunnel being taken over by a newer connection. The
 //     second is how somebody holding a leaked token becomes the agent; a trail
 //     that could be told to forget it would make the takeover silent.
+//   - agent-team-groups: an administrator confirming that a cluster's agent
+//     package now names a team's group, which changes which identities the
+//     cluster is told about. It is an authorization act, so a setting that
+//     hides it would let the set of Kubernetes groups a cluster trusts change
+//     with no trail.
 //   - mfa-reset / mfa-remove / mfa-recovery-used: somebody's second factor
 //     being taken away or stood in for. Each one weakens how an account
 //     authenticates, which is exactly what an attacker holding a session wants
@@ -75,6 +80,7 @@ var alwaysRecorded = map[string]bool{
 	"secret-reveal":      true,
 	"agent-token-rotate": true,
 	"agent-displaced":    true,
+	"agent-team-groups":  true,
 	"mfa-reset":          true,
 	"mfa-remove":         true,
 	"mfa-recovery-used":  true,

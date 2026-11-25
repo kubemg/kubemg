@@ -167,11 +167,150 @@ func refusedByCluster(Request) Response {
 	}
 }
 
+// staleUntilWithdrawn answers like an API server whose agent package names none
+// of the team groups: the first one asserted is refused, and a call without any
+// is answered.
+func staleUntilWithdrawn(r Request) Response {
+	for _, group := range r.Header["Impersonate-Group"] {
+		if strings.HasPrefix(group, TeamGroupPrefix) {
+			return Response{
+				Status: http.StatusForbidden,
+				Header: map[string][]string{"Content-Type": {"application/json"}},
+				Body:   []byte(impersonationRefusal(group)),
+			}
+		}
+	}
+	return Response{
+		Status: http.StatusOK,
+		Header: map[string][]string{"Content-Type": {"application/json"}},
+		Body:   []byte(`{"kind":"PodList","items":[]}`),
+	}
+}
+
+// A confirmation the cluster shows to be wrong is withdrawn and the call goes
+// again without the group, so the caller keeps the base role instead of being
+// locked out until somebody re-applies the package. The withdrawal is its own
+// audit row, and the call's row says what was asserted and what is now waiting.
+func TestProxyWithdrawsAStaleTeamGroupAndAnswersWithTheBaseRole(t *testing.T) {
+	h, user, agent := teamHarness(t, staleUntilWithdrawn)
+
+	resp := h.proxyRequest(http.MethodGet, "/api/v1/clusters/1/proxy/api/v1/namespaces/team-a/pods", h.token(user))
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected the base role to answer, got %d", resp.StatusCode)
+	}
+
+	seen := agent.requests()
+	if len(seen) != 2 {
+		t.Fatalf("expected the call and one retry, got %d requests", len(seen))
+	}
+	if !slices.Contains(seen[0].Header["Impersonate-Group"], "kubemg:g:ops") {
+		t.Fatalf("the first attempt should assert the team: %v", seen[0].Header["Impersonate-Group"])
+	}
+	if got := seen[1].Header["Impersonate-Group"]; slices.Contains(got, "kubemg:g:ops") || !slices.Contains(got, "kubemg:view") {
+		t.Fatalf("the retry must carry the base role and not the team, got %v", got)
+	}
+
+	h.store.mu.Lock()
+	confirmed := h.store.clusters[1].AgentTeamGroups
+	h.store.mu.Unlock()
+	if confirmed != "" {
+		t.Fatalf("the confirmation must be withdrawn, got %q", confirmed)
+	}
+
+	events := h.audit.events()
+	if len(events) != 2 {
+		t.Fatalf("expected the withdrawal and the call, got %+v", events)
+	}
+	withdrawal, call := events[0], events[1]
+	if withdrawal.Verb != VerbAgentTeamGroups || withdrawal.Name != "kubemg:g:ops" ||
+		!strings.Contains(withdrawal.Error, "withdrawn") {
+		t.Fatalf("unexpected withdrawal row: %+v", withdrawal)
+	}
+	if call.Status != http.StatusOK || slices.Contains(call.ImpersonatedGroups, "kubemg:g:ops") ||
+		!slices.Equal(call.WithheldTeamGroups, []string{"kubemg:g:ops"}) {
+		t.Fatalf("the call's row must show the team as waiting: %+v", call)
+	}
+}
+
+// Two stale teams are withdrawn one refusal at a time, and the call still ends
+// with the base role.
+func TestProxyWithdrawsEveryStaleTeamGroup(t *testing.T) {
+	h, user, agent := teamHarness(t, staleUntilWithdrawn)
+	h.store.mu.Lock()
+	h.store.clusters[1].AgentTeamGroups = "ops,platform"
+	grant := h.store.access[10][1]
+	grant.TeamGroups = []string{"ops", "platform"}
+	h.store.access[10][1] = grant
+	h.store.mu.Unlock()
+
+	resp := h.proxyRequest(http.MethodGet, "/api/v1/clusters/1/proxy/api/v1/namespaces/team-a/pods", h.token(user))
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected the base role to answer, got %d", resp.StatusCode)
+	}
+	if got := len(agent.requests()); got != 3 {
+		t.Fatalf("expected the call and two retries, got %d requests", got)
+	}
+	h.store.mu.Lock()
+	confirmed := h.store.clusters[1].AgentTeamGroups
+	h.store.mu.Unlock()
+	if confirmed != "" {
+		t.Fatalf("both confirmations must be withdrawn, got %q", confirmed)
+	}
+}
+
+// A refusal about anything else is the cluster's answer and passes through, and
+// no confirmation is touched on its account.
+func TestProxyLeavesOtherRefusalsAlone(t *testing.T) {
+	h, user, agent := teamHarness(t, func(Request) Response {
+		return Response{
+			Status: http.StatusForbidden,
+			Header: map[string][]string{"Content-Type": {"application/json"}},
+			Body:   []byte(`{"kind":"Status","status":"Failure","message":"pods is forbidden: User \"kubemg:u:bob\" cannot list resource \"pods\"","reason":"Forbidden","code":403}`),
+		}
+	})
+
+	resp := h.proxyRequest(http.MethodGet, "/api/v1/clusters/1/proxy/api/v1/namespaces/team-a/pods", h.token(user))
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected the cluster's 403, got %d", resp.StatusCode)
+	}
+	if got := len(agent.requests()); got != 1 {
+		t.Fatalf("an ordinary refusal must not be retried, got %d requests", got)
+	}
+	h.store.mu.Lock()
+	confirmed := h.store.clusters[1].AgentTeamGroups
+	h.store.mu.Unlock()
+	if confirmed != "ops" {
+		t.Fatalf("the confirmation must stay, got %q", confirmed)
+	}
+}
+
+// The console's calls recover the same way.
+func TestCallWithdrawsAStaleTeamGroupAndAnswersWithTheBaseRole(t *testing.T) {
+	h, user, agent := teamHarness(t, staleUntilWithdrawn)
+	h.store.mu.Lock()
+	cluster, grant := h.store.clusters[1], h.store.access[10][1]
+	h.store.mu.Unlock()
+
+	resp, err := h.proxy.Call(context.Background(), user, cluster, grant, http.MethodGet,
+		"/api/v1/namespaces/team-a/pods", nil, nil)
+	if err != nil || resp.Status != http.StatusOK {
+		t.Fatalf("expected the base role to answer, got %v (%+v)", err, resp)
+	}
+	if got := len(agent.requests()); got != 2 {
+		t.Fatalf("expected the call and one retry, got %d requests", got)
+	}
+}
+
 // kubectl through the proxy gets a Kubernetes Status naming the re-apply, so
 // it prints the reason instead of the agent's ServiceAccount, and the audit
 // row carries the same explanation.
 func TestProxyExplainsAStaleAgentRefusal(t *testing.T) {
 	h, user, _ := teamHarness(t, refusedByCluster)
+	// The confirmation cannot be withdrawn here, so the refusal is all there is.
+	h.store.forgetErr = errors.New("database unavailable")
 
 	resp := h.proxyRequest(http.MethodGet, "/api/v1/clusters/1/proxy/api/v1/namespaces/team-a/pods", h.token(user))
 	defer func() { _ = resp.Body.Close() }()
@@ -202,6 +341,7 @@ func TestProxyExplainsAStaleAgentRefusal(t *testing.T) {
 // The console's calls get the same explanation as a CallError.
 func TestCallExplainsAStaleAgentRefusal(t *testing.T) {
 	h, user, _ := teamHarness(t, refusedByCluster)
+	h.store.forgetErr = errors.New("database unavailable")
 	h.store.mu.Lock()
 	cluster, grant := h.store.clusters[1], h.store.access[10][1]
 	h.store.mu.Unlock()

@@ -106,7 +106,7 @@ export function GroupManagement() {
     const confirmed = await confirm({
       eyebrow: 'Group',
       title: `Delete ${group.name}?`,
-      body: 'Members lose every cluster grant they only held through this group, at their next call. Grants they hold directly are unaffected.',
+      body: `Members lose every cluster grant they only held through this group, at their next call. Grants they hold directly are unaffected.${group.team_group ? ` Role bindings in clusters stay bound to ${group.team_group}: remove them too, or a group later created under this name inherits them.` : ''}`,
       confirmLabel: 'Delete',
     })
     if (!confirmed) return

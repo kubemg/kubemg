@@ -157,18 +157,20 @@ func (s *Store) AccessForUser(ctx context.Context, userID uint) (map[uint]UserCl
 		return nil, fmt.Errorf("access for user: %w", err)
 	}
 
-	inherited := []GroupClusterAccess{}
+	// One query reads the grants and the names of the groups behind them, so a
+	// proxied call costs no more than it did before team groups. A grant whose
+	// group row is missing is kept, with no name, rather than dropped.
+	inherited := []inheritedGrant{}
 	err = s.gdb.WithContext(ctx).
-		Where("group_id IN (?)", s.gdb.Model(&UserGroup{}).
+		Table("group_cluster_access").
+		Select("group_cluster_access.*, groups.name AS group_name").
+		Joins("LEFT JOIN groups ON groups.id = group_cluster_access.group_id").
+		Where("group_cluster_access.group_id IN (?)", s.gdb.Model(&UserGroup{}).
 			Select("group_id").
 			Where("user_id = ?", userID)).
-		Find(&inherited).Error
+		Scan(&inherited).Error
 	if err != nil {
 		return nil, fmt.Errorf("inherited access for user: %w", err)
-	}
-	groupNames, err := s.groupNames(ctx, inherited)
-	if err != nil {
-		return nil, err
 	}
 
 	out := make(map[uint]UserClusterAccess, len(direct)+len(inherited))
@@ -189,8 +191,8 @@ func (s *Store) AccessForUser(ctx context.Context, userID uint) (map[uint]UserCl
 		// A group grant is also a team identity on *this* cluster, and only on
 		// this one: the name rides on the grant it came from, so a group that
 		// holds no grant here is never carried to it.
-		if name, ok := groupNames[g.GroupID]; ok {
-			candidate.TeamGroups = []string{name}
+		if g.GroupName != "" {
+			candidate.TeamGroups = []string{g.GroupName}
 		}
 		if existing, ok := out[g.ClusterID]; ok {
 			out[g.ClusterID] = MergeAccess(existing, candidate)
@@ -201,25 +203,11 @@ func (s *Store) AccessForUser(ctx context.Context, userID uint) (map[uint]UserCl
 	return out, nil
 }
 
-// groupNames loads the names of the groups behind a set of group grants, keyed
-// by group ID.
-func (s *Store) groupNames(ctx context.Context, grants []GroupClusterAccess) (map[uint]string, error) {
-	if len(grants) == 0 {
-		return map[uint]string{}, nil
-	}
-	ids := make([]uint, 0, len(grants))
-	for _, g := range grants {
-		ids = append(ids, g.GroupID)
-	}
-	groups := []Group{}
-	if err := s.gdb.WithContext(ctx).Select("id", "name").Where("id IN ?", ids).Find(&groups).Error; err != nil {
-		return nil, fmt.Errorf("group names: %w", err)
-	}
-	out := make(map[uint]string, len(groups))
-	for _, g := range groups {
-		out[g.ID] = g.Name
-	}
-	return out, nil
+// inheritedGrant is a group grant together with the name of the group that
+// holds it.
+type inheritedGrant struct {
+	GroupClusterAccess
+	GroupName string `gorm:"column:group_name"`
 }
 
 // TeamGroupsForCluster returns the names of the groups holding a grant on a
