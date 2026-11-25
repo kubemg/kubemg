@@ -900,6 +900,28 @@ export function StatTile({
 }
 
 /**
+ * StatTiles is a row of StatTile that steps aside when every figure in it is
+ * zero. On a fresh install or an empty list a row of zeros is the first thing
+ * the eye lands on and says nothing the empty state under it does not, so the
+ * page shows only that until there is something to count.
+ *
+ * `counts` are the figures the tiles read, not what a filter left: a filter that
+ * matches nothing is not an empty install, and its tiles stay.
+ */
+export function StatTiles({
+  counts,
+  className,
+  children,
+}: {
+  counts: number[]
+  className: string
+  children: ReactNode
+}) {
+  if (counts.every((count) => count === 0)) return null
+  return <div className={className}>{children}</div>
+}
+
+/**
  * Disclosure folds a card's own explanation behind one line — the "why this
  * is like this" prose that belongs in the console rather than only in the
  * manual, kept out of the way of the readings it explains instead of cut.
