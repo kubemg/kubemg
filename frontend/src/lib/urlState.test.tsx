@@ -52,4 +52,19 @@ describe('filters kept in the address', () => {
     expect(new URLSearchParams(window.location.search).get('verb')).toBe('get,list')
     expect(result.current[1][0]).toEqual(['get', 'list'])
   })
+
+  // The audit trail's query depends on the set; a new array on every render
+  // re-ran its fetch effect forever, which with no matching rows showed as a
+  // table flickering between "Loading…" and empty.
+  it('hands back the same set until the address changes', () => {
+    window.history.replaceState(null, '', '/audit?verb=cli-session-revoke')
+    const { result, rerender } = renderHook(() => useUrlList('verb'), { wrapper })
+    const first = result.current[0]
+    rerender()
+    expect(result.current[0]).toBe(first)
+
+    act(() => result.current[1](['get']))
+    expect(result.current[0]).not.toBe(first)
+    expect(result.current[0]).toEqual(['get'])
+  })
 })

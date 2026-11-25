@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router'
 
 /*
@@ -75,7 +75,11 @@ export function useUrlList(key: string): [string[], (next: Update<string[]>) => 
   const [params] = useSearchParams()
   const write = useWriteParam()
   const raw = params.get(key) ?? ''
-  const value = raw === '' ? EMPTY : raw.split(',')
+  // One array per address, not per render: a page puts the set in a query
+  // object an effect depends on, and a fresh array every render re-ran that
+  // effect, whose own state change rendered again — a fetch loop for as long
+  // as anything was selected.
+  const value = useMemo(() => (raw === '' ? EMPTY : raw.split(',')), [raw])
   const set = useCallback(
     (next: Update<string[]>) => {
       const wasRaw = current().get(key) ?? ''
