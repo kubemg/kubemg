@@ -65,16 +65,20 @@ export function AppFooter() {
         ) : null}
         {info ? (
           <span className="ml-auto inline-flex items-center gap-4">
-            {/* Drawn in the warn tone, unlike everything else down here, so it
-                is found: a feedback button nobody notices asks for nothing. */}
-            <button
-              type="button"
-              onClick={() => setFeedback(true)}
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-control border border-warn/40 bg-warn-soft px-2 py-0.5 text-[12px] font-medium text-warn transition-colors hover:border-warn"
-            >
-              <MessageSquarePlus aria-hidden="true" className="size-3.5" />
-              Feedback
-            </button>
+            {/* Drawn the way Documentation is: the footer is the quietest line
+                on the page, and amber is a state, not an accent. An install
+                that should not send its users to a public repository turns it
+                off under Settings -> Branding. */}
+            {branding?.feedback_hidden ? null : (
+              <button
+                type="button"
+                onClick={() => setFeedback(true)}
+                className="inline-flex cursor-pointer items-center gap-1.5 text-[12px] text-muted transition-colors hover:text-fg"
+              >
+                Feedback
+                <MessageSquarePlus aria-hidden="true" className="size-3.5" />
+              </button>
+            )}
             <a
               href={info.docs_url}
               target="_blank"

@@ -252,6 +252,7 @@ Branding differs from a setting in three ways:
 | `banner_text` | 120 characters | Empty means no banner, which is the default. Whitespace runs are folded to one space - a pasted newline would push every page's content down. |
 | `banner_tone` | `neutral`, `caution`, `critical` | A tone stored without text is not reported as a banner. |
 | `footer_notice` | 160 characters | The classification or handling line, beside the release number in the footer. |
+| `feedback_hidden` | true / false | Hides the footer's **Feedback** link, which opens a pre-filled public discussion on the kubemg GitHub repository. Shown by default; turn it off for an install that should not send its users there. |
 
 An omitted field is left alone and a field sent empty is cleared - the same
 convention the settings routes use.

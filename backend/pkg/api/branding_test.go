@@ -223,3 +223,27 @@ func TestBrandingReadRepairsAnUnknownStoredTone(t *testing.T) {
 		t.Fatalf("expected an unreadable tone to fall back to %q, got %q", BannerToneNeutral, body.BannerTone)
 	}
 }
+
+// The footer's Feedback link opens a public GitHub discussion, so an
+// administrator can turn it off. It is served with the public branding, since
+// every signed-in page draws the footer and the settings API is admin-only.
+func TestFeedbackLinkCanBeTurnedOff(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.store.addUser("admin", "pw", db.RoleAdmin)
+	token := env.tokenFor(t, admin)
+
+	if decode[brandingResponse](t, env.do(t, http.MethodGet, "/api/v1/branding", "", nil)).FeedbackHidden {
+		t.Fatal("the link is hidden before anybody turned it off")
+	}
+	rec := env.do(t, http.MethodPut, "/api/v1/branding", token, map[string]any{"feedback_hidden": true})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d (%s)", rec.Code, rec.Body.String())
+	}
+	if !decode[brandingResponse](t, env.do(t, http.MethodGet, "/api/v1/branding", "", nil)).FeedbackHidden {
+		t.Fatal("the switch did not reach the public branding")
+	}
+	env.do(t, http.MethodPut, "/api/v1/branding", token, map[string]any{"feedback_hidden": false})
+	if decode[brandingResponse](t, env.do(t, http.MethodGet, "/api/v1/branding", "", nil)).FeedbackHidden {
+		t.Fatal("turning it back on did not stick")
+	}
+}

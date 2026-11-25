@@ -14,10 +14,13 @@ const CATEGORIES = [
 ] as const
 
 /**
- * Past this the address GitHub is opened on grows longer than a browser or
- * GitHub will carry, so the message is capped well under it.
+ * The longest address GitHub is opened on. What reaches GitHub is the
+ * URL-encoded form, and a character outside ASCII encodes to six or nine
+ * characters, so the budget is measured on the address itself rather than on
+ * the text typed: 4000 characters of Turkish or Chinese would otherwise become
+ * an address of 24 to 36 thousand, which GitHub refuses.
  */
-const MESSAGE_LIMIT = 4000
+const ADDRESS_LIMIT = 6000
 
 /**
  * discussionURL is GitHub's new-discussion page with the feedback already in
@@ -42,7 +45,8 @@ export function FeedbackSheet({ version, onClose }: { version?: string; onClose:
   const [category, setCategory] = useState<string>(CATEGORIES[0].slug)
   const [title, setTitle] = useState('')
   const [message, setMessage] = useState('')
-  const ready = title.trim() !== '' && message.trim() !== ''
+  const left = ADDRESS_LIMIT - discussionURL(category, title, message, version).length
+  const ready = title.trim() !== '' && message.trim() !== '' && left >= 0
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -96,14 +100,14 @@ export function FeedbackSheet({ version, onClose }: { version?: string; onClose:
         <Field
           label="Message"
           htmlFor={`${id}-message`}
-          hint={`${message.length} / ${MESSAGE_LIMIT}`}
+          error={left < 0 ? `Too long for one address by ${-left} characters. Shorten it, or post the rest on GitHub.` : undefined}
+          hint={`${left} characters left`}
         >
           <TextArea
             id={`${id}-message`}
             prose
             rows={8}
             value={message}
-            maxLength={MESSAGE_LIMIT}
             onChange={(event) => setMessage(event.target.value)}
           />
         </Field>

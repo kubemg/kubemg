@@ -67,6 +67,7 @@ export function BrandingSettings() {
         banner_text: draft.banner_text ?? '',
         banner_tone: draft.banner_tone ?? 'neutral',
         footer_notice: draft.footer_notice ?? '',
+        feedback_hidden: draft.feedback_hidden ?? false,
       })
       await refresh()
       setSaved(true)
@@ -286,6 +287,21 @@ export function BrandingSettings() {
               onChange={(event) => set('footer_notice', event.target.value)}
             />
           </Field>
+          <label className="flex items-start gap-2.5">
+            <input
+              type="checkbox"
+              className="mt-0.5 size-4 accent-[var(--color-accent)]"
+              checked={!draft.feedback_hidden}
+              onChange={(event) => set('feedback_hidden', !event.target.checked)}
+            />
+            <span className="min-w-0">
+              <span className="text-[13px] text-fg">Show the Feedback link</span>
+              <span className="mt-0.5 block text-[12px] leading-snug text-muted">
+                It opens a public discussion on the kubemg GitHub repository. Turn it off for an
+                install that should not send its users there.
+              </span>
+            </span>
+          </label>
         </Panel>
       </form>
     </SettingsLayout>
@@ -321,6 +337,7 @@ function normalize(branding: Branding): Branding {
     banner_text: (branding.banner_text ?? '').trim(),
     banner_tone: branding.banner_tone ?? 'neutral',
     footer_notice: (branding.footer_notice ?? '').trim(),
+    feedback_hidden: branding.feedback_hidden ?? false,
   }
 }
 
@@ -330,6 +347,7 @@ function same(a: Branding, b: Branding): boolean {
     a.organisation_mark === b.organisation_mark &&
     a.banner_text === b.banner_text &&
     a.banner_tone === b.banner_tone &&
-    a.footer_notice === b.footer_notice
+    a.footer_notice === b.footer_notice &&
+    a.feedback_hidden === b.feedback_hidden
   )
 }

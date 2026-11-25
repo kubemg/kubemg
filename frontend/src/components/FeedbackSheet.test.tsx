@@ -70,14 +70,37 @@ describe('FeedbackSheet', () => {
     expect(screen.getByLabelText<HTMLSelectElement>('Kind').value).toBe('ideas')
   })
 
-  it('caps the message so the address stays short enough to open', () => {
+  it('measures the budget on the encoded address, not on the characters typed', () => {
+    render(<FeedbackSheet version="v0.17.2" onClose={() => {}} />)
+
+    // 1500 ASCII characters encode to about as many: well inside the address.
+    fill('Ideas', 'a'.repeat(1500))
+    expect(continueOnGitHub().disabled).toBe(false)
+
+    // 1500 Turkish ones encode to six characters each, past what GitHub takes,
+    // though the text is no longer.
+    fill('Fikirler', 'ş'.repeat(1500))
+    expect(continueOnGitHub().disabled).toBe(true)
+    expect(screen.getByRole('alert').textContent).toMatch(/Too long for one address/)
+  })
+
+  it('keeps the title short', () => {
     render(<FeedbackSheet onClose={() => {}} />)
-    expect(screen.getByLabelText<HTMLTextAreaElement>('Message').maxLength).toBe(4000)
     expect(screen.getByLabelText<HTMLInputElement>('Title').maxLength).toBe(200)
   })
 })
 
 describe('AppFooter feedback', () => {
+  it('is not drawn when an administrator turned it off', async () => {
+    render(
+      <BrandingContext.Provider value={{ branding: { feedback_hidden: true }, refresh: () => Promise.resolve() }}>
+        <AppFooter />
+      </BrandingContext.Provider>,
+    )
+    expect(await screen.findByRole('link', { name: /Documentation/ })).not.toBeNull()
+    expect(screen.queryByRole('button', { name: 'Feedback' })).toBeNull()
+  })
+
   it('sits beside Documentation and opens the sheet', async () => {
     render(
       <BrandingContext.Provider value={{ branding: null, refresh: () => Promise.resolve() }}>

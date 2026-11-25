@@ -491,6 +491,8 @@ export interface Branding {
   banner_text?: string
   banner_tone?: BannerTone
   footer_notice?: string
+  /** Hides the footer's Feedback link, which opens a public GitHub discussion. */
+  feedback_hidden?: boolean
 }
 
 /** How loudly a banner is drawn. The deck's semantic three, never the accent:
