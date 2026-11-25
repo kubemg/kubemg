@@ -144,7 +144,8 @@ export function AuditForwardingPanel() {
     <>
       <Panel
         title="Where the trail is shipped"
-        description="Every audit record is pushed here as RFC 5424 syslog with a JSON message - the same fields this server writes to its own log, so one parser reads both copies. This is not an alarm: nothing is deduplicated and no verb selection narrows it."
+        description="Push every audit record to a syslog server."
+        info="Every audit record is pushed here as RFC 5424 syslog with a JSON message - the same fields this server writes to its own log, so one parser reads both copies. This is not an alarm: nothing is deduplicated and no verb selection narrows it."
         bodyClassName="flex flex-col"
         actions={
           <Button size="sm" onClick={() => setEditing('new')}>
@@ -391,7 +392,8 @@ function ForwarderSheet({
           <Field
             label="Host"
             htmlFor="forwarder_host"
-            hint="A hostname or IP on its own - no scheme, and the port is the next field. Dialled from kubemg, so it has to be reachable from here."
+            hint="Hostname or IP, no scheme or port."
+            info="A hostname or IP on its own - no scheme, and the port is the next field. Dialled from kubemg, so it has to be reachable from here."
           >
             <TextInput
               id="forwarder_host"
@@ -478,7 +480,8 @@ function ForwarderSheet({
             <Field
               label="CA bundle"
               htmlFor="forwarder_ca"
-              hint="PEM. Leave blank for a publicly-issued certificate; paste the issuing CA for the private one most SIEM appliances use."
+              hint="PEM. Empty for a public certificate."
+              info="PEM. Leave blank for a publicly-issued certificate; paste the issuing CA for the private one most SIEM appliances use."
             >
               <TextArea
                 id="forwarder_ca"

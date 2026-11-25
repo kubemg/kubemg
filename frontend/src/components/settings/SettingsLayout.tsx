@@ -7,6 +7,7 @@ import type { SettingSource } from '../../lib/settings'
 import type { DocTarget } from '../../lib/docs'
 import { AppShell } from '../AppShell'
 import { DocsLink } from '../DocsLink'
+import { InfoTip } from '../primitives'
 
 /**
  * SettingsLayout is the shared frame every settings sub-page renders through.
@@ -34,6 +35,7 @@ import { DocsLink } from '../DocsLink'
 export function SettingsLayout({
   title,
   description,
+  info,
   actions,
   aside,
   docs,
@@ -43,6 +45,8 @@ export function SettingsLayout({
   /** What this group of settings governs, in one line under the title. The
       reasoning lives in the manual, behind `docs`. */
   description?: ReactNode
+  /** The longer account of what the page governs, behind an ⓘ after the line. */
+  info?: ReactNode
   /** The manual's page for this group, linked at the end of the description. */
   docs?: DocTarget
   actions?: ReactNode
@@ -59,6 +63,12 @@ export function SettingsLayout({
         description || docs ? (
           <>
             {description}
+            {info ? (
+              <>
+                {' '}
+                <InfoTip tip={info} label={`About ${title}`} />
+              </>
+            ) : null}
             {description && docs ? ' ' : null}
             {docs ? <DocsLink to={docs}>Documentation</DocsLink> : null}
           </>
@@ -112,14 +122,31 @@ export function SettingsAside({
       that reaches nothing until somebody re-applies manifests, for instance. */
   reach?: ReactNode
 }) {
+  // One glance per row: the value, and where it came from as a word. What a
+  // change reaches, and the source in a sentence, are a hover away.
   return (
-    <div className="flex flex-col gap-1.5 rounded-card border border-line bg-surface p-3">
-      <p className="label text-faint">{label}</p>
-      <p className="min-w-0 font-data text-[12.5px] break-words text-fg">{value}</p>
-      {source ? <p className="text-[12px] text-muted">{SOURCE_COPY[source]}</p> : null}
-      {reach ? <p className="text-[12px] text-muted">{reach}</p> : null}
+    <div className="flex flex-col gap-1 rounded-card border border-line bg-surface p-3">
+      <span className="flex items-center gap-1">
+        <span className="label text-faint">{label}</span>
+        {reach ? <InfoTip tip={reach} label={`What changing ${label} reaches`} /> : null}
+      </span>
+      <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <span className="min-w-0 font-data text-[12.5px] break-words text-fg">{value}</span>
+        {source ? (
+          <span title={SOURCE_COPY[source]} className="text-[12px] text-muted">
+            {SOURCE_WORD[source]}
+          </span>
+        ) : null}
+      </span>
     </div>
   )
+}
+
+/** The source as a word, beside the value. The sentence is its title. */
+const SOURCE_WORD: Record<SettingSource, string> = {
+  default: 'default',
+  environment: 'from env',
+  override: 'set here',
 }
 
 /**

@@ -151,7 +151,8 @@ export function AuditSettings() {
   return (
     <SettingsLayout
       title="Audit settings"
-      description="What the audit trail keeps and for how long, whether shells are recorded, and where the trail is forwarded. Refusals, streaming calls and replays are recorded whatever is selected here."
+      description="What the trail keeps, records and forwards."
+      info="What the audit trail keeps and for how long, whether shells are recorded, and where the trail is forwarded. Refusals, streaming calls and replays are recorded whatever is selected here."
       aside={
         settings ? (
           <>

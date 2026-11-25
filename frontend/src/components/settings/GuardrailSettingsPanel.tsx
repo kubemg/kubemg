@@ -20,6 +20,7 @@ import {
   Button,
   Field,
   IconButton,
+  InfoTip,
   Notice,
   Panel,
   Pill,
@@ -181,7 +182,8 @@ export function GuardrailSettingsPanel({ clusters }: { clusters: Cluster[] }) {
     <>
       <Panel
         title="Command guardrails"
-        description="Rules that refuse a call whatever the cluster’s RBAC allows - because the person who deletes the wrong namespace is usually the person entitled to delete it. They cover proxied API calls and what is typed into a container."
+        description="Rules that refuse a call whatever RBAC allows."
+        info="Rules that refuse a call whatever the cluster’s RBAC allows - because the person who deletes the wrong namespace is usually the person entitled to delete it. They cover proxied API calls and what is typed into a container."
         bodyClassName="flex flex-col"
         actions={
           <>
@@ -227,6 +229,10 @@ export function GuardrailSettingsPanel({ clusters }: { clusters: Cluster[] }) {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="truncate text-[13.5px] font-medium text-fg">{policy.name}</span>
+                  {/* Why the rule exists is worth reading once, not on every row. */}
+                  {policy.description ? (
+                    <InfoTip label={`About ${policy.name}`} tip={policy.description} />
+                  ) : null}
 
                   {/* Scope first: it is what decides the blast radius. */}
                   {policy.cluster_id === 0 ? (
@@ -242,10 +248,7 @@ export function GuardrailSettingsPanel({ clusters }: { clusters: Cluster[] }) {
                 </div>
 
                 <p className="mt-1 truncate font-mono text-[12px] text-muted">{policy.pattern}</p>
-                <p className="mt-1 text-[12px] text-faint">
-                  {TARGET_LABEL[policy.target]}
-                  {policy.description ? ` · ${policy.description}` : ''}
-                </p>
+                <p className="mt-1 text-[12px] text-faint">{TARGET_LABEL[policy.target]}</p>
               </div>
 
               <div className="flex shrink-0 items-center gap-1.5">
@@ -282,9 +285,13 @@ export function GuardrailSettingsPanel({ clusters }: { clusters: Cluster[] }) {
             control oversold as a sandbox is one somebody relies on wrongly. */}
         <div className="px-4 py-3">
           <Notice tone="info">
-            Guardrails stop the right command typed against the wrong cluster. They are not a
-            sandbox: anyone who can open a shell can work around a pattern, and the controls for
-            that are the grant that let them in and the recording of what they did.
+            <span className="inline-flex items-center gap-1">
+              Guardrails catch mistakes; they are not a sandbox.
+              <InfoTip
+                label="Why guardrails are not a sandbox"
+                tip="Guardrails stop the right command typed against the wrong cluster. Anyone who can open a shell can work around a pattern, and the controls for that are the grant that let them in and the recording of what they did."
+              />
+            </span>
           </Notice>
         </div>
       </Panel>

@@ -623,12 +623,16 @@ const CONTROL =
 export function Field({
   label,
   hint,
+  info,
   error,
   htmlFor,
   children,
 }: {
   label: string
   hint?: string
+  /** What the field means, at length: behind an ⓘ beside the label, so the hint
+      under the input can stay a unit, a format or a default. */
+  info?: ReactNode
   /** Replaces the hint while the field is invalid — two messages under one
       input is one too many, and the problem outranks the explanation. */
   error?: string
@@ -637,9 +641,18 @@ export function Field({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={htmlFor} className="label">
-        {label}
-      </label>
+      {info ? (
+        <span className="flex items-center gap-1">
+          <label htmlFor={htmlFor} className="label">
+            {label}
+          </label>
+          <InfoTip tip={info} label={`About ${label}`} />
+        </span>
+      ) : (
+        <label htmlFor={htmlFor} className="label">
+          {label}
+        </label>
+      )}
       {children}
       {error ? (
         <p role="alert" className="text-[12px] leading-snug text-danger">
@@ -741,6 +754,7 @@ export function Panel({
   title,
   eyebrow,
   description,
+  info,
   actions,
   children,
   className,
@@ -749,6 +763,8 @@ export function Panel({
   title: string
   eyebrow?: string
   description?: string
+  /** The longer explanation, one hover or focus away beside the title. */
+  info?: ReactNode
   actions?: ReactNode
   children?: ReactNode
   className?: string
@@ -763,6 +779,7 @@ export function Panel({
               named in a quiet pill beside the title rather than above it. */}
           <div className="flex min-w-0 items-center gap-2">
             <h2 className="truncate text-[16px] font-bold text-fg">{title}</h2>
+            {info ? <InfoTip tip={info} label={`About ${title}`} /> : null}
             {eyebrow ? (
               <span className="shrink-0 rounded-full border border-line px-2 py-px text-[11.5px] font-medium text-muted">
                 {eyebrow}
