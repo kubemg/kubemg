@@ -237,6 +237,14 @@ stay internal: give agents an address and a port of their own.
   listener is plain HTTP and needs a TLS-terminating route of its own.
 - Agents already installed keep the address they were installed with. Re-apply
   their install package to move them.
+- **The browser shell still needs `publicURL`.** Its pod runs in the cluster,
+  and its `kubectl` dials back to `publicURL`, because the agent listener does
+  not serve the kubectl proxy. A cluster that reaches only `agent.url` gets a
+  shell whose `kubectl` times out. The shell dock says so when an agent URL is
+  set. Either let those clusters reach `publicURL` too, or leave the browser
+  shell to clusters that can.
+- **Settings → Deployment** shows the agent URL install packages are rendered
+  on, and warns when it is plain `http://`.
 
 ## Values
 
