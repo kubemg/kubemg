@@ -234,6 +234,7 @@ func TestDispatcherDeliversAMatchingSignal(t *testing.T) {
 		Reason: "OOMKilled", Type: "Warning", Object: "pod/api-7d9f",
 		Message: "Container api was OOMKilled", Count: 4,
 	})
+	d.waitDeliveries()
 
 	if got.count() != 1 {
 		t.Fatalf("expected one delivery, got %d", got.count())
@@ -313,6 +314,7 @@ func TestDispatcherDeduplicatesWithinTheCooloff(t *testing.T) {
 	for range 5 {
 		d.deliver(context.Background(), signal)
 	}
+	d.waitDeliveries()
 
 	if got.count() != 1 {
 		t.Fatalf("a crash loop should collapse into one delivery, got %d", got.count())
@@ -323,6 +325,7 @@ func TestDispatcherDeduplicatesWithinTheCooloff(t *testing.T) {
 	other.Object = "pod/worker"
 	other.Fingerprint = "event/prod/payments/pod/worker/OOMKilled"
 	d.deliver(context.Background(), other)
+	d.waitDeliveries()
 	if got.count() != 2 {
 		t.Fatalf("a different object should deliver, got %d", got.count())
 	}
@@ -345,6 +348,7 @@ func TestDispatcherSkipsDisabledChannelsAndRules(t *testing.T) {
 	}
 	d := newTestDispatcher(t, store)
 	d.deliver(context.Background(), Signal{Source: SourceAudit, Verb: "delete"})
+	d.waitDeliveries()
 
 	if got.count() != 0 {
 		t.Fatalf("neither a disabled channel nor a disabled rule should deliver, got %d", got.count())
@@ -503,6 +507,7 @@ func TestWebhookCarriesTheSignalUnreshaped(t *testing.T) {
 		Status: 403, Denied: true, Path: "/api/v1/namespaces/prod",
 		Message: "KubeMG refused DELETE /api/v1/namespaces/prod",
 	})
+	d.waitDeliveries()
 
 	body, _ := got.last()
 	var envelope struct {
@@ -631,6 +636,64 @@ func TestMaskChannelURL(t *testing.T) {
 	} {
 		if got := MaskChannelURL(raw); got != want {
 			t.Errorf("MaskChannelURL(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
+// TestDeadChannelDoesNotBlockHealthyChannel verifies that a signal sent to two
+// channels — one that hangs, one that answers immediately — reaches the healthy
+// channel without waiting for the hanging one to time out.
+func TestDeadChannelDoesNotBlockHealthyChannel(t *testing.T) {
+	healthy := &receiver{}
+	healthyServer := httptest.NewServer(healthy.handler())
+	defer healthyServer.Close()
+
+	// A server that blocks for longer than the per-attempt timeout.
+	slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(30 * time.Second):
+		}
+	}))
+	defer slowServer.Close()
+
+	store := &fakeAlarmStore{
+		channels: []db.AlarmChannel{
+			{ID: 1, Name: "slow", Kind: db.ChannelWebhook, URL: slowServer.URL, Enabled: true},
+			{ID: 2, Name: "fast", Kind: db.ChannelWebhook, URL: healthyServer.URL, Enabled: true},
+		},
+		rules: []db.AlarmRule{
+			{ID: 1, Name: "r1", ChannelID: 1, Enabled: true, Trigger: db.TriggerClusterEvent, EventReasons: "OOMKilled"},
+			{ID: 2, Name: "r2", ChannelID: 2, Enabled: true, Trigger: db.TriggerClusterEvent, EventReasons: "OOMKilled"},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	d := NewDispatcher(DispatcherOptions{Store: store})
+	d.Refresh(ctx)
+	d.deliver(ctx, Signal{
+		Source: SourceClusterEvent, At: time.Now().UTC(),
+		Reason: "OOMKilled", Type: "Warning",
+	})
+
+	// The healthy channel must receive its signal well within the per-attempt
+	// timeout — it should not wait for the slow channel to finish.
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-tick.C:
+			if healthy.count() >= 1 {
+				return // pass
+			}
+		case <-deadline.C:
+			t.Fatalf("healthy channel did not receive its signal within 3s (got %d deliveries)", healthy.count())
+		case <-ctx.Done():
+			t.Fatalf("context expired before healthy channel received its signal")
 		}
 	}
 }
