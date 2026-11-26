@@ -102,7 +102,7 @@ const (
 	// The console's own identity — see pkg/api/branding.go for what each one is
 	// for and why the mark is stored inline rather than linked.
 	//
-	// These five are deliberately **not** in SettingKeys and not in the settings
+	// These six are deliberately **not** in SettingKeys and not in the settings
 	// API's runtimeSettings. Every setting there is a knob on how this server
 	// behaves, resolved from an environment default the process was started
 	// with, and readable only by an administrator. Branding is none of those: it
@@ -119,6 +119,11 @@ const (
 	SettingEnvironmentBannerText = "environment_banner_text"
 	SettingEnvironmentBannerTone = "environment_banner_tone"
 	SettingFooterNotice          = "footer_notice"
+	// SettingFeedbackHidden hides the footer's Feedback link, which opens a
+	// public GitHub discussion. "1" hides it; unset shows it. A regulated
+	// install, or one with a handling caveat in its footer, should not invite
+	// its users to write to a public repository from inside the console.
+	SettingFeedbackHidden = "feedback_hidden"
 	// SettingSetupCompletedAt stamps the moment first-run setup finished, as an
 	// RFC 3339 timestamp. Its presence is the whole signal — the console shows
 	// the install wizard until it is set, and never again afterwards.

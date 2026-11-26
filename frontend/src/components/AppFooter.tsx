@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, MessageSquarePlus } from 'lucide-react'
 
 import { fetchServerVersion } from '../api/client'
 import type { ServerVersion } from '../api/types'
 import { useBranding } from '../state/branding-context'
+import { FeedbackSheet } from './FeedbackSheet'
 
 /**
  * The one line under every page: which release this is, and where the manual
@@ -22,6 +23,7 @@ import { useBranding } from '../state/branding-context'
  */
 export function AppFooter() {
   const [info, setInfo] = useState<ServerVersion | null>(null)
+  const [feedback, setFeedback] = useState(false)
   const { branding } = useBranding()
 
   useEffect(() => {
@@ -62,17 +64,34 @@ export function AppFooter() {
           <span className="min-w-0 truncate text-[12px] font-medium text-muted">{notice}</span>
         ) : null}
         {info ? (
-        <a
-          href={info.docs_url}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="ml-auto inline-flex items-center gap-1.5 text-[12px] text-muted transition-colors hover:text-fg"
-        >
-          Documentation
-          <ExternalLink aria-hidden="true" className="size-3.5" />
-        </a>
+          <span className="ml-auto inline-flex items-center gap-4">
+            {/* Drawn the way Documentation is: the footer is the quietest line
+                on the page, and amber is a state, not an accent. An install
+                that should not send its users to a public repository turns it
+                off under Settings -> Branding. */}
+            {branding?.feedback_hidden ? null : (
+              <button
+                type="button"
+                onClick={() => setFeedback(true)}
+                className="inline-flex cursor-pointer items-center gap-1.5 text-[12px] text-muted transition-colors hover:text-fg"
+              >
+                Feedback
+                <MessageSquarePlus aria-hidden="true" className="size-3.5" />
+              </button>
+            )}
+            <a
+              href={info.docs_url}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="inline-flex items-center gap-1.5 text-[12px] text-muted transition-colors hover:text-fg"
+            >
+              Documentation
+              <ExternalLink aria-hidden="true" className="size-3.5" />
+            </a>
+          </span>
         ) : null}
       </div>
+      {feedback ? <FeedbackSheet version={info?.version} onClose={() => setFeedback(false)} /> : null}
     </footer>
   )
 }

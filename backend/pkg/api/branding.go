@@ -46,6 +46,10 @@ type brandingResponse struct {
 	// FooterNotice is the classification line under every page — "Internal —
 	// Restricted", a handling caveat, whatever the site is obliged to state.
 	FooterNotice string `json:"footer_notice,omitempty"`
+	// FeedbackHidden turns off the footer's Feedback link. It is served with
+	// the rest of the console's identity because every signed-in page draws
+	// the footer, and the settings API is administrators' only.
+	FeedbackHidden bool `json:"feedback_hidden,omitempty"`
 }
 
 // Banner tones. Three, and they are the deck's semantic colours rather than a
@@ -101,6 +105,7 @@ func (s *server) branding(c *gin.Context) brandingResponse {
 		BannerText:       strings.TrimSpace(stored[db.SettingEnvironmentBannerText]),
 		BannerTone:       strings.TrimSpace(stored[db.SettingEnvironmentBannerTone]),
 		FooterNotice:     strings.TrimSpace(stored[db.SettingFooterNotice]),
+		FeedbackHidden:   stored[db.SettingFeedbackHidden] == "1",
 	}
 
 	// A tone with no text is not a banner, and a hand-edited row must not be
@@ -136,6 +141,7 @@ type updateBrandingRequest struct {
 	BannerText       *string `json:"banner_text"`
 	BannerTone       *string `json:"banner_tone"`
 	FooterNotice     *string `json:"footer_notice"`
+	FeedbackHidden   *bool   `json:"feedback_hidden"`
 }
 
 // updateBranding stores the console's identity (admin only). The settings
@@ -208,6 +214,13 @@ func (s *server) updateBranding(c *gin.Context) {
 			return
 		}
 		values[db.SettingFooterNotice] = notice
+	}
+
+	if req.FeedbackHidden != nil {
+		values[db.SettingFeedbackHidden] = ""
+		if *req.FeedbackHidden {
+			values[db.SettingFeedbackHidden] = "1"
+		}
 	}
 
 	if len(values) == 0 {
