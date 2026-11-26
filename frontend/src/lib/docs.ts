@@ -38,6 +38,19 @@ export function docsHref(base: string, target: DocTarget): string {
  * it, so a settings page reads its own row rather than spelling a path.
  */
 export const DOCS = {
+  /** The page behind each page subtitle's Learn more. */
+  pages: {
+    accessRequests: 'access/jit.md',
+    audit: 'audit/trail.md',
+    clusters: 'clusters/managing.md',
+    registerCluster: 'clusters/registering.md',
+    groups: 'access/users-and-groups.md',
+    users: 'access/users-and-groups.md#users',
+    credentials: 'access/kubeconfigs.md#the-register-of-issued-credentials',
+    machineAccounts: 'access/machine-accounts.md',
+    permissions: 'access/model.md',
+    recordings: 'audit/session-recording.md',
+  },
   deployment: {
     page: 'reference/settings.md#deployment-posture-read-only-not-a-setting',
     checks: {

@@ -122,7 +122,7 @@ export function UserDetail() {
   return (
     <AppShell
       title={title}
-      description="What this account can reach today and through which grants, the kubeconfigs it holds, and the shells it opened."
+      description="What this account reaches, holds and opened."
       parent={{ label: 'Users', to: '/admin/users' }}
     >
       <div className="flex min-w-0 flex-col gap-4">

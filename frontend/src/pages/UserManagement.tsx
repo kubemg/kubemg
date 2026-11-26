@@ -36,6 +36,7 @@ import {
 import { useAuth } from '../state/auth-context'
 import { useConfirm } from '../state/confirm-context'
 import { useResult } from '../state/result-context'
+import { DOCS } from '../lib/docs'
 
 const SYSTEM_ROLES: SystemRole[] = ['superadmin', 'admin', 'user']
 
@@ -191,7 +192,8 @@ export function UserManagement() {
   return (
     <AppShell
       title="Users"
-      description="The people who sign in to kubemg. Disabling an account keeps its cluster grants and group memberships, and takes effect on the next request rather than at token expiry."
+      description="People who sign in to kubemg."
+      docs={DOCS.pages.users}
       actions={
         <Button variant="primary" onClick={() => setSheetOpen(true)}>
           <Plus aria-hidden="true" className="size-4" />

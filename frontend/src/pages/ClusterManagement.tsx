@@ -30,6 +30,7 @@ import { linkState } from '../lib/status'
 import { useClusters } from '../state/clusters-context'
 import { useConfirm } from '../state/confirm-context'
 import { useResult } from '../state/result-context'
+import { DOCS } from '../lib/docs'
 
 export function ClusterManagement() {
   const confirm = useConfirm()
@@ -125,7 +126,8 @@ export function ClusterManagement() {
   return (
     <AppShell
       title="Clusters"
-      description="Every cluster kubemg is registered to reach, how it reaches it, and whether that link is up right now."
+      description="Every registered cluster and its link."
+      docs={DOCS.pages.clusters}
       actions={
         <LinkButton to="/admin/clusters/new" variant="primary">
             <Plus aria-hidden="true" className="size-4" />

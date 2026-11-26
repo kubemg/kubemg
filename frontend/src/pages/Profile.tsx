@@ -54,7 +54,7 @@ export function Profile() {
   return (
     <AppShell
       title="My profile"
-      description="The account you are signed in as, the details you can change yourself, and your password."
+      description="Your account, details and password."
     >
       {editing ? (
         <ProfileSheet

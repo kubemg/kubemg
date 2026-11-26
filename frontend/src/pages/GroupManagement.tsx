@@ -29,6 +29,7 @@ import {
 import { relativeAge } from '../lib/time'
 import { useConfirm } from '../state/confirm-context'
 import { useResult } from '../state/result-context'
+import { DOCS } from '../lib/docs'
 
 const ROLE_LABEL: Record<SystemRole, string> = {
   superadmin: 'Super admin',
@@ -121,7 +122,8 @@ export function GroupManagement() {
   return (
     <AppShell
       title="Groups"
-      description="Grant a cluster to a group once instead of to each member in turn. Every member inherits the grant, and where a user holds both, the more permissive one applies."
+      description="Grant clusters to many people at once."
+      docs={DOCS.pages.groups}
       actions={
         <Button variant="primary" onClick={() => setSheetOpen(true)}>
           <Plus aria-hidden="true" className="size-4" />

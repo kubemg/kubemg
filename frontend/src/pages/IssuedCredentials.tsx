@@ -37,6 +37,7 @@ import { useAuth } from '../state/auth-context'
 import { useConfirm } from '../state/confirm-context'
 import { useResult } from '../state/result-context'
 import { useUrlText } from '../lib/urlState'
+import { DOCS } from '../lib/docs'
 
 /**
  * IssuedCredentials is the register: every kubeconfig this console has handed
@@ -199,15 +200,10 @@ export function IssuedCredentials({ reading }: { reading: Reading }) {
   return (
     <AppShell
       title={mine ? 'My credentials' : 'Issued credentials'}
-      description={
-        <>
-          A kubeconfig for a cluster reached through an agent carries a kubemg token, so revoking
-          it here stops the next call. One for a cluster registered for direct API access carries a
-          token that cluster minted, which kubemg cannot withdraw - those rows say so, and the only
-          lever is deleting the account’s <code className="font-mono text-[12.5px]">kubemg-…</code>{' '}
-          ServiceAccount on the cluster.
-        </>
-      }
+      // Revoking a direct-mode credential is the one thing here that does not
+      // do what it says, and each such row says so where the action is.
+      description="Issued kubeconfigs, and who holds them."
+      docs={DOCS.pages.credentials}
       actions={
         <>
           {/* Only on the operator's own reading, and only for an account whose

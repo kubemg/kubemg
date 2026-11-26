@@ -38,6 +38,7 @@ import { useAuth } from '../state/auth-context'
 import { useClusters } from '../state/clusters-context'
 import { useShellDock } from '../state/shell-dock-context'
 import { useInventory } from '../state/inventory-context'
+import type { DocTarget } from '../lib/docs'
 import { useTheme } from '../lib/theme'
 import {
   ACCESS_HOME,
@@ -56,6 +57,7 @@ import { railChip } from '../lib/branding'
 import { linkState } from '../lib/status'
 import { useVulnCounts } from '../lib/useVulnCounts'
 import { vulnRailDot } from '../lib/vulnFindings'
+import { DocsLink } from './DocsLink'
 import { ClusterMenu } from './ClusterMenu'
 import { ClusterSwitcher } from './ClusterSwitcher'
 import { ClusterTree } from './ClusterTree'
@@ -327,6 +329,7 @@ function storedPanelCollapsed(): boolean {
 export function AppShell({
   title,
   description,
+  docs,
   parent,
   actions,
   timeRange = false,
@@ -337,11 +340,13 @@ export function AppShell({
 }: {
   title: string
   /**
-   * One or two sentences under the title: what this page is for, said once.
-   * It replaces the info notice a page used to open its body with, which read
-   * as a warning box on a page that had nothing to warn about.
+   * A few words under the title: what this page is for, said once. It is read
+   * in a glance, so it stays short and the rest lives in the manual, which
+   * `docs` links as Learn more.
    */
   description?: ReactNode
+  /** The manual's page for this one, linked after the description. */
+  docs?: DocTarget
   /** Rendered ahead of the title as a breadcrumb, for pages nested under another. */
   parent?: { label: string; to: string }
   actions?: ReactNode
@@ -744,6 +749,12 @@ export function AppShell({
               {description ? (
                 <p className="mt-1 max-w-3xl text-[13.5px] leading-relaxed text-muted">
                   {description}
+                  {docs ? (
+                    <>
+                      {' '}
+                      <DocsLink to={docs}>Learn more</DocsLink>
+                    </>
+                  ) : null}
                 </p>
               ) : null}
               </div>
