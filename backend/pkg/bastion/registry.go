@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -119,6 +120,15 @@ type Tunnel struct {
 	// queueWait is how long a sender waits for room in that queue before giving
 	// up on its own frame. It is a field only so a test can shorten it.
 	queueWait time.Duration
+	// capabilities are what this server accepted from the agent's hello, the
+	// list its welcome sends back. Negotiated once, here, so the welcome and
+	// the tunnel's own behaviour read one answer and cannot drift apart.
+	capabilities []string
+	// binaryStreams says the agent negotiated CapabilityBinaryStreamData, so
+	// stream_data goes to it as a binary message, and a binary message from it
+	// is a frame it may send. Set at construction and never changed, so
+	// senders read it without a lock.
+	binaryStreams bool
 	// bodyLimit and budget are maxResponseBody and assemblyBudget, as fields
 	// only so a test can shorten them.
 	bodyLimit int
@@ -141,6 +151,7 @@ type Tunnel struct {
 }
 
 func newTunnel(conn *websocket.Conn, clusterID uint, clusterName string, hello Hello) *Tunnel {
+	capabilities := negotiateCapabilities(hello.Capabilities)
 	t := &Tunnel{
 		ClusterID:         clusterID,
 		ClusterName:       clusterName,
@@ -151,6 +162,8 @@ func newTunnel(conn *websocket.Conn, clusterID uint, clusterName string, hello H
 		out:               make(chan []byte, outboundQueue),
 		bulk:              make(chan []byte, outboundQueue),
 		queueWait:         writeTimeout,
+		capabilities:      capabilities,
+		binaryStreams:     slices.Contains(capabilities, CapabilityBinaryStreamData),
 		bodyLimit:         maxResponseBody,
 		budget:            assemblyBudget,
 		pending:           map[string]*pendingCall{},
@@ -204,7 +217,7 @@ func (t *Tunnel) Do(ctx context.Context, req *Request) (*Response, error) {
 // queued, not once it is on the wire: a write that fails afterwards closes the
 // tunnel, and every caller is already waiting on t.closed for exactly that.
 func (t *Tunnel) send(msg Message) error {
-	payload, err := json.Marshal(msg)
+	payload, err := t.encode(msg)
 	if err != nil {
 		return fmt.Errorf("encode %s frame: %w", msg.Type, err)
 	}
@@ -217,6 +230,17 @@ func (t *Tunnel) send(msg Message) error {
 		return fmt.Errorf("queue %s frame: %w", msg.Type, err)
 	}
 	return nil
+}
+
+// encode renders a frame as it goes on the wire: stream_data as a binary frame
+// when the agent negotiated them, everything else as JSON.
+func (t *Tunnel) encode(msg Message) ([]byte, error) {
+	if t.binaryStreams && msg.Type == MessageStreamData && msg.StreamData != nil {
+		if frame, ok := encodeStreamData(msg.ID, *msg.StreamData); ok {
+			return frame, nil
+		}
+	}
+	return json.Marshal(msg)
 }
 
 // enqueue puts a frame on the urgent queue. See enqueueOn.
@@ -265,7 +289,7 @@ func (t *Tunnel) writeLoop() {
 			t.closeWith(fmt.Errorf("set write deadline: %w", err))
 			return
 		}
-		if err := t.conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+		if err := t.conn.WriteMessage(wireKind(payload), payload); err != nil {
 			t.closeWith(fmt.Errorf("write frame: %w", err))
 			return
 		}
@@ -319,10 +343,30 @@ func (t *Tunnel) serve() error {
 	go t.keepalive()
 
 	for {
-		_, payload, err := t.conn.ReadMessage()
+		kind, payload, err := t.conn.ReadMessage()
 		if err != nil {
 			t.closeWith(err)
 			return err
+		}
+
+		if kind == websocket.BinaryMessage {
+			// An agent that did not name the capability gets v2 exactly, and
+			// v2 has no binary frames: one from it is a protocol violation.
+			if !t.binaryStreams {
+				err = errors.New("binary frame from an agent that did not negotiate " + CapabilityBinaryStreamData)
+				t.closeWith(err)
+				return err
+			}
+			id, chunk, err := decodeStreamData(payload)
+			if err != nil {
+				err = fmt.Errorf("malformed binary frame from agent: %w", err)
+				t.closeWith(err)
+				return err
+			}
+			if stream, ok := t.lookupStream(id); ok {
+				stream.deliver(chunk)
+			}
+			continue
 		}
 
 		var msg Message
