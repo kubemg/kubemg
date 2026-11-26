@@ -899,6 +899,7 @@ export function Explore() {
       <AppShell title={item.label}>
         <div className="card">
           <EmptyState
+            detail="visible"
             icon={<Boxes aria-hidden="true" className="size-5" />}
             title="No cluster is reachable right now"
           >
@@ -918,6 +919,7 @@ export function Explore() {
       <AppShell title={item.label}>
         <div className="card">
           <EmptyState
+            detail="visible"
             icon={<Boxes aria-hidden="true" className="size-5" />}
             title={
               unreadable

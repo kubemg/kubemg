@@ -1,6 +1,6 @@
 import { Info, ShieldCheck } from 'lucide-react'
 import type { RuntimeSettings } from '../../api/types'
-import { Chip, Field, Notice, Panel, TextInput } from '../primitives'
+import { Chip, Field, InfoTip, Notice, Panel, TextInput } from '../primitives'
 
 /**
  * What the audit trail keeps, and for how long.
@@ -97,7 +97,8 @@ export function AuditSettingsPanel({
     <>
       <Panel
         title="What reaches the trail"
-        description="Every proxied call is recorded. On a busy fleet most of those rows are reads nobody queries, so the table can be narrowed to the actions worth keeping - the structured log a SIEM tails stays complete either way."
+        description="Which calls the audit table keeps."
+        info="Every proxied call is recorded. On a busy fleet most of those rows are reads nobody queries, so the table can be narrowed to the actions worth keeping - the structured log a SIEM tails stays complete either way."
         bodyClassName="flex flex-col gap-4 p-4"
         actions={
           selecting ? (
@@ -113,7 +114,10 @@ export function AuditSettingsPanel({
       >
         {VERB_GROUPS.map((group) => (
           <div key={group.label} className="flex flex-col gap-2">
-            <p className="label">{group.label}</p>
+            <span className="flex items-center gap-1">
+              <span className="label">{group.label}</span>
+              <InfoTip label={`About ${group.label}`} tip={group.hint} />
+            </span>
             <div className="flex flex-wrap gap-2">
               {group.verbs.map((verb) => (
                 <Chip key={verb} active={active(verb)} onClick={() => toggle(verb)}>
@@ -121,7 +125,6 @@ export function AuditSettingsPanel({
                 </Chip>
               ))}
             </div>
-            <p className="text-[12px] leading-snug text-muted">{group.hint}</p>
           </div>
         ))}
 
@@ -132,10 +135,9 @@ export function AuditSettingsPanel({
           <span className="inline-flex items-baseline gap-1.5">
             <ShieldCheck aria-hidden="true" className="size-3.5 translate-y-0.5" />
             <span>
-              Three things are recorded whatever is selected: anything kubemg{' '}
-              <strong>refused</strong> or that failed, every <strong>interactive session</strong>{' '}
-              while it is open, and who <strong>replayed or deleted</strong> a recording. Turning a
-              verb off reduces volume; it cannot hide an action.
+              Always recorded: <strong>refusals</strong> and failures, open{' '}
+              <strong>sessions</strong>, and who <strong>replayed or deleted</strong> a recording.
+              Narrowing cuts volume; it cannot hide an action.
             </span>
           </span>
         </Notice>
@@ -151,13 +153,15 @@ export function AuditSettingsPanel({
       <Panel
         eyebrow="Retention"
         title="How long it is kept"
-        description="A background pass twice a day deletes anything past these windows. Deletions are permanent - there is no archive behind them."
+        description="Older records are deleted twice a day, for good."
+        info="A background pass twice a day deletes anything past these windows. Deletions are permanent - there is no archive behind them."
         bodyClassName="flex flex-col gap-4 p-4"
       >
         <Field
           label="Audit trail (days)"
           htmlFor="audit_retention_days"
-          hint={`Records older than this are deleted. Leave empty for ${defaults.audit_retention_days} days.`}
+          hint={`Days. Default ${defaults.audit_retention_days}.`}
+          info={`Records older than this are deleted. Leave empty for ${defaults.audit_retention_days} days.`}
           error={retentionError}
         >
           <TextInput
@@ -178,7 +182,8 @@ export function AuditSettingsPanel({
         <Field
           label="Session recordings (days)"
           htmlFor="session_recording_retention_days"
-          hint={`Recordings are far larger than the rows describing them, so this is usually shorter. Leave empty to follow the audit window; it can never be longer than it, because a replay must not outlive the record saying the shell was opened.`}
+          hint="Days. Empty follows the audit window."
+          info={`Recordings are far larger than the rows describing them, so this is usually shorter. Leave empty to follow the audit window; it can never be longer than it, because a replay must not outlive the record saying the shell was opened.`}
           error={recordingRetentionError}
         >
           <TextInput
@@ -211,14 +216,25 @@ export function AuditSettingsPanel({
             onChange={(event) => onRecordManifestDiffsChange(event.target.checked)}
           />
           <span className="min-w-0">
-            <span className="text-[13px] text-fg">Keep the field-level diff of manifest writes</span>
+            <span className="inline-flex items-center gap-1 text-[13px] text-fg">
+              Keep the field-level diff of manifest writes
+              <InfoTip
+                label="About manifest diffs"
+                tip={
+                  <>
+                    An <code>update</code> row already says a manifest was applied; this makes it say
+                    what changed. Off by default, because a manifest body can hold values as sensitive
+                    as a Secret's without the object being one - an inlined token in a ConfigMap, a
+                    certificate in a Deployment's env - so this is a decision to retain more, not a
+                    cosmetic toggle. A Secret's own diff is never stored, whatever this is set to, and
+                    the stored diff is pruned by the retention window above like every other row.
+                  </>
+                }
+              />
+            </span>
+            {/* The part that is a warning stays on the page. */}
             <span className="mt-0.5 block text-[12px] leading-snug text-muted">
-              An <code>update</code> row already says a manifest was applied; this makes it say
-              what changed. Off by default, because a manifest body can hold values as sensitive as
-              a Secret's without the object being one - an inlined token in a ConfigMap, a
-              certificate in a Deployment's env - so this is a decision to retain more, not a
-              cosmetic toggle. A Secret's own diff is never stored, whatever this is set to, and the
-              stored diff is pruned by the retention window above like every other row.
+              Can keep sensitive values. A Secret's own diff is never stored.
             </span>
           </span>
         </label>
@@ -231,7 +247,8 @@ export function AuditSettingsPanel({
       <Panel
         eyebrow="Recording"
         title="Interactive session capture"
-        description="Every exec and attach through the proxy is teed into an asciinema recording, so the trail can say not only that a shell was opened in production but what was done in it."
+        description="Record exec and attach sessions for replay."
+        info="Every exec and attach through the proxy is teed into an asciinema recording, so the trail can say not only that a shell was opened in production but what was done in it."
         bodyClassName="flex flex-col gap-4 p-4"
       >
         {effective.recording_available ? (
@@ -244,11 +261,12 @@ export function AuditSettingsPanel({
                 onChange={(event) => onRecordSessionsChange(event.target.checked)}
               />
               <span className="min-w-0">
-                <span className="text-[13px] text-fg">Record exec and attach sessions</span>
-                <span className="mt-0.5 block text-[12px] leading-snug text-muted">
-                  Turning this off stops the next session from being recorded and leaves the ones
-                  already running alone. Sessions are still audited either way - what is lost is
-                  the replay.
+                <span className="inline-flex items-center gap-1 text-[13px] text-fg">
+                  Record exec and attach sessions
+                  <InfoTip
+                    label="About recording sessions"
+                    tip="Turning this off stops the next session from being recorded and leaves the ones already running alone. Sessions are still audited either way - what is lost is the replay."
+                  />
                 </span>
               </span>
             </label>

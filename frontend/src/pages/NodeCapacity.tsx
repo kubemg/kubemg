@@ -448,6 +448,7 @@ export function NodeCapacity() {
       <AppShell title="Capacity">
         <div className="card">
           <EmptyState
+            detail="visible"
             icon={<Cpu aria-hidden="true" className="size-5" />}
             title={
               unreachable
@@ -481,6 +482,7 @@ export function NodeCapacity() {
       <AppShell title="Capacity">
         <div className="card">
           <EmptyState
+            detail="visible"
             icon={<Cpu aria-hidden="true" className="size-5" />}
             title="Capacity is a cluster-wide reading"
           >

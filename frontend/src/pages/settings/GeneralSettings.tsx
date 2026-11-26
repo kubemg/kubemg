@@ -179,7 +179,8 @@ export function GeneralSettings() {
   return (
     <SettingsLayout
       title="General settings"
-      description="Where clusters reach this server, how long a kubeconfig may live, how fast one account may call a cluster, who needs a second factor to sign in, and how long a password lasts. A value set here overrides what the server read from its environment at boot; clearing it falls back to that."
+      description="Server address, kubeconfig limits, rate limits and sign-in."
+      info="Where clusters reach this server, how long a kubeconfig may live, how fast one account may call a cluster, who needs a second factor to sign in, and how long a password lasts. A value set here overrides what the server read from its environment at boot; clearing it falls back to that."
       aside={
         settings ? (
           <>
@@ -275,7 +276,8 @@ export function GeneralSettings() {
           <Panel
             eyebrow="Server"
             title="Where clusters reach kubemg"
-            description="Baked into every agent install command and into the agent's tunnel address, so it must be routable from inside a target cluster - not the address your browser uses."
+            description="The address agents and kubectl dial."
+            info="Baked into every agent install command and into the agent's tunnel address, so it must be routable from inside a target cluster - not the address your browser uses."
             bodyClassName="flex flex-col gap-4 p-4"
           >
             <Field
@@ -301,13 +303,15 @@ export function GeneralSettings() {
           <Panel
             eyebrow="Cluster access"
             title="How long a kubeconfig may live"
-            description="The ceiling anyone generating a kubeconfig is measured against. They still choose their own window inside it - this is the longest one the choice offers."
+            description="The longest window a kubeconfig may have."
+            info="The ceiling anyone generating a kubeconfig is measured against. They still choose their own window inside it - this is the longest one the choice offers."
             bodyClassName="flex flex-col gap-4 p-4"
           >
             <Field
               label="Longest window (hours)"
               htmlFor="kubeconfig_max_ttl_hours"
-              hint={`Leave empty for the default of ${settings.defaults.kubeconfig_max_ttl_hours} hours. 2160 is three months, 720 a month, 8 a shift.`}
+              hint={`Hours. Default ${settings.defaults.kubeconfig_max_ttl_hours}.`}
+              info={`Leave empty for the default of ${settings.defaults.kubeconfig_max_ttl_hours} hours. 2160 is three months, 720 a month, 8 a shift.`}
               error={ceilingError}
             >
               <TextInput
@@ -333,13 +337,15 @@ export function GeneralSettings() {
           <Panel
             eyebrow="Cluster access"
             title="The kubemg command line"
-            description="kubemg login signs a command line in through this console - your second factor included - and it then hands kubectl a fifteen-minute credential at a time."
+            description="How long a kubemg login session lasts."
+            info="kubemg login signs a command line in through this console - your second factor included - and it then hands kubectl a fifteen-minute credential at a time."
             bodyClassName="flex flex-col gap-4 p-4"
           >
             <Field
               label="A sign-in lasts (hours)"
               htmlFor="cli_session_max_hours"
-              hint={`Leave empty for the default of ${settings.defaults.cli_session_max_hours} hours. Never longer than the kubeconfig window above.`}
+              hint={`Hours. Default ${settings.defaults.cli_session_max_hours}.`}
+              info={`Leave empty for the default of ${settings.defaults.cli_session_max_hours} hours. Never longer than the kubeconfig window above.`}
               error={cliHoursError}
             >
               <TextInput
@@ -361,7 +367,8 @@ export function GeneralSettings() {
             <Field
               label="Agent-mode kubeconfig files"
               htmlFor="kubeconfig_issuance"
-              hint={
+              hint={issuance === 'cli_only' ? 'CLI only.' : 'Console and CLI.'}
+              info={
                 issuance === 'cli_only'
                   ? 'Not handed out. kubectl reaches agent-mode clusters through the CLI only. Direct-mode clusters are unaffected - their credential is a token the cluster mints, which no CLI session governs.'
                   : 'Handed out from the console, alongside the CLI.'
@@ -387,13 +394,15 @@ export function GeneralSettings() {
           <Panel
             eyebrow="Cluster access"
             title="How fast one account may call a cluster"
-            description="Every call kubemg makes into a cluster on somebody's behalf spends from that person's budget for that cluster - a kubectl command, each read behind a console page, a CLI or machine token. A call over budget waits up to two seconds for its turn, then is refused with 429 and recorded in the audit trail; kubectl waits and retries on its own."
+            description="Over budget, a call waits, then gets a 429."
+            info="Every call kubemg makes into a cluster on somebody's behalf spends from that person's budget for that cluster - a kubectl command, each read behind a console page, a CLI or machine token. A call over budget waits up to two seconds for its turn, then is refused with 429 and recorded in the audit trail; kubectl waits and retries on its own."
             bodyClassName="flex flex-col gap-4 p-4"
           >
             <Field
               label="Calls per second"
               htmlFor="proxy_rate_limit_per_second"
-              hint={`Leave empty for the default of ${settings.defaults.proxy_rate_limit_per_second}, the same as kubectl's own client-side limit. The limit cannot be turned off; ${MAX_RATE_PER_SECOND} is as far out of the way as it goes.`}
+              hint={`Default ${settings.defaults.proxy_rate_limit_per_second}.`}
+              info={`Leave empty for the default of ${settings.defaults.proxy_rate_limit_per_second}, the same as kubectl's own client-side limit. The limit cannot be turned off; ${MAX_RATE_PER_SECOND} is as far out of the way as it goes.`}
               error={ratePerSecondError}
             >
               <TextInput
@@ -415,7 +424,8 @@ export function GeneralSettings() {
             <Field
               label="Burst"
               htmlFor="proxy_rate_limit_burst"
-              hint={`Leave empty for the default of ${settings.defaults.proxy_rate_limit_burst}. How many calls may go at once before the rate applies - one console page across every namespace is up to fifty.`}
+              hint={`Default ${settings.defaults.proxy_rate_limit_burst}.`}
+              info={`Leave empty for the default of ${settings.defaults.proxy_rate_limit_burst}. How many calls may go at once before the rate applies - one console page across every namespace is up to fifty.`}
               error={rateBurstError}
             >
               <TextInput
@@ -441,7 +451,8 @@ export function GeneralSettings() {
           <Panel
             eyebrow="Sign-in"
             title="Second factor"
-            description="Whose password sign-in also asks for a code from an authenticator app. It covers local and LDAP accounts; an OIDC or SAML account's second factor is its identity provider's."
+            description="Who must also use an authenticator app."
+            info="Whose password sign-in also asks for a code from an authenticator app. It covers local and LDAP accounts; an OIDC or SAML account's second factor is its identity provider's."
             bodyClassName="flex flex-col gap-4 p-4"
           >
             <Field
@@ -472,13 +483,15 @@ export function GeneralSettings() {
           <Panel
             eyebrow="Sign-in"
             title="Password expiry"
-            description="How long a password held here lasts before its owner has to choose a new one. It covers local accounts only; an LDAP, OIDC or SAML account's password is its directory's."
+            description="How long a local password lasts."
+            info="How long a password held here lasts before its owner has to choose a new one. It covers local accounts only; an LDAP, OIDC or SAML account's password is its directory's."
             bodyClassName="flex flex-col gap-4 p-4"
           >
             <Field
               label="Passwords expire after (days)"
               htmlFor="password_max_age_days"
-              hint="Leave empty for no expiry. People are mailed 14, 7, 3 and 1 days before, through the relay under Settings → Email. One account's password can also be expired by hand from its page under Users."
+              hint="Days. Empty means no expiry."
+              info="Leave empty for no expiry. People are mailed 14, 7, 3 and 1 days before, through the relay under Settings → Email. One account's password can also be expired by hand from its page under Users."
               error={passwordDaysError}
             >
               <TextInput

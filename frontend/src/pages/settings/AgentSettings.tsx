@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { RotateCcw } from 'lucide-react'
 import { errorMessage, fetchSettings, updateSettings } from '../../api/client'
 import type { SettingsResponse } from '../../api/types'
-import { Button, Field, Notice, Panel, TextInput } from '../../components/primitives'
+import { Button, Field, InfoTip, Notice, Panel, TextInput } from '../../components/primitives'
 import { settingSource } from '../../lib/settings'
 import { SettingsAside, SettingsLayout } from '../../components/settings/SettingsLayout'
 import { useUnsavedGuard } from '../../lib/unsavedGuard'
@@ -126,7 +126,8 @@ export function AgentSettings() {
   return (
     <SettingsLayout
       title="Agent settings"
-      description="What gets installed into a cluster: the agent, the browser shell and the debug container. A change reaches install packages rendered from now on; an agent already running keeps what it was installed with until its manifests are re-applied."
+      description="What kubemg installs into a cluster."
+      info="What gets installed into a cluster: the agent, the browser shell and the debug container. A change reaches install packages rendered from now on; an agent already running keeps what it was installed with until its manifests are re-applied."
       aside={
         settings ? (
           <>
@@ -211,7 +212,8 @@ export function AgentSettings() {
               <Field
                 label="Agent image"
                 htmlFor="agent_image"
-                hint={`Container image the generated manifests install. Leave empty for ${settings.defaults.agent_image}.`}
+                hint={`Default ${settings.defaults.agent_image}.`}
+                info={`Container image the generated manifests install. Leave empty for ${settings.defaults.agent_image}.`}
               >
                 <TextInput
                   id="agent_image"
@@ -225,7 +227,8 @@ export function AgentSettings() {
               <Field
                 label="Agent namespace"
                 htmlFor="agent_namespace"
-                hint={`Namespace the agent is installed into on target clusters. Leave empty for ${settings.defaults.agent_namespace}.`}
+                hint={`Default ${settings.defaults.agent_namespace}.`}
+                info={`Namespace the agent is installed into on target clusters. Leave empty for ${settings.defaults.agent_namespace}.`}
               >
                 <TextInput
                   id="agent_namespace"
@@ -239,7 +242,8 @@ export function AgentSettings() {
               <Field
                 label="Image pull secret"
                 htmlFor="agent_image_pull_secret"
-                hint={`For a mirror that requires authentication: the name of a docker-registry Secret in the agent namespace, which the agent and the browser shell pull with. KubeMG stores only the name - the install sheet shows the command that creates it. ${settings.defaults.agent_image_pull_secret ? `Leave empty for ${settings.defaults.agent_image_pull_secret}.` : 'Leave empty for none.'}`}
+                hint="A docker-registry Secret name, or empty."
+                info={`For a mirror that requires authentication: the name of a docker-registry Secret in the agent namespace, which the agent and the browser shell pull with. KubeMG stores only the name - the install sheet shows the command that creates it. ${settings.defaults.agent_image_pull_secret ? `Leave empty for ${settings.defaults.agent_image_pull_secret}.` : 'Leave empty for none.'}`}
               >
                 <TextInput
                   id="agent_image_pull_secret"
@@ -260,6 +264,7 @@ export function AgentSettings() {
               title="A terminal KubeMG runs on a cluster"
               bodyClassName="flex flex-col gap-4 p-4"
             >
+              <span className="flex items-start gap-1">
               <label className="flex items-start gap-2.5">
                 <input
                   type="checkbox"
@@ -270,23 +275,32 @@ export function AgentSettings() {
                 />
                 <span className="min-w-0">
                   <span className="text-[13px] text-fg">Offer a browser shell on agent-mode clusters</span>
-                  <span className="mt-0.5 block text-[12px] leading-snug text-muted">
-                    A pod with <code>kubectl</code> in it, started only when
-                    somebody asks. It holds no cluster credential of its own: its kubeconfig points
-                    back at this server, so every command it runs is impersonated as the operator,
-                    answered by the cluster's own RBAC and audited. Turning this off refuses new
-                    shells and leaves running ones alone.
-                    {settings.defaults.shell_enabled
-                      ? ''
-                      : ' This server was started without a shell image, so there is nothing to run.'}
-                  </span>
+                  {/* A warning stays on the page; the explanation is a hover away. */}
+                  {settings.defaults.shell_enabled ? null : (
+                    <span className="mt-0.5 block text-[12px] leading-snug text-warn">
+                      This server was started without a shell image, so there is nothing to run.
+                    </span>
+                  )}
                 </span>
               </label>
+              <InfoTip
+                label="About the browser shell"
+                tip={
+                  <>
+                    A pod with <code>kubectl</code> in it, started only when somebody asks. It holds no
+                    cluster credential of its own: its kubeconfig points back at this server, so every
+                    command it runs is impersonated as the operator, answered by the cluster's own RBAC
+                    and audited. Turning this off refuses new shells and leaves running ones alone.
+                  </>
+                }
+              />
+              </span>
 
               <Field
                 label="Shell image"
                 htmlFor="shell_image"
-                hint={`Leave empty for ${settings.defaults.shell_image || 'the build’s own image'}. An air-gapped site points this at its mirror.`}
+                hint={`Default ${settings.defaults.shell_image || 'the build image'}.`}
+                info={`Leave empty for ${settings.defaults.shell_image || 'the build’s own image'}. An air-gapped site points this at its mirror.`}
               >
                 <TextInput
                   id="shell_image"
@@ -300,7 +314,8 @@ export function AgentSettings() {
               <Field
                 label="Idle timeout (minutes)"
                 htmlFor="shell_idle_timeout_minutes"
-                hint={`How long a shell may go without a keystroke before it is reclaimed. Leave empty for ${settings.defaults.shell_idle_timeout_minutes} minutes.`}
+                hint={`Default ${settings.defaults.shell_idle_timeout_minutes} minutes.`}
+                info={`How long a shell may go without a keystroke before it is reclaimed. Leave empty for ${settings.defaults.shell_idle_timeout_minutes} minutes.`}
               >
                 <TextInput
                   id="shell_idle_timeout_minutes"
@@ -314,7 +329,8 @@ export function AgentSettings() {
               <Field
                 label="Maximum lifetime (hours)"
                 htmlFor="shell_max_lifetime_hours"
-                hint={`Written into the pod itself, so it holds even while this server is down. Capped by the kubeconfig ceiling - a shell must not outlive the credential inside it. Leave empty for ${settings.defaults.shell_max_lifetime_hours} hours.`}
+                hint={`Hours. Default ${settings.defaults.shell_max_lifetime_hours}.`}
+                info={`Written into the pod itself, so it holds even while this server is down. Capped by the kubeconfig ceiling - a shell must not outlive the credential inside it. Leave empty for ${settings.defaults.shell_max_lifetime_hours} hours.`}
               >
                 <TextInput
                   id="shell_max_lifetime_hours"
@@ -333,19 +349,23 @@ export function AgentSettings() {
             <Panel
               eyebrow="Debug containers"
               title="The pod that has no shell"
+              description="An extra container for a pod with no shell."
+              info={
+                <>
+                  An ephemeral container an operator can add to a running pod, sharing an existing
+                  container's process namespace, for exec into an image with no shell of its own -{' '}
+                  <code>kubectl debug</code>'s trick. It cannot be removed once added, and any grant
+                  that can already exec into a pod can already ask for one.
+                </>
+              }
               bodyClassName="flex flex-col gap-4 p-4"
             >
-              <p className="text-[12px] leading-snug text-muted">
-                An ephemeral container an operator can add to a running pod, sharing an existing
-                container's process namespace, for exec into an image with no shell of its own -{' '}
-                <code>kubectl debug</code>'s trick. It cannot be removed once added, and any grant
-                that can already exec into a pod can already ask for one.
-              </p>
 
               <Field
                 label="Debug image"
                 htmlFor="debug_image"
-                hint={`Leave empty for ${settings.defaults.debug_image || "the build's own default"}. An air-gapped site points this at its mirror.`}
+                hint={`Default ${settings.defaults.debug_image || 'the build default'}.`}
+                info={`Leave empty for ${settings.defaults.debug_image || "the build's own default"}. An air-gapped site points this at its mirror.`}
               >
                 <TextInput
                   id="debug_image"

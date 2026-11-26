@@ -79,7 +79,7 @@ export function ClusterAlerts() {
     return (
       <AppShell title="Alerts">
         <div className="card">
-          <EmptyState icon={<BellRing aria-hidden="true" className="size-5" />} title="That cluster is not registered">
+          <EmptyState detail="visible" icon={<BellRing aria-hidden="true" className="size-5" />} title="That cluster is not registered">
             Pick a cluster from the fleet list to read its alerts.
           </EmptyState>
         </div>

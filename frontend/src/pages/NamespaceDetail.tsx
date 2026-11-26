@@ -104,6 +104,7 @@ export function NamespaceDetail() {
       <AppShell title={name || 'Namespace'}>
         <div className="card">
           <EmptyState
+            detail="visible"
             icon={<Boxes aria-hidden="true" className="size-5" />}
             title={clustersLoading ? 'Looking for that cluster' : 'That cluster is not registered'}
           >
@@ -121,6 +122,7 @@ export function NamespaceDetail() {
       <AppShell title={name} parent={{ label: 'Namespaces', to: resourceHref(cluster.id, 'namespaces') }}>
         <div className="card">
           <EmptyState
+            detail="visible"
             icon={<Boxes aria-hidden="true" className="size-5" />}
             title={`${cluster.name} has no live connection`}
           >
@@ -140,6 +142,7 @@ export function NamespaceDetail() {
       <AppShell title={name} parent={{ label: 'Namespaces', to: resourceHref(cluster.id, 'namespaces') }}>
         <div className="card">
           <EmptyState
+            detail="visible"
             icon={<Boxes aria-hidden="true" className="size-5" />}
             title={`${name} is outside your access`}
           >
