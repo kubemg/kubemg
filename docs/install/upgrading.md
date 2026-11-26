@@ -130,6 +130,9 @@ A release that asks something beyond pulling the image is listed here.
     - **API guardrail rules are also matched against the call's canonical forms** (no trailing slash, query sorted, values encoded and decoded). This only adds matches, so a rule written for one spelling may now also catch a call it missed before.
     - **The console signs out only when the session is gone**, not on every `401` (a wrong current password or a cluster's own refusal no longer ends it). The browser shell closes when the person who opened it signs out, rather than passing to the next person to sign in.
     - **A git checkout rebuilds its backend image with `--pull`** ([below](#the-backend-will-not-start-after-a-pull)), because the server now needs Go 1.26.11.
+- **0.17.3**, from 0.17.2: a dependency security release, with no schema step, no new setting, and the tunnel protocol and the agent's roles unchanged, so a 0.17.2 agent stays attached.
+    - **Re-apply every agent's install package** when convenient. The agent moves to a `gorilla/websocket` build that draws the WebSocket mask key from a cryptographic source (GO-2026-6278); an agent keeps its old image until it is re-applied, and nothing stops working in the meantime.
+    - The server moves to `gosaml2` v0.12.0 and `goxmldsig` v1.6.1 (CVE-2026-128073, a panic while decrypting an encrypted assertion). kubemg does not configure an assertion decryption key, so the affected path was not reachable; the bump clears the finding from image scanners.
 
 An install that runs from a clone of the repository has one more thing to get right: see [Upgrading a git checkout](#upgrading-a-git-checkout).
 
