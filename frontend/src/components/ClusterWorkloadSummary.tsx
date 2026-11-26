@@ -119,6 +119,7 @@ export function ClusterWorkloadSummary({
     return (
       <Panel title="Workloads" eyebrow="Live">
         <EmptyState
+          detail="visible"
           icon={<Layers aria-hidden="true" className="size-5" />}
           title="Nothing to read from this cluster yet"
         >

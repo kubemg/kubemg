@@ -663,7 +663,7 @@ export function AuditTrail() {
           {!loading && events.length === 0 ? (
             <EmptyState
               icon={<ScrollText aria-hidden="true" className="size-5" />}
-              title="Nothing recorded yet"
+              title="No activity yet"
             >
               Proxied kubectl traffic against agent-based clusters lands here, refusals included.
             </EmptyState>

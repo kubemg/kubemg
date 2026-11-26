@@ -167,6 +167,7 @@ export function SecurityPosture() {
       <AppShell title="Security posture">
         <div className="card">
           <EmptyState
+            detail="visible"
             icon={<ShieldAlert aria-hidden="true" className="size-5" />}
             title={
               unreachable ? `${unreachable.name} has no live connection` : 'That cluster is not registered'

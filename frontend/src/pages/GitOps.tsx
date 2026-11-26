@@ -82,6 +82,7 @@ export function GitOps() {
       <AppShell title="GitOps">
         <div className="card">
           <EmptyState
+            detail="visible"
             icon={<GitCompareArrows aria-hidden="true" className="size-5" />}
             title={
               unreachable

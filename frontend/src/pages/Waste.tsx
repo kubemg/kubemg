@@ -640,6 +640,7 @@ export function Waste() {
       <AppShell title="Cost & waste">
         <div className="card">
           <EmptyState
+            detail="visible"
             icon={<Recycle aria-hidden="true" className="size-5" />}
             title={
               unreachable

@@ -1013,11 +1013,20 @@ export function EmptyState({
   title,
   children,
   action,
+  detail = 'tip',
 }: {
   icon?: ReactNode
   title: string
   children?: ReactNode
   action?: ReactNode
+  /**
+   * How the sentence under the title is shown. An empty state is read in a
+   * glance, so by default its explanation is one hover or focus away, beside
+   * the title, rather than a paragraph under it. `visible` keeps it on the page
+   * for the ones a reader needs in order to go on: why something cannot be read,
+   * a refusal, an instruction.
+   */
+  detail?: 'tip' | 'visible'
 }) {
   return (
     <div className="flex flex-col items-center px-6 py-14 text-center">
@@ -1026,12 +1035,57 @@ export function EmptyState({
           {icon}
         </span>
       ) : null}
-      <h3 className="text-[16px] font-bold text-fg">{title}</h3>
-      {children ? (
+      {children && detail === 'tip' ? (
+        <InfoTip tip={children} label={`About ${title}`}>
+          <h3 className="text-[16px] font-bold text-fg">{title}</h3>
+        </InfoTip>
+      ) : (
+        <h3 className="text-[16px] font-bold text-fg">{title}</h3>
+      )}
+      {children && detail === 'visible' ? (
         <p className="mt-1.5 max-w-md text-[13px] leading-relaxed text-muted">{children}</p>
       ) : null}
       {action ? <div className="mt-4">{action}</div> : null}
     </div>
+  )
+}
+
+/**
+ * InfoTip keeps an explanation one hover away instead of on the page. The
+ * sentence shows while the pointer is over what it explains (the children, if
+ * given, and the ⓘ beside them) and while the ⓘ has keyboard focus, and the ⓘ
+ * points a screen reader at it, so it is never reachable by mouse alone.
+ */
+export function InfoTip({
+  tip,
+  label,
+  children,
+}: {
+  tip: ReactNode
+  /** What the ⓘ is called to a screen reader, e.g. "About No activity yet". */
+  label: string
+  children?: ReactNode
+}) {
+  const id = useId()
+  return (
+    <span className="group/tip relative inline-flex items-center gap-1.5">
+      {children}
+      <button
+        type="button"
+        aria-label={label}
+        aria-describedby={id}
+        className="inline-grid size-5 shrink-0 cursor-help place-items-center rounded-full text-faint transition-colors hover:text-fg focus-visible:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+      >
+        <Info aria-hidden="true" className="size-3.5" />
+      </button>
+      <span
+        role="tooltip"
+        id={id}
+        className="pointer-events-none invisible absolute top-full left-1/2 z-40 mt-2 w-max max-w-xs -translate-x-1/2 rounded-control border border-line bg-raised px-3 py-2 text-left text-[12.5px] leading-relaxed font-normal text-muted opacity-0 shadow-deck transition-opacity duration-150 group-focus-within/tip:visible group-focus-within/tip:opacity-100 group-hover/tip:visible group-hover/tip:opacity-100"
+      >
+        {tip}
+      </span>
+    </span>
   )
 }
 
