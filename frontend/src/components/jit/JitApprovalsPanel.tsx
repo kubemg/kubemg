@@ -23,6 +23,7 @@ import {
   Pill,
   Row,
   StatTile,
+  StatTiles,
   Table,
   Td,
   Th,
@@ -165,7 +166,10 @@ export function JitApprovalsPanel({
       {error ? <Notice tone="error">{error}</Notice> : null}
 
       {list ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatTiles
+          counts={[waiting.length, live.length, history.length]}
+          className="grid grid-cols-1 gap-4 sm:grid-cols-3"
+        >
           <StatTile
             icon={Inbox}
             label="Waiting on a decision"
@@ -184,7 +188,7 @@ export function JitApprovalsPanel({
             value={history.length}
             sub={`${history.filter((request) => request.status === 'rejected').length} rejected`}
           />
-        </div>
+        </StatTiles>
       ) : null}
 
       {list?.scoped_to_me ? (

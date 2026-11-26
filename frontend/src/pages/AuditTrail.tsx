@@ -43,6 +43,7 @@ import {
   Select,
   Sheet,
   StatTile,
+  StatTiles,
   Table,
   Td,
   Th,
@@ -344,7 +345,10 @@ export function AuditTrail() {
         ) : null}
 
         {summary ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatTiles
+            counts={[summary.total, summary.failed, summary.streams]}
+            className="grid grid-cols-1 gap-4 sm:grid-cols-3"
+          >
             <StatTile
               icon={Activity}
               label={`Calls · last ${summary.window_hours}h`}
@@ -361,7 +365,7 @@ export function AuditTrail() {
               label="Sessions opened"
               value={COUNT.format(summary.streams)}
             />
-          </div>
+          </StatTiles>
         ) : null}
 
         {/* The one table in this console that is read by scrolling the window

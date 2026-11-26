@@ -6,7 +6,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { useState } from 'react'
 
-import { ArcGauge, Disclosure, Meter, OBJECT_NAME, Pill, Row, Switch, Tabs, TickMeter } from './primitives'
+import { Server } from 'lucide-react'
+
+import { ArcGauge, Disclosure, Meter, OBJECT_NAME, Pill, Row, StatTile, StatTiles, Switch, Tabs, TickMeter } from './primitives'
 
 /*
  * The DOM half of the suite, kept deliberately small. What is worth rendering a
@@ -324,5 +326,27 @@ describe('Tabs', () => {
       screen.getByRole('tab', { name }).querySelector('[aria-hidden="true"].bg-accent')
     expect(underline('Overview')?.className).toContain('opacity-100')
     expect(underline('YAML')?.className).toContain('opacity-0')
+  })
+})
+
+describe('StatTiles', () => {
+  function tiles(counts: number[]) {
+    return render(
+      <StatTiles counts={counts} className="grid">
+        {counts.map((count, index) => (
+          <StatTile key={index} icon={Server} label={`Tile ${index}`} value={count} />
+        ))}
+      </StatTiles>,
+    )
+  }
+
+  it('draws nothing while every figure is zero', () => {
+    const { container } = tiles([0, 0, 0])
+    expect(container.innerHTML).toBe('')
+  })
+
+  it('draws the whole row once any figure is not', () => {
+    tiles([0, 3, 0])
+    expect(screen.getAllByText(/^Tile /)).toHaveLength(3)
   })
 })

@@ -19,6 +19,7 @@ import {
   Row,
   SearchInput,
   StatTile,
+  StatTiles,
   Table,
   Td,
   Th,
@@ -137,7 +138,7 @@ export function ClusterManagement() {
         {listError ? <Notice tone="error">{listError}</Notice> : null}
         {rowError ? <Notice tone="error">{rowError}</Notice> : null}
 
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatTiles counts={[clusters.length]} className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <StatTile icon={Server} label="Registered" value={clusters.length} />
           <StatTile
             icon={Waypoints}
@@ -164,7 +165,7 @@ export function ClusterManagement() {
             onClick={behind.size > 0 || behindOnly ? (behindOnly ? showEveryAgent : showBehindOnly) : undefined}
             pressed={behindOnly}
           />
-        </div>
+        </StatTiles>
 
         <div className="card min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 pt-4 pb-3.5">
