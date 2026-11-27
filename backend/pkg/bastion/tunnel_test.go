@@ -32,6 +32,9 @@ type tunnelStore struct {
 	clusters map[uint]*db.Cluster
 	access   map[uint]map[uint]db.UserClusterAccess
 	states   []db.AgentState
+	// forgetErr makes ForgetAgentTeamGroup fail, for the path where a stale
+	// team group cannot be withdrawn.
+	forgetErr error
 }
 
 func newTunnelStore() *tunnelStore {
@@ -60,6 +63,18 @@ func (s *tunnelStore) ClusterByID(_ context.Context, id uint) (*db.Cluster, erro
 		return cluster, nil
 	}
 	return nil, db.ErrNotFound
+}
+
+func (s *tunnelStore) ForgetAgentTeamGroup(_ context.Context, clusterID uint, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.forgetErr != nil {
+		return s.forgetErr
+	}
+	if cluster, ok := s.clusters[clusterID]; ok {
+		cluster.AgentTeamGroups = db.WithoutTeamGroup(cluster.AgentTeamGroups, name)
+	}
+	return nil
 }
 
 func (s *tunnelStore) UserByID(_ context.Context, id uint) (*db.User, error) {

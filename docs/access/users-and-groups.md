@@ -120,6 +120,8 @@ Routes: `GET|POST /api/v1/groups`, `DELETE /api/v1/groups/:id`, `POST /api/v1/gr
 
 A group is a name and a set of members. A cluster grant made against the group is inherited by every current member.
 
+On an agent-mode cluster the group is also the Kubernetes group `kubemg:g:<name>`, so a cluster operator can bind a Role to the team once ([Team groups](model.md#team-groups)). That is why a new group's name must be a Kubernetes label: at most 63 lowercase letters, digits and `-`, starting and ending with a letter or digit. Any other name is refused with `400`. Groups cannot be renamed. The cluster knows a team only by its name, and a Role is bound to that name: if a group is deleted and a new one is later created with the same name, granted on the cluster and confirmed, its members inherit every RoleBinding the old team had on `kubemg:g:<name>`. Remove the bindings in the cluster when you delete a group, or choose a different name for its replacement. Each group in `GET /api/v1/groups` carries `team_group`, the name clusters see, which is empty for a group created before this rule whose name does not qualify; such a group still grants access as before but is never asserted as a team, and the Groups page says so.
+
 ```json title="POST /api/v1/groups"
 { "name": "platform-devs", "description": "Everyone on the platform team" }
 ```

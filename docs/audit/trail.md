@@ -132,7 +132,7 @@ On a busy fleet most rows are `list`/`get` that nobody reads. Selective audit na
 Suppressible verbs: `get`, `list`, `watch`, `create`, `update`, `patch`, `delete`, `log`, `exec`, `attach`, `portforward`.
 
 - It applies only to the database table, never to the structured log or a forwarder.
-- **Never suppressed:** any refusal or error, any streaming call, and kubemg's own `replay`, `recording-get`, `recording-delete`, `jit-*`, `agent-token-rotate`, `agent-displaced`, `mfa-reset`, `mfa-remove` and `mfa-recovery-used`.
+- **Never suppressed:** any refusal or error, any streaming call, and kubemg's own `replay`, `recording-get`, `recording-delete`, `jit-*`, `agent-token-rotate`, `agent-team-groups`, `agent-displaced`, `mfa-reset`, `mfa-remove` and `mfa-recovery-used`.
 - A verb this build does not recognise is always recorded.
 - An empty selection means "record every verb again", not "record nothing".
 

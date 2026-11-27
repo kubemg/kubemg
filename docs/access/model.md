@@ -62,13 +62,53 @@ Impersonate-Group: kubemg:users
 
 Groups carry the role, never the namespace list; namespace scope is enforced by the proxy (below).
 
+### Team groups
+
+In agent mode, a caller who reaches a cluster through a kubemg group grant is also asserted as that team: `kubemg:g:<group-name>`, once for each group that grants them the cluster. A caller in `payments` and `platform`, both granted `prod`, carries:
+
+```
+Impersonate-User: kubemg:u:ada
+Impersonate-Group: kubemg:edit
+Impersonate-Group: kubemg:users
+Impersonate-Group: kubemg:g:payments
+Impersonate-Group: kubemg:g:platform
+```
+
+So a cluster operator can give a team something the built-in roles cannot, such as exec into three named pods and nothing else, by binding a Role to the team once per cluster:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: payments-debug
+  namespace: payments
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: kubemg:g:payments
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: payments-debug
+```
+
+Who is in the team is then a kubemg membership change; nothing on the cluster changes when someone joins or leaves. RBAC is additive, so a team group adds to the grant's role and never narrows it.
+
+- **Only where the group has a grant.** A group is asserted on the clusters it is granted, never fleet-wide. A direct user grant or a JIT elevation carries no team group.
+- **A name is an identity.** Role bindings in the cluster are by name, so a group deleted and recreated under the same name, then granted and confirmed again, inherits whatever the old team was bound to. Remove the old bindings when a group is deleted.
+- **Only a valid name.** A group name must be a Kubernetes label (at most 63 lowercase letters, digits and `-`), and creating a group with any other name is refused. A group created before this rule with, say, an upper-case name or a space is never asserted, and the Groups page says so.
+- **Only once the agent allows it.** The agent may impersonate only the groups its ClusterRole names (see below), so a group's *first* grant on a cluster means that cluster's agent package must be re-applied. Until an administrator confirms the re-apply on the cluster's **Agent install** sheet, kubemg leaves the group off the call: sending it would make the API server refuse the whole call, base role included. A held-back group is not silent: the audit record lists it under *Team groups withheld* and the identity in the [access review](rbac-visibility.md) shows it as waiting.
+- **Agent mode only.** Direct mode has no agent and binds nothing, so it asserts no team groups.
+
+Deleting a group and creating another with the same name gives the new group every binding on every cluster that named the old one. Delete the bindings with the group, or choose a new name.
+
 ### Why the username is prefixed
 
 Without a prefix, an account named `system:serviceaccount:kube-system:backup-operator` would reach the API server as that ServiceAccount and inherit its bindings, whatever its kubemg grant said. Three things close this together:
 
 - **The prefix.** A kubemg account is always `kubemg:u:<username>` to the cluster.
 - **The username rule.** A new or renamed account may not contain `:` or a control character. A federated sign-in whose username claim breaks the rule is refused by name, not rewritten. Older accounts are left alone and listed in a warning at startup so you can rename them.
-- **The agent's permissions.** The agent may impersonate only the four `kubemg:` groups and no ServiceAccount.
+- **The agent's permissions.** The agent may impersonate only the four `kubemg:` groups, plus `kubemg:g:<group>` for each team granted that cluster (named one by one), and no ServiceAccount.
 
 If you bound a RoleBinding to a kubemg username directly (`kind: User, name: ada`), rebind it to `kubemg:u:ada`. Bindings to the `kubemg:` groups, which is how kubemg's own manifests grant access, are unaffected. kubemg's own fixed identities (`kubemg:alarm-watcher`, `kubemg:event-watcher`, `kubemg:shell-runner`) keep their names.
 

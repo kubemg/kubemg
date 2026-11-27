@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -45,6 +46,15 @@ type agentInstallResponse struct {
 	// registry's from the operator's environment — because KubeMG holds none.
 	ImagePullSecret   string `json:"image_pull_secret,omitempty"`
 	PullSecretCommand string `json:"pull_secret_command,omitempty"`
+
+	// TeamGroups are the KubeMG groups this package allows the agent to assert
+	// as kubemg:g:<name>: every group with a grant on the cluster and a valid
+	// name. ConfirmedTeamGroups are those an administrator confirmed the applied
+	// agent allows, and WaitingTeamGroups the rest, which KubeMG does not assert
+	// until the package is re-applied and the re-apply confirmed.
+	TeamGroups          []string `json:"team_groups"`
+	ConfirmedTeamGroups []string `json:"confirmed_team_groups"`
+	WaitingTeamGroups   []string `json:"waiting_team_groups"`
 }
 
 // clusterKustomize serves the rendered agent installation package for a cluster
@@ -61,7 +71,12 @@ func (s *server) clusterKustomize(c *gin.Context) {
 	}
 
 	if c.Query("format") == "yaml" {
-		manifest, err := agentpkg.Manifest(s.agentOptions(c.Request.Context(), cluster.AgentToken))
+		opts, err := s.agentOptions(c.Request.Context(), cluster)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		manifest, err := agentpkg.Manifest(opts)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -118,7 +133,10 @@ func (s *server) agentCluster(c *gin.Context) (*db.Cluster, bool) {
 // agentInstallEnvelope renders the package for a cluster and mints the
 // single-use download ticket its commands carry.
 func (s *server) agentInstallEnvelope(ctx context.Context, cluster *db.Cluster) (agentInstallResponse, error) {
-	opts := s.agentOptions(ctx, cluster.AgentToken)
+	opts, err := s.agentOptions(ctx, cluster)
+	if err != nil {
+		return agentInstallResponse{}, err
+	}
 	files, err := agentpkg.Render(opts)
 	if err != nil {
 		return agentInstallResponse{}, err
@@ -137,6 +155,7 @@ func (s *server) agentInstallEnvelope(ctx context.Context, cluster *db.Cluster) 
 
 	manifestURL := s.installURL(ctx, ticket, "agent.yaml")
 	archiveURL := s.installURL(ctx, ticket, "kustomize.tar.gz")
+	confirmed, waiting := splitTeamGroups(cluster, opts.TeamGroups)
 
 	return agentInstallResponse{
 		ClusterID:         cluster.ID,
@@ -159,7 +178,36 @@ func (s *server) agentInstallEnvelope(ctx context.Context, cluster *db.Cluster) 
 		Files:             files,
 		ImagePullSecret:   opts.ImagePullSecret,
 		PullSecretCommand: pullSecretCommand(opts),
+
+		TeamGroups:          nonNil(opts.TeamGroups),
+		ConfirmedTeamGroups: confirmed,
+		WaitingTeamGroups:   waiting,
 	}, nil
+}
+
+// splitTeamGroups divides the team groups a package for the cluster carries
+// into those an administrator confirmed the applied agent allows and those
+// still waiting for the re-apply. A confirmed name whose group no longer holds
+// a grant here is left out of both: it is no longer asserted, so it is not
+// worth a line.
+func splitTeamGroups(cluster *db.Cluster, teams []string) (confirmed, waiting []string) {
+	confirmed, waiting = []string{}, []string{}
+	applied := cluster.AgentTeamGroupList()
+	for _, name := range teams {
+		if slices.Contains(applied, name) {
+			confirmed = append(confirmed, name)
+		} else {
+			waiting = append(waiting, name)
+		}
+	}
+	return confirmed, waiting
+}
+
+func nonNil(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
 
 // pullSecretCommand renders the step an operator runs before the install
@@ -290,17 +338,35 @@ func (s *server) installTarget(c *gin.Context) (agentpkg.Options, *db.Cluster, b
 		c.JSON(http.StatusNotFound, gin.H{"error": spentInstallURLMessage})
 		return agentpkg.Options{}, nil, false
 	}
-	return s.agentOptions(ctx, cluster.AgentToken), cluster, true
+	opts, err := s.agentOptions(ctx, cluster)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return agentpkg.Options{}, nil, false
+	}
+	return opts, cluster, true
 }
 
 // agentOptions renders against the *effective* settings rather than the
 // boot-time environment, so an operator who fixes the server URL in the console
 // fixes every install command issued from then on without a redeploy.
-func (s *server) agentOptions(ctx context.Context, token string) agentpkg.Options {
+//
+// The team groups are read the same way, at render time: the package names the
+// groups granted this cluster now. A store that cannot be read refuses the
+// render rather than producing a package without them — applied, that package
+// would take back the agent's right to assert teams already confirmed.
+func (s *server) agentOptions(ctx context.Context, cluster *db.Cluster) (agentpkg.Options, error) {
+	teams, err := s.store.TeamGroupsForCluster(ctx, cluster.ID)
+	if err != nil {
+		s.log().Error("could not read a cluster's team groups for its agent package",
+			slog.Uint64("cluster_id", uint64(cluster.ID)),
+			slog.String("error", err.Error()))
+		return agentpkg.Options{}, errors.New("could not read the groups granted this cluster")
+	}
 	settings := s.settings(ctx)
 	return agentpkg.Options{
+		TeamGroups:   teams,
 		BastionURL:   s.agentAddress(settings),
-		ClusterToken: token,
+		ClusterToken: cluster.AgentToken,
 		Namespace:    settings.AgentNamespace,
 		Image:        settings.AgentImage,
 		// The CA is the server's own listener certificate, so it is boot-time
@@ -308,7 +374,7 @@ func (s *server) agentOptions(ctx context.Context, token string) agentpkg.Option
 		// restarting with different TLS material anyway.
 		BastionCA:       s.bastionCA,
 		ImagePullSecret: settings.AgentImagePullSecret,
-	}
+	}, nil
 }
 
 // installURL is rendered on the agent's address rather than the console's: the

@@ -157,12 +157,18 @@ func (s *Store) AccessForUser(ctx context.Context, userID uint) (map[uint]UserCl
 		return nil, fmt.Errorf("access for user: %w", err)
 	}
 
-	inherited := []GroupClusterAccess{}
+	// One query reads the grants and the names of the groups behind them, so a
+	// proxied call costs no more than it did before team groups. A grant whose
+	// group row is missing is kept, with no name, rather than dropped.
+	inherited := []inheritedGrant{}
 	err = s.gdb.WithContext(ctx).
-		Where("group_id IN (?)", s.gdb.Model(&UserGroup{}).
+		Table("group_cluster_access").
+		Select("group_cluster_access.*, groups.name AS group_name").
+		Joins("LEFT JOIN groups ON groups.id = group_cluster_access.group_id").
+		Where("group_cluster_access.group_id IN (?)", s.gdb.Model(&UserGroup{}).
 			Select("group_id").
 			Where("user_id = ?", userID)).
-		Find(&inherited).Error
+		Scan(&inherited).Error
 	if err != nil {
 		return nil, fmt.Errorf("inherited access for user: %w", err)
 	}
@@ -182,6 +188,12 @@ func (s *Store) AccessForUser(ctx context.Context, userID uint) (map[uint]UserCl
 			K8sRole:    g.K8sRole,
 			Namespaces: g.Namespaces,
 		}
+		// A group grant is also a team identity on *this* cluster, and only on
+		// this one: the name rides on the grant it came from, so a group that
+		// holds no grant here is never carried to it.
+		if g.GroupName != "" {
+			candidate.TeamGroups = []string{g.GroupName}
+		}
 		if existing, ok := out[g.ClusterID]; ok {
 			out[g.ClusterID] = MergeAccess(existing, candidate)
 			continue
@@ -189,6 +201,53 @@ func (s *Store) AccessForUser(ctx context.Context, userID uint) (map[uint]UserCl
 		out[g.ClusterID] = candidate
 	}
 	return out, nil
+}
+
+// inheritedGrant is a group grant together with the name of the group that
+// holds it.
+type inheritedGrant struct {
+	GroupClusterAccess
+	GroupName string `gorm:"column:group_name"`
+}
+
+// TeamGroupsForCluster returns the names of the groups holding a grant on a
+// cluster that can be asserted as team groups, sorted. It is what the agent
+// package for that cluster lists, and what an administrator's "the agent is
+// re-applied" confirms. A group whose name is not a valid team group name is
+// left out: it is never asserted, so the agent has no reason to be allowed it.
+func (s *Store) TeamGroupsForCluster(ctx context.Context, clusterID uint) ([]string, error) {
+	names := []string{}
+	err := s.gdb.WithContext(ctx).Model(&Group{}).
+		Where("id IN (?)", s.gdb.Model(&GroupClusterAccess{}).
+			Select("group_id").
+			Where("cluster_id = ?", clusterID)).
+		Order("name asc").
+		Pluck("name", &names).Error
+	if err != nil {
+		return nil, fmt.Errorf("team groups for cluster: %w", err)
+	}
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		if ValidTeamGroupName(name) {
+			out = append(out, name)
+		}
+	}
+	return out, nil
+}
+
+// ConfirmAgentTeamGroups records the team group names an administrator
+// confirmed the cluster's applied agent package allows.
+func (s *Store) ConfirmAgentTeamGroups(ctx context.Context, clusterID uint, names []string) error {
+	res := s.gdb.WithContext(ctx).Model(&Cluster{}).
+		Where("id = ?", clusterID).
+		Update("agent_team_groups", JoinNamespaces(names))
+	if res.Error != nil {
+		return fmt.Errorf("confirm agent team groups: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // ClusterByID loads a single cluster.

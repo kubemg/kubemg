@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Download } from 'lucide-react'
-import { errorMessage, fetchAgentInstall } from '../api/client'
-import type { AgentInstall, Cluster } from '../api/types'
+import { confirmAgentTeamGroups, errorMessage, fetchAgentInstall } from '../api/client'
+import type { AgentInstall, AgentTeamGroups, Cluster } from '../api/types'
 import { downloadLinkState, saveManifest } from '../lib/agentInstall'
 import { Button, CodeBlock, DetailList, Notice, Sheet } from './primitives'
 import { CardSkeleton } from './SkeletonLoader'
@@ -200,7 +200,98 @@ export function AgentInstallSheet({
       {error ? <Notice tone="error">{error}</Notice> : null}
       {!install && !error ? <CardSkeleton lines={4} label="Rendering the install package" /> : null}
       {install ? <AgentInstallBody install={install} onRenew={renew} /> : null}
+      {install ? (
+        <TeamGroupsPanel
+          cluster={cluster}
+          install={install}
+          onConfirmed={(state) => setInstall({ ...install, ...state })}
+        />
+      ) : null}
     </Sheet>
+  )
+}
+
+function GroupList({ names }: { names: string[] }) {
+  return (
+    <>
+      {names.map((name, i) => (
+        <span key={name}>
+          {i > 0 ? ', ' : null}
+          <code>kubemg:g:{name}</code>
+        </span>
+      ))}
+    </>
+  )
+}
+
+/**
+ * TeamGroupsPanel says which KubeMG groups this package lets the agent assert,
+ * and which of them KubeMG actually asserts yet.
+ *
+ * The agent may only impersonate groups its ClusterRole names, so a group's
+ * first grant on a cluster needs this package re-applied there. Until then the
+ * group is *waiting*: KubeMG leaves it off every call, because the cluster would
+ * refuse the whole call - base role included - for a group the agent may not
+ * claim. Nothing can observe the re-apply from here (the agent may not read its
+ * own ClusterRole), so the administrator who ran it says so. What is confirmed
+ * is the list this package shows, never more.
+ */
+export function TeamGroupsPanel({
+  cluster,
+  install,
+  onConfirmed,
+}: {
+  cluster: Cluster
+  install: AgentInstall
+  onConfirmed: (state: AgentTeamGroups) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const teams = install.team_groups ?? []
+  const waiting = install.waiting_team_groups ?? []
+  const confirmed = install.confirmed_team_groups ?? []
+  if (teams.length === 0) return null
+
+  const confirm = () => {
+    setBusy(true)
+    setError(null)
+    confirmAgentTeamGroups(cluster.id, teams)
+      .then(onConfirmed)
+      .catch((err) => setError(errorMessage(err, 'Could not record the re-apply.')))
+      .finally(() => setBusy(false))
+  }
+
+  return (
+    <section className="flex flex-col gap-2.5 border-t border-line-soft pt-4">
+      <h3 className="text-[13px] font-medium text-fg">Team groups</h3>
+      <p className="text-[12px] leading-snug text-muted">
+        Members of a KubeMG group granted {cluster.name} are also told to it as{' '}
+        <code>kubemg:g:&lt;group&gt;</code>, so a Role bound to that group once applies to whoever is
+        in the team. This package lets the agent assert <GroupList names={teams} />.
+      </p>
+      {waiting.length > 0 ? (
+        <Notice tone="warn">
+          Waiting for the agent re-apply: <GroupList names={waiting} />. KubeMG does not send these
+          groups yet - the cluster would refuse every call their members make. Members keep their
+          role meanwhile. Apply this package to {cluster.name}, then confirm.
+        </Notice>
+      ) : (
+        <Notice tone="ok">Every team group in this package is asserted on {cluster.name}.</Notice>
+      )}
+      {confirmed.length > 0 && waiting.length > 0 ? (
+        <p className="text-[12px] leading-snug text-muted">
+          Already asserted: <GroupList names={confirmed} />.
+        </p>
+      ) : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
+      {waiting.length > 0 ? (
+        <div>
+          <Button variant="primary" onClick={confirm} disabled={busy}>
+            {busy ? 'Recording...' : 'I re-applied this package'}
+          </Button>
+        </div>
+      ) : null}
+    </section>
   )
 }
 

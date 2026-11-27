@@ -359,6 +359,31 @@ type Cluster struct {
 	// AgentConnectedAt is when the current tunnel was established. It is cleared
 	// on disconnect, so a nil value means "no agent is attached right now".
 	AgentConnectedAt *time.Time `json:"agent_connected_at,omitempty"`
+	// AgentTeamGroups are the KubeMG group names an administrator confirmed the
+	// applied agent package allows the agent to impersonate as team groups.
+	//
+	// It is a confirmation rather than something KubeMG can observe: the agent
+	// holds no right to read its own ClusterRole, and giving it one to answer
+	// this would be a grant for the sake of a status line. It matters because
+	// the API server refuses an impersonation of a group the agent may not
+	// claim, and refuses the *whole* call — so a team group asserted before the
+	// re-apply would lock every member of that team out of the cluster. Only
+	// names on this list are asserted; the rest wait, visibly.
+	AgentTeamGroups string `gorm:"type:text" json:"-"`
+}
+
+// AgentTeamGroupList splits the confirmed team group names.
+func (c Cluster) AgentTeamGroupList() []string { return splitNamespaces(c.AgentTeamGroups) }
+
+// WithoutTeamGroup removes one name from a stored list of confirmed team
+// groups, returning the list unchanged when it does not carry the name.
+func WithoutTeamGroup(stored, name string) string {
+	names := splitNamespaces(stored)
+	kept := slices.DeleteFunc(slices.Clone(names), func(n string) bool { return n == name })
+	if len(kept) == len(names) {
+		return stored
+	}
+	return JoinNamespaces(kept)
 }
 
 // UsesAgent reports whether this cluster is reached through a tunnel rather
@@ -435,6 +460,11 @@ type AuditEvent struct {
 	// (`kubemg:u:`) on top of a name that may already use all 120.
 	ImpersonatedUser   string `gorm:"size:190" json:"impersonated_user,omitempty"`
 	ImpersonatedGroups string `gorm:"type:text" json:"impersonated_groups,omitempty"`
+	// WithheldTeamGroups are team groups the caller's grant names but KubeMG did
+	// not assert, because the cluster's agent was not yet confirmed to allow
+	// them. Recorded so a caller who reached the cluster without their team's
+	// access can see why, rather than the call quietly carrying less.
+	WithheldTeamGroups string `gorm:"type:text" json:"withheld_team_groups,omitempty"`
 
 	Status     int   `gorm:"index" json:"status"`
 	DurationMS int64 `gorm:"column:duration_ms" json:"duration_ms"`
@@ -496,6 +526,9 @@ func (AuditEvent) TableName() string { return "audit_events" }
 // ImpersonatedGroupList splits the stored group list.
 func (e AuditEvent) ImpersonatedGroupList() []string { return splitNamespaces(e.ImpersonatedGroups) }
 
+// WithheldTeamGroupList splits the stored withheld team groups.
+func (e AuditEvent) WithheldTeamGroupList() []string { return splitNamespaces(e.WithheldTeamGroups) }
+
 // UserClusterAccess maps a KubeMG user onto a cluster with a Kubernetes role
 // and an optional namespace scope.
 //
@@ -530,6 +563,12 @@ type UserClusterAccess struct {
 	// pass has run since. A sweeper that fell behind must never mean access that
 	// outlived its approval.
 	ExpiresAt *time.Time `gorm:"index" json:"expires_at,omitempty"`
+	// TeamGroups are the names of the KubeMG groups whose grant on this cluster
+	// contributed to this access, sorted and de-duplicated. It is resolved by
+	// AccessForUser and never stored: membership and group grants are the facts,
+	// and a copy here would go stale the moment either changed. Which of them are
+	// actually asserted to the cluster is the bastion's decision, not this one's.
+	TeamGroups []string `gorm:"-" json:"-"`
 }
 
 // TableName pins the join table name; GORM would otherwise pluralize it to
@@ -592,6 +631,27 @@ func IsNamespaceName(name string) bool {
 	return true
 }
 
+// ValidTeamGroupName reports whether a group name can be asserted to a cluster
+// as the team group `kubemg:g:<name>`. It is the namespace rule on purpose: an
+// RFC 1123 label has no colon to forge another segment of the kubemg: prefix
+// with, no upper case for two groups to differ by case alone, and nothing that
+// needs quoting where the name lands in the agent's rendered ClusterRole.
+func ValidTeamGroupName(name string) bool { return IsNamespaceName(name) }
+
+// mergeTeamGroups unions two team group lists, sorted and without duplicates,
+// so the groups asserted for a caller do not depend on the order their grants
+// were read in.
+func mergeTeamGroups(a, b []string) []string {
+	if len(a) == 0 && len(b) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(a)+len(b))
+	out = append(out, a...)
+	out = append(out, b...)
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
 // JoinNamespaces renders a namespace slice for storage.
 func JoinNamespaces(namespaces []string) string {
 	out := make([]string, 0, len(namespaces))
@@ -629,6 +689,7 @@ func k8sRoleRank(role string) int {
 // ends, which is why the JIT surface reads the requests rather than this.
 func MergeAccess(a, b UserClusterAccess) UserClusterAccess {
 	out := a
+	out.TeamGroups = mergeTeamGroups(a.TeamGroups, b.TeamGroups)
 	if k8sRoleRank(b.K8sRole) > k8sRoleRank(a.K8sRole) {
 		out.K8sRole = b.K8sRole
 	}

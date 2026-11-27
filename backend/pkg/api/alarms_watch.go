@@ -516,6 +516,9 @@ func auditMessage(event bastion.Event, denied bool) string {
 	case bastion.VerbAgentTokenRotate:
 		fmt.Fprintf(&b, "%s rotated the agent registration token for %s", event.Username, event.Cluster)
 		return b.String()
+	case bastion.VerbAgentTeamGroups:
+		fmt.Fprintf(&b, "%s confirmed the team groups %s for %s", event.Username, event.Name, event.Cluster)
+		return b.String()
 	}
 	if denied {
 		b.WriteString("KubeMG refused ")

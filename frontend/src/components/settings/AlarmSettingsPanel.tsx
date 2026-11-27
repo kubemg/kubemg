@@ -1090,6 +1090,7 @@ const AUDIT_VERBS = [
   'recording-delete',
   'agent-displaced',
   'agent-token-rotate',
+  'agent-team-groups',
   'mfa-reset',
   'mfa-remove',
   'mfa-recovery-used',

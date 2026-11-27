@@ -44,6 +44,9 @@ const (
 	// VerbAgentTokenRotate is an administrator replacing a cluster's tunnel
 	// credential. It is written by the API, and named here beside its sibling.
 	VerbAgentTokenRotate = "agent-token-rotate"
+	// VerbAgentTeamGroups is an administrator confirming that a cluster's agent
+	// package, with the team groups it names, is applied. Written by the API.
+	VerbAgentTeamGroups = "agent-team-groups"
 )
 
 // AgentActor is the user named on a record the agent's own connection caused.

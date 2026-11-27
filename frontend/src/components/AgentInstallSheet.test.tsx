@@ -1,10 +1,10 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AgentInstall, Cluster } from '../api/types'
+import type { AgentInstall, AgentTeamGroups, Cluster } from '../api/types'
 import { AgentInstallSheet } from './AgentInstallSheet'
 
 /*
@@ -17,11 +17,21 @@ import { AgentInstallSheet } from './AgentInstallSheet'
 
 const calls: number[] = []
 let answer: () => Promise<AgentInstall> = async () => install()
+const confirmed: Array<{ id: number; teams: string[] }> = []
+let confirmAnswer: () => Promise<AgentTeamGroups> = async () => ({
+  team_groups: ['payments'],
+  confirmed_team_groups: ['payments'],
+  waiting_team_groups: [],
+})
 
 vi.mock('../api/client', () => ({
   fetchAgentInstall: (id: number) => {
     calls.push(id)
     return answer()
+  },
+  confirmAgentTeamGroups: (id: number, teams: string[]) => {
+    confirmed.push({ id, teams })
+    return confirmAnswer()
   },
   errorMessage: (_err: unknown, fallback: string) => fallback,
 }))
@@ -44,13 +54,22 @@ function install(over: Partial<AgentInstall> = {}): AgentInstall {
     kustomize_command: 'curl -sfL … | tar -xz\nkubectl apply -k kubemg-agent',
     manifest: 'apiVersion: v1\nkind: Namespace\n',
     files: {},
+    team_groups: [],
+    confirmed_team_groups: [],
+    waiting_team_groups: [],
     ...over,
   }
 }
 
 beforeEach(() => {
   calls.length = 0
+  confirmed.length = 0
   answer = async () => install()
+  confirmAnswer = async () => ({
+    team_groups: ['payments'],
+    confirmed_team_groups: ['payments'],
+    waiting_team_groups: [],
+  })
 })
 afterEach(cleanup)
 
@@ -139,5 +158,40 @@ describe('AgentInstallSheet', () => {
       expect(screen.getByText('Could not render the install package.')).toBeTruthy(),
     )
     expect(screen.queryByText('Registration token')).toBeNull()
+  })
+
+  it('shows no team groups section for a cluster no group is granted', async () => {
+    render(<AgentInstallSheet cluster={cluster} onClose={() => {}} />)
+
+    await waitFor(() => expect(screen.getByText('Install command')).toBeTruthy())
+    expect(screen.queryByText('Team groups')).toBeNull()
+  })
+
+  it('says a team group waits for the re-apply, and records it when confirmed', async () => {
+    answer = async () =>
+      install({ team_groups: ['payments'], confirmed_team_groups: [], waiting_team_groups: ['payments'] })
+    render(<AgentInstallSheet cluster={cluster} onClose={() => {}} />)
+
+    await waitFor(() => expect(screen.getByText(/Waiting for the agent re-apply/)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'I re-applied this package' }))
+
+    // What is confirmed is exactly the list this package carries.
+    await waitFor(() => expect(confirmed).toEqual([{ id: 7, teams: ['payments'] }]))
+    await waitFor(() => expect(screen.getByText(/Every team group in this package is asserted/)).toBeTruthy())
+    expect(screen.queryByRole('button', { name: 'I re-applied this package' })).toBeNull()
+  })
+
+  it('keeps the team groups waiting when the confirmation fails', async () => {
+    answer = async () =>
+      install({ team_groups: ['payments'], confirmed_team_groups: [], waiting_team_groups: ['payments'] })
+    confirmAnswer = async () => {
+      throw new Error('nope')
+    }
+    render(<AgentInstallSheet cluster={cluster} onClose={() => {}} />)
+
+    await waitFor(() => expect(screen.getByText(/Waiting for the agent re-apply/)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'I re-applied this package' }))
+    await waitFor(() => expect(screen.getByText('Could not record the re-apply.')).toBeTruthy())
+    expect(screen.getByText(/Waiting for the agent re-apply/)).toBeTruthy()
   })
 })

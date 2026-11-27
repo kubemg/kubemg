@@ -269,6 +269,10 @@ export interface Group {
   description?: string
   member_ids: number[]
   created_at: string
+  /** The Kubernetes group this group is asserted as on the agent clusters it
+      is granted (kubemg:g:<name>), or empty for a name created before team
+      groups that can never be asserted. */
+  team_group: string
 }
 
 /** A permission targets either one account or every member of a group. */
@@ -572,6 +576,9 @@ export interface AuditEvent {
   name?: string
   impersonated_user?: string
   impersonated_groups: string[]
+  /** Team groups the caller's grant named that KubeMG did not assert, because
+      the cluster's agent was not yet confirmed to allow them. */
+  withheld_team_groups?: string[]
   status: number
   duration_ms: number
   /** A long-lived call: exec, attach, watch, logs -f. Recorded on open and close. */
@@ -1607,6 +1614,9 @@ export interface AccessReviewResult {
 export interface GrantIdentity {
   subject: string
   groups: string[]
+  /** Team groups this caller's grant names that are not asserted yet, because
+      the cluster's agent has not been re-applied with them. */
+  withheld_team_groups?: string[]
   k8s_role: string
   namespaces: string[]
   cluster: string
@@ -2258,6 +2268,22 @@ export interface AgentInstall {
       none. */
   image_pull_secret?: string
   pull_secret_command?: string
+  /** The KubeMG groups this package lets the agent assert as kubemg:g:<name>:
+      every group granted the cluster whose name is a valid team group. */
+  team_groups: string[]
+  /** Those an administrator confirmed the applied agent allows. Only these are
+      asserted on calls to the cluster. */
+  confirmed_team_groups: string[]
+  /** The rest: granted, in this package, but not asserted until the package is
+      re-applied and the re-apply confirmed. */
+  waiting_team_groups: string[]
+}
+
+/** The team group state of a cluster after a re-apply was confirmed. */
+export interface AgentTeamGroups {
+  team_groups: string[]
+  confirmed_team_groups: string[]
+  waiting_team_groups: string[]
 }
 
 /** A rotated agent credential: the package the agent now needs, and whether

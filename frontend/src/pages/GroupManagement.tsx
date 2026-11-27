@@ -106,7 +106,7 @@ export function GroupManagement() {
     const confirmed = await confirm({
       eyebrow: 'Group',
       title: `Delete ${group.name}?`,
-      body: 'Members lose every cluster grant they only held through this group, at their next call. Grants they hold directly are unaffected.',
+      body: `Members lose every cluster grant they only held through this group, at their next call. Grants they hold directly are unaffected.${group.team_group ? ` Role bindings in clusters stay bound to ${group.team_group}: remove them too, or a group later created under this name inherits them.` : ''}`,
       confirmLabel: 'Delete',
     })
     if (!confirmed) return
@@ -260,6 +260,22 @@ function GroupCard({
         </IconButton>
       }
     >
+      {/* The name a cluster is told, so an operator binding a Role to this team
+          can copy it — or, for a name from before team groups, why there is
+          none to copy. */}
+      {group.team_group ? (
+        <p className="border-b border-line-soft px-5 py-2.5 text-[12px] text-muted">
+          Clusters this group is granted see it as{' '}
+          <code className="font-data text-fg">{group.team_group}</code>
+        </p>
+      ) : (
+        <div className="border-b border-line-soft px-5 py-3">
+          <Notice tone="warn">
+            Clusters are never told about this group: its name is not a valid Kubernetes group
+            segment. Create a group with a lowercase name to bind a Role to the team.
+          </Notice>
+        </div>
+      )}
       <ul className="flex flex-col">
         {members.map((member) => (
           <li
@@ -358,7 +374,11 @@ function CreateGroupSheet({
         </>
       }
     >
-      <Field label="Name" htmlFor="group_name">
+      <Field
+        label="Name"
+        htmlFor="group_name"
+        hint="Lowercase letters, digits and '-'. Clusters this group is granted see it as kubemg:g:<name>."
+      >
         <TextInput
           id="group_name"
           required

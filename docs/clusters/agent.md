@@ -89,7 +89,7 @@ A static binary of about 7–10 MB with a single dependency (`gorilla/websocket`
 
 | Object | What it grants | Bound to |
 |---|---|---|
-| `kubemg-agent-impersonator` | `impersonate` on users, and on the four groups `kubemg:view`, `kubemg:edit`, `kubemg:cluster-admin`, `kubemg:users` only; `get` on `/version` | the agent's ServiceAccount |
+| `kubemg-agent-impersonator` | `impersonate` on users, and on the four groups `kubemg:view`, `kubemg:edit`, `kubemg:cluster-admin`, `kubemg:users` plus `kubemg:g:<group>` for each [team](#team-groups) granted this cluster, by name; `get` on `/version` | the agent's ServiceAccount |
 | `kubemg-view` → built-in `view` | read-only access | group `kubemg:view` |
 | `kubemg-edit` → built-in `edit` | read/write, no RBAC or quota | group `kubemg:edit` |
 | `kubemg-cluster-admin` → built-in `cluster-admin` | full control | group `kubemg:cluster-admin` |
@@ -102,6 +102,24 @@ The agent holds almost nothing itself: its only privilege is to *impersonate*. W
 
 ??? info "Why custom-resource access is enumerated, never wildcarded"
     The built-in `view`, `edit` and `cluster-admin` roles cover only the API groups Kubernetes ships. Without `kubemg-crd-discovery` Explore cannot read which CRDs exist, and without the custom-resource roles a `view` grant cannot read Gateway API or Istio objects. A wildcard `apiGroups: ["*"]` would include the core group, where Secrets live, and hand every user every secret. To let Explore browse another operator's CRDs (Strimzi, Debezium, an in-house CRD), add its API group to `kubemg-custom-resource-view` and `-edit` and re-apply.
+
+### Team groups
+
+A kubemg group with a grant on this cluster is asserted to it as `kubemg:g:<group>` (see [Team groups](../access/model.md#team-groups)). RBAC's `resourceNames` has no prefix match, so the package kubemg renders for a cluster names each of its teams in `kubemg-agent-impersonator`, after the four fixed groups. Nothing else in the package changes.
+
+When a group gets its **first** grant on a cluster, that cluster's agent package must be re-applied:
+
+1. Open **the cluster's dashboard → Agent install**. The **Team groups** section lists the groups this package allows and marks the new one as *waiting for the agent re-apply*.
+2. Apply the package as usual. Updating a ClusterRole takes effect at once and does not restart the agent.
+3. Click **I re-applied this package**. kubemg records the groups this package listed, writes an `agent-team-groups` audit record, and starts asserting them.
+
+Until step 3, kubemg leaves the waiting group off every call to that cluster. The API server refuses the whole call when the agent impersonates a group its ClusterRole does not name, so sending it early would cut the team's members off the cluster, base role included. Members keep their role meanwhile. Each call made without the group lists it under *Team groups withheld* in its audit record. Confirm only after the apply succeeded. If a group is confirmed while the applied package does not name it (an older package re-applied afterwards, `deploy/kustomize/base`, or a GitOps copy committed before the group was added), the API server refuses the whole impersonation. kubemg recognises that one refusal and withdraws the group's confirmation on that cluster. The team goes back to *waiting*, the call is made again with the base role, and its members keep that role instead of losing the cluster. The withdrawal is audited as `agent-team-groups`, with the group and the reason on the row, and the call's own row lists the group under *Team groups withheld*. An exec, attach or port-forward cannot be made again on the caller's behalf: that one attempt answers `403` naming the group, and the next works with the base role. Re-apply the package and confirm again to restore the team's access.
+
+A Role bound to a team needs the verbs the call uses. kubemg opens `exec` and `attach` as a WebSocket handshake, which Kubernetes checks as `get` on `pods/exec` (or `pods/attach`) as well as `create`, so a Role that grants a team exec needs both verbs.
+
+Removing a grant needs no re-apply. kubemg stops asserting the group at once, and a stale name in the ClusterRole lets the agent claim a group nothing binds. Removing the grant (or deleting the group) also clears its confirmation on that cluster, so a later grant waits for a re-apply confirmation again: kubemg cannot know whether a package applied in between still names it.
+
+The agent cannot read its own ClusterRole, and it is not given the right to just so kubemg can check this. That is why the re-apply is confirmed by an administrator rather than detected.
 
 ## Environment variables
 

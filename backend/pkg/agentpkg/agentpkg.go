@@ -19,6 +19,7 @@ import (
 	"io/fs"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -85,7 +86,23 @@ type Options struct {
 	// renders no pull secret. KubeMG only names it: the Secret is the
 	// operator's to create, because registry credentials are theirs.
 	ImagePullSecret string
+	// TeamGroups are the names of the KubeMG groups holding a grant on this
+	// cluster. Each is added to the agent's impersonator ClusterRole as
+	// `kubemg:g:<name>`, beside the four fixed groups, so the agent may assert
+	// it. Empty renders the package exactly as base/ ships it.
+	TeamGroups []string
 }
+
+// TeamGroupPrefix is the Kubernetes group a KubeMG group is asserted as, ahead
+// of its name. The bastion asserts the same prefix; a test keeps them in step.
+const TeamGroupPrefix = "kubemg:g:"
+
+// fixedGroupNames is the line in base/rbac.yaml naming the groups every agent
+// may impersonate. A package with team groups widens this line and nothing
+// else. It is matched exactly, and a render that cannot find it fails: the
+// alternative is a package whose agent silently cannot assert the teams it
+// was rendered for.
+const fixedGroupNames = `resourceNames: ["kubemg:view", "kubemg:edit", "kubemg:cluster-admin", "kubemg:users"]`
 
 // dns1123Label is what Kubernetes itself requires of a namespace name. It is
 // also what keeps the value inert everywhere it lands unquoted in the
@@ -134,7 +151,34 @@ func (o Options) normalize() (Options, error) {
 	if o.ImagePullSecret != "" && !ValidImagePullSecret(o.ImagePullSecret) {
 		return o, fmt.Errorf("image pull secret %q is not a valid Secret name", o.ImagePullSecret)
 	}
+	// A team group name lands in the ClusterRole that bounds what the agent may
+	// claim, so it is held to the DNS-1123 label rule here as well as where the
+	// group is created: no colon to reach another kubemg: segment with, nothing
+	// that needs escaping in YAML.
+	teams := make([]string, 0, len(o.TeamGroups))
+	for _, name := range o.TeamGroups {
+		name = strings.TrimSpace(name)
+		if !dns1123Label.MatchString(name) {
+			return o, fmt.Errorf("team group %q is not a valid DNS-1123 label", name)
+		}
+		teams = append(teams, name)
+	}
+	slices.Sort(teams)
+	o.TeamGroups = slices.Compact(teams)
 	return o, nil
+}
+
+// impersonableGroups renders the resourceNames line for a package: the fixed
+// groups, then each team group in order.
+func impersonableGroups(teams []string) string {
+	if len(teams) == 0 {
+		return fixedGroupNames
+	}
+	names := make([]string, 0, len(teams))
+	for _, name := range teams {
+		names = append(names, quote(TeamGroupPrefix+name))
+	}
+	return strings.TrimSuffix(fixedGroupNames, "]") + ", " + strings.Join(names, ", ") + "]"
 }
 
 // Render fills the package in for one cluster, returning file name -> content.
@@ -175,7 +219,15 @@ func Render(opts Options) (map[string]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", entry.Name(), err)
 		}
-		out[entry.Name()] = replacer.Replace(string(raw))
+		rendered := replacer.Replace(string(raw))
+		if entry.Name() == "rbac.yaml" && len(opts.TeamGroups) > 0 {
+			if strings.Count(rendered, fixedGroupNames) != 1 {
+				return nil, fmt.Errorf("rbac.yaml does not carry the agent's group list in the expected form; " +
+					"the team groups cannot be added to it")
+			}
+			rendered = strings.Replace(rendered, fixedGroupNames, impersonableGroups(opts.TeamGroups), 1)
+		}
+		out[entry.Name()] = rendered
 	}
 	return out, nil
 }

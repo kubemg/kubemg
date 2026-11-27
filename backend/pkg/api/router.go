@@ -52,6 +52,13 @@ type Store interface {
 	PutAgentInstallTicket(ctx context.Context, hash string, clusterID uint, expiresAt time.Time) error
 	TakeAgentInstallTicket(ctx context.Context, hash string) (uint, bool, error)
 	RotateClusterAgentToken(ctx context.Context, clusterID uint, token string) error
+	// Team groups a cluster's agent package names, and the administrator's
+	// confirmation that the applied agent allows them — see agent_team_groups.go.
+	TeamGroupsForCluster(ctx context.Context, clusterID uint) ([]string, error)
+	ConfirmAgentTeamGroups(ctx context.Context, clusterID uint, names []string) error
+	// ForgetAgentTeamGroup is the proxy withdrawing a confirmation the cluster
+	// showed to be wrong; see bastion.ProxyStore.
+	ForgetAgentTeamGroup(ctx context.Context, clusterID uint, name string) error
 	CreateCluster(ctx context.Context, cluster *db.Cluster) error
 	DeleteCluster(ctx context.Context, id uint) error
 	UpdateClusterHealth(ctx context.Context, id uint, health db.ClusterHealth) error
@@ -963,6 +970,9 @@ func NewRouter(opts Options) *gin.Engine {
 			// Replaces the tunnel credential and cuts the attached agent off. No
 			// grace window: the point is that the old token stops working.
 			clusters.POST("/:id/agent-token/rotate", requireAdmin, s.rotateAgentToken)
+			// Records that the agent package with these team groups is applied, so
+			// they start being asserted. See agent_team_groups.go.
+			clusters.POST("/:id/agent-team-groups/confirm", requireAdmin, s.confirmAgentTeamGroups)
 		}
 
 		// Where this cluster's metrics and logs actually come from. The Metrics

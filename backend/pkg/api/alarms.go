@@ -699,7 +699,7 @@ func (s *server) ruleFrom(c *gin.Context, req alarmRuleRequest) (*db.AlarmRule, 
 var auditVerbVocabulary = append(
 	append([]string{}, auditpolicy.Verbs...),
 	"replay", "recording-get", "recording-delete",
-	bastion.VerbAgentDisplaced, bastion.VerbAgentTokenRotate,
+	bastion.VerbAgentDisplaced, bastion.VerbAgentTokenRotate, bastion.VerbAgentTeamGroups,
 	verbMFAReset, verbMFARemove, verbMFARecoveryUsed,
 	verbCLILogin, verbCLISessionRevoke,
 	verbPasswordExpire,
